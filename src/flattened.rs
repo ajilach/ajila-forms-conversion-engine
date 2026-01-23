@@ -1,11 +1,10 @@
-use crate::xfa::{XfaNode, XfaNodeKind, Border, Font, Para, HAlign, VAlign, FontWeight, StrokeStyle, Num, num};
-use crate::text_metrics::{TextMeasurer, TextBlockMetrics};
+use crate::xfa::{XfaNode, XfaNodeKind, Border, Font, Para, HAlign, VAlign, StrokeStyle, Num, num};
 use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef};
+use crate::font_manager::get_font_manager;
 use std::path::Path;
 use std::collections::HashMap;
 use image::{RgbaImage, Rgba, ImageBuffer};
-use imageproc::drawing::{draw_hollow_rect_mut, draw_text_mut};
-use imageproc::rect::Rect;
+use imageproc::drawing::draw_text_mut;
 use ab_glyph::{FontRef, PxScale, Font as AbGlyphFont, ScaleFont};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -760,7 +759,21 @@ impl Flattened {
         // For positioned layout, use node's x,y directly
         let x = node.x.unwrap_or(Decimal::ZERO);
         let y = node.y.unwrap_or(Decimal::ZERO);
-        let width = node.w.unwrap_or(parent_position.width);
+        
+        // Per XFA spec: if w is not specified, the element is horizontally growable.
+        // Use minW as the width, or calculate natural width for Draw elements.
+        let width = node.w.unwrap_or_else(|| {
+            // For Draw elements without explicit width, use minW or natural text width
+            if let XfaNodeKind::Draw = &node.kind {
+                let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                let natural_width = Self::calculate_natural_text_width(&text, &node.font);
+                let min_w = node.min_w.unwrap_or(Decimal::ZERO);
+                natural_width.max(min_w)
+            } else {
+                // For other elements, use minW or fall back to parent width
+                node.min_w.unwrap_or(parent_position.width)
+            }
+        });
         let height = node.h.unwrap_or_else(|| num(20.0));
         
         let pos = Position::new(
@@ -1231,84 +1244,133 @@ impl Flattened {
         let x = node.x.unwrap_or(Decimal::ZERO);
         let y = node.y.unwrap_or(Decimal::ZERO);
         
-        // Width defaults to parent width if not specified (per XFA spec)
-        let width = node.w.unwrap_or(parent_position.width);
-        
-        // Height: use explicit h, or minH as fallback, or a small default for leaf nodes
-        let explicit_height = node.h;
-        let min_height = node.min_h.unwrap_or(Decimal::ZERO);
-        
-        // For containers without explicit height, use minH or a very small default
-        // The actual height will be determined by children
-        let height = explicit_height.unwrap_or_else(|| {
-            if min_height > Decimal::ZERO {
-                min_height
-            } else {
-                // For leaf nodes (field/draw), calculate natural height based on content
-                // For containers, use 0 and let children determine height
-                match &node.kind {
-                    XfaNodeKind::Draw => {
-                        // Calculate natural height for draw element based on text content
-                        // Per XFA AXTE spec
-                        // Use embed context to resolve xfa:embed references for accurate height
-                        if let Some(text) = extract_text_with_embed_context(&node.children) {
-                            Self::calculate_natural_text_height(
-                                &text, 
-                                &node.font, 
-                                &node.para, 
-                                width
-                            ).max(min_height)
-                        } else {
-                            // No text content, use minimum or default
-                            min_height.max(num(12.0))
-                        }
+        // Per XFA spec: if w is not specified, the element is horizontally growable.
+        // - For Draw elements: use natural text width (constrained by minW/maxW)
+        // - For other elements: use minW if available, otherwise parent width
+        let width = node.w.unwrap_or_else(|| {
+            match &node.kind {
+                XfaNodeKind::Draw => {
+                    // Calculate natural width from text content
+                    let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                    let natural_width = Self::calculate_natural_text_width(&text, &node.font);
+                    let min_w = node.min_w.unwrap_or(Decimal::ZERO);
+                    let max_w = node.max_w;
+                    
+                    // Constrain by minW and maxW
+                    let width = natural_width.max(min_w);
+                    if let Some(max) = max_w {
+                        width.min(max)
+                    } else {
+                        width
                     }
-                    XfaNodeKind::Field => {
-                        // For fields, calculate based on font size + margins
-                        // Per XFA spec: natural height of text widget is height of text block
-                        let font_size = node.font.as_ref()
-                            .map(|f| f.size)
-                            .unwrap_or_else(|| num(10.0));
-                        // Line gap of 20% plus some padding
-                        let line_height = font_size * num(1.4); // Font size + 20% line gap + padding
-                        line_height.max(min_height)
+                }
+                XfaNodeKind::Element { tag_name, .. } if tag_name == "draw" => {
+                    // Same logic for generic draw elements
+                    let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                    let natural_width = Self::calculate_natural_text_width(&text, &node.font);
+                    let min_w = node.min_w.unwrap_or(Decimal::ZERO);
+                    let max_w = node.max_w;
+                    
+                    let width = natural_width.max(min_w);
+                    if let Some(max) = max_w {
+                        width.min(max)
+                    } else {
+                        width
                     }
-                    XfaNodeKind::Element { tag_name, .. } => {
-                        match tag_name.as_str() {
-                            "draw" => {
-                                // Calculate natural height for draw element
-                                // Use embed context to resolve xfa:embed references for accurate height
-                                if let Some(text) = extract_text_with_embed_context(&node.children) {
-                                    Self::calculate_natural_text_height(
-                                        &text, 
-                                        &node.font, 
-                                        &node.para, 
-                                        width
-                                    ).max(min_height)
-                                } else {
-                                    min_height.max(num(12.0))
-                                }
-                            }
-                            "field" => {
-                                let font_size = node.font.as_ref()
-                                    .map(|f| f.size)
-                                    .unwrap_or_else(|| num(10.0));
-                                let line_height = font_size * num(1.4);
-                                line_height.max(min_height)
-                            }
-                            _ => Decimal::ZERO, // Containers start with 0 height
-                        }
-                    }
-                    _ => Decimal::ZERO,
+                }
+                _ => {
+                    // For subforms, fields, etc: use minW if available, else parent width
+                    node.min_w.unwrap_or(parent_position.width)
                 }
             }
         });
         
         // Get margins (these define spacing between the element's edges and its content)
+        // NOTE: Must be extracted before height calculation since natural height includes margins
         let margin_top = node.margin_top.unwrap_or(Decimal::ZERO);
         let margin_bottom = node.margin_bottom.unwrap_or(Decimal::ZERO);
         let margin_left = node.margin_left.unwrap_or(Decimal::ZERO);
         let margin_right = node.margin_right.unwrap_or(Decimal::ZERO);
+        
+        // Height: use explicit h, or calculate natural height for leaf nodes
+        let explicit_height = node.h;
+        let min_height = node.min_h.unwrap_or(Decimal::ZERO);
+        
+        // For containers without explicit height, calculate natural height
+        // NOTE: For draw/field elements, natural height is content + margins
+        let height = explicit_height.unwrap_or_else(|| {
+            // For leaf nodes (field/draw), calculate natural height based on content
+            // The natural height must include space for margins + content
+            match &node.kind {
+                XfaNodeKind::Draw => {
+                    // Calculate natural height for draw element based on text content
+                    // Per XFA AXTE spec
+                    // Use embed context to resolve xfa:embed references for accurate height
+                    let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
+                        Self::calculate_natural_text_height(
+                            &text, 
+                            &node.font, 
+                            &node.para, 
+                            width
+                        )
+                    } else {
+                        // No text content, use default line height
+                        num(12.0)
+                    };
+                    // Total height = content + margins
+                    let total_height = natural_content_height + margin_top + margin_bottom;
+                    total_height.max(min_height)
+                }
+                XfaNodeKind::Field => {
+                    // For fields, calculate based on font size + margins
+                    // Per XFA spec: natural height of text widget is height of text block
+                    let font_size = node.font.as_ref()
+                        .map(|f| f.size)
+                        .unwrap_or_else(|| num(10.0));
+                    // Line gap of 20% plus some padding
+                    let content_height = font_size * num(1.4); // Font size + 20% line gap + padding
+                    let total_height = content_height + margin_top + margin_bottom;
+                    total_height.max(min_height)
+                }
+                XfaNodeKind::Element { tag_name, .. } => {
+                    match tag_name.as_str() {
+                        "draw" => {
+                            // Calculate natural height for draw element
+                            // Use embed context to resolve xfa:embed references for accurate height
+                            let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
+                                Self::calculate_natural_text_height(
+                                    &text, 
+                                    &node.font, 
+                                    &node.para, 
+                                    width
+                                )
+                            } else {
+                                num(12.0)
+                            };
+                            // Total height = content + margins
+                            let total_height = natural_content_height + margin_top + margin_bottom;
+                            total_height.max(min_height)
+                        }
+                        "field" => {
+                            let font_size = node.font.as_ref()
+                                .map(|f| f.size)
+                                .unwrap_or_else(|| num(10.0));
+                            let content_height = font_size * num(1.4);
+                            let total_height = content_height + margin_top + margin_bottom;
+                            total_height.max(min_height)
+                        }
+                        _ => {
+                            // Containers: if min_height is set, use it; else 0 (children determine)
+                            if min_height > Decimal::ZERO { min_height } else { Decimal::ZERO }
+                        }
+                    }
+                }
+                _ => {
+                    // Other containers: if min_height is set, use it; else 0
+                    if min_height > Decimal::ZERO { min_height } else { Decimal::ZERO }
+                }
+            }
+        });
         
         // Get layout from node's layout attribute
         // Per XFA spec: if subform has no layout attribute, it defaults to "position"
@@ -1477,6 +1539,31 @@ impl Flattened {
             "bottomRight" => (x - width, y - height),
             _ => (x, y), // Default to topLeft
         }
+    }
+    
+    /// Calculate the natural width for a text/draw element.
+    /// Per XFA spec: when w is not specified, the element is horizontally growable
+    /// and its width is determined by the content (natural width).
+    /// The width is constrained by minW (minimum) and maxW (maximum) if specified.
+    fn calculate_natural_text_width(text: &str, font: &Option<Font>) -> Num {
+        // Get font size from style or use default
+        let font_size = font.as_ref()
+            .map(|f| f.size)
+            .unwrap_or_else(|| num(10.0));
+        
+        let font_size_f32 = font_size.to_f32().unwrap_or(10.0);
+        
+        // Approximate character width as 60% of font size (rough estimate)
+        // This is a simplified calculation; for accurate width we'd need actual font metrics
+        let char_width = font_size_f32 * 0.6;
+        
+        // Calculate width of the text
+        let text_width = text.chars().count() as f32 * char_width;
+        
+        // Add some padding for margins
+        let padded_width = text_width + font_size_f32 * 0.5;
+        
+        Decimal::from_f32(padded_width).unwrap_or_else(|| num(100.0))
     }
     
     /// Calculate the natural height for a text/draw element based on AXTE rules.
@@ -1792,17 +1879,34 @@ impl Flattened {
     /// Render the flattened layout to an image file
     /// Pass 1: Draw actual content (text in black, field boxes)
     /// Pass 2: Overlay debug info in transparent red (names, outlines)
+    /// 
+    /// Per XFA spec, font rendering respects:
+    /// - typeface: Font family name (default: Courier)
+    /// - size: Font size in points (default: 10pt)
+    /// - weight: normal or bold (default: normal)
+    /// - posture: normal or italic (default: normal)
     pub fn render_to_image<P: AsRef<Path>>(&self, output_path: P, scale: f32) -> Result<(), String> {
         // Scale dimensions for better resolution (e.g., scale=2.0 for 2x)
         let scale_dec = num(scale as f64);
+        
+        // Width is fixed to page width
         let img_width = (self.page.width * scale_dec).to_f32().unwrap_or(0.0) as u32;
-        let img_height = (self.page.height * scale_dec).to_f32().unwrap_or(0.0) as u32;
+        
+        // Height adapts to actual content bounds (maximum y + height of all nodes)
+        let actual_content_height = self.nodes.iter()
+            .map(|node| node.y + node.height)
+            .max()
+            .unwrap_or(self.page.height);
+        let img_height = (actual_content_height * scale_dec).to_f32().unwrap_or(0.0) as u32;
         
         // Create a white background image (RGBA for transparency support)
         let mut img: RgbaImage = ImageBuffer::from_pixel(img_width, img_height, Rgba([255u8, 255u8, 255u8, 255u8]));
         
-        // Load a system font for text rendering
-        let font = Self::load_system_font()?;
+        // Get the font manager for font resolution
+        let font_manager = get_font_manager();
+        
+        // Get a default fallback font for debug text
+        let fallback_font = Self::load_fallback_font()?;
         
         // Colors (RGBA - last value is alpha: 255=opaque, 0=transparent)
         let black = Rgba([0u8, 0u8, 0u8, 255u8]);
@@ -1823,6 +1927,7 @@ impl Flattened {
                 node.rotate, scale_dec
             );
             
+            // Skip nodes outside the visible area or with invalid dimensions
             if x < 0 || y < 0 || w <= 0 || h <= 0 {
                 continue;
             }
@@ -1853,9 +1958,17 @@ impl Flattened {
                     // Note: Field names are drawn in Pass 2 as debug/meta info in red
                     // Only draw field VALUE (not name) in black if present
                     if !value.is_empty() {
-                        let font_size = node.style.font.as_ref().map(|f| f.size.to_f32().unwrap_or(10.0)).unwrap_or(10.0);
+                        // Get font style from node, or use XFA defaults
+                        let xfa_font = node.style.font.clone().unwrap_or_default();
+                        let font_size = xfa_font.size.to_f32().unwrap_or(10.0);
                         let scaled_font_size = (font_size * scale).max(8.0);
                         let text_scale = PxScale::from(scaled_font_size);
+                        
+                        // Get the appropriate font for this style (with fallback)
+                        let render_font = {
+                            let mut mgr = font_manager.lock().map_err(|e| format!("Lock error: {}", e))?;
+                            mgr.get_font(&xfa_font).unwrap_or_else(|_| fallback_font.clone())
+                        };
                         
                         // Get text color from style or use black
                         let text_color = node.style.font.as_ref()
@@ -1863,9 +1976,20 @@ impl Flattened {
                             .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
                             .unwrap_or(black);
                         
-                        // Apply text alignment from para using font metrics
-                        let text_x = Self::calculate_text_x(x, w, value, scaled_font_size, &node.style.para, &font);
-                        let text_y = Self::calculate_text_y(y, h, scaled_font_size, &node.style.para, &font, 0, 1);
+                        // Calculate content area inside border margins
+                        let (content_x, content_y, content_w, content_h) = if let Some(border) = &node.style.border {
+                            let ml = (border.margin_left.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32;
+                            let mt = (border.margin_top.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32;
+                            let mr = (border.margin_right.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32;
+                            let mb = (border.margin_bottom.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32;
+                            (x + ml, y + mt, (w - ml - mr).max(0), (h - mt - mb).max(0))
+                        } else {
+                            (x, y, w, h)
+                        };
+                        
+                        // Apply text alignment from para using font metrics (within content area)
+                        let text_x = Self::calculate_text_x(content_x, content_w, value, scaled_font_size, &node.style.para, &render_font);
+                        let text_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, 0, 1);
                         
                         draw_text_mut(
                             &mut img,
@@ -1873,7 +1997,7 @@ impl Flattened {
                             text_x,
                             text_y,
                             text_scale,
-                            &font,
+                            &render_font,
                             value,
                         );
                     }
@@ -1881,12 +2005,22 @@ impl Flattened {
                 FlattenedNodeKind::Text { content, font_size, .. } => {
                     // Draw text content (draw elements/labels)
                     if !content.is_empty() {
+                        // Get font style from node, or use XFA defaults
+                        let xfa_font = node.style.font.clone().unwrap_or_default();
                         // Use style font size if available, otherwise use the passed value
-                        let effective_font_size = node.style.font.as_ref()
-                            .map(|f| f.size.to_f32().unwrap_or(10.0))
-                            .unwrap_or_else(|| font_size.to_f32().unwrap_or(10.0));
+                        let effective_font_size = if node.style.font.is_some() {
+                            xfa_font.size.to_f32().unwrap_or(10.0)
+                        } else {
+                            font_size.to_f32().unwrap_or(10.0)
+                        };
                         let scaled_font_size = (effective_font_size * scale).max(8.0);
                         let text_scale = PxScale::from(scaled_font_size);
+                        
+                        // Get the appropriate font for this style (with fallback)
+                        let render_font = {
+                            let mut mgr = font_manager.lock().map_err(|e| format!("Lock error: {}", e))?;
+                            mgr.get_font(&xfa_font).unwrap_or_else(|_| fallback_font.clone())
+                        };
                         
                         // Get text color from style or use dark gray
                         let text_color = node.style.font.as_ref()
@@ -1894,35 +2028,49 @@ impl Flattened {
                             .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
                             .unwrap_or(dark_gray);
                         
-                        // Word-wrap text using proper font metrics
-                        let lines = Self::wrap_text_with_font(content, w as f32, scaled_font_size, &font);
+                        // Calculate content area inside border margins
+                        // Per XFA box model: content is drawn inside the border margins (insets)
+                        // Per XFA spec: if h is null/0, the container is vertically growable
+                        // and height should be computed from content
+                        let (content_x, content_y, content_w, content_h) = {
+                            // Get border margins if present
+                            let (ml, mt, mr, mb) = if let Some(border) = &node.style.border {
+                                (
+                                    (border.margin_left.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                    (border.margin_top.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                    (border.margin_right.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                    (border.margin_bottom.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                )
+                            } else {
+                                (0, 0, 0, 0)
+                            };
+                            
+                            // Per XFA spec: if h is 0 or very small, the container is vertically growable
+                            // Height should be derived from content (use font size as minimum)
+                            let effective_h = if h <= (scaled_font_size as i32) {
+                                // Growable: use natural text height based on font metrics
+                                // Estimate line count from content (rough approximation)
+                                let line_gap = scaled_font_size * 0.2;
+                                let natural_height = (scaled_font_size + line_gap) as i32;
+                                natural_height.max(scaled_font_size as i32)
+                            } else {
+                                // Fixed height: apply border margins
+                                (h - mt - mb).max(scaled_font_size as i32)
+                            };
+                            
+                            (x + ml, y + mt, (w - ml - mr).max(0), effective_h)
+                        };
+                        
+                        // Word-wrap text using proper font metrics and the correct font
+                        let lines = Self::wrap_text_with_font(content, content_w as f32, scaled_font_size, &render_font);
                         let total_lines = lines.len();
                         
-                        // Calculate proper line height using AXTE rules
-                        // Per AXTE: line gap is 20% of font size
-                        let line_gap = scaled_font_size * 0.2;
-                        let scale_px = PxScale::from(scaled_font_size);
-                        let scaled_font_ref = font.as_scaled(scale_px);
-                        let ascent = scaled_font_ref.ascent();
-                        let descent = scaled_font_ref.descent().abs();
-                        let mut effective_ascent = ascent;
-                        if ascent + descent < scaled_font_size {
-                            effective_ascent = scaled_font_size - descent;
-                        }
-                        let text_height = effective_ascent + descent;
-                        
-                        // Line height: use override if provided, else TH + LG
-                        let line_height_num = node.style.para.as_ref()
-                            .and_then(|p| p.line_height)
-                            .map(|lh| lh.to_f32().unwrap_or(0.0) * scale)
-                            .unwrap_or(text_height + line_gap);
-                        
                         for (i, line) in lines.iter().enumerate() {
-                            // Calculate x position based on alignment
-                            let line_x = Self::calculate_text_x(x, w, line, scaled_font_size, &node.style.para, &font);
+                            // Calculate x position based on alignment (within content area)
+                            let line_x = Self::calculate_text_x(content_x, content_w, line, scaled_font_size, &node.style.para, &render_font);
                             
-                            // Calculate y position using AXTE-compliant method
-                            let line_y = Self::calculate_text_y(y, h, scaled_font_size, &node.style.para, &font, i, total_lines);
+                            // Calculate y position using AXTE-compliant method (within content area)
+                            let line_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, i, total_lines);
                             
                             if line_y >= 0 && line_y < img_height as i32 - scaled_font_size as i32 {
                                 draw_text_mut(
@@ -1931,7 +2079,7 @@ impl Flattened {
                                     line_x,
                                     line_y,
                                     text_scale,
-                                    &font,
+                                    &render_font,
                                     line,
                                 );
                             }
@@ -1967,14 +2115,14 @@ impl Flattened {
             let debug_font_size = (8.0 * scale).max(6.0);
             let debug_scale = PxScale::from(debug_font_size);
             
-            // Draw name in transparent red at top-left of box
+            // Draw name in transparent red at top-left of box (using fallback font)
             draw_text_mut(
                 &mut img,
                 debug_red,
                 x + 1,
                 y + 1,
                 debug_scale,
-                &font,
+                &fallback_font,
                 &debug_name,
             );
         }
@@ -2515,28 +2663,11 @@ impl Flattened {
         }
     }
     
-    /// Load a system font, trying multiple common locations
-    fn load_system_font() -> Result<FontRef<'static>, String> {
-        // Try common system font locations (macOS, Linux, Windows)
-        let font_paths = [
-            "/System/Library/Fonts/Helvetica.ttc",           // macOS
-            "/System/Library/Fonts/Supplemental/Arial.ttf",   // macOS
-            "/Library/Fonts/Arial.ttf",                       // macOS
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", // Linux
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",            // Linux
-            "C:\\Windows\\Fonts\\arial.ttf",                  // Windows
-        ];
-        
-        for font_path in &font_paths {
-            if let Ok(font_data) = std::fs::read(font_path) {
-                // Leak the font data so it has 'static lifetime
-                let static_data: &'static [u8] = Box::leak(font_data.into_boxed_slice());
-                if let Ok(font) = FontRef::try_from_slice(static_data) {
-                    return Ok(font);
-                }
-            }
-        }
-        
-        Err("Could not load any system font. Please ensure fonts are available.".to_string())
+    /// Load a fallback font for rendering when specific fonts aren't available
+    /// This uses the font_manager's fallback mechanism
+    fn load_fallback_font() -> Result<FontRef<'static>, String> {
+        let manager = get_font_manager();
+        let mut manager = manager.lock().map_err(|e| format!("Lock error: {}", e))?;
+        manager.get_default_font()
     }
 }

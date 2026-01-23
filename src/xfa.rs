@@ -143,8 +143,13 @@ pub struct Font {
 
 impl Default for Font {
     fn default() -> Self {
+        // Per XFA spec section 17 "Template Reference":
+        // - typeface: Default is "Courier"
+        // - size: Default is 10pt
+        // - weight: Default is "normal"
+        // - posture: Default is "normal"
         Font {
-            typeface: "Helvetica".to_string(),
+            typeface: "Courier".to_string(),
             size: num(10.0),  // 10pt default
             weight: FontWeight::Normal,
             posture: FontPosture::Normal,
@@ -156,7 +161,7 @@ impl Default for Font {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FontWeight {
     #[default]
     Normal,
@@ -172,7 +177,7 @@ impl FontWeight {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FontPosture {
     #[default]
     Normal,
@@ -482,11 +487,12 @@ impl XfaNode {
     }
     
     /// Parse a <font> element
+    /// Per XFA spec section 17: typeface defaults to Courier, size to 10pt
     fn parse_font(node: &XfaNode) -> Font {
         Font {
             typeface: node.attributes.get("typeface")
                 .cloned()
-                .unwrap_or_else(|| "Helvetica".to_string()),
+                .unwrap_or_else(|| "Courier".to_string()),
             size: node.attributes.get("size")
                 .and_then(|v| Self::parse_dimension(v).ok())
                 .unwrap_or_else(|| num(10.0)),
@@ -732,6 +738,9 @@ impl XfaNode {
                             };
                         }
                     }
+                    
+                    // Extract styling (margins, border, font, para) from child elements
+                    child_node.extract_styling_from_children();
                     
                     children.push(child_node);
                 }

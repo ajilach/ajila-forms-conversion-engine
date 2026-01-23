@@ -2,6 +2,7 @@ mod xfa;
 mod flattened;
 mod text_metrics;
 mod scripting;
+mod font_manager;
 
 use pdf::file::FileOptions;
 use pdf::object::*;
@@ -323,7 +324,9 @@ mod tests {
         for node in sorted_nodes.iter().take(50) {
             let name = match &node.kind {
                 flattened::FlattenedNodeKind::Field { name, .. } => name.clone(),
-                flattened::FlattenedNodeKind::Text { .. } => "Text".to_string(),
+                flattened::FlattenedNodeKind::Text { source_name, .. } => {
+                    source_name.as_ref().map(|s| format!("Text[{}]", s)).unwrap_or_else(|| "Text".to_string())
+                }
             };
             println!("y={:7.2} x={:7.2} h={:6.2} w={:6.2}  {}", 
                 node.y, node.x, node.height, node.width, name);
@@ -447,6 +450,206 @@ mod tests {
         );
         
         println!("\n✓ All field alignment tests passed!");
+    }
+    
+    #[test]
+    fn test_aaab_des_label_alignment() {
+        // Test that DES_PostalCode, DES_City, and DES_Country labels are on the same line
+        // These are the labels for PLZ, Stadt, and Land
+        use crate::flattened::{Flattened, FlattenedNodeKind};
+        
+        // Use AAAI which has these fields
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Use from_xfa_with_scripts to get the computed label text
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Helper function to find text node by source_name (Draw element name)
+        fn find_draw_by_name<'a>(nodes: &'a [flattened::FlattenedNode], name: &str) -> Option<&'a flattened::FlattenedNode> {
+            nodes.iter().find(|n| {
+                matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), .. } if sn == name)
+            })
+        }
+        
+        // Debug: Print all text nodes with source names containing "Postal" or "City" or "Country"
+        println!("\n=== All Text nodes with Postal/City/Country in source_name ===");
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Text { source_name: Some(sn), content, .. } = &node.kind {
+                if sn.contains("Postal") || sn.contains("City") || sn.contains("Country") ||
+                   sn.contains("postal") || sn.contains("city") || sn.contains("country") ||
+                   sn.contains("PLZ") || sn.contains("Stadt") || sn.contains("Land") {
+                    println!("  '{}': y={}, x={}, w={}, h={}, content='{}'", 
+                        sn, node.y, node.x, node.width, node.height, content);
+                }
+            }
+        }
+        
+        // Debug: print all source_names that contain "DES"
+        println!("\n=== All Text nodes with DES in source_name ===");
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Text { source_name: Some(sn), content, .. } = &node.kind {
+                if sn.contains("DES") {
+                    println!("  '{}': y={}, x={}, w={}, h={}, content='{}'", 
+                        sn, node.y, node.x, node.width, node.height, content);
+                }
+            }
+        }
+        
+        // Find DES_PostalCode, DES_City, DES_Country
+        let des_postal = find_draw_by_name(&flattened.nodes, "DES_PostalCode")
+            .expect("DES_PostalCode not found");
+        let des_city = find_draw_by_name(&flattened.nodes, "DES_City")
+            .expect("DES_City not found");
+        let des_country = find_draw_by_name(&flattened.nodes, "DES_Country")
+            .expect("DES_Country not found");
+        
+        println!("\n=== DES Label Alignment Test ===");
+        println!("DES_PostalCode: y={}, x={}, w={}, h={}", des_postal.y, des_postal.x, des_postal.width, des_postal.height);
+        println!("DES_City:       y={}, x={}, w={}, h={}", des_city.y, des_city.x, des_city.width, des_city.height);
+        println!("DES_Country:    y={}, x={}, w={}, h={}", des_country.y, des_country.x, des_country.width, des_country.height);
+        
+        if let FlattenedNodeKind::Text { content, .. } = &des_postal.kind {
+            println!("DES_PostalCode content: '{}'", content);
+        }
+        if let FlattenedNodeKind::Text { content, .. } = &des_city.kind {
+            println!("DES_City content: '{}'", content);
+        }
+        if let FlattenedNodeKind::Text { content, .. } = &des_country.kind {
+            println!("DES_Country content: '{}'", content);
+        }
+        
+        let tolerance = rust_decimal::Decimal::from_str("0.01").unwrap();
+        
+        // Test 1: All three labels should be on the same line (same Y coordinate)
+        assert!(
+            (des_postal.y - des_city.y).abs() < tolerance,
+            "DES_PostalCode (y={}) and DES_City (y={}) should be on the same line",
+            des_postal.y, des_city.y
+        );
+        
+        assert!(
+            (des_postal.y - des_country.y).abs() < tolerance,
+            "DES_PostalCode (y={}) and DES_Country (y={}) should be on the same line",
+            des_postal.y, des_country.y
+        );
+        
+        // Test 2: Labels should be in order left-to-right: PostalCode, City, Country
+        assert!(
+            des_postal.x < des_city.x,
+            "DES_PostalCode (x={}) should be to the left of DES_City (x={})",
+            des_postal.x, des_city.x
+        );
+        
+        assert!(
+            des_city.x < des_country.x,
+            "DES_City (x={}) should be to the left of DES_Country (x={})",
+            des_city.x, des_country.x
+        );
+        
+        // Test 3: Labels should NOT overlap
+        let postal_end_x = des_postal.x + des_postal.width;
+        assert!(
+            des_city.x >= postal_end_x - tolerance,
+            "DES_City (x={}) should not overlap with DES_PostalCode (ends at x={})",
+            des_city.x, postal_end_x
+        );
+        
+        let city_end_x = des_city.x + des_city.width;
+        assert!(
+            des_country.x >= city_end_x - tolerance,
+            "DES_Country (x={}) should not overlap with DES_City (ends at x={})",
+            des_country.x, city_end_x
+        );
+        
+        println!("\n✓ DES label alignment test passed!");
+    }
+    
+    #[test]
+    fn test_debug_des_postalcode_structure() {
+        // Debug the XFA structure for DES_PostalCode
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Find and dump DES_PostalCode node
+        fn find_and_dump(nodes: &[xfa::XfaNode], target: &str, indent: usize) -> bool {
+            let prefix = "  ".repeat(indent);
+            for node in nodes {
+                if node.name.as_deref() == Some(target) {
+                    println!("{}FOUND: {} {:?}", prefix, target, node.kind);
+                    println!("{}  Parsed dimensions:", prefix);
+                    println!("{}    x = {:?}", prefix, node.x);
+                    println!("{}    y = {:?}", prefix, node.y);
+                    println!("{}    w = {:?}", prefix, node.w);
+                    println!("{}    h = {:?}", prefix, node.h);
+                    println!("{}    min_w = {:?}", prefix, node.min_w);
+                    println!("{}    min_h = {:?}", prefix, node.min_h);
+                    println!("{}  Raw attributes:", prefix);
+                    for (k, v) in &node.attributes {
+                        println!("{}    {}={}", prefix, k, v);
+                    }
+                    println!("{}  Children:", prefix);
+                    dump_node_tree(node, indent + 2);
+                    return true;
+                }
+                if find_and_dump(&node.children, target, indent) {
+                    return true;
+                }
+            }
+            false
+        }
+        
+        fn dump_node_tree(node: &xfa::XfaNode, indent: usize) {
+            let prefix = "  ".repeat(indent);
+            for child in &node.children {
+                match &child.kind {
+                    xfa::XfaNodeKind::Element { tag_name, text_content } => {
+                        println!("{}Element: {} (attrs: {:?})", prefix, tag_name, child.attributes);
+                        if let Some(content) = text_content {
+                            println!("{}  text_content: {:?}", prefix, &content[..content.len().min(200)]);
+                        }
+                        println!("{}  w={:?}, h={:?}", prefix, child.w, child.h);
+                        dump_node_tree(child, indent + 1);
+                    }
+                    xfa::XfaNodeKind::Value => {
+                        println!("{}Value (attrs: {:?})", prefix, child.attributes);
+                        println!("{}  w={:?}, h={:?}", prefix, child.w, child.h);
+                        dump_node_tree(child, indent + 1);
+                    }
+                    other => {
+                        println!("{}{:?} (attrs: {:?})", prefix, other, child.attributes);
+                        if child.w.is_some() || child.h.is_some() {
+                            println!("{}  w={:?}, h={:?}", prefix, child.w, child.h);
+                        }
+                        dump_node_tree(child, indent + 1);
+                    }
+                }
+            }
+        }
+        
+        println!("\n=== DES_PostalCode structure ===\n");
+        if !find_and_dump(&nodes, "DES_PostalCode", 0) {
+            println!("DES_PostalCode not found!");
+        }
+        
+        println!("\n=== DES_City structure ===\n");
+        if !find_and_dump(&nodes, "DES_City", 0) {
+            println!("DES_City not found!");
+        }
+        
+        println!("\n=== DES_Country structure ===\n");
+        if !find_and_dump(&nodes, "DES_Country", 0) {
+            println!("DES_Country not found!");
+        }
     }
     
     #[test]
@@ -807,6 +1010,18 @@ mod tests {
         );
         
         println!("\n✓ Header positioning test passed!");
+        
+        // Verify font styling on the title
+        // The title should have a larger font size than the default (10pt)
+        if let flattened::FlattenedNodeKind::Text { font_size, .. } = &title_text.kind {
+            println!("Title font size: {:?}", font_size);
+            // Also check the style.font
+            if let Some(font) = &title_text.style.font {
+                println!("Title style.font: size={:?}, typeface={}", font.size, font.typeface);
+                assert!(font.size > rust_decimal::Decimal::from(10), 
+                    "Title should have font size > 10pt, but got {:?}", font.size);
+            }
+        }
     }
     
     #[test]

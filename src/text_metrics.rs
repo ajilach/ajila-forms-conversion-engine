@@ -10,8 +10,15 @@
 //! - Derived line spacing: `DS = TH + LG` (or use override if provided)
 //! - Full height: `FH = MT + DS + MB` (with line gap removed on last line)
 //! - Baseline: `B = MT + TH - D`
+//!
+//! Per XFA spec section 17 (font element):
+//! - typeface: Default is "Courier"
+//! - size: Default is 10pt
+//! - weight: "normal" or "bold", default "normal"
+//! - posture: "normal" or "italic", default "normal"
 
 use crate::xfa::{Font, Para, Num, num};
+use crate::font_manager::{FontVariant, get_font_manager};
 use ab_glyph::{FontRef, Font as AbGlyphFont, ScaleFont, PxScale};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -273,81 +280,136 @@ impl TextBlockMetrics {
 }
 
 /// Text measurement engine with font caching
+/// Uses the font_manager module for font resolution according to XFA spec
 pub struct TextMeasurer {
-    /// Cached font data (static lifetime for ab_glyph)
-    font_data: Option<&'static [u8]>,
-    /// Cached font reference
-    font: Option<FontRef<'static>>,
-    /// Cached font metrics by size
-    metrics_cache: HashMap<u32, FontMetrics>,
+    /// Cached fonts by variant (using font_manager's static data)
+    cached_fonts: HashMap<FontVariant, FontRef<'static>>,
+    /// Cached font metrics by (variant hash, size)
+    metrics_cache: HashMap<(u64, u32), FontMetrics>,
+    /// Current font variant in use
+    current_variant: Option<FontVariant>,
 }
 
 impl TextMeasurer {
     /// Create a new text measurer
     pub fn new() -> Self {
         TextMeasurer {
-            font_data: None,
-            font: None,
+            cached_fonts: HashMap::new(),
             metrics_cache: HashMap::new(),
+            current_variant: None,
         }
     }
     
-    /// Load a system font
-    pub fn load_font(&mut self) -> Result<(), String> {
-        if self.font.is_some() {
-            return Ok(());
+    /// Get or load a font for the given XFA font style
+    /// Per XFA spec: uses typeface, weight, and posture to select appropriate font
+    pub fn get_font_for_style(&mut self, xfa_font: &Font) -> Result<&FontRef<'static>, String> {
+        let variant = FontVariant::from_xfa_font(xfa_font);
+        
+        // Check if already cached
+        if !self.cached_fonts.contains_key(&variant) {
+            // Load through font_manager
+            let manager = get_font_manager();
+            let mut manager = manager.lock().map_err(|e| format!("Lock error: {}", e))?;
+            let font = manager.get_font(xfa_font)?;
+            self.cached_fonts.insert(variant.clone(), font);
         }
         
-        // Try common system font locations
-        let font_paths = [
-            "/System/Library/Fonts/Helvetica.ttc",           // macOS
-            "/System/Library/Fonts/Supplemental/Arial.ttf",   // macOS
-            "/Library/Fonts/Arial.ttf",                       // macOS
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", // Linux
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",            // Linux
-            "C:\\Windows\\Fonts\\arial.ttf",                  // Windows
-        ];
-        
-        for font_path in &font_paths {
-            if let Ok(font_data) = std::fs::read(font_path) {
-                // Leak the font data so it has 'static lifetime
-                let static_data: &'static [u8] = Box::leak(font_data.into_boxed_slice());
-                self.font_data = Some(static_data);
-                
-                if let Ok(font) = FontRef::try_from_slice(static_data) {
-                    self.font = Some(font);
-                    return Ok(());
-                }
+        self.current_variant = Some(variant.clone());
+        self.cached_fonts.get(&variant).ok_or_else(|| "Font not in cache".to_string())
+    }
+    
+    /// Load a font using default XFA settings (Courier, normal, normal)
+    /// This is a compatibility method for code that doesn't specify font style
+    pub fn load_font(&mut self) -> Result<(), String> {
+        let default_font = Font::default();
+        self.get_font_for_style(&default_font)?;
+        Ok(())
+    }
+    
+    /// Get the currently loaded font (or load default if none)
+    /// Returns a clone of the font variant to avoid borrow issues
+    fn get_current_font(&mut self) -> Result<FontRef<'static>, String> {
+        // Check if we have a cached font for current variant
+        if let Some(ref variant) = self.current_variant.clone() {
+            if let Some(font) = self.cached_fonts.get(variant) {
+                return Ok(font.clone());
             }
         }
         
-        Err("Could not load any system font".to_string())
+        // Load default font and return a clone
+        let default_font = Font::default();
+        let font = self.get_font_for_style(&default_font)?;
+        Ok(font.clone())
     }
     
-    /// Get font metrics for a given font size (with caching)
-    pub fn get_metrics(&mut self, font_size: Num) -> Result<FontMetrics, String> {
-        self.load_font()?;
+    /// Get font metrics for a given font size and style (with caching)
+    /// Per XFA spec: size defaults to 10pt
+    pub fn get_metrics_for_style(&mut self, xfa_font: &Font) -> Result<FontMetrics, String> {
+        let font = self.get_font_for_style(xfa_font)?.clone();
+        let variant = FontVariant::from_xfa_font(xfa_font);
         
-        let font = self.font.as_ref().ok_or("Font not loaded")?;
-        
-        // Use font size in hundredths of a point as cache key
-        let cache_key = (font_size * num(100.0)).to_u32().unwrap_or(1000);
+        // Create a unique cache key from variant and size
+        let variant_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            variant.hash(&mut hasher);
+            hasher.finish()
+        };
+        let size_key = (xfa_font.size * num(100.0)).to_u32().unwrap_or(1000);
+        let cache_key = (variant_hash, size_key);
         
         if let Some(metrics) = self.metrics_cache.get(&cache_key) {
             return Ok(metrics.clone());
         }
         
-        let metrics = FontMetrics::from_font(font, font_size);
+        let metrics = FontMetrics::from_font(&font, xfa_font.size);
         self.metrics_cache.insert(cache_key, metrics.clone());
         
         Ok(metrics)
     }
     
-    /// Measure text width
-    pub fn measure_text_width(&mut self, text: &str, font_size: Num) -> Result<Num, String> {
-        self.load_font()?;
+    /// Get font metrics for a given font size (with caching)
+    /// Uses the current font variant or default
+    pub fn get_metrics(&mut self, font_size: Num) -> Result<FontMetrics, String> {
+        let font = self.get_current_font()?;
         
-        let font = self.font.as_ref().ok_or("Font not loaded")?;
+        // Use font size in hundredths of a point as cache key (with 0 for default variant)
+        let cache_key = (0u64, (font_size * num(100.0)).to_u32().unwrap_or(1000));
+        
+        if let Some(metrics) = self.metrics_cache.get(&cache_key) {
+            return Ok(metrics.clone());
+        }
+        
+        let metrics = FontMetrics::from_font(&font, font_size);
+        self.metrics_cache.insert(cache_key, metrics.clone());
+        
+        Ok(metrics)
+    }
+    
+    /// Measure text width using specified font style
+    pub fn measure_text_width_styled(&mut self, text: &str, xfa_font: &Font) -> Result<Num, String> {
+        let font = self.get_font_for_style(xfa_font)?.clone();
+        let size_f32 = xfa_font.size.to_f32().unwrap_or(10.0);
+        let scale = PxScale::from(size_f32);
+        let scaled_font = font.as_scaled(scale);
+        
+        let mut width: f32 = 0.0;
+        for ch in text.chars() {
+            let glyph_id = font.glyph_id(ch);
+            if glyph_id.0 != 0 {
+                width += scaled_font.h_advance(glyph_id);
+            } else {
+                // Fallback for missing glyphs
+                width += size_f32 * 0.6;
+            }
+        }
+        
+        Ok(num(width as f64))
+    }
+    
+    /// Measure text width (backward compatible - uses current/default font)
+    pub fn measure_text_width(&mut self, text: &str, font_size: Num) -> Result<Num, String> {
+        let font = self.get_current_font()?;
         let size_f32 = font_size.to_f32().unwrap_or(10.0);
         let scale = PxScale::from(size_f32);
         let scaled_font = font.as_scaled(scale);
@@ -366,13 +428,23 @@ impl TextMeasurer {
         Ok(num(width as f64))
     }
     
+    /// Wrap text to fit within a maximum width using specified font style
+    pub fn wrap_text_styled(&mut self, text: &str, max_width: Num, xfa_font: &Font) -> Result<Vec<String>, String> {
+        let font = self.get_font_for_style(xfa_font)?.clone();
+        let size_f32 = xfa_font.size.to_f32().unwrap_or(10.0);
+        Self::wrap_text_internal(&font, text, max_width, size_f32)
+    }
+    
     /// Wrap text to fit within a maximum width
     /// Returns a vector of lines
     pub fn wrap_text(&mut self, text: &str, max_width: Num, font_size: Num) -> Result<Vec<String>, String> {
-        self.load_font()?;
-        
-        let font = self.font.as_ref().ok_or("Font not loaded")?;
+        let font = self.get_current_font()?;
         let size_f32 = font_size.to_f32().unwrap_or(10.0);
+        Self::wrap_text_internal(&font, text, max_width, size_f32)
+    }
+    
+    /// Internal text wrapping implementation
+    fn wrap_text_internal(font: &FontRef<'_>, text: &str, max_width: Num, size_f32: f32) -> Result<Vec<String>, String> {
         let scale = PxScale::from(size_f32);
         let scaled_font = font.as_scaled(scale);
         let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
@@ -429,6 +501,7 @@ impl TextMeasurer {
     
     /// Measure a text block with wrapping and full metrics
     /// This is the main entry point for text sizing
+    /// Uses font style (typeface, weight, posture) per XFA spec
     pub fn measure_text_block(
         &mut self,
         text: &str,
@@ -436,10 +509,12 @@ impl TextMeasurer {
         para: &Option<Para>,
         max_width: Num,
     ) -> Result<TextBlockMetrics, String> {
-        // Get font size from style or use default
-        let font_size = font.as_ref()
-            .map(|f| f.size)
-            .unwrap_or_else(|| num(10.0));
+        // Get font style or use XFA defaults
+        let xfa_font = font.clone().unwrap_or_default();
+        let font_size = xfa_font.size;
+        
+        // Load the appropriate font for this style
+        self.get_font_for_style(&xfa_font)?;
         
         // Get paragraph margins
         let margin_top = para.as_ref()
@@ -451,25 +526,25 @@ impl TextMeasurer {
         let line_height_override = para.as_ref()
             .and_then(|p| p.line_height);
         
-        // Wrap text
-        let wrapped_lines = self.wrap_text(text, max_width, font_size)?;
+        // Wrap text using the styled font
+        let wrapped_lines = self.wrap_text_styled(text, max_width, &xfa_font)?;
         let num_lines = wrapped_lines.len();
         
-        // Get base font metrics
-        let base_metrics = self.get_metrics(font_size)?;
+        // Get base font metrics for this style
+        let base_metrics = self.get_metrics_for_style(&xfa_font)?;
         
         // Build text lines with metrics
         let mut lines = Vec::new();
         let mut total_height = Decimal::ZERO;
-        let mut max_width = Decimal::ZERO;
+        let mut max_width_result = Decimal::ZERO;
         
         for (i, line_text) in wrapped_lines.into_iter().enumerate() {
             let is_first = i == 0;
             let is_last = i == num_lines - 1;
             
-            // Measure line width
-            let line_width = self.measure_text_width(&line_text, font_size)?;
-            max_width = max_width.max(line_width);
+            // Measure line width using styled measurement
+            let line_width = self.measure_text_width_styled(&line_text, &xfa_font)?;
+            max_width_result = max_width_result.max(line_width);
             
             // Create line metrics
             let mut line_metrics = LineMetrics::new(is_first, is_last);
@@ -496,7 +571,7 @@ impl TextMeasurer {
         
         Ok(TextBlockMetrics {
             lines,
-            total_width: max_width,
+            total_width: max_width_result,
             total_height,
         })
     }
