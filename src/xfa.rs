@@ -27,9 +27,11 @@ pub enum StrokeStyle {
     Embossed,
 }
 
-impl StrokeStyle {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for StrokeStyle {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "solid" => StrokeStyle::Solid,
             "dashed" => StrokeStyle::Dashed,
             "dotted" => StrokeStyle::Dotted,
@@ -40,7 +42,7 @@ impl StrokeStyle {
             "etched" => StrokeStyle::Etched,
             "embossed" => StrokeStyle::Embossed,
             _ => StrokeStyle::Solid,
-        }
+        })
     }
 }
 
@@ -52,12 +54,14 @@ pub enum JoinStyle {
     Round,
 }
 
-impl JoinStyle {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for JoinStyle {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "round" => JoinStyle::Round,
             _ => JoinStyle::Square,
-        }
+        })
     }
 }
 
@@ -145,18 +149,22 @@ pub enum GenericFamily {
     Monospace,
 }
 
-impl GenericFamily {
-    /// Parse genericFamily from XFA attribute string
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl FromStr for GenericFamily {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "serif" => GenericFamily::Serif,
             "sansserif" | "sans-serif" => GenericFamily::SansSerif,
             "cursive" => GenericFamily::Cursive,
             "fantasy" => GenericFamily::Fantasy,
             "monospace" => GenericFamily::Monospace,
             _ => GenericFamily::SansSerif, // Default per XFA spec
-        }
+        })
     }
+}
+
+impl GenericFamily {
     
     /// Get XFA attribute value string
     pub fn as_xfa_str(&self) -> &'static str {
@@ -222,12 +230,14 @@ pub enum FontWeight {
     Bold,
 }
 
-impl FontWeight {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for FontWeight {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "bold" => FontWeight::Bold,
             _ => FontWeight::Normal,
-        }
+        })
     }
 }
 
@@ -238,12 +248,14 @@ pub enum FontPosture {
     Italic,
 }
 
-impl FontPosture {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for FontPosture {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "italic" => FontPosture::Italic,
             _ => FontPosture::Normal,
-        }
+        })
     }
 }
 
@@ -505,7 +517,7 @@ impl XfaNode {
             thickness: node.attributes.get("thickness")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             stroke: node.attributes.get("stroke")
-                .map(|s| StrokeStyle::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             presence: node.attributes.get("presence")
                 .cloned()
@@ -520,7 +532,7 @@ impl XfaNode {
             thickness: node.attributes.get("thickness")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             join: node.attributes.get("join")
-                .map(|s| JoinStyle::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             presence: node.attributes.get("presence")
                 .cloned()
@@ -557,7 +569,7 @@ impl XfaNode {
         
         // Determine generic family: from attribute, or infer from typeface
         let generic_family = node.attributes.get("genericFamily")
-            .map(|s| GenericFamily::from_str(s))
+            .and_then(|s| s.parse().ok())
             .or_else(|| {
                 // Infer generic family from common typeface names
                 let tf_lower = typeface.to_lowercase();
@@ -580,10 +592,10 @@ impl XfaNode {
                 .and_then(|v| Self::parse_dimension(v).ok())
                 .unwrap_or_else(|| num(10.0)),
             weight: node.attributes.get("weight")
-                .map(|s| FontWeight::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             posture: node.attributes.get("posture")
-                .map(|s| FontPosture::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             underline: node.attributes.get("underline")
                 .map(|s| s != "0")

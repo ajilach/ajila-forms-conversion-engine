@@ -1,0 +1,367 @@
+//! Radio button grouper module.
+//!
+//! Groups radio buttons that are on the same line (horizontally or vertically)
+//! into RadioButtonGroup groups. Grouping stops if another element is in between.
+
+use crate::document::{Document, GroupKind, GroupSource};
+use super::AnalysisModule;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use std::collections::HashSet;
+
+/// Groups adjacent radio buttons on the same line into RadioButtonGroup.
+///
+/// Radio buttons are grouped if they:
+/// 1. Are aligned horizontally (same Y coordinate) or vertically (same X coordinate)
+/// 2. Are close to each other
+/// 3. Have no other elements in between
+pub struct RadioButtonGrouper {
+    /// Maximum horizontal gap between radio buttons to group them
+    pub max_horizontal_gap: Decimal,
+    /// Maximum vertical gap between radio buttons to group them
+    pub max_vertical_gap: Decimal,
+    /// Tolerance for considering elements on the same line
+    pub alignment_tolerance: Decimal,
+}
+
+impl Default for RadioButtonGrouper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RadioButtonGrouper {
+    pub fn new() -> Self {
+        RadioButtonGrouper {
+            max_horizontal_gap: Decimal::from_str("50.0").unwrap(),
+            max_vertical_gap: Decimal::from_str("30.0").unwrap(),
+            alignment_tolerance: Decimal::from_str("10.0").unwrap(),
+        }
+    }
+    
+    /// Check if two radio buttons are horizontally aligned.
+    fn are_horizontally_aligned(
+        &self,
+        bounds1: (Decimal, Decimal, Decimal, Decimal),
+        bounds2: (Decimal, Decimal, Decimal, Decimal)
+    ) -> bool {
+        let (_x1, y1, _w1, h1) = bounds1;
+        let (_x2, y2, _w2, h2) = bounds2;
+        
+        let center_y1 = y1 + h1 / Decimal::TWO;
+        let center_y2 = y2 + h2 / Decimal::TWO;
+        
+        (center_y1 - center_y2).abs() <= self.alignment_tolerance
+    }
+    
+    /// Check if two radio buttons are vertically aligned.
+    fn are_vertically_aligned(
+        &self,
+        bounds1: (Decimal, Decimal, Decimal, Decimal),
+        bounds2: (Decimal, Decimal, Decimal, Decimal)
+    ) -> bool {
+        let (x1, _y1, w1, _h1) = bounds1;
+        let (x2, _y2, w2, _h2) = bounds2;
+        
+        let center_x1 = x1 + w1 / Decimal::TWO;
+        let center_x2 = x2 + w2 / Decimal::TWO;
+        
+        (center_x1 - center_x2).abs() <= self.alignment_tolerance
+    }
+    
+    /// Calculate horizontal distance between two radio buttons.
+    fn horizontal_distance(
+        &self,
+        bounds1: (Decimal, Decimal, Decimal, Decimal),
+        bounds2: (Decimal, Decimal, Decimal, Decimal)
+    ) -> Decimal {
+        let (x1, _y1, w1, _h1) = bounds1;
+        let (x2, _y2, _w2, _h2) = bounds2;
+        
+        let right1 = x1 + w1;
+        
+        if x2 >= right1 {
+            x2 - right1
+        } else {
+            Decimal::MAX // overlapping or reversed
+        }
+    }
+    
+    /// Calculate vertical distance between two radio buttons.
+    fn vertical_distance(
+        &self,
+        bounds1: (Decimal, Decimal, Decimal, Decimal),
+        bounds2: (Decimal, Decimal, Decimal, Decimal)
+    ) -> Decimal {
+        let (_x1, y1, _w1, h1) = bounds1;
+        let (_x2, y2, _w2, _h2) = bounds2;
+        
+        let bottom1 = y1 + h1;
+        
+        if y2 >= bottom1 {
+            y2 - bottom1
+        } else {
+            Decimal::MAX // overlapping or reversed
+        }
+    }
+    
+    /// Check if there are any elements between two radio buttons.
+    fn has_elements_between(
+        &self,
+        doc: &Document,
+        bounds1: (Decimal, Decimal, Decimal, Decimal),
+        bounds2: (Decimal, Decimal, Decimal, Decimal),
+        radio_button_indices: &HashSet<usize>
+    ) -> bool {
+        let (x1, y1, w1, h1) = bounds1;
+        let (x2, y2, w2, h2) = bounds2;
+        
+        // Create bounding box that encompasses both radio buttons
+        let min_x = x1.min(x2);
+        let min_y = y1.min(y2);
+        let max_x = (x1 + w1).max(x2 + w2);
+        let max_y = (y1 + h1).max(y2 + h2);
+        
+        // Check all root groups
+        for root_idx in doc.roots() {
+            // Skip if it's one of the radio buttons we're checking
+            if radio_button_indices.contains(&root_idx) {
+                continue;
+            }
+            
+            // Get bounds of this element
+            let Some(bounds) = doc.get_bounds(root_idx) else {
+                continue;
+            };
+            
+            let (ex, ey, ew, eh) = bounds;
+            let e_right = ex + ew;
+            let e_bottom = ey + eh;
+            
+            // Check if this element overlaps with the region between the two radio buttons
+            let overlaps_x = !(e_right < min_x || ex > max_x);
+            let overlaps_y = !(e_bottom < min_y || ey > max_y);
+            
+            if overlaps_x && overlaps_y {
+                return true; // Found an element in between
+            }
+        }
+        
+        false
+    }
+    
+    /// Group radio buttons that are on the same line.
+    fn group_aligned_radio_buttons(
+        &self,
+        doc: &mut Document,
+        radio_buttons: &[usize]
+    ) {
+        if radio_buttons.is_empty() {
+            return;
+        }
+        
+        let mut grouped: HashSet<usize> = HashSet::new();
+        let radio_button_set: HashSet<usize> = radio_buttons.iter().copied().collect();
+        
+        for &rb_idx in radio_buttons {
+            if grouped.contains(&rb_idx) {
+                continue;
+            }
+            
+            let Some(rb_bounds) = doc.get_bounds(rb_idx) else {
+                continue;
+            };
+            
+            let mut group: Vec<usize> = vec![rb_idx];
+            grouped.insert(rb_idx);
+            
+            // Try to find adjacent radio buttons in horizontal direction
+            let mut found_horizontal = true;
+            let mut last_bounds = rb_bounds;
+            
+            while found_horizontal {
+                found_horizontal = false;
+                
+                for &candidate_idx in radio_buttons {
+                    if grouped.contains(&candidate_idx) {
+                        continue;
+                    }
+                    
+                    let Some(candidate_bounds) = doc.get_bounds(candidate_idx) else {
+                        continue;
+                    };
+                    
+                    // Check if horizontally aligned and close
+                    if self.are_horizontally_aligned(last_bounds, candidate_bounds) {
+                        let distance = self.horizontal_distance(last_bounds, candidate_bounds);
+                        
+                        if distance <= self.max_horizontal_gap && 
+                           !self.has_elements_between(doc, last_bounds, candidate_bounds, &radio_button_set) {
+                            group.push(candidate_idx);
+                            grouped.insert(candidate_idx);
+                            last_bounds = candidate_bounds;
+                            found_horizontal = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Try to find adjacent radio buttons in vertical direction
+            let mut found_vertical = true;
+            last_bounds = rb_bounds;
+            
+            while found_vertical {
+                found_vertical = false;
+                
+                for &candidate_idx in radio_buttons {
+                    if grouped.contains(&candidate_idx) {
+                        continue;
+                    }
+                    
+                    let Some(candidate_bounds) = doc.get_bounds(candidate_idx) else {
+                        continue;
+                    };
+                    
+                    // Check if vertically aligned and close
+                    if self.are_vertically_aligned(last_bounds, candidate_bounds) {
+                        let distance = self.vertical_distance(last_bounds, candidate_bounds);
+                        
+                        if distance <= self.max_vertical_gap &&
+                           !self.has_elements_between(doc, last_bounds, candidate_bounds, &radio_button_set) {
+                            group.push(candidate_idx);
+                            grouped.insert(candidate_idx);
+                            last_bounds = candidate_bounds;
+                            found_vertical = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Create a RadioButtonGroup if we have more than one radio button
+            if group.len() > 1 {
+                doc.merge(
+                    group,
+                    GroupKind::RadioButtonGroup,
+                    GroupSource::Inferred { module: self.name().to_string() },
+                );
+            }
+        }
+    }
+}
+
+impl AnalysisModule for RadioButtonGrouper {
+    fn name(&self) -> &'static str {
+        "RadioButtonGrouper"
+    }
+    
+    fn process(&self, doc: &mut Document) {
+        // Get all root RadioButton groups
+        let roots = doc.roots();
+        let radio_buttons: Vec<usize> = roots.iter()
+            .filter(|&&idx| matches!(doc.get_group(idx).map(|g| &g.kind), Some(GroupKind::RadioButton { .. })))
+            .copied()
+            .collect();
+        
+        if radio_buttons.is_empty() {
+            return;
+        }
+        
+        // Group aligned radio buttons
+        self.group_aligned_radio_buttons(doc, &radio_buttons);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::{Document, GroupKind};
+    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
+    use crate::xfa::num;
+    use crate::modules::{FieldGrouper, TextBlockGrouper, RadioButtonDetector};
+    
+    #[test]
+    fn test_horizontal_radio_button_grouping() {
+        // Create a flattened document with 3 horizontally aligned radio buttons
+        let flattened = Flattened {
+            page: Page { width: num(595.0), height: num(842.0) },
+            nodes: vec![
+                // Radio button 1
+                FlattenedNode {
+                    kind: FlattenedNodeKind::Field {
+                        name: "radio1".to_string(),
+                        value: "".to_string(),
+                        label: "".to_string(),
+                    },
+                    x: num(50.0),
+                    y: num(100.0),
+                    width: num(12.0),
+                    height: num(12.0),
+                    rotate: 0,
+                    style: Default::default(),
+                },
+                FlattenedNode {
+                    kind: FlattenedNodeKind::Text {
+                        content: "Option 1".to_string(),
+                        font_size: num(10.0),
+                        font_name: "Helvetica".to_string(),
+                        source_name: None,
+                        rich_text: None,
+                    },
+                    x: num(65.0),
+                    y: num(100.0),
+                    width: num(50.0),
+                    height: num(12.0),
+                    rotate: 0,
+                    style: Default::default(),
+                },
+                // Radio button 2 (30 points away horizontally, same Y)
+                FlattenedNode {
+                    kind: FlattenedNodeKind::Field {
+                        name: "radio2".to_string(),
+                        value: "".to_string(),
+                        label: "".to_string(),
+                    },
+                    x: num(145.0),
+                    y: num(100.0),
+                    width: num(12.0),
+                    height: num(12.0),
+                    rotate: 0,
+                    style: Default::default(),
+                },
+                FlattenedNode {
+                    kind: FlattenedNodeKind::Text {
+                        content: "Option 2".to_string(),
+                        font_size: num(10.0),
+                        font_name: "Helvetica".to_string(),
+                        source_name: None,
+                        rich_text: None,
+                    },
+                    x: num(160.0),
+                    y: num(100.0),
+                    width: num(50.0),
+                    height: num(12.0),
+                    rotate: 0,
+                    style: Default::default(),
+                },
+            ],
+        };
+        
+        let mut doc = Document::from_flattened(&flattened);
+        
+        // Process with required modules
+        FieldGrouper::new().process(&mut doc);
+        TextBlockGrouper::new().process(&mut doc);
+        RadioButtonDetector::new().process(&mut doc);
+        RadioButtonGrouper::new().process(&mut doc);
+        
+        // Should have created a RadioButtonGroup
+        let radio_button_groups = doc.find_groups(|k| matches!(k, GroupKind::RadioButtonGroup));
+        assert_eq!(radio_button_groups.len(), 1);
+        
+        // The group should contain 2 RadioButton children
+        let group = doc.get_group(radio_button_groups[0]).unwrap();
+        assert_eq!(group.children.len(), 2);
+    }
+}

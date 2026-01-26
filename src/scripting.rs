@@ -70,9 +70,11 @@ pub enum EventActivity {
     Other(String),
 }
 
-impl EventActivity {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for EventActivity {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "ready" => EventActivity::Ready,
             "initialize" => EventActivity::Initialize,
             "enter" => EventActivity::Enter,
@@ -86,7 +88,7 @@ impl EventActivity {
             "docReady" => EventActivity::DocReady,
             "indexChange" => EventActivity::IndexChange,
             _ => EventActivity::Other(s.to_string()),
-        }
+        })
     }
 }
 
@@ -100,15 +102,17 @@ pub enum EventRef {
     Named(String),
 }
 
-impl EventRef {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for EventRef {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "$form" | "xfa.form" => EventRef::Form,
             "$layout" | "xfa.layout" => EventRef::Layout,
             "$data" | "xfa.data" => EventRef::Data,
             "$" => EventRef::Current,
             _ => EventRef::Named(s.to_string()),
-        }
+        })
     }
 }
 
@@ -132,13 +136,15 @@ pub enum RunAt {
     Both,
 }
 
-impl RunAt {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for RunAt {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "server" => RunAt::Server,
             "both" => RunAt::Both,
             _ => RunAt::Client,
-        }
+        })
     }
 }
 
@@ -994,11 +1000,11 @@ pub fn parse_events_from_node(children: &[crate::xfa::XfaNode]) -> Vec<XfaScript
 
 fn parse_event_element(event_node: &crate::xfa::XfaNode) -> Option<XfaScript> {
     let activity = event_node.attributes.get("activity")
-        .map(|s| EventActivity::from_str(s))
+        .and_then(|s| s.parse().ok())
         .unwrap_or(EventActivity::Other("unknown".to_string()));
     
     let event_ref = event_node.attributes.get("ref")
-        .map(|s| EventRef::from_str(s))
+        .and_then(|s| s.parse().ok())
         .unwrap_or(EventRef::Current);
     
     let name = event_node.attributes.get("name").cloned();
@@ -1011,7 +1017,7 @@ fn parse_event_element(event_node: &crate::xfa::XfaNode) -> Option<XfaScript> {
                     .unwrap_or(ScriptContentType::FormCalc);
                 
                 let run_at = child.attributes.get("runAt")
-                    .map(|s| RunAt::from_str(s))
+                    .and_then(|s| s.parse().ok())
                     .unwrap_or_default();
                 
                 let source = text_content.clone().unwrap_or_default();
@@ -1157,16 +1163,16 @@ mod tests {
     
     #[test]
     fn test_event_activity_parsing() {
-        assert_eq!(EventActivity::from_str("ready"), EventActivity::Ready);
-        assert_eq!(EventActivity::from_str("click"), EventActivity::Click);
-        assert_eq!(EventActivity::from_str("initialize"), EventActivity::Initialize);
+        assert_eq!("ready".parse::<EventActivity>().unwrap(), EventActivity::Ready);
+        assert_eq!("click".parse::<EventActivity>().unwrap(), EventActivity::Click);
+        assert_eq!("initialize".parse::<EventActivity>().unwrap(), EventActivity::Initialize);
     }
     
     #[test]
     fn test_event_ref_parsing() {
-        assert_eq!(EventRef::from_str("$form"), EventRef::Form);
-        assert_eq!(EventRef::from_str("$layout"), EventRef::Layout);
-        assert_eq!(EventRef::from_str("$"), EventRef::Current);
+        assert_eq!("$form".parse::<EventRef>().unwrap(), EventRef::Form);
+        assert_eq!("$layout".parse::<EventRef>().unwrap(), EventRef::Layout);
+        assert_eq!("$".parse::<EventRef>().unwrap(), EventRef::Current);
     }
     
     #[test]

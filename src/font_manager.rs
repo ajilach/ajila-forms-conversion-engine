@@ -832,14 +832,14 @@ mod tests {
     
     #[test]
     fn test_generic_family_parsing() {
-        assert_eq!(GenericFamily::from_str("serif"), GenericFamily::Serif);
-        assert_eq!(GenericFamily::from_str("sansSerif"), GenericFamily::SansSerif);
-        assert_eq!(GenericFamily::from_str("sans-serif"), GenericFamily::SansSerif);
-        assert_eq!(GenericFamily::from_str("monospace"), GenericFamily::Monospace);
-        assert_eq!(GenericFamily::from_str("cursive"), GenericFamily::Cursive);
-        assert_eq!(GenericFamily::from_str("fantasy"), GenericFamily::Fantasy);
+        assert_eq!("serif".parse::<GenericFamily>().unwrap(), GenericFamily::Serif);
+        assert_eq!("sansSerif".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
+        assert_eq!("sans-serif".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
+        assert_eq!("monospace".parse::<GenericFamily>().unwrap(), GenericFamily::Monospace);
+        assert_eq!("cursive".parse::<GenericFamily>().unwrap(), GenericFamily::Cursive);
+        assert_eq!("fantasy".parse::<GenericFamily>().unwrap(), GenericFamily::Fantasy);
         // Unknown defaults to SansSerif
-        assert_eq!(GenericFamily::from_str("unknown"), GenericFamily::SansSerif);
+        assert_eq!("unknown".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
     }
     
     #[test]

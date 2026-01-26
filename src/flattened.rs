@@ -2334,6 +2334,76 @@ impl Flattened {
     /// - weight: normal or bold (default: normal)
     /// - posture: normal or italic (default: normal)
     pub fn render_to_image<P: AsRef<Path>>(&self, output_path: P, scale: f32) -> Result<(), String> {
+        let img = self.render_to_image_buffer(scale)?;
+        img.save(output_path.as_ref())
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+        Ok(())
+    }
+    
+    /// Render the flattened layout to an image buffer (for compositing)
+    /// 
+    /// Returns the rendered image without saving to disk. This is useful for
+    /// compositing additional overlays (e.g., group annotations in Document).
+    /// This includes both the actual content and red debug annotations.
+    pub fn render_to_image_buffer(&self, scale: f32) -> Result<RgbaImage, String> {
+        // Start with the plain rendering (PASS 1)
+        let mut img = self.render_to_image_buffer_plain(scale)?;
+        
+        // Get the scale and dimensions for PASS 2
+        let scale_dec = num(scale as f64);
+        
+        // Get a default fallback font for debug text
+        let fallback_font = Self::load_fallback_font()?;
+        
+        // Colors for debug overlay
+        let debug_red = Rgba([255u8, 0u8, 0u8, 180u8]); // More visible red for field names
+        let debug_red_outline = Rgba([255u8, 0u8, 0u8, 20u8]);
+        
+        // ============================================
+        // PASS 2: Draw debug overlay in red
+        // ============================================
+        for node in &self.nodes {
+            // Handle rotation: for 90/270 degrees, we swap width/height and adjust position
+            let (x, y, w, h) = Self::apply_rotation_to_bounds(
+                node.x, node.y, node.width, node.height, 
+                node.rotate, scale_dec
+            );
+            
+            if x < 0 || y < 0 || w <= 0 || h <= 0 {
+                continue;
+            }
+            
+            // Draw debug outline with transparency (blend with existing pixels)
+            Self::draw_transparent_rect(&mut img, x, y, w, h, debug_red_outline);
+            
+            // Draw debug name label
+            let debug_name = match &node.kind {
+                FlattenedNodeKind::Field { name, .. } => name.clone(),
+                FlattenedNodeKind::Text { .. } => "Text".to_string(),
+            };
+            
+            let debug_font_size = (8.0 * scale).max(6.0);
+            let debug_scale = PxScale::from(debug_font_size);
+            
+            // Draw name in transparent red at top-left of box (using fallback font)
+            draw_text_mut(
+                &mut img,
+                debug_red,
+                x + 1,
+                y + 1,
+                debug_scale,
+                &fallback_font,
+                &debug_name,
+            );
+        }
+        
+        Ok(img)
+    }
+    
+    /// Render the flattened layout to an image buffer without debug annotations (plain mode)
+    /// 
+    /// Returns the rendered image without red debug overlays, only showing the actual content.
+    pub fn render_to_image_buffer_plain(&self, scale: f32) -> Result<RgbaImage, String> {
         // Scale dimensions for better resolution (e.g., scale=2.0 for 2x)
         let scale_dec = num(scale as f64);
         
@@ -2353,19 +2423,16 @@ impl Flattened {
         // Get the font manager for font resolution
         let font_manager = get_font_manager();
         
-        // Get a default fallback font for debug text
+        // Get a default fallback font
         let fallback_font = Self::load_fallback_font()?;
         
         // Colors (RGBA - last value is alpha: 255=opaque, 0=transparent)
         let black = Rgba([0u8, 0u8, 0u8, 255u8]);
         let dark_gray = Rgba([80u8, 80u8, 80u8, 255u8]);
         let light_blue_fill = Rgba([200u8, 220u8, 255u8, 255u8]); // Light blue for field backgrounds
-        // Transparent red for debug overlay (alpha=100 for ~40% opacity)
-        let debug_red = Rgba([255u8, 0u8, 0u8, 180u8]); // More visible red for field names
-        let debug_red_outline = Rgba([255u8, 0u8, 0u8, 20u8]);
         
         // ============================================
-        // PASS 1: Draw actual content (as in PDF)
+        // Draw actual content (as in PDF) - no debug overlay
         // ============================================
         for node in &self.nodes {
             // Handle rotation: for 90/270 degrees, we swap width/height and adjust position
@@ -2403,7 +2470,6 @@ impl Flattened {
                     // Draw light blue fill for field background (no border)
                     Self::fill_rect(&mut img, x, y, w, h, light_blue_fill);
                     
-                    // Note: Field names are drawn in Pass 2 as debug/meta info in red
                     // Only draw field VALUE (not name) in black if present
                     if !value.is_empty() {
                         // Get font style from node, or use XFA defaults
@@ -2465,20 +2531,8 @@ impl Flattened {
                     
                     // Get the appropriate font for this style (with fallback)
                     // Also get bold and italic variants for rich text rendering
-                    // NOTE: For rich text, we need normal weight as base since HTML
-                    // styling will specify bold explicitly via RichRun.bold flag.
-                    // The XFA font weight only applies to plain text content.
                     let (render_font, normal_font, bold_font, italic_font, bold_italic_font) = {
                         let mut mgr = font_manager.lock().map_err(|e| format!("Lock error: {}", e))?;
-                        
-                        // DEBUG: Check if requested font is available
-                        if let Some(name) = source_name {
-                            if name.contains("T_Left") && !name.contains("Indent") {
-                                let has_font = mgr.has_font(&xfa_font.typeface.to_lowercase(), xfa_font.weight, xfa_font.posture);
-                                eprintln!("  Font '{}' weight={:?} posture={:?} -> available: {}", 
-                                    xfa_font.typeface, xfa_font.weight, xfa_font.posture, has_font);
-                            }
-                        }
                         
                         // Get font as specified in XFA (may be bold/italic)
                         let base = mgr.get_font(&xfa_font).unwrap_or_else(|_| fallback_font.clone());
@@ -2517,7 +2571,6 @@ impl Flattened {
                         .unwrap_or(dark_gray);
                     
                     // Calculate content area inside border margins
-                    // Per XFA box model: content is drawn inside the border margins (insets)
                     let (content_x, content_y, content_w, content_h) = {
                         // Get border margins if present
                         let (ml, mt, mr, mb) = if let Some(border) = &node.style.border {
@@ -2535,47 +2588,21 @@ impl Flattened {
                     };
                     
                     // Check if we have rich text (HTML content with paragraph structure)
-                    // Only use rich text rendering if it has actual content
                     let has_rich_content = rich_text.as_ref().map_or(false, |rt| {
                         rt.paragraphs.iter().any(|p| !p.is_empty && p.runs.iter().any(|r| !r.text.is_empty()))
                     });
                     
                     // Get letter spacing from XFA font (scaled to pixels)
-                    // Per XFA spec: letterSpacing is a relative measurement that adjusts
-                    // spacing between successive grapheme clusters
                     let letter_spacing = xfa_font.letter_spacing
                         .map(|ls| ls.to_f32().unwrap_or(0.0) * scale)
                         .unwrap_or(0.0);
                     
-                    // DEBUG: Print font info for T_Left
-                    if let Some(name) = source_name {
-                        if name.contains("T_Left") && !name.contains("Indent") {
-                            eprintln!("\n=== DEBUG {} ===", name);
-                            eprintln!("  XFA font typeface: {}", xfa_font.typeface);
-                            eprintln!("  XFA font size: {:?}", xfa_font.size);
-                            eprintln!("  XFA letter_spacing: {:?}", xfa_font.letter_spacing);
-                            eprintln!("  Scaled letter_spacing: {}", letter_spacing);
-                            eprintln!("  Effective font size: {} (scaled: {})", effective_font_size, scaled_font_size);
-                            // Check what text starts with
-                            if let Some(rt) = rich_text.as_ref() {
-                                if !rt.paragraphs.is_empty() && !rt.paragraphs[0].runs.is_empty() {
-                                    let first_text = &rt.paragraphs[0].runs[0].text;
-                                    if first_text.len() > 30 {
-                                        eprintln!("  First text: {}...", &first_text[..30]);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
                     if has_rich_content {
                         let rt = rich_text.as_ref().unwrap();
-                        // For rich text, use normal weight font as base (not XFA font weight)
-                        // because rich text specifies its own bold/italic via HTML tags
+                        // For rich text, use normal weight font as base
                         let base_font = normal_font.as_ref().unwrap_or(&render_font);
                         
                         // Use XFA-compliant rich text rendering with glyph-by-glyph positioning
-                        // This handles text-indent, xfa-spacerun, and justify alignment properly
                         let rendered_lines = Self::layout_rich_text(
                             rt,
                             content_w as f32,
@@ -2631,49 +2658,7 @@ impl Flattened {
             }
         }
         
-        // ============================================
-        // PASS 2: Draw debug overlay in red
-        // ============================================
-        for node in &self.nodes {
-            // Handle rotation: for 90/270 degrees, we swap width/height and adjust position
-            let (x, y, w, h) = Self::apply_rotation_to_bounds(
-                node.x, node.y, node.width, node.height, 
-                node.rotate, scale_dec
-            );
-            
-            if x < 0 || y < 0 || w <= 0 || h <= 0 {
-                continue;
-            }
-            
-            // Draw debug outline with transparency (blend with existing pixels)
-            Self::draw_transparent_rect(&mut img, x, y, w, h, debug_red_outline);
-            
-            // Draw debug name label
-            let debug_name = match &node.kind {
-                FlattenedNodeKind::Field { name, .. } => name.clone(),
-                FlattenedNodeKind::Text { .. } => "Text".to_string(),
-            };
-            
-            let debug_font_size = (8.0 * scale).max(6.0);
-            let debug_scale = PxScale::from(debug_font_size);
-            
-            // Draw name in transparent red at top-left of box (using fallback font)
-            draw_text_mut(
-                &mut img,
-                debug_red,
-                x + 1,
-                y + 1,
-                debug_scale,
-                &fallback_font,
-                &debug_name,
-            );
-        }
-        
-        // Save the image
-        img.save(output_path.as_ref())
-            .map_err(|e| format!("Failed to save image: {}", e))?;
-        
-        Ok(())
+        Ok(img)
     }
     
     /// Draw border with proper edge styling
@@ -2890,7 +2875,7 @@ impl Flattened {
     }
     
     /// Fill a rectangle with a solid color
-    fn fill_rect(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, color: Rgba<u8>) {
+    pub fn fill_rect(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, color: Rgba<u8>) {
         let img_width = img.width() as i32;
         let img_height = img.height() as i32;
         
@@ -3176,7 +3161,7 @@ impl Flattened {
     }
     
     /// Draw a transparent hollow rectangle by blending with existing pixels
-    fn draw_transparent_rect(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, color: Rgba<u8>) {
+    pub fn draw_transparent_rect(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, color: Rgba<u8>) {
         let img_width = img.width() as i32;
         let img_height = img.height() as i32;
         
@@ -3212,7 +3197,7 @@ impl Flattened {
     
     /// Load a fallback font for rendering when specific fonts aren't available
     /// This uses the font_manager's fallback mechanism
-    fn load_fallback_font() -> Result<FontRef<'static>, String> {
+    pub fn load_fallback_font() -> Result<FontRef<'static>, String> {
         let manager = get_font_manager();
         let mut manager = manager.lock().map_err(|e| format!("Lock error: {}", e))?;
         manager.get_default_font().map_err(|e| e.to_string())

@@ -1,5 +1,7 @@
 mod xfa;
 mod flattened;
+mod document;
+mod modules;
 mod text_metrics;
 mod scripting;
 mod font_manager;
@@ -7,10 +9,13 @@ mod font_manager;
 use pdf::file::FileOptions;
 use pdf::object::*;
 use pdf::primitive::Primitive;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use xfa::XfaNode;
-use flattened::Flattened;
+use flattened::{Flattened, FlattenedNodeKind};
 use rust_decimal::prelude::*;
+use clap::Parser;
+use document::Document;
+use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
 
 /// Check if PDF contains XFA and extract it
 pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -58,8 +63,199 @@ pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, 
     Ok(None)
 }
 
-fn main() {
-    println!("Hello, world!");
+/// Blueprint - XFA PDF document processor
+#[derive(Parser, Debug)]
+#[command(name = "blueprint")]
+#[command(about = "Process and analyze XFA PDF documents", long_about = None)]
+struct Args {
+    /// Path to the PDF document
+    #[arg(value_name = "DOCUMENT")]
+    document: PathBuf,
+    
+    /// Render the document with labeled fields (blue group overlays)
+    #[arg(long)]
+    render_labelled: bool,
+    
+    /// Render the plain document without annotations
+    #[arg(long)]
+    render_plain: bool,
+    
+    /// Render the document with red field annotations
+    #[arg(long)]
+    render_annotated: bool,
+    
+    /// Scale factor for rendering (default: 1.5)
+    #[arg(short, long, default_value = "1.5")]
+    scale: f32,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    
+    // Check if document exists
+    if !args.document.exists() {
+        eprintln!("Error: Document not found: {}", args.document.display());
+        std::process::exit(1);
+    }
+    
+    println!("Processing document: {}", args.document.display());
+    
+    // Extract XFA data from PDF
+    let xfa_data = extract_xfa_from_pdf(&args.document)?;
+    
+    if xfa_data.is_none() {
+        eprintln!("Error: No XFA data found in PDF");
+        std::process::exit(1);
+    }
+    
+    println!("✓ XFA data extracted");
+    
+    // Parse XFA structure
+    let nodes = XfaNode::parse(&xfa_data.unwrap())?;
+    println!("✓ XFA structure parsed");
+    
+    // Get document name for locale detection
+    let doc_name = args.document
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    
+    // Detect locale from filename (e.g., "_DE", "_EN")
+    let locale = if doc_name.ends_with("_DE") {
+        "DE"
+    } else if doc_name.ends_with("_EN") {
+        "EN"
+    } else {
+        "EN" // default
+    };
+    
+    // Flatten XFA with scripts
+    let flattened = Flattened::from_xfa_with_scripts(&nodes, locale, doc_name)?;
+    println!("✓ XFA flattened ({} nodes)", flattened.nodes.len());
+    
+    // Create document and run analysis modules
+    let mut doc = Document::from_flattened(&flattened);
+    
+    // Run analysis pipeline
+    TextBlockGrouper::new().process(&mut doc);
+    let text_blocks = doc.find_groups(|k| matches!(k, document::GroupKind::TextBlock));
+    println!("✓ Text blocks created: {}", text_blocks.len());
+    
+    FieldGrouper::new().process(&mut doc);
+    let field_groups = doc.find_groups(|k| matches!(k, document::GroupKind::Field));
+    println!("✓ Field groups created: {}", field_groups.len());
+    
+    DateFieldDetector::new().process(&mut doc);
+    let date_fields = doc.find_groups(|k| matches!(k, document::GroupKind::DateField { .. }));
+    println!("✓ Date fields detected: {}", date_fields.len());
+    
+    RadioButtonDetector::new().process(&mut doc);
+    let radio_buttons = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButton { .. }));
+    println!("✓ Radio buttons detected: {}", radio_buttons.len());
+    
+    RadioButtonGrouper::new().process(&mut doc);
+    let radio_button_groups = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButtonGroup));
+    println!("✓ Radio button groups created: {}", radio_button_groups.len());
+    
+    LabelAttacher::new().process(&mut doc);
+    let labeled_fields = doc.labeled_fields();
+    println!("✓ Labeled fields found: {}", labeled_fields.len());
+    
+    HeadingDetector::new().process(&mut doc);
+    let headings = doc.headings();
+    println!("✓ Headings detected: {}", headings.len());
+    
+    // Print radio button summary
+    if !radio_buttons.is_empty() {
+        println!("\nRadio Buttons:");
+        for (i, &rb_idx) in radio_buttons.iter().enumerate() {
+            if let Some(group) = doc.get_group(rb_idx) {
+                if let document::GroupKind::RadioButton { field, label } = group.kind {
+                    // Get the field name
+                    let field_name = group.children.get(field)
+                        .and_then(|&field_idx| {
+                            let nodes = doc.collect_nodes(field_idx);
+                            nodes.first().and_then(|n| {
+                                if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .unwrap_or_else(|| "unknown".to_string());
+                    
+                    // Get the label text
+                    let label_text = group.children.get(label)
+                        .map(|&label_idx| doc.get_text_content(label_idx))
+                        .unwrap_or_else(|| String::new());
+                    
+                    let preview: String = label_text.chars().take(50).collect();
+                    let suffix = if label_text.chars().count() > 50 { "..." } else { "" };
+                    println!("  {}: [{}] {}{}", i + 1, field_name, preview, suffix);
+                }
+            }
+        }
+    }
+    
+    // Print heading summary
+    if !headings.is_empty() {
+        println!("\nHeadings:");
+        for &h_idx in &headings {
+            if let Some(group) = doc.get_group(h_idx) {
+                if let document::GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(h_idx);
+                    let preview: String = text.chars().take(60).collect();
+                    let suffix = if text.chars().count() > 60 { "..." } else { "" };
+                    println!("  H{}: {}{}", level, preview, suffix);
+                }
+            }
+        }
+    }
+    
+    // Print labeled field summary
+    if !labeled_fields.is_empty() {
+        println!("\nLabeled Fields (sample):");
+        for (i, &lf_idx) in labeled_fields.iter().take(10).enumerate() {
+            let label_text = doc.get_label_text(lf_idx).unwrap_or_default();
+            let field_name = doc.get_field_name(lf_idx).unwrap_or_default();
+            let preview: String = label_text.chars().take(40).collect();
+            let suffix = if label_text.chars().count() > 40 { "..." } else { "" };
+            println!("  {}: '{}{}' -> {}", i + 1, preview, suffix, field_name);
+        }
+        if labeled_fields.len() > 10 {
+            println!("  ... and {} more", labeled_fields.len() - 10);
+        }
+    }
+    
+    // Render if requested
+    if args.render_labelled {
+        let output_path = PathBuf::from(format!("{}_labelled.png", doc_name));
+        
+        println!("\nRendering document with labels...");
+        doc.render_to_image(&output_path, args.scale)?;
+        println!("✓ Document rendered to: {}", output_path.display());
+    }
+    
+    if args.render_plain {
+        let output_path = PathBuf::from(format!("{}_plain.png", doc_name));
+        
+        println!("\nRendering plain document...");
+        flattened.render_to_image_buffer_plain(args.scale)?
+            .save(&output_path)
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+        println!("✓ Document rendered to: {}", output_path.display());
+    }
+    
+    if args.render_annotated {
+        let output_path = PathBuf::from(format!("{}_annotated.png", doc_name));
+        
+        println!("\nRendering annotated document...");
+        flattened.render_to_image(&output_path, args.scale)?;
+        println!("✓ Document rendered to: {}", output_path.display());
+    }
+    
+    Ok(())
 }
 
 #[cfg(test)]
@@ -219,92 +415,12 @@ mod tests {
     }
     
     #[test]
-    fn test_render_flattened_to_image() {
-        // Test rendering the basic flattened structure
-        use xfa::*;
-        use std::collections::HashMap;
+    fn test_aaai_title_is_h1() {
+        // Test that the AAAI document title "Vereinbarung für die Erteilung von Zahlungsaufträgen"
+        // is correctly identified as an H1 heading
+        use crate::document::Document;
+        use crate::modules::{TextBlockGrouper, HeadingDetector, AnalysisModule};
         
-        let mut subform_attrs = HashMap::new();
-        subform_attrs.insert("x".to_string(), "10pt".to_string());
-        subform_attrs.insert("y".to_string(), "20pt".to_string());
-        subform_attrs.insert("w".to_string(), "400pt".to_string());
-        subform_attrs.insert("h".to_string(), "300pt".to_string());
-        subform_attrs.insert("layout".to_string(), "tb".to_string());
-        
-        let mut field1_attrs = HashMap::new();
-        field1_attrs.insert("name".to_string(), "FirstName".to_string());
-        field1_attrs.insert("x".to_string(), "5pt".to_string());
-        field1_attrs.insert("y".to_string(), "5pt".to_string());
-        field1_attrs.insert("w".to_string(), "200pt".to_string());
-        field1_attrs.insert("h".to_string(), "30pt".to_string());
-        
-        let mut field2_attrs = HashMap::new();
-        field2_attrs.insert("name".to_string(), "LastName".to_string());
-        field2_attrs.insert("x".to_string(), "0pt".to_string());
-        field2_attrs.insert("y".to_string(), "10pt".to_string());
-        field2_attrs.insert("w".to_string(), "200pt".to_string());
-        field2_attrs.insert("h".to_string(), "30pt".to_string());
-        
-        let field1 = XfaNode::new(XfaNodeKind::Field, field1_attrs);
-        let field2 = XfaNode::new(XfaNodeKind::Field, field2_attrs);
-        
-        let mut subform = XfaNode::new(XfaNodeKind::Subform, subform_attrs);
-        subform.children = vec![field1, field2];
-        
-        let nodes = vec![subform];
-        
-        let flattened = Flattened::from_xfa(&nodes)
-            .expect("Failed to flatten XFA");
-        
-        // Render to image
-        let output_path = "output/test_layout.png";
-        std::fs::create_dir_all("output").expect("Failed to create output directory");
-        
-        flattened.render_to_image(output_path, 1.5)
-            .expect("Failed to render image");
-        
-        println!("\n✓ Rendered flattened layout to {}", output_path);
-        assert!(std::path::Path::new(output_path).exists(), "Image file should exist");
-    }
-    
-    #[test]
-    fn test_render_aaab_to_image() {
-        // Render the AAAB document
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
-            .expect("Failed to read PDF");
-        assert!(xfa_data.is_some(), "PDF should contain XFA data");
-        
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
-            .expect("Failed to parse XFA structure");
-        
-        // Use from_xfa_with_scripts to execute scripts and get computed labels
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
-            .expect("Failed to flatten XFA with scripts");
-        
-        // Render to image with 1.5x scale
-        let output_path = "output/aaab_layout.png";
-        std::fs::create_dir_all("output").expect("Failed to create output directory");
-        
-        flattened.render_to_image(output_path, 1.5)
-            .expect("Failed to render image");
-        
-        println!("\n✓ Rendered AAAB layout to {}", output_path);
-        println!("  Image dimensions: {}x{} pixels", 
-            (flattened.page.width.to_f32().unwrap_or(0.0) * 1.5) as u32, 
-            (flattened.page.height.to_f32().unwrap_or(0.0) * 1.5) as u32);
-        println!("  Rendered {} fields/elements", flattened.nodes.len());
-        println!("\n  Visual validation: Compare output/aaab_layout.png with expected/AAAB_019_DE-1.png");
-        println!("  Expected image: 910x1288 pixels");
-        println!("  Output image:   {}x{} pixels", 
-            (flattened.page.width.to_f32().unwrap_or(0.0) * 1.5) as u32, 
-            (flattened.page.height.to_f32().unwrap_or(0.0) * 1.5) as u32);
-        
-        assert!(std::path::Path::new(output_path).exists(), "Image file should exist");
-    }
-    
-    #[test]
-    fn test_render_aaai_to_image() {
-        // Render the AAAI document
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -312,41 +428,37 @@ mod tests {
         let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        // Use from_xfa_with_scripts to execute scripts and get computed labels
         let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
-        // Debug: print all node positions sorted by Y coordinate
-        let mut sorted_nodes: Vec<_> = flattened.nodes.iter().collect();
-        sorted_nodes.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap());
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
         
-        println!("\n=== AAAI Element Positions (sorted by Y) ===");
-        for node in sorted_nodes.iter().take(50) {
-            let name = match &node.kind {
-                flattened::FlattenedNodeKind::Field { name, .. } => name.clone(),
-                flattened::FlattenedNodeKind::Text { source_name, .. } => {
-                    source_name.as_ref().map(|s| format!("Text[{}]", s)).unwrap_or_else(|| "Text".to_string())
+        let headings = doc.headings();
+        
+        // Find the H1 heading
+        let h1_headings: Vec<_> = headings.iter()
+            .filter_map(|&idx| {
+                if let Some(group) = doc.get_group(idx) {
+                    if let crate::document::GroupKind::Heading { level: 1 } = group.kind {
+                        let text = doc.get_text_content(idx);
+                        return Some((idx, text));
+                    }
                 }
-            };
-            println!("y={:7.2} x={:7.2} h={:6.2} w={:6.2}  {}", 
-                node.y, node.x, node.height, node.width, name);
-        }
-        println!("... and {} more", flattened.nodes.len().saturating_sub(50));
+                None
+            })
+            .collect();
         
-        // Render to image with 1.5x scale
-        let output_path = "output/aaai_layout.png";
-        std::fs::create_dir_all("output").expect("Failed to create output directory");
+        assert!(!h1_headings.is_empty(), "Should have at least one H1 heading");
         
-        flattened.render_to_image(output_path, 1.5)
-            .expect("Failed to render image");
-        
-        println!("\n✓ Rendered AAAI layout to {}", output_path);
-        println!("  Image dimensions: {}x{} pixels", 
-            (flattened.page.width.to_f32().unwrap_or(0.0) * 1.5) as u32, 
-            (flattened.page.height.to_f32().unwrap_or(0.0) * 1.5) as u32);
-        println!("  Rendered {} fields/elements", flattened.nodes.len());
-        
-        assert!(std::path::Path::new(output_path).exists(), "Image file should exist");
+        // The main title should be the H1
+        let (_, title_text) = &h1_headings[0];
+        assert!(
+            title_text.contains("Vereinbarung") && title_text.contains("Zahlungsaufträg"),
+            "H1 should be the document title 'Vereinbarung für die Erteilung von Zahlungsaufträgen', got: {}",
+            title_text
+        );
     }
     
     #[test]
@@ -464,7 +576,6 @@ mod tests {
         use crate::flattened::{Flattened, FlattenedNodeKind};
         use crate::xfa::{XfaNode, FontWeight};
         use rust_decimal::Decimal;
-        use std::str::FromStr;
         
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
             .expect("Failed to read PDF")
@@ -1657,6 +1768,62 @@ mod tests {
             }
             
             panic!("DES_FirstName node not found in flattened output!");
+        }
+    }
+    
+    #[test]
+    fn test_aaai_label_attachment() {
+        // Test that labels are correctly attached to fields in the AAAI document
+        use crate::document::Document;
+        use crate::modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, AnalysisModule};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run analysis modules in the correct order
+        let mut doc = Document::from_flattened(&flattened);
+        
+        println!("\n=== Initial state ===");
+        println!("Total flattened nodes: {}", flattened.nodes.len());
+        println!("Initial roots: {}", doc.roots().len());
+        
+        // Step 1: Group text nodes into TextBlocks
+        TextBlockGrouper::new().process(&mut doc);
+        let text_blocks = doc.find_groups(|k| matches!(k, crate::document::GroupKind::TextBlock));
+        println!("\n=== After TextBlockGrouper ===");
+        println!("TextBlocks created: {}", text_blocks.len());
+        println!("Current roots: {}", doc.roots().len());
+        
+        // Step 2: Group field nodes into FieldGroups
+        FieldGrouper::new().process(&mut doc);
+        let field_groups = doc.find_groups(|k| matches!(k, crate::document::GroupKind::Field));
+        println!("\n=== After FieldGrouper ===");
+        println!("FieldGroups created: {}", field_groups.len());
+        println!("Current roots: {}", doc.roots().len());
+        
+        // Step 3: Attach labels to fields
+        LabelAttacher::new().process(&mut doc);
+        let labeled_fields = doc.labeled_fields();
+        println!("\n=== After LabelAttacher ===");
+        println!("LabeledFields created: {}", labeled_fields.len());
+        println!("Current roots: {}", doc.roots().len());
+        
+        // Should have found some labeled fields
+        assert!(labeled_fields.len() > 0, "Should have found at least one labeled field");
+        
+        // Print some examples
+        println!("\n=== Sample Labeled Fields ===");
+        for (i, &lf_idx) in labeled_fields.iter().take(5).enumerate() {
+            let label_text = doc.get_label_text(lf_idx).unwrap_or_default();
+            let field_name = doc.get_field_name(lf_idx).unwrap_or_default();
+            println!("  {}: '{}' -> {}", i + 1, label_text, field_name);
         }
     }
 }
