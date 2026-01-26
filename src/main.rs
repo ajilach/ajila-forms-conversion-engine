@@ -452,6 +452,157 @@ mod tests {
         println!("\n✓ All field alignment tests passed!");
     }
     
+    /// Test font properties for the "Der Kunde beauftragt hiermit UBS Europe SE" paragraph (T_Left).
+    /// 
+    /// According to XFA spec and the actual XFA data:
+    /// - XFA font element: typeface="Frutiger 45 Light", size="8pt", weight="bold"
+    /// - HTML paragraph style: font-weight:normal, letter-spacing:0in
+    /// 
+    /// The HTML style should override the XFA font weight for rich text content.
+    #[test]
+    fn test_aaai_t_left_font_properties() {
+        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::xfa::{XfaNode, FontWeight};
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF")
+            .expect("No XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data)
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Find the T_Left text node
+        let t_left = flattened.nodes.iter()
+            .find(|n| {
+                if let FlattenedNodeKind::Text { source_name, .. } = &n.kind {
+                    source_name.as_ref().map(|s| s == "T_Left").unwrap_or(false)
+                } else {
+                    false
+                }
+            })
+            .expect("T_Left text node not found");
+        
+        println!("\n=== T_Left Font Properties Test ===");
+        
+        // ----------------------------------------------------------------
+        // Test 1: XFA font properties are correctly parsed
+        // ----------------------------------------------------------------
+        let xfa_font = t_left.style.font.as_ref()
+            .expect("T_Left should have font style");
+        
+        // Per XFA: typeface="Frutiger 45 Light"
+        assert_eq!(
+            xfa_font.typeface, "Frutiger 45 Light",
+            "Font typeface should be 'Frutiger 45 Light'"
+        );
+        println!("  ✓ Typeface: {}", xfa_font.typeface);
+        
+        // Per XFA: size="8pt"
+        let expected_size = Decimal::from(8);
+        assert_eq!(
+            xfa_font.size, expected_size,
+            "Font size should be 8pt, got {:?}", xfa_font.size
+        );
+        println!("  ✓ Size: {}pt", xfa_font.size);
+        
+        // Per XFA: weight="bold" (but HTML overrides to normal for rich text)
+        assert_eq!(
+            xfa_font.weight, FontWeight::Bold,
+            "XFA font weight should be Bold"
+        );
+        println!("  ✓ XFA Weight: {:?}", xfa_font.weight);
+        
+        // Per XFA: letterSpacing not specified, so should be None (default 0)
+        // Note: The HTML specifies letter-spacing:0in which is effectively 0
+        assert!(
+            xfa_font.letter_spacing.is_none() || 
+            xfa_font.letter_spacing == Some(Decimal::ZERO),
+            "Letter spacing should be 0 or None, got {:?}", xfa_font.letter_spacing
+        );
+        println!("  ✓ Letter spacing: {:?}", xfa_font.letter_spacing);
+        
+        // ----------------------------------------------------------------
+        // Test 2: Rich text content is correctly parsed
+        // ----------------------------------------------------------------
+        if let FlattenedNodeKind::Text { rich_text, content, .. } = &t_left.kind {
+            let rt = rich_text.as_ref()
+                .expect("T_Left should have rich text (HTML exData)");
+            
+            assert!(!rt.paragraphs.is_empty(), "Rich text should have paragraphs");
+            println!("  ✓ Rich text has {} paragraphs", rt.paragraphs.len());
+            
+            // First paragraph should contain "Der Kunde beauftragt hiermit UBS Europe SE"
+            let first_para = &rt.paragraphs[0];
+            assert!(!first_para.runs.is_empty(), "First paragraph should have text runs");
+            
+            let first_text = &first_para.runs[0].text;
+            assert!(
+                first_text.starts_with("Der Kunde beauftragt hiermit UBS Europe SE"),
+                "First paragraph should start with expected text, got: '{}'", 
+                &first_text[..first_text.len().min(50)]
+            );
+            println!("  ✓ First paragraph text: '{}...'", &first_text[..first_text.len().min(40)]);
+            
+            // Per HTML: font-weight:normal - the run should NOT be bold
+            assert!(
+                !first_para.runs[0].bold,
+                "First paragraph run should NOT be bold (HTML overrides XFA weight)"
+            );
+            println!("  ✓ First run bold: {} (expected: false)", first_para.runs[0].bold);
+            
+            // Per HTML: text-decoration:none - no underline
+            assert!(
+                !first_para.runs[0].underline,
+                "First paragraph run should NOT be underlined"
+            );
+            println!("  ✓ First run underline: {} (expected: false)", first_para.runs[0].underline);
+            
+            // Check content field also has text (fallback for non-rich rendering)
+            assert!(
+                !content.is_empty(),
+                "Content string should be present as fallback"
+            );
+            println!("  ✓ Fallback content present: {} chars", content.len());
+        } else {
+            panic!("T_Left should be a Text node");
+        }
+        
+        // ----------------------------------------------------------------
+        // Test 3: Verify paragraphs with text-indent are properly marked
+        // ----------------------------------------------------------------
+        if let FlattenedNodeKind::Text { rich_text, .. } = &t_left.kind {
+            let rt = rich_text.as_ref().unwrap();
+            
+            // Some paragraphs should have text-indent (e.g., text-indent:25.512pt)
+            let indented_paras: Vec<_> = rt.paragraphs.iter()
+                .filter(|p| p.text_indent.is_some() && p.text_indent.unwrap() > 0.0)
+                .collect();
+            
+            assert!(
+                !indented_paras.is_empty(),
+                "Some paragraphs should have text-indent"
+            );
+            println!("  ✓ Found {} paragraphs with text-indent", indented_paras.len());
+            
+            // Check the indent value is approximately 25.512pt (converted to pixels in style)
+            if let Some(indent) = indented_paras[0].text_indent {
+                // The indent should be around 25.5 pt (stored as-is in points)
+                assert!(
+                    indent > 20.0 && indent < 30.0,
+                    "Text indent should be around 25pt, got {}", indent
+                );
+                println!("  ✓ First indented paragraph indent: {}pt", indent);
+            }
+        }
+        
+        println!("\n✓ All T_Left font property tests passed!");
+    }
+
     #[test]
     fn test_aaab_des_label_alignment() {
         // Test that DES_PostalCode, DES_City, and DES_Country labels are on the same line

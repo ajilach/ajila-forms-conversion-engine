@@ -310,7 +310,7 @@ impl TextMeasurer {
             // Load through font_manager
             let manager = get_font_manager();
             let mut manager = manager.lock().map_err(|e| format!("Lock error: {}", e))?;
-            let font = manager.get_font(xfa_font)?;
+            let font = manager.get_font(xfa_font).map_err(|e| e.to_string())?;
             self.cached_fonts.insert(variant.clone(), font);
         }
         

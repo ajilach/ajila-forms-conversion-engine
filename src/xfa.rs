@@ -128,7 +128,50 @@ pub struct Fill {
     pub presence: String,
 }
 
+/// Generic font family for fallback per XFA spec
+/// Per XFA spec section 28: "The genericFamily attribute values are defined by [CSS2]."
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum GenericFamily {
+    /// Sans-serif fonts (no serifs) - this is the default
+    #[default]
+    SansSerif,
+    /// Serif fonts (with serifs)
+    Serif,
+    /// Cursive/script fonts (handwritten look)
+    Cursive,
+    /// Fantasy/decorative fonts
+    Fantasy,
+    /// Monospace/fixed-width fonts
+    Monospace,
+}
+
+impl GenericFamily {
+    /// Parse genericFamily from XFA attribute string
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "serif" => GenericFamily::Serif,
+            "sansserif" | "sans-serif" => GenericFamily::SansSerif,
+            "cursive" => GenericFamily::Cursive,
+            "fantasy" => GenericFamily::Fantasy,
+            "monospace" => GenericFamily::Monospace,
+            _ => GenericFamily::SansSerif, // Default per XFA spec
+        }
+    }
+    
+    /// Get XFA attribute value string
+    pub fn as_xfa_str(&self) -> &'static str {
+        match self {
+            GenericFamily::SansSerif => "sansSerif",
+            GenericFamily::Serif => "serif",
+            GenericFamily::Cursive => "cursive",
+            GenericFamily::Fantasy => "fantasy",
+            GenericFamily::Monospace => "monospace",
+        }
+    }
+}
+
 /// Font properties
+/// Per XFA spec section 17 (Template Reference - font element)
 #[derive(Debug, Clone)]
 pub struct Font {
     pub typeface: String,
@@ -139,6 +182,14 @@ pub struct Font {
     pub line_through: bool,
     pub color: Option<(u8, u8, u8)>,
     pub baseline_shift: Option<Num>,
+    /// Letter spacing adjustment (relative measurement, can be negative)
+    /// Per XFA spec: "specifies an adjustment to the spacing that would otherwise
+    /// be used between successive grapheme clusters. Interword as well as
+    /// interletter spacings are affected." Default is 0.
+    pub letter_spacing: Option<Num>,
+    /// Generic font family for fallback when typeface is not available
+    /// Per XFA spec section 28 (Font Mapping): used to select appropriate fallback
+    pub generic_family: Option<GenericFamily>,
 }
 
 impl Default for Font {
@@ -148,6 +199,7 @@ impl Default for Font {
         // - size: Default is 10pt
         // - weight: Default is "normal"
         // - posture: Default is "normal"
+        // - letterSpacing: Default is 0
         Font {
             typeface: "Courier".to_string(),
             size: num(10.0),  // 10pt default
@@ -157,6 +209,8 @@ impl Default for Font {
             line_through: false,
             color: None,
             baseline_shift: None,
+            letter_spacing: None,  // 0 default (no adjustment)
+            generic_family: Some(GenericFamily::Monospace), // Courier is monospace
         }
     }
 }
@@ -488,11 +542,40 @@ impl XfaNode {
     
     /// Parse a <font> element
     /// Per XFA spec section 17: typeface defaults to Courier, size to 10pt
+    /// Per XFA spec section 28: genericFamily is used for font fallback
     fn parse_font(node: &XfaNode) -> Font {
+        let typeface = node.attributes.get("typeface")
+            .cloned()
+            .unwrap_or_else(|| "Courier".to_string());
+        
+        let weight_attr = node.attributes.get("weight");
+        
+        // DEBUG: Print font parsing for Frutiger
+        if typeface.to_lowercase().contains("frutiger") {
+            eprintln!("PARSE_FONT: typeface='{}', weight_attr={:?}", typeface, weight_attr);
+        }
+        
+        // Determine generic family: from attribute, or infer from typeface
+        let generic_family = node.attributes.get("genericFamily")
+            .map(|s| GenericFamily::from_str(s))
+            .or_else(|| {
+                // Infer generic family from common typeface names
+                let tf_lower = typeface.to_lowercase();
+                if tf_lower.contains("courier") || tf_lower.contains("mono") || tf_lower.contains("consolas") {
+                    Some(GenericFamily::Monospace)
+                } else if tf_lower.contains("times") || tf_lower.contains("georgia") || tf_lower.contains("serif") {
+                    Some(GenericFamily::Serif)
+                } else if tf_lower.contains("helvetica") || tf_lower.contains("arial") || tf_lower.contains("verdana") {
+                    Some(GenericFamily::SansSerif)
+                } else if tf_lower.contains("comic") || tf_lower.contains("script") || tf_lower.contains("cursive") {
+                    Some(GenericFamily::Cursive)
+                } else {
+                    None // Will use default
+                }
+            });
+        
         Font {
-            typeface: node.attributes.get("typeface")
-                .cloned()
-                .unwrap_or_else(|| "Courier".to_string()),
+            typeface,
             size: node.attributes.get("size")
                 .and_then(|v| Self::parse_dimension(v).ok())
                 .unwrap_or_else(|| num(10.0)),
@@ -511,6 +594,11 @@ impl XfaNode {
             color: Self::parse_color_from_children(&node.children),
             baseline_shift: node.attributes.get("baselineShift")
                 .and_then(|v| Self::parse_dimension(v).ok()),
+            // Per XFA spec: letterSpacing is a relative measurement (e.g., "0.5pt", "-0.1em")
+            // that adjusts spacing between grapheme clusters. Default is 0.
+            letter_spacing: node.attributes.get("letterSpacing")
+                .and_then(|v| Self::parse_dimension(v).ok()),
+            generic_family,
         }
     }
     

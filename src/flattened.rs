@@ -60,6 +60,10 @@ pub enum FlattenedNodeKind {
         font_name: String,
         /// Name of the source XFA node (for Draw elements with scripts)
         source_name: Option<String>,
+        /// Optional rich text structure for HTML content (exData with contentType="text/html")
+        /// When present, this should be used for rendering instead of `content` to preserve
+        /// paragraph structure, text-indent, and xfa-spacerun spacing.
+        rich_text: Option<RichText>,
     },
     
     /// Input field
@@ -70,11 +74,118 @@ pub enum FlattenedNodeKind {
     },
 }
 
+// ============================================================================
+// XFA-Compliant Rich Text Model
+// ============================================================================
+
+/// A rich text document consisting of multiple paragraphs.
+/// Per XFA spec, rich text in exData contentType="text/html" is structured as
+/// XHTML paragraphs with inline styling.
+#[derive(Debug, Clone, Default)]
+pub struct RichText {
+    /// Paragraphs in the document
+    pub paragraphs: Vec<RichParagraph>,
+}
+
+/// A single paragraph with optional styling and text runs.
+/// Per XFA spec (Chapter 27): paragraphs can have text-indent, margins, alignment.
+#[derive(Debug, Clone, Default)]
+pub struct RichParagraph {
+    /// Text runs within the paragraph
+    pub runs: Vec<RichRun>,
+    /// First-line text indent (from CSS text-indent style)
+    pub text_indent: Option<f32>,
+    /// Horizontal alignment
+    pub h_align: HAlign,
+    /// Space above paragraph
+    pub space_above: Option<f32>,
+    /// Space below paragraph
+    pub space_below: Option<f32>,
+    /// Whether this is an empty paragraph (just whitespace/separator)
+    pub is_empty: bool,
+}
+
+/// A run of text with uniform styling.
+/// Per XFA spec: spans can have xfa-spacerun:yes to preserve consecutive spaces.
+#[derive(Debug, Clone)]
+pub struct RichRun {
+    /// The text content
+    pub text: String,
+    /// Whether consecutive spaces should be preserved (xfa-spacerun:yes)
+    pub preserve_spaces: bool,
+    /// Font weight (bold)
+    pub bold: bool,
+    /// Font style (italic)
+    pub italic: bool,
+    /// Underline
+    pub underline: bool,
+}
+
+impl Default for RichRun {
+    fn default() -> Self {
+        RichRun {
+            text: String::new(),
+            preserve_spaces: false,
+            bold: false,
+            italic: false,
+            underline: false,
+        }
+    }
+}
+
+/// A positioned word/token ready for rendering.
+/// Used for glyph-by-glyph rendering with proper justify support.
+#[derive(Debug, Clone)]
+pub struct RenderedWord {
+    /// The text of this word
+    pub text: String,
+    /// X position in pixels
+    pub x: f32,
+    /// Whether spaces should be preserved (from xfa-spacerun)
+    pub preserve_spaces: bool,
+    /// Whether this word should be rendered bold
+    pub bold: bool,
+    /// Whether this word should be rendered italic
+    pub italic: bool,
+}
+
+/// A line of text ready for rendering, with positioning info.
+#[derive(Debug, Clone)]
+pub struct RenderedLine {
+    /// Words/tokens in this line
+    pub words: Vec<RenderedWord>,
+    /// Y position of the line baseline
+    pub y: f32,
+    /// Whether this is the first line of a paragraph (for text-indent)
+    pub is_first_line: bool,
+    /// Whether this is the last line of a paragraph (for justify - don't stretch)
+    pub is_last_line: bool,
+    /// The paragraph's text indent (only applied if is_first_line)
+    pub text_indent: f32,
+    /// Horizontal alignment for this line
+    pub h_align: HAlign,
+    /// Total width of all content on this line
+    pub content_width: f32,
+}
+
+/// A token for text layout - a word or preserved space run.
+/// Used internally during text layout.
+#[derive(Debug, Clone)]
+pub struct LayoutToken {
+    pub text: String,
+    pub width: f32,
+    pub preserve_spaces: bool,
+    /// Whether this token should be rendered bold
+    pub bold: bool,
+    /// Whether this token should be rendered italic
+    pub italic: bool,
+}
+
 impl FlattenedNode {
     /// Create a new text node
     pub fn new_text(content: String, font_size: Num, font_name: String, x: Num, y: Num, width: Num, height: Num) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None },
+            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None, rich_text: None },
             x,
             y,
             width,
@@ -87,7 +198,7 @@ impl FlattenedNode {
     /// Create a new text node with style
     pub fn new_text_styled(content: String, font_size: Num, font_name: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None },
+            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None, rich_text: None },
             x,
             y,
             width,
@@ -139,7 +250,7 @@ impl FlattenedNode {
     /// Create a new text node with style and rotation
     pub fn new_text_styled_rotated(content: String, font_size: Num, font_name: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle, rotate: i32) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None },
+            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name: None, rich_text: None },
             x,
             y,
             width,
@@ -152,7 +263,20 @@ impl FlattenedNode {
     /// Create a new text node with style, rotation, and source name (for Draw elements with scripts)
     pub fn new_text_styled_rotated_named(content: String, font_size: Num, font_name: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle, rotate: i32, source_name: Option<String>) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name },
+            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name, rich_text: None },
+            x,
+            y,
+            width,
+            height,
+            rotate,
+            style,
+        }
+    }
+    
+    /// Create a new text node with rich text content (for HTML exData)
+    pub fn new_text_with_rich_text(content: String, font_size: Num, font_name: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle, rotate: i32, source_name: Option<String>, rich_text: Option<RichText>) -> Self {
+        FlattenedNode {
+            kind: FlattenedNodeKind::Text { content, font_size, font_name, source_name, rich_text },
             x,
             y,
             width,
@@ -381,7 +505,26 @@ impl Flattened {
         let mut all_events = Vec::new();
         find_all_events(xfa_nodes, &mut all_events);
         
-        // Execute all form-ready JavaScript events
+        // Execute events in proper XFA lifecycle order:
+        // 1. Initialize events (activity="initialize") - these call setupVariables() etc.
+        // 2. Ready events (activity="ready") - form-ready scripts that compute field values
+        
+        // Phase 1: Execute initialize events
+        // These are typically scripts like: soCommonLabelDefinition.setupVariables()
+        for (field_name, script) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript 
+                && script.activity == EventActivity::Initialize
+            {
+                // Set up field context (may be empty for form-level initialize events)
+                engine.set_current_field(field_name, field_name, "");
+                
+                // Execute the initialize script (maintains global context)
+                let _ = engine.execute_script(script);
+            }
+        }
+        
+        // Phase 2: Execute form-ready JavaScript events
+        // These compute field values after initialization is complete
         for (field_name, script) in &all_events {
             if script.content_type == ScriptContentType::JavaScript 
                 && script.activity == EventActivity::Ready 
@@ -439,7 +582,8 @@ impl Flattened {
             let _ = engine.execute_variable_script(&wrapped);
         }
         
-        // Initialize translation objects before calling setupVariables
+        // Initialize translation objects in global scope (these will be populated by setupVariables())
+        // These objects are referenced by the variable scripts when setupVariables() is called
         let init_globals = r#"
             if (typeof myDE === 'undefined') { myDE = {}; }
             if (typeof myEN === 'undefined') { myEN = {}; }
@@ -448,16 +592,6 @@ impl Flattened {
             if (typeof my70334D === 'undefined') { my70334D = {}; }
         "#;
         let _ = engine.execute_variable_script(init_globals);
-        
-        // Now call setupVariables() on each script object that has it
-        // This mimics the initialize event: soCommonLabelDefinition.setupVariables()
-        for (name, _) in &variable_scripts {
-            let call_setup = format!(
-                "if (typeof {name} !== 'undefined' && typeof {name}.setupVariables === 'function') {{ {name}.setupVariables(); }}",
-                name = name
-            );
-            let _ = engine.execute_variable_script(&call_setup);
-        }
     }
     
     /// Recursively collect script content from <variables> elements
@@ -792,7 +926,13 @@ impl Flattened {
                 let font_name = Self::extract_font_name(node);
                 let style = Self::extract_style(node);
                 
-                flattened_nodes.push(FlattenedNode::new_text_styled_rotated_named(
+                // Get default h_align from XFA para element
+                let default_h_align = node.para.as_ref().map(|p| p.h_align).unwrap_or(HAlign::Left);
+                
+                // Extract rich text if this is HTML content (exData with contentType="text/html")
+                let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
+                
+                flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
                     text_content,
                     font_size,
                     font_name,
@@ -803,6 +943,7 @@ impl Flattened {
                     style,
                     node.rotate,
                     node.name.clone(),
+                    rich_text,
                 ));
             }
             XfaNodeKind::Field => {
@@ -908,6 +1049,164 @@ impl Flattened {
         node.font.as_ref().map(|f| f.typeface.clone()).unwrap_or_else(|| "Helvetica".to_string())
     }
     
+    /// Count the number of paragraphs in HTML content.
+    /// Used for height calculation to account for paragraph breaks.
+    fn count_html_paragraphs(children: &[XfaNode]) -> usize {
+        let mut count = 0;
+        Self::count_paragraphs_recursive(children, &mut count);
+        count.max(1) // At least 1 paragraph
+    }
+    
+    fn count_paragraphs_recursive(children: &[XfaNode], count: &mut usize) {
+        for child in children {
+            match &child.kind {
+                XfaNodeKind::Element { tag_name, .. } => {
+                    let tag_lower = tag_name.to_lowercase();
+                    if tag_lower == "p" {
+                        *count += 1;
+                    }
+                    // Recurse into children
+                    Self::count_paragraphs_recursive(&child.children, count);
+                }
+                XfaNodeKind::Value => {
+                    Self::count_paragraphs_recursive(&child.children, count);
+                }
+                _ => {
+                    Self::count_paragraphs_recursive(&child.children, count);
+                }
+            }
+        }
+    }
+    
+    /// Check if a node contains HTML exData content
+    fn has_html_exdata(children: &[XfaNode]) -> bool {
+        for child in children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for value_child in &child.children {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
+                        if tag_name == "exData" {
+                            for ex_child in &value_child.children {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
+                                    if inner_tag == "body" {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Extract rich text from a node's value children.
+    /// Handles both:
+    /// - HTML exData content (with paragraph styling, text-indent, xfa-spacerun)
+    /// - Plain <text> elements containing U+2029 paragraph separators
+    fn extract_rich_text_from_node(children: &[XfaNode], default_h_align: HAlign) -> Option<RichText> {
+        for child in children {
+            // Check for XfaNodeKind::Value
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for value_child in &child.children {
+                    if let XfaNodeKind::Element { tag_name, text_content } = &value_child.kind {
+                        // Check for <text> element with U+2029 paragraph separators
+                        if tag_name == "text" {
+                            if let Some(text) = text_content {
+                                if text.contains('\u{2029}') {
+                                    // Create rich text from plain text with paragraph separators
+                                    return Some(Self::create_rich_text_from_plain_with_separators(text, default_h_align));
+                                }
+                            }
+                        }
+                        
+                        if tag_name == "exData" {
+                            // Check if it has HTML body content
+                            for ex_child in &value_child.children {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
+                                    if inner_tag == "body" {
+                                        // Found HTML body - parse it into RichText
+                                        return Some(Self::parse_rich_text_from_html(&value_child.children, default_h_align));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Also check for Element with tag_name "value"
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "value" {
+                    for value_child in &child.children {
+                        if let XfaNodeKind::Element { tag_name: inner_tag, text_content } = &value_child.kind {
+                            // Check for <text> element with U+2029 paragraph separators
+                            if inner_tag == "text" {
+                                if let Some(text) = text_content {
+                                    if text.contains('\u{2029}') {
+                                        return Some(Self::create_rich_text_from_plain_with_separators(text, default_h_align));
+                                    }
+                                }
+                            }
+                            
+                            if inner_tag == "exData" {
+                                for ex_child in &value_child.children {
+                                    if let XfaNodeKind::Element { tag_name: body_tag, .. } = &ex_child.kind {
+                                        if body_tag == "body" {
+                                            return Some(Self::parse_rich_text_from_html(&value_child.children, default_h_align));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Create rich text structure from plain text containing U+2029 paragraph separators.
+    /// Each segment separated by U+2029 becomes a separate paragraph.
+    fn create_rich_text_from_plain_with_separators(text: &str, default_h_align: HAlign) -> RichText {
+        let segments: Vec<&str> = text.split('\u{2029}').collect();
+        let mut paragraphs = Vec::new();
+        
+        for segment in segments {
+            // Normalize whitespace in each segment
+            let normalized = Self::normalize_whitespace(segment);
+            
+            let mut para = RichParagraph {
+                h_align: default_h_align,
+                ..RichParagraph::default()
+            };
+            
+            if !normalized.is_empty() {
+                para.runs.push(RichRun {
+                    text: normalized,
+                    preserve_spaces: false,
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                });
+            } else {
+                para.is_empty = true;
+            }
+            
+            paragraphs.push(para);
+        }
+        
+        // If no paragraphs were created, add an empty one
+        if paragraphs.is_empty() {
+            paragraphs.push(RichParagraph {
+                h_align: default_h_align,
+                is_empty: true,
+                ..RichParagraph::default()
+            });
+        }
+        
+        RichText { paragraphs }
+    }
+
     fn flatten_nodes(
         nodes: &[XfaNode],
         parent_position: Position,
@@ -1047,7 +1346,14 @@ impl Flattened {
                         let font_name = Self::extract_font_name(node);
                         let style = Self::extract_style(node);
                         
-                        flattened_nodes.push(FlattenedNode::new_text_styled_rotated_named(
+                        // Get default h_align from XFA para element
+                        let default_h_align = node.para.as_ref().map(|p| p.h_align).unwrap_or(HAlign::Left);
+                        
+                        // Extract rich text if this is HTML content (exData with contentType="text/html")
+                        // This preserves paragraph structure, text-indent, and xfa-spacerun spacing
+                        let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
+                        
+                        flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
                             text_content,
                             font_size,
                             font_name,
@@ -1058,6 +1364,7 @@ impl Flattened {
                             style,
                             node.rotate,
                             node.name.clone(),
+                            rich_text,
                         ));
                     }
                     
@@ -1158,7 +1465,13 @@ impl Flattened {
                                 let font_name = Self::extract_font_name(node);
                                 let style = Self::extract_style(node);
                                 
-                                flattened_nodes.push(FlattenedNode::new_text_styled_rotated_named(
+                                // Get default h_align from XFA para element
+                                let default_h_align = node.para.as_ref().map(|p| p.h_align).unwrap_or(HAlign::Left);
+                                
+                                // Extract rich text if this is HTML content (exData with contentType="text/html")
+                                let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
+                                
+                                flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
                                     text_content,
                                     font_size,
                                     font_name,
@@ -1169,6 +1482,7 @@ impl Flattened {
                                     style,
                                     node.rotate,
                                     node.name.clone(),
+                                    rich_text,
                                 ));
                             }
                             
@@ -1186,6 +1500,42 @@ impl Flattened {
                             };
                             
                             Self::flatten_nodes(&node.children, parent_position, child_layout, flattened_nodes)?;
+                        }
+                        "exclGroup" => {
+                            // Per XFA spec (section 17 "The exclGroup element"):
+                            // exclGroup is a container element with x, y, w, h, layout, and other positioning attributes.
+                            // It should be treated like a subform for layout purposes - compute its position
+                            // and use that as the parent position for its children (the radio button fields).
+                            let (outer_pos, content_pos, layout, consumed_height) = Self::compute_position_for_node_with_children(
+                                node,
+                                parent_position,
+                                parent_layout,
+                                &mut current_x,
+                                &mut current_y,
+                                &mut max_height_in_row,
+                                flattened_nodes,
+                            )?;
+                            
+                            // For positioned layout, track the max extent (relative to parent_position)
+                            if parent_layout == Layout::Position {
+                                let node_bottom = (outer_pos.y - parent_position.y) + outer_pos.height;
+                                max_extent_y = max_extent_y.max(node_bottom);
+                            }
+                            
+                            // Recurse into exclGroup children with the computed content position
+                            // The exclGroup's layout applies to its children (the fields)
+                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes)?;
+                            
+                            // For tb layout, update current_y based on actual content height if no explicit height
+                            if parent_layout == Layout::TopToBottom && node.h.is_none() {
+                                let actual_height = children_height + node.margin_top.unwrap_or(Decimal::ZERO) + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                                let min_h = node.min_h.unwrap_or(Decimal::ZERO);
+                                let effective_height = actual_height.max(min_h).max(consumed_height);
+                                
+                                if effective_height > consumed_height {
+                                    current_y = outer_pos.y + effective_height;
+                                }
+                            }
                         }
                         // Skip data-only elements - these are Form DOM data, not layout
                         _ if tag_name.starts_with("xfa:") || 
@@ -1307,11 +1657,19 @@ impl Flattened {
                     // Per XFA AXTE spec
                     // Use embed context to resolve xfa:embed references for accurate height
                     let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
-                        Self::calculate_natural_text_height(
+                        // Check if this is HTML content with multiple paragraphs
+                        let paragraph_count = if Self::has_html_exdata(&node.children) {
+                            Self::count_html_paragraphs(&node.children)
+                        } else {
+                            0
+                        };
+                        
+                        Self::calculate_natural_text_height_with_paragraphs(
                             &text, 
                             &node.font, 
                             &node.para, 
-                            width
+                            width,
+                            paragraph_count
                         )
                     } else {
                         // No text content, use default line height
@@ -1338,11 +1696,19 @@ impl Flattened {
                             // Calculate natural height for draw element
                             // Use embed context to resolve xfa:embed references for accurate height
                             let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
-                                Self::calculate_natural_text_height(
+                                // Check if this is HTML content with multiple paragraphs
+                                let paragraph_count = if Self::has_html_exdata(&node.children) {
+                                    Self::count_html_paragraphs(&node.children)
+                                } else {
+                                    0
+                                };
+                                
+                                Self::calculate_natural_text_height_with_paragraphs(
                                     &text, 
                                     &node.font, 
                                     &node.para, 
-                                    width
+                                    width,
+                                    paragraph_count
                                 )
                             } else {
                                 num(12.0)
@@ -1581,25 +1947,32 @@ impl Flattened {
         
         let font_size_f32 = font_size.to_f32().unwrap_or(10.0);
         
-        // Count approximate number of lines
-        // Approximate character width as 60% of font size
-        let char_width = font_size_f32 * 0.6;
+        // Get line height from para, or calculate default (font_size + 20% line gap)
+        let line_height = para.as_ref()
+            .and_then(|p| p.line_height)
+            .unwrap_or(font_size * num(1.2));
+        let line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
+        
+        // Use a more accurate character width estimate based on typical font metrics
+        // Average character width is typically 40-50% of font size for proportional fonts
+        let char_width = font_size_f32 * 0.45;
         let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
         let chars_per_line = (max_width_f32 / char_width).max(1.0) as usize;
         
-        // Count words and estimate lines
+        // Count words and estimate lines more accurately
         let words: Vec<&str> = text.split_whitespace().collect();
         let mut num_lines: usize = 1;
         let mut current_line_chars: usize = 0;
         
         for word in words {
+            let word_chars = word.chars().count();
             if current_line_chars == 0 {
-                current_line_chars = word.len();
-            } else if current_line_chars + 1 + word.len() <= chars_per_line {
-                current_line_chars += 1 + word.len();
+                current_line_chars = word_chars;
+            } else if current_line_chars + 1 + word_chars <= chars_per_line {
+                current_line_chars += 1 + word_chars;
             } else {
                 num_lines += 1;
-                current_line_chars = word.len();
+                current_line_chars = word_chars;
             }
         }
         
@@ -1607,18 +1980,10 @@ impl Flattened {
             num_lines = 1;
         }
         
-        // Per AXTE: line gap is 20% of font size
-        let line_gap = font_size * num(0.2);
-        
-        // Per AXTE: if (ascent + descent) < font_size, use font_size as text height
-        // We'll use font_size as an approximation for text height since we don't have
-        // the actual font metrics here. For most fonts, ascent + descent ≈ font_size.
-        let text_height = font_size;
-        
-        // Line spacing: use override if provided, else TH + LG
-        let line_spacing = para.as_ref()
-            .and_then(|p| p.line_height)
-            .unwrap_or(text_height + line_gap);
+        // Add extra lines for paragraph breaks (empty lines in rich text)
+        // Count paragraph separators that would add extra lines
+        let paragraph_breaks = text.matches('\n').count() + text.matches('\u{2029}').count();
+        num_lines += paragraph_breaks;
         
         // Paragraph margins
         let margin_top = para.as_ref()
@@ -1628,18 +1993,101 @@ impl Flattened {
             .and_then(|p| p.space_below)
             .unwrap_or(Decimal::ZERO);
         
-        // Calculate total height per AXTE rules
-        // FH = MT + DS + MB, with LG removed on last line
-        let total_height = if num_lines == 1 {
-            // Single line: MT + TH + MB (no line gap)
-            margin_top + text_height + margin_bottom
+        // Calculate total height using line_height for all lines
+        // Per AXTE: FH = MT + (num_lines * line_height) + MB
+        // But last line doesn't need trailing gap, so subtract one line gap
+        let line_gap = line_height - font_size;
+        let total_height = if num_lines == 0 {
+            margin_top + font_size + margin_bottom
+        } else if num_lines == 1 {
+            // Single line: MT + line_height + MB - line_gap (no trailing gap)
+            margin_top + font_size + margin_bottom
         } else {
-            // Multiple lines:
-            // - First N-1 lines: each has height = DS (line_spacing)
-            // - Last line: TH (text_height, no line gap)
-            let first_lines = num(num_lines as f64 - 1.0) * line_spacing;
-            let last_line = text_height;
-            margin_top + first_lines + last_line + margin_bottom
+            // Multiple lines: all lines use line_height, but last line has no trailing gap
+            let lines_height = num(num_lines as f64) * line_height - line_gap;
+            margin_top + lines_height + margin_bottom
+        };
+        
+        total_height
+    }
+    
+    /// Calculate the natural height for a text/draw element with paragraph count.
+    /// This version accounts for multiple HTML paragraphs that each add a line break.
+    fn calculate_natural_text_height_with_paragraphs(
+        text: &str, 
+        font: &Option<Font>, 
+        para: &Option<Para>, 
+        max_width: Num,
+        paragraph_count: usize
+    ) -> Num {
+        // Get font size from style or use default
+        let font_size = font.as_ref()
+            .map(|f| f.size)
+            .unwrap_or_else(|| num(10.0));
+        
+        let font_size_f32 = font_size.to_f32().unwrap_or(10.0);
+        
+        // Get line height from para, or calculate default (font_size + 20% line gap)
+        let line_height = para.as_ref()
+            .and_then(|p| p.line_height)
+            .unwrap_or(font_size * num(1.2));
+        let line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
+        
+        // Use a more accurate character width estimate based on typical font metrics
+        // Average character width is typically 40-50% of font size for proportional fonts
+        let char_width = font_size_f32 * 0.45;
+        let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
+        let chars_per_line = (max_width_f32 / char_width).max(1.0) as usize;
+        
+        // Count words and estimate lines more accurately
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut num_lines: usize = 1;
+        let mut current_line_chars: usize = 0;
+        
+        for word in words {
+            let word_chars = word.chars().count();
+            if current_line_chars == 0 {
+                current_line_chars = word_chars;
+            } else if current_line_chars + 1 + word_chars <= chars_per_line {
+                current_line_chars += 1 + word_chars;
+            } else {
+                num_lines += 1;
+                current_line_chars = word_chars;
+            }
+        }
+        
+        if text.is_empty() {
+            num_lines = 1;
+        }
+        
+        // Add extra lines for paragraph breaks from HTML <p> elements
+        // Each paragraph after the first adds a line break
+        if paragraph_count > 1 {
+            num_lines += paragraph_count - 1;
+        }
+        
+        // Also count inline paragraph breaks
+        let inline_breaks = text.matches('\n').count() + text.matches('\u{2029}').count();
+        num_lines += inline_breaks;
+        
+        // Paragraph margins
+        let margin_top = para.as_ref()
+            .and_then(|p| p.space_above)
+            .unwrap_or(Decimal::ZERO);
+        let margin_bottom = para.as_ref()
+            .and_then(|p| p.space_below)
+            .unwrap_or(Decimal::ZERO);
+        
+        // Calculate total height using line_height for all lines
+        let line_gap = line_height - font_size;
+        let total_height = if num_lines == 0 {
+            margin_top + font_size + margin_bottom
+        } else if num_lines == 1 {
+            margin_top + font_size + margin_bottom
+        } else {
+            // Multiple lines: all lines use line_height, but last line has no trailing gap
+            let lines_height = num(num_lines as f64) * line_height - line_gap;
+            margin_top + lines_height + margin_bottom
         };
         
         total_height
@@ -1989,7 +2437,7 @@ impl Flattened {
                         
                         // Apply text alignment from para using font metrics (within content area)
                         let text_x = Self::calculate_text_x(content_x, content_w, value, scaled_font_size, &node.style.para, &render_font);
-                        let text_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, 0, 1);
+                        let text_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, 0, 1, scale);
                         
                         draw_text_mut(
                             &mut img,
@@ -2002,66 +2450,160 @@ impl Flattened {
                         );
                     }
                 }
-                FlattenedNodeKind::Text { content, font_size, .. } => {
+                FlattenedNodeKind::Text { content, font_size, rich_text, source_name, .. } => {
                     // Draw text content (draw elements/labels)
-                    if !content.is_empty() {
-                        // Get font style from node, or use XFA defaults
-                        let xfa_font = node.style.font.clone().unwrap_or_default();
-                        // Use style font size if available, otherwise use the passed value
-                        let effective_font_size = if node.style.font.is_some() {
-                            xfa_font.size.to_f32().unwrap_or(10.0)
+                    // Get font style from node, or use XFA defaults
+                    let xfa_font = node.style.font.clone().unwrap_or_default();
+                    // Use style font size if available, otherwise use the passed value
+                    let effective_font_size = if node.style.font.is_some() {
+                        xfa_font.size.to_f32().unwrap_or(10.0)
+                    } else {
+                        font_size.to_f32().unwrap_or(10.0)
+                    };
+                    let scaled_font_size = (effective_font_size * scale).max(8.0);
+                    let text_scale = PxScale::from(scaled_font_size);
+                    
+                    // Get the appropriate font for this style (with fallback)
+                    // Also get bold and italic variants for rich text rendering
+                    // NOTE: For rich text, we need normal weight as base since HTML
+                    // styling will specify bold explicitly via RichRun.bold flag.
+                    // The XFA font weight only applies to plain text content.
+                    let (render_font, normal_font, bold_font, italic_font, bold_italic_font) = {
+                        let mut mgr = font_manager.lock().map_err(|e| format!("Lock error: {}", e))?;
+                        
+                        // DEBUG: Check if requested font is available
+                        if let Some(name) = source_name {
+                            if name.contains("T_Left") && !name.contains("Indent") {
+                                let has_font = mgr.has_font(&xfa_font.typeface.to_lowercase(), xfa_font.weight, xfa_font.posture);
+                                eprintln!("  Font '{}' weight={:?} posture={:?} -> available: {}", 
+                                    xfa_font.typeface, xfa_font.weight, xfa_font.posture, has_font);
+                            }
+                        }
+                        
+                        // Get font as specified in XFA (may be bold/italic)
+                        let base = mgr.get_font(&xfa_font).unwrap_or_else(|_| fallback_font.clone());
+                        
+                        // Get normal weight variant (for rich text base)
+                        let mut normal_xfa_font = xfa_font.clone();
+                        normal_xfa_font.weight = crate::xfa::FontWeight::Normal;
+                        normal_xfa_font.posture = crate::xfa::FontPosture::Normal;
+                        let normal = mgr.get_font(&normal_xfa_font).ok();
+                        
+                        // Get bold variant
+                        let mut bold_xfa_font = xfa_font.clone();
+                        bold_xfa_font.weight = crate::xfa::FontWeight::Bold;
+                        bold_xfa_font.posture = crate::xfa::FontPosture::Normal;
+                        let bold = mgr.get_font(&bold_xfa_font).ok();
+                        
+                        // Get italic variant
+                        let mut italic_xfa_font = xfa_font.clone();
+                        italic_xfa_font.weight = crate::xfa::FontWeight::Normal;
+                        italic_xfa_font.posture = crate::xfa::FontPosture::Italic;
+                        let italic = mgr.get_font(&italic_xfa_font).ok();
+                        
+                        // Get bold italic variant
+                        let mut bold_italic_xfa_font = xfa_font.clone();
+                        bold_italic_xfa_font.weight = crate::xfa::FontWeight::Bold;
+                        bold_italic_xfa_font.posture = crate::xfa::FontPosture::Italic;
+                        let bold_italic = mgr.get_font(&bold_italic_xfa_font).ok();
+                        
+                        (base, normal, bold, italic, bold_italic)
+                    };
+                    
+                    // Get text color from style or use dark gray
+                    let text_color = node.style.font.as_ref()
+                        .and_then(|f| f.color)
+                        .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
+                        .unwrap_or(dark_gray);
+                    
+                    // Calculate content area inside border margins
+                    // Per XFA box model: content is drawn inside the border margins (insets)
+                    let (content_x, content_y, content_w, content_h) = {
+                        // Get border margins if present
+                        let (ml, mt, mr, mb) = if let Some(border) = &node.style.border {
+                            (
+                                (border.margin_left.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                (border.margin_top.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                (border.margin_right.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                                (border.margin_bottom.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
+                            )
                         } else {
-                            font_size.to_f32().unwrap_or(10.0)
-                        };
-                        let scaled_font_size = (effective_font_size * scale).max(8.0);
-                        let text_scale = PxScale::from(scaled_font_size);
-                        
-                        // Get the appropriate font for this style (with fallback)
-                        let render_font = {
-                            let mut mgr = font_manager.lock().map_err(|e| format!("Lock error: {}", e))?;
-                            mgr.get_font(&xfa_font).unwrap_or_else(|_| fallback_font.clone())
+                            (0, 0, 0, 0)
                         };
                         
-                        // Get text color from style or use dark gray
-                        let text_color = node.style.font.as_ref()
-                            .and_then(|f| f.color)
-                            .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
-                            .unwrap_or(dark_gray);
+                        (x + ml, y + mt, (w - ml - mr).max(0), (h - mt - mb).max(scaled_font_size as i32))
+                    };
+                    
+                    // Check if we have rich text (HTML content with paragraph structure)
+                    // Only use rich text rendering if it has actual content
+                    let has_rich_content = rich_text.as_ref().map_or(false, |rt| {
+                        rt.paragraphs.iter().any(|p| !p.is_empty && p.runs.iter().any(|r| !r.text.is_empty()))
+                    });
+                    
+                    // Get letter spacing from XFA font (scaled to pixels)
+                    // Per XFA spec: letterSpacing is a relative measurement that adjusts
+                    // spacing between successive grapheme clusters
+                    let letter_spacing = xfa_font.letter_spacing
+                        .map(|ls| ls.to_f32().unwrap_or(0.0) * scale)
+                        .unwrap_or(0.0);
+                    
+                    // DEBUG: Print font info for T_Left
+                    if let Some(name) = source_name {
+                        if name.contains("T_Left") && !name.contains("Indent") {
+                            eprintln!("\n=== DEBUG {} ===", name);
+                            eprintln!("  XFA font typeface: {}", xfa_font.typeface);
+                            eprintln!("  XFA font size: {:?}", xfa_font.size);
+                            eprintln!("  XFA letter_spacing: {:?}", xfa_font.letter_spacing);
+                            eprintln!("  Scaled letter_spacing: {}", letter_spacing);
+                            eprintln!("  Effective font size: {} (scaled: {})", effective_font_size, scaled_font_size);
+                            // Check what text starts with
+                            if let Some(rt) = rich_text.as_ref() {
+                                if !rt.paragraphs.is_empty() && !rt.paragraphs[0].runs.is_empty() {
+                                    let first_text = &rt.paragraphs[0].runs[0].text;
+                                    if first_text.len() > 30 {
+                                        eprintln!("  First text: {}...", &first_text[..30]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if has_rich_content {
+                        let rt = rich_text.as_ref().unwrap();
+                        // For rich text, use normal weight font as base (not XFA font weight)
+                        // because rich text specifies its own bold/italic via HTML tags
+                        let base_font = normal_font.as_ref().unwrap_or(&render_font);
                         
-                        // Calculate content area inside border margins
-                        // Per XFA box model: content is drawn inside the border margins (insets)
-                        // Per XFA spec: if h is null/0, the container is vertically growable
-                        // and height should be computed from content
-                        let (content_x, content_y, content_w, content_h) = {
-                            // Get border margins if present
-                            let (ml, mt, mr, mb) = if let Some(border) = &node.style.border {
-                                (
-                                    (border.margin_left.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
-                                    (border.margin_top.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
-                                    (border.margin_right.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
-                                    (border.margin_bottom.unwrap_or(Decimal::ZERO).to_f32().unwrap_or(0.0) * scale) as i32,
-                                )
-                            } else {
-                                (0, 0, 0, 0)
-                            };
-                            
-                            // Per XFA spec: if h is 0 or very small, the container is vertically growable
-                            // Height should be derived from content (use font size as minimum)
-                            let effective_h = if h <= (scaled_font_size as i32) {
-                                // Growable: use natural text height based on font metrics
-                                // Estimate line count from content (rough approximation)
-                                let line_gap = scaled_font_size * 0.2;
-                                let natural_height = (scaled_font_size + line_gap) as i32;
-                                natural_height.max(scaled_font_size as i32)
-                            } else {
-                                // Fixed height: apply border margins
-                                (h - mt - mb).max(scaled_font_size as i32)
-                            };
-                            
-                            (x + ml, y + mt, (w - ml - mr).max(0), effective_h)
-                        };
+                        // Use XFA-compliant rich text rendering with glyph-by-glyph positioning
+                        // This handles text-indent, xfa-spacerun, and justify alignment properly
+                        let rendered_lines = Self::layout_rich_text(
+                            rt,
+                            content_w as f32,
+                            scaled_font_size,
+                            base_font,
+                            scale,
+                            letter_spacing,
+                        );
                         
-                        // Word-wrap text using proper font metrics and the correct font
+                        Self::render_text_glyph_by_glyph(
+                            &mut img,
+                            &rendered_lines,
+                            content_x,
+                            content_y,
+                            content_w,
+                            content_h,
+                            scaled_font_size,
+                            base_font,
+                            bold_font.as_ref(),
+                            italic_font.as_ref(),
+                            bold_italic_font.as_ref(),
+                            text_color,
+                            &node.style.para,
+                            scale,
+                            letter_spacing,
+                        );
+                    } else if !content.is_empty() {
+                        // Fallback to simple text rendering for plain text content
                         let lines = Self::wrap_text_with_font(content, content_w as f32, scaled_font_size, &render_font);
                         let total_lines = lines.len();
                         
@@ -2070,7 +2612,7 @@ impl Flattened {
                             let line_x = Self::calculate_text_x(content_x, content_w, line, scaled_font_size, &node.style.para, &render_font);
                             
                             // Calculate y position using AXTE-compliant method (within content area)
-                            let line_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, i, total_lines);
+                            let line_y = Self::calculate_text_y(content_y, content_h, scaled_font_size, &node.style.para, &render_font, i, total_lines, scale);
                             
                             if line_y >= 0 && line_y < img_height as i32 - scaled_font_size as i32 {
                                 draw_text_mut(
@@ -2399,12 +2941,17 @@ impl Flattened {
     /// - Baseline position: B = MT + TH - D
     /// - Text is drawn from baseline, so we need to position at baseline - ascent
     /// - Line gap is 20% of font size
-    fn calculate_text_y(box_y: i32, box_h: i32, font_size: f32, para: &Option<Para>, font: &FontRef<'_>, line_index: usize, total_lines: usize) -> i32 {
+    /// 
+    /// The `render_scale` parameter converts points to pixels (e.g., 2.0 for 2x resolution).
+    /// This is needed because `para` values (lineHeight, spaceAbove) are in points,
+    /// while `font_size` is already in scaled pixels.
+    fn calculate_text_y(box_y: i32, box_h: i32, font_size: f32, para: &Option<Para>, font: &FontRef<'_>, line_index: usize, total_lines: usize, render_scale: f32) -> i32 {
         let v_align = para.as_ref().map(|p| p.v_align).unwrap_or(VAlign::Top);
-        let space_above = para.as_ref().and_then(|p| p.space_above).map(|s| s.to_f32().unwrap_or(0.0)).unwrap_or(0.0);
-        let line_height_override = para.as_ref().and_then(|p| p.line_height).map(|lh| lh.to_f32().unwrap_or(0.0));
+        // Scale paragraph values from points to pixels
+        let space_above = para.as_ref().and_then(|p| p.space_above).map(|s| s.to_f32().unwrap_or(0.0) * render_scale).unwrap_or(0.0);
+        let line_height_override = para.as_ref().and_then(|p| p.line_height).map(|lh| lh.to_f32().unwrap_or(0.0) * render_scale);
         
-        // Get font metrics
+        // Get font metrics (for glyph scaling, not render scaling)
         let scale = PxScale::from(font_size);
         let scaled_font = font.as_scaled(scale);
         let ascent = scaled_font.ascent();
@@ -2668,6 +3215,1025 @@ impl Flattened {
     fn load_fallback_font() -> Result<FontRef<'static>, String> {
         let manager = get_font_manager();
         let mut manager = manager.lock().map_err(|e| format!("Lock error: {}", e))?;
-        manager.get_default_font()
+        manager.get_default_font().map_err(|e| e.to_string())
+    }
+
+    // ========================================================================
+    // XFA-Compliant Rich Text Parsing
+    // ========================================================================
+
+    /// Parse HTML content from exData into a RichText structure.
+    /// This handles:
+    /// - Paragraph elements (<p>) with inline styles (text-indent, font-weight, etc.)
+    /// - Span elements with xfa-spacerun:yes for preserved spaces
+    /// - Non-breaking spaces (U+00A0, &#160;) 
+    /// - Paragraph separators (U+2029)
+    /// 
+    /// The `default_h_align` is used when CSS doesn't specify text-align (inherited from XFA para element)
+    pub fn parse_rich_text_from_html(children: &[XfaNode], default_h_align: HAlign) -> RichText {
+        let mut paragraphs = Vec::new();
+        Self::parse_html_nodes_to_rich_text(children, &mut paragraphs, false, false, false, default_h_align);
+        
+        // If no paragraphs were created but we have content, create a single paragraph
+        if paragraphs.is_empty() {
+            paragraphs.push(RichParagraph {
+                h_align: default_h_align,
+                ..RichParagraph::default()
+            });
+        }
+        
+        RichText { paragraphs }
+    }
+
+    /// Recursively parse HTML nodes into rich text paragraphs
+    fn parse_html_nodes_to_rich_text(
+        children: &[XfaNode],
+        paragraphs: &mut Vec<RichParagraph>,
+        preserve_spaces: bool,
+        bold: bool,
+        italic: bool,
+        default_h_align: HAlign,
+    ) {
+        for child in children {
+            match &child.kind {
+                XfaNodeKind::Text { content } => {
+                    // Handle text content - check for paragraph separators (U+2029)
+                    // which should create new paragraphs
+                    let segments: Vec<&str> = content.split('\u{2029}').collect();
+                    
+                    for (seg_idx, segment) in segments.iter().enumerate() {
+                        // If not the first segment, create a new paragraph for each U+2029
+                        if seg_idx > 0 {
+                            paragraphs.push(RichParagraph {
+                                h_align: default_h_align,
+                                ..RichParagraph::default()
+                            });
+                        }
+                        
+                        let text = if preserve_spaces {
+                            // xfa-spacerun: preserve all whitespace, convert NBSP to space
+                            segment.replace('\u{00A0}', " ")
+                        } else {
+                            // Normal mode: collapse whitespace but preserve structure
+                            Self::normalize_whitespace(segment)
+                        };
+                        
+                        if !text.is_empty() || preserve_spaces {
+                            // Ensure we have a paragraph
+                            if paragraphs.is_empty() {
+                                paragraphs.push(RichParagraph {
+                                    h_align: default_h_align,
+                                    ..RichParagraph::default()
+                                });
+                            }
+                            
+                            let para = paragraphs.last_mut().unwrap();
+                            para.runs.push(RichRun {
+                                text,
+                                preserve_spaces,
+                                bold,
+                            italic,
+                            underline: false,
+                        });
+                    }
+                }
+                }
+                XfaNodeKind::Element { tag_name, text_content } => {
+                    let tag_lower = tag_name.to_lowercase();
+                    
+                    match tag_lower.as_str() {
+                        "body" => {
+                            // Body element - recurse into children
+                            Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, preserve_spaces, bold, italic, default_h_align);
+                        }
+                        "p" => {
+                            // Paragraph element - create new paragraph
+                            let mut para = RichParagraph {
+                                h_align: default_h_align,  // Use XFA default if CSS doesn't override
+                                ..RichParagraph::default()
+                            };
+                            
+                            // Parse paragraph styles from style attribute
+                            let para_bold = if let Some(style) = child.attributes.get("style") {
+                                para.text_indent = Self::parse_css_dimension(style, "text-indent");
+                                // Only override h_align if CSS specifies it
+                                let css_align = Self::parse_css_alignment_optional(style);
+                                if let Some(align) = css_align {
+                                    para.h_align = align;
+                                }
+                                
+                                // Check for font-weight:bold in paragraph style
+                                style.contains("font-weight:bold") || style.contains("font-weight: bold")
+                            } else {
+                                false
+                            };
+                            
+                            // Add paragraph to list
+                            paragraphs.push(para);
+                            
+                            // First, handle direct text_content of the <p> element
+                            // Use helper that handles U+2029 paragraph separators
+                            if let Some(text) = text_content {
+                                Self::add_text_with_paragraph_splits(
+                                    text,
+                                    paragraphs,
+                                    preserve_spaces,
+                                    bold || para_bold,
+                                    italic,
+                                    default_h_align,
+                                );
+                            }
+                            
+                            // Then parse children with inherited styles
+                            Self::parse_html_nodes_to_rich_text(
+                                &child.children, 
+                                paragraphs, 
+                                preserve_spaces, 
+                                bold || para_bold, 
+                                italic,
+                                default_h_align
+                            );
+                            
+                            // Check if paragraph ended up empty (only whitespace spans)
+                            if let Some(last_para) = paragraphs.last_mut() {
+                                if last_para.runs.is_empty() || 
+                                   last_para.runs.iter().all(|r| r.text.trim().is_empty()) {
+                                    last_para.is_empty = true;
+                                }
+                            }
+                        }
+                        "span" => {
+                            // Check for xfa-spacerun:yes style
+                            let new_preserve = if let Some(style) = child.attributes.get("style") {
+                                style.contains("xfa-spacerun:yes") || style.contains("xfa-spacerun: yes")
+                            } else {
+                                preserve_spaces
+                            };
+                            
+                            // Handle text_content if present
+                            // Handle text_content with U+2029 support
+                            if let Some(text) = text_content {
+                                if new_preserve {
+                                    // For xfa-spacerun, count spaces but still handle U+2029
+                                    let segments: Vec<&str> = text.split('\u{2029}').collect();
+                                    for (seg_idx, segment) in segments.iter().enumerate() {
+                                        if seg_idx > 0 {
+                                            paragraphs.push(RichParagraph {
+                                                h_align: default_h_align,
+                                                ..RichParagraph::default()
+                                            });
+                                        }
+                                        let space_count = segment.chars()
+                                            .filter(|c| *c == ' ' || *c == '\u{00A0}')
+                                            .count();
+                                        if space_count > 0 {
+                                            if paragraphs.is_empty() {
+                                                paragraphs.push(RichParagraph {
+                                                    h_align: default_h_align,
+                                                    ..RichParagraph::default()
+                                                });
+                                            }
+                                            paragraphs.last_mut().unwrap().runs.push(RichRun {
+                                                text: " ".repeat(space_count),
+                                                preserve_spaces: true,
+                                                bold,
+                                                italic,
+                                                underline: false,
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    Self::add_text_with_paragraph_splits(
+                                        text, paragraphs, false, bold, italic, default_h_align
+                                    );
+                                }
+                            }
+                            
+                            // Recurse into span children
+                            Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, new_preserve, bold, italic, default_h_align);
+                        }
+                        "b" | "strong" => {
+                            // Bold text - handle U+2029 paragraph separators
+                            if let Some(text) = text_content {
+                                Self::add_text_with_paragraph_splits(
+                                    text, paragraphs, preserve_spaces, true, italic, default_h_align
+                                );
+                            }
+                            Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, preserve_spaces, true, italic, default_h_align);
+                        }
+                        "i" | "em" => {
+                            // Italic text - handle U+2029 paragraph separators
+                            if let Some(text) = text_content {
+                                Self::add_text_with_paragraph_splits(
+                                    text, paragraphs, preserve_spaces, bold, true, default_h_align
+                                );
+                            }
+                            Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, preserve_spaces, bold, true, default_h_align);
+                        }
+                        "br" => {
+                            // Line break - start a new paragraph
+                            paragraphs.push(RichParagraph {
+                                h_align: default_h_align,
+                                is_empty: true,
+                                ..Default::default()
+                            });
+                        }
+                        _ => {
+                            // Unknown element - handle U+2029 paragraph separators
+                            if let Some(text) = text_content {
+                                Self::add_text_with_paragraph_splits(
+                                    text, paragraphs, preserve_spaces, bold, italic, default_h_align
+                                );
+                            }
+                            Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, preserve_spaces, bold, italic, default_h_align);
+                        }
+                    }
+                }
+                _ => {
+                    // Other node types - recurse into children
+                    Self::parse_html_nodes_to_rich_text(&child.children, paragraphs, preserve_spaces, bold, italic, default_h_align);
+                }
+            }
+        }
+    }
+
+    /// Helper to add text content to paragraphs, handling U+2029 paragraph separators.
+    /// This splits text on U+2029 and creates new paragraphs as needed.
+    fn add_text_with_paragraph_splits(
+        text: &str,
+        paragraphs: &mut Vec<RichParagraph>,
+        preserve_spaces: bool,
+        bold: bool,
+        italic: bool,
+        default_h_align: HAlign,
+    ) {
+        // Split on U+2029 paragraph separator
+        let segments: Vec<&str> = text.split('\u{2029}').collect();
+        
+        for (seg_idx, segment) in segments.iter().enumerate() {
+            // If not the first segment, create a new paragraph for each U+2029
+            if seg_idx > 0 {
+                paragraphs.push(RichParagraph {
+                    h_align: default_h_align,
+                    ..RichParagraph::default()
+                });
+            }
+            
+            let processed = if preserve_spaces {
+                // xfa-spacerun: preserve all whitespace, convert NBSP to space
+                segment.replace('\u{00A0}', " ")
+            } else {
+                // Normal mode: collapse whitespace but preserve structure
+                Self::normalize_whitespace(segment)
+            };
+            
+            if !processed.is_empty() || preserve_spaces {
+                // Ensure we have a paragraph
+                if paragraphs.is_empty() {
+                    paragraphs.push(RichParagraph {
+                        h_align: default_h_align,
+                        ..RichParagraph::default()
+                    });
+                }
+                
+                paragraphs.last_mut().unwrap().runs.push(RichRun {
+                    text: processed,
+                    preserve_spaces,
+                    bold,
+                    italic,
+                    underline: false,
+                });
+            }
+        }
+    }
+
+    /// Normalize whitespace in text content per XFA/HTML rules.
+    /// Collapses consecutive whitespace to single space, handles special chars.
+    /// Note: U+2029 is NOT handled here - it should be split before calling this.
+    fn normalize_whitespace(text: &str) -> String {
+        let mut result = String::new();
+        let mut last_was_space = true; // Start true to trim leading
+        
+        for ch in text.chars() {
+            match ch {
+                // Paragraph separator - treat as paragraph break marker
+                '\u{2029}' => {
+                    if !last_was_space {
+                        result.push(' ');
+                        last_was_space = true;
+                    }
+                }
+                // Non-breaking space - convert to regular space but keep
+                '\u{00A0}' => {
+                    result.push(' ');
+                    last_was_space = true;
+                }
+                // Regular whitespace
+                ' ' | '\t' | '\n' | '\r' => {
+                    if !last_was_space {
+                        result.push(' ');
+                        last_was_space = true;
+                    }
+                }
+                // Regular character
+                _ => {
+                    result.push(ch);
+                    last_was_space = false;
+                }
+            }
+        }
+        
+        // Trim trailing space
+        if result.ends_with(' ') {
+            result.pop();
+        }
+        
+        result
+    }
+
+    /// Parse a CSS dimension value from a style string.
+    /// Looks for "property: Xpt" or "property: Xin" etc.
+    fn parse_css_dimension(style: &str, property: &str) -> Option<f32> {
+        let search = format!("{}:", property);
+        if let Some(pos) = style.find(&search) {
+            let rest = &style[pos + search.len()..];
+            let value_str = rest.split(';').next()?.trim();
+            
+            // Parse the dimension with unit
+            if value_str.ends_with("pt") {
+                value_str[..value_str.len()-2].trim().parse().ok()
+            } else if value_str.ends_with("in") {
+                value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 72.0)
+            } else if value_str.ends_with("mm") {
+                value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 2.834645669)
+            } else if value_str.ends_with("px") {
+                // Approximate px to pt (1px ≈ 0.75pt at 96dpi)
+                value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 0.75)
+            } else {
+                // Try parsing as bare number (assume pt)
+                value_str.parse().ok()
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Parse CSS text-align property from style string
+    fn parse_css_alignment(style: &str) -> HAlign {
+        if style.contains("text-align:justify") || style.contains("text-align: justify") {
+            HAlign::Justify
+        } else if style.contains("text-align:center") || style.contains("text-align: center") {
+            HAlign::Center
+        } else if style.contains("text-align:right") || style.contains("text-align: right") {
+            HAlign::Right
+        } else {
+            HAlign::Left
+        }
+    }
+
+    /// Parse CSS text-align property from style string, returning None if not specified
+    fn parse_css_alignment_optional(style: &str) -> Option<HAlign> {
+        if style.contains("text-align:justify") || style.contains("text-align: justify") {
+            Some(HAlign::Justify)
+        } else if style.contains("text-align:center") || style.contains("text-align: center") {
+            Some(HAlign::Center)
+        } else if style.contains("text-align:right") || style.contains("text-align: right") {
+            Some(HAlign::Right)
+        } else if style.contains("text-align:left") || style.contains("text-align: left") {
+            Some(HAlign::Left)
+        } else {
+            None  // CSS doesn't specify - use default
+        }
+    }
+
+    // ========================================================================
+    // XFA-Compliant Text Layout and Wrapping
+    // ========================================================================
+
+    /// Layout rich text into rendered lines with proper word wrapping.
+    /// This handles:
+    /// - Per-paragraph text-indent (first line only)
+    /// - Preserved spaces (xfa-spacerun)
+    /// - Proper word breaking (don't break on NBSP)
+    /// - Justify preparation (marking first/last lines)
+    /// Per XFA spec: letterSpacing affects interword and interletter spacings
+    pub fn layout_rich_text(
+        rich_text: &RichText,
+        max_width: f32,
+        font_size: f32,
+        font: &FontRef<'_>,
+        scale: f32,
+        letter_spacing: f32,
+    ) -> Vec<RenderedLine> {
+        let mut lines = Vec::new();
+        let px_scale = PxScale::from(font_size);
+        let scaled_font = font.as_scaled(px_scale);
+        
+        // Get space width (also affected by letter spacing per XFA spec)
+        let space_glyph = font.glyph_id(' ');
+        let base_space_width = if space_glyph.0 != 0 {
+            scaled_font.h_advance(space_glyph)
+        } else {
+            font_size * 0.3
+        };
+        let space_width = base_space_width + letter_spacing;
+        
+        for para in &rich_text.paragraphs {
+            // Handle empty paragraphs as blank lines
+            if para.is_empty {
+                lines.push(RenderedLine {
+                    words: vec![],
+                    y: 0.0, // Will be calculated later
+                    is_first_line: true,
+                    is_last_line: true,
+                    text_indent: 0.0,
+                    h_align: para.h_align,
+                    content_width: 0.0,
+                });
+                continue;
+            }
+            
+            // Calculate effective indent (in pixels after scaling)
+            let para_indent = para.text_indent.unwrap_or(0.0) * scale;
+            
+            // Collect all text from runs into tokens for wrapping
+            let tokens = Self::tokenize_paragraph_runs(&para.runs, font_size, font, letter_spacing);
+            
+            if tokens.is_empty() {
+                // Empty paragraph - add blank line
+                lines.push(RenderedLine {
+                    words: vec![],
+                    y: 0.0,
+                    is_first_line: true,
+                    is_last_line: true,
+                    text_indent: para_indent,
+                    h_align: para.h_align,
+                    content_width: 0.0,
+                });
+                continue;
+            }
+            
+            // Word-wrap the tokens
+            let para_lines = Self::wrap_tokens_to_lines(&tokens, max_width, para_indent, space_width);
+            let num_para_lines = para_lines.len();
+            
+            for (i, line_tokens) in para_lines.into_iter().enumerate() {
+                let is_first = i == 0;
+                let is_last = i == num_para_lines - 1;
+                
+                // Calculate content width
+                let mut content_width: f32 = 0.0;
+                for (j, token) in line_tokens.iter().enumerate() {
+                    content_width += token.width;
+                    if j < line_tokens.len() - 1 {
+                        content_width += space_width;
+                    }
+                }
+                
+                // Convert tokens to rendered words (positioning happens during render)
+                let words: Vec<RenderedWord> = line_tokens.into_iter().map(|t| RenderedWord {
+                    text: t.text,
+                    x: 0.0, // Will be calculated during render
+                    preserve_spaces: t.preserve_spaces,
+                    bold: t.bold,
+                    italic: t.italic,
+                }).collect();
+                
+                lines.push(RenderedLine {
+                    words,
+                    y: 0.0, // Will be calculated later
+                    is_first_line: is_first,
+                    is_last_line: is_last,
+                    text_indent: if is_first { para_indent } else { 0.0 },
+                    h_align: para.h_align,
+                    content_width,
+                });
+            }
+        }
+        
+        lines
+    }
+
+    /// Tokenize paragraph runs into layout tokens
+    /// Per XFA spec: letterSpacing affects interword and interletter spacings
+    fn tokenize_paragraph_runs(
+        runs: &[RichRun],
+        font_size: f32,
+        font: &FontRef<'_>,
+        letter_spacing: f32,
+    ) -> Vec<LayoutToken> {
+        let px_scale = PxScale::from(font_size);
+        let _scaled_font = font.as_scaled(px_scale);
+        
+        let mut tokens = Vec::new();
+        
+        for run in runs {
+            if run.preserve_spaces {
+                // Preserved space run - keep as single token
+                let width = Self::measure_text_width(&run.text, font_size, font, letter_spacing);
+                if !run.text.is_empty() {
+                    tokens.push(LayoutToken {
+                        text: run.text.clone(),
+                        width,
+                        preserve_spaces: true,
+                        bold: run.bold,
+                        italic: run.italic,
+                    });
+                }
+            } else {
+                // Normal text - split into words
+                let mut current_word = String::new();
+                
+                for ch in run.text.chars() {
+                    if ch == ' ' {
+                        if !current_word.is_empty() {
+                            let width = Self::measure_text_width(&current_word, font_size, font, letter_spacing);
+                            tokens.push(LayoutToken {
+                                text: current_word.clone(),
+                                width,
+                                preserve_spaces: false,
+                                bold: run.bold,
+                                italic: run.italic,
+                            });
+                            current_word.clear();
+                        }
+                    } else {
+                        current_word.push(ch);
+                    }
+                }
+                
+                // Don't forget the last word
+                if !current_word.is_empty() {
+                    let width = Self::measure_text_width(&current_word, font_size, font, letter_spacing);
+                    tokens.push(LayoutToken {
+                        text: current_word,
+                        width,
+                        preserve_spaces: false,
+                        bold: run.bold,
+                        italic: run.italic,
+                    });
+                }
+            }
+        }
+        
+        tokens
+    }
+
+    /// Wrap tokens into lines respecting max width and indentation
+    fn wrap_tokens_to_lines(
+        tokens: &[LayoutToken],
+        max_width: f32,
+        first_line_indent: f32,
+        space_width: f32,
+    ) -> Vec<Vec<LayoutToken>> {
+        if tokens.is_empty() {
+            return vec![vec![]];
+        }
+        
+        let mut lines: Vec<Vec<LayoutToken>> = Vec::new();
+        let mut current_line: Vec<LayoutToken> = Vec::new();
+        let mut current_width: f32 = 0.0;
+        let mut is_first_line = true;
+        
+        for token in tokens {
+            let effective_max = if is_first_line {
+                max_width - first_line_indent
+            } else {
+                max_width
+            };
+            
+            let token_space = if current_line.is_empty() { 0.0 } else { space_width };
+            
+            if current_width + token_space + token.width <= effective_max || current_line.is_empty() {
+                // Token fits on current line
+                if !current_line.is_empty() {
+                    current_width += space_width;
+                }
+                current_width += token.width;
+                current_line.push(token.clone());
+            } else {
+                // Token doesn't fit - start new line
+                lines.push(current_line);
+                current_line = vec![token.clone()];
+                current_width = token.width;
+                is_first_line = false;
+            }
+        }
+        
+        // Don't forget the last line
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+        
+        if lines.is_empty() {
+            lines.push(vec![]);
+        }
+        
+        lines
+    }
+
+    /// Measure text width using font metrics
+    /// Per XFA spec: letterSpacing "specifies an adjustment to the spacing that would
+    /// otherwise be used between successive grapheme clusters"
+    fn measure_text_width(text: &str, font_size: f32, font: &FontRef<'_>, letter_spacing: f32) -> f32 {
+        let px_scale = PxScale::from(font_size);
+        let scaled_font = font.as_scaled(px_scale);
+        
+        let mut width: f32 = 0.0;
+        let char_count = text.chars().count();
+        for (i, ch) in text.chars().enumerate() {
+            let glyph_id = font.glyph_id(ch);
+            if glyph_id.0 != 0 {
+                width += scaled_font.h_advance(glyph_id);
+            } else {
+                // Fallback for missing glyphs
+                width += font_size * 0.6;
+            }
+            // Add letter spacing between characters (not after the last one)
+            if i < char_count - 1 {
+                width += letter_spacing;
+            }
+        }
+        width
+    }
+
+    // ========================================================================
+    // XFA-Compliant Glyph-by-Glyph Text Rendering
+    // ========================================================================
+
+    /// Render text with proper glyph-by-glyph positioning.
+    /// This handles:
+    /// - Justify alignment (distributes extra space between words)
+    /// - Text-indent on first line of paragraphs
+    /// - Preserved spaces (xfa-spacerun)
+    /// - Bold/italic variants for styled text
+    /// Per XFA spec: letterSpacing affects spacing between grapheme clusters
+    pub fn render_text_glyph_by_glyph(
+        img: &mut RgbaImage,
+        lines: &[RenderedLine],
+        box_x: i32,
+        box_y: i32,
+        box_w: i32,
+        box_h: i32,
+        font_size: f32,
+        base_font: &FontRef<'_>,
+        bold_font: Option<&FontRef<'_>>,
+        italic_font: Option<&FontRef<'_>>,
+        bold_italic_font: Option<&FontRef<'_>>,
+        color: Rgba<u8>,
+        para: &Option<Para>,
+        scale: f32,
+        letter_spacing: f32,
+    ) {
+        let px_scale = PxScale::from(font_size);
+        let scaled_font = base_font.as_scaled(px_scale);
+        
+        // Get space width and font metrics (space width affected by letter spacing)
+        let space_glyph = base_font.glyph_id(' ');
+        let base_space_width = if space_glyph.0 != 0 {
+            scaled_font.h_advance(space_glyph)
+        } else {
+            font_size * 0.3
+        };
+        let space_width = base_space_width + letter_spacing;
+        
+        // Get vertical alignment and spacing from para
+        let v_align = para.as_ref().map(|p| p.v_align).unwrap_or(VAlign::Top);
+        let space_above = para.as_ref()
+            .and_then(|p| p.space_above)
+            .map(|s| s.to_f32().unwrap_or(0.0) * scale)
+            .unwrap_or(0.0);
+        let line_height_override = para.as_ref()
+            .and_then(|p| p.line_height)
+            .map(|lh| lh.to_f32().unwrap_or(0.0) * scale);
+        
+        // Font metrics
+        let ascent = scaled_font.ascent();
+        let descent = scaled_font.descent().abs();
+        let line_gap = font_size * 0.2;
+        let text_height = ascent + descent;
+        let line_spacing = line_height_override.unwrap_or(text_height + line_gap);
+        
+        // Calculate total text block height
+        let total_lines = lines.len();
+        let total_height = if total_lines == 0 {
+            0.0
+        } else if total_lines == 1 {
+            text_height
+        } else {
+            (total_lines - 1) as f32 * line_spacing + text_height
+        };
+        
+        // Calculate starting Y based on vertical alignment
+        let start_y = match v_align {
+            VAlign::Top => box_y as f32 + space_above,
+            VAlign::Middle => box_y as f32 + (box_h as f32 - total_height) / 2.0,
+            VAlign::Bottom => box_y as f32 + box_h as f32 - total_height,
+        };
+        
+        // Get paragraph margins
+        let margin_left = para.as_ref()
+            .and_then(|p| p.margin_left)
+            .map(|m| m.to_f32().unwrap_or(0.0) * scale)
+            .unwrap_or(0.0);
+        let margin_right = para.as_ref()
+            .and_then(|p| p.margin_right)
+            .map(|m| m.to_f32().unwrap_or(0.0) * scale)
+            .unwrap_or(0.0);
+        
+        let effective_width = box_w as f32 - margin_left - margin_right;
+        
+        // Render each line
+        for (line_idx, line) in lines.iter().enumerate() {
+            let line_y = start_y + (line_idx as f32 * line_spacing);
+            
+            if line_y < 0.0 || line_y > img.height() as f32 {
+                continue;
+            }
+            
+            if line.words.is_empty() {
+                continue;
+            }
+            
+            // Calculate available width (considering text-indent for first line)
+            let available_width = effective_width - line.text_indent;
+            
+            // Determine alignment and spacing
+            let (start_x, extra_space) = match line.h_align {
+                HAlign::Left => {
+                    (box_x as f32 + margin_left + line.text_indent, 0.0)
+                }
+                HAlign::Center => {
+                    let offset = (available_width - line.content_width) / 2.0;
+                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                }
+                HAlign::Right => {
+                    let offset = available_width - line.content_width;
+                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                }
+                HAlign::Justify | HAlign::JustifyAll => {
+                    // Only justify if not the last line (unless JustifyAll)
+                    if line.is_last_line && line.h_align != HAlign::JustifyAll {
+                        // Last line of paragraph - left align
+                        (box_x as f32 + margin_left + line.text_indent, 0.0)
+                    } else if line.words.len() > 1 {
+                        // Distribute extra space between words
+                        let extra = available_width - line.content_width;
+                        let gaps = (line.words.len() - 1) as f32;
+                        (box_x as f32 + margin_left + line.text_indent, extra / gaps)
+                    } else {
+                        (box_x as f32 + margin_left + line.text_indent, 0.0)
+                    }
+                }
+                HAlign::Radix => {
+                    // Simplified: treat as center
+                    let offset = (available_width - line.content_width) / 2.0;
+                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                }
+            };
+            
+            // Render words with proper spacing
+            let mut x = start_x;
+            for (word_idx, word) in line.words.iter().enumerate() {
+                // Select the appropriate font variant based on word style
+                let word_font: &FontRef<'_> = if word.bold && word.italic {
+                    bold_italic_font.unwrap_or(bold_font.unwrap_or(base_font))
+                } else if word.bold {
+                    bold_font.unwrap_or(base_font)
+                } else if word.italic {
+                    italic_font.unwrap_or(base_font)
+                } else {
+                    base_font
+                };
+                
+                // Render each glyph with letter spacing
+                Self::render_glyphs(
+                    img,
+                    &word.text,
+                    x as i32,
+                    line_y as i32,
+                    font_size,
+                    word_font,
+                    color,
+                    letter_spacing,
+                );
+                
+                // Advance position (word width already includes letter spacing)
+                let word_width = Self::measure_text_width(&word.text, font_size, word_font, letter_spacing);
+                x += word_width;
+                
+                // Add space between words (space_width already includes letter_spacing)
+                if word_idx < line.words.len() - 1 {
+                    x += space_width + extra_space;
+                }
+            }
+        }
+    }
+
+    /// Render individual glyphs for a text string with letter spacing
+    /// Per XFA spec: letterSpacing affects spacing between grapheme clusters
+    fn render_glyphs(
+        img: &mut RgbaImage,
+        text: &str,
+        x: i32,
+        y: i32,
+        font_size: f32,
+        font: &FontRef<'_>,
+        color: Rgba<u8>,
+        letter_spacing: f32,
+    ) {
+        let px_scale = PxScale::from(font_size);
+        
+        // If no letter spacing, use the fast path
+        if letter_spacing.abs() < 0.001 {
+            draw_text_mut(img, color, x, y, px_scale, font, text);
+            return;
+        }
+        
+        // Render each character with letter spacing
+        let scaled_font = font.as_scaled(px_scale);
+        let mut current_x = x as f32;
+        let char_count = text.chars().count();
+        
+        for (i, ch) in text.chars().enumerate() {
+            let ch_str = ch.to_string();
+            draw_text_mut(img, color, current_x as i32, y, px_scale, font, &ch_str);
+            
+            // Advance position by glyph width + letter spacing
+            let glyph_id = font.glyph_id(ch);
+            let advance = if glyph_id.0 != 0 {
+                scaled_font.h_advance(glyph_id)
+            } else {
+                font_size * 0.6
+            };
+            current_x += advance;
+            
+            // Add letter spacing between characters (not after the last one)
+            if i < char_count - 1 {
+                current_x += letter_spacing;
+            }
+        }
+    }
+
+    // ========================================================================
+    // Helper: Extract rich text from exData for draw elements
+    // ========================================================================
+
+    /// Extract rich text from exData HTML content.
+    /// Returns RichText structure if HTML content is found, None otherwise.
+    pub fn extract_rich_text_from_exdata(children: &[XfaNode], default_h_align: HAlign) -> Option<RichText> {
+        for child in children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "body" {
+                    return Some(Self::parse_rich_text_from_html(&[child.clone()], default_h_align));
+                }
+            }
+            // Recurse into children
+            if let Some(rich_text) = Self::extract_rich_text_from_exdata(&child.children, default_h_align) {
+                return Some(rich_text);
+            }
+        }
+        None
+    }
+
+    /// Check if the value node contains rich text (exData with HTML)
+    pub fn has_rich_text_content(children: &[XfaNode]) -> bool {
+        for child in children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for value_child in &child.children {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
+                        if tag_name == "exData" {
+                            // Check if it has HTML body content
+                            for ex_child in &value_child.children {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
+                                    if inner_tag == "body" {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Get rich text from a node's value if present
+    pub fn get_rich_text_from_value(children: &[XfaNode], default_h_align: HAlign) -> Option<RichText> {
+        for child in children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for value_child in &child.children {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
+                        if tag_name == "exData" {
+                            return Self::extract_rich_text_from_exdata(&value_child.children, default_h_align);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xfa::{Para, VAlign, num};
+    use crate::font_manager::get_font_manager;
+    
+    /// Test that line height from para element is properly scaled.
+    /// This tests the fix for the "Vereinbarung" title line spacing issue.
+    /// 
+    /// Per XFA spec: lineHeight attribute on para element specifies the line spacing
+    /// in points. When rendering, this must be scaled to pixels using the render scale.
+    #[test]
+    fn test_line_height_scaling() {
+        // Get a font for testing
+        let font_manager = get_font_manager();
+        let mut mgr = font_manager.lock().unwrap();
+        let default_font = crate::xfa::Font::default();
+        let font = mgr.get_font(&default_font).unwrap();
+        
+        // Create para with lineHeight of 22.5pt (like the T_FormTitle element)
+        let para = Some(Para {
+            h_align: crate::xfa::HAlign::Left,
+            v_align: VAlign::Top,
+            line_height: Some(num(22.5)),  // 22.5pt line height
+            space_above: Some(num(5.0)),   // 5pt space above
+            space_below: None,
+            text_indent: None,
+            margin_left: None,
+            margin_right: None,
+        });
+        
+        // Test with scale=1.0 (1x resolution)
+        let font_size_scaled = 18.0; // 18pt font, already scaled
+        let render_scale = 1.0;
+        
+        // Calculate Y positions for two lines
+        let y_line_0 = Flattened::calculate_text_y(0, 100, font_size_scaled, &para, &font, 0, 2, render_scale);
+        let y_line_1 = Flattened::calculate_text_y(0, 100, font_size_scaled, &para, &font, 1, 2, render_scale);
+        
+        // Line spacing should be approximately lineHeight (22.5pt) at scale 1.0
+        let line_spacing = (y_line_1 - y_line_0) as f32;
+        assert!((line_spacing - 22.5).abs() < 1.0, 
+            "Line spacing at scale 1.0 should be ~22.5, got {}", line_spacing);
+        
+        // Test with scale=2.0 (2x resolution, like Retina)
+        let font_size_scaled_2x = 36.0; // 18pt * 2 = 36px
+        let render_scale_2x = 2.0;
+        
+        let y_line_0_2x = Flattened::calculate_text_y(0, 200, font_size_scaled_2x, &para, &font, 0, 2, render_scale_2x);
+        let y_line_1_2x = Flattened::calculate_text_y(0, 200, font_size_scaled_2x, &para, &font, 1, 2, render_scale_2x);
+        
+        // Line spacing should be approximately lineHeight * scale (22.5 * 2 = 45px) at scale 2.0
+        let line_spacing_2x = (y_line_1_2x - y_line_0_2x) as f32;
+        assert!((line_spacing_2x - 45.0).abs() < 2.0, 
+            "Line spacing at scale 2.0 should be ~45, got {}", line_spacing_2x);
+    }
+    
+    /// Test that space_above from para element is properly scaled.
+    #[test]
+    fn test_space_above_scaling() {
+        let font_manager = get_font_manager();
+        let mut mgr = font_manager.lock().unwrap();
+        let default_font = crate::xfa::Font::default();
+        let font = mgr.get_font(&default_font).unwrap();
+        
+        // Create para with spaceAbove of 10pt
+        let para_with_space = Some(Para {
+            h_align: crate::xfa::HAlign::Left,
+            v_align: VAlign::Top,
+            line_height: None,
+            space_above: Some(num(10.0)),  // 10pt space above
+            space_below: None,
+            text_indent: None,
+            margin_left: None,
+            margin_right: None,
+        });
+        
+        let para_without_space = Some(Para {
+            h_align: crate::xfa::HAlign::Left,
+            v_align: VAlign::Top,
+            line_height: None,
+            space_above: None,
+            space_below: None,
+            text_indent: None,
+            margin_left: None,
+            margin_right: None,
+        });
+        
+        let font_size = 12.0;
+        let render_scale = 2.0;
+        
+        // Y with space_above at 2x scale
+        let y_with_space = Flattened::calculate_text_y(0, 100, font_size * render_scale, &para_with_space, &font, 0, 1, render_scale);
+        let y_without_space = Flattened::calculate_text_y(0, 100, font_size * render_scale, &para_without_space, &font, 0, 1, render_scale);
+        
+        // Difference should be space_above * scale = 10 * 2 = 20 pixels
+        let space_diff = (y_with_space - y_without_space) as f32;
+        assert!((space_diff - 20.0).abs() < 1.0,
+            "Space above at scale 2.0 should add ~20px, got {}", space_diff);
     }
 }

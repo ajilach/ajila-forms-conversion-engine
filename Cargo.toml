@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 ab_glyph = "0.2.32"
+thiserror = "1.0"
 boa_engine = "0.20"
 boa_gc = "0.20"
 image = "0.25.9"
