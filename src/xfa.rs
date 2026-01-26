@@ -562,11 +562,6 @@ impl XfaNode {
         
         let weight_attr = node.attributes.get("weight");
         
-        // DEBUG: Print font parsing for Frutiger
-        if typeface.to_lowercase().contains("frutiger") {
-            eprintln!("PARSE_FONT: typeface='{}', weight_attr={:?}", typeface, weight_attr);
-        }
-        
         // Determine generic family: from attribute, or infer from typeface
         let generic_family = node.attributes.get("genericFamily")
             .and_then(|s| s.parse().ok())

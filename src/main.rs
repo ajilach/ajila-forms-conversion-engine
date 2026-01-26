@@ -1619,9 +1619,12 @@ mod tests {
         // if any visible field got a value from the scripts
         
         // For now, verify that flattening with scripts doesn't crash
-        // and produces a reasonable number of nodes
+        // and produces a reasonable number of nodes.
+        // NOTE: With proper presence inheritance, many nodes are now correctly hidden
+        // (e.g., the Löschung subform and its children are hidden when the radio button
+        // is not set to a specific value). So we expect fewer visible nodes.
         println!("Total flattened nodes: {}", flattened.nodes.len());
-        assert!(flattened.nodes.len() > 100, "Should have many flattened nodes");
+        assert!(flattened.nodes.len() > 50, "Should have many flattened nodes");
         
         // Verify visible field ffBankingRelation exists (it's visible)
         let has_banking = flattened.nodes.iter().any(|n| {
@@ -1825,5 +1828,733 @@ mod tests {
             let field_name = doc.get_field_name(lf_idx).unwrap_or_default();
             println!("  {}: '{}' -> {}", i + 1, label_text, field_name);
         }
+    }
+
+    #[test]
+    fn test_aaai_signature_labels_present() {
+        // Test that signature labels are present in the AAAI document
+        // These labels come from hidden fields via xfa:embed
+        // The parent subform has a script: this.ffDesSignature.rawValue = mySignatureClient
+        // which sets the hidden field value to "Unterschrift des Kunden"
+        use crate::flattened::{Flattened, FlattenedNodeKind};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Expected signature labels (set by scripts)
+        let expected_labels = [
+            "Unterschrift des Kunden",
+            "Name des Kunden",
+            "Unterschrift UBS Europe SE",
+            "Name der verantwortlichen Person",
+        ];
+        
+        // Search for these labels in the flattened output
+        let mut found_labels = Vec::new();
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                for label in &expected_labels {
+                    if content.contains(label) {
+                        found_labels.push(label.to_string());
+                    }
+                }
+            }
+        }
+        
+        println!("Expected labels: {:?}", expected_labels);
+        println!("Found labels: {:?}", found_labels);
+        
+        // All expected labels should be found
+        for label in &expected_labels {
+            assert!(
+                found_labels.iter().any(|f| f.contains(label)),
+                "Label '{}' should be present in the flattened output. \
+                 These labels come from hidden fields that get their values \
+                 set by parent subform scripts via xfa:embed.",
+                label
+            );
+        }
+        
+        println!("✓ All signature labels found!");
+    }
+    
+    #[test]
+    fn test_aaai_unterschrift_en_section_header() {
+        // Test that the "Unterschrift(en)" section header is present in the AAAI document
+        // This header comes from:
+        // 1. FF_Signature_s field (hidden, id=floatingField018467)
+        // 2. Has event ref="$layout" activity="ready" (layout:ready event)
+        // 3. Script: this.rawValue = myDE.GV_Signature_s  (which is "Unterschrift(en)")
+        // 4. T_Signature draw embeds this via xfa:embed="#floatingField018467"
+        use crate::flattened::{Flattened, FlattenedNodeKind};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Search for "Unterschrift(en)" in text nodes
+        let mut found = false;
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                if content.contains("Unterschrift(en)") {
+                    found = true;
+                    println!("✓ Found 'Unterschrift(en)' in text: '{}'", content);
+                    break;
+                }
+            }
+        }
+        
+        if !found {
+            // Debug: print all text nodes that contain "Unterschrift"
+            println!("\n=== Text nodes containing 'Unterschrift' ===");
+            for node in &flattened.nodes {
+                if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                    if content.to_lowercase().contains("unterschrift") {
+                        println!("  '{}'", content);
+                    }
+                }
+            }
+        }
+        
+        assert!(
+            found,
+            "'Unterschrift(en)' section header should be visible. \
+             This comes from FF_Signature_s field via xfa:embed, \
+             which is set by a layout:ready script to myDE.GV_Signature_s"
+        );
+    }
+
+    #[test]
+    fn test_aaai_ffdesignature_script_execution() {
+        // Test that the ffDesSignature and ffDesFullName scripts execute correctly
+        // when the parent subform sets their values
+        use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef};
+        use std::collections::HashMap;
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Helper function to find events recursively
+        fn find_all_events(nodes: &[xfa::XfaNode], events: &mut Vec<(String, crate::scripting::XfaScript)>) {
+            for node in nodes {
+                let name = node.name.clone().unwrap_or_default();
+                
+                // Look for event children
+                let node_events = parse_events_from_node(&node.children);
+                for event in node_events {
+                    events.push((name.clone(), event));
+                }
+                
+                // Recurse into children
+                find_all_events(&node.children, events);
+            }
+        }
+        
+        let mut all_events = Vec::new();
+        find_all_events(&nodes, &mut all_events);
+        
+        // Find the Signature subform's form-ready script
+        // This script sets: this.ffDesSignature.rawValue = mySignatureClient
+        let signature_script = all_events.iter()
+            .find(|(name, script)| {
+                name == "Signature" &&
+                script.content_type == ScriptContentType::JavaScript &&
+                script.activity == EventActivity::Ready &&
+                script.event_ref == EventRef::Form &&
+                script.source.contains("ffDesSignature")
+            });
+        
+        if let Some((name, script)) = signature_script {
+            println!("Found Signature script:\n{}", script.source);
+            
+            // Set up the script engine with AAAI context
+            let mut engine = XfaScriptEngine::new();
+            
+            // Register the language control field (German)
+            engine.register_field("Footer_Line_txtlanguage", "Footer_Line_txtlanguage", "DE");
+            
+            // Register German translations (myDE)
+            let mut de_translations = HashMap::new();
+            de_translations.insert("GV_SignatureClient".to_string(), "Unterschrift des Kunden".to_string());
+            de_translations.insert("GV_NameClient".to_string(), "Name des Kunden".to_string());
+            de_translations.insert("GV_SignatureUBS".to_string(), "Unterschrift UBS Europe SE".to_string());
+            de_translations.insert("GV_NameRespPerson".to_string(), "Name der verantwortlichen Person".to_string());
+            engine.register_translation_object("myDE", de_translations);
+            
+            // Create global variables that the script expects
+            // These are normally set by soLocalLabelDefinition.setupVariables()
+            // Using assignment without var makes them global in JS
+            let init_script = r#"
+                mySignatureClient = myDE.GV_SignatureClient;
+                mySignatureNameClient = myDE.GV_NameClient;
+            "#;
+            let _ = engine.execute_variable_script(init_script);
+            
+            // Debug: Check if globals are set
+            let debug_globals = engine.evaluate_expression(
+                "typeof mySignatureClient + ': ' + mySignatureClient + ' | ' + typeof myDE"
+            );
+            println!("Debug globals: {:?}", debug_globals);
+            
+            // Set up the field context for Signature subform WITH CHILD FIELDS
+            // This enables the script to access this.ffDesSignature and this.ffDesFullName
+            // Now uses (name, id) tuples to track unique field IDs
+            let child_fields: Vec<(String, String)> = vec![
+                ("ffDesSignature".to_string(), "test-sig-id".to_string()),
+                ("ffDesFullName".to_string(), "test-name-id".to_string()),
+            ];
+            engine.set_current_field_with_children("Signature", name, "", &child_fields);
+            
+            // Debug: Check if child fields are set up
+            let debug_children = engine.evaluate_expression(
+                "typeof this.ffDesSignature + ' | rawValue: ' + (this.ffDesSignature ? this.ffDesSignature.rawValue : 'no obj')"
+            );
+            println!("Debug children: {:?}", debug_children);
+            
+            // Execute the script
+            let result = engine.execute_script(&script);
+            
+            // The script sets this.ffDesSignature.rawValue
+            // We need to check that the child field was set
+            println!("Script execution result: {:?}", result);
+            
+            // The value should be available on this.ffDesSignature
+            let ff_value = engine.evaluate_expression("this.ffDesSignature ? this.ffDesSignature.rawValue : 'not found'");
+            println!("this.ffDesSignature.rawValue = {:?}", ff_value);
+            
+            // Also check the child field value via the engine's helper method
+            // Now returns (child_id, value) tuple
+            let child_value = engine.get_child_field_value("ffDesSignature");
+            println!("get_child_field_value('ffDesSignature') = {:?}", child_value);
+            
+            // Check if the value is set
+            if let Some((child_id, value)) = child_value {
+                assert_eq!(
+                    value, "Unterschrift des Kunden",
+                    "ffDesSignature.rawValue should be 'Unterschrift des Kunden'"
+                );
+                println!("✓ ffDesSignature correctly set to '{}' (id={})", value, child_id);
+            } else {
+                panic!("ffDesSignature value should be set");
+            }
+        } else {
+            println!("Signature form-ready script not found");
+            println!("Available scripts for 'Signature':");
+            for (name, script) in &all_events {
+                if name == "Signature" {
+                    println!("  - activity={:?}, ref={:?}, source={}", 
+                        script.activity, script.event_ref, 
+                        &script.source[..script.source.len().min(100)]);
+                }
+            }
+            panic!("Signature form-ready script should exist");
+        }
+    }
+    
+    /// Test that RB_1 (the first radio button in the exclusion group) gets a default value set.
+    /// 
+    /// Per XFA 3.3 spec section 2 "Exclusion Group":
+    /// - An exclusion group may have a default value
+    /// - The default value is provided by one of the fields in the group via its <value> element
+    /// - When a field's <value> matches its <items>, that field is pre-selected
+    /// 
+    /// In AAAB, RB_Group_Neuanlage contains RB_1, RB_2, RB_3, and RB_1 should be the default.
+    /// The script `if(!this.rawValue) { Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_1.rawValue = 1; ... }`
+    /// should NOT run if RB_1 already has its default value set.
+    #[test]
+    fn test_aaab_rb1_default_value() {
+        use crate::xfa::XfaNodeKind;
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Helper to find a node by name recursively
+        fn find_node_by_name<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
+            for node in nodes {
+                if node.name.as_deref() == Some(name) {
+                    return Some(node);
+                }
+                if let Some(found) = find_node_by_name(&node.children, name) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        
+        // Helper to extract field value (looks for <value><text>...</text></value>)
+        fn extract_field_value(children: &[XfaNode]) -> Option<String> {
+            for child in children {
+                if matches!(child.kind, XfaNodeKind::Value) {
+                    for value_child in &child.children {
+                        if let XfaNodeKind::Element { tag_name, text_content } = &value_child.kind {
+                            if tag_name == "text" || tag_name == "integer" {
+                                return text_content.clone();
+                            }
+                        }
+                    }
+                }
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                    if tag_name == "value" {
+                        for value_child in &child.children {
+                            if let XfaNodeKind::Element { tag_name: inner_tag, text_content } = &value_child.kind {
+                                if inner_tag == "text" || inner_tag == "integer" {
+                                    return text_content.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+        
+        // Helper to extract items value (looks for <items><integer>...</integer></items>)
+        fn extract_items_value(children: &[XfaNode]) -> Option<String> {
+            for child in children {
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                    if tag_name == "items" {
+                        for items_child in &child.children {
+                            if let XfaNodeKind::Element { tag_name: inner_tag, text_content } = &items_child.kind {
+                                if inner_tag == "text" || inner_tag == "integer" {
+                                    return text_content.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+        
+        // Find RB_Group_Neuanlage (the exclusion group)
+        let excl_group = find_node_by_name(&nodes, "RB_Group_Neuanlage");
+        assert!(excl_group.is_some(), "Should find RB_Group_Neuanlage exclusion group");
+        let excl_group = excl_group.unwrap();
+        
+        println!("\n=== Examining RB_Group_Neuanlage exclusion group ===");
+        
+        // Find and examine RB_1, RB_2, RB_3
+        let rb1 = find_node_by_name(&excl_group.children, "RB_1");
+        let rb2 = find_node_by_name(&excl_group.children, "RB_2");
+        let rb3 = find_node_by_name(&excl_group.children, "RB_3");
+        
+        assert!(rb1.is_some(), "Should find RB_1 field");
+        assert!(rb2.is_some(), "Should find RB_2 field");
+        assert!(rb3.is_some(), "Should find RB_3 field");
+        
+        let rb1 = rb1.unwrap();
+        let rb2 = rb2.unwrap();
+        let rb3 = rb3.unwrap();
+        
+        // Extract items and values for each
+        let rb1_items = extract_items_value(&rb1.children);
+        let rb1_value = extract_field_value(&rb1.children);
+        let rb2_items = extract_items_value(&rb2.children);
+        let rb2_value = extract_field_value(&rb2.children);
+        let rb3_items = extract_items_value(&rb3.children);
+        let rb3_value = extract_field_value(&rb3.children);
+        
+        println!("RB_1: items={:?}, value={:?}", rb1_items, rb1_value);
+        println!("RB_2: items={:?}, value={:?}", rb2_items, rb2_value);
+        println!("RB_3: items={:?}, value={:?}", rb3_items, rb3_value);
+        
+        // Per XFA spec: a field is the default if it has a <value> element
+        // whose content matches its <items> element
+        // 
+        // Based on the debug output showing the script:
+        // if(!this.rawValue) { Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_1.rawValue = 1; ... }
+        // This suggests RB_1 should be selected (value=1) if no default is already set
+        
+        // The bug: Currently extract_field_value doesn't handle exclGroup default values properly.
+        // When RB_1 has <value><text>1</text></value> and <items><integer>1</integer></items>,
+        // it should be detected as the default, and the exclGroup's rawValue should be "1".
+        
+        // Now test with the flattening that uses scripts
+        let doc_name = "AAAB_019_DE";
+        let locale = "DE";
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, locale, doc_name)
+            .expect("Failed to flatten XFA");
+        
+        // Look for RB_1 in flattened output and verify it has the correct value
+        // The field should have rawValue=1 if it's the default selection
+        println!("\nFlattened nodes with RB_ prefix:");
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Field { name, value, .. } = &node.kind {
+                if name.starts_with("RB_") {
+                    println!("  {} = {:?}", name, value);
+                }
+            }
+        }
+        
+        // Find RB_1 in flattened nodes
+        let rb1_node = flattened.nodes.iter().find(|n| {
+            if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                name == "RB_1"
+            } else {
+                false
+            }
+        });
+        
+        assert!(rb1_node.is_some(), "Should find RB_1 in flattened nodes");
+        let rb1_node = rb1_node.unwrap();
+        
+        if let FlattenedNodeKind::Field { value, .. } = &rb1_node.kind {
+            // RB_1 should have a truthy value (1, "1", or true) indicating it's selected
+            // This is the assertion that will fail if the default value is not being set
+            let has_default = value == "1" || value == "true" || !value.is_empty();
+            assert!(
+                has_default,
+                "RB_1 should have a default value of '1' (is the default selection), but got: {:?}",
+                value
+            );
+            println!("\n✓ RB_1 has default value: {:?}", value);
+        } else {
+            panic!("RB_1 should be a field");
+        }
+    }
+    
+    /// Test that ffClientDetails field (with rawValue "Endkunde") should be hidden.
+    /// 
+    /// Per XFA 3.3 spec, setting rawValue via JavaScript does NOT change field presence.
+    /// The presence attribute is static and should be respected regardless of computed value.
+    /// 
+    /// In AAAB, ffClientDetails has presence="hidden" in the template but its value is
+    /// computed by JavaScript. This field should NOT appear in the flattened output.
+    #[test]
+    fn test_aaab_hidden_field_with_computed_value_not_visible() {
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Helper function to find node info
+        fn find_node_info(nodes: &[xfa::XfaNode], target: &str) -> Option<(String, String)> {
+            for node in nodes {
+                if node.name.as_deref() == Some(target) {
+                    let presence = node.attributes.get("presence").cloned().unwrap_or("visible".to_string());
+                    let kind = format!("{:?}", node.kind).split_whitespace().next().unwrap_or("?").to_string();
+                    return Some((kind, presence));
+                }
+                if let Some(result) = find_node_info(&node.children, target) {
+                    return Some(result);
+                }
+            }
+            None
+        }
+        
+        // First, verify ffClientDetails has presence="hidden" in the template
+        if let Some((kind, presence)) = find_node_info(&nodes, "ffClientDetails") {
+            println!("ffClientDetails: kind={}, presence={}", kind, presence);
+            assert_eq!(presence, "hidden", 
+                "ffClientDetails should have presence='hidden' in template");
+        } else {
+            panic!("Could not find ffClientDetails field in XFA template");
+        }
+        
+        // Flatten WITH script execution
+        // The script sets ffClientDetails.rawValue = "Endkunde"
+        // But per XFA spec, this should NOT change the field's visibility
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Check if ffClientDetails appears in flattened output
+        let has_client_details_field = flattened.nodes.iter().any(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "ffClientDetails")
+        });
+        
+        // Also check for any text node with "Endkunde" content that came DIRECTLY from ffClientDetails
+        // Note: Text from OTHER Draw elements (like T_Client_Details) that embed ffClientDetails via
+        // xfa:embed is ALLOWED per XFA spec - the embed reference should resolve even if the source
+        // field is hidden. The T_Client_Details element itself is visible.
+        let has_endkunde_text_from_hidden_field = flattened.nodes.iter().any(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, source_name, .. } 
+                if content == "Endkunde" && source_name.as_deref() == Some("ffClientDetails"))
+        });
+        
+        // Print what we found for debugging
+        println!("\nSearching for ffClientDetails/Endkunde in flattened output:");
+        for node in &flattened.nodes {
+            match &node.kind {
+                FlattenedNodeKind::Field { name, value, .. } if name == "ffClientDetails" => {
+                    println!("  Found Field '{}' with value '{}'", name, value);
+                }
+                FlattenedNodeKind::Text { content, source_name, .. } if content.contains("Endkunde") => {
+                    println!("  Found Text '{}' from source {:?}", content, source_name);
+                }
+                _ => {}
+            }
+        }
+        
+        // The field itself should NOT appear because it's hidden
+        assert!(!has_client_details_field, 
+            "ffClientDetails should NOT appear in flattened output - it has presence='hidden'. \
+             Setting rawValue via script should NOT make hidden fields visible.");
+        
+        // Text from the hidden field itself should not appear
+        // (but text from OTHER elements that embed the value is allowed per XFA spec)
+        assert!(!has_endkunde_text_from_hidden_field,
+            "Text 'Endkunde' directly from hidden field ffClientDetails should NOT appear in output. \
+             Per XFA spec, presence='hidden' means the field does not participate in layout/rendering.");
+        
+        println!("\n✓ Hidden field ffClientDetails (with computed value 'Endkunde') correctly excluded from output");
+    }
+    
+    /// Test that the "Neuanlage" section is visible when RB_1 (Neuanlage radio button) is selected.
+    ///
+    /// In AAAB, there's a radio group (RB_Group_Neuanlage) with RB_1 being the default selection.
+    /// When RB_1 is selected (rawValue=1), the corresponding "Neuanlage" section should be visible.
+    /// This requires click events on RB_1 to be executed even when it's the default selection.
+    #[test]
+    fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
+        use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef};
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Helper to find node by name
+        fn find_node_by_name<'a>(nodes: &'a [XfaNode], target: &str) -> Option<&'a XfaNode> {
+            for node in nodes {
+                if node.name.as_deref() == Some(target) {
+                    return Some(node);
+                }
+                if let Some(found) = find_node_by_name(&node.children, target) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        
+        // Helper to find all events with their activities
+        fn find_all_events_with_activities(
+            nodes: &[XfaNode], 
+            events: &mut Vec<(String, EventActivity, String)>
+        ) {
+            for node in nodes {
+                let name = node.name.clone().unwrap_or_default();
+                let node_events = parse_events_from_node(&node.children);
+                for event in node_events {
+                    let activity = event.activity.clone();
+                    let script_preview = event.source.chars().take(100).collect::<String>();
+                    events.push((name.clone(), activity, script_preview));
+                }
+                find_all_events_with_activities(&node.children, events);
+            }
+        }
+        
+        // Find all events and group by activity type
+        let mut all_events = Vec::new();
+        find_all_events_with_activities(&nodes, &mut all_events);
+        
+        println!("\n=== Event Activities in AAAB ===");
+        let mut activity_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (name, activity, script_preview) in &all_events {
+            let activity_str = format!("{:?}", activity);
+            *activity_counts.entry(activity_str).or_insert(0) += 1;
+            
+            // Print events on RB_ fields and Groups and ffrb1
+            if name.starts_with("RB_") || name == "ffrb1" {
+                println!("  {} has {:?} event", name, activity);
+                // Show script content for mouseDown and Change events
+                if matches!(activity, EventActivity::Other(s) if s == "mouseDown") 
+                    || matches!(activity, EventActivity::Change)
+                    || matches!(activity, EventActivity::Ready) {
+                    println!("    Script: {}", script_preview);
+                }
+            }
+        }
+        
+        println!("\nActivity type counts:");
+        for (activity, count) in &activity_counts {
+            println!("  {}: {}", activity, count);
+        }
+        
+        // Find "Neuanlage" subform and check its presence
+        let neuanlage = find_node_by_name(&nodes, "Neuanlage");
+        if let Some(subform) = neuanlage {
+            println!("\nFound 'Neuanlage' subform:");
+            println!("  presence attribute: {:?}", subform.attributes.get("presence"));
+            println!("  kind: {:?}", subform.kind);
+        } else {
+            // Search for subforms containing "Neuanlage" in name
+            fn find_subforms_with_prefix<'a>(nodes: &'a [XfaNode], prefix: &str, results: &mut Vec<&'a XfaNode>) {
+                for node in nodes {
+                    if let Some(name) = &node.name {
+                        if name.to_lowercase().contains(&prefix.to_lowercase()) {
+                            results.push(node);
+                        }
+                    }
+                    find_subforms_with_prefix(&node.children, prefix, results);
+                }
+            }
+            
+            let mut neuanlage_nodes = Vec::new();
+            find_subforms_with_prefix(&nodes, "Neuanlage", &mut neuanlage_nodes);
+            
+            println!("\nFound {} nodes containing 'Neuanlage' in name:", neuanlage_nodes.len());
+            for n in &neuanlage_nodes {
+                println!("  - {:?} (presence={:?})", n.name, n.attributes.get("presence"));
+            }
+        }
+        
+        // Flatten with script execution
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Count visible nodes to verify the Neuanlage section is rendered
+        let total_nodes = flattened.nodes.len();
+        println!("\nTotal flattened nodes: {}", total_nodes);
+        
+        // Find text nodes that might be from the Neuanlage section
+        // (these typically have field labels like "Vorname", "Nachname", etc.)
+        let neuanlage_related_texts: Vec<_> = flattened.nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { source_name: Some(name), .. } = &n.kind {
+                    name.contains("TF_") || name.contains("DES_")  // These are label fields
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("Neuanlage-related label nodes found: {}", neuanlage_related_texts.len());
+        for (i, node) in neuanlage_related_texts.iter().take(10).enumerate() {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("  {}: '{}' (source: {:?})", i, content.chars().take(30).collect::<String>(), source_name);
+            }
+        }
+        
+        // Look for the text "Neuanlage" itself in any text node
+        let neuanlage_text_nodes: Vec<_> = flattened.nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.to_lowercase().contains("neuanlage")
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("\nNodes containing 'Neuanlage' text: {}", neuanlage_text_nodes.len());
+        for node in &neuanlage_text_nodes {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("  '{}' (source: {:?})", content.chars().take(60).collect::<String>(), source_name);
+            }
+        }
+        
+        // Look for ffrb1 which should contain "Neuanlage" text when RB_1 is selected
+        let ffrb1_node = flattened.nodes.iter()
+            .find(|n| {
+                if let FlattenedNodeKind::Text { source_name: Some(name), .. } = &n.kind {
+                    name == "ffrb1"
+                } else if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.contains("Neuanlage") && content.contains("möglich")
+                } else {
+                    false
+                }
+            });
+        
+        if let Some(node) = ffrb1_node {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("\nFound ffrb1/Neuanlage text: '{}' (source: {:?})", content, source_name);
+            }
+        } else {
+            println!("\nWARNING: ffrb1 node with 'Neuanlage (möglich ab...)' text not found!");
+            println!("This indicates that click events for RB_1 are not being triggered.");
+        }
+        
+        // The Neuanlage section should have multiple visible elements when RB_1 is selected
+        // This test will FAIL if click events aren't being triggered on default selection
+        assert!(
+            neuanlage_related_texts.len() > 5,
+            "Neuanlage section should have visible label elements when RB_1 is selected by default. \
+             Found only {} elements. Click events may not be triggered on default selection.",
+            neuanlage_related_texts.len()
+        );
+        
+        println!("\n✓ Neuanlage section is visible with {} label elements", neuanlage_related_texts.len());
+    }
+
+    /// Test that ffrb1 field shows "Neuanlage (möglich ab dem 01. des aktuellen Monats)" when RB_1 is selected.
+    ///
+    /// When RB_1 (Neuanlage) is selected by default, the Initialize script on RB_Group_Neuanlage 
+    /// calls `soLocalLabelDefinition.change()` which should set ffrb1.rawValue to the German 
+    /// text for "New application (possible from the 1st of the current month)".
+    ///
+    /// This test confirms the bug: ffrb1 has no computed value because change() can't 
+    /// resolve the field via xfa.resolveNode().
+    #[test]
+    fn test_aaab_ffrb1_shows_neuanlage_text_when_rb1_selected() {
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Flatten with script execution
+        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
+        // This is the label that indicates which radio button option is selected
+        let ffrb1_text = flattened.nodes.iter()
+            .find_map(|n| {
+                if let FlattenedNodeKind::Text { content, source_name, .. } = &n.kind {
+                    // Check if this is ffrb1 or contains the expected text
+                    if source_name.as_deref() == Some("ffrb1") {
+                        return Some(content.clone());
+                    }
+                    if content.contains("Neuanlage") && content.contains("möglich") {
+                        return Some(content.clone());
+                    }
+                }
+                None
+            });
+        
+        // Print debug info
+        println!("\n=== ffrb1 Test ===");
+        println!("ffrb1 text content: {:?}", ffrb1_text);
+        
+        // The test SHOULD fail with this assertion - demonstrating the bug
+        // When fixed, ffrb1 should have the text "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
+        assert!(
+            ffrb1_text.is_some() && ffrb1_text.as_ref().unwrap().contains("Neuanlage (möglich"),
+            "ffrb1 should show 'Neuanlage (möglich ab dem 01. des aktuellen Monats)' when RB_1 is selected. \
+             Got: {:?}. This indicates that soLocalLabelDefinition.change() is not properly setting ffrb1.rawValue.",
+            ffrb1_text
+        );
+        
+        println!("\n✓ ffrb1 correctly shows: '{}'", ffrb1_text.unwrap());
     }
 }

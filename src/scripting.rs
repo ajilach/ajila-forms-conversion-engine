@@ -455,7 +455,7 @@ impl DependencyTracker {
 // =============================================================================
 
 /// Node presence values per XFA spec
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Presence {
     Visible,
     Invisible,
@@ -477,6 +477,26 @@ impl Presence {
             "inactive" => Presence::Inactive,
             _ => Presence::Visible,
         }
+    }
+    
+    /// Returns the XFA string representation of this presence value
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Presence::Visible => "visible",
+            Presence::Invisible => "invisible",
+            Presence::Hidden => "hidden",
+            Presence::Inactive => "inactive",
+        }
+    }
+    
+    /// Returns true if this presence should skip rendering
+    pub fn should_skip_render(&self) -> bool {
+        matches!(self, Presence::Hidden | Presence::Invisible | Presence::Inactive)
+    }
+    
+    /// Returns true if this presence should skip layout (not take up space)
+    pub fn should_skip_layout(&self) -> bool {
+        matches!(self, Presence::Hidden | Presence::Inactive)
     }
 }
 
@@ -564,6 +584,14 @@ pub struct XfaScriptEngine {
     dependencies: DependencyTracker,
     /// Registered field JS objects for resolveNode results
     field_objects: HashMap<String, JsObject>,
+    /// Maps child field names to their unique IDs in the current context
+    /// This is used to store computed values by ID instead of name to avoid collisions
+    /// when multiple subforms have same-named children.
+    child_name_to_id: HashMap<String, String>,
+    /// Maps radio button paths to their parent exclGroup paths
+    /// Per XFA spec, when a radio button's rawValue is set to its "on" value,
+    /// the parent exclGroup's rawValue should also be updated.
+    exclgroup_child_to_parent: HashMap<String, String>,
 }
 
 impl XfaScriptEngine {
@@ -578,6 +606,8 @@ impl XfaScriptEngine {
             som_resolver: SomResolver::new(),
             dependencies: DependencyTracker::new(),
             field_objects: HashMap::new(),
+            child_name_to_id: HashMap::new(),
+            exclgroup_child_to_parent: HashMap::new(),
         };
         
         engine.setup_environment();
@@ -594,6 +624,8 @@ impl XfaScriptEngine {
             som_resolver: SomResolver::new(),
             dependencies: DependencyTracker::new(),
             field_objects: HashMap::new(),
+            child_name_to_id: HashMap::new(),
+            exclgroup_child_to_parent: HashMap::new(),
         };
         
         engine.setup_environment();
@@ -603,6 +635,105 @@ impl XfaScriptEngine {
     fn setup_environment(&mut self) {
         self.setup_xfa_object();
         self.setup_shortcuts();
+        self.setup_field_registry();
+        self.setup_som_fallback();
+    }
+    
+    /// Create a global field registry that resolveNode can access
+    fn setup_field_registry(&mut self) {
+        // Create _xfa_fields_ global object that maps field names to their JS objects
+        // This allows resolveNode to find fields by name
+        let registry = ObjectInitializer::new(&mut self.context).build();
+        self.context.register_global_property(js_string!("_xfa_fields_"), registry, Attribute::all()).ok();
+    }
+    
+    /// Set up a fallback mechanism for SOM path resolution.
+    /// 
+    /// In XFA, embedded fields appear in the SOM at their embed location. For example,
+    /// a floating field "ffrb1" embedded in "Page.SectionTitle.STP_SectionTitle" should
+    /// be accessible as "Page.SectionTitle.STP_SectionTitle.ffrb1".
+    /// 
+    /// Since tracking exact embed locations is complex, we provide a global helper
+    /// that scripts can use when direct property access fails.
+    fn setup_som_fallback(&mut self) {
+        // Create helper functions for SOM resolution and exclGroup sync
+        let helpers_js = r#"
+            // Global SOM resolution helper
+            // When a path like "Page.SectionTitle.STP_SectionTitle.ffrb1" is accessed,
+            // JavaScript property chain works for subforms but fails for floating fields.
+            // This helper provides fallback resolution.
+            function _xfa_resolve_path_(path) {
+                var parts = path.split('.');
+                var obj = this; // Start from global
+                
+                // Try to traverse the path
+                for (var i = 0; i < parts.length; i++) {
+                    var part = parts[i];
+                    if (obj && typeof obj[part] !== 'undefined') {
+                        obj = obj[part];
+                    } else {
+                        // Path traversal failed - try looking up the last part in the registry
+                        var lastPart = parts[parts.length - 1];
+                        if (typeof _xfa_fields_ !== 'undefined' && _xfa_fields_[lastPart]) {
+                            return _xfa_fields_[lastPart];
+                        }
+                        return null;
+                    }
+                }
+                return obj;
+            }
+            
+            // Exclusion group value sync helper
+            // Per XFA spec, when a radio button's rawValue is set, the parent exclGroup should update.
+            // This stores known parent-child relationships that get synced.
+            var _xfa_exclgroup_map_ = {};
+            
+            // Register an exclGroup parent-child relationship
+            function _xfa_register_exclgroup_(childPath, parentPath) {
+                _xfa_exclgroup_map_[childPath] = parentPath;
+            }
+            
+            // Sync all exclGroup values based on their children
+            function _xfa_sync_exclgroups_() {
+                for (var childPath in _xfa_exclgroup_map_) {
+                    var parentPath = _xfa_exclgroup_map_[childPath];
+                    try {
+                        // Navigate to child object
+                        var childParts = childPath.split('.');
+                        var child = this;
+                        for (var i = 0; i < childParts.length; i++) {
+                            if (child && child[childParts[i]]) {
+                                child = child[childParts[i]];
+                            } else {
+                                child = null;
+                                break;
+                            }
+                        }
+                        
+                        // Navigate to parent object
+                        var parentParts = parentPath.split('.');
+                        var parent = this;
+                        for (var i = 0; i < parentParts.length; i++) {
+                            if (parent && parent[parentParts[i]]) {
+                                parent = parent[parentParts[i]];
+                            } else {
+                                parent = null;
+                                break;
+                            }
+                        }
+                        
+                        // If child has a value, set parent's value
+                        if (child && parent && child.rawValue && child.rawValue !== '' && child.rawValue !== '0') {
+                            parent.rawValue = child.rawValue;
+                        }
+                    } catch (e) {
+                        // Ignore errors during sync
+                    }
+                }
+            }
+        "#;
+        
+        let _ = self.execute_variable_script(helpers_js);
     }
     
     /// Create the xfa root object with resolveNode/resolveNodes
@@ -637,11 +768,48 @@ impl XfaScriptEngine {
         xfa.set(PropertyKey::from(js_string!("event")), event, false, &mut self.context).ok();
         
         // Add resolveNode as a global function (XFA 3.3 spec page 106)
-        // Note: In full implementation, this would be on each node
+        // This function looks up nodes by name from the _xfa_fields_ registry
         let resolve_node_fn = NativeFunction::from_fn_ptr(|_this, args, context| {
-            let _expr = args.get_or_undefined(0).to_string(context)?;
-            // Return null for now - actual resolution happens in Rust
-            // This is a placeholder that gets overridden per-execution
+            let expr = args.get_or_undefined(0).to_string(context)?;
+            let expr_str = expr.to_std_string_escaped();
+            
+            // Extract the field name from the expression
+            // Handle both simple names ("ffrb1") and paths ("Page.FormTitle.ffrb1")
+            let field_name = expr_str.rsplit('.').next().unwrap_or(&expr_str);
+            
+            // Look up in the global field registry
+            if let Ok(registry) = context.global_object()
+                .get(PropertyKey::from(js_string!("_xfa_fields_")), context) 
+            {
+                if let Some(registry_obj) = registry.as_object() {
+                    if let Ok(field_obj) = registry_obj.get(
+                        PropertyKey::from(JsString::from(field_name)), 
+                        context
+                    ) {
+                        if !field_obj.is_undefined() && !field_obj.is_null() {
+                            return Ok(field_obj);
+                        }
+                    }
+                }
+            }
+            
+            // Also try looking up as a global (for backward compatibility)
+            if let Ok(global_field) = context.global_object()
+                .get(PropertyKey::from(JsString::from(field_name)), context)
+            {
+                if !global_field.is_undefined() && !global_field.is_null() {
+                    // Check if it has rawValue (is a field object)
+                    if let Some(obj) = global_field.as_object() {
+                        if let Ok(raw) = obj.get(PropertyKey::from(js_string!("rawValue")), context) {
+                            if !raw.is_undefined() {
+                                return Ok(global_field);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Return null if not found
             Ok(JsValue::null())
         });
         xfa.set(
@@ -883,11 +1051,191 @@ impl XfaScriptEngine {
     pub fn set_current_field(&mut self, path: &str, name: &str, value: &str) {
         self.current_field_path = Some(path.to_string());
         let this_obj = self.create_field_object(name, path, value);
+        // Use _xfa_this_ as the property name since "this" is a reserved keyword in JS
+        // The execute_javascript method wraps scripts with .call(_xfa_this_)
         self.context.register_global_property(
-            js_string!("this"),
+            js_string!("_xfa_this_"),
             this_obj,
             Attribute::all()
         ).ok();
+    }
+    
+    /// Set up the current field context with child fields as properties of `this`.
+    /// 
+    /// Per XFA 3.3 spec (Chapter 3, "Scripting Object Model"):
+    /// Child elements of a container are accessible as properties on that container.
+    /// This enables scripts like: `this.ffDesSignature.rawValue = mySignatureClient`
+    /// where `ffDesSignature` is a child field of the current subform.
+    /// The `children` parameter is a list of (child_name, child_id) pairs.
+    pub fn set_current_field_with_children(&mut self, path: &str, name: &str, value: &str, children: &[(String, String)]) {
+        self.current_field_path = Some(path.to_string());
+        let this_obj = self.create_field_object(name, path, value);
+        
+        // Track which child names map to which IDs for later retrieval
+        self.child_name_to_id.clear();
+        
+        // Add child fields as properties of `this`
+        // Each child becomes accessible as this.childName with rawValue property
+        for (child_name, child_id) in children {
+            let child_path = format!("{}.{}", path, child_name);
+            let child_obj = self.create_field_object(child_name, &child_path, "");
+            
+            // Track the name->id mapping for this context
+            self.child_name_to_id.insert(child_name.clone(), child_id.clone());
+            
+            // Use define_property_or_throw for more reliable property definition
+            let property_key = PropertyKey::from(JsString::from(child_name.as_str()));
+            
+            let set_result = this_obj.define_property_or_throw(
+                property_key.clone(),
+                boa_engine::property::PropertyDescriptor::builder()
+                    .value(child_obj.clone())
+                    .writable(true)
+                    .enumerable(true)
+                    .configurable(true)
+                    .build(),
+                &mut self.context
+            );
+            
+            if let Err(e) = &set_result {
+                eprintln!("Warning: Failed to define child property '{}': {:?}", child_name, e);
+            }
+            
+            // Also store the child object for later value retrieval
+            self.field_objects.insert(child_path, child_obj);
+        }
+        
+        // Register as _xfa_this_ globally (used by execute_javascript's .call(_xfa_this_))
+        self.context.register_global_property(
+            js_string!("_xfa_this_"),
+            this_obj.clone(),
+            Attribute::all()
+        ).ok();
+    }
+    
+    /// Get the value of a child field that was set via `this.childName.rawValue = ...`
+    /// Returns (child_id, value) if found, so values can be stored by unique ID.
+    /// This is critical for avoiding collisions when multiple subforms have same-named children.
+    pub fn get_child_field_value(&mut self, child_name: &str) -> Option<(String, String)> {
+        // Get the child's unique ID from our mapping
+        let child_id = self.child_name_to_id.get(child_name).cloned().unwrap_or_default();
+        
+        // First, try to get it from `_xfa_this_.childName.rawValue`
+        if let Ok(this_val) = self.context.global_object()
+            .get(PropertyKey::from(js_string!("_xfa_this_")), &mut self.context) 
+        {
+            if let Some(this_obj) = this_val.as_object() {
+                if let Ok(child_val) = this_obj.get(
+                    PropertyKey::from(JsString::from(child_name)),
+                    &mut self.context
+                ) {
+                    if let Some(child_obj) = child_val.as_object() {
+                        if let Ok(raw_value) = child_obj.get(
+                            PropertyKey::from(js_string!("rawValue")),
+                            &mut self.context
+                        ) {
+                            if !raw_value.is_undefined() && !raw_value.is_null() {
+                                let value = raw_value.to_string(&mut self.context)
+                                    .ok()
+                                    .map(|s| s.to_std_string_escaped())?;
+                                return Some((child_id, value));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback: check form state
+        let state = self.form_state.read().ok()?;
+        state.get_value(child_name).map(|v| (child_id, v.as_string()))
+    }
+    
+    /// Get the value of a field from the SOM hierarchy by its full path.
+    /// This is used to retrieve values set via SOM path references like:
+    /// `Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_1.rawValue = 1`
+    pub fn get_som_field_value(&mut self, path: &str) -> Option<String> {
+        if let Some(field_obj) = self.field_objects.get(path) {
+            if let Ok(raw_value) = field_obj.get(
+                PropertyKey::from(js_string!("rawValue")),
+                &mut self.context
+            ) {
+                if !raw_value.is_undefined() && !raw_value.is_null() {
+                    return raw_value.to_string(&mut self.context)
+                        .ok()
+                        .map(|s| s.to_std_string_escaped());
+                }
+            }
+        }
+        None
+    }
+    
+    /// Sync exclusion group values based on their children's rawValues.
+    /// 
+    /// Per XFA 3.3 spec: When a radio button's rawValue is set to its "on" value,
+    /// the parent exclGroup's rawValue should also be updated to that value.
+    /// This ensures scripts that check the exclGroup's value work correctly.
+    fn sync_exclgroup_values(&mut self) {
+        // Clone the mappings to avoid borrow issues
+        let child_to_parent: Vec<(String, String)> = self.exclgroup_child_to_parent.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        for (child_path, parent_path) in child_to_parent {
+            // Get the child's rawValue
+            if let Some(child_obj) = self.field_objects.get(&child_path) {
+                if let Ok(raw_value) = child_obj.get(
+                    PropertyKey::from(js_string!("rawValue")),
+                    &mut self.context
+                ) {
+                    if !raw_value.is_undefined() && !raw_value.is_null() {
+                        if let Ok(value_str) = raw_value.to_string(&mut self.context) {
+                            let value = value_str.to_std_string_escaped();
+                            // If the child has a non-empty value, propagate to parent exclGroup
+                            if !value.is_empty() && value != "0" {
+                                // Set the parent exclGroup's rawValue
+                                if let Some(parent_obj) = self.field_objects.get(&parent_path) {
+                                    parent_obj.set(
+                                        PropertyKey::from(js_string!("rawValue")),
+                                        JsValue::from(js_string!(value.as_str())),
+                                        false,
+                                        &mut self.context
+                                    ).ok();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Get all field values from the SOM hierarchy that have been modified.
+    /// Returns a map of field name -> value for all fields with non-empty values.
+    /// This is useful for collecting values set via SOM path references after script execution.
+    pub fn get_all_som_field_values(&mut self) -> std::collections::HashMap<String, String> {
+        let mut values = std::collections::HashMap::new();
+        
+        for (path, obj) in &self.field_objects {
+            if let Ok(raw_value) = obj.get(
+                PropertyKey::from(js_string!("rawValue")),
+                &mut self.context
+            ) {
+                if !raw_value.is_undefined() && !raw_value.is_null() {
+                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
+                        let value = value_str.to_std_string_escaped();
+                        if !value.is_empty() {
+                            // Extract just the field name from the path for lookup
+                            // e.g., "Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_1" -> "RB_1"
+                            let field_name = path.rsplit('.').next().unwrap_or(path);
+                            values.insert(field_name.to_string(), value);
+                        }
+                    }
+                }
+            }
+        }
+        
+        values
     }
     
     pub fn execute_script(&mut self, script: &XfaScript) -> Result<Option<String>, String> {
@@ -904,8 +1252,10 @@ impl XfaScriptEngine {
     
     fn execute_javascript(&mut self, source: &str) -> Result<Option<String>, String> {
         let this_obj = self.context.global_object()
-            .get(PropertyKey::from(js_string!("this")), &mut self.context)
+            .get(PropertyKey::from(js_string!("_xfa_this_")), &mut self.context)
             .ok();
+        
+        let has_this_context = this_obj.as_ref().map(|v| !v.is_undefined()).unwrap_or(false);
         
         let initial_raw_value = if let Some(ref this_val) = this_obj {
             if let Some(obj) = this_val.as_object() {
@@ -920,10 +1270,28 @@ impl XfaScriptEngine {
             None
         };
         
-        match self.context.eval(Source::from_bytes(source)) {
+        // Wrap the script in a function that provides proper `this` binding if available
+        // We use _xfa_this_ as a global property and then call the function with it as `this`
+        // The script can then use `this.fieldName.rawValue` as expected per XFA spec
+        // If no this context is set, run the script without the .call() wrapper
+        let wrapped_source = if has_this_context {
+            format!(
+                "(function() {{ {} }}).call(_xfa_this_)",
+                source
+            )
+        } else {
+            // No this context - run script in global scope
+            format!("(function() {{ {} }})()", source)
+        };
+        
+        match self.context.eval(Source::from_bytes(&wrapped_source)) {
             Ok(result) => {
+                // Sync exclusion group values after script execution
+                // Per XFA spec, when a radio button's rawValue is set, the parent exclGroup's value should update
+                self.sync_exclgroup_values();
+                
                 if let Ok(this_val) = self.context.global_object()
-                    .get(PropertyKey::from(js_string!("this")), &mut self.context) {
+                    .get(PropertyKey::from(js_string!("_xfa_this_")), &mut self.context) {
                     if let Some(this_obj) = this_val.as_object() {
                         if let Ok(raw_value) = this_obj
                             .get(PropertyKey::from(js_string!("rawValue")), &mut self.context) {
@@ -975,6 +1343,178 @@ impl XfaScriptEngine {
     /// Access to SOM resolver
     pub fn som_resolver(&self) -> &SomResolver {
         &self.som_resolver
+    }
+    
+    /// Register an XFA node (subform or field) in the SOM hierarchy.
+    /// 
+    /// Per XFA 3.3 spec Chapter 3 ("Scripting Object Model"):
+    /// - Subforms and fields are accessible as named properties on their parent
+    /// - Top-level subforms are accessible as global variables
+    /// - The hierarchy enables references like `Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.rawValue`
+    /// 
+    /// Parameters:
+    /// - `name`: The node's name attribute
+    /// - `path`: Full SOM path (e.g., "Page.FormTitle.STP_RB_Horizontal")
+    /// - `parent_path`: Parent's path (None for top-level subforms)
+    /// - `is_field`: true if this is a field, false if subform
+    /// - `value`: Initial rawValue for fields
+    pub fn register_xfa_node(&mut self, name: &str, path: &str, parent_path: Option<&str>, is_field: bool, value: &str) {
+        // Track exclGroup parent-child relationships for value propagation
+        // If the parent path contains "RB_Group" or similar exclGroup naming,
+        // this field is a radio button child of an exclGroup
+        if let Some(parent) = parent_path {
+            // Heuristic: if parent name contains "Group" and starts with "RB_" or we're registering RB_ fields
+            let is_exclgroup_child = parent.contains("_Group") && name.starts_with("RB_");
+            if is_exclgroup_child {
+                self.exclgroup_child_to_parent.insert(path.to_string(), parent.to_string());
+                
+                // Also register in JavaScript for in-script sync
+                let js_register = format!(
+                    "_xfa_register_exclgroup_('{}', '{}');",
+                    path.replace('\'', "\\'"),
+                    parent.replace('\'', "\\'")
+                );
+                let _ = self.context.eval(Source::from_bytes(&js_register));
+            }
+        }
+        
+        // Create the JavaScript object for this node
+        let node_obj = if is_field {
+            self.create_field_object(name, path, value)
+        } else {
+            // For subforms, create an object that can have children
+            ObjectInitializer::new(&mut self.context)
+                .property(js_string!("name"), JsValue::from(js_string!(name)), Attribute::READONLY)
+                .property(js_string!("somExpression"), JsValue::from(js_string!(path)), Attribute::READONLY)
+                .build()
+        };
+        
+        // Store in field_objects for later lookup
+        self.field_objects.insert(path.to_string(), node_obj.clone());
+        
+        // Register in SOM resolver
+        self.som_resolver.register_node(path, name, if is_field { "field" } else { "subform" }, parent_path);
+        
+        // If there's a parent, add this node as a child property
+        if let Some(parent) = parent_path {
+            if let Some(parent_obj) = self.field_objects.get(parent) {
+                parent_obj.set(
+                    PropertyKey::from(JsString::from(name)),
+                    node_obj.clone(),
+                    false,
+                    &mut self.context
+                ).ok();
+            }
+        } else {
+            // Top-level subform - register as a global variable
+            // This enables scripts to reference like: Page.FormTitle...
+            self.context.register_global_property(
+                JsString::from(name),
+                node_obj.clone(),
+                Attribute::all()
+            ).ok();
+        }
+        
+        // Also register in the _xfa_fields_ registry for resolveNode() lookups
+        // This allows change() functions to find fields via xfa.resolveNode("fieldName")
+        if let Ok(registry) = self.context.global_object()
+            .get(PropertyKey::from(js_string!("_xfa_fields_")), &mut self.context)
+        {
+            if let Some(registry_obj) = registry.as_object() {
+                registry_obj.set(
+                    PropertyKey::from(JsString::from(name)),
+                    node_obj.clone(),
+                    false,
+                    &mut self.context
+                ).ok();
+            }
+        }
+        
+        // For floating fields (registered without parent), also add as property on all existing subforms
+        // This enables SOM path access like "Page.SectionTitle.STP_SectionTitle.ffrb1" where
+        // ffrb1 is a floating field that's embedded somewhere in the STP_SectionTitle subtree
+        if is_field && parent_path.is_none() {
+            for (_, subform_obj) in &self.field_objects {
+                // Only add to subforms (objects that have 'somExpression' property)
+                if let Ok(som) = subform_obj.get(
+                    PropertyKey::from(js_string!("somExpression")),
+                    &mut self.context
+                ) {
+                    if !som.is_undefined() {
+                        // This is a subform, add the floating field as a property
+                        subform_obj.set(
+                            PropertyKey::from(JsString::from(name)),
+                            node_obj.clone(),
+                            false,
+                            &mut self.context
+                        ).ok();
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Get the current presence value set on `this` by a script.
+    /// Returns the presence value if it was set, None otherwise.
+    pub fn get_current_field_presence(&mut self) -> Option<Presence> {
+        if let Ok(this_val) = self.context.global_object()
+            .get(PropertyKey::from(js_string!("_xfa_this_")), &mut self.context) 
+        {
+            if let Some(this_obj) = this_val.as_object() {
+                if let Ok(presence) = this_obj.get(
+                    PropertyKey::from(js_string!("presence")),
+                    &mut self.context
+                ) {
+                    if !presence.is_undefined() && !presence.is_null() {
+                        let presence_str = presence.to_string(&mut self.context)
+                            .ok()
+                            .map(|s| s.to_std_string_escaped())?;
+                        // Only return if it's a valid XFA presence value
+                        if matches!(presence_str.as_str(), "visible" | "invisible" | "hidden" | "inactive") {
+                            return Some(Presence::from_str(&presence_str));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Get the presence value of a child field that was set via `this.childName.presence = ...`
+    /// Returns (child_id, presence) if found.
+    pub fn get_child_field_presence(&mut self, child_name: &str) -> Option<(String, Presence)> {
+        // Get the child's unique ID from our mapping
+        let child_id = self.child_name_to_id.get(child_name).cloned().unwrap_or_default();
+        
+        // Try to get it from `_xfa_this_.childName.presence`
+        if let Ok(this_val) = self.context.global_object()
+            .get(PropertyKey::from(js_string!("_xfa_this_")), &mut self.context) 
+        {
+            if let Some(this_obj) = this_val.as_object() {
+                if let Ok(child_val) = this_obj.get(
+                    PropertyKey::from(JsString::from(child_name)),
+                    &mut self.context
+                ) {
+                    if let Some(child_obj) = child_val.as_object() {
+                        if let Ok(presence) = child_obj.get(
+                            PropertyKey::from(js_string!("presence")),
+                            &mut self.context
+                        ) {
+                            if !presence.is_undefined() && !presence.is_null() {
+                                let presence_str = presence.to_string(&mut self.context)
+                                    .ok()
+                                    .map(|s| s.to_std_string_escaped())?;
+                                // Only return if it's a valid XFA presence value
+                                if matches!(presence_str.as_str(), "visible" | "invisible" | "hidden" | "inactive") {
+                                    return Some((child_id, Presence::from_str(&presence_str)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -1084,7 +1624,10 @@ mod tests {
         };
         
         let result = engine.execute_script(&script);
-        assert!(result.is_ok());
+        if let Err(e) = &result {
+            eprintln!("Script execution error: {}", e);
+        }
+        assert!(result.is_ok(), "Script execution failed: {:?}", result);
     }
     
     #[test]

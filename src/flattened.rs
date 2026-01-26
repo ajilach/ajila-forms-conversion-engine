@@ -1,5 +1,5 @@
 use crate::xfa::{XfaNode, XfaNodeKind, Border, Font, Para, HAlign, VAlign, StrokeStyle, Num, num};
-use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef};
+use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef, Presence};
 use crate::font_manager::get_font_manager;
 use std::path::Path;
 use std::collections::HashMap;
@@ -317,52 +317,102 @@ pub enum Layout {
     Table,                  // table
 }
 
-/// Context for embed resolution during flattening
-/// Bundles the data needed to resolve xfa:embed references
-struct EmbedContext<'a> {
-    /// Map of field name -> computed value from scripts
-    computed_values: &'a HashMap<String, String>,
+/// Context for flattening XFA nodes into absolute positions.
+/// 
+/// Bundles all state needed during the recursive flattening process:
+/// - Embed resolution data (computed_values, id_to_field) for xfa:embed references
+/// - Presence values set by scripts (presence_map)
+/// - Inherited presence from parent containers (inherited_presence)
+/// 
+/// Per XFA 3.3 spec (page 221, "Rich Text That Contains External Objects"):
+/// External references via xfa:embed are resolved during the layout process.
+/// 
+/// Per XFA 3.3 spec (section 2, "Explicitly Concealing Containers"):
+/// Children inherit presence from their parent container - if a parent is hidden,
+/// all its children are also hidden regardless of their individual presence values.
+pub struct FlattenContext<'a> {
+    /// Map of field name/ID -> computed value from scripts
+    pub computed_values: &'a HashMap<String, String>,
     /// Map of element ID -> field name for resolving embed URI references
-    id_to_field: &'a HashMap<String, String>,
+    pub id_to_field: &'a HashMap<String, String>,
+    /// Map of node name/ID -> presence value set by scripts
+    pub presence_map: &'a HashMap<String, Presence>,
+    /// Inherited presence from parent - if Hidden or Inactive, children are also hidden
+    pub inherited_presence: Option<Presence>,
 }
 
-impl<'a> EmbedContext<'a> {
-    fn new(computed_values: &'a HashMap<String, String>, id_to_field: &'a HashMap<String, String>) -> Self {
-        EmbedContext { computed_values, id_to_field }
-    }
-}
-
-// Thread-local storage for embed context during flattening
-// This allows us to pass the context through recursive calls without changing all function signatures
-thread_local! {
-    static EMBED_CONTEXT: std::cell::RefCell<Option<(HashMap<String, String>, HashMap<String, String>)>> = 
-        std::cell::RefCell::new(None);
-}
-
-/// Set the embed context for the current thread during flattening
-fn set_embed_context(computed_values: HashMap<String, String>, id_to_field: HashMap<String, String>) {
-    EMBED_CONTEXT.with(|ctx| {
-        *ctx.borrow_mut() = Some((computed_values, id_to_field));
-    });
-}
-
-/// Clear the embed context after flattening
-fn clear_embed_context() {
-    EMBED_CONTEXT.with(|ctx| {
-        *ctx.borrow_mut() = None;
-    });
-}
-
-/// Get text content with embed resolution using thread-local context
-fn extract_text_with_embed_context(children: &[XfaNode]) -> Option<String> {
-    EMBED_CONTEXT.with(|ctx| {
-        let borrowed = ctx.borrow();
-        if let Some((computed_values, id_to_field)) = borrowed.as_ref() {
-            Flattened::extract_text_content_with_embed(children, computed_values, id_to_field)
-        } else {
-            Flattened::extract_text_content(children)
+impl<'a> FlattenContext<'a> {
+    /// Create a new flatten context with the given embed resolution data
+    pub fn new(
+        computed_values: &'a HashMap<String, String>, 
+        id_to_field: &'a HashMap<String, String>,
+        presence_map: &'a HashMap<String, Presence>,
+    ) -> Self {
+        FlattenContext { 
+            computed_values, 
+            id_to_field, 
+            presence_map,
+            inherited_presence: None,
         }
-    })
+    }
+    
+    /// Create an empty context (no embed resolution)
+    pub fn empty() -> FlattenContext<'static> {
+        static EMPTY_STR: std::sync::LazyLock<HashMap<String, String>> = std::sync::LazyLock::new(HashMap::new);
+        static EMPTY_PRESENCE: std::sync::LazyLock<HashMap<String, Presence>> = std::sync::LazyLock::new(HashMap::new);
+        FlattenContext {
+            computed_values: &EMPTY_STR,
+            id_to_field: &EMPTY_STR,
+            presence_map: &EMPTY_PRESENCE,
+            inherited_presence: None,
+        }
+    }
+    
+    /// Create a child context with inherited presence
+    /// Used when recursing into subforms that may have presence set
+    pub fn with_inherited_presence(&self, presence: Presence) -> FlattenContext<'a> {
+        FlattenContext {
+            computed_values: self.computed_values,
+            id_to_field: self.id_to_field,
+            presence_map: self.presence_map,
+            inherited_presence: Some(presence),
+        }
+    }
+    
+    /// Get the effective presence for a node, considering:
+    /// 1. Inherited presence from parent (takes precedence if hidden/inactive)
+    /// 2. Dynamic presence set by scripts (from presence_map)
+    /// 3. Static presence attribute on the node
+    pub fn get_effective_presence(&self, node: &XfaNode) -> Presence {
+        // If parent is hidden/inactive, children inherit that
+        if let Some(inherited) = self.inherited_presence {
+            if inherited.should_skip_layout() {
+                return inherited;
+            }
+        }
+        
+        // Check for dynamic presence set by script (using node name or ID)
+        if let Some(name) = &node.name {
+            if let Some(&presence) = self.presence_map.get(name) {
+                return presence;
+            }
+        }
+        if let Some(id) = node.attributes.get("id") {
+            if let Some(&presence) = self.presence_map.get(id) {
+                return presence;
+            }
+        }
+        
+        // Fall back to static attribute on the node
+        node.attributes.get("presence")
+            .map(|s| Presence::from_str(s))
+            .unwrap_or(Presence::Visible)
+    }
+    
+    /// Extract text content from node children, resolving any xfa:embed references
+    pub fn extract_text(&self, children: &[XfaNode]) -> Option<String> {
+        Flattened::extract_text_content_with_embed(children, self.computed_values, self.id_to_field)
+    }
 }
 
 impl Layout {
@@ -425,14 +475,14 @@ impl Flattened {
     /// ```
     pub fn from_xfa(xfa_nodes: &[XfaNode]) -> Result<Self, String> {
         // Use the version without scripts (empty computed values, no embed context)
-        Self::from_xfa_with_computed_values(xfa_nodes, &HashMap::new(), &HashMap::new())
+        Self::from_xfa_with_computed_values(xfa_nodes, &HashMap::new(), &HashMap::new(), &HashMap::new())
     }
     
     /// Create a flattened representation from XFA nodes with script execution.
     /// 
     /// This method:
     /// 1. Extracts translation objects from <variables> sections
-    /// 2. Executes all form-ready scripts to compute field values
+    /// 2. Executes all form-ready scripts to compute field values and presence
     /// 3. Builds an ID-to-field-name map for resolving xfa:embed references
     /// 4. Uses those computed values during flattening
     /// 
@@ -441,14 +491,14 @@ impl Flattened {
     /// - `language`: The language code (e.g., "DE", "EN", "SP") for translations
     /// - `form_id`: The form ID (e.g., "AAAB_019_DE") used by some scripts
     pub fn from_xfa_with_scripts(xfa_nodes: &[XfaNode], language: &str, form_id: &str) -> Result<Self, String> {
-        // Execute scripts and collect computed values
-        let computed_values = Self::execute_form_ready_scripts(xfa_nodes, language, form_id)?;
+        // Execute scripts and collect computed values and presence
+        let (computed_values, presence_map) = Self::execute_form_ready_scripts(xfa_nodes, language, form_id)?;
         
         // Build ID-to-field-name map for xfa:embed resolution
         let id_to_field = Self::build_id_to_field_map(xfa_nodes);
         
-        // Flatten with computed values and ID map
-        Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field)
+        // Flatten with computed values, ID map, and presence map
+        Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field, &presence_map)
     }
     
     /// Build a map from element ID to field name (for resolving xfa:embed references)
@@ -470,13 +520,355 @@ impl Flattened {
         }
     }
     
-    /// Execute all form-ready scripts and return a map of field name -> computed value
+    /// Build a map from node name to its child field names
+    /// Used for setting up `this.childField` access in scripts
+    fn build_parent_child_map(xfa_nodes: &[XfaNode]) -> HashMap<String, Vec<String>> {
+        let mut parent_child_map: HashMap<String, Vec<String>> = HashMap::new();
+        
+        fn collect_children(nodes: &[XfaNode], parent_name: Option<&str>, map: &mut HashMap<String, Vec<String>>) {
+            for node in nodes {
+                let node_name = node.name.as_deref();
+                
+                // If this is a field and we have a parent, add to parent's children
+                if let Some(parent) = parent_name {
+                    let is_field = matches!(node.kind, XfaNodeKind::Field) ||
+                        matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                    
+                    if is_field {
+                        if let Some(name) = node_name {
+                            map.entry(parent.to_string())
+                                .or_insert_with(Vec::new)
+                                .push(name.to_string());
+                        }
+                    }
+                }
+                
+                // For subforms, recurse with this node as the parent
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                
+                if is_subform {
+                    collect_children(&node.children, node_name, map);
+                } else {
+                    // Non-subform containers pass through the current parent
+                    collect_children(&node.children, parent_name, map);
+                }
+            }
+        }
+        
+        collect_children(xfa_nodes, None, &mut parent_child_map);
+        parent_child_map
+    }
+    
+    /// Build a parent-child map that tracks both child names AND their unique IDs.
+    /// Key: unique path like "Signature[0]" or "Signature[1]" for multiple instances
+    /// Value: Vec of (child_name, child_id) pairs
+    /// This is needed because multiple subforms can have same-named children with different IDs.
+    fn build_parent_child_map_with_ids(xfa_nodes: &[XfaNode]) -> HashMap<String, Vec<(String, String)>> {
+        let mut parent_child_map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        // Track how many times we've seen each subform name to create unique keys
+        let mut subform_counters: HashMap<String, usize> = HashMap::new();
+        
+        fn collect_children_with_ids(
+            nodes: &[XfaNode], 
+            parent_key: Option<&str>, 
+            map: &mut HashMap<String, Vec<(String, String)>>,
+            counters: &mut HashMap<String, usize>
+        ) {
+            for node in nodes {
+                let node_name = node.name.clone().unwrap_or_default();
+                let node_id = node.attributes.get("id").cloned().unwrap_or_default();
+                
+                // If this is a field and we have a parent, add to parent's children
+                if let Some(parent) = parent_key {
+                    let is_field = matches!(node.kind, XfaNodeKind::Field) ||
+                        matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                    
+                    if is_field && !node_name.is_empty() {
+                        map.entry(parent.to_string())
+                            .or_insert_with(Vec::new)
+                            .push((node_name.clone(), node_id.clone()));
+                    }
+                }
+                
+                // For subforms and exclGroups, recurse with this node as the parent
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                
+                if (is_subform || is_exclgroup) && !node_name.is_empty() {
+                    // Create a key that uniquely identifies this subform/exclGroup instance
+                    // Use ID if available, otherwise use instance counter
+                    // For exclGroups, we want to track their field children (RB_1, RB_2, etc.)
+                    let key = if !node_id.is_empty() { 
+                        format!("{}#{}", node_name, node_id) 
+                    } else {
+                        // Use instance counter for subforms/exclGroups without IDs
+                        let count = counters.entry(node_name.clone()).or_insert(0);
+                        let key = format!("{}[{}]", node_name, *count);
+                        *count += 1;
+                        key
+                    };
+                    collect_children_with_ids(&node.children, Some(&key), map, counters);
+                } else if !is_subform && !is_exclgroup {
+                    // Non-subform/non-exclgroup containers pass through the current parent
+                    collect_children_with_ids(&node.children, parent_key, map, counters);
+                }
+            }
+        }
+        
+        collect_children_with_ids(xfa_nodes, None, &mut parent_child_map, &mut subform_counters);
+        parent_child_map
+    }
+
+    /// Build and register the XFA SOM hierarchy in the scripting engine.
+    /// 
+    /// Per XFA 3.3 spec Chapter 3 ("Scripting Object Model"):
+    /// - Subforms and fields form a hierarchy accessible via dot notation
+    /// - Top-level subforms are accessible as global variables (e.g., "Page")
+    /// - Child elements are accessible as properties (e.g., "Page.FormTitle.Field.rawValue")
+    /// 
+    /// This enables scripts to use references like:
+    /// `if(Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.rawValue == 3) { ... }`
+    fn build_and_register_xfa_som_hierarchy(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+        /// Recursively register all subforms and fields
+        fn register_nodes_recursive(
+            nodes: &[XfaNode], 
+            parent_path: Option<&str>,
+            engine: &mut XfaScriptEngine
+        ) {
+            for node in nodes {
+                let name = match &node.name {
+                    Some(n) if !n.is_empty() => n.clone(),
+                    _ => continue, // Skip unnamed nodes
+                };
+                
+                // Build the SOM path for this node
+                let path = match parent_path {
+                    Some(parent) => format!("{}.{}", parent, name),
+                    None => name.clone(),
+                };
+                
+                // Determine node type and value
+                let is_field = matches!(node.kind, XfaNodeKind::Field) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                
+                if is_field {
+                    // Register field
+                    let value = extract_field_value_helper(&node.children);
+                    engine.register_xfa_node(&name, &path, parent_path, true, &value);
+                } else if is_exclgroup {
+                    // Per XFA spec (section 2 "Exclusion Group"):
+                    // An exclGroup is a container that can have a rawValue (the selected field's value)
+                    // AND it contains field children that should be accessible via SOM paths.
+                    // Register the exclGroup as a field-like node with its value
+                    let value = extract_field_value_helper(&node.children);
+                    engine.register_xfa_node(&name, &path, parent_path, true, &value);
+                    // Also recurse into children to register the fields (RB_1, RB_2, etc.)
+                    // This enables scripts like: Page.FormTitle.RB_Group_Neuanlage.RB_1.rawValue = 1
+                    register_nodes_recursive(&node.children, Some(&path), engine);
+                } else if is_subform {
+                    // Register subform and recurse
+                    engine.register_xfa_node(&name, &path, parent_path, false, "");
+                    register_nodes_recursive(&node.children, Some(&path), engine);
+                } else {
+                    // Other container types (area, etc.) - just recurse through with same parent
+                    register_nodes_recursive(&node.children, parent_path, engine);
+                }
+            }
+        }
+        
+        /// Helper function to extract field value (to avoid Self:: in nested fn)
+        fn extract_field_value_helper(children: &[XfaNode]) -> String {
+            Flattened::extract_field_value(children)
+        }
+        
+        // Start from the template root
+        // Skip pageSet and go directly to content subforms
+        // IMPORTANT: We must register content subforms FIRST, then floating fields AFTER
+        // because floating fields need to be added as properties on all existing subforms
+        fn find_and_register_from_template(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+            // First pass: collect pageSet nodes for later
+            let mut page_set_nodes: Vec<&XfaNode> = Vec::new();
+            
+            fn find_template_and_collect<'a>(
+                nodes: &'a [XfaNode], 
+                engine: &mut XfaScriptEngine,
+                page_set_nodes: &mut Vec<&'a XfaNode>,
+            ) {
+                for node in nodes {
+                    if matches!(node.kind, XfaNodeKind::Template) ||
+                       matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "template")
+                    {
+                        // Found template, look for root subform
+                        for child in &node.children {
+                            if matches!(child.kind, XfaNodeKind::Subform) ||
+                               matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform")
+                            {
+                                // This is the root container (like "UBSForms")
+                                // Register its children (pageSet and content subforms)
+                                for grandchild in &child.children {
+                                    // Skip proto and variables elements
+                                    if matches!(&grandchild.kind, XfaNodeKind::Element { tag_name, .. } 
+                                        if tag_name == "variables" || tag_name == "proto")
+                                    {
+                                        continue;
+                                    }
+                                    
+                                    // Save pageSet for later - we'll register floating fields AFTER subforms
+                                    if matches!(grandchild.kind, XfaNodeKind::PageSet) ||
+                                       matches!(&grandchild.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet")
+                                    {
+                                        page_set_nodes.push(grandchild);
+                                        continue;
+                                    }
+                                    
+                                    // Register content subforms and their children FIRST
+                                    if let Some(name) = &grandchild.name {
+                                        if !name.is_empty() {
+                                            let is_subform = matches!(grandchild.kind, XfaNodeKind::Subform) ||
+                                                matches!(&grandchild.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                                            if is_subform {
+                                                engine.register_xfa_node(name, name, None, false, "");
+                                                register_nodes_recursive(&grandchild.children, Some(name), engine);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    // Recurse to find template
+                    find_template_and_collect(&node.children, engine, page_set_nodes);
+                }
+            }
+            
+            // First: register all subforms
+            find_template_and_collect(nodes, engine, &mut page_set_nodes);
+            
+            // Second: NOW register floating fields (after all subforms exist)
+            // This allows floating fields to be added as properties on all subforms
+            for page_set in page_set_nodes {
+                register_floating_fields(&page_set.children, engine);
+            }
+        }
+        
+        /// Register floating fields from pageSet
+        /// These are fields that can be embedded anywhere in the form via xfa:embed
+        /// They need to be registered so xfa.resolveNode() can find them
+        fn register_floating_fields(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+            for node in nodes {
+                // Check if this is a field
+                let is_field = matches!(node.kind, XfaNodeKind::Field) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                
+                if is_field {
+                    if let Some(name) = &node.name {
+                        if !name.is_empty() {
+                            // Register floating field with just its name (no parent path)
+                            let value = extract_field_value_helper(&node.children);
+                            engine.register_xfa_node(name, name, None, true, &value);
+                        }
+                    }
+                }
+                
+                // Recurse into children (e.g., pageArea contains the floating fields)
+                register_floating_fields(&node.children, engine);
+            }
+        }
+        
+        find_and_register_from_template(xfa_nodes, engine);
+        
+        // After registering the basic hierarchy, scan for xfa:embed references
+        // and register floating fields at their embed locations
+        // Per XFA spec, embedded fields appear in the SOM at their embed location
+        Self::register_embedded_fields_at_locations(xfa_nodes, engine);
+    }
+    
+    /// Scan for xfa:embed references and register floating fields at their embed locations.
+    /// 
+    /// Per XFA 3.3 spec: When a field is embedded via xfa:embed, it becomes part of the
+    /// form DOM at the location where it's embedded, making it accessible via SOM paths
+    /// like `Page.SectionTitle.STP_SectionTitle.ffrb1`.
+    fn register_embedded_fields_at_locations(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+        // Build map of floating field ID -> field name
+        let id_to_field = Self::build_id_to_field_map(xfa_nodes);
+        
+        /// Recursively scan for xfa:embed and register fields at their locations
+        fn scan_for_embeds(
+            nodes: &[XfaNode], 
+            parent_path: Option<&str>,
+            engine: &mut XfaScriptEngine,
+            id_to_field: &HashMap<String, String>,
+        ) {
+            for node in nodes {
+                let node_name = node.name.clone().unwrap_or_default();
+                
+                // Build current path
+                let current_path = if !node_name.is_empty() {
+                    match parent_path {
+                        Some(p) => format!("{}.{}", p, node_name),
+                        None => node_name.clone(),
+                    }
+                } else {
+                    parent_path.map(|s| s.to_string()).unwrap_or_default()
+                };
+                
+                // Check for xfa:embed attribute (references like "#floatingField010747")
+                if let Some(embed_ref) = node.attributes.get("xfa:embed") {
+                    // Parse the embed reference to get the field ID
+                    let field_id = embed_ref.trim_start_matches('#');
+                    
+                    // Look up the field name from the ID
+                    if let Some(field_name) = id_to_field.get(field_id) {
+                        // Register this field as a child of the current container
+                        if let Some(parent) = parent_path {
+                            let embed_path = format!("{}.{}", parent, field_name);
+                            // Register at the embed location (this makes Page.Section.field work)
+                            engine.register_xfa_node(field_name, &embed_path, Some(parent), true, "");
+                        }
+                    }
+                }
+                
+                // Determine if this node is a container that forms a new path segment
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                
+                // Recurse into children
+                let child_parent = if (is_subform || is_exclgroup) && !node_name.is_empty() {
+                    Some(current_path.as_str())
+                } else {
+                    parent_path
+                };
+                
+                scan_for_embeds(&node.children, child_parent, engine, id_to_field);
+            }
+        }
+        
+        // Start scanning from the root content subform
+        if let Some(root) = Self::find_root_subform(xfa_nodes) {
+            let root_name = root.name.clone().unwrap_or_default();
+            if !root_name.is_empty() {
+                scan_for_embeds(&root.children, Some(&root_name), engine, &id_to_field);
+            }
+        }
+    }
+
+    /// Execute all form-ready scripts and return maps of:
+    /// - field name -> computed value
+    /// - node name/ID -> presence value (set by scripts)
     fn execute_form_ready_scripts(
         xfa_nodes: &[XfaNode], 
         language: &str, 
         form_id: &str
-    ) -> Result<HashMap<String, String>, String> {
+    ) -> Result<(HashMap<String, String>, HashMap<String, Presence>), String> {
         let mut computed_values = HashMap::new();
+        let mut presence_map: HashMap<String, Presence> = HashMap::new();
         let mut engine = XfaScriptEngine::new();
         
         // Register control fields used by scripts
@@ -486,24 +878,66 @@ impl Flattened {
         // Extract and register translation objects from the XFA
         Self::extract_and_register_translations(xfa_nodes, &mut engine);
         
-        // Find all events recursively
-        fn find_all_events(nodes: &[XfaNode], events: &mut Vec<(String, crate::scripting::XfaScript)>) {
+        // Build the XFA SOM hierarchy for unqualified references
+        // Per XFA 3.3 spec Chapter 3: unqualified references like "Page.FormTitle.Field"
+        // must be resolvable by searching up the hierarchy from the current container.
+        Self::build_and_register_xfa_som_hierarchy(xfa_nodes, &mut engine);
+        
+        // Build parent-child map for setting up `this.childField` access
+        // This maps subform name -> list of (child_name, child_id) pairs
+        let parent_child_map = Self::build_parent_child_map_with_ids(xfa_nodes);
+        
+        // Find all events recursively, tracking the node's child fields with their IDs
+        // Returns: (parent_name, vec of (child_name, child_id), script)
+        // Uses instance counters to match subforms/exclGroups without IDs to their children
+        fn find_all_events_with_child_ids(
+            nodes: &[XfaNode], 
+            events: &mut Vec<(String, Vec<(String, String)>, crate::scripting::XfaScript)>,
+            parent_child_map: &HashMap<String, Vec<(String, String)>>,
+            subform_counters: &mut HashMap<String, usize>
+        ) {
             for node in nodes {
                 let name = node.name.clone().unwrap_or_default();
+                
+                // Get this node's ID for looking up its children
+                let node_id = node.attributes.get("id").cloned().unwrap_or_default();
+                
+                // Check if this is a subform or exclGroup (both need counter-based keys for children)
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform) ||
+                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                
+                // Build the key the same way as build_parent_child_map_with_ids
+                // Both subforms and exclGroups use counter-based keys when they don't have IDs
+                let key = if !node_id.is_empty() { 
+                    format!("{}#{}", name, node_id) 
+                } else if (is_subform || is_exclgroup) && !name.is_empty() {
+                    // Use instance counter for subforms/exclGroups without IDs
+                    let count = subform_counters.entry(name.clone()).or_insert(0);
+                    let key = format!("{}[{}]", name, *count);
+                    *count += 1;
+                    key
+                } else {
+                    name.clone()
+                };
+                
+                // Look up children using the computed key
+                let children = parent_child_map.get(&key).cloned().unwrap_or_default();
                 
                 // Look for event children
                 let node_events = parse_events_from_node(&node.children);
                 for event in node_events {
-                    events.push((name.clone(), event));
+                    events.push((name.clone(), children.clone(), event));
                 }
                 
                 // Recurse into children
-                find_all_events(&node.children, events);
+                find_all_events_with_child_ids(&node.children, events, parent_child_map, subform_counters);
             }
         }
         
+        let mut subform_counters: HashMap<String, usize> = HashMap::new();
         let mut all_events = Vec::new();
-        find_all_events(xfa_nodes, &mut all_events);
+        find_all_events_with_child_ids(xfa_nodes, &mut all_events, &parent_child_map, &mut subform_counters);
         
         // Execute events in proper XFA lifecycle order:
         // 1. Initialize events (activity="initialize") - these call setupVariables() etc.
@@ -511,67 +945,191 @@ impl Flattened {
         
         // Phase 1: Execute initialize events
         // These are typically scripts like: soCommonLabelDefinition.setupVariables()
-        for (field_name, script) in &all_events {
+        // IMPORTANT: Initialize scripts can set presence values on containers (e.g., parent.presence = "hidden")
+        for (field_name, child_fields, script) in &all_events {
             if script.content_type == ScriptContentType::JavaScript 
                 && script.activity == EventActivity::Initialize
             {
-                // Set up field context (may be empty for form-level initialize events)
-                engine.set_current_field(field_name, field_name, "");
+                // Set up field context with child fields (initialize scripts may reference children)
+                engine.set_current_field_with_children(field_name, field_name, "", child_fields);
                 
                 // Execute the initialize script (maintains global context)
                 let _ = engine.execute_script(script);
+                
+                // Collect presence values set on the current field
+                if let Some(presence) = engine.get_current_field_presence() {
+                    presence_map.insert(field_name.clone(), presence);
+                }
+                
+                // Collect presence values set on child fields
+                for (child_name, child_id) in child_fields {
+                    if let Some((id, presence)) = engine.get_child_field_presence(child_name) {
+                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+                        if !storage_key.is_empty() {
+                            presence_map.insert(storage_key.clone(), presence);
+                        }
+                        presence_map.insert(child_name.clone(), presence);
+                    }
+                }
+                
+                // Initialize scripts (especially those calling change()) can set values on fields
+                // via xfa.resolveNode(). Collect these values from the field registry.
+                let init_som_values = engine.get_all_som_field_values();
+                for (init_field_name, init_value) in init_som_values {
+                    if !init_value.is_empty() {
+                        computed_values.insert(init_field_name, init_value);
+                    }
+                }
             }
         }
         
         // Phase 2: Execute form-ready JavaScript events
         // These compute field values after initialization is complete
-        for (field_name, script) in &all_events {
+        for (field_name, child_fields, script) in &all_events {
             if script.content_type == ScriptContentType::JavaScript 
                 && script.activity == EventActivity::Ready 
                 && script.event_ref == EventRef::Form 
                 && !field_name.is_empty() 
             {
-                // Set up field context
-                engine.set_current_field(field_name, field_name, "");
+                // Set up field context with child fields as properties of `this`
+                // This enables scripts like: this.ffDesSignature.rawValue = mySignatureClient
+                // child_fields is Vec<(child_name, child_id)>
+                engine.set_current_field_with_children(field_name, field_name, "", child_fields);
                 
                 // Execute the script
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(field_name.clone(), value);
                 }
+                
+                // Collect values set on child fields
+                // Per XFA spec, scripts can set rawValue on child fields via this.childName
+                // Store by UNIQUE ID to avoid collisions when multiple subforms have same-named children
+                for (child_name, child_id) in child_fields {
+                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
+                        if !child_value.is_empty() {
+                            // Use the ID if available, otherwise fall back to the id from the pair
+                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+                            
+                            // Store by ID for unique identification
+                            if !storage_key.is_empty() {
+                                computed_values.insert(storage_key.clone(), child_value.clone());
+                            }
+                            // Also store by name for fallback lookups (will be overwritten by later instances)
+                            computed_values.insert(child_name.clone(), child_value);
+                        }
+                    }
+                }
             }
         }
         
-        Ok(computed_values)
+        // Phase 3: Execute layout-ready JavaScript events
+        // Per XFA 3.3 spec (page 388): "In the case of the Layout DOM ($layout), the ready event 
+        // fires when the layout is complete but rendering has not yet begun. Thus a script can 
+        // modify the layout before it is rendered."
+        // For static flattening, we execute these after form:ready to ensure values are computed.
+        for (field_name, child_fields, script) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript 
+                && script.activity == EventActivity::Ready 
+                && script.event_ref == EventRef::Layout 
+                && !field_name.is_empty() 
+            {
+                // Set up field context with child fields as properties of `this`
+                engine.set_current_field_with_children(field_name, field_name, "", child_fields);
+                
+                // Execute the script
+                if let Ok(Some(value)) = engine.execute_script(script) {
+                    computed_values.insert(field_name.clone(), value);
+                }
+                
+                // Collect values set on child fields (same logic as form:ready)
+                for (child_name, child_id) in child_fields {
+                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
+                        if !child_value.is_empty() {
+                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+                            
+                            if !storage_key.is_empty() {
+                                computed_values.insert(storage_key.clone(), child_value.clone());
+                            }
+                            computed_values.insert(child_name.clone(), child_value);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Phase 4: Collect all values from SOM hierarchy
+        // This captures values set via SOM path references like:
+        // `Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_1.rawValue = 1`
+        // These may not be captured by the this.childName collection above.
+        let som_values = engine.get_all_som_field_values();
+        for (field_name, value) in som_values {
+            if !value.is_empty() {
+                // Only insert if not already present (don't overwrite more specific values)
+                computed_values.entry(field_name.clone()).or_insert(value);
+            }
+        }
+        
+        Ok((computed_values, presence_map))
     }
     
-    /// Extract translation objects (myDE, myEN, mySP) from XFA <variables> sections
-    /// Extract and execute variable scripts from the XFA template.
+    /// Execute variable scripts from the XFA template.
+    /// 
     /// According to XFA 3.3 spec (page 376-377), scripts in <variables> elements
     /// are compiled into script objects when the subform is instantiated during data binding.
     /// The script object is registered with the subform and can be referenced by name.
+    /// 
+    /// Per spec, variable scripts can:
+    /// - Define functions (setupVariables, change, etc.)
+    /// - Declare global variables when executed
+    /// - Be accessed as named script objects (e.g., soLocalLabelDefinition.change())
     fn extract_and_register_translations(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
         // Collect all script contents from <variables> elements
         let mut variable_scripts: Vec<(String, String)> = Vec::new();
         Self::collect_variable_scripts(xfa_nodes, &mut variable_scripts);
         
-        // Execute each variable script wrapped to create a named script object
-        // In XFA, a script in <variables name="foo"> becomes accessible as "foo" with its
-        // functions and variables as properties/methods.
+        // Execute each variable script to create a named script object
+        // Per XFA spec, variable scripts run in a context where they can define global variables
+        // and functions. The script object is then accessible by its name.
         for (name, content) in &variable_scripts {
-            // Wrap the script content to create a named object
-            // The script typically defines functions like setupVariables() which become methods
+            // The script content typically defines functions and may declare globals.
+            // We wrap it in an IIFE that:
+            // 1. Executes the script content (which may set globals)
+            // 2. Captures any defined functions and exposes them on a named object
+            // 3. Wraps change() to sync exclGroup values first (per XFA spec)
+            //
+            // This follows XFA spec: "The script object is registered with the subform 
+            // and can be referenced by name."
             let wrapped = format!(
                 r#"
                 var {name} = (function() {{
+                    // Execute the script content in this scope
+                    // Any assignments to undeclared variables become globals
+                    // Any function declarations become local to this IIFE
+                    {content}
+                    
+                    // Return an object exposing any functions defined in the script
                     var _obj = {{}};
-                    // Execute the script in the context where 'this' could be used
-                    (function() {{
-                        {content}
-                        // Copy any functions defined to _obj
-                        if (typeof setupVariables === 'function') {{
-                            _obj.setupVariables = setupVariables;
-                        }}
-                    }})();
+                    if (typeof setupVariables === 'function') {{
+                        _obj.setupVariables = function() {{ setupVariables(); }};
+                    }}
+                    if (typeof change === 'function') {{
+                        // Wrap change() to sync exclGroup values first
+                        // Per XFA spec, when a radio button's rawValue is set, the parent
+                        // exclGroup's rawValue should also update before change() reads it
+                        _obj.change = function() {{ 
+                            if (typeof _xfa_sync_exclgroups_ === 'function') {{
+                                _xfa_sync_exclgroups_();
+                            }}
+                            change(); 
+                        }};
+                    }}
+                    // Expose any other common XFA script functions
+                    if (typeof calculate === 'function') {{
+                        _obj.calculate = function() {{ calculate(); }};
+                    }}
+                    if (typeof validate === 'function') {{
+                        _obj.validate = function() {{ return validate(); }};
+                    }}
                     return _obj;
                 }})();
                 "#,
@@ -581,17 +1139,6 @@ impl Flattened {
             
             let _ = engine.execute_variable_script(&wrapped);
         }
-        
-        // Initialize translation objects in global scope (these will be populated by setupVariables())
-        // These objects are referenced by the variable scripts when setupVariables() is called
-        let init_globals = r#"
-            if (typeof myDE === 'undefined') { myDE = {}; }
-            if (typeof myEN === 'undefined') { myEN = {}; }
-            if (typeof mySP === 'undefined') { mySP = {}; }
-            if (typeof my66522D === 'undefined') { my66522D = {}; }
-            if (typeof my70334D === 'undefined') { my70334D = {}; }
-        "#;
-        let _ = engine.execute_variable_script(init_globals);
     }
     
     /// Recursively collect script content from <variables> elements
@@ -625,10 +1172,12 @@ impl Flattened {
     /// - `xfa_nodes`: The parsed XFA template nodes
     /// - `computed_values`: Map of field name -> computed value from scripts
     /// - `id_to_field`: Map of element ID -> field name for resolving xfa:embed references
+    /// - `presence_map`: Map of node name/ID -> presence value set by scripts
     fn from_xfa_with_computed_values(
         xfa_nodes: &[XfaNode], 
         computed_values: &HashMap<String, String>,
-        id_to_field: &HashMap<String, String>
+        id_to_field: &HashMap<String, String>,
+        presence_map: &HashMap<String, Presence>,
     ) -> Result<Self, String> {
         let mut flattened_nodes = Vec::new();
         
@@ -670,6 +1219,9 @@ impl Flattened {
             // NOT the contentArea. They use positioned layout (absolute coordinates).
             let page_position = Position::new(Decimal::ZERO, Decimal::ZERO, page.width, page.height);
             
+            // Create context for page background (page background elements typically don't use scripts)
+            let page_ctx = FlattenContext::new(computed_values, id_to_field, presence_map);
+            
             for child in &page_area.children {
                 // Skip contentArea and medium - these define page structure, not content
                 if matches!(child.kind, XfaNodeKind::ContentArea) {
@@ -682,7 +1234,7 @@ impl Flattened {
                 }
                 
                 // Render page background element with positioned layout relative to page origin
-                Self::flatten_single_node(child, page_position, Layout::Position, &mut flattened_nodes)?;
+                Self::flatten_single_node(child, page_position, Layout::Position, &mut flattened_nodes, &page_ctx)?;
             }
         }
         
@@ -701,28 +1253,22 @@ impl Flattened {
             content_height
         );
         
-        // Set up embed context for resolving xfa:embed references during text extraction
-        set_embed_context(computed_values.clone(), id_to_field.clone());
+        // Create flatten context for resolving xfa:embed references during text extraction
+        let ctx = FlattenContext::new(computed_values, id_to_field, presence_map);
         
         // Find and flatten the root content subform (the Form DOM)
         // This is the sibling to pageSet, NOT inside pageArea
-        let flatten_result = if let Some(root_subform) = Self::find_root_subform(xfa_nodes) {
+        if let Some(root_subform) = Self::find_root_subform(xfa_nodes) {
             // Get the layout from the root subform (often "tb" for top-to-bottom)
             let layout = root_subform.layout.as_ref()
                 .map(|l| Layout::from_str(l))
                 .unwrap_or(Layout::Position);
             
-            Self::flatten_nodes(&root_subform.children, root_position, layout, &mut flattened_nodes)
+            Self::flatten_nodes(&root_subform.children, root_position, layout, &mut flattened_nodes, &ctx)?;
         } else {
             // Fallback: flatten all nodes (old behavior for simple forms without proper structure)
-            Self::flatten_nodes(xfa_nodes, root_position, Layout::Position, &mut flattened_nodes)
+            Self::flatten_nodes(xfa_nodes, root_position, Layout::Position, &mut flattened_nodes, &ctx)?;
         };
-        
-        // Clear embed context after flattening
-        clear_embed_context();
-        
-        // Check for flatten errors
-        flatten_result?;
         
         // Apply computed values from scripts to nodes
         for node in &mut flattened_nodes {
@@ -889,7 +1435,16 @@ impl Flattened {
         parent_position: Position,
         parent_layout: Layout,
         flattened_nodes: &mut Vec<FlattenedNode>,
+        ctx: &FlattenContext,
     ) -> Result<(), String> {
+        // Check presence - per XFA spec, hidden/inactive nodes should not be rendered
+        // This is critical for fields whose values are set by scripts but should remain hidden
+        let presence = ctx.get_effective_presence(node);
+        if presence.should_skip_layout() {
+            // Hidden/Inactive: skip entirely - don't render, don't consume layout space
+            return Ok(());
+        }
+        
         // For positioned layout, use node's x,y directly
         let x = node.x.unwrap_or(Decimal::ZERO);
         let y = node.y.unwrap_or(Decimal::ZERO);
@@ -899,7 +1454,7 @@ impl Flattened {
         let width = node.w.unwrap_or_else(|| {
             // For Draw elements without explicit width, use minW or natural text width
             if let XfaNodeKind::Draw = &node.kind {
-                let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                let text = ctx.extract_text(&node.children).unwrap_or_default();
                 let natural_width = Self::calculate_natural_text_width(&text, &node.font);
                 let min_w = node.min_w.unwrap_or(Decimal::ZERO);
                 natural_width.max(min_w)
@@ -920,8 +1475,8 @@ impl Flattened {
         match &node.kind {
             XfaNodeKind::Draw => {
                 // Extract text content, or use empty string if none (scripts may fill it later)
-                // Use embed context to resolve xfa:embed references
-                let text_content = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                // Use context to resolve xfa:embed references
+                let text_content = ctx.extract_text(&node.children).unwrap_or_default();
                 let font_size = Self::extract_font_size(node);
                 let font_name = Self::extract_font_name(node);
                 let style = Self::extract_style(node);
@@ -966,7 +1521,7 @@ impl Flattened {
             XfaNodeKind::Subform | XfaNodeKind::Element { .. } => {
                 // Recurse into subform children with positioned layout
                 for child in &node.children {
-                    Self::flatten_single_node(child, pos, Layout::Position, flattened_nodes)?;
+                    Self::flatten_single_node(child, pos, Layout::Position, flattened_nodes, ctx)?;
                 }
             }
             _ => {}
@@ -1212,6 +1767,7 @@ impl Flattened {
         parent_position: Position,
         parent_layout: Layout,
         flattened_nodes: &mut Vec<FlattenedNode>,
+        ctx: &FlattenContext,
     ) -> Result<Num, String> {
         // Returns the total height consumed by these nodes
         // Initialize flow position based on layout direction
@@ -1231,20 +1787,34 @@ impl Flattened {
         let mut max_extent_y = Decimal::ZERO;
         
         for node in nodes {
-            // Check presence attribute
+            // Check presence attribute using the context
+            // This considers: inherited presence > script-set presence > static attribute
             // Per XFA spec (section 2, "Explicitly Concealing Containers"):
-            // - "visible" - element is rendered and participates in layout (normal behavior)
-            // - "invisible" - element takes up space but is NOT rendered (participates in layout)
-            // - "hidden" - element does NOT take up space and is NOT rendered (no layout)
-            // - "inactive" - element does NOT take up space and is NOT rendered (no layout, no automation)
-            let presence = node.attributes.get("presence").map(|s| s.as_str()).unwrap_or("visible");
-            let skip_render = presence == "hidden" || presence == "invisible" || presence == "inactive";
-            let skip_layout = presence == "hidden" || presence == "inactive";
+            // - Visible - element is rendered and participates in layout (normal behavior)
+            // - Invisible - element takes up space but is NOT rendered (participates in layout)
+            // - Hidden - element does NOT take up space and is NOT rendered (no layout)
+            // - Inactive - element does NOT take up space and is NOT rendered (no layout, no automation)
+            let presence = ctx.get_effective_presence(node);
+            let skip_render = presence.should_skip_render();
             
-            if skip_layout {
+            if presence.should_skip_layout() {
                 // Hidden/Inactive: skip entirely - don't render, don't consume layout space
                 continue;
             }
+            
+            // Create child context - if this node's presence is hidden/inactive, 
+            // children inherit that presence
+            let child_ctx = if presence.should_skip_layout() {
+                ctx.with_inherited_presence(presence)
+            } else {
+                // Pass through existing inherited presence or none
+                if let Some(inherited) = ctx.inherited_presence {
+                    ctx.with_inherited_presence(inherited)
+                } else {
+                    // No inheritance needed, use visible as default
+                    ctx.with_inherited_presence(Presence::Visible)
+                }
+            };
             
             match &node.kind {
                 XfaNodeKind::Subform => {
@@ -1256,6 +1826,7 @@ impl Flattened {
                         &mut current_y,
                         &mut max_height_in_row,
                         flattened_nodes,
+                        &child_ctx,
                     )?;
                     
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -1266,7 +1837,8 @@ impl Flattened {
                     
                     // Recurse into subform children with the content position (inside margins)
                     // The subform's layout applies to its children
-                    let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes)?;
+                    // Pass child_ctx to propagate inherited presence to children
+                    let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;;
                     
                     // For tb layout, update current_y based on actual content height if no explicit height
                     if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1290,6 +1862,7 @@ impl Flattened {
                         &mut current_y,
                         &mut max_height_in_row,
                         flattened_nodes,
+                        &child_ctx,
                     )?;
                     
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -1329,6 +1902,7 @@ impl Flattened {
                         &mut current_y,
                         &mut max_height_in_row,
                         flattened_nodes,
+                        ctx,
                     )?;
                     
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -1340,8 +1914,8 @@ impl Flattened {
                     // Only add to output if not hidden
                     if !skip_render {
                         // Extract text content from draw node, or use empty (scripts may fill it)
-                        // Use embed context to resolve xfa:embed references
-                        let text_content = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                        // Use context to resolve xfa:embed references
+                        let text_content = child_ctx.extract_text(&node.children).unwrap_or_default();
                         let font_size = Self::extract_font_size(node);
                         let font_name = Self::extract_font_name(node);
                         let style = Self::extract_style(node);
@@ -1382,6 +1956,7 @@ impl Flattened {
                                 &mut current_y,
                                 &mut max_height_in_row,
                                 flattened_nodes,
+                                &child_ctx,
                             )?;
                             
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -1390,7 +1965,7 @@ impl Flattened {
                                 max_extent_y = max_extent_y.max(node_bottom);
                             }
                             
-                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes)?;
+                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;
                             
                             // For tb layout, update current_y based on actual content height
                             if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1412,6 +1987,7 @@ impl Flattened {
                                 &mut current_y,
                                 &mut max_height_in_row,
                                 flattened_nodes,
+                                &child_ctx,
                             )?;
                             
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -1448,6 +2024,7 @@ impl Flattened {
                                 &mut current_y,
                                 &mut max_height_in_row,
                                 flattened_nodes,
+                                &child_ctx,
                             )?;
                             
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -1459,8 +2036,8 @@ impl Flattened {
                             // Only add to output if not hidden
                             if !skip_render {
                                 // Draw nodes render text or images - use empty string if no content (scripts may fill it)
-                                // Use embed context to resolve xfa:embed references
-                                let text_content = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                                // Use context to resolve xfa:embed references
+                                let text_content = child_ctx.extract_text(&node.children).unwrap_or_default();
                                 let font_size = Self::extract_font_size(node);
                                 let font_name = Self::extract_font_name(node);
                                 let style = Self::extract_style(node);
@@ -1499,7 +2076,7 @@ impl Flattened {
                                 parent_layout
                             };
                             
-                            Self::flatten_nodes(&node.children, parent_position, child_layout, flattened_nodes)?;
+                            Self::flatten_nodes(&node.children, parent_position, child_layout, flattened_nodes, &child_ctx)?;
                         }
                         "exclGroup" => {
                             // Per XFA spec (section 17 "The exclGroup element"):
@@ -1514,6 +2091,7 @@ impl Flattened {
                                 &mut current_y,
                                 &mut max_height_in_row,
                                 flattened_nodes,
+                                &child_ctx,
                             )?;
                             
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -1524,7 +2102,7 @@ impl Flattened {
                             
                             // Recurse into exclGroup children with the computed content position
                             // The exclGroup's layout applies to its children (the fields)
-                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes)?;
+                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;
                             
                             // For tb layout, update current_y based on actual content height if no explicit height
                             if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1547,20 +2125,20 @@ impl Flattened {
                         }
                         _ => {
                             // Other elements, recurse with current position
-                            Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes)?;
+                            Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes, &child_ctx)?;
                         }
                     }
                 }
                 XfaNodeKind::Template | XfaNodeKind::ContentArea | XfaNodeKind::PageSet => {
                     // NOTE: These should NOT normally be encountered when processing Form DOM content.
                     // This handles fallback cases. Pass through with same parent position and layout.
-                    Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes)?;
+                    Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes, &child_ctx)?;
                 }
                 XfaNodeKind::PageArea => {
                     // NOTE: PageArea should NOT normally be encountered when processing Form DOM content.
                     // Page background (pageArea children) are handled separately in from_xfa().
                     // This fallback handles edge cases - pass through with positioned layout.
-                    Self::flatten_nodes(&node.children, parent_position, Layout::Position, flattened_nodes)?;
+                    Self::flatten_nodes(&node.children, parent_position, Layout::Position, flattened_nodes, &child_ctx)?;
                 }
                 _ => {}
             }
@@ -1585,6 +2163,7 @@ impl Flattened {
         current_y: &mut Num,
         max_height_in_row: &mut Num,
         _flattened_nodes: &mut Vec<FlattenedNode>,
+        ctx: &FlattenContext,
     ) -> Result<(Position, Position, Layout, Num), String> {
         // Check if explicit coordinates are provided
         let has_explicit_x = node.x.is_some();
@@ -1601,7 +2180,7 @@ impl Flattened {
             match &node.kind {
                 XfaNodeKind::Draw => {
                     // Calculate natural width from text content
-                    let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                    let text = ctx.extract_text(&node.children).unwrap_or_default();
                     let natural_width = Self::calculate_natural_text_width(&text, &node.font);
                     let min_w = node.min_w.unwrap_or(Decimal::ZERO);
                     let max_w = node.max_w;
@@ -1616,7 +2195,7 @@ impl Flattened {
                 }
                 XfaNodeKind::Element { tag_name, .. } if tag_name == "draw" => {
                     // Same logic for generic draw elements
-                    let text = extract_text_with_embed_context(&node.children).unwrap_or_default();
+                    let text = ctx.extract_text(&node.children).unwrap_or_default();
                     let natural_width = Self::calculate_natural_text_width(&text, &node.font);
                     let min_w = node.min_w.unwrap_or(Decimal::ZERO);
                     let max_w = node.max_w;
@@ -1655,8 +2234,8 @@ impl Flattened {
                 XfaNodeKind::Draw => {
                     // Calculate natural height for draw element based on text content
                     // Per XFA AXTE spec
-                    // Use embed context to resolve xfa:embed references for accurate height
-                    let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
+                    // Use context to resolve xfa:embed references for accurate height
+                    let natural_content_height = if let Some(text) = ctx.extract_text(&node.children) {
                         // Check if this is HTML content with multiple paragraphs
                         let paragraph_count = if Self::has_html_exdata(&node.children) {
                             Self::count_html_paragraphs(&node.children)
@@ -1694,8 +2273,8 @@ impl Flattened {
                     match tag_name.as_str() {
                         "draw" => {
                             // Calculate natural height for draw element
-                            // Use embed context to resolve xfa:embed references for accurate height
-                            let natural_content_height = if let Some(text) = extract_text_with_embed_context(&node.children) {
+                            // Use context to resolve xfa:embed references for accurate height
+                            let natural_content_height = if let Some(text) = ctx.extract_text(&node.children) {
                                 // Check if this is HTML content with multiple paragraphs
                                 let paragraph_count = if Self::has_html_exdata(&node.children) {
                                     Self::count_html_paragraphs(&node.children)
@@ -2301,6 +2880,9 @@ impl Flattened {
     /// The embed reference can be:
     /// - A URI fragment like "#uuid:field_id" (xfa:embedType="uri")
     /// - A SOM expression like "FIELD_NAME" (xfa:embedType="som")
+    /// 
+    /// Values in computed_values are now stored BOTH by field ID (primary) and by name (fallback).
+    /// This handles the case where multiple subforms have same-named children with different IDs.
     fn resolve_embed_reference(
         embed_ref: &str,
         computed_values: &HashMap<String, String>,
@@ -2310,14 +2892,17 @@ impl Flattened {
         if embed_ref.starts_with('#') {
             let id = &embed_ref[1..]; // Remove the # prefix
             
-            // Look up the field name from the ID
+            // FIRST: Try to look up the value directly by ID (preferred - handles multiple same-named fields)
+            if let Some(value) = computed_values.get(id) {
+                return Some(value.clone());
+            }
+            
+            // SECOND: Look up the field name from the ID, then look up by name (fallback)
             if let Some(field_name) = id_to_field.get(id) {
-                // Get the computed value for this field
                 return computed_values.get(field_name).cloned();
             }
             
-            // Fallback: try the ID directly as a field name
-            return computed_values.get(id).cloned();
+            return None;
         }
         
         // Handle SOM expression (no # prefix) - direct field name reference
