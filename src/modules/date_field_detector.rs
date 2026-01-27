@@ -6,6 +6,7 @@
 //! - Day field + "." + Month field + "." + Year field
 
 use crate::document::{Document, GroupKind, GroupSource};
+use crate::flattened::Bounds;
 use super::AnalysisModule;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -41,18 +42,8 @@ impl DateFieldDetector {
     }
     
     /// Check if two elements are on the same line (vertically aligned).
-    fn are_on_same_line(
-        &self,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal)
-    ) -> bool {
-        let (_x1, y1, _w1, h1) = bounds1;
-        let (_x2, y2, _w2, h2) = bounds2;
-        
-        let center_y1 = y1 + h1 / Decimal::TWO;
-        let center_y2 = y2 + h2 / Decimal::TWO;
-        
-        (center_y1 - center_y2).abs() <= self.line_tolerance
+    fn are_on_same_line(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
+        bounds1.is_horizontally_aligned(bounds2, self.line_tolerance)
     }
     
     /// Check if text is a valid date separator.
@@ -72,13 +63,8 @@ impl DateFieldDetector {
         let field1_bounds = doc.get_bounds(field1_idx)?;
         let field2_bounds = doc.get_bounds(field2_idx)?;
         
-        let (x1, _y1, w1, _h1) = field1_bounds;
-        let (x2, _y2, _w2, _h2) = field2_bounds;
-        
-        let right1 = x1 + w1;
-        
         // Field2 should be to the right of field1
-        if x2 <= right1 {
+        if field2_bounds.x <= field1_bounds.right() {
             return None;
         }
         
@@ -88,15 +74,12 @@ impl DateFieldDetector {
                 continue;
             };
             
-            let (tx, ty, tw, th) = text_bounds;
-            let t_right = tx + tw;
-            
             // Text should be between the two fields
-            if tx >= right1 && t_right <= x2 {
+            if text_bounds.x >= field1_bounds.right() && text_bounds.right() <= field2_bounds.x {
                 // Check if it's on the same line
-                if self.are_on_same_line(field1_bounds, text_bounds) {
+                if self.are_on_same_line(&field1_bounds, &text_bounds) {
                     // Check gap from field1
-                    let gap1 = tx - right1;
+                    let gap1 = text_bounds.x - field1_bounds.right();
                     if gap1 <= self.max_separator_gap {
                         // Get the text content
                         let text_content = doc.get_text_content(text_idx);
@@ -126,7 +109,6 @@ impl DateFieldDetector {
         }
         
         let start_bounds = doc.get_bounds(start_field_idx)?;
-        let (_x1, _y1, _w1, _h1) = start_bounds;
         
         let mut date_fields = vec![start_field_idx];
         let mut separators = Vec::new();
@@ -147,25 +129,21 @@ impl DateFieldDetector {
                 };
                 
                 // Must be on the same line
-                if !self.are_on_same_line(start_bounds, field_bounds) {
+                if !self.are_on_same_line(&start_bounds, &field_bounds) {
                     continue;
                 }
                 
                 let current_bounds = doc.get_bounds(current_field_idx)?;
-                let (cx, _cy, cw, _ch) = current_bounds;
-                let c_right = cx + cw;
-                
-                let (fx, _fy, _fw, _fh) = field_bounds;
                 
                 // Must be to the right
-                if fx <= c_right {
+                if field_bounds.x <= current_bounds.right() {
                     continue;
                 }
                 
                 // Check for separator between current and this field
                 if let Some(sep_idx) = self.find_separator_between(doc, current_field_idx, field_idx, text_groups) {
                     if !used_texts.contains(&sep_idx) && !separators.contains(&sep_idx) {
-                        let distance = fx - c_right;
+                        let distance = field_bounds.x - current_bounds.right();
                         if next_field.map(|(_, d)| distance < d).unwrap_or(true) {
                             next_field = Some((field_idx, distance));
                         }
@@ -229,8 +207,8 @@ impl AnalysisModule for DateFieldDetector {
             let bounds_a = doc.get_bounds(a);
             let bounds_b = doc.get_bounds(b);
             match (bounds_a, bounds_b) {
-                (Some((x_a, y_a, _, _)), Some((x_b, y_b, _, _))) => {
-                    y_a.cmp(&y_b).then_with(|| x_a.cmp(&x_b))
+                (Some(a), Some(b)) => {
+                    a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x))
                 }
                 _ => std::cmp::Ordering::Equal,
             }

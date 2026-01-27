@@ -6,6 +6,7 @@
 //! - Typically small (checkbox/radio button size)
 
 use crate::document::{Document, GroupKind, GroupSource};
+use crate::flattened::Bounds;
 use super::AnalysisModule;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -79,34 +80,16 @@ impl RadioButtonDetector {
     }
     
     /// Check if text is to the right of the field and on the same line.
-    fn is_label_on_right(
-        &self,
-        field_bounds: (Decimal, Decimal, Decimal, Decimal),
-        text_bounds: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Option<Decimal> {
-        let (field_x, field_y, field_w, field_h) = field_bounds;
-        let (text_x, text_y, _text_w, text_h) = text_bounds;
-        
-        let field_right = field_x + field_w;
-        
+    fn is_label_on_right(&self, field_bounds: &Bounds, text_bounds: &Bounds) -> Option<Decimal> {
         // Text must be to the right of field
-        if text_x < field_right {
-            return None;
-        }
+        let gap = field_bounds.horizontal_gap_to(text_bounds)?;
         
-        let gap = text_x - field_right;
         if gap > self.max_label_distance {
             return None;
         }
         
         // Check vertical alignment (same line)
-        let field_center_y = field_y + field_h / Decimal::TWO;
-        let text_center_y = text_y + text_h / Decimal::TWO;
-        let y_diff = (field_center_y - text_center_y).abs();
-        
-        let max_y_diff = (field_h.max(text_h) / Decimal::TWO) + self.line_tolerance;
-        
-        if y_diff > max_y_diff {
+        if !field_bounds.is_on_same_line(text_bounds, self.line_tolerance) {
             return None;
         }
         
@@ -129,7 +112,7 @@ impl RadioButtonDetector {
                 continue;
             };
             
-            if let Some(gap) = self.is_label_on_right(field_bounds, text_bounds) {
+            if let Some(gap) = self.is_label_on_right(&field_bounds, &text_bounds) {
                 if best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true) {
                     best = Some((text_idx, gap));
                 }
@@ -170,12 +153,12 @@ impl AnalysisModule for RadioButtonDetector {
         
         for field_idx in field_groups {
             // Check if this field looks like a radio button
-            let Some((x, y, width, height)) = doc.get_bounds(field_idx) else {
+            let Some(bounds) = doc.get_bounds(field_idx) else {
                 continue;
             };
             
             // Must be square and small
-            if !self.is_square(width, height) || !self.is_radio_size(width, height) {
+            if !self.is_square(bounds.width, bounds.height) || !self.is_radio_size(bounds.width, bounds.height) {
                 continue;
             }
             

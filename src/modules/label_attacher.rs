@@ -7,6 +7,7 @@
 //! (above, below, or left of fields) based on the document layout.
 
 use crate::document::{Document, GroupKind, GroupSource};
+use crate::flattened::Bounds;
 use super::AnalysisModule;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -63,31 +64,16 @@ impl LabelAttacher {
     }
     
     /// Check if text is above the field and return the gap distance.
-    fn check_above(&self, 
-        text_bounds: (Decimal, Decimal, Decimal, Decimal),
-        field_bounds: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Option<Decimal> {
-        let (text_x, text_y, text_w, text_h) = text_bounds;
-        let (field_x, field_y, field_w, _field_h) = field_bounds;
-        
-        let text_bottom = text_y + text_h;
-        
+    fn check_above(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
         // Text must be above field
-        if text_bottom > field_y {
-            return None;
-        }
+        let gap = text_bounds.vertical_gap_to(field_bounds)?;
         
-        let gap = field_y - text_bottom;
         if gap > self.vertical_threshold {
             return None;
         }
         
-        // Check horizontal alignment
-        let text_right = text_x + text_w;
-        let field_right = field_x + field_w;
-        
         // Text should overlap horizontally with field
-        if text_right < field_x - self.line_tolerance || text_x > field_right + self.line_tolerance {
+        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
             return None;
         }
         
@@ -95,30 +81,16 @@ impl LabelAttacher {
     }
     
     /// Check if text is below the field and return the gap distance.
-    fn check_below(&self,
-        text_bounds: (Decimal, Decimal, Decimal, Decimal),
-        field_bounds: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Option<Decimal> {
-        let (text_x, text_y, text_w, _text_h) = text_bounds;
-        let (field_x, field_y, field_w, field_h) = field_bounds;
-        
-        let field_bottom = field_y + field_h;
-        
+    fn check_below(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
         // Text must be below field
-        if text_y < field_bottom {
-            return None;
-        }
+        let gap = field_bounds.vertical_gap_to(text_bounds)?;
         
-        let gap = text_y - field_bottom;
         if gap > self.vertical_threshold {
             return None;
         }
         
-        // Check horizontal alignment
-        let text_right = text_x + text_w;
-        let field_right = field_x + field_w;
-        
-        if text_right < field_x - self.line_tolerance || text_x > field_right + self.line_tolerance {
+        // Text should overlap horizontally with field
+        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
             return None;
         }
         
@@ -126,33 +98,16 @@ impl LabelAttacher {
     }
     
     /// Check if text is to the left of the field and return the gap distance.
-    fn check_left(&self,
-        text_bounds: (Decimal, Decimal, Decimal, Decimal),
-        field_bounds: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Option<Decimal> {
-        let (text_x, text_y, text_w, text_h) = text_bounds;
-        let (field_x, field_y, _field_w, field_h) = field_bounds;
-        
-        let text_right = text_x + text_w;
-        
+    fn check_left(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
         // Text must be to the left of field
-        if text_right > field_x {
-            return None;
-        }
+        let gap = text_bounds.horizontal_gap_to(field_bounds)?;
         
-        let gap = field_x - text_right;
         if gap > self.horizontal_threshold {
             return None;
         }
         
         // Check vertical alignment (same line)
-        let text_center_y = text_y + text_h / Decimal::TWO;
-        let field_center_y = field_y + field_h / Decimal::TWO;
-        let y_diff = (text_center_y - field_center_y).abs();
-        
-        let max_y_diff = (text_h.max(field_h) / Decimal::TWO) + self.line_tolerance;
-        
-        if y_diff > max_y_diff {
+        if !text_bounds.is_on_same_line(field_bounds, self.line_tolerance) {
             return None;
         }
         
@@ -174,13 +129,13 @@ impl LabelAttacher {
                 };
                 
                 // Check each position
-                if self.check_above(text_bounds, field_bounds).is_some() {
+                if self.check_above(&text_bounds, &field_bounds).is_some() {
                     *position_counts.entry(LabelPosition::Above).or_insert(0) += 1;
                 }
-                if self.check_below(text_bounds, field_bounds).is_some() {
+                if self.check_below(&text_bounds, &field_bounds).is_some() {
                     *position_counts.entry(LabelPosition::Below).or_insert(0) += 1;
                 }
-                if self.check_left(text_bounds, field_bounds).is_some() {
+                if self.check_left(&text_bounds, &field_bounds).is_some() {
                     *position_counts.entry(LabelPosition::Left).or_insert(0) += 1;
                 }
             }
@@ -209,9 +164,9 @@ impl LabelAttacher {
             };
             
             let gap = match position {
-                LabelPosition::Above => self.check_above(text_bounds, field_bounds),
-                LabelPosition::Below => self.check_below(text_bounds, field_bounds),
-                LabelPosition::Left => self.check_left(text_bounds, field_bounds),
+                LabelPosition::Above => self.check_above(&text_bounds, &field_bounds),
+                LabelPosition::Below => self.check_below(&text_bounds, &field_bounds),
+                LabelPosition::Left => self.check_left(&text_bounds, &field_bounds),
             };
             
             if let Some(g) = gap {
@@ -264,8 +219,8 @@ impl AnalysisModule for LabelAttacher {
             let bounds_a = doc.get_bounds(a);
             let bounds_b = doc.get_bounds(b);
             match (bounds_a, bounds_b) {
-                (Some((x_a, y_a, _, _)), Some((x_b, y_b, _, _))) => {
-                    y_a.cmp(&y_b).then_with(|| x_a.cmp(&x_b))
+                (Some(a), Some(b)) => {
+                    a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x))
                 }
                 _ => std::cmp::Ordering::Equal,
             }

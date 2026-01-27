@@ -285,6 +285,11 @@ impl FlattenedNode {
             style,
         }
     }
+    
+    /// Get the bounds of this node.
+    pub fn bounds(&self) -> Bounds {
+        Bounds::new(self.x, self.y, self.width, self.height)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -302,6 +307,190 @@ impl Position {
     
     pub fn zero() -> Self {
         Position { x: Decimal::ZERO, y: Decimal::ZERO, width: Decimal::ZERO, height: Decimal::ZERO }
+    }
+}
+
+/// Bounding box with geometry helper methods.
+/// 
+/// Provides convenient methods for spatial relationship calculations
+/// commonly used in document analysis modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bounds {
+    pub x: Num,
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+}
+
+impl Bounds {
+    /// Create a new Bounds from position and dimensions.
+    pub fn new(x: Num, y: Num, width: Num, height: Num) -> Self {
+        Bounds { x, y, width, height }
+    }
+    
+    /// Create bounds from a tuple (x, y, width, height).
+    pub fn from_tuple(tuple: (Num, Num, Num, Num)) -> Self {
+        Bounds { x: tuple.0, y: tuple.1, width: tuple.2, height: tuple.3 }
+    }
+    
+    /// Convert to tuple (x, y, width, height).
+    pub fn to_tuple(self) -> (Num, Num, Num, Num) {
+        (self.x, self.y, self.width, self.height)
+    }
+    
+    // ========================================================================
+    // Edge accessors
+    // ========================================================================
+    
+    /// Right edge (x + width).
+    #[inline]
+    pub fn right(&self) -> Num {
+        self.x + self.width
+    }
+    
+    /// Bottom edge (y + height).
+    #[inline]
+    pub fn bottom(&self) -> Num {
+        self.y + self.height
+    }
+    
+    /// Left edge (alias for x).
+    #[inline]
+    pub fn left(&self) -> Num {
+        self.x
+    }
+    
+    /// Top edge (alias for y).
+    #[inline]
+    pub fn top(&self) -> Num {
+        self.y
+    }
+    
+    // ========================================================================
+    // Center calculations
+    // ========================================================================
+    
+    /// Horizontal center (x + width / 2).
+    #[inline]
+    pub fn center_x(&self) -> Num {
+        self.x + self.width / Decimal::TWO
+    }
+    
+    /// Vertical center (y + height / 2).
+    #[inline]
+    pub fn center_y(&self) -> Num {
+        self.y + self.height / Decimal::TWO
+    }
+    
+    // ========================================================================
+    // Distance calculations
+    // ========================================================================
+    
+    /// Horizontal gap from this bounds' right edge to another bounds' left edge.
+    /// Returns None if other is not to the right (overlapping or reversed).
+    pub fn horizontal_gap_to(&self, other: &Bounds) -> Option<Num> {
+        if other.x >= self.right() {
+            Some(other.x - self.right())
+        } else {
+            None
+        }
+    }
+    
+    /// Vertical gap from this bounds' bottom edge to another bounds' top edge.
+    /// Returns None if other is not below (overlapping or reversed).
+    pub fn vertical_gap_to(&self, other: &Bounds) -> Option<Num> {
+        if other.y >= self.bottom() {
+            Some(other.y - self.bottom())
+        } else {
+            None
+        }
+    }
+    
+    /// Absolute vertical distance between center points.
+    pub fn vertical_center_distance(&self, other: &Bounds) -> Num {
+        (self.center_y() - other.center_y()).abs()
+    }
+    
+    /// Absolute horizontal distance between center points.
+    pub fn horizontal_center_distance(&self, other: &Bounds) -> Num {
+        (self.center_x() - other.center_x()).abs()
+    }
+    
+    // ========================================================================
+    // Alignment checks
+    // ========================================================================
+    
+    /// Check if horizontally aligned (centers within tolerance).
+    pub fn is_horizontally_aligned(&self, other: &Bounds, tolerance: Num) -> bool {
+        self.vertical_center_distance(other) <= tolerance
+    }
+    
+    /// Check if vertically aligned (centers within tolerance).
+    pub fn is_vertically_aligned(&self, other: &Bounds, tolerance: Num) -> bool {
+        self.horizontal_center_distance(other) <= tolerance
+    }
+    
+    /// Check if on the same line (vertical centers within tolerance based on max height).
+    pub fn is_on_same_line(&self, other: &Bounds, tolerance: Num) -> bool {
+        let max_half_height = self.height.max(other.height) / Decimal::TWO;
+        self.vertical_center_distance(other) <= max_half_height + tolerance
+    }
+    
+    // ========================================================================
+    // Overlap checks
+    // ========================================================================
+    
+    /// Check if this bounds overlaps horizontally with another (within tolerance).
+    pub fn overlaps_horizontally(&self, other: &Bounds, tolerance: Num) -> bool {
+        !(self.right() < other.x - tolerance || self.x > other.right() + tolerance)
+    }
+    
+    /// Check if this bounds overlaps vertically with another (within tolerance).
+    pub fn overlaps_vertically(&self, other: &Bounds, tolerance: Num) -> bool {
+        !(self.bottom() < other.y - tolerance || self.y > other.bottom() + tolerance)
+    }
+    
+    /// Check if this bounds overlaps with another in both dimensions.
+    pub fn overlaps(&self, other: &Bounds) -> bool {
+        self.overlaps_horizontally(other, Decimal::ZERO) && 
+        self.overlaps_vertically(other, Decimal::ZERO)
+    }
+    
+    // ========================================================================
+    // Relative position checks
+    // ========================================================================
+    
+    /// Check if other is above this bounds (other's bottom <= this top).
+    pub fn is_above(&self, other: &Bounds) -> bool {
+        other.bottom() <= self.y
+    }
+    
+    /// Check if other is below this bounds (other's top >= this bottom).
+    pub fn is_below(&self, other: &Bounds) -> bool {
+        other.y >= self.bottom()
+    }
+    
+    /// Check if other is to the left of this bounds (other's right <= this left).
+    pub fn is_left_of(&self, other: &Bounds) -> bool {
+        other.right() <= self.x
+    }
+    
+    /// Check if other is to the right of this bounds (other's left >= this right).
+    pub fn is_right_of(&self, other: &Bounds) -> bool {
+        other.x >= self.right()
+    }
+    
+    // ========================================================================
+    // Bounding box operations
+    // ========================================================================
+    
+    /// Compute union of this bounds with another.
+    pub fn union(&self, other: &Bounds) -> Bounds {
+        let min_x = self.x.min(other.x);
+        let min_y = self.y.min(other.y);
+        let max_x = self.right().max(other.right());
+        let max_y = self.bottom().max(other.bottom());
+        Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
 }
 

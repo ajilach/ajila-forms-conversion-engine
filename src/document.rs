@@ -27,7 +27,7 @@
 //!
 //! This is computed dynamically from the group structure - no separate tracking needed.
 
-use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
+use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Bounds};
 use crate::xfa::num;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
@@ -544,10 +544,10 @@ impl<'a> Document<'a> {
         Some((min_x, min_y, max_x, max_y))
     }
     
-    /// Get bounding box for a group as (x, y, width, height).
-    pub fn get_bounds(&self, group_idx: usize) -> Option<(rust_decimal::Decimal, rust_decimal::Decimal, rust_decimal::Decimal, rust_decimal::Decimal)> {
+    /// Get bounding box for a group as a Bounds struct.
+    pub fn get_bounds(&self, group_idx: usize) -> Option<Bounds> {
         let (min_x, min_y, max_x, max_y) = self.compute_group_bounds(group_idx)?;
-        Some((min_x, min_y, max_x - min_x, max_y - min_y))
+        Some(Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y))
     }
     
     /// Get a human-readable label for a group kind.

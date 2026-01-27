@@ -4,6 +4,7 @@
 //! into RadioButtonGroup groups. Grouping stops if another element is in between.
 
 use crate::document::{Document, GroupKind, GroupSource};
+use crate::flattened::Bounds;
 use super::AnalysisModule;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -40,87 +41,35 @@ impl RadioButtonGrouper {
     }
     
     /// Check if two radio buttons are horizontally aligned.
-    fn are_horizontally_aligned(
-        &self,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal)
-    ) -> bool {
-        let (_x1, y1, _w1, h1) = bounds1;
-        let (_x2, y2, _w2, h2) = bounds2;
-        
-        let center_y1 = y1 + h1 / Decimal::TWO;
-        let center_y2 = y2 + h2 / Decimal::TWO;
-        
-        (center_y1 - center_y2).abs() <= self.alignment_tolerance
+    fn are_horizontally_aligned(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
+        bounds1.is_horizontally_aligned(bounds2, self.alignment_tolerance)
     }
     
     /// Check if two radio buttons are vertically aligned.
-    fn are_vertically_aligned(
-        &self,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal)
-    ) -> bool {
-        let (x1, _y1, w1, _h1) = bounds1;
-        let (x2, _y2, w2, _h2) = bounds2;
-        
-        let center_x1 = x1 + w1 / Decimal::TWO;
-        let center_x2 = x2 + w2 / Decimal::TWO;
-        
-        (center_x1 - center_x2).abs() <= self.alignment_tolerance
+    fn are_vertically_aligned(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
+        bounds1.is_vertically_aligned(bounds2, self.alignment_tolerance)
     }
     
     /// Calculate horizontal distance between two radio buttons.
-    fn horizontal_distance(
-        &self,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Decimal {
-        let (x1, _y1, w1, _h1) = bounds1;
-        let (x2, _y2, _w2, _h2) = bounds2;
-        
-        let right1 = x1 + w1;
-        
-        if x2 >= right1 {
-            x2 - right1
-        } else {
-            Decimal::MAX // overlapping or reversed
-        }
+    fn horizontal_distance(&self, bounds1: &Bounds, bounds2: &Bounds) -> Decimal {
+        bounds1.horizontal_gap_to(bounds2).unwrap_or(Decimal::MAX)
     }
     
     /// Calculate vertical distance between two radio buttons.
-    fn vertical_distance(
-        &self,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal)
-    ) -> Decimal {
-        let (_x1, y1, _w1, h1) = bounds1;
-        let (_x2, y2, _w2, _h2) = bounds2;
-        
-        let bottom1 = y1 + h1;
-        
-        if y2 >= bottom1 {
-            y2 - bottom1
-        } else {
-            Decimal::MAX // overlapping or reversed
-        }
+    fn vertical_distance(&self, bounds1: &Bounds, bounds2: &Bounds) -> Decimal {
+        bounds1.vertical_gap_to(bounds2).unwrap_or(Decimal::MAX)
     }
     
     /// Check if there are any elements between two radio buttons.
     fn has_elements_between(
         &self,
         doc: &Document,
-        bounds1: (Decimal, Decimal, Decimal, Decimal),
-        bounds2: (Decimal, Decimal, Decimal, Decimal),
+        bounds1: &Bounds,
+        bounds2: &Bounds,
         radio_button_indices: &HashSet<usize>
     ) -> bool {
-        let (x1, y1, w1, h1) = bounds1;
-        let (x2, y2, w2, h2) = bounds2;
-        
         // Create bounding box that encompasses both radio buttons
-        let min_x = x1.min(x2);
-        let min_y = y1.min(y2);
-        let max_x = (x1 + w1).max(x2 + w2);
-        let max_y = (y1 + h1).max(y2 + h2);
+        let region = bounds1.union(bounds2);
         
         // Check all root groups
         for root_idx in doc.roots() {
@@ -134,15 +83,8 @@ impl RadioButtonGrouper {
                 continue;
             };
             
-            let (ex, ey, ew, eh) = bounds;
-            let e_right = ex + ew;
-            let e_bottom = ey + eh;
-            
             // Check if this element overlaps with the region between the two radio buttons
-            let overlaps_x = !(e_right < min_x || ex > max_x);
-            let overlaps_y = !(e_bottom < min_y || ey > max_y);
-            
-            if overlaps_x && overlaps_y {
+            if region.overlaps(&bounds) {
                 return true; // Found an element in between
             }
         }
@@ -192,11 +134,11 @@ impl RadioButtonGrouper {
                     };
                     
                     // Check if horizontally aligned and close
-                    if self.are_horizontally_aligned(last_bounds, candidate_bounds) {
-                        let distance = self.horizontal_distance(last_bounds, candidate_bounds);
+                    if self.are_horizontally_aligned(&last_bounds, &candidate_bounds) {
+                        let distance = self.horizontal_distance(&last_bounds, &candidate_bounds);
                         
                         if distance <= self.max_horizontal_gap && 
-                           !self.has_elements_between(doc, last_bounds, candidate_bounds, &radio_button_set) {
+                           !self.has_elements_between(doc, &last_bounds, &candidate_bounds, &radio_button_set) {
                             group.push(candidate_idx);
                             grouped.insert(candidate_idx);
                             last_bounds = candidate_bounds;
@@ -224,11 +166,11 @@ impl RadioButtonGrouper {
                     };
                     
                     // Check if vertically aligned and close
-                    if self.are_vertically_aligned(last_bounds, candidate_bounds) {
-                        let distance = self.vertical_distance(last_bounds, candidate_bounds);
+                    if self.are_vertically_aligned(&last_bounds, &candidate_bounds) {
+                        let distance = self.vertical_distance(&last_bounds, &candidate_bounds);
                         
                         if distance <= self.max_vertical_gap &&
-                           !self.has_elements_between(doc, last_bounds, candidate_bounds, &radio_button_set) {
+                           !self.has_elements_between(doc, &last_bounds, &candidate_bounds, &radio_button_set) {
                             group.push(candidate_idx);
                             grouped.insert(candidate_idx);
                             last_bounds = candidate_bounds;
