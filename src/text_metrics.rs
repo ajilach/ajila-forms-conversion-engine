@@ -52,7 +52,7 @@ impl FontMetrics {
         // Get metrics from font (these are in pixels at the given scale)
         let ascent_px = scaled_font.ascent();
         let descent_px = scaled_font.descent().abs(); // descent is often negative
-        let line_gap_from_font = scaled_font.line_gap();
+        let _line_gap_from_font = scaled_font.line_gap();
         
         // Convert to Decimal
         let mut ascent = num(ascent_px as f64);
@@ -198,8 +198,8 @@ impl LineMetrics {
     pub fn derived_spacing(&self) -> Num {
         let default_spacing = self.text_height() + self.line_gap;
         
-        if let Some(sp) = self.spacing_override {
-            if sp > Decimal::ZERO {
+        if let Some(sp) = self.spacing_override
+            && sp > Decimal::ZERO {
                 // Per AXTE: "If there is a line spacing override and it is larger than 
                 // the default line spacing, the extra space is ignored on the first line 
                 // in a text block, for consistency with other text processing applications."
@@ -209,7 +209,6 @@ impl LineMetrics {
                 }
                 return sp;
             }
-        }
         
         default_spacing
     }
@@ -223,7 +222,7 @@ impl LineMetrics {
         // Per AXTE: "AXTE removes the line gap on the last line in a block 
         // so that bottom-aligned text doesn't appear shifted up."
         if self.is_last_line {
-            fh = fh - self.line_gap;
+            fh -= self.line_gap;
         }
         
         fh
@@ -236,12 +235,11 @@ impl LineMetrics {
     pub fn baseline_from_top(&self) -> Num {
         let th = self.text_height();
         
-        if let Some(sp) = self.spacing_override {
-            if sp > Decimal::ZERO && sp - self.line_gap >= th {
+        if let Some(sp) = self.spacing_override
+            && sp > Decimal::ZERO && sp - self.line_gap >= th {
                 // Spacing override in effect and larger than text height
                 return self.margin_top + sp - self.line_gap - self.descent;
             }
-        }
         
         // Default formula
         self.margin_top + th - self.descent
@@ -330,11 +328,10 @@ impl TextMeasurer {
     /// Returns a clone of the font variant to avoid borrow issues
     fn get_current_font(&mut self) -> Result<FontRef<'static>, String> {
         // Check if we have a cached font for current variant
-        if let Some(ref variant) = self.current_variant.clone() {
-            if let Some(font) = self.cached_fonts.get(variant) {
+        if let Some(ref variant) = self.current_variant.clone()
+            && let Some(font) = self.cached_fonts.get(variant) {
                 return Ok(font.clone());
             }
-        }
         
         // Load default font and return a clone
         let default_font = Font::default();
@@ -511,7 +508,7 @@ impl TextMeasurer {
     ) -> Result<TextBlockMetrics, String> {
         // Get font style or use XFA defaults
         let xfa_font = font.clone().unwrap_or_default();
-        let font_size = xfa_font.size;
+        let _font_size = xfa_font.size;
         
         // Load the appropriate font for this style
         self.get_font_for_style(&xfa_font)?;
@@ -560,7 +557,7 @@ impl TextMeasurer {
             }
             
             // Accumulate total height
-            total_height = total_height + line_metrics.full_height();
+            total_height += line_metrics.full_height();
             
             lines.push(TextLine {
                 text: line_text,
@@ -591,7 +588,7 @@ impl TextMeasurer {
             return Ok((w, h));
         }
         
-        let font_size = font.as_ref()
+        let _font_size = font.as_ref()
             .map(|f| f.size)
             .unwrap_or_else(|| num(10.0));
         

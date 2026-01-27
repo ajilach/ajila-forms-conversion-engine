@@ -112,11 +112,10 @@ impl RadioButtonDetector {
                 continue;
             };
             
-            if let Some(gap) = self.is_label_on_right(&field_bounds, &text_bounds) {
-                if best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true) {
+            if let Some(gap) = self.is_label_on_right(&field_bounds, &text_bounds)
+                && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true) {
                     best = Some((text_idx, gap));
                 }
-            }
         }
         
         best.map(|(idx, _)| idx)

@@ -12,7 +12,6 @@ use pdf::primitive::Primitive;
 use std::path::{Path, PathBuf};
 use xfa::XfaNode;
 use flattened::{Flattened, FlattenedNodeKind};
-use rust_decimal::prelude::*;
 use clap::Parser;
 use document::Document;
 use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
@@ -42,13 +41,12 @@ pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, 
                     let resolver = pdf.resolver();
                     
                     for i in (1..arr.len()).step_by(2) {
-                        if let Primitive::Reference(stream_ref) = &arr[i] {
-                            if let Ok(Primitive::Stream(ref pdf_stream)) = resolver.resolve(*stream_ref) {
+                        if let Primitive::Reference(stream_ref) = &arr[i]
+                            && let Ok(Primitive::Stream(ref pdf_stream)) = resolver.resolve(*stream_ref) {
                                 let stream: Stream<()> = Stream::from_stream(pdf_stream.clone(), &resolver)?;
                                 let data = stream.data(&resolver)?;
                                 xfa_data.extend_from_slice(&data);
                             }
-                        }
                     }
                     
                     if !xfa_data.is_empty() {
@@ -169,8 +167,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !radio_buttons.is_empty() {
         println!("\nRadio Buttons:");
         for (i, &rb_idx) in radio_buttons.iter().enumerate() {
-            if let Some(group) = doc.get_group(rb_idx) {
-                if let document::GroupKind::RadioButton { field, label } = group.kind {
+            if let Some(group) = doc.get_group(rb_idx)
+                && let document::GroupKind::RadioButton { field, label } = group.kind {
                     // Get the field name
                     let field_name = group.children.get(field)
                         .and_then(|&field_idx| {
@@ -188,13 +186,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Get the label text
                     let label_text = group.children.get(label)
                         .map(|&label_idx| doc.get_text_content(label_idx))
-                        .unwrap_or_else(|| String::new());
+                        .unwrap_or_else(String::new);
                     
                     let preview: String = label_text.chars().take(50).collect();
                     let suffix = if label_text.chars().count() > 50 { "..." } else { "" };
                     println!("  {}: [{}] {}{}", i + 1, field_name, preview, suffix);
                 }
-            }
         }
     }
     
@@ -202,14 +199,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !headings.is_empty() {
         println!("\nHeadings:");
         for &h_idx in &headings {
-            if let Some(group) = doc.get_group(h_idx) {
-                if let document::GroupKind::Heading { level } = group.kind {
+            if let Some(group) = doc.get_group(h_idx)
+                && let document::GroupKind::Heading { level } = group.kind {
                     let text = doc.get_text_content(h_idx);
                     let preview: String = text.chars().take(60).collect();
                     let suffix = if text.chars().count() > 60 { "..." } else { "" };
                     println!("  H{}: {}{}", level, preview, suffix);
                 }
-            }
         }
     }
     
@@ -261,6 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal::prelude::*;
     
     #[test]
     fn test_parse_xfa_from_aaab_document() {

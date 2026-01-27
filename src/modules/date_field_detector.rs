@@ -141,14 +141,13 @@ impl DateFieldDetector {
                 }
                 
                 // Check for separator between current and this field
-                if let Some(sep_idx) = self.find_separator_between(doc, current_field_idx, field_idx, text_groups) {
-                    if !used_texts.contains(&sep_idx) && !separators.contains(&sep_idx) {
+                if let Some(sep_idx) = self.find_separator_between(doc, current_field_idx, field_idx, text_groups)
+                    && !used_texts.contains(&sep_idx) && !separators.contains(&sep_idx) {
                         let distance = field_bounds.x - current_bounds.right();
                         if next_field.map(|(_, d)| distance < d).unwrap_or(true) {
                             next_field = Some((field_idx, distance));
                         }
                     }
-                }
             }
             
             if let Some((field_idx, _)) = next_field {
@@ -166,7 +165,7 @@ impl DateFieldDetector {
         }
         
         // We need at least 2 fields with 1 separator to make a date field
-        if date_fields.len() >= 2 && separators.len() >= 1 {
+        if date_fields.len() >= 2 && !separators.is_empty() {
             Some((date_fields, separators))
         } else {
             None

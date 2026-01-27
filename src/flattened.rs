@@ -108,6 +108,7 @@ pub struct RichParagraph {
 /// A run of text with uniform styling.
 /// Per XFA spec: spans can have xfa-spacerun:yes to preserve consecutive spaces.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct RichRun {
     /// The text content
     pub text: String,
@@ -121,17 +122,6 @@ pub struct RichRun {
     pub underline: bool,
 }
 
-impl Default for RichRun {
-    fn default() -> Self {
-        RichRun {
-            text: String::new(),
-            preserve_spaces: false,
-            bold: false,
-            italic: false,
-            underline: false,
-        }
-    }
-}
 
 /// A positioned word/token ready for rendering.
 /// Used for glyph-by-glyph rendering with proper justify support.
@@ -574,23 +564,20 @@ impl<'a> FlattenContext<'a> {
     /// 3. Static presence attribute on the node
     pub fn get_effective_presence(&self, node: &XfaNode) -> Presence {
         // If parent is hidden/inactive, children inherit that
-        if let Some(inherited) = self.inherited_presence {
-            if inherited.should_skip_layout() {
+        if let Some(inherited) = self.inherited_presence
+            && inherited.should_skip_layout() {
                 return inherited;
             }
-        }
         
         // Check for dynamic presence set by script (using node name or ID)
-        if let Some(name) = &node.name {
-            if let Some(&presence) = self.presence_map.get(name) {
+        if let Some(name) = &node.name
+            && let Some(&presence) = self.presence_map.get(name) {
                 return presence;
             }
-        }
-        if let Some(id) = node.attributes.get("id") {
-            if let Some(&presence) = self.presence_map.get(id) {
+        if let Some(id) = node.attributes.get("id")
+            && let Some(&presence) = self.presence_map.get(id) {
                 return presence;
             }
-        }
         
         // Fall back to static attribute on the node
         node.attributes.get("presence")
@@ -723,13 +710,12 @@ impl Flattened {
                     let is_field = matches!(node.kind, XfaNodeKind::Field) ||
                         matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
                     
-                    if is_field {
-                        if let Some(name) = node_name {
+                    if is_field
+                        && let Some(name) = node_name {
                             map.entry(parent.to_string())
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push(name.to_string());
                         }
-                    }
                 }
                 
                 // For subforms, recurse with this node as the parent
@@ -775,7 +761,7 @@ impl Flattened {
                     
                     if is_field && !node_name.is_empty() {
                         map.entry(parent.to_string())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push((node_name.clone(), node_id.clone()));
                     }
                 }
@@ -916,8 +902,8 @@ impl Flattened {
                                     }
                                     
                                     // Register content subforms and their children FIRST
-                                    if let Some(name) = &grandchild.name {
-                                        if !name.is_empty() {
+                                    if let Some(name) = &grandchild.name
+                                        && !name.is_empty() {
                                             let is_subform = matches!(grandchild.kind, XfaNodeKind::Subform) ||
                                                 matches!(&grandchild.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
                                             if is_subform {
@@ -925,7 +911,6 @@ impl Flattened {
                                                 register_nodes_recursive(&grandchild.children, Some(name), engine);
                                             }
                                         }
-                                    }
                                 }
                             }
                         }
@@ -955,15 +940,13 @@ impl Flattened {
                 let is_field = matches!(node.kind, XfaNodeKind::Field) ||
                     matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
                 
-                if is_field {
-                    if let Some(name) = &node.name {
-                        if !name.is_empty() {
+                if is_field
+                    && let Some(name) = &node.name
+                        && !name.is_empty() {
                             // Register floating field with just its name (no parent path)
                             let value = extract_field_value_helper(&node.children);
                             engine.register_xfa_node(name, name, None, true, &value);
                         }
-                    }
-                }
                 
                 // Recurse into children (e.g., pageArea contains the floating fields)
                 register_floating_fields(&node.children, engine);
@@ -1194,8 +1177,8 @@ impl Flattened {
                 // Per XFA spec, scripts can set rawValue on child fields via this.childName
                 // Store by UNIQUE ID to avoid collisions when multiple subforms have same-named children
                 for (child_name, child_id) in child_fields {
-                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        if !child_value.is_empty() {
+                    if let Some((id, child_value)) = engine.get_child_field_value(child_name)
+                        && !child_value.is_empty() {
                             // Use the ID if available, otherwise fall back to the id from the pair
                             let storage_key = if !id.is_empty() { id } else { child_id.clone() };
                             
@@ -1206,7 +1189,6 @@ impl Flattened {
                             // Also store by name for fallback lookups (will be overwritten by later instances)
                             computed_values.insert(child_name.clone(), child_value);
                         }
-                    }
                 }
             }
         }
@@ -1232,8 +1214,8 @@ impl Flattened {
                 
                 // Collect values set on child fields (same logic as form:ready)
                 for (child_name, child_id) in child_fields {
-                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        if !child_value.is_empty() {
+                    if let Some((id, child_value)) = engine.get_child_field_value(child_name)
+                        && !child_value.is_empty() {
                             let storage_key = if !id.is_empty() { id } else { child_id.clone() };
                             
                             if !storage_key.is_empty() {
@@ -1241,7 +1223,6 @@ impl Flattened {
                             }
                             computed_values.insert(child_name.clone(), child_value);
                         }
-                    }
                 }
             }
         }
@@ -1333,22 +1314,18 @@ impl Flattened {
     /// Recursively collect script content from <variables> elements
     fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
         for node in nodes {
-            if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
-                if tag_name == "variables" {
+            if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+                && tag_name == "variables" {
                     // Look for script children
                     for child in &node.children {
-                        if let XfaNodeKind::Element { tag_name: child_tag, text_content, .. } = &child.kind {
-                            if child_tag == "script" {
-                                if let Some(name) = child.name.as_ref().or_else(|| child.attributes.get("name")) {
-                                    if let Some(content) = text_content {
+                        if let XfaNodeKind::Element { tag_name: child_tag, text_content, .. } = &child.kind
+                            && child_tag == "script"
+                                && let Some(name) = child.name.as_ref().or_else(|| child.attributes.get("name"))
+                                    && let Some(content) = text_content {
                                         scripts.push((name.clone(), content.clone()));
                                     }
-                                }
-                            }
-                        }
                     }
                 }
-            }
             
             // Recurse
             Self::collect_variable_scripts(&node.children, scripts);
@@ -1416,11 +1393,10 @@ impl Flattened {
                 if matches!(child.kind, XfaNodeKind::ContentArea) {
                     continue;
                 }
-                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                    if tag_name == "contentArea" || tag_name == "medium" {
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                    && (tag_name == "contentArea" || tag_name == "medium") {
                         continue;
                     }
-                }
                 
                 // Render page background element with positioned layout relative to page origin
                 Self::flatten_single_node(child, page_position, Layout::Position, &mut flattened_nodes, &page_ctx)?;
@@ -1465,21 +1441,18 @@ impl Flattened {
                 FlattenedNodeKind::Field { name, value, .. } => {
                     // If we have a computed value for this field and it currently has no value,
                     // use the computed value
-                    if value.is_empty() {
-                        if let Some(computed) = computed_values.get(name) {
+                    if value.is_empty()
+                        && let Some(computed) = computed_values.get(name) {
                             *value = computed.clone();
                         }
-                    }
                 }
                 FlattenedNodeKind::Text { content, source_name, .. } => {
                     // For Draw elements with a source name, check if we have a computed value
-                    if let Some(name) = source_name {
-                        if content.is_empty() {
-                            if let Some(computed) = computed_values.get(name) {
+                    if let Some(name) = source_name
+                        && content.is_empty()
+                            && let Some(computed) = computed_values.get(name) {
                                 *content = computed.clone();
                             }
-                        }
-                    }
                 }
             }
         }
@@ -1536,7 +1509,7 @@ impl Flattened {
         }
         
         /// Find content subform inside a container subform (sibling to pageSet)
-        fn find_content_subform_in_container<'a>(container: &'a XfaNode) -> Option<&'a XfaNode> {
+        fn find_content_subform_in_container(container: &XfaNode) -> Option<&XfaNode> {
             // Look for a subform that is NOT a pageSet and NOT a non-content element
             // This is the actual content subform that goes into the Form DOM
             for child in &container.children {
@@ -1548,16 +1521,15 @@ impl Flattened {
                 if matches!(child.kind, XfaNodeKind::Subform) {
                     return Some(child);
                 }
-                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                    if tag_name == "subform" {
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                    && tag_name == "subform" {
                         return Some(child);
                     }
-                }
             }
             None
         }
         
-        fn search_recursive<'a>(nodes: &'a [XfaNode]) -> Option<&'a XfaNode> {
+        fn search_recursive(nodes: &[XfaNode]) -> Option<&XfaNode> {
             for node in nodes {
                 // Skip data elements - we only want Template DOM content
                 if is_data_element(node) {
@@ -1576,7 +1548,7 @@ impl Flattened {
                             }
                             // If no content subform found, the container itself might be the content
                             // (for simpler forms without separate pageSet)
-                            let has_page_set = child.children.iter().any(|c| is_page_structure(c));
+                            let has_page_set = child.children.iter().any(is_page_structure);
                             if !has_page_set {
                                 return Some(child);
                             }
@@ -1585,8 +1557,8 @@ impl Flattened {
                 }
                 
                 // Check Element nodes for template
-                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
-                    if tag_name == "template" {
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+                    && tag_name == "template" {
                         for child in &node.children {
                             let is_subform = matches!(child.kind, XfaNodeKind::Subform) ||
                                 matches!(&child.kind, XfaNodeKind::Element { tag_name: ct, .. } if ct == "subform");
@@ -1597,21 +1569,19 @@ impl Flattened {
                                     return Some(content_subform);
                                 }
                                 // Fallback: use the container if no pageSet
-                                let has_page_set = child.children.iter().any(|c| is_page_structure(c));
+                                let has_page_set = child.children.iter().any(is_page_structure);
                                 if !has_page_set {
                                     return Some(child);
                                 }
                             }
                         }
                     }
-                }
                 
                 // Only recurse into Template or container nodes, skip data elements
-                if !is_data_element(node) {
-                    if let Some(result) = search_recursive(&node.children) {
+                if !is_data_element(node)
+                    && let Some(result) = search_recursive(&node.children) {
                         return Some(result);
                     }
-                }
             }
             None
         }
@@ -1622,7 +1592,7 @@ impl Flattened {
     fn flatten_single_node(
         node: &XfaNode,
         parent_position: Position,
-        parent_layout: Layout,
+        _parent_layout: Layout,
         flattened_nodes: &mut Vec<FlattenedNode>,
         ctx: &FlattenContext,
     ) -> Result<(), String> {
@@ -1720,7 +1690,7 @@ impl Flattened {
     }
     
     fn find_page_and_content_area(nodes: &[XfaNode]) -> Option<(&XfaNode, &XfaNode)> {
-        fn search_recursive<'a>(nodes: &'a [XfaNode]) -> Option<(&'a XfaNode, &'a XfaNode)> {
+        fn search_recursive(nodes: &[XfaNode]) -> Option<(&XfaNode, &XfaNode)> {
             for node in nodes {
                 // Check for PageArea node type
                 if matches!(node.kind, XfaNodeKind::PageArea) {
@@ -1730,44 +1700,40 @@ impl Flattened {
                             return Some((node, child));
                         }
                         // Also check Element nodes that might be contentArea
-                        if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                            if tag_name == "contentArea" {
+                        if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                            && tag_name == "contentArea" {
                                 return Some((node, child));
                             }
-                        }
                     }
                     // If no contentArea found, return pageArea twice (use page dimensions)
                     return Some((node, node));
                 }
                 
                 // Check for pageArea as Element
-                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
-                    if tag_name == "pageArea" {
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+                    && tag_name == "pageArea" {
                         // Found pageArea as Element, look for contentArea
                         for child in &node.children {
                             if matches!(child.kind, XfaNodeKind::ContentArea) {
                                 return Some((node, child));
                             }
-                            if let XfaNodeKind::Element { tag_name: ca_tag, .. } = &child.kind {
-                                if ca_tag == "contentArea" {
+                            if let XfaNodeKind::Element { tag_name: ca_tag, .. } = &child.kind
+                                && ca_tag == "contentArea" {
                                     return Some((node, child));
                                 }
-                            }
                         }
                         return Some((node, node));
                     }
-                }
                 
                 // Recurse into all container-like nodes to find pageArea
                 let should_recurse = matches!(node.kind, 
                     XfaNodeKind::Template | XfaNodeKind::PageSet | XfaNodeKind::Subform)
                     || matches!(&node.kind, XfaNodeKind::Element { .. });
                     
-                if should_recurse {
-                    if let Some(result) = search_recursive(&node.children) {
+                if should_recurse
+                    && let Some(result) = search_recursive(&node.children) {
                         return Some(result);
                     }
-                }
             }
             None
         }
@@ -1827,17 +1793,15 @@ impl Flattened {
         for child in children {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for value_child in &child.children {
-                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
-                        if tag_name == "exData" {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind
+                        && tag_name == "exData" {
                             for ex_child in &value_child.children {
-                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
-                                    if inner_tag == "body" {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind
+                                    && inner_tag == "body" {
                                         return true;
                                     }
-                                }
                             }
                         }
-                    }
                 }
             }
         }
@@ -1855,56 +1819,49 @@ impl Flattened {
                 for value_child in &child.children {
                     if let XfaNodeKind::Element { tag_name, text_content } = &value_child.kind {
                         // Check for <text> element with U+2029 paragraph separators
-                        if tag_name == "text" {
-                            if let Some(text) = text_content {
-                                if text.contains('\u{2029}') {
+                        if tag_name == "text"
+                            && let Some(text) = text_content
+                                && text.contains('\u{2029}') {
                                     // Create rich text from plain text with paragraph separators
                                     return Some(Self::create_rich_text_from_plain_with_separators(text, default_h_align));
                                 }
-                            }
-                        }
                         
                         if tag_name == "exData" {
                             // Check if it has HTML body content
                             for ex_child in &value_child.children {
-                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
-                                    if inner_tag == "body" {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind
+                                    && inner_tag == "body" {
                                         // Found HTML body - parse it into RichText
                                         return Some(Self::parse_rich_text_from_html(&value_child.children, default_h_align));
                                     }
-                                }
                             }
                         }
                     }
                 }
             }
             // Also check for Element with tag_name "value"
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "value" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "value" {
                     for value_child in &child.children {
                         if let XfaNodeKind::Element { tag_name: inner_tag, text_content } = &value_child.kind {
                             // Check for <text> element with U+2029 paragraph separators
-                            if inner_tag == "text" {
-                                if let Some(text) = text_content {
-                                    if text.contains('\u{2029}') {
+                            if inner_tag == "text"
+                                && let Some(text) = text_content
+                                    && text.contains('\u{2029}') {
                                         return Some(Self::create_rich_text_from_plain_with_separators(text, default_h_align));
                                     }
-                                }
-                            }
                             
                             if inner_tag == "exData" {
                                 for ex_child in &value_child.children {
-                                    if let XfaNodeKind::Element { tag_name: body_tag, .. } = &ex_child.kind {
-                                        if body_tag == "body" {
+                                    if let XfaNodeKind::Element { tag_name: body_tag, .. } = &ex_child.kind
+                                        && body_tag == "body" {
                                             return Some(Self::parse_rich_text_from_html(&value_child.children, default_h_align));
                                         }
-                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
         }
         None
     }
@@ -2719,7 +2676,7 @@ impl Flattened {
         let line_height = para.as_ref()
             .and_then(|p| p.line_height)
             .unwrap_or(font_size * num(1.2));
-        let line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
+        let _line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
         
         // Use a more accurate character width estimate based on typical font metrics
         // Average character width is typically 40-50% of font size for proportional fonts
@@ -2765,7 +2722,9 @@ impl Flattened {
         // Per AXTE: FH = MT + (num_lines * line_height) + MB
         // But last line doesn't need trailing gap, so subtract one line gap
         let line_gap = line_height - font_size;
-        let total_height = if num_lines == 0 {
+        
+        
+        if num_lines == 0 {
             margin_top + font_size + margin_bottom
         } else if num_lines == 1 {
             // Single line: MT + line_height + MB - line_gap (no trailing gap)
@@ -2774,9 +2733,7 @@ impl Flattened {
             // Multiple lines: all lines use line_height, but last line has no trailing gap
             let lines_height = num(num_lines as f64) * line_height - line_gap;
             margin_top + lines_height + margin_bottom
-        };
-        
-        total_height
+        }
     }
     
     /// Calculate the natural height for a text/draw element with paragraph count.
@@ -2799,7 +2756,7 @@ impl Flattened {
         let line_height = para.as_ref()
             .and_then(|p| p.line_height)
             .unwrap_or(font_size * num(1.2));
-        let line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
+        let _line_height_f32 = line_height.to_f32().unwrap_or(font_size_f32 * 1.2);
         
         // Use a more accurate character width estimate based on typical font metrics
         // Average character width is typically 40-50% of font size for proportional fonts
@@ -2848,7 +2805,9 @@ impl Flattened {
         
         // Calculate total height using line_height for all lines
         let line_gap = line_height - font_size;
-        let total_height = if num_lines == 0 {
+        
+        
+        if num_lines == 0 {
             margin_top + font_size + margin_bottom
         } else if num_lines == 1 {
             margin_top + font_size + margin_bottom
@@ -2856,9 +2815,7 @@ impl Flattened {
             // Multiple lines: all lines use line_height, but last line has no trailing gap
             let lines_height = num(num_lines as f64) * line_height - line_gap;
             margin_top + lines_height + margin_bottom
-        };
-        
-        total_height
+        }
     }
     
     fn parse_dimension(s: &str) -> Result<Num, String> {
@@ -2900,11 +2857,10 @@ impl Flattened {
                     if let XfaNodeKind::Text { content } = &value_child.kind {
                         return content.clone();
                     }
-                    if let XfaNodeKind::Element { text_content, .. } = &value_child.kind {
-                        if let Some(text) = text_content {
+                    if let XfaNodeKind::Element { text_content, .. } = &value_child.kind
+                        && let Some(text) = text_content {
                             return text.clone();
                         }
-                    }
                 }
             }
         }
@@ -2929,19 +2885,16 @@ impl Flattened {
     ) -> Option<String> {
         for child in children {
             // Check for XfaNodeKind::Value
-            if matches!(child.kind, XfaNodeKind::Value) {
-                if let Some(text) = Self::extract_value_text_with_embed(&child.children, computed_values, id_to_field) {
+            if matches!(child.kind, XfaNodeKind::Value)
+                && let Some(text) = Self::extract_value_text_with_embed(&child.children, computed_values, id_to_field) {
                     return Some(text);
                 }
-            }
             // Also check for Element with tag_name "value" (when parsed via parse_element_content)
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "value" {
-                    if let Some(text) = Self::extract_value_text_with_embed(&child.children, computed_values, id_to_field) {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "value"
+                    && let Some(text) = Self::extract_value_text_with_embed(&child.children, computed_values, id_to_field) {
                         return Some(text);
                     }
-                }
-            }
             if let XfaNodeKind::Text { content } = &child.kind {
                 return Some(content.clone());
             }
@@ -2965,11 +2918,10 @@ impl Flattened {
                 return Some(content.clone());
             }
             if let XfaNodeKind::Element { tag_name, text_content } = &value_child.kind {
-                if tag_name == "text" {
-                    if let Some(text) = text_content {
+                if tag_name == "text"
+                    && let Some(text) = text_content {
                         return Some(text.clone());
                     }
-                }
                 // Handle exData with HTML content - extract plain text from it
                 if tag_name == "exData" {
                     // Try to extract text from HTML body with embed resolution
@@ -3048,11 +3000,10 @@ impl Flattened {
                         }
                     }
                     // Add space/newline for paragraph breaks
-                    if tag_name == "p" || tag_name == "br" {
-                        if !text_parts.is_empty() {
+                    if (tag_name == "p" || tag_name == "br")
+                        && !text_parts.is_empty() {
                             text_parts.push(" ".to_string());
                         }
-                    }
                     // Recurse into children
                     Self::collect_text_recursive_with_embed(&child.children, text_parts, computed_values, id_to_field);
                 }
@@ -3078,8 +3029,8 @@ impl Flattened {
         id_to_field: &HashMap<String, String>
     ) -> Option<String> {
         // Handle URI reference (starts with #)
-        if embed_ref.starts_with('#') {
-            let id = &embed_ref[1..]; // Remove the # prefix
+        if let Some(id) = embed_ref.strip_prefix('#') {
+            // Remove the # prefix
             
             // FIRST: Try to look up the value directly by ID (preferred - handles multiple same-named fields)
             if let Some(value) = computed_values.get(id) {
@@ -3222,22 +3173,18 @@ impl Flattened {
             }
             
             // Draw fill background if present
-            if let Some(border) = &node.style.border {
-                if let Some(fill) = &border.fill {
-                    if fill.presence != "hidden" && fill.presence != "inactive" {
-                        if let Some((r, g, b)) = fill.color {
+            if let Some(border) = &node.style.border
+                && let Some(fill) = &border.fill
+                    && fill.presence != "hidden" && fill.presence != "inactive"
+                        && let Some((r, g, b)) = fill.color {
                             Self::fill_rect(&mut img, x, y, w, h, Rgba([r, g, b, 255u8]));
                         }
-                    }
-                }
-            }
             
             // Draw border if present and visible
-            if let Some(border) = &node.style.border {
-                if border.is_visible() {
+            if let Some(border) = &node.style.border
+                && border.is_visible() {
                     Self::draw_border(&mut img, x, y, w, h, border, scale);
                 }
-            }
             
             match &node.kind {
                 FlattenedNodeKind::Field { value, .. } => {
@@ -3290,7 +3237,7 @@ impl Flattened {
                         );
                     }
                 }
-                FlattenedNodeKind::Text { content, font_size, rich_text, source_name, .. } => {
+                FlattenedNodeKind::Text { content, font_size, rich_text, source_name: _, .. } => {
                     // Draw text content (draw elements/labels)
                     // Get font style from node, or use XFA defaults
                     let xfa_font = node.style.font.clone().unwrap_or_default();
@@ -3362,7 +3309,7 @@ impl Flattened {
                     };
                     
                     // Check if we have rich text (HTML content with paragraph structure)
-                    let has_rich_content = rich_text.as_ref().map_or(false, |rt| {
+                    let has_rich_content = rich_text.as_ref().is_some_and(|rt| {
                         rt.paragraphs.iter().any(|p| !p.is_empty && p.runs.iter().any(|r| !r.text.is_empty()))
                     });
                     
@@ -3615,7 +3562,7 @@ impl Flattened {
         let h = (node_height * scale).to_f32().unwrap_or(0.0);
         
         // Normalize rotation to 0, 90, 180, 270
-        let rot = ((rotate % 360) + 360) % 360;
+        let rot = rotate.rem_euclid(360);
         
         match rot {
             0 => (x as i32, y as i32, w as i32, h as i32),
@@ -3737,7 +3684,7 @@ impl Flattened {
             text_height
         } else {
             // Multiple lines: full line spacing for all but last line
-            let is_last_line = line_index == total_lines - 1;
+            let _is_last_line = line_index == total_lines - 1;
             let full_height_per_line = line_spacing;
             let last_line_height = text_height; // No line gap on last line
             
@@ -4114,12 +4061,11 @@ impl Flattened {
                             );
                             
                             // Check if paragraph ended up empty (only whitespace spans)
-                            if let Some(last_para) = paragraphs.last_mut() {
-                                if last_para.runs.is_empty() || 
-                                   last_para.runs.iter().all(|r| r.text.trim().is_empty()) {
+                            if let Some(last_para) = paragraphs.last_mut()
+                                && (last_para.runs.is_empty() || 
+                                   last_para.runs.iter().all(|r| r.text.trim().is_empty())) {
                                     last_para.is_empty = true;
                                 }
-                            }
                         }
                         "span" => {
                             // Check for xfa-spacerun:yes style
@@ -4324,7 +4270,7 @@ impl Flattened {
             } else if value_str.ends_with("in") {
                 value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 72.0)
             } else if value_str.ends_with("mm") {
-                value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 2.834645669)
+                value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 2.834_645_7)
             } else if value_str.ends_with("px") {
                 // Approximate px to pt (1px ≈ 0.75pt at 96dpi)
                 value_str[..value_str.len()-2].trim().parse::<f32>().ok().map(|v| v * 0.75)
@@ -4842,11 +4788,10 @@ impl Flattened {
     /// Returns RichText structure if HTML content is found, None otherwise.
     pub fn extract_rich_text_from_exdata(children: &[XfaNode], default_h_align: HAlign) -> Option<RichText> {
         for child in children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "body" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "body" {
                     return Some(Self::parse_rich_text_from_html(&[child.clone()], default_h_align));
                 }
-            }
             // Recurse into children
             if let Some(rich_text) = Self::extract_rich_text_from_exdata(&child.children, default_h_align) {
                 return Some(rich_text);
@@ -4860,18 +4805,16 @@ impl Flattened {
         for child in children {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for value_child in &child.children {
-                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
-                        if tag_name == "exData" {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind
+                        && tag_name == "exData" {
                             // Check if it has HTML body content
                             for ex_child in &value_child.children {
-                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind {
-                                    if inner_tag == "body" {
+                                if let XfaNodeKind::Element { tag_name: inner_tag, .. } = &ex_child.kind
+                                    && inner_tag == "body" {
                                         return true;
                                     }
-                                }
                             }
                         }
-                    }
                 }
             }
         }
@@ -4883,11 +4826,10 @@ impl Flattened {
         for child in children {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for value_child in &child.children {
-                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
-                        if tag_name == "exData" {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind
+                        && tag_name == "exData" {
                             return Self::extract_rich_text_from_exdata(&value_child.children, default_h_align);
                         }
-                    }
                 }
             }
         }

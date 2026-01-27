@@ -169,11 +169,10 @@ impl LabelAttacher {
                 LabelPosition::Left => self.check_left(&text_bounds, &field_bounds),
             };
             
-            if let Some(g) = gap {
-                if best.map(|(_, best_gap)| g < best_gap).unwrap_or(true) {
+            if let Some(g) = gap
+                && best.map(|(_, best_gap)| g < best_gap).unwrap_or(true) {
                     best = Some((text_idx, g));
                 }
-            }
         }
         
         best

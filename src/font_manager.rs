@@ -343,7 +343,7 @@ impl FontManager {
         ];
         
         // Combine all directories
-        let mut all_dirs: Vec<&str> = if cfg!(target_os = "macos") {
+        let all_dirs: Vec<&str> = if cfg!(target_os = "macos") {
             macos_dirs.to_vec()
         } else if cfg!(target_os = "linux") {
             linux_dirs.to_vec()
@@ -596,8 +596,8 @@ impl FontManager {
         }
         
         // 5. Try aliases with normal weight if we were looking for bold/italic
-        if variant.weight != FontWeight::Normal || variant.posture != FontPosture::Normal {
-            if let Some(aliases) = self.aliases.get(&variant.family).cloned() {
+        if (variant.weight != FontWeight::Normal || variant.posture != FontPosture::Normal)
+            && let Some(aliases) = self.aliases.get(&variant.family).cloned() {
                 for alias in &aliases {
                     let alias_normal = FontVariant::new(alias, FontWeight::Normal, FontPosture::Normal);
                     if let Some(font_file) = self.font_files.get(&alias_normal) {
@@ -605,7 +605,6 @@ impl FontManager {
                     }
                 }
             }
-        }
         
         // 6. Try generic family fallback - preserve weight and posture
         let generic = generic_family.unwrap_or(self.config.default_generic_family);

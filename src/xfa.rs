@@ -435,8 +435,8 @@ impl XfaNode {
     /// Extract margins from child <margin> element after parsing children
     pub fn extract_margins_from_children(&mut self) {
         for child in &self.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "margin" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "margin" {
                     self.margin_top = child.attributes.get("topInset")
                         .and_then(|v| Self::parse_dimension(v).ok());
                     self.margin_bottom = child.attributes.get("bottomInset")
@@ -447,7 +447,6 @@ impl XfaNode {
                         .and_then(|v| Self::parse_dimension(v).ok());
                     break; // Only one margin element expected
                 }
-            }
         }
     }
     
@@ -560,7 +559,7 @@ impl XfaNode {
             .cloned()
             .unwrap_or_else(|| "Courier".to_string());
         
-        let weight_attr = node.attributes.get("weight");
+        let _weight_attr = node.attributes.get("weight");
         
         // Determine generic family: from attribute, or infer from typeface
         let generic_family = node.attributes.get("genericFamily")
@@ -636,9 +635,9 @@ impl XfaNode {
     /// Parse color from child <color> element (value attribute like "255,0,0")
     fn parse_color_from_children(children: &[XfaNode]) -> Option<(u8, u8, u8)> {
         for child in children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "color" {
-                    if let Some(value) = child.attributes.get("value") {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "color"
+                    && let Some(value) = child.attributes.get("value") {
                         let parts: Vec<&str> = value.split(',').collect();
                         if parts.len() >= 3 {
                             let r = parts[0].trim().parse::<u8>().ok()?;
@@ -647,8 +646,6 @@ impl XfaNode {
                             return Some((r, g, b));
                         }
                     }
-                }
-            }
         }
         None
     }
@@ -759,11 +756,10 @@ impl XfaNode {
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
                     
-                    if let Some(expected_end) = end_tag {
-                        if tag_name == expected_end {
+                    if let Some(expected_end) = end_tag
+                        && tag_name == expected_end {
                             return Ok(());
                         }
-                    }
                 }
                 Ok(Event::Text(e)) => {
                     let text = e.unescape()
@@ -825,14 +821,13 @@ impl XfaNode {
                     Self::parse_element_content(reader, &mut child_node.children, &mut child_text, &tag_name)?;
                     
                     // Update kind with text if present (only for Element type)
-                    if !child_text.trim().is_empty() {
-                        if let XfaNodeKind::Element { tag_name: t, .. } = &child_node.kind {
+                    if !child_text.trim().is_empty()
+                        && let XfaNodeKind::Element { tag_name: t, .. } = &child_node.kind {
                             child_node.kind = XfaNodeKind::Element {
                                 tag_name: t.clone(),
                                 text_content: Some(child_text),
                             };
                         }
-                    }
                     
                     // Extract styling (margins, border, font, para) from child elements
                     child_node.extract_styling_from_children();

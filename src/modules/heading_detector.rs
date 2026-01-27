@@ -106,7 +106,7 @@ impl HeadingDetector {
         sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         
         let len = sizes.len();
-        let median = if len % 2 == 0 {
+        let median = if len.is_multiple_of(2) {
             (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
         } else {
             sizes[len / 2]
@@ -240,11 +240,10 @@ impl HeadingDetector {
                 text_content.push(' ');
                 
                 // Check font weight from style
-                if let Some(font) = &node.style.font {
-                    if font.weight == FontWeight::Bold {
+                if let Some(font) = &node.style.font
+                    && font.weight == FontWeight::Bold {
                         is_bold = true;
                     }
-                }
             }
         }
         
@@ -355,8 +354,8 @@ impl AnalysisModule for HeadingDetector {
         let mut headings: Vec<(usize, u8)> = Vec::new();
         
         for group_idx in text_groups {
-            if let Some(props) = self.get_text_properties(doc, group_idx) {
-                if let Some(level) = self.determine_heading_level(
+            if let Some(props) = self.get_text_properties(doc, group_idx)
+                && let Some(level) = self.determine_heading_level(
                     props.avg_font_size,
                     props.is_bold,
                     props.text_length,
@@ -364,7 +363,6 @@ impl AnalysisModule for HeadingDetector {
                 ) {
                     headings.push((group_idx, level));
                 }
-            }
         }
         
         // Create Heading groups
