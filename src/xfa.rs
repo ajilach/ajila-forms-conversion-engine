@@ -314,6 +314,48 @@ impl VAlign {
     }
 }
 
+/// Node presence values per XFA spec
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
+pub enum Presence {
+    #[default]
+    Visible,
+    Invisible,
+    Hidden,
+    Inactive,
+}
+
+impl Presence {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "invisible" => Presence::Invisible,
+            "hidden" => Presence::Hidden,
+            "inactive" => Presence::Inactive,
+            _ => Presence::Visible,
+        }
+    }
+    
+    /// Returns the XFA string representation of this presence value
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Presence::Visible => "visible",
+            Presence::Invisible => "invisible",
+            Presence::Hidden => "hidden",
+            Presence::Inactive => "inactive",
+        }
+    }
+    
+    /// Returns true if this presence should skip rendering
+    pub fn should_skip_render(&self) -> bool {
+        matches!(self, Presence::Hidden | Presence::Invisible | Presence::Inactive)
+    }
+    
+    /// Returns true if this presence should skip layout (not take up space)
+    pub fn should_skip_layout(&self) -> bool {
+        matches!(self, Presence::Hidden | Presence::Inactive)
+    }
+}
+
 /// Main XFA node structure containing layout information and node-specific data
 #[derive(Debug, Clone)]
 pub struct XfaNode {
@@ -346,6 +388,9 @@ pub struct XfaNode {
     
     /// Node name (for named nodes like subforms, fields, etc.)
     pub name: Option<String>,
+    
+    /// Presence attribute (can be modified by scripts)
+    pub presence: Presence,
     
     /// All attributes from the XML (including layout attrs)
     pub attributes: HashMap<String, String>,
@@ -406,6 +451,9 @@ impl XfaNode {
         let layout = attributes.get("layout").cloned();
         let rotate = attributes.get("rotate").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
         let name = attributes.get("name").cloned();
+        let presence = attributes.get("presence")
+            .map(|s| Presence::from_str(s))
+            .unwrap_or(Presence::Visible);
         
         XfaNode {
             kind,
@@ -427,6 +475,7 @@ impl XfaNode {
             font: None,
             para: None,
             name,
+            presence,
             attributes,
             children: Vec::new(),
         }
@@ -1004,5 +1053,41 @@ impl XfaNode {
         for child in &self.children {
             child.find_nodes_by_type(predicate, results);
         }
+    }
+    
+    /// Get the current presence value for this node
+    pub fn get_presence(&self) -> Presence {
+        self.presence
+    }
+    
+    /// Set the presence value for this node
+    pub fn set_presence(&mut self, presence: Presence) {
+        self.presence = presence;
+    }
+    
+    /// Find a mutable reference to a descendant node by name
+    pub fn find_node_by_name_mut(&mut self, name: &str) -> Option<&mut XfaNode> {
+        if self.name.as_deref() == Some(name) {
+            return Some(self);
+        }
+        for child in &mut self.children {
+            if let Some(found) = child.find_node_by_name_mut(name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    
+    /// Find a mutable reference to a descendant node by ID attribute
+    pub fn find_node_by_id_mut(&mut self, id: &str) -> Option<&mut XfaNode> {
+        if self.attributes.get("id").map(|s| s.as_str()) == Some(id) {
+            return Some(self);
+        }
+        for child in &mut self.children {
+            if let Some(found) = child.find_node_by_id_mut(id) {
+                return Some(found);
+            }
+        }
+        None
     }
 }

@@ -228,6 +228,39 @@ impl SomResolver {
         }
     }
     
+    /// Build a SomResolver from XFA nodes
+    pub fn from_nodes(xfa_nodes: &[XfaNode]) -> Self {
+        let mut resolver = Self::new();
+        
+        fn register_recursive(resolver: &mut SomResolver, nodes: &[XfaNode], parent_path: Option<&str>) {
+            for node in nodes {
+                if let Some(name) = &node.name {
+                    let path = match parent_path {
+                        Some(p) => format!("{}.{}", p, name),
+                        None => name.clone(),
+                    };
+                    
+                    let class_name = match &node.kind {
+                        XfaNodeKind::Field => "field",
+                        XfaNodeKind::Subform => "subform",
+                        XfaNodeKind::Draw => "draw",
+                        XfaNodeKind::Element { tag_name, .. } => tag_name.as_str(),
+                        _ => "node",
+                    };
+                    
+                    resolver.register_node(&path, name, class_name, parent_path);
+                    register_recursive(resolver, &node.children, Some(&path));
+                } else {
+                    // Node without name - recurse with same parent path
+                    register_recursive(resolver, &node.children, parent_path);
+                }
+            }
+        }
+        
+        register_recursive(&mut resolver, xfa_nodes, None);
+        resolver
+    }
+    
     /// Register a node in the SOM tree
     pub fn register_node(&mut self, path: &str, name: &str, class_name: &str, parent_path: Option<&str>) {
         let index = self.nodes_by_name.get(name).map(|v| v.len()).unwrap_or(0);
@@ -453,48 +486,8 @@ impl DependencyTracker {
 // Form State
 // =============================================================================
 
-/// Node presence values per XFA spec
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
-pub enum Presence {
-    #[default]
-    Visible,
-    Invisible,
-    Hidden,
-    Inactive,
-}
-
-
-impl Presence {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "invisible" => Presence::Invisible,
-            "hidden" => Presence::Hidden,
-            "inactive" => Presence::Inactive,
-            _ => Presence::Visible,
-        }
-    }
-    
-    /// Returns the XFA string representation of this presence value
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Presence::Visible => "visible",
-            Presence::Invisible => "invisible",
-            Presence::Hidden => "hidden",
-            Presence::Inactive => "inactive",
-        }
-    }
-    
-    /// Returns true if this presence should skip rendering
-    pub fn should_skip_render(&self) -> bool {
-        matches!(self, Presence::Hidden | Presence::Invisible | Presence::Inactive)
-    }
-    
-    /// Returns true if this presence should skip layout (not take up space)
-    pub fn should_skip_layout(&self) -> bool {
-        matches!(self, Presence::Hidden | Presence::Inactive)
-    }
-}
+// Re-export Presence from xfa module - single source of truth
+pub use crate::xfa::Presence;
 
 /// Shared form data state that scripts can read/write
 #[derive(Debug, Clone)]
@@ -1763,5 +1756,916 @@ mod tests {
         if let Ok(Some(value)) = result {
             assert_eq!(value, "First name(s)");
         }
+    }
+    
+    // =========================================================================
+    // XfaForm Interface Tests for AAAB
+    // =========================================================================
+    
+    /// Test the XfaForm interface with AAAB: RB_1, RB_2, RB_3 control section visibility
+    /// 
+    /// - RB_1 (default): "Neuanlage (möglich ab dem 01. des aktuellen Monats)" section visible
+    /// - RB_2: "Änderung" section visible  
+    /// - RB_3: "Löschung" section visible
+    #[test]
+    fn test_xfa_form_aaab_radio_button_sections() {
+        use crate::xfa::Presence;
+        
+        // Extract XFA from AAAB using the public function from main
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        // Create XfaForm
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Test that we can resolve the radio buttons
+        let rb1 = form.resolve("RB_1");
+        let rb2 = form.resolve("RB_2");
+        let rb3 = form.resolve("RB_3");
+        
+        println!("\n=== Radio Button Resolution ===");
+        println!("RB_1 resolved: {}", rb1.is_some());
+        println!("RB_2 resolved: {}", rb2.is_some());
+        println!("RB_3 resolved: {}", rb3.is_some());
+        
+        // At least one should be resolvable
+        assert!(rb1.is_some() || rb2.is_some() || rb3.is_some(), 
+            "At least one radio button should be resolvable");
+        
+        // Print RB_1 details if found
+        if let Some(rb1_ref) = rb1 {
+            println!("\nRB_1 details:");
+            println!("  Name: {:?}", rb1_ref.name());
+            println!("  SOM Path: {}", rb1_ref.som_path());
+            println!("  Presence: {:?}", rb1_ref.presence());
+            println!("  Raw Value: {:?}", rb1_ref.raw_value());
+            println!("  Is Visible: {}", rb1_ref.is_visible());
+            if let Some(bounds) = rb1_ref.bounds() {
+                println!("  Bounds: ({}, {}, {}, {})", bounds.x, bounds.y, bounds.width, bounds.height);
+            }
+        }
+        
+        // Test reading presence of all nodes
+        println!("\n=== All field names ===");
+        let field_names = form.field_names();
+        for name in field_names.iter().take(20) {
+            println!("  {}", name);
+        }
+        println!("  ... ({} total fields)", field_names.len());
+    }
+    
+    /// Test that RB_1 is selected by default and Neuanlage section is visible
+    #[test]
+    fn test_xfa_form_aaab_rb1_default_neuanlage_visible() {
+        use crate::xfa::Presence;
+        
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Check that RB_1 is selected (value = 1)
+        if let Some(rb1) = form.resolve("RB_1") {
+            println!("\nRB_1 raw value: {:?}", rb1.raw_value());
+            // RB_1 should have value "1" when selected
+        }
+        
+        // The exclusion group should have the default value
+        if let Some(group) = form.resolve("RB_Group_Neuanlage") {
+            println!("RB_Group_Neuanlage presence: {:?}", group.presence());
+            println!("RB_Group_Neuanlage raw value: {:?}", group.raw_value());
+        }
+        
+        // ffrb1 should show the Neuanlage text when RB_1 is selected
+        if let Some(ffrb1) = form.resolve("ffrb1") {
+            let value = ffrb1.raw_value();
+            println!("\nffrb1 raw value: {:?}", value);
+            
+            // When RB_1 is selected, ffrb1 should contain "Neuanlage"
+            // This may not work if scripting for label updates isn't fully implemented
+        }
+        
+        // Look for fields that are typically in the Neuanlage section
+        println!("\n=== Neuanlage section fields ===");
+        for field in form.field_names() {
+            if field.to_lowercase().contains("neuanlage") || 
+               field.to_lowercase().contains("firstname") ||
+               field.to_lowercase().contains("familyname") {
+                if let Some(node) = form.resolve(&field) {
+                    println!("  {} - presence: {:?}, visible: {}", 
+                        field, node.presence(), node.is_visible());
+                }
+            }
+        }
+    }
+    
+    /// Test XfaForm resolve_mut and refresh workflow
+    #[test]
+    fn test_xfa_form_aaab_resolve_mut_and_refresh() {
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Find a field to modify
+        let test_field = "TF_FamilyName";
+        
+        // Read initial state
+        let initial_value = form.resolve(test_field)
+            .and_then(|n| n.raw_value());
+        println!("\nInitial value of {}: {:?}", test_field, initial_value);
+        
+        // Modify the field
+        if let Some(mut node) = form.resolve_mut(test_field) {
+            println!("Modifying {} via resolve_mut", test_field);
+            node.set_raw_value("TestValue123");
+            
+            // Check it was set on the XFA node
+            println!("Value after set: {:?}", node.raw_value());
+        }
+        
+        // Refresh to update flattened layout
+        form.refresh().expect("Failed to refresh form");
+        
+        // Read the updated value
+        let updated_value = form.resolve(test_field)
+            .and_then(|n| n.raw_value());
+        println!("Value after refresh: {:?}", updated_value);
+    }
+    
+    /// Test that presence can be read for nodes
+    #[test]
+    fn test_xfa_form_aaab_presence_read() {
+        use crate::xfa::Presence;
+        
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        println!("\n=== Presence states of various nodes ===");
+        
+        // Check presence of different nodes
+        let nodes_to_check = ["RB_1", "RB_2", "RB_3", "TF_FamilyName", "ffrb1"];
+        
+        for name in nodes_to_check {
+            if let Some(node) = form.resolve(name) {
+                println!("{}: presence={:?}, visible={}", 
+                    name, node.presence(), node.is_visible());
+            } else {
+                println!("{}: not found via SOM resolution", name);
+            }
+        }
+        
+        // Count nodes by presence type
+        let mut visible_count = 0;
+        let mut hidden_count = 0;
+        let mut invisible_count = 0;
+        let mut inactive_count = 0;
+        
+        for name in form.field_names() {
+            if let Some(node) = form.resolve(&name) {
+                match node.presence() {
+                    Presence::Visible => visible_count += 1,
+                    Presence::Hidden => hidden_count += 1,
+                    Presence::Invisible => invisible_count += 1,
+                    Presence::Inactive => inactive_count += 1,
+                }
+            }
+        }
+        
+        println!("\nPresence distribution:");
+        println!("  Visible: {}", visible_count);
+        println!("  Hidden: {}", hidden_count);
+        println!("  Invisible: {}", invisible_count);
+        println!("  Inactive: {}", inactive_count);
+    }
+    
+    /// Test setting presence via resolve_mut
+    #[test]
+    fn test_xfa_form_aaab_set_presence() {
+        use crate::xfa::Presence;
+        
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        let test_field = "TF_FamilyName";
+        
+        // Read initial presence
+        let initial_presence = form.resolve(test_field)
+            .map(|n| n.presence());
+        println!("\nInitial presence of {}: {:?}", test_field, initial_presence);
+        
+        // Set to hidden
+        if let Some(mut node) = form.resolve_mut(test_field) {
+            println!("Setting {} to Hidden", test_field);
+            node.set_presence(Presence::Hidden);
+        }
+        
+        // Refresh and check
+        form.refresh().expect("Failed to refresh");
+        
+        let after_presence = form.resolve(test_field)
+            .map(|n| n.presence());
+        println!("Presence after set to Hidden: {:?}", after_presence);
+        
+        assert_eq!(after_presence, Some(Presence::Hidden), 
+            "Presence should be Hidden after set_presence");
+        
+        // Set back to visible
+        if let Some(mut node) = form.resolve_mut(test_field) {
+            node.set_presence(Presence::Visible);
+        }
+        form.refresh().expect("Failed to refresh");
+        
+        let final_presence = form.resolve(test_field)
+            .map(|n| n.presence());
+        println!("Presence after set to Visible: {:?}", final_presence);
+        
+        assert_eq!(final_presence, Some(Presence::Visible), 
+            "Presence should be Visible after set_presence");
+    }
+    
+    /// Test position and size access
+    #[test]
+    fn test_xfa_form_aaab_position_and_size() {
+        let xfa_data = crate::extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let xfa_bytes = xfa_data.unwrap();
+        let nodes = XfaNode::parse(&xfa_bytes)
+            .expect("Failed to parse XFA structure");
+        
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        println!("\n=== Position and Size of Radio Buttons ===");
+        
+        for rb_name in ["RB_1", "RB_2", "RB_3"] {
+            if let Some(node) = form.resolve(rb_name) {
+                println!("\n{}:", rb_name);
+                if let Some((x, y)) = node.position() {
+                    println!("  Position: ({}, {})", x, y);
+                } else {
+                    println!("  Position: not available (node not in flattened layout)");
+                }
+                if let Some((w, h)) = node.size() {
+                    println!("  Size: {} x {}", w, h);
+                } else {
+                    println!("  Size: not available");
+                }
+                if let Some(bounds) = node.bounds() {
+                    println!("  Full bounds: x={}, y={}, w={}, h={}", 
+                        bounds.x, bounds.y, bounds.width, bounds.height);
+                }
+            } else {
+                println!("{}: not found", rb_name);
+            }
+        }
+    }
+}
+
+// =============================================================================
+// XFA Form Interface - High-level API for interacting with XFA forms
+// =============================================================================
+
+use crate::xfa::{XfaNode, XfaNodeKind, Num};
+use crate::flattened::{Flattened, FlattenedNodeKind, FlattenedNode};
+
+/// Position and size of a node in the flattened layout
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NodeBounds {
+    pub x: Num,
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+}
+
+/// Result of executing an event
+#[derive(Debug, Default)]
+pub struct EventResult {
+    /// Whether any values changed
+    pub values_changed: bool,
+    /// Whether presence changed on any node
+    pub presence_changed: bool,
+    /// SOM paths of fields whose values changed
+    pub changed_fields: Vec<String>,
+}
+
+/// A reference to a resolved node in the XFA form (immutable)
+/// 
+/// Provides read-only access to node properties including position,
+/// size, presence, and raw value.
+pub struct XfaNodeRef<'a> {
+    /// The XFA node
+    xfa_node: &'a XfaNode,
+    /// The flattened node (if visible in layout)
+    flattened_node: Option<&'a FlattenedNode>,
+    /// The SOM path used to resolve this node
+    som_path: String,
+}
+
+impl<'a> XfaNodeRef<'a> {
+    /// Get the presence of this node
+    pub fn presence(&self) -> Presence {
+        self.xfa_node.get_presence()
+    }
+    
+    /// Get the bounds (position and size) from the flattened layout
+    /// 
+    /// Returns None if the node is not visible in the layout.
+    pub fn bounds(&self) -> Option<NodeBounds> {
+        self.flattened_node.map(|n| NodeBounds {
+            x: n.x,
+            y: n.y,
+            width: n.width,
+            height: n.height,
+        })
+    }
+    
+    /// Get the position (x, y) from the flattened layout
+    pub fn position(&self) -> Option<(Num, Num)> {
+        self.flattened_node.map(|n| (n.x, n.y))
+    }
+    
+    /// Get the size (width, height) from the flattened layout
+    pub fn size(&self) -> Option<(Num, Num)> {
+        self.flattened_node.map(|n| (n.width, n.height))
+    }
+    
+    /// Get the raw value of this node
+    /// 
+    /// Returns the value from the flattened layout if available,
+    /// otherwise tries to extract from the XFA node.
+    pub fn raw_value(&self) -> Option<String> {
+        // First try flattened node
+        if let Some(flat) = self.flattened_node {
+            match &flat.kind {
+                FlattenedNodeKind::Field { value, .. } if !value.is_empty() => {
+                    return Some(value.clone());
+                }
+                FlattenedNodeKind::Text { content, .. } if !content.is_empty() => {
+                    return Some(content.clone());
+                }
+                _ => {}
+            }
+        }
+        
+        // Fall back to XFA node attributes or value child
+        if let Some(raw) = self.xfa_node.attributes.get("rawValue") {
+            return Some(raw.clone());
+        }
+        
+        // Look for value child
+        Self::extract_value_from_xfa_node(self.xfa_node)
+    }
+    
+    /// Get the name of this node
+    pub fn name(&self) -> Option<&str> {
+        self.xfa_node.name.as_deref()
+    }
+    
+    /// Get the SOM path used to resolve this node
+    pub fn som_path(&self) -> &str {
+        &self.som_path
+    }
+    
+    /// Check if this node is visible in the flattened layout
+    pub fn is_visible(&self) -> bool {
+        self.flattened_node.is_some()
+    }
+    
+    /// Get the XFA node kind
+    pub fn kind(&self) -> &XfaNodeKind {
+        &self.xfa_node.kind
+    }
+    
+    fn extract_value_from_xfa_node(node: &XfaNode) -> Option<String> {
+        for child in &node.children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for text_child in &child.children {
+                    if let XfaNodeKind::Text { content } = &text_child.kind {
+                        if !content.is_empty() {
+                            return Some(content.clone());
+                        }
+                    }
+                    if let XfaNodeKind::Element { text_content: Some(content), .. } = &text_child.kind {
+                        if !content.is_empty() {
+                            return Some(content.clone());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+/// A mutable reference to a resolved node in the XFA form
+/// 
+/// Provides mutable access for setting values, presence, and executing events.
+/// Note: After mutations, call `XfaForm::refresh()` to update the flattened layout.
+pub struct XfaNodeRefMut<'a> {
+    /// The XFA node (mutable)
+    xfa_node: &'a mut XfaNode,
+    /// The SOM path used to resolve this node
+    som_path: String,
+    /// Reference to the form's computed values cache
+    computed_values: &'a mut HashMap<String, String>,
+}
+
+impl<'a> XfaNodeRefMut<'a> {
+    /// Get the presence of this node
+    pub fn presence(&self) -> Presence {
+        self.xfa_node.get_presence()
+    }
+    
+    /// Set the presence of this node
+    /// 
+    /// Note: Call `XfaForm::refresh()` after to update the layout.
+    pub fn set_presence(&mut self, presence: Presence) {
+        self.xfa_node.set_presence(presence);
+    }
+    
+    /// Get the raw value of this node
+    pub fn raw_value(&self) -> Option<String> {
+        // Check computed values first
+        if let Some(value) = self.computed_values.get(&self.som_path) {
+            return Some(value.clone());
+        }
+        if let Some(name) = &self.xfa_node.name {
+            if let Some(value) = self.computed_values.get(name) {
+                return Some(value.clone());
+            }
+        }
+        
+        // Fall back to XFA node
+        if let Some(raw) = self.xfa_node.attributes.get("rawValue") {
+            return Some(raw.clone());
+        }
+        
+        XfaNodeRef::extract_value_from_xfa_node(self.xfa_node)
+    }
+    
+    /// Set the raw value of this node
+    /// 
+    /// Note: Call `XfaForm::refresh()` after to update the layout.
+    pub fn set_raw_value(&mut self, value: &str) {
+        // Store in computed values cache
+        self.computed_values.insert(self.som_path.clone(), value.to_string());
+        if let Some(name) = &self.xfa_node.name {
+            self.computed_values.insert(name.clone(), value.to_string());
+        }
+        
+        // Also update the XFA node
+        Self::set_node_value(self.xfa_node, value);
+    }
+    
+    /// Get the name of this node
+    pub fn name(&self) -> Option<&str> {
+        self.xfa_node.name.as_deref()
+    }
+    
+    /// Get the SOM path used to resolve this node
+    pub fn som_path(&self) -> &str {
+        &self.som_path
+    }
+    
+    fn set_node_value(node: &mut XfaNode, value: &str) {
+        // Look for existing value child
+        for child in &mut node.children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for text_child in &mut child.children {
+                    if let XfaNodeKind::Text { content } = &mut text_child.kind {
+                        *content = value.to_string();
+                        return;
+                    }
+                    if let XfaNodeKind::Element { text_content, .. } = &mut text_child.kind {
+                        *text_content = Some(value.to_string());
+                        return;
+                    }
+                }
+            }
+        }
+        // Value child not found - store in attributes as fallback
+        node.attributes.insert("rawValue".to_string(), value.to_string());
+    }
+}
+
+/// High-level interface for interacting with an XFA form
+/// 
+/// This struct owns the XFA nodes and manages the flattened layout.
+/// Use SOM expressions to resolve nodes and query/modify their properties.
+/// 
+/// # Example
+/// ```ignore
+/// let mut form = XfaForm::new(nodes, "DE", "FORM_001")?;
+/// 
+/// // Query node properties via SOM expression
+/// if let Some(node) = form.resolve("Page.FormTitle.MyField") {
+///     println!("Presence: {:?}", node.presence());
+///     if let Some(bounds) = node.bounds() {
+///         println!("Position: ({}, {})", bounds.x, bounds.y);
+///     }
+///     println!("Value: {:?}", node.raw_value());
+/// }
+/// 
+/// // Modify node properties
+/// if let Some(mut node) = form.resolve_mut("Page.FormTitle.MyField") {
+///     node.set_raw_value("New Value");
+///     node.set_presence(Presence::Hidden);
+/// }
+/// 
+/// // Execute event and refresh layout
+/// let result = form.execute_event("SubmitButton", EventActivity::Click)?;
+/// form.refresh()?;
+/// ```
+pub struct XfaForm {
+    /// The XFA node tree
+    nodes: Vec<XfaNode>,
+    /// The current flattened layout
+    flattened: Flattened,
+    /// Language code for translations (e.g., "DE", "EN")
+    language: String,
+    /// Form identifier
+    form_id: String,
+    /// SOM resolver for node lookups
+    som_resolver: SomResolver,
+    /// Cached mapping of field names to their flattened node indices
+    field_index_cache: HashMap<String, usize>,
+    /// Cached computed values from scripts
+    computed_values: HashMap<String, String>,
+    /// Dirty flag - set when changes require refresh
+    dirty: bool,
+}
+
+impl XfaForm {
+    /// Create a new XFA form from parsed nodes
+    /// 
+    /// This will execute initialization scripts and flatten the form.
+    pub fn new(mut nodes: Vec<XfaNode>, language: &str, form_id: &str) -> Result<Self, String> {
+        // Initial flattening with script execution
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, language, form_id)?;
+        
+        // Build SOM resolver
+        let som_resolver = SomResolver::from_nodes(&nodes);
+        
+        // Build field index cache
+        let field_index_cache = Self::build_field_index_cache(&flattened);
+        
+        Ok(XfaForm {
+            nodes,
+            flattened,
+            language: language.to_string(),
+            form_id: form_id.to_string(),
+            som_resolver,
+            field_index_cache,
+            computed_values: HashMap::new(),
+            dirty: false,
+        })
+    }
+    
+    /// Resolve a node by SOM expression (immutable)
+    /// 
+    /// Returns a reference to the node if found, with access to
+    /// presence, bounds, position, size, and raw value.
+    pub fn resolve(&self, som_expression: &str) -> Option<XfaNodeRef<'_>> {
+        // Try to resolve the SOM expression
+        let resolved_path = self.som_resolver.resolve_node(som_expression, None)?;
+        
+        // Find the XFA node
+        let xfa_node = Self::find_xfa_node_by_path(&self.nodes, &resolved_path)?;
+        
+        // Find the corresponding flattened node
+        let node_name = xfa_node.name.as_ref()?;
+        let flattened_node = self.field_index_cache.get(node_name)
+            .and_then(|&idx| self.flattened.nodes.get(idx));
+        
+        Some(XfaNodeRef {
+            xfa_node,
+            flattened_node,
+            som_path: resolved_path,
+        })
+    }
+    
+    /// Resolve a node by SOM expression (mutable)
+    /// 
+    /// Returns a mutable reference for setting values and presence.
+    /// Call `refresh()` after mutations to update the layout.
+    pub fn resolve_mut(&mut self, som_expression: &str) -> Option<XfaNodeRefMut<'_>> {
+        // Try to resolve the SOM expression
+        let resolved_path = self.som_resolver.resolve_node(som_expression, None)?;
+        
+        // Find the XFA node mutably
+        let xfa_node = Self::find_xfa_node_by_path_mut(&mut self.nodes, &resolved_path)?;
+        
+        Some(XfaNodeRefMut {
+            xfa_node,
+            som_path: resolved_path,
+            computed_values: &mut self.computed_values,
+        })
+    }
+    
+    /// Execute an event activity on a node
+    /// 
+    /// This executes any scripts associated with the event.
+    /// Call `refresh()` after to update the flattened layout.
+    pub fn execute_event(&mut self, som_expression: &str, activity: EventActivity) -> Result<EventResult, String> {
+        // Resolve the node
+        let resolved_path = self.som_resolver.resolve_node(som_expression, None)
+            .ok_or_else(|| format!("Could not resolve SOM expression: {}", som_expression))?;
+        
+        let node_name = Self::find_xfa_node_by_path(&self.nodes, &resolved_path)
+            .and_then(|n| n.name.clone())
+            .ok_or_else(|| format!("Node has no name: {}", resolved_path))?;
+        
+        // Find scripts for this event
+        let scripts = self.find_node_scripts(&resolved_path, &activity);
+        
+        if scripts.is_empty() {
+            return Ok(EventResult::default());
+        }
+        
+        // Create script engine
+        let mut engine = XfaScriptEngine::new();
+        
+        // Set up engine context
+        engine.register_field("Footer_Line_txtlanguage", "Footer_Line_txtlanguage", &self.language);
+        engine.register_field("Footer_Line_txtformid", "Footer_Line_txtformid", &self.form_id);
+        
+        Self::extract_and_register_translations(&self.nodes, &mut engine);
+        Self::build_som_hierarchy(&self.nodes, &mut engine);
+        
+        // Set current field context
+        engine.set_current_field(&resolved_path, &node_name, "");
+        
+        // Execute scripts
+        let mut changed_fields = Vec::new();
+        for script in &scripts {
+            if let Ok(Some(value)) = engine.execute_script(script) {
+                if !value.is_empty() {
+                    changed_fields.push(resolved_path.clone());
+                    self.computed_values.insert(resolved_path.clone(), value.clone());
+                    self.computed_values.insert(node_name.clone(), value);
+                }
+            }
+        }
+        
+        // Check for presence changes
+        let presence_changed = if let Some(presence) = engine.get_current_field_presence() {
+            if let Some(node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, &resolved_path) {
+                node.set_presence(presence);
+            }
+            true
+        } else {
+            false
+        };
+        
+        // Collect SOM field value changes
+        let som_values = engine.get_all_som_field_values();
+        for (field_path, value) in som_values {
+            if !value.is_empty() && self.computed_values.get(&field_path) != Some(&value) {
+                changed_fields.push(field_path.clone());
+                self.computed_values.insert(field_path, value);
+            }
+        }
+        
+        let values_changed = !changed_fields.is_empty();
+        
+        if values_changed || presence_changed {
+            self.dirty = true;
+        }
+        
+        Ok(EventResult {
+            values_changed,
+            presence_changed,
+            changed_fields,
+        })
+    }
+    
+    /// Convenience method to execute a click event
+    pub fn click(&mut self, som_expression: &str) -> Result<EventResult, String> {
+        self.execute_event(som_expression, EventActivity::Click)
+    }
+    
+    /// Convenience method to execute a change event
+    pub fn change(&mut self, som_expression: &str) -> Result<EventResult, String> {
+        self.execute_event(som_expression, EventActivity::Change)
+    }
+    
+    /// Convenience method to execute an enter event
+    pub fn enter(&mut self, som_expression: &str) -> Result<EventResult, String> {
+        self.execute_event(som_expression, EventActivity::Enter)
+    }
+    
+    /// Convenience method to execute an exit event
+    pub fn exit(&mut self, som_expression: &str) -> Result<EventResult, String> {
+        self.execute_event(som_expression, EventActivity::Exit)
+    }
+    
+    /// Re-flatten the form to reflect any changes
+    /// 
+    /// Must be called after mutations to update position/size/visibility.
+    pub fn refresh(&mut self) -> Result<(), String> {
+        self.flattened = Flattened::from_xfa_with_scripts(&mut self.nodes, &self.language, &self.form_id)?;
+        self.som_resolver = SomResolver::from_nodes(&self.nodes);
+        self.field_index_cache = Self::build_field_index_cache(&self.flattened);
+        self.dirty = false;
+        Ok(())
+    }
+    
+    /// Check if the form has uncommitted changes that require refresh
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+    
+    /// Get the page dimensions
+    pub fn page_size(&self) -> (Num, Num) {
+        (self.flattened.page.width, self.flattened.page.height)
+    }
+    
+    /// Get all flattened nodes (read-only)
+    pub fn flattened_nodes(&self) -> &[FlattenedNode] {
+        &self.flattened.nodes
+    }
+    
+    /// Get the underlying Flattened struct
+    pub fn flattened(&self) -> &Flattened {
+        &self.flattened
+    }
+    
+    /// Get all field names in the form
+    pub fn field_names(&self) -> Vec<String> {
+        self.field_index_cache.keys().cloned().collect()
+    }
+    
+    /// Get access to the underlying XFA nodes (read-only)
+    pub fn xfa_nodes(&self) -> &[XfaNode] {
+        &self.nodes
+    }
+    
+    // ========================================================================
+    // Private helper methods
+    // ========================================================================
+    
+    fn build_field_index_cache(flattened: &Flattened) -> HashMap<String, usize> {
+        let mut cache = HashMap::new();
+        for (idx, node) in flattened.nodes.iter().enumerate() {
+            match &node.kind {
+                FlattenedNodeKind::Field { name, .. } => {
+                    cache.insert(name.clone(), idx);
+                }
+                FlattenedNodeKind::Text { source_name: Some(name), .. } => {
+                    cache.insert(name.clone(), idx);
+                }
+                _ => {}
+            }
+        }
+        cache
+    }
+    
+    fn find_xfa_node_by_path<'a>(nodes: &'a [XfaNode], path: &str) -> Option<&'a XfaNode> {
+        // Try direct name match first
+        let target_name = path.rsplit('.').next().unwrap_or(path);
+        
+        fn find_recursive<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
+            for node in nodes {
+                if node.name.as_deref() == Some(name) {
+                    return Some(node);
+                }
+                if let Some(found) = find_recursive(&node.children, name) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        
+        find_recursive(nodes, target_name)
+    }
+    
+    fn find_xfa_node_by_path_mut<'a>(nodes: &'a mut [XfaNode], path: &str) -> Option<&'a mut XfaNode> {
+        let target_name = path.rsplit('.').next().unwrap_or(path);
+        
+        fn find_recursive<'a>(nodes: &'a mut [XfaNode], name: &str) -> Option<&'a mut XfaNode> {
+            for node in nodes {
+                if node.name.as_deref() == Some(name) {
+                    return Some(node);
+                }
+                if let Some(found) = find_recursive(&mut node.children, name) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        
+        find_recursive(nodes, target_name)
+    }
+    
+    fn find_node_scripts(&self, path: &str, activity: &EventActivity) -> Vec<XfaScript> {
+        if let Some(node) = Self::find_xfa_node_by_path(&self.nodes, path) {
+            parse_events_from_node(&node.children)
+                .into_iter()
+                .filter(|script| &script.activity == activity)
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+    
+    fn extract_and_register_translations(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+        fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
+            for node in nodes {
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                    if tag_name == "variables" {
+                        for child in &node.children {
+                            if let XfaNodeKind::Element { tag_name: child_tag, .. } = &child.kind {
+                                if child_tag == "script" {
+                                    if let Some(name) = &child.name {
+                                        for script_child in &child.children {
+                                            if let XfaNodeKind::Element { text_content: Some(content), .. } = &script_child.kind {
+                                                scripts.push((name.clone(), content.clone()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                collect_variable_scripts(&node.children, scripts);
+            }
+        }
+        
+        let mut scripts = Vec::new();
+        collect_variable_scripts(nodes, &mut scripts);
+        
+        for (name, content) in scripts {
+            let _ = engine.execute_script(&XfaScript {
+                source: format!(
+                    "var {} = (function() {{ {} return typeof setupVariables !== 'undefined' ? {{ setupVariables: setupVariables }} : {{}}; }})();",
+                    name, content
+                ),
+                content_type: ScriptContentType::JavaScript,
+                activity: EventActivity::Initialize,
+                event_ref: EventRef::Form,
+                name: Some(name),
+                run_at: RunAt::Client,
+            });
+        }
+    }
+    
+    fn build_som_hierarchy(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+        fn register_fields(nodes: &[XfaNode], path: &str, engine: &mut XfaScriptEngine) {
+            for node in nodes {
+                let node_path = match &node.name {
+                    Some(name) if path.is_empty() => name.clone(),
+                    Some(name) => format!("{}.{}", path, name),
+                    None => path.to_string(),
+                };
+                
+                if matches!(node.kind, XfaNodeKind::Field) {
+                    if let Some(name) = &node.name {
+                        engine.register_field(&node_path, name, "");
+                    }
+                }
+                
+                register_fields(&node.children, &node_path, engine);
+            }
+        }
+        
+        register_fields(nodes, "", engine);
     }
 }

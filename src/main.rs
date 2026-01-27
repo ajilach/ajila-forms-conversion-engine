@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ XFA data extracted");
     
     // Parse XFA structure
-    let nodes = XfaNode::parse(&xfa_data.unwrap())?;
+    let mut nodes = XfaNode::parse(&xfa_data.unwrap())?;
     println!("✓ XFA structure parsed");
     
     // Get document name for locale detection
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     // Flatten XFA with scripts
-    let flattened = Flattened::from_xfa_with_scripts(&nodes, locale, doc_name)?;
+    let flattened = Flattened::from_xfa_with_scripts(&mut nodes, locale, doc_name)?;
     println!("✓ XFA flattened ({} nodes)", flattened.nodes.len());
     
     // Create document and run analysis modules
@@ -273,7 +273,7 @@ mod tests {
         assert!(!xfa_buffer.is_empty(), "XFA buffer should not be empty");
         
         // Parse the XFA structure
-        let nodes = XfaNode::parse(&xfa_buffer)
+        let mut nodes = XfaNode::parse(&xfa_buffer)
             .expect("Failed to parse XFA structure");
         
         assert!(!nodes.is_empty(), "Should parse at least one XFA node");
@@ -300,7 +300,7 @@ mod tests {
         let xfa_buffer = xfa_data.unwrap();
         
         // Parse the XFA structure
-        let nodes = XfaNode::parse(&xfa_buffer)
+        let mut nodes = XfaNode::parse(&xfa_buffer)
             .expect("Failed to parse XFA structure");
         
         // Verify structure
@@ -378,7 +378,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Debug: print structure
@@ -422,10 +422,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -465,7 +465,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         let flattened = Flattened::from_xfa(&nodes)
@@ -578,10 +578,10 @@ mod tests {
             .expect("Failed to read PDF")
             .expect("No XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data)
+        let mut nodes = XfaNode::parse(&xfa_data)
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Find the T_Left text node
@@ -722,11 +722,11 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Use from_xfa_with_scripts to get the computed label text
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Helper function to find text node by source_name (Draw element name)
@@ -836,7 +836,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Find and dump DES_PostalCode node
@@ -918,7 +918,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Print detailed positioning information
@@ -1025,7 +1025,7 @@ mod tests {
             .expect("Failed to read PDF")
             .expect("No XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data)
+        let mut nodes = XfaNode::parse(&xfa_data)
             .expect("Failed to parse XFA structure");
         
         // Find draw elements and print their content
@@ -1078,7 +1078,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         fn find_subform<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
@@ -1124,7 +1124,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Debug: find elements containing "UBS"
@@ -1291,7 +1291,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         let flattened = Flattened::from_xfa(&nodes)
@@ -1359,7 +1359,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -1477,7 +1477,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -1566,7 +1566,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Find the node and check its presence
@@ -1608,7 +1608,7 @@ mod tests {
         // Flatten WITH script execution (German language)
         // Even though ffFirstName_s is hidden, the script should execute and the value
         // should be available in the computed_values map
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Hidden fields are intentionally skipped in flattening per XFA spec
@@ -1712,7 +1712,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Flatten WITH script execution (German language)
@@ -1720,7 +1720,7 @@ mod tests {
         // 1. Execute scripts -> ffFirstName_s gets "Vorname(n)" 
         // 2. Build ID map -> "5a604bee...floatingField010860" -> "ffFirstName_s"
         // 3. During text extraction, resolve xfa:embed in DES_FirstName -> "Vorname(n)"
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Find DES_FirstName in the flattened output
@@ -1781,10 +1781,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run analysis modules in the correct order
@@ -1839,10 +1839,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Expected signature labels (set by scripts)
@@ -1896,10 +1896,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAI_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Search for "Unterschrift(en)" in text nodes
@@ -1945,7 +1945,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -2084,7 +2084,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper to find a node by name recursively
@@ -2191,7 +2191,7 @@ mod tests {
         // Now test with the flattening that uses scripts
         let doc_name = "AAAB_019_DE";
         let locale = "DE";
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, locale, doc_name)
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, locale, doc_name)
             .expect("Failed to flatten XFA");
         
         // Look for RB_1 in flattened output and verify it has the correct value
@@ -2246,7 +2246,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find node info
@@ -2276,7 +2276,7 @@ mod tests {
         // Flatten WITH script execution
         // The script sets ffClientDetails.rawValue = "Endkunde"
         // But per XFA spec, this should NOT change the field's visibility
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Check if ffClientDetails appears in flattened output
@@ -2335,7 +2335,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper to find node by name
@@ -2424,7 +2424,7 @@ mod tests {
         }
         
         // Flatten with script execution
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Count visible nodes to verify the Neuanlage section is rendered
@@ -2516,11 +2516,11 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+        let mut nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Flatten with script execution
-        let flattened = Flattened::from_xfa_with_scripts(&nodes, "DE", "AAAB_019_DE")
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"

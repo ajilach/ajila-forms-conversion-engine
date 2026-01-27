@@ -500,7 +500,6 @@ pub enum Layout {
 /// 
 /// Bundles all state needed during the recursive flattening process:
 /// - Embed resolution data (computed_values, id_to_field) for xfa:embed references
-/// - Presence values set by scripts (presence_map)
 /// - Inherited presence from parent containers (inherited_presence)
 /// 
 /// Per XFA 3.3 spec (page 221, "Rich Text That Contains External Objects"):
@@ -514,8 +513,6 @@ pub struct FlattenContext<'a> {
     pub computed_values: &'a HashMap<String, String>,
     /// Map of element ID -> field name for resolving embed URI references
     pub id_to_field: &'a HashMap<String, String>,
-    /// Map of node name/ID -> presence value set by scripts
-    pub presence_map: &'a HashMap<String, Presence>,
     /// Inherited presence from parent - if Hidden or Inactive, children are also hidden
     pub inherited_presence: Option<Presence>,
 }
@@ -525,12 +522,10 @@ impl<'a> FlattenContext<'a> {
     pub fn new(
         computed_values: &'a HashMap<String, String>, 
         id_to_field: &'a HashMap<String, String>,
-        presence_map: &'a HashMap<String, Presence>,
     ) -> Self {
         FlattenContext { 
             computed_values, 
             id_to_field, 
-            presence_map,
             inherited_presence: None,
         }
     }
@@ -538,11 +533,9 @@ impl<'a> FlattenContext<'a> {
     /// Create an empty context (no embed resolution)
     pub fn empty() -> FlattenContext<'static> {
         static EMPTY_STR: std::sync::LazyLock<HashMap<String, String>> = std::sync::LazyLock::new(HashMap::new);
-        static EMPTY_PRESENCE: std::sync::LazyLock<HashMap<String, Presence>> = std::sync::LazyLock::new(HashMap::new);
         FlattenContext {
             computed_values: &EMPTY_STR,
             id_to_field: &EMPTY_STR,
-            presence_map: &EMPTY_PRESENCE,
             inherited_presence: None,
         }
     }
@@ -553,15 +546,13 @@ impl<'a> FlattenContext<'a> {
         FlattenContext {
             computed_values: self.computed_values,
             id_to_field: self.id_to_field,
-            presence_map: self.presence_map,
             inherited_presence: Some(presence),
         }
     }
     
     /// Get the effective presence for a node, considering:
     /// 1. Inherited presence from parent (takes precedence if hidden/inactive)
-    /// 2. Dynamic presence set by scripts (from presence_map)
-    /// 3. Static presence attribute on the node
+    /// 2. Presence stored directly on the XfaNode (set by scripts or from attributes)
     pub fn get_effective_presence(&self, node: &XfaNode) -> Presence {
         // If parent is hidden/inactive, children inherit that
         if let Some(inherited) = self.inherited_presence
@@ -569,20 +560,8 @@ impl<'a> FlattenContext<'a> {
                 return inherited;
             }
         
-        // Check for dynamic presence set by script (using node name or ID)
-        if let Some(name) = &node.name
-            && let Some(&presence) = self.presence_map.get(name) {
-                return presence;
-            }
-        if let Some(id) = node.attributes.get("id")
-            && let Some(&presence) = self.presence_map.get(id) {
-                return presence;
-            }
-        
-        // Fall back to static attribute on the node
-        node.attributes.get("presence")
-            .map(|s| Presence::from_str(s))
-            .unwrap_or(Presence::Visible)
+        // Read presence directly from the XFA node (scripts modify this directly)
+        node.get_presence()
     }
     
     /// Extract text content from node children, resolving any xfa:embed references
@@ -651,7 +630,7 @@ impl Flattened {
     /// ```
     pub fn from_xfa(xfa_nodes: &[XfaNode]) -> Result<Self, String> {
         // Use the version without scripts (empty computed values, no embed context)
-        Self::from_xfa_with_computed_values(xfa_nodes, &HashMap::new(), &HashMap::new(), &HashMap::new())
+        Self::from_xfa_with_computed_values(xfa_nodes, &HashMap::new(), &HashMap::new())
     }
     
     /// Create a flattened representation from XFA nodes with script execution.
@@ -663,18 +642,18 @@ impl Flattened {
     /// 4. Uses those computed values during flattening
     /// 
     /// Parameters:
-    /// - `xfa_nodes`: The parsed XFA template nodes
+    /// - `xfa_nodes`: The parsed XFA template nodes (mutable - scripts modify presence)
     /// - `language`: The language code (e.g., "DE", "EN", "SP") for translations
     /// - `form_id`: The form ID (e.g., "AAAB_019_DE") used by some scripts
-    pub fn from_xfa_with_scripts(xfa_nodes: &[XfaNode], language: &str, form_id: &str) -> Result<Self, String> {
-        // Execute scripts and collect computed values and presence
-        let (computed_values, presence_map) = Self::execute_form_ready_scripts(xfa_nodes, language, form_id)?;
+    pub fn from_xfa_with_scripts(xfa_nodes: &mut [XfaNode], language: &str, form_id: &str) -> Result<Self, String> {
+        // Execute scripts - modifies presence directly on XFA nodes, returns computed values
+        let computed_values = Self::execute_form_ready_scripts(xfa_nodes, language, form_id)?;
         
         // Build ID-to-field-name map for xfa:embed resolution
         let id_to_field = Self::build_id_to_field_map(xfa_nodes);
         
-        // Flatten with computed values, ID map, and presence map
-        Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field, &presence_map)
+        // Flatten with computed values and ID map (presence is now on nodes)
+        Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field)
     }
     
     /// Build a map from element ID to field name (for resolving xfa:embed references)
@@ -1031,16 +1010,15 @@ impl Flattened {
         }
     }
 
-    /// Execute all form-ready scripts and return maps of:
-    /// - field name -> computed value
-    /// - node name/ID -> presence value (set by scripts)
+    /// Execute all form-ready scripts and return computed values.
+    /// Presence changes are applied directly to the XFA nodes.
     fn execute_form_ready_scripts(
-        xfa_nodes: &[XfaNode], 
+        xfa_nodes: &mut [XfaNode], 
         language: &str, 
         form_id: &str
-    ) -> Result<(HashMap<String, String>, HashMap<String, Presence>), String> {
+    ) -> Result<HashMap<String, String>, String> {
         let mut computed_values = HashMap::new();
-        let mut presence_map: HashMap<String, Presence> = HashMap::new();
+        let mut presence_changes: Vec<(String, Option<String>, Presence)> = Vec::new(); // (name, id, presence)
         let mut engine = XfaScriptEngine::new();
         
         // Register control fields used by scripts
@@ -1130,17 +1108,14 @@ impl Flattened {
                 
                 // Collect presence values set on the current field
                 if let Some(presence) = engine.get_current_field_presence() {
-                    presence_map.insert(field_name.clone(), presence);
+                    presence_changes.push((field_name.clone(), None, presence));
                 }
                 
                 // Collect presence values set on child fields
                 for (child_name, child_id) in child_fields {
                     if let Some((id, presence)) = engine.get_child_field_presence(child_name) {
-                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
-                        if !storage_key.is_empty() {
-                            presence_map.insert(storage_key.clone(), presence);
-                        }
-                        presence_map.insert(child_name.clone(), presence);
+                        let storage_id = if !id.is_empty() { Some(id) } else if !child_id.is_empty() { Some(child_id.clone()) } else { None };
+                        presence_changes.push((child_name.clone(), storage_id, presence));
                     }
                 }
                 
@@ -1239,7 +1214,52 @@ impl Flattened {
             }
         }
         
-        Ok((computed_values, presence_map))
+        // Apply presence changes directly to the XFA tree
+        Self::apply_presence_changes(xfa_nodes, &presence_changes);
+        
+        Ok(computed_values)
+    }
+    
+    /// Apply presence changes collected from script execution directly to XFA nodes
+    fn apply_presence_changes(nodes: &mut [XfaNode], changes: &[(String, Option<String>, Presence)]) {
+        for (name, id, presence) in changes {
+            // Try to find by ID first (more specific)
+            if let Some(id_val) = id {
+                if Self::apply_presence_by_id(nodes, id_val, *presence) {
+                    continue;
+                }
+            }
+            // Fall back to finding by name
+            Self::apply_presence_by_name(nodes, name, *presence);
+        }
+    }
+    
+    /// Recursively find a node by ID and set its presence
+    fn apply_presence_by_id(nodes: &mut [XfaNode], id: &str, presence: Presence) -> bool {
+        for node in nodes {
+            if node.attributes.get("id").map(|s| s.as_str()) == Some(id) {
+                node.set_presence(presence);
+                return true;
+            }
+            if Self::apply_presence_by_id(&mut node.children, id, presence) {
+                return true;
+            }
+        }
+        false
+    }
+    
+    /// Recursively find a node by name and set its presence
+    fn apply_presence_by_name(nodes: &mut [XfaNode], name: &str, presence: Presence) -> bool {
+        for node in nodes {
+            if node.name.as_deref() == Some(name) {
+                node.set_presence(presence);
+                return true;
+            }
+            if Self::apply_presence_by_name(&mut node.children, name, presence) {
+                return true;
+            }
+        }
+        false
     }
     
     /// Execute variable scripts from the XFA template.
@@ -1335,15 +1355,13 @@ impl Flattened {
     /// Create a flattened representation with pre-computed field values
     /// 
     /// Parameters:
-    /// - `xfa_nodes`: The parsed XFA template nodes
+    /// - `xfa_nodes`: The parsed XFA template nodes (presence already set by scripts)
     /// - `computed_values`: Map of field name -> computed value from scripts
     /// - `id_to_field`: Map of element ID -> field name for resolving xfa:embed references
-    /// - `presence_map`: Map of node name/ID -> presence value set by scripts
     fn from_xfa_with_computed_values(
         xfa_nodes: &[XfaNode], 
         computed_values: &HashMap<String, String>,
         id_to_field: &HashMap<String, String>,
-        presence_map: &HashMap<String, Presence>,
     ) -> Result<Self, String> {
         let mut flattened_nodes = Vec::new();
         
@@ -1385,8 +1403,8 @@ impl Flattened {
             // NOT the contentArea. They use positioned layout (absolute coordinates).
             let page_position = Position::new(Decimal::ZERO, Decimal::ZERO, page.width, page.height);
             
-            // Create context for page background (page background elements typically don't use scripts)
-            let page_ctx = FlattenContext::new(computed_values, id_to_field, presence_map);
+            // Create context for page background
+            let page_ctx = FlattenContext::new(computed_values, id_to_field);
             
             for child in &page_area.children {
                 // Skip contentArea and medium - these define page structure, not content
@@ -1419,7 +1437,7 @@ impl Flattened {
         );
         
         // Create flatten context for resolving xfa:embed references during text extraction
-        let ctx = FlattenContext::new(computed_values, id_to_field, presence_map);
+        let ctx = FlattenContext::new(computed_values, id_to_field);
         
         // Find and flatten the root content subform (the Form DOM)
         // This is the sibling to pageSet, NOT inside pageArea
