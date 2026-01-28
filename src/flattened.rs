@@ -71,6 +71,11 @@ pub enum FlattenedNodeKind {
         name: String,
         value: String,
         label: String,
+        /// For checkButton fields: whether the button is currently "on" (checked/selected)
+        /// Per XFA spec:
+        /// - Standalone checkbox: on when rawValue == "on" (or the "on" item value)
+        /// - Radio in exclGroup: on when exclGroup.rawValue == this field's item key
+        is_checked: Option<bool>,
     },
 }
 
@@ -201,7 +206,7 @@ impl FlattenedNode {
     /// Create a new field node
     pub fn new_field(name: String, value: String, label: String, x: Num, y: Num, width: Num, height: Num) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Field { name, value, label },
+            kind: FlattenedNodeKind::Field { name, value, label, is_checked: None },
             x,
             y,
             width,
@@ -214,7 +219,7 @@ impl FlattenedNode {
     /// Create a new field node with style
     pub fn new_field_styled(name: String, value: String, label: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Field { name, value, label },
+            kind: FlattenedNodeKind::Field { name, value, label, is_checked: None },
             x,
             y,
             width,
@@ -227,7 +232,20 @@ impl FlattenedNode {
     /// Create a new field node with style and rotation
     pub fn new_field_styled_rotated(name: String, value: String, label: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle, rotate: i32) -> Self {
         FlattenedNode {
-            kind: FlattenedNodeKind::Field { name, value, label },
+            kind: FlattenedNodeKind::Field { name, value, label, is_checked: None },
+            x,
+            y,
+            width,
+            height,
+            rotate,
+            style,
+        }
+    }
+    
+    /// Create a new field node with style, rotation, and checked state (for checkButtons in exclGroups)
+    pub fn new_field_with_checked(name: String, value: String, label: String, x: Num, y: Num, width: Num, height: Num, style: RenderStyle, rotate: i32, is_checked: Option<bool>) -> Self {
+        FlattenedNode {
+            kind: FlattenedNodeKind::Field { name, value, label, is_checked },
             x,
             y,
             width,
@@ -508,6 +526,7 @@ pub enum Layout {
 /// Per XFA 3.3 spec (section 2, "Explicitly Concealing Containers"):
 /// Children inherit presence from their parent container - if a parent is hidden,
 /// all its children are also hidden regardless of their individual presence values.
+#[derive(Clone)]
 pub struct FlattenContext<'a> {
     /// Map of field name/ID -> computed value from scripts
     pub computed_values: &'a HashMap<String, String>,
@@ -515,6 +534,9 @@ pub struct FlattenContext<'a> {
     pub id_to_field: &'a HashMap<String, String>,
     /// Inherited presence from parent - if Hidden or Inactive, children are also hidden
     pub inherited_presence: Option<Presence>,
+    /// For fields inside an exclGroup: the parent exclGroup's current value
+    /// Used to determine if a radio button should be rendered as "checked"
+    pub parent_exclgroup_value: Option<String>,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -527,6 +549,7 @@ impl<'a> FlattenContext<'a> {
             computed_values, 
             id_to_field, 
             inherited_presence: None,
+            parent_exclgroup_value: None,
         }
     }
     
@@ -537,6 +560,7 @@ impl<'a> FlattenContext<'a> {
             computed_values: &EMPTY_STR,
             id_to_field: &EMPTY_STR,
             inherited_presence: None,
+            parent_exclgroup_value: None,
         }
     }
     
@@ -547,6 +571,18 @@ impl<'a> FlattenContext<'a> {
             computed_values: self.computed_values,
             id_to_field: self.id_to_field,
             inherited_presence: Some(presence),
+            parent_exclgroup_value: self.parent_exclgroup_value.clone(),
+        }
+    }
+    
+    /// Create a child context for fields inside an exclGroup
+    /// Used when recursing into exclGroup children
+    pub fn with_exclgroup_value(&self, value: String) -> FlattenContext<'a> {
+        FlattenContext {
+            computed_values: self.computed_values,
+            id_to_field: self.id_to_field,
+            inherited_presence: self.inherited_presence,
+            parent_exclgroup_value: Some(value),
         }
     }
     
@@ -633,6 +669,15 @@ impl Flattened {
         Self::from_xfa_with_computed_values(xfa_nodes, &HashMap::new(), &HashMap::new())
     }
     
+    /// Re-flatten with existing computed values without re-running scripts.
+    /// 
+    /// Use this when you've already modified presence values on XFA nodes and
+    /// want to re-render without the scripts overwriting those changes.
+    pub fn reflatten(xfa_nodes: &[XfaNode], computed_values: &HashMap<String, String>) -> Result<Self, String> {
+        let id_to_field = Self::build_id_to_field_map(xfa_nodes);
+        Self::from_xfa_with_computed_values(xfa_nodes, computed_values, &id_to_field)
+    }
+    
     /// Create a flattened representation from XFA nodes with script execution.
     /// 
     /// This method:
@@ -646,6 +691,19 @@ impl Flattened {
     /// - `language`: The language code (e.g., "DE", "EN", "SP") for translations
     /// - `form_id`: The form ID (e.g., "AAAB_019_DE") used by some scripts
     pub fn from_xfa_with_scripts(xfa_nodes: &mut [XfaNode], language: &str, form_id: &str) -> Result<Self, String> {
+        let (flattened, _computed_values) = Self::from_xfa_with_scripts_returning_values(xfa_nodes, language, form_id)?;
+        Ok(flattened)
+    }
+    
+    /// Create a flattened representation from XFA nodes with script execution,
+    /// also returning the computed values map for use in subsequent refreshes.
+    /// 
+    /// This is used by XfaForm to preserve computed values across refresh cycles.
+    pub fn from_xfa_with_scripts_returning_values(
+        xfa_nodes: &mut [XfaNode], 
+        language: &str, 
+        form_id: &str
+    ) -> Result<(Self, HashMap<String, String>), String> {
         // Execute scripts - modifies presence directly on XFA nodes, returns computed values
         let computed_values = Self::execute_form_ready_scripts(xfa_nodes, language, form_id)?;
         
@@ -653,7 +711,9 @@ impl Flattened {
         let id_to_field = Self::build_id_to_field_map(xfa_nodes);
         
         // Flatten with computed values and ID map (presence is now on nodes)
-        Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field)
+        let flattened = Self::from_xfa_with_computed_values(xfa_nodes, &computed_values, &id_to_field)?;
+        
+        Ok((flattened, computed_values))
     }
     
     /// Build a map from element ID to field name (for resolving xfa:embed references)
@@ -1248,18 +1308,21 @@ impl Flattened {
         false
     }
     
-    /// Recursively find a node by name and set its presence
+    /// Recursively find ALL nodes by name and set their presence
+    /// Returns true if at least one node was found and updated
     fn apply_presence_by_name(nodes: &mut [XfaNode], name: &str, presence: Presence) -> bool {
+        let mut found = false;
         for node in nodes {
             if node.name.as_deref() == Some(name) {
                 node.set_presence(presence);
-                return true;
+                found = true;
+                // Don't return early - continue to find all nodes with this name
             }
             if Self::apply_presence_by_name(&mut node.children, name, presence) {
-                return true;
+                found = true;
             }
         }
-        false
+        found
     }
     
     /// Execute variable scripts from the XFA template.
@@ -1683,7 +1746,19 @@ impl Flattened {
                 let field_value = Self::extract_field_value(&node.children);
                 let style = Self::extract_style(node);
                 
-                flattened_nodes.push(FlattenedNode::new_field_styled_rotated(
+                // Per XFA spec: A field in an exclGroup is "on" when exclGroup.rawValue == field.items[0].text
+                let is_checked = if let Some(ref exclgroup_value) = ctx.parent_exclgroup_value {
+                    let item_key = Self::extract_field_item_key(&node.children);
+                    if let Some(key) = item_key {
+                        Some(exclgroup_value == &key)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                flattened_nodes.push(FlattenedNode::new_field_with_checked(
                     field_name.clone(),
                     field_value,
                     field_name,
@@ -1693,6 +1768,7 @@ impl Flattened {
                     pos.height,
                     style,
                     node.rotate,
+                    is_checked,
                 ));
             }
             XfaNodeKind::Subform | XfaNodeKind::Element { .. } => {
@@ -2042,7 +2118,19 @@ impl Flattened {
                         let field_value = Self::extract_field_value(&node.children);
                         let style = Self::extract_style(node);
                         
-                        flattened_nodes.push(FlattenedNode::new_field_styled_rotated(
+                        // Per XFA spec: A field in an exclGroup is "on" when exclGroup.rawValue == field.items[0].text
+                        let is_checked = if let Some(ref exclgroup_value) = child_ctx.parent_exclgroup_value {
+                            let item_key = Self::extract_field_item_key(&node.children);
+                            if let Some(key) = item_key {
+                                Some(exclgroup_value == &key)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        
+                        flattened_nodes.push(FlattenedNode::new_field_with_checked(
                             field_name.clone(),
                             field_value,
                             field_name,
@@ -2052,6 +2140,7 @@ impl Flattened {
                             content_pos.height,
                             style,
                             node.rotate,
+                            is_checked,
                         ));
                     }
                     
@@ -2166,7 +2255,22 @@ impl Flattened {
                                 let field_value = Self::extract_field_value(&node.children);
                                 let style = Self::extract_style(node);
                                 
-                                flattened_nodes.push(FlattenedNode::new_field_styled_rotated(
+                                // Per XFA spec (section 4 "Exclusion Groups"):
+                                // A field in an exclGroup is "on" when exclGroup.rawValue == field.items[0].text
+                                let is_checked = if let Some(ref exclgroup_value) = child_ctx.parent_exclgroup_value {
+                                    let item_key = Self::extract_field_item_key(&node.children);
+                                    eprintln!("DEBUG Field (Element 'field'): name={}, exclgroup_value={}, item_key={:?}, is_checked={:?}",
+                                        &field_name, exclgroup_value, &item_key, item_key.as_ref().map(|k| exclgroup_value == k));
+                                    if let Some(key) = item_key {
+                                        Some(exclgroup_value == &key)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+                                
+                                flattened_nodes.push(FlattenedNode::new_field_with_checked(
                                     field_name,
                                     field_value.clone(),
                                     field_value,
@@ -2176,6 +2280,7 @@ impl Flattened {
                                     content_pos.height,
                                     style,
                                     node.rotate,
+                                    is_checked,
                                 ));
                             }
                         }
@@ -2264,9 +2369,30 @@ impl Flattened {
                                 max_extent_y = max_extent_y.max(node_bottom);
                             }
                             
+                            // Per XFA spec (section 4 "Exclusion Groups"):
+                            // The exclGroup has a rawValue that determines which child field is "on".
+                            // Get the exclGroup's current value to pass to children.
+                            let exclgroup_value = if let Some(name) = &node.name {
+                                // First check computed_values by name
+                                ctx.computed_values.get(name).cloned()
+                                    // Then check the node's value child
+                                    .or_else(|| Self::extract_field_value(&node.children).into())
+                                    // Then check rawValue attribute
+                                    .or_else(|| node.attributes.get("rawValue").cloned())
+                            } else {
+                                None
+                            };
+                            
+                            // Create a child context with the exclGroup value for radio button checked state
+                            let exclgroup_ctx = if let Some(value) = exclgroup_value.filter(|v| !v.is_empty()) {
+                                child_ctx.with_exclgroup_value(value)
+                            } else {
+                                child_ctx.clone()
+                            };
+                            
                             // Recurse into exclGroup children with the computed content position
                             // The exclGroup's layout applies to its children (the fields)
-                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;
+                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &exclgroup_ctx)?;
                             
                             // For tb layout, update current_y based on actual content height if no explicit height
                             if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -2885,6 +3011,33 @@ impl Flattened {
         String::new()
     }
     
+    /// Extract the key value from a field's `<items>` element
+    /// 
+    /// Per XFA spec (section 4 "Exclusion Groups"):
+    /// Each field within an exclusion group is associated with a key value from its <items> element.
+    /// When a field is activated, the exclGroup's rawValue is set to that field's key.
+    /// A field is "on" when exclGroup.rawValue == field.items[0].text
+    fn extract_field_item_key(children: &[XfaNode]) -> Option<String> {
+        for child in children {
+            // Look for <items> element
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "items" {
+                    // Get the first <text> child's content
+                    for item_child in &child.children {
+                        if let XfaNodeKind::Element { tag_name: t2, text_content, .. } = &item_child.kind
+                            && t2 == "text"
+                                && let Some(text) = text_content {
+                                    return Some(text.clone());
+                                }
+                        if let XfaNodeKind::Text { content } = &item_child.kind {
+                            return Some(content.clone());
+                        }
+                    }
+                }
+        }
+        None
+    }
+    
     fn extract_text_content(children: &[XfaNode]) -> Option<String> {
         // Use empty context for backward compatibility
         Self::extract_text_content_with_embed(children, &HashMap::new(), &HashMap::new())
@@ -3205,9 +3358,26 @@ impl Flattened {
                 }
             
             match &node.kind {
-                FlattenedNodeKind::Field { value, .. } => {
+                FlattenedNodeKind::Field { value, is_checked, .. } => {
                     // Draw light blue fill for field background (no border)
                     Self::fill_rect(&mut img, x, y, w, h, light_blue_fill);
+                    
+                    // If this is a radio button or checkbox, draw the checked indicator
+                    if let Some(checked) = is_checked {
+                        if *checked {
+                            // Draw a filled circle (radio button) indicator
+                            // Use black for the check mark
+                            let indicator_color = Rgba([0u8, 0u8, 0u8, 255u8]);
+                            
+                            // Calculate center and radius based on field size
+                            let min_dim = w.min(h) as f32;
+                            let center_x = x + w / 2;
+                            let center_y = y + h / 2;
+                            let radius = (min_dim * 0.25).max(3.0) as i32; // 25% of smaller dimension, min 3px
+                            
+                            Self::fill_circle(&mut img, center_x, center_y, radius, indicator_color);
+                        }
+                    }
                     
                     // Only draw field VALUE (not name) in black if present
                     if !value.is_empty() {
@@ -3624,6 +3794,26 @@ impl Flattened {
                 let py = y + dy;
                 if px >= 0 && px < img_width && py >= 0 && py < img_height {
                     img.put_pixel(px as u32, py as u32, color);
+                }
+            }
+        }
+    }
+    
+    /// Draw a filled circle (used for radio button checked indicator)
+    pub fn fill_circle(img: &mut RgbaImage, center_x: i32, center_y: i32, radius: i32, color: Rgba<u8>) {
+        let img_width = img.width() as i32;
+        let img_height = img.height() as i32;
+        
+        // Use the midpoint circle algorithm (filled version)
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                // Check if (dx, dy) is inside the circle
+                if dx * dx + dy * dy <= radius * radius {
+                    let px = center_x + dx;
+                    let py = center_y + dy;
+                    if px >= 0 && px < img_width && py >= 0 && py < img_height {
+                        img.put_pixel(px as u32, py as u32, color);
+                    }
                 }
             }
         }

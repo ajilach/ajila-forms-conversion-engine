@@ -10,11 +10,12 @@ use pdf::file::FileOptions;
 use pdf::object::*;
 use pdf::primitive::Primitive;
 use std::path::{Path, PathBuf};
-use xfa::XfaNode;
+use xfa::{XfaNode, XfaNodeKind};
 use flattened::{Flattened, FlattenedNodeKind};
 use clap::Parser;
 use document::Document;
 use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
+use scripting::XfaForm;
 
 /// Check if PDF contains XFA and extract it
 pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -82,6 +83,10 @@ struct Args {
     #[arg(long)]
     render_annotated: bool,
     
+    /// Render exhaustively: click each selectable element, render, then unselect
+    #[arg(long)]
+    exhaustive: bool,
+
     /// Scale factor for rendering (default: 1.5)
     #[arg(short, long, default_value = "1.5")]
     scale: f32,
@@ -249,6 +254,209 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nRendering annotated document...");
         flattened.render_to_image(&output_path, args.scale)?;
         println!("✓ Document rendered to: {}", output_path.display());
+    }
+    
+    if args.exhaustive {
+        println!("\nExhaustive mode: rendering each selectable element...");
+        
+        // Re-parse XFA nodes for XfaForm (it takes ownership)
+        let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
+        let nodes_for_form = XfaNode::parse(&xfa_data_for_form)?;
+        let mut form = XfaForm::new(nodes_for_form, locale, doc_name)
+            .map_err(|e| format!("Failed to create XfaForm: {}", e))?;
+        
+        // Find all checkButton fields (radio buttons and checkboxes) from XFA structure
+        fn find_checkbutton_fields(nodes: &[XfaNode], results: &mut Vec<(String, String)>) {
+            for node in nodes {
+                // Check if this is a Field node with checkButton UI
+                if matches!(&node.kind, XfaNodeKind::Field) {
+                    let shape = node.children.iter()
+                        .find_map(|c| {
+                            if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
+                                if tag_name == "ui" {
+                                    return c.children.iter().find_map(|ui_c| {
+                                        if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
+                                            if t2 == "checkButton" {
+                                                return Some(ui_c.attributes.get("shape")
+                                                    .cloned()
+                                                    .unwrap_or_else(|| "square".to_string()));
+                                            }
+                                        }
+                                        None
+                                    });
+                                }
+                            }
+                            None
+                        });
+                    
+                    if let Some(shape) = shape {
+                        if let Some(name) = &node.name {
+                            results.push((name.clone(), shape));
+                        }
+                    }
+                }
+                // Recurse into children
+                find_checkbutton_fields(&node.children, results);
+            }
+        }
+        
+        let mut all_checkbuttons: Vec<(String, String)> = Vec::new();
+        find_checkbutton_fields(form.xfa_nodes(), &mut all_checkbuttons);
+        
+        // Deduplicate by name (same field name in different scopes resolves to same element)
+        let mut seen = std::collections::HashSet::new();
+        let unique_checkbuttons: Vec<_> = all_checkbuttons.into_iter()
+            .filter(|(name, _)| seen.insert(name.clone()))
+            .collect();
+        
+        println!("Found {} selectable elements:", unique_checkbuttons.len());
+        for (name, shape) in &unique_checkbuttons {
+            let kind = if *shape == "round" { "radio" } else { "checkbox" };
+            println!("  - {} ({})", name, kind);
+        }
+        
+        // For each selectable element, click it (triggering scripts), render, then reset
+        for (name, shape) in &unique_checkbuttons {
+            println!("\nProcessing: {}", name);
+            
+            // For radio buttons, we need to set the value on both the field AND the parent exclGroup
+            // The visibility scripts check exclGroup.rawValue, not the individual field value
+            let is_radio = shape == "round";
+            
+            if is_radio {
+                // For main radio buttons (RB_1, RB_2, RB_3), set the corresponding value on RB_Group_Neuanlage
+                // RB_1 = value 1, RB_2 = value 2, RB_3 = value 3
+                let rb_value = if name == "RB_1" {
+                    "1"
+                } else if name == "RB_2" {
+                    "2"
+                } else if name == "RB_3" {
+                    "3"
+                } else if name == "RB_4" {
+                    "4"
+                } else {
+                    "1"
+                };
+                
+                // Per XFA spec (section 4 "Exclusion Groups"):
+                // - ONLY the exclGroup's rawValue should be set to indicate selection
+                // - The individual field's value is its KEY (from <items>) and should NOT change
+                // - A field is "on" when exclGroup.rawValue == field.items[0].text
+                // 
+                // So we ONLY set the exclGroup's rawValue, not the individual field's rawValue
+                if let Some(mut excl_group) = form.resolve_mut("RB_Group_Neuanlage") {
+                    excl_group.set_raw_value(rb_value);
+                    println!("  Set RB_Group_Neuanlage.rawValue={}", rb_value);
+                }
+                
+                // Trigger change event on the exclGroup
+                match form.change("RB_Group_Neuanlage") {
+                    Ok(result) => {
+                        if result.values_changed || result.presence_changed {
+                            println!("  ExclGroup change triggered: values={}, presence={}", 
+                                result.values_changed, result.presence_changed);
+                        }
+                    }
+                    Err(e) => {
+                        println!("  Note: exclGroup change event: {}", e);
+                    }
+                }
+                
+                // Re-run initialize events on sections that control visibility based on RB_Group_Neuanlage value
+                // These scripts check RB_Group_Neuanlage.rawValue and set their own presence
+                // Also include STP_SectionTitle which contains ffrb1 (the section title text)
+                for section in ["Page.Löschung", "Page.Bankverbindung", "Page.SectionTitle", "Page.Neuanlage", "Page.Änderung", "Löschung", "Bankverbindung", "SectionTitle", "Neuanlage", "Änderung", "STP_SectionTitle", "Page.SectionTitle.STP_SectionTitle", "ffrb1", "soLocalLabelDefinition"] {
+                    match form.initialize(section) {
+                        Ok(result) => {
+                            if result.presence_changed || result.values_changed {
+                                println!("  Section {} changed (presence={}, values={})", 
+                                    section, result.presence_changed, result.values_changed);
+                            }
+                        }
+                        Err(_) => {} // Section might not exist or have no initialize script
+                    }
+                    // Also try calling the change event on the section
+                    match form.change(section) {
+                        Ok(result) => {
+                            if result.values_changed {
+                                println!("  Section {} change triggered (values={})", 
+                                    section, result.values_changed);
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }
+            } else {
+                // For checkboxes, just set the raw value
+                if let Some(mut node) = form.resolve_mut(name) {
+                    node.set_raw_value("1");
+                    println!("  Set rawValue=1");
+                }
+            }
+            
+            // Trigger change event cascade on the parent exclGroup (for radio buttons)
+            // This is the spec-compliant way: change events fire on the exclGroup, not individual fields
+            // The cascade will re-run any calculate scripts that depend on the exclGroup value
+            if is_radio {
+                match form.trigger_change_on_excl_group(name) {
+                    Ok(result) => {
+                        if result.presence_changed || result.values_changed {
+                            println!("  ExclGroup change triggered (presence={}, values={})", 
+                                result.presence_changed, result.values_changed);
+                        }
+                    }
+                    Err(e) => {
+                        println!("  Warning: Failed to trigger change on exclGroup: {}", e);
+                    }
+                }
+            }
+            
+            // Debug: Check ffrb1 value before refresh
+            if let Some(ffrb1_node) = form.resolve("ffrb1") {
+                println!("  DEBUG ffrb1 rawValue before refresh: {:?}", ffrb1_node.raw_value());
+            }
+            
+            // Refresh the form to update the flattened layout with new values/presence
+            form.refresh().map_err(|e| format!("Failed to refresh after clicking {}: {}", name, e))?;
+            
+            // Debug: Look for ffrb1 and similar section title text nodes
+            let section_title_nodes: Vec<_> = form.flattened().nodes.iter()
+                .filter(|n| {
+                    if let FlattenedNodeKind::Text { content, source_name, .. } = &n.kind {
+                        source_name.as_deref() == Some("ffrb1") || 
+                        content.contains("möglich") ||
+                        (content.contains("Löschung") && content.len() > 10)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            
+            if section_title_nodes.is_empty() {
+                println!("  WARNING: ffrb1 not found in flattened output!");
+            }
+            for node in &section_title_nodes {
+                if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                    println!("  Section title: '{}' (source: {:?})", content, source_name);
+                }
+            }
+            
+            // Render
+            let output_path = PathBuf::from(format!("{}_{}.png", doc_name, name));
+            form.flattened().render_to_image_buffer_plain(args.scale)?
+                .save(&output_path)
+                .map_err(|e| format!("Failed to save image for {}: {}", name, e))?;
+            println!("  ✓ Rendered: {}", output_path.display());
+            
+            // Reset by re-creating the form from fresh data
+            // (This ensures we start from a clean state for each element)
+            let xfa_data_reset = extract_xfa_from_pdf(&args.document)?.unwrap();
+            let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
+            form = XfaForm::new(nodes_reset, locale, doc_name)
+                .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+        }
+        
+        println!("\n✓ Exhaustive rendering complete ({} images)", unique_checkbuttons.len());
     }
     
     Ok(())
@@ -1771,6 +1979,189 @@ mod tests {
         }
     }
     
+    /// Test that dynamically set labels like "Vorname(n)" are visible in flattened output
+    /// and have valid coordinates for rendering.
+    /// 
+    /// This test was added to catch a regression where labels set by scripts
+    /// (via xfa:embed) were being lost during flattening or rendering.
+    #[test]
+    fn test_vorname_label_visible_in_flattened_output() {
+        use crate::flattened::{Flattened, FlattenedNodeKind};
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Flatten WITH script execution (German language)
+        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Search for any text node containing "Vorname"
+        let vorname_nodes: Vec<_> = flattened.nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.contains("Vorname")
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("Nodes containing 'Vorname': {}", vorname_nodes.len());
+        for (i, node) in vorname_nodes.iter().enumerate() {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("  {}: '{}' (source: {:?}, x={}, y={}, w={}, h={})", 
+                    i, content, source_name, node.x, node.y, node.width, node.height);
+            }
+        }
+        
+        // We expect at least one node with "Vorname" in it
+        assert!(!vorname_nodes.is_empty(), 
+            "Expected at least one text node containing 'Vorname', but found none. \
+             This suggests the script-set label value is not being propagated to the flattened output.");
+        
+        // Verify all Vorname nodes have valid render coordinates
+        for node in &vorname_nodes {
+            assert!(node.x >= Decimal::ZERO, "Node x should be non-negative");
+            assert!(node.y >= Decimal::ZERO, "Node y should be non-negative");
+            assert!(node.width > Decimal::ZERO, "Node width should be positive");
+            assert!(node.height > Decimal::ZERO, "Node height should be positive");
+        }
+        
+        // Also check for "Nachname" which should similarly be set by scripts
+        let nachname_nodes: Vec<_> = flattened.nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.contains("Nachname")
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("Nodes containing 'Nachname': {}", nachname_nodes.len());
+        for (i, node) in nachname_nodes.iter().enumerate() {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("  {}: '{}' (source: {:?}, x={}, y={}, w={}, h={})", 
+                    i, content, source_name, node.x, node.y, node.width, node.height);
+            }
+        }
+        
+        assert!(!nachname_nodes.is_empty(), 
+            "Expected at least one text node containing 'Nachname', but found none.");
+        
+        // Additionally, verify the labels can be successfully rendered
+        // by checking that they're included in the render output
+        let img = flattened.render_to_image_buffer_plain(1.0)
+            .expect("Failed to render to image buffer");
+        
+        println!("Image dimensions: {}x{}", img.width(), img.height());
+        
+        // The image should have reasonable dimensions
+        assert!(img.width() > 500, "Image width should be > 500px, but was {}", img.width());
+        assert!(img.height() > 500, "Image height should be > 500px, but was {}", img.height());
+        
+        // Check that pixels at the expected "Vorname(n)" location have non-white content
+        // The text is at approximately x=305, y=209
+        let text_x = 305u32;
+        let text_y = 209u32;
+        
+        // Sample a small region around the expected text location
+        // If rendering worked, there should be non-white pixels (text color)
+        let mut darkest_pixel = (255u8, 255u8, 255u8);
+        let mut darkest_pos = (0u32, 0u32);
+        for dx in 0..100 {
+            for dy in 0..20 {
+                if text_x + dx < img.width() && text_y + dy < img.height() {
+                    let pixel = img.get_pixel(text_x + dx, text_y + dy);
+                    let brightness = (pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32) / 3;
+                    let current_brightness = (darkest_pixel.0 as u32 + darkest_pixel.1 as u32 + darkest_pixel.2 as u32) / 3;
+                    if brightness < current_brightness {
+                        darkest_pixel = (pixel[0], pixel[1], pixel[2]);
+                        darkest_pos = (text_x + dx, text_y + dy);
+                    }
+                }
+            }
+        }
+        
+        println!("Darkest pixel in Vorname region at ({}, {}): RGB({}, {}, {})", 
+            darkest_pos.0, darkest_pos.1, darkest_pixel.0, darkest_pixel.1, darkest_pixel.2);
+        
+        // The darkest pixel should be reasonably dark (< 150 for dark gray text)
+        let is_dark_enough = darkest_pixel.0 < 150 && darkest_pixel.1 < 150 && darkest_pixel.2 < 150;
+        assert!(is_dark_enough, 
+            "Expected to find rendered text near x=305, y=209 (where 'Vorname(n)' should be), \
+             but the darkest pixel is RGB({}, {}, {}) which is too bright. \
+             The label text may not be rendering correctly.",
+             darkest_pixel.0, darkest_pixel.1, darkest_pixel.2);
+    }
+    
+    /// Test that dynamically set labels remain visible after XfaForm.refresh()
+    /// This tests the exhaustive mode scenario where we modify form state and re-render.
+    #[test]
+    fn test_vorname_visible_after_xfa_form_refresh() {
+        use crate::scripting::XfaForm;
+        use crate::flattened::FlattenedNodeKind;
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Create XfaForm (this is used in exhaustive mode)
+        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Simulate what exhaustive mode does: set exclGroup value and refresh
+        if let Some(mut node) = form.resolve_mut("RB_Group_Neuanlage") {
+            node.set_raw_value("1");
+        }
+        form.refresh().expect("Failed to refresh form");
+        
+        // Check that Vorname(n) is still in the flattened output after refresh
+        let vorname_nodes: Vec<_> = form.flattened().nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.contains("Vorname")
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("After refresh - Nodes containing 'Vorname': {}", vorname_nodes.len());
+        for (i, node) in vorname_nodes.iter().enumerate() {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                println!("  {}: '{}' (source: {:?})", i, content, source_name);
+            }
+        }
+        
+        assert!(!vorname_nodes.is_empty(), 
+            "Expected 'Vorname(n)' label to be visible after XfaForm.refresh(), but it was missing. \
+             The computed_values from script execution may not be preserved across refresh cycles.");
+        
+        // Also check for Nachname
+        let nachname_nodes: Vec<_> = form.flattened().nodes.iter()
+            .filter(|n| {
+                if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                    content.contains("Nachname")
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        assert!(!nachname_nodes.is_empty(), 
+            "Expected 'Nachname' label to be visible after XfaForm.refresh()");
+    }
+
     #[test]
     fn test_aaai_label_attachment() {
         // Test that labels are correctly attached to fields in the AAAI document
@@ -2553,5 +2944,152 @@ mod tests {
         );
         
         println!("\n✓ ffrb1 correctly shows: '{}'", ffrb1_text.unwrap());
+    }
+
+    /// Test that clicking RB_3 (Löschung) changes the section title from "Neuanlage" to "Löschung".
+    ///
+    /// When RB_3 is clicked:
+    /// 1. The click event on RB_3 should fire
+    /// 2. The change event on RB_Group_Neuanlage should fire
+    /// 3. soLocalLabelDefinition.change() should be called
+    /// 4. ffrb1.rawValue should be set to "Löschung"
+    /// 5. After refresh, T_Sectiontitle should embed the "Löschung" text
+    #[test]
+    fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
+        use crate::scripting::XfaForm;
+        use crate::scripting::XfaScriptEngine;
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Debug: Check what scripts are on RB_Group_Neuanlage
+        fn find_scripts_on_node(nodes: &[XfaNode], target_name: &str) -> Vec<(String, String)> {
+            let mut results = Vec::new();
+            for node in nodes {
+                if node.name.as_deref() == Some(target_name) {
+                    // Found the node, look at events
+                    let events = crate::scripting::parse_events_from_node(&node.children);
+                    for event in events {
+                        results.push((format!("{:?}", event.activity), event.source.chars().take(200).collect()));
+                    }
+                }
+                results.extend(find_scripts_on_node(&node.children, target_name));
+            }
+            results
+        }
+        
+        let excl_group_scripts = find_scripts_on_node(&nodes, "RB_Group_Neuanlage");
+        println!("\n=== Scripts on RB_Group_Neuanlage ===");
+        for (activity, script) in &excl_group_scripts {
+            println!("  {}: {}", activity, script);
+        }
+        
+        // Create XfaForm
+        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Debug: Test the script engine directly with ffrb1
+        println!("\n=== Direct script engine test ===");
+        {
+            let mut engine = XfaScriptEngine::new();
+            engine.register_field("ffrb1", "ffrb1", "initial value");
+            engine.register_field("RB_Group_Neuanlage", "RB_Group_Neuanlage", "3");  // 3 = Löschung
+            
+            // Execute a simple script that sets ffrb1.rawValue
+            let test_script = r#"
+                console.log('Testing ffrb1 assignment');
+                var f = xfa.resolveNode('ffrb1');
+                console.log('Resolved ffrb1:', f);
+                if (f) {
+                    f.rawValue = 'TEST VALUE';
+                    console.log('Set ffrb1.rawValue to:', f.rawValue);
+                }
+            "#;
+            let result = engine.execute_script(&crate::scripting::XfaScript {
+                source: test_script.to_string(),
+                content_type: crate::scripting::ScriptContentType::JavaScript,
+                activity: crate::scripting::EventActivity::Initialize,
+                event_ref: crate::scripting::EventRef::Form,
+                name: Some("test".to_string()),
+                run_at: crate::scripting::RunAt::Client,
+            });
+            println!("Script result: {:?}", result);
+            
+            // Check if ffrb1 was updated
+            let values = engine.get_all_som_field_values();
+            println!("SOM field values after script: {:?}", values);
+            if let Some(ffrb1_val) = values.get("ffrb1") {
+                println!("ffrb1 value: {}", ffrb1_val);
+            } else {
+                println!("ffrb1 NOT FOUND in SOM values!");
+            }
+        }
+        
+        // Check initial ffrb1 value via resolve()
+        if let Some(ffrb1) = form.resolve("ffrb1") {
+            println!("\nInitial ffrb1 rawValue: {:?}", ffrb1.raw_value());
+        } else {
+            println!("\nInitial ffrb1 not found via resolve()");
+        }
+        
+        // Select RB_3 (Löschung) - this sets values and triggers change event
+        println!("\nSelecting RB_3...");
+        let select_result = form.select_radio_button("RB_3");
+        println!("Select result: {:?}", select_result);
+        
+        // Check what values were set
+        println!("RB_Group_Neuanlage computed value: {:?}", form.get_computed_value("RB_Group_Neuanlage"));
+        println!("RB_3 computed value: {:?}", form.get_computed_value("RB_3"));
+        
+        // Check ffrb1 value after change - should reflect the script update
+        // Note: ffrb1 is a <text> variable, not a physical XFA node, so we need
+        // to get its value from computed_values via get_computed_value
+        if let Some(ffrb1_value) = form.get_computed_value("ffrb1") {
+            println!("ffrb1 computed value after change: {:?}", ffrb1_value);
+        } else {
+            println!("ffrb1 NOT in computed_values after change");
+        }
+        
+        // Refresh to process embeds
+        form.refresh().expect("Refresh failed");
+        
+        // Get the final flattened output
+        let flattened = form.flattened();
+        
+        // Look for the section title text
+        let mut found_section_title = None;
+        for node in &flattened.nodes {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                // Check if this is the section title or ffrb1
+                if source_name.as_deref() == Some("ffrb1") || 
+                   source_name.as_deref() == Some("T_Sectiontitle") {
+                    println!("\nFound section title text: '{}' (source: {:?})", content, source_name);
+                    found_section_title = Some(content.clone());
+                    break;
+                }
+                // Also log content containing Löschung or Neuanlage
+                if content.contains("Löschung") || content.contains("Neuanlage") {
+                    println!("Found relevant text: '{}' (source: {:?})", content, source_name);
+                }
+            }
+        }
+        
+        println!("\n=== Section Title Test ===");
+        println!("Section title content: {:?}", found_section_title);
+        
+        // The section title should contain "Löschung" after clicking RB_3
+        assert!(
+            found_section_title.is_some() && found_section_title.as_ref().unwrap().contains("Löschung"),
+            "After clicking RB_3, section title should contain 'Löschung'. \
+             Got: {:?}. This indicates that the change event chain is not working correctly.",
+            found_section_title
+        );
+        
+        println!("\n✓ Section title correctly changed to: '{}'", found_section_title.unwrap());
     }
 }
