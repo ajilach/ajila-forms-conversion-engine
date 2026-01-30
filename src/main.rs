@@ -5,6 +5,7 @@ mod modules;
 mod text_metrics;
 mod scripting;
 mod font_manager;
+mod script_executor;
 
 use pdf::file::FileOptions;
 use pdf::object::*;
@@ -16,6 +17,7 @@ use clap::Parser;
 use document::Document;
 use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
 use scripting::XfaForm;
+use script_executor::ScriptExecutor;
 
 /// Check if PDF contains XFA and extract it
 pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -132,8 +134,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "EN" // default
     };
     
-    // Flatten XFA with scripts
-    let flattened = Flattened::from_xfa_with_scripts(&mut nodes, locale, doc_name)?;
+    // Execute scripts to get computed values and presence changes
+    let script_result = ScriptExecutor::execute(&nodes, locale, doc_name);
+    println!("✓ Scripts executed ({} computed values)", script_result.computed_values.len());
+    
+    // Apply presence changes to the XFA tree
+    ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
+    
+    // Flatten XFA (pure transformation)
+    let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)?;
     println!("✓ XFA flattened ({} nodes)", flattened.nodes.len());
     
     // Create document and run analysis modules
@@ -257,7 +266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     if args.exhaustive {
-        println!("\nExhaustive mode: rendering each selectable element...");
+        println!("\nExhaustive mode: recursively discovering all form states...");
         
         // Re-parse XFA nodes for XfaForm (it takes ownership)
         let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
@@ -265,198 +274,224 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut form = XfaForm::new(nodes_for_form, locale, doc_name)
             .map_err(|e| format!("Failed to create XfaForm: {}", e))?;
         
-        // Find all checkButton fields (radio buttons and checkboxes) from XFA structure
-        fn find_checkbutton_fields(nodes: &[XfaNode], results: &mut Vec<(String, String)>) {
-            for node in nodes {
-                // Check if this is a Field node with checkButton UI
-                if matches!(&node.kind, XfaNodeKind::Field) {
-                    let shape = node.children.iter()
-                        .find_map(|c| {
-                            if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
-                                if tag_name == "ui" {
-                                    return c.children.iter().find_map(|ui_c| {
-                                        if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
-                                            if t2 == "checkButton" {
-                                                return Some(ui_c.attributes.get("shape")
-                                                    .cloned()
-                                                    .unwrap_or_else(|| "square".to_string()));
-                                            }
-                                        }
-                                        None
-                                    });
-                                }
-                            }
-                            None
-                        });
-                    
-                    if let Some(shape) = shape {
-                        if let Some(name) = &node.name {
-                            results.push((name.clone(), shape));
-                        }
-                    }
-                }
-                // Recurse into children
-                find_checkbutton_fields(&node.children, results);
-            }
-        }
+        // Track rendered states to avoid duplicates
+        // State is represented as a sorted list of (field_name, value) pairs for selected buttons
+        let mut rendered_states: std::collections::HashSet<Vec<(String, String)>> = std::collections::HashSet::new();
         
-        let mut all_checkbuttons: Vec<(String, String)> = Vec::new();
-        find_checkbutton_fields(form.xfa_nodes(), &mut all_checkbuttons);
-        
-        // Deduplicate by name (same field name in different scopes resolves to same element)
-        let mut seen = std::collections::HashSet::new();
-        let unique_checkbuttons: Vec<_> = all_checkbuttons.into_iter()
-            .filter(|(name, _)| seen.insert(name.clone()))
-            .collect();
-        
-        println!("Found {} selectable elements:", unique_checkbuttons.len());
-        for (name, shape) in &unique_checkbuttons {
-            let kind = if *shape == "round" { "radio" } else { "checkbox" };
-            println!("  - {} ({})", name, kind);
-        }
-        
-        // For each selectable element, click it (triggering scripts), render, then reset
-        for (name, shape) in &unique_checkbuttons {
-            println!("\nProcessing: {}", name);
+        // Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections)
+        // Returns (som_path, name, shape) tuples where som_path uniquely identifies each field
+        fn find_all_checkbutton_fields_with_paths(nodes: &[XfaNode]) -> Vec<(String, String, String)> {
+            let mut results = Vec::new();
             
-            // For radio buttons, we need to set the value on both the field AND the parent exclGroup
-            // The visibility scripts check exclGroup.rawValue, not the individual field value
-            let is_radio = shape == "round";
-            
-            if is_radio {
-                // For main radio buttons (RB_1, RB_2, RB_3), set the corresponding value on RB_Group_Neuanlage
-                // RB_1 = value 1, RB_2 = value 2, RB_3 = value 3
-                let rb_value = if name == "RB_1" {
-                    "1"
-                } else if name == "RB_2" {
-                    "2"
-                } else if name == "RB_3" {
-                    "3"
-                } else if name == "RB_4" {
-                    "4"
-                } else {
-                    "1"
-                };
-                
-                // Per XFA spec (section 4 "Exclusion Groups"):
-                // - ONLY the exclGroup's rawValue should be set to indicate selection
-                // - The individual field's value is its KEY (from <items>) and should NOT change
-                // - A field is "on" when exclGroup.rawValue == field.items[0].text
-                // 
-                // So we ONLY set the exclGroup's rawValue, not the individual field's rawValue
-                if let Some(mut excl_group) = form.resolve_mut("RB_Group_Neuanlage") {
-                    excl_group.set_raw_value(rb_value);
-                    println!("  Set RB_Group_Neuanlage.rawValue={}", rb_value);
-                }
-                
-                // Trigger change event on the exclGroup
-                match form.change("RB_Group_Neuanlage") {
-                    Ok(result) => {
-                        if result.values_changed || result.presence_changed {
-                            println!("  ExclGroup change triggered: values={}, presence={}", 
-                                result.values_changed, result.presence_changed);
+            fn search(nodes: &[XfaNode], current_path: &str, results: &mut Vec<(String, String, String)>) {
+                for node in nodes {
+                    // Build the SOM path for this node
+                    let node_path = if let Some(name) = &node.name {
+                        if current_path.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{}.{}", current_path, name)
                         }
-                    }
-                    Err(e) => {
-                        println!("  Note: exclGroup change event: {}", e);
-                    }
-                }
-                
-                // Re-run initialize events on sections that control visibility based on RB_Group_Neuanlage value
-                // These scripts check RB_Group_Neuanlage.rawValue and set their own presence
-                // Also include STP_SectionTitle which contains ffrb1 (the section title text)
-                for section in ["Page.Löschung", "Page.Bankverbindung", "Page.SectionTitle", "Page.Neuanlage", "Page.Änderung", "Löschung", "Bankverbindung", "SectionTitle", "Neuanlage", "Änderung", "STP_SectionTitle", "Page.SectionTitle.STP_SectionTitle", "ffrb1", "soLocalLabelDefinition"] {
-                    match form.initialize(section) {
-                        Ok(result) => {
-                            if result.presence_changed || result.values_changed {
-                                println!("  Section {} changed (presence={}, values={})", 
-                                    section, result.presence_changed, result.values_changed);
-                            }
-                        }
-                        Err(_) => {} // Section might not exist or have no initialize script
-                    }
-                    // Also try calling the change event on the section
-                    match form.change(section) {
-                        Ok(result) => {
-                            if result.values_changed {
-                                println!("  Section {} change triggered (values={})", 
-                                    section, result.values_changed);
-                            }
-                        }
-                        Err(_) => {}
-                    }
-                }
-            } else {
-                // For checkboxes, just set the raw value
-                if let Some(mut node) = form.resolve_mut(name) {
-                    node.set_raw_value("1");
-                    println!("  Set rawValue=1");
-                }
-            }
-            
-            // Trigger change event cascade on the parent exclGroup (for radio buttons)
-            // This is the spec-compliant way: change events fire on the exclGroup, not individual fields
-            // The cascade will re-run any calculate scripts that depend on the exclGroup value
-            if is_radio {
-                match form.trigger_change_on_excl_group(name) {
-                    Ok(result) => {
-                        if result.presence_changed || result.values_changed {
-                            println!("  ExclGroup change triggered (presence={}, values={})", 
-                                result.presence_changed, result.values_changed);
-                        }
-                    }
-                    Err(e) => {
-                        println!("  Warning: Failed to trigger change on exclGroup: {}", e);
-                    }
-                }
-            }
-            
-            // Debug: Check ffrb1 value before refresh
-            if let Some(ffrb1_node) = form.resolve("ffrb1") {
-                println!("  DEBUG ffrb1 rawValue before refresh: {:?}", ffrb1_node.raw_value());
-            }
-            
-            // Refresh the form to update the flattened layout with new values/presence
-            form.refresh().map_err(|e| format!("Failed to refresh after clicking {}: {}", name, e))?;
-            
-            // Debug: Look for ffrb1 and similar section title text nodes
-            let section_title_nodes: Vec<_> = form.flattened().nodes.iter()
-                .filter(|n| {
-                    if let FlattenedNodeKind::Text { content, source_name, .. } = &n.kind {
-                        source_name.as_deref() == Some("ffrb1") || 
-                        content.contains("möglich") ||
-                        (content.contains("Löschung") && content.len() > 10)
                     } else {
-                        false
+                        current_path.to_string()
+                    };
+                    
+                    // Check if this is a Field node
+                    if matches!(&node.kind, XfaNodeKind::Field) {
+                        // Check if this field has a checkButton UI element
+                        let shape = node.children.iter()
+                            .find_map(|c| {
+                                if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind {
+                                    if t == "ui" {
+                                        return c.children.iter().find_map(|ui_c| {
+                                            if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
+                                                if t2 == "checkButton" {
+                                                    return Some(ui_c.attributes.get("shape")
+                                                        .cloned()
+                                                        .unwrap_or_else(|| "square".to_string()));
+                                                }
+                                            }
+                                            None
+                                        });
+                                    }
+                                }
+                                None
+                            });
+                        
+                        if let Some(shape) = shape {
+                            let name = node.name.clone().unwrap_or_default();
+                            if !name.is_empty() {
+                                // Convert shape to our standard format
+                                let shape_normalized = if shape == "round" { "round" } else { "square" };
+                                results.push((node_path.clone(), name, shape_normalized.to_string()));
+                            }
+                        }
                     }
-                })
-                .collect();
-            
-            if section_title_nodes.is_empty() {
-                println!("  WARNING: ffrb1 not found in flattened output!");
-            }
-            for node in &section_title_nodes {
-                if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
-                    println!("  Section title: '{}' (source: {:?})", content, source_name);
+                    // Recurse into children
+                    search(&node.children, &node_path, results);
                 }
             }
             
-            // Render
-            let output_path = PathBuf::from(format!("{}_{}.png", doc_name, name));
-            form.flattened().render_to_image_buffer_plain(args.scale)?
-                .save(&output_path)
-                .map_err(|e| format!("Failed to save image for {}: {}", name, e))?;
-            println!("  ✓ Rendered: {}", output_path.display());
-            
-            // Reset by re-creating the form from fresh data
-            // (This ensures we start from a clean state for each element)
-            let xfa_data_reset = extract_xfa_from_pdf(&args.document)?.unwrap();
-            let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
-            form = XfaForm::new(nodes_reset, locale, doc_name)
-                .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+            search(nodes, "", &mut results);
+            results
         }
         
-        println!("\n✓ Exhaustive rendering complete ({} images)", unique_checkbuttons.len());
+        // Get the list of all VISIBLE radio buttons/checkboxes in a given form state
+        // Returns (som_path, name, shape) tuples for visible fields only
+        fn get_visible_selectable_fields(form: &XfaForm) -> Vec<(String, String, String)> {
+            // Get ALL checkButton fields with their SOM paths
+            let all_fields = find_all_checkbutton_fields_with_paths(form.xfa_nodes());
+            
+            // Filter to only those that are currently visible (checking XFA tree)
+            let mut result = Vec::new();
+            for (som_path, name, shape) in all_fields {
+                if form.is_path_visible(&som_path) {
+                    result.push((som_path, name, shape));
+                }
+            }
+            result
+        }
+        
+        // Convert current selection state to a canonical representation
+        fn get_current_state(selections: &[(String, String)]) -> Vec<(String, String)> {
+            let mut state: Vec<_> = selections.iter().cloned().collect();
+            state.sort();
+            state
+        }
+        
+        // Recursive function to explore all states
+        // Selections are now (som_path, field_name, value) tuples for unique identification
+        fn explore_states(
+            form: &mut XfaForm,
+            current_selections: Vec<(String, String, String)>,  // (som_path, field_name, value) tuples
+            rendered_states: &mut std::collections::HashSet<Vec<(String, String)>>,
+            doc_name: &str,
+            scale: f32,
+            pdf_path: &std::path::Path,
+            locale: &str,
+        ) -> Result<usize, Box<dyn std::error::Error>> {
+            let mut images_rendered = 0;
+            
+            // Get the canonical state representation (using SOM paths for uniqueness)
+            let state: Vec<(String, String)> = current_selections.iter()
+                .map(|(path, _, value)| (path.clone(), value.clone()))
+                .collect();
+            let state = get_current_state(&state);
+            
+            // Skip if we've already rendered this state
+            if rendered_states.contains(&state) {
+                return Ok(0);
+            }
+            
+            // Mark this state as rendered
+            rendered_states.insert(state.clone());
+            
+            // Generate a filename based on the current selections (use short names for readability)
+            let state_suffix = if current_selections.is_empty() {
+                "default".to_string()
+            } else {
+                current_selections.iter()
+                    .map(|(_, name, _)| name.clone())
+                    .collect::<Vec<_>>()
+                    .join("_")
+            };
+            
+            // Render the current state
+            let output_path = std::path::PathBuf::from(format!("{}_{}.png", doc_name, state_suffix));
+            form.flattened().render_to_image_buffer_plain(scale)?
+                .save(&output_path)
+                .map_err(|e| format!("Failed to save image: {}", e))?;
+            
+            println!("  ✓ Rendered: {} (selections: {:?})", output_path.display(), 
+                current_selections.iter().map(|(p, _, _)| p.as_str()).collect::<Vec<_>>());
+            images_rendered += 1;
+            
+            // Get visible selectable fields in this state (with SOM paths)
+            let visible_fields = get_visible_selectable_fields(form);
+            
+            // For each visible field that is NOT already selected, try selecting it
+            for (som_path, field_name, shape) in &visible_fields {
+                // Skip if this field (by SOM path) is already in our current selections
+                if current_selections.iter().any(|(p, _, _)| p == som_path) {
+                    continue;
+                }
+                
+                // For radio buttons, also skip if a sibling from the same group is selected
+                // (we only select one radio button per group)
+                let is_radio = shape == "round";
+                if is_radio {
+                    // Check if any sibling in the same exclGroup is already selected
+                    // Use the SOM path for proper path-based exclGroup lookup
+                    if let Some(excl_group) = form.find_excl_group_for_field(som_path) {
+                        let group_already_has_selection = current_selections.iter()
+                            .any(|(sel_path, _, _)| {
+                                form.find_excl_group_for_field(sel_path)
+                                    .map(|g| g == excl_group)
+                                    .unwrap_or(false)
+                            });
+                        if group_already_has_selection {
+                            continue;
+                        }
+                    }
+                }
+                
+                // Create a fresh form from the PDF
+                let xfa_data_reset = crate::extract_xfa_from_pdf(pdf_path)?.unwrap();
+                let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
+                let mut new_form = XfaForm::new(nodes_reset, locale, doc_name)
+                    .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+                
+                // Apply all current selections to the new form using FULL SOM paths
+                // This ensures we select the correct field when there are duplicates (e.g., RB_1 in different sections)
+                let mut new_selections = current_selections.clone();
+                for (sel_path, _, _) in &current_selections {
+                    let _ = new_form.select_radio_button(sel_path);
+                    new_form.refresh()?;
+                }
+                
+                // Now select the new field using its SOM path
+                if is_radio {
+                    let _ = new_form.select_radio_button(som_path);
+                } else {
+                    // For checkboxes, use the SOM path for resolution
+                    if let Some(mut node) = new_form.resolve_mut(som_path) {
+                        node.set_raw_value("1");
+                    }
+                }
+                
+                // Add this field to our selections (with SOM path)
+                new_selections.push((som_path.clone(), field_name.clone(), "1".to_string()));
+                
+                // Refresh the form to apply changes
+                new_form.refresh()?;
+                
+                // Recursively explore from this new state
+                images_rendered += explore_states(
+                    &mut new_form,
+                    new_selections,
+                    rendered_states,
+                    doc_name,
+                    scale,
+                    pdf_path,
+                    locale,
+                )?;
+            }
+            
+            Ok(images_rendered)
+        }
+        
+        // Start exploration from the initial state
+        let total_images = explore_states(
+            &mut form,
+            Vec::new(),  // No selections initially
+            &mut rendered_states,
+            doc_name,
+            args.scale,
+            &args.document,
+            locale,
+        )?;
+        
+        println!("\n✓ Exhaustive rendering complete ({} unique states)", total_images);
     }
     
     Ok(())
@@ -466,6 +501,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use rust_decimal::prelude::*;
+    use std::collections::HashMap;
+    
+    /// Helper function to flatten XFA with script execution using the new architecture.
+    /// This replaces the old `Flattened::from_xfa_with_scripts` API.
+    fn flatten_with_scripts(nodes: &mut [XfaNode], language: &str, form_id: &str) -> Result<Flattened, String> {
+        let script_result = ScriptExecutor::execute(nodes, language, form_id);
+        ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
+        Flattened::from_xfa(nodes, &script_result.computed_values)
+    }
     
     #[test]
     fn test_parse_xfa_from_aaab_document() {
@@ -481,7 +525,7 @@ mod tests {
         assert!(!xfa_buffer.is_empty(), "XFA buffer should not be empty");
         
         // Parse the XFA structure
-        let mut nodes = XfaNode::parse(&xfa_buffer)
+        let nodes = XfaNode::parse(&xfa_buffer)
             .expect("Failed to parse XFA structure");
         
         assert!(!nodes.is_empty(), "Should parse at least one XFA node");
@@ -508,7 +552,7 @@ mod tests {
         let xfa_buffer = xfa_data.unwrap();
         
         // Parse the XFA structure
-        let mut nodes = XfaNode::parse(&xfa_buffer)
+        let nodes = XfaNode::parse(&xfa_buffer)
             .expect("Failed to parse XFA structure");
         
         // Verify structure
@@ -586,14 +630,14 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Debug: print structure
         println!("\nXFA Structure:");
         println!("{}", XfaNode::summarize_structure(&nodes, 0));
         
-        let flattened = Flattened::from_xfa(&nodes)
+        let flattened = Flattened::from_xfa(&nodes, &HashMap::new())
             .expect("Failed to flatten XFA");
         
         println!("\nFlattened AAAB document:");
@@ -633,7 +677,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -673,10 +717,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa(&nodes)
+        let flattened = Flattened::from_xfa(&nodes, &HashMap::new())
             .expect("Failed to flatten XFA");
         
         // Helper function to find field by name
@@ -778,7 +822,7 @@ mod tests {
     /// The HTML style should override the XFA font weight for rich text content.
     #[test]
     fn test_aaai_t_left_font_properties() {
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         use crate::xfa::{XfaNode, FontWeight};
         use rust_decimal::Decimal;
         
@@ -789,7 +833,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data)
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Find the T_Left text node
@@ -923,7 +967,7 @@ mod tests {
     fn test_aaab_des_label_alignment() {
         // Test that DES_PostalCode, DES_City, and DES_Country labels are on the same line
         // These are the labels for PLZ, Stadt, and Land
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         // Use AAAI which has these fields
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
@@ -933,8 +977,8 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        // Use from_xfa_with_scripts to get the computed label text
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        // Use flatten_with_scripts to get the computed label text
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Helper function to find text node by source_name (Draw element name)
@@ -1044,7 +1088,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Find and dump DES_PostalCode node
@@ -1126,7 +1170,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Print detailed positioning information
@@ -1233,7 +1277,7 @@ mod tests {
             .expect("Failed to read PDF")
             .expect("No XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data)
+        let nodes = XfaNode::parse(&xfa_data)
             .expect("Failed to parse XFA structure");
         
         // Find draw elements and print their content
@@ -1286,7 +1330,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         fn find_subform<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
@@ -1332,7 +1376,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Debug: find elements containing "UBS"
@@ -1425,7 +1469,7 @@ mod tests {
             println!("x={:?}, y={:?}, w={:?}, h={:?}", ubs_draw.x, ubs_draw.y, ubs_draw.w, ubs_draw.h);
         }
         
-        let flattened = Flattened::from_xfa(&nodes)
+        let flattened = Flattened::from_xfa(&nodes, &HashMap::new())
             .expect("Failed to flatten XFA");
         
         // Helper function to find text node by content substring
@@ -1499,10 +1543,10 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa(&nodes)
+        let flattened = Flattened::from_xfa(&nodes, &HashMap::new())
             .expect("Failed to flatten XFA");
         
         // Helper function to find text node by content substring
@@ -1524,7 +1568,7 @@ mod tests {
         
         // Get bounding boxes
         let vertretungs_bottom = vertretungs.y + vertretungs.height;
-        let kunde_top = kunde.y;
+        let _kunde_top = kunde.y;
         
         println!("\n=== Subform Overlap Test ===");
         println!("'Vertretungsberechtigte(r)': y={}, height={}, bottom={}", 
@@ -1567,7 +1611,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -1685,7 +1729,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -1767,7 +1811,7 @@ mod tests {
     
     #[test]
     fn test_flattened_with_scripts_has_vorname() {
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
@@ -1816,7 +1860,7 @@ mod tests {
         // Flatten WITH script execution (German language)
         // Even though ffFirstName_s is hidden, the script should execute and the value
         // should be available in the computed_values map
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Hidden fields are intentionally skipped in flattening per XFA spec
@@ -1913,7 +1957,7 @@ mod tests {
     
     #[test]
     fn test_des_firstname_gets_vorname_via_embed() {
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
@@ -1928,7 +1972,7 @@ mod tests {
         // 1. Execute scripts -> ffFirstName_s gets "Vorname(n)" 
         // 2. Build ID map -> "5a604bee...floatingField010860" -> "ffFirstName_s"
         // 3. During text extraction, resolve xfa:embed in DES_FirstName -> "Vorname(n)"
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Find DES_FirstName in the flattened output
@@ -1986,7 +2030,7 @@ mod tests {
     /// (via xfa:embed) were being lost during flattening or rendering.
     #[test]
     fn test_vorname_label_visible_in_flattened_output() {
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
@@ -1997,7 +2041,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Flatten WITH script execution (German language)
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Search for any text node containing "Vorname"
@@ -2175,7 +2219,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run analysis modules in the correct order
@@ -2224,7 +2268,7 @@ mod tests {
         // These labels come from hidden fields via xfa:embed
         // The parent subform has a script: this.ffDesSignature.rawValue = mySignatureClient
         // which sets the hidden field value to "Unterschrift des Kunden"
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
             .expect("Failed to read PDF");
@@ -2233,7 +2277,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Expected signature labels (set by scripts)
@@ -2281,7 +2325,7 @@ mod tests {
         // 2. Has event ref="$layout" activity="ready" (layout:ready event)
         // 3. Script: this.rawValue = myDE.GV_Signature_s  (which is "Unterschrift(en)")
         // 4. T_Signature draw embeds this via xfa:embed="#floatingField018467"
-        use crate::flattened::{Flattened, FlattenedNodeKind};
+        use crate::flattened::FlattenedNodeKind;
         
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
             .expect("Failed to read PDF");
@@ -2290,7 +2334,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Search for "Unterschrift(en)" in text nodes
@@ -2336,7 +2380,7 @@ mod tests {
             .expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
         
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+        let nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
         // Helper function to find events recursively
@@ -2582,7 +2626,7 @@ mod tests {
         // Now test with the flattening that uses scripts
         let doc_name = "AAAB_019_DE";
         let locale = "DE";
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, locale, doc_name)
+        let flattened = flatten_with_scripts(&mut nodes, locale, doc_name)
             .expect("Failed to flatten XFA");
         
         // Look for RB_1 in flattened output and verify it has the correct value
@@ -2667,7 +2711,7 @@ mod tests {
         // Flatten WITH script execution
         // The script sets ffClientDetails.rawValue = "Endkunde"
         // But per XFA spec, this should NOT change the field's visibility
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Check if ffClientDetails appears in flattened output
@@ -2719,7 +2763,7 @@ mod tests {
     /// This requires click events on RB_1 to be executed even when it's the default selection.
     #[test]
     fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
-        use crate::scripting::{XfaScriptEngine, parse_events_from_node, ScriptContentType, EventActivity, EventRef};
+        use crate::scripting::{parse_events_from_node, EventActivity};
         
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
@@ -2815,7 +2859,7 @@ mod tests {
         }
         
         // Flatten with script execution
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Count visible nodes to verify the Neuanlage section is rendered
@@ -2911,7 +2955,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Flatten with script execution
-        let flattened = Flattened::from_xfa_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
             .expect("Failed to flatten XFA with scripts");
         
         // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
