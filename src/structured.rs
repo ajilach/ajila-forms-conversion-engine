@@ -1,22 +1,23 @@
 pub enum StructuredNode {
     HeadingNode(HeadingNode),
     ParagraphNode(ParagraphNode),
-    InlineNode(InlineNode),
     FieldNode(FieldNode),
 }
 
 pub struct FieldNode {
-    pub label: String,
+    pub label: InlineText,
 }
 
 pub struct ParagraphNode {
-    pub content: Vec<InlineNode>,
+    pub content: InlineText,
 }
 
 pub struct HeadingNode {
     pub level: HeadingLevel,
-    pub content: Vec<InlineNode>,
+    pub content: InlineText,
 }
+
+pub struct InlineText(Vec<InlineNode>);
 
 pub enum InlineNode {
     TextNode(String),

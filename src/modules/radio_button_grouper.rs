@@ -226,71 +226,29 @@ mod tests {
     #[test]
     fn test_horizontal_radio_button_grouping() {
         // Create a flattened document with 3 horizontally aligned radio buttons
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Radio button 1
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Field {
-                        name: "radio1".to_string(),
-                        value: "".to_string(),
-                        label: "".to_string(),
-                        is_checked: None,
-                    },
-                    x: num(50.0),
-                    y: num(100.0),
-                    width: num(12.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Text {
-                        content: "Option 1".to_string(),
-                        font_size: num(10.0),
-                        font_name: "Helvetica".to_string(),
-                        source_name: None,
-                        rich_text: None,
-                    },
-                    x: num(65.0),
-                    y: num(100.0),
-                    width: num(50.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
+                FlattenedNode::new_field(
+                    "radio1".to_string(), "".to_string(), "".to_string(),
+                    num(50.0), num(100.0), num(12.0), num(12.0),
+                ),
+                FlattenedNode::new_text(
+                    "Option 1".to_string(), num(10.0), "Helvetica".to_string(),
+                    num(65.0), num(100.0), num(50.0), num(12.0),
+                ),
                 // Radio button 2 (30 points away horizontally, same Y)
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Field {
-                        name: "radio2".to_string(),
-                        value: "".to_string(),
-                        label: "".to_string(),
-                        is_checked: None,
-                    },
-                    x: num(145.0),
-                    y: num(100.0),
-                    width: num(12.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Text {
-                        content: "Option 2".to_string(),
-                        font_size: num(10.0),
-                        font_name: "Helvetica".to_string(),
-                        source_name: None,
-                        rich_text: None,
-                    },
-                    x: num(160.0),
-                    y: num(100.0),
-                    width: num(50.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
+                FlattenedNode::new_field(
+                    "radio2".to_string(), "".to_string(), "".to_string(),
+                    num(145.0), num(100.0), num(12.0), num(12.0),
+                ),
+                FlattenedNode::new_text(
+                    "Option 2".to_string(), num(10.0), "Helvetica".to_string(),
+                    num(160.0), num(100.0), num(50.0), num(12.0),
+                ),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         

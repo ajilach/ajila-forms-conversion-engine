@@ -55,6 +55,20 @@ pub struct Group {
     pub source: GroupSource,
 }
 
+/// Where a group came from - either initially from flattening or inferred by a module.
+#[derive(Debug, Clone)]
+pub enum GroupSource {
+    /// Group was created during initial flattening (Leaf groups)
+    Initial,
+    /// Group was directly from XFA structure
+    Xfa,
+    /// Group was inferred by an analysis module
+    Inferred {
+        /// Name of the module that created this group
+        module: String,
+    },
+}
+
 /// The kind of group - either a Leaf wrapping a node, or a composite kind.
 #[derive(Debug, Clone)]
 pub enum GroupKind {
@@ -126,20 +140,18 @@ pub enum GroupKind {
     
     /// Page footer content
     Footer,
-}
-
-/// Where a group originated from
-#[derive(Debug, Clone)]
-pub enum GroupSource {
-    /// Initial leaf groups created from Flattened nodes
-    Initial,
-    /// Group came from XFA structure (e.g., exclGroup)
-    Xfa,
-    /// Group was inferred by an analysis module
-    Inferred {
-        /// Name of the module that created this group
-        module: String,
+    
+    /// A repeatable section (dynamic array/table) per XFA occur element
+    RepeatableSection {
+        /// Minimum occurrences required
+        min_occurrences: u32,
+        /// Maximum occurrences allowed (None = unlimited)
+        max_occurrences: Option<u32>,
     },
+    
+    /// An inline field - a field with text directly before/after but no label above/below
+    /// These are fields embedded in flowing text rather than traditional form layouts
+    InlineField,
 }
 
 impl<'a> Document<'a> {
@@ -147,7 +159,8 @@ impl<'a> Document<'a> {
     ///
     /// Initializes one Leaf group per FlattenedNode.
     pub fn from_flattened(source: &'a Flattened) -> Self {
-        let groups = source.nodes.iter().enumerate()
+        // Collect all nodes from the recursive structure for index-based access
+        let groups = source.iter_nodes().enumerate()
             .map(|(i, _)| Group {
                 kind: GroupKind::Leaf { node_index: i },
                 children: vec![],
@@ -222,7 +235,7 @@ impl<'a> Document<'a> {
     
     /// Get a FlattenedNode by index.
     pub fn get_node(&self, index: usize) -> Option<&FlattenedNode> {
-        self.source.nodes.get(index)
+        self.source.iter_nodes().nth(index)
     }
     
     /// Get all leaf node indices under a group (recursively).
@@ -242,7 +255,7 @@ impl<'a> Document<'a> {
     /// Get all FlattenedNodes under a group (recursively).
     pub fn collect_nodes(&self, group_index: usize) -> Vec<&FlattenedNode> {
         self.collect_node_indices(group_index).iter()
-            .filter_map(|&i| self.source.nodes.get(i))
+            .filter_map(|&i| self.source.iter_nodes().nth(i))
             .collect()
     }
     
@@ -299,7 +312,7 @@ impl<'a> Document<'a> {
         self.unclaimed_leaves().into_iter()
             .filter(|&i| {
                 if let GroupKind::Leaf { node_index } = self.groups[i].kind {
-                    matches!(self.source.nodes.get(node_index).map(|n| &n.kind), 
+                    matches!(self.source.iter_nodes().nth(node_index).map(|n| &n.kind), 
                         Some(FlattenedNodeKind::Text { .. }))
                 } else {
                     false
@@ -313,7 +326,7 @@ impl<'a> Document<'a> {
         self.unclaimed_leaves().into_iter()
             .filter(|&i| {
                 if let GroupKind::Leaf { node_index } = self.groups[i].kind {
-                    matches!(self.source.nodes.get(node_index).map(|n| &n.kind),
+                    matches!(self.source.iter_nodes().nth(node_index).map(|n| &n.kind),
                         Some(FlattenedNodeKind::Field { .. }))
                 } else {
                     false
@@ -386,6 +399,30 @@ impl<'a> Document<'a> {
     /// Check if a group is a Field.
     pub fn is_field(&self, group_idx: usize) -> bool {
         self.is_group_kind(group_idx, |k| matches!(k, GroupKind::Field))
+    }
+    
+    /// Check if a group is a Heading.
+    pub fn is_heading(&self, group_idx: usize) -> bool {
+        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::Heading { .. }))
+    }
+    
+    /// Check if a group is an InlineField.
+    pub fn is_inline_field(&self, group_idx: usize) -> bool {
+        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::InlineField))
+    }
+    
+    /// Find all InlineField groups.
+    pub fn inline_fields(&self) -> Vec<usize> {
+        self.find_groups(|k| matches!(k, GroupKind::InlineField))
+    }
+    
+    /// Mark a field group as an inline field by wrapping it in an InlineField group.
+    pub fn add_inline_field_marker(&mut self, field_idx: usize) {
+        self.merge(
+            vec![field_idx],
+            GroupKind::InlineField,
+            GroupSource::Inferred { module: "InlineFieldDetector".to_string() },
+        );
     }
     
     // ========================================================================
@@ -529,7 +566,7 @@ impl<'a> Document<'a> {
         let mut max_y = rust_decimal::Decimal::MIN;
         
         for node_idx in node_indices {
-            if let Some(node) = self.source.nodes.get(node_idx) {
+            if let Some(node) = self.source.iter_nodes().nth(node_idx) {
                 min_x = min_x.min(node.x);
                 min_y = min_y.min(node.y);
                 max_x = max_x.max(node.x + node.width);
@@ -573,6 +610,13 @@ impl<'a> Document<'a> {
             GroupKind::Section => "Section".to_string(),
             GroupKind::Header => "Header".to_string(),
             GroupKind::Footer => "Footer".to_string(),
+            GroupKind::RepeatableSection { min_occurrences, max_occurrences } => {
+                match max_occurrences {
+                    Some(max) => format!("RepeatableSection[{}-{}]", min_occurrences, max),
+                    None => format!("RepeatableSection[{}+]", min_occurrences),
+                }
+            }
+            GroupKind::InlineField => "InlineField".to_string(),
         }
     }
     
@@ -607,12 +651,12 @@ mod tests {
     use crate::xfa::num;
     
     fn create_test_flattened() -> Flattened {
-        Flattened {
-            page: Page {
+        Flattened::from_nodes(
+            Page {
                 width: num(595.0),
                 height: num(842.0),
             },
-            nodes: vec![
+            vec![
                 FlattenedNode::new_text(
                     "First".to_string(),
                     num(10.0),
@@ -644,7 +688,7 @@ mod tests {
                     num(40.0), num(50.0), num(20.0), num(20.0),
                 ),
             ],
-        }
+        )
     }
     
     #[test]

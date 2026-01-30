@@ -535,7 +535,7 @@ impl XfaForm {
         let flattened_node = self
             .field_index_cache
             .get(node_name)
-            .and_then(|&idx| self.flattened.nodes.get(idx));
+            .and_then(|&idx| self.flattened.iter_nodes().nth(idx));
 
         let ancestors_visible = self.check_ancestors_visible(node_name);
 
@@ -980,9 +980,9 @@ impl XfaForm {
         (self.flattened.page.width, self.flattened.page.height)
     }
 
-    /// Get all flattened nodes (read-only)
-    pub fn flattened_nodes(&self) -> &[FlattenedNode] {
-        &self.flattened.nodes
+    /// Get an iterator over all flattened nodes (read-only)
+    pub fn flattened_nodes(&self) -> impl Iterator<Item = &FlattenedNode> {
+        self.flattened.iter_nodes()
     }
 
     /// Get the underlying Flattened struct
@@ -1090,7 +1090,7 @@ impl XfaForm {
 
     fn build_field_index_cache(flattened: &Flattened) -> HashMap<String, usize> {
         let mut cache = HashMap::new();
-        for (idx, node) in flattened.nodes.iter().enumerate() {
+        for (idx, node) in flattened.iter_nodes().enumerate() {
             match &node.kind {
                 FlattenedNodeKind::Field { name, .. } => {
                     cache.insert(name.clone(), idx);

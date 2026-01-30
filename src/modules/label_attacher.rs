@@ -115,34 +115,60 @@ impl LabelAttacher {
     }
     
     /// Analyze all text-field relationships and determine the dominant label position.
+    /// 
+    /// For each field, finds the closest text in each direction (above, below, left).
+    /// Then votes for the position that most frequently has the closest text.
     fn analyze_label_positions(&self, doc: &Document, text_groups: &[usize], field_groups: &[usize]) -> Option<LabelPosition> {
-        let mut position_counts: HashMap<LabelPosition, usize> = HashMap::new();
+        // For each field, find the closest text in each direction
+        // Then determine which direction most often has the closest match
+        let mut position_votes: HashMap<LabelPosition, usize> = HashMap::new();
         
         for &field_idx in field_groups {
             let Some(field_bounds) = doc.get_bounds(field_idx) else {
                 continue;
             };
             
+            // Find the closest text in each direction for this field
+            let mut best_above: Option<Decimal> = None;
+            let mut best_below: Option<Decimal> = None;
+            let mut best_left: Option<Decimal> = None;
+            
             for &text_idx in text_groups {
                 let Some(text_bounds) = doc.get_bounds(text_idx) else {
                     continue;
                 };
                 
-                // Check each position
-                if self.check_above(&text_bounds, &field_bounds).is_some() {
-                    *position_counts.entry(LabelPosition::Above).or_insert(0) += 1;
+                if let Some(gap) = self.check_above(&text_bounds, &field_bounds) {
+                    if best_above.map_or(true, |b| gap < b) {
+                        best_above = Some(gap);
+                    }
                 }
-                if self.check_below(&text_bounds, &field_bounds).is_some() {
-                    *position_counts.entry(LabelPosition::Below).or_insert(0) += 1;
+                if let Some(gap) = self.check_below(&text_bounds, &field_bounds) {
+                    if best_below.map_or(true, |b| gap < b) {
+                        best_below = Some(gap);
+                    }
                 }
-                if self.check_left(&text_bounds, &field_bounds).is_some() {
-                    *position_counts.entry(LabelPosition::Left).or_insert(0) += 1;
+                if let Some(gap) = self.check_left(&text_bounds, &field_bounds) {
+                    if best_left.map_or(true, |b| gap < b) {
+                        best_left = Some(gap);
+                    }
                 }
+            }
+            
+            // Vote for the direction with the smallest gap (closest text)
+            let candidates: Vec<(LabelPosition, Decimal)> = [
+                best_above.map(|g| (LabelPosition::Above, g)),
+                best_below.map(|g| (LabelPosition::Below, g)),
+                best_left.map(|g| (LabelPosition::Left, g)),
+            ].into_iter().flatten().collect();
+            
+            if let Some((winner, _gap)) = candidates.into_iter().min_by_key(|(_, g)| *g) {
+                *position_votes.entry(winner).or_insert(0) += 1;
             }
         }
         
-        // Find the dominant position
-        position_counts.into_iter()
+        // Find the dominant position (most votes)
+        position_votes.into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(pos, _)| pos)
     }
@@ -188,9 +214,15 @@ impl AnalysisModule for LabelAttacher {
         // Get all root groups
         let roots = doc.roots();
         
-        // Find TextBlock groups and Field groups
+        // Find TextBlock groups that are NOT headings (headings shouldn't be used as labels)
+        // Only plain text blocks should be used as field labels
+        // Also filter out text blocks that have no actual text content
         let text_groups: Vec<usize> = roots.iter()
-            .filter(|&&idx| doc.is_text_block(idx))
+            .filter(|&&idx| {
+                doc.is_text_block(idx) 
+                    && !doc.is_heading(idx)
+                    && !doc.get_text_content(idx).trim().is_empty()
+            })
             .copied()
             .collect();
         
@@ -258,9 +290,9 @@ mod tests {
     
     #[test]
     fn test_label_above_field() {
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Labels above fields (this pattern should be detected as dominant)
                 FlattenedNode::new_text(
                     "First Name:".to_string(), num(10.0), "Helvetica".to_string(),
@@ -279,7 +311,7 @@ mod tests {
                     num(10.0), num(165.0), num(150.0), num(20.0),
                 ),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         TextBlockGrouper::new().process(&mut doc);
@@ -293,9 +325,9 @@ mod tests {
     
     #[test]
     fn test_label_left_of_field() {
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Labels to left of fields (this pattern should be detected as dominant)
                 FlattenedNode::new_text(
                     "Name:".to_string(), num(10.0), "Helvetica".to_string(),
@@ -314,7 +346,7 @@ mod tests {
                     num(60.0), num(128.0), num(150.0), num(20.0),
                 ),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         TextBlockGrouper::new().process(&mut doc);
@@ -333,9 +365,9 @@ mod tests {
     #[test]
     fn test_statistical_analysis_chooses_dominant_position() {
         // Mix of positions, but "above" should dominate (3 above vs 1 left)
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Three labels above
                 FlattenedNode::new_text("A:".to_string(), num(10.0), "Helvetica".to_string(),
                     num(10.0), num(50.0), num(20.0), num(12.0)),
@@ -352,7 +384,7 @@ mod tests {
                 FlattenedNode::new_field("F_C".to_string(), "".to_string(), "C".to_string(),
                     num(10.0), num(165.0), num(100.0), num(20.0)),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         TextBlockGrouper::new().process(&mut doc);
@@ -366,9 +398,9 @@ mod tests {
     
     #[test]
     fn test_no_label_for_distant_field() {
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Text at top
                 FlattenedNode::new_text(
                     "Title".to_string(), num(10.0), "Helvetica".to_string(),
@@ -380,7 +412,7 @@ mod tests {
                     num(10.0), num(500.0), num(150.0), num(20.0),
                 ),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         TextBlockGrouper::new().process(&mut doc);

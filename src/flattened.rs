@@ -9,10 +9,338 @@ use ab_glyph::{FontRef, PxScale, Font as AbGlyphFont, ScaleFont};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::str::FromStr;
+use uuid::Uuid;
 
 pub struct Flattened {
     pub page: Page,
-    pub nodes: Vec<FlattenedNode>,
+    pub children: Vec<FlattenedKind>,
+}
+
+// ============================================================================
+// Recursive Flattened Structure
+// ============================================================================
+
+/// A flattened element: either a group (with hints/conditions) or a leaf node.
+/// Groups can be nested recursively and carry semantic hints.
+/// Leaf nodes contain actual layout information (position, dimensions, content).
+#[derive(Debug, Clone)]
+pub enum FlattenedKind {
+    /// A group of elements with optional hints and visibility condition.
+    /// Groups are created when an XFA node has an <occur> element (repeatable section).
+    Group {
+        /// Child elements (can be nested groups or leaf nodes)
+        children: Vec<FlattenedKind>,
+        /// Semantic hints for this group (format-agnostic)
+        hints: Vec<Hint>,
+        /// Optional visibility constraint
+        condition: Option<VisibilityConstraint>,
+    },
+    /// A leaf node with position and rendering information
+    Node(FlattenedNode),
+}
+
+impl FlattenedKind {
+    /// Create a new group with children and hints
+    pub fn group(children: Vec<FlattenedKind>, hints: Vec<Hint>) -> Self {
+        FlattenedKind::Group {
+            children,
+            hints,
+            condition: None,
+        }
+    }
+    
+    /// Create a new group with children, hints, and a visibility condition
+    pub fn group_conditional(children: Vec<FlattenedKind>, hints: Vec<Hint>, condition: VisibilityConstraint) -> Self {
+        FlattenedKind::Group {
+            children,
+            hints,
+            condition: Some(condition),
+        }
+    }
+    
+    /// Create a leaf node
+    pub fn node(node: FlattenedNode) -> Self {
+        FlattenedKind::Node(node)
+    }
+    
+    /// Get hints for this element (both groups and nodes can have hints)
+    pub fn hints(&self) -> &[Hint] {
+        match self {
+            FlattenedKind::Group { hints, .. } => hints,
+            FlattenedKind::Node(node) => &node.hints,
+        }
+    }
+    
+    /// Get mutable hints for this element (both groups and nodes can have hints)
+    pub fn hints_mut(&mut self) -> &mut Vec<Hint> {
+        match self {
+            FlattenedKind::Group { hints, .. } => hints,
+            FlattenedKind::Node(node) => &mut node.hints,
+        }
+    }
+    
+    /// Add a hint to this element (works for both groups and nodes)
+    pub fn add_hint(&mut self, hint: Hint) {
+        match self {
+            FlattenedKind::Group { hints, .. } => {
+                let discriminant = hint.discriminant();
+                hints.retain(|h| h.discriminant() != discriminant);
+                hints.push(hint);
+            }
+            FlattenedKind::Node(node) => {
+                node.add_hint(hint);
+            }
+        }
+    }
+    
+    /// Get a hint by discriminant
+    pub fn get_hint(&self, discriminant: &str) -> Option<&Hint> {
+        self.hints().iter().find(|h| h.discriminant() == discriminant)
+    }
+    
+    /// Get the visibility condition (only groups can have conditions)
+    pub fn condition(&self) -> Option<&VisibilityConstraint> {
+        match self {
+            FlattenedKind::Group { condition, .. } => condition.as_ref(),
+            FlattenedKind::Node(_) => None,
+        }
+    }
+    
+    /// Returns true if this is a group
+    pub fn is_group(&self) -> bool {
+        matches!(self, FlattenedKind::Group { .. })
+    }
+    
+    /// Returns true if this is a leaf node
+    pub fn is_node(&self) -> bool {
+        matches!(self, FlattenedKind::Node(_))
+    }
+    
+    /// Get the underlying node if this is a leaf node
+    pub fn as_node(&self) -> Option<&FlattenedNode> {
+        match self {
+            FlattenedKind::Node(node) => Some(node),
+            FlattenedKind::Group { .. } => None,
+        }
+    }
+    
+    /// Get the underlying node mutably if this is a leaf node
+    pub fn as_node_mut(&mut self) -> Option<&mut FlattenedNode> {
+        match self {
+            FlattenedKind::Node(node) => Some(node),
+            FlattenedKind::Group { .. } => None,
+        }
+    }
+    
+    /// Get children if this is a group
+    pub fn children(&self) -> Option<&[FlattenedKind]> {
+        match self {
+            FlattenedKind::Group { children, .. } => Some(children),
+            FlattenedKind::Node(_) => None,
+        }
+    }
+    
+    /// Find a node by FieldId, searching recursively
+    pub fn find_by_id(&self, id: &FieldId) -> Option<&FlattenedNode> {
+        match self {
+            FlattenedKind::Node(node) => {
+                if &node.id == id {
+                    Some(node)
+                } else {
+                    None
+                }
+            }
+            FlattenedKind::Group { children, .. } => {
+                for child in children {
+                    if let Some(found) = child.find_by_id(id) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+        }
+    }
+    
+    /// Find a node mutably by FieldId, searching recursively
+    pub fn find_by_id_mut(&mut self, id: &FieldId) -> Option<&mut FlattenedNode> {
+        match self {
+            FlattenedKind::Node(node) => {
+                if &node.id == id {
+                    Some(node)
+                } else {
+                    None
+                }
+            }
+            FlattenedKind::Group { children, .. } => {
+                for child in children {
+                    if let Some(found) = child.find_by_id_mut(id) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+        }
+    }
+    
+    /// Iterate over all leaf nodes recursively
+    pub fn iter_nodes(&self) -> FlattenedNodeIter<'_> {
+        FlattenedNodeIter::new(std::slice::from_ref(self))
+    }
+    
+    /// Iterate over all leaf nodes mutably
+    pub fn iter_nodes_mut(&mut self) -> FlattenedNodeIterMut<'_> {
+        FlattenedNodeIterMut::new(std::slice::from_mut(self))
+    }
+    
+    /// Count all leaf nodes recursively
+    pub fn node_count(&self) -> usize {
+        match self {
+            FlattenedKind::Node(_) => 1,
+            FlattenedKind::Group { children, .. } => {
+                children.iter().map(|c| c.node_count()).sum()
+            }
+        }
+    }
+}
+
+/// Iterator over all leaf nodes in a FlattenedKind tree
+pub struct FlattenedNodeIter<'a> {
+    stack: Vec<std::slice::Iter<'a, FlattenedKind>>,
+}
+
+impl<'a> FlattenedNodeIter<'a> {
+    fn new(children: &'a [FlattenedKind]) -> Self {
+        FlattenedNodeIter {
+            stack: vec![children.iter()],
+        }
+    }
+}
+
+impl<'a> Iterator for FlattenedNodeIter<'a> {
+    type Item = &'a FlattenedNode;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(iter) = self.stack.last_mut() {
+            match iter.next() {
+                Some(FlattenedKind::Node(node)) => return Some(node),
+                Some(FlattenedKind::Group { children, .. }) => {
+                    self.stack.push(children.iter());
+                }
+                None => {
+                    self.stack.pop();
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Mutable iterator over all leaf nodes in a FlattenedKind tree
+pub struct FlattenedNodeIterMut<'a> {
+    stack: Vec<std::slice::IterMut<'a, FlattenedKind>>,
+}
+
+impl<'a> FlattenedNodeIterMut<'a> {
+    fn new(children: &'a mut [FlattenedKind]) -> Self {
+        FlattenedNodeIterMut {
+            stack: vec![children.iter_mut()],
+        }
+    }
+}
+
+impl<'a> Iterator for FlattenedNodeIterMut<'a> {
+    type Item = &'a mut FlattenedNode;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(iter) = self.stack.last_mut() {
+            match iter.next() {
+                Some(FlattenedKind::Node(node)) => return Some(node),
+                Some(FlattenedKind::Group { children, .. }) => {
+                    // SAFETY: We need to extend the lifetime here because we're
+                    // pushing to a stack that outlives this loop iteration.
+                    // This is safe because we only access each element once.
+                    let children_ptr = children as *mut Vec<FlattenedKind>;
+                    self.stack.push(unsafe { (*children_ptr).iter_mut() });
+                }
+                None => {
+                    self.stack.pop();
+                }
+            }
+        }
+        None
+    }
+}
+
+// ============================================================================
+// Unique Field Identification
+// ============================================================================
+
+/// Unique identifier for a flattened node, using UUID v4.
+/// This enables self-contained references within the flattened representation,
+/// independent of any source format (XFA, PDF AcroForms, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FieldId(pub Uuid);
+
+impl FieldId {
+    /// Generate a new unique field ID
+    pub fn new() -> Self {
+        FieldId(Uuid::new_v4())
+    }
+    
+    /// Get the underlying UUID
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for FieldId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for FieldId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+// ============================================================================
+// Conditional Flattening Model
+// ============================================================================
+
+/// A discriminant field that controls conditional visibility.
+/// References flattened fields by their unique ID.
+#[derive(Debug, Clone)]
+pub struct Discriminant {
+    /// Unique ID of the discriminant field
+    pub field_id: FieldId,
+    /// Human-readable name of the field (for debugging/display)
+    pub field_name: String,
+    /// Possible values this discriminant can take
+    pub options: Vec<String>,
+}
+
+/// A constraint that determines when a conditional group is visible.
+/// References are to flattened field IDs, making this self-contained.
+#[derive(Debug, Clone)]
+pub struct VisibilityConstraint {
+    /// ID of the field that controls visibility
+    pub field_id: FieldId,
+    /// The value the field must have for this group to be visible
+    pub required_value: String,
+}
+
+/// A group of nodes whose visibility depends on a discriminant's value.
+/// Each branch maps a discriminant value to the node indices visible for that value.
+#[derive(Debug, Clone)]
+pub struct ConditionalGroup {
+    /// The discriminant controlling this group
+    pub discriminant: Discriminant,
+    /// Map from discriminant value to node indices visible for that value
+    pub branches: HashMap<String, Vec<usize>>,
+    /// Optional constraint from a parent discriminant
+    pub visible_when: Option<VisibilityConstraint>,
 }
 
 pub struct Page {
@@ -34,6 +362,9 @@ pub struct RenderStyle {
 /// Main flattened node structure containing position and rendering information
 #[derive(Debug, Clone)]
 pub struct FlattenedNode {
+    /// Unique identifier for this node
+    pub id: FieldId,
+    
     /// Node-specific information
     pub kind: FlattenedNodeKind,
     
@@ -48,6 +379,9 @@ pub struct FlattenedNode {
     
     /// Rendering style
     pub style: RenderStyle,
+    
+    /// Semantic hints for this node (node-specific hints like RichContent, Validation, etc.)
+    pub hints: Vec<Hint>,
 }
 
 /// Enum representing the specific kind of flattened node
@@ -60,10 +394,6 @@ pub enum FlattenedNodeKind {
         font_name: String,
         /// Name of the source XFA node (for Draw elements with scripts)
         source_name: Option<String>,
-        /// Optional rich text structure for HTML content (exData with contentType="text/html")
-        /// When present, this should be used for rendering instead of `content` to preserve
-        /// paragraph structure, text-indent, and xfa-spacerun spacing.
-        rich_text: Option<RichText>,
     },
     
     /// Input field
@@ -80,13 +410,214 @@ pub enum FlattenedNodeKind {
 }
 
 // ============================================================================
+// Format-Agnostic Semantic Hints
+// ============================================================================
+
+/// Field access level per XFA specification.
+/// Controls user interaction capabilities with a field or container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FieldAccess {
+    /// Allow update without restriction. User may modify content and navigate to it.
+    #[default]
+    Open,
+    /// Content can be loaded but not updated interactively. Behaves like printed content.
+    /// Calculations and scripts can still modify the content.
+    NonInteractive,
+    /// User cannot make direct changes. Does not participate in tabbing.
+    /// Will not generate any events. May allow text selection for copying.
+    Protected,
+    /// User cannot make direct changes but can tab to it, view/scroll content,
+    /// and select content for copying. Generates a subset of events.
+    ReadOnly,
+}
+
+impl FieldAccess {
+    /// Parse from XFA access attribute value.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "open" => FieldAccess::Open,
+            "nonInteractive" => FieldAccess::NonInteractive,
+            "protected" => FieldAccess::Protected,
+            "readOnly" => FieldAccess::ReadOnly,
+            _ => FieldAccess::Open, // Default per XFA spec
+        }
+    }
+    
+    /// Returns true if this access level allows user interaction/input.
+    pub fn is_interactive(&self) -> bool {
+        matches!(self, FieldAccess::Open)
+    }
+}
+
+/// Semantic hints that can be attached to any flattened node.
+/// These are format-agnostic concepts applicable to XFA, PDF AcroForms, HTML forms, etc.
+/// Multiple hints can be attached to a single node; they are deduplicated by discriminant.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Hint {
+    /// Accessibility information
+    Accessibility {
+        /// Semantic role (e.g., "TH" for table header, "TR" for table row)
+        role: Option<String>,
+        /// Tooltip text for user assistance
+        tool_tip: Option<String>,
+        /// Text to be spoken by screen readers
+        speak_text: Option<String>,
+    },
+    
+    /// Validation constraints
+    Validation {
+        /// Whether the field is required (nullTest)
+        required: bool,
+        /// Format pattern for validation (picture clause)
+        format_pattern: Option<String>,
+        /// Custom error message
+        error_message: Option<String>,
+    },
+    
+    /// Field behavior properties
+    FieldBehavior {
+        /// Field access level (open, nonInteractive, protected, readOnly)
+        access: FieldAccess,
+        /// Whether multiline input is allowed
+        multiline: bool,
+        /// Maximum character count
+        max_length: Option<u32>,
+        /// Number of comb cells (for comb-style input)
+        comb_cells: Option<u32>,
+    },
+    
+    /// Widget type information
+    WidgetType(WidgetKind),
+    
+    /// Caption/label information
+    Caption {
+        /// Position relative to field (left, right, top, bottom, inline)
+        placement: CaptionPlacement,
+        /// Caption text content
+        text: Option<String>,
+    },
+    
+    /// Occurrence constraints for repeatable sections
+    Occurrence {
+        /// Minimum occurrences
+        min: u32,
+        /// Maximum occurrences (None = unlimited)
+        max: Option<u32>,
+    },
+    
+    /// Layout break hints
+    LayoutBreak {
+        /// Break before this element
+        before: bool,
+        /// Break after this element
+        after: bool,
+        /// Keep this element together (don't split across breaks)
+        keep_together: bool,
+    },
+    
+    /// Rich text content (HTML, formatted text)
+    RichContent(RichText),
+    
+    /// Data binding reference
+    DataBinding {
+        /// Generic data reference path
+        ref_path: Option<String>,
+    },
+    
+    /// Master page content indicator (page background elements)
+    /// Elements on the master page are outside the contentArea and typically
+    /// contain headers, footers, or background decorations.
+    MasterPage {
+        /// Which region of the master page this element is in
+        region: MasterPageRegion,
+    },
+}
+
+/// Region classification for master page (page background) content.
+/// Based on element position relative to contentArea bounds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MasterPageRegion {
+    /// Element is primarily above the contentArea (header region)
+    /// Classified when >50% of element area is above contentArea.y
+    Header,
+    /// Element is primarily below the contentArea (footer region)
+    /// Classified when >50% of element area is below contentArea.y + contentArea.h
+    Footer,
+    /// Element is alongside or overlapping the contentArea (background/sidebar)
+    Background,
+}
+
+impl Hint {
+    /// Returns a discriminant identifier for deduplication.
+    /// Two hints with the same discriminant are considered duplicates.
+    pub fn discriminant(&self) -> &'static str {
+        match self {
+            Hint::Accessibility { .. } => "Accessibility",
+            Hint::Validation { .. } => "Validation",
+            Hint::FieldBehavior { .. } => "FieldBehavior",
+            Hint::WidgetType(_) => "WidgetType",
+            Hint::Caption { .. } => "Caption",
+            Hint::Occurrence { .. } => "Occurrence",
+            Hint::LayoutBreak { .. } => "LayoutBreak",
+            Hint::RichContent(_) => "RichContent",
+            Hint::DataBinding { .. } => "DataBinding",
+            Hint::MasterPage { .. } => "MasterPage",
+        }
+    }
+}
+
+/// Widget type for field elements
+#[derive(Debug, Clone, PartialEq)]
+pub enum WidgetKind {
+    /// Single-line text input
+    Text,
+    /// Multi-line text area
+    TextArea,
+    /// Checkbox (square, can be standalone)
+    Checkbox,
+    /// Radio button (round, part of exclusive group)
+    Radio,
+    /// Dropdown/select list
+    Dropdown,
+    /// Date picker
+    Date,
+    /// Time picker
+    Time,
+    /// DateTime picker
+    DateTime,
+    /// Numeric input
+    Numeric,
+    /// Password input (masked)
+    Password,
+    /// Digital signature field
+    Signature,
+    /// Barcode display
+    Barcode,
+    /// Push button
+    Button,
+    /// Image selection/display
+    Image,
+}
+
+/// Caption placement relative to its field
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CaptionPlacement {
+    #[default]
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Inline,
+}
+
+// ============================================================================
 // XFA-Compliant Rich Text Model
 // ============================================================================
 
 /// A rich text document consisting of multiple paragraphs.
 /// Per XFA spec, rich text in exData contentType="text/html" is structured as
 /// XHTML paragraphs with inline styling.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RichText {
     /// Paragraphs in the document
     pub paragraphs: Vec<RichParagraph>,
@@ -94,7 +625,7 @@ pub struct RichText {
 
 /// A single paragraph with optional styling and text runs.
 /// Per XFA spec (Chapter 27): paragraphs can have text-indent, margins, alignment.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RichParagraph {
     /// Text runs within the paragraph
     pub runs: Vec<RichRun>,
@@ -112,8 +643,7 @@ pub struct RichParagraph {
 
 /// A run of text with uniform styling.
 /// Per XFA spec: spans can have xfa-spacerun:yes to preserve consecutive spaces.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RichRun {
     /// The text content
     pub text: String,
@@ -187,6 +717,7 @@ pub struct FlattenedNodeBuilder {
     height: Num,
     rotate: i32,
     style: RenderStyle,
+    hints: Vec<Hint>,
 }
 
 impl Default for FlattenedNodeBuilder {
@@ -199,6 +730,7 @@ impl Default for FlattenedNodeBuilder {
             height: Decimal::ZERO,
             rotate: 0,
             style: RenderStyle::default(),
+            hints: Vec::new(),
         }
     }
 }
@@ -236,7 +768,6 @@ impl FlattenedNodeBuilder {
             font_size,
             font_name,
             source_name: None,
-            rich_text: None,
         });
         self
     }
@@ -248,7 +779,6 @@ impl FlattenedNodeBuilder {
             font_size,
             font_name,
             source_name,
-            rich_text: None,
         });
         self
     }
@@ -260,8 +790,10 @@ impl FlattenedNodeBuilder {
             font_size,
             font_name,
             source_name,
-            rich_text,
         });
+        if let Some(rt) = rich_text {
+            self.hints.push(Hint::RichContent(rt));
+        }
         self
     }
 
@@ -287,9 +819,27 @@ impl FlattenedNodeBuilder {
         self
     }
 
+    /// Add a hint to this node
+    pub fn hint(mut self, hint: Hint) -> Self {
+        // Deduplicate by discriminant
+        let discriminant = hint.discriminant();
+        self.hints.retain(|h| h.discriminant() != discriminant);
+        self.hints.push(hint);
+        self
+    }
+
+    /// Add multiple hints to this node
+    pub fn hints(mut self, hints: Vec<Hint>) -> Self {
+        for hint in hints {
+            self = self.hint(hint);
+        }
+        self
+    }
+
     /// Build the FlattenedNode. Panics if kind was not set.
     pub fn build(self) -> FlattenedNode {
         FlattenedNode {
+            id: FieldId::new(),
             kind: self.kind.expect("FlattenedNodeBuilder: kind must be set before building"),
             x: self.x,
             y: self.y,
@@ -297,6 +847,7 @@ impl FlattenedNodeBuilder {
             height: self.height,
             rotate: self.rotate,
             style: self.style,
+            hints: self.hints,
         }
     }
 }
@@ -377,6 +928,90 @@ impl FlattenedNode {
     /// Get the bounds of this node.
     pub fn bounds(&self) -> Bounds {
         Bounds::new(self.x, self.y, self.width, self.height)
+    }
+
+    // ========================================================================
+    // Hint accessor methods
+    // ========================================================================
+
+    /// Get a hint by type (returns the first matching hint)
+    pub fn get_hint<F, T>(&self, f: F) -> Option<T>
+    where
+        F: Fn(&Hint) -> Option<T>,
+    {
+        self.hints.iter().find_map(f)
+    }
+
+    /// Check if this node has a specific hint type
+    pub fn has_hint(&self, discriminant: &str) -> bool {
+        self.hints.iter().any(|h| h.discriminant() == discriminant)
+    }
+
+    /// Get rich text content if present
+    pub fn rich_text(&self) -> Option<&RichText> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::RichContent(rt) => Some(rt),
+            _ => None,
+        })
+    }
+
+    /// Get field behavior hint if present
+    pub fn field_behavior(&self) -> Option<(FieldAccess, bool, Option<u32>, Option<u32>)> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::FieldBehavior { access, multiline, max_length, comb_cells } => {
+                Some((*access, *multiline, *max_length, *comb_cells))
+            }
+            _ => None,
+        })
+    }
+
+    /// Get validation hint if present
+    pub fn validation(&self) -> Option<(bool, Option<&String>, Option<&String>)> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::Validation { required, format_pattern, error_message } => {
+                Some((*required, format_pattern.as_ref(), error_message.as_ref()))
+            }
+            _ => None,
+        })
+    }
+
+    /// Get accessibility hint if present
+    pub fn accessibility(&self) -> Option<(Option<&String>, Option<&String>, Option<&String>)> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::Accessibility { role, tool_tip, speak_text } => {
+                Some((role.as_ref(), tool_tip.as_ref(), speak_text.as_ref()))
+            }
+            _ => None,
+        })
+    }
+
+    /// Get widget type if present
+    pub fn widget_type(&self) -> Option<&WidgetKind> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::WidgetType(wk) => Some(wk),
+            _ => None,
+        })
+    }
+
+    /// Check if this node is interactive based on FieldBehavior hint
+    pub fn is_interactive(&self) -> bool {
+        self.field_behavior()
+            .map(|(access, _, _, _)| access.is_interactive())
+            .unwrap_or(true) // Default to interactive if no hint
+    }
+
+    /// Add a hint to this node, deduplicating by discriminant
+    pub fn add_hint(&mut self, hint: Hint) {
+        let discriminant = hint.discriminant();
+        self.hints.retain(|h| h.discriminant() != discriminant);
+        self.hints.push(hint);
+    }
+
+    /// Add multiple hints to this node
+    pub fn add_hints(&mut self, hints: Vec<Hint>) {
+        for hint in hints {
+            self.add_hint(hint);
+        }
     }
 }
 
@@ -596,9 +1231,42 @@ pub enum Layout {
 
 /// Context for flattening XFA nodes into absolute positions.
 /// 
+/// Occurrence constraints for repeatable sections (from XFA <occur> element)
+/// Per XFA 3.3 spec (Chapter 9, "The Occur Element"):
+/// - min: minimum number of copies required (defaults to 1)
+/// - max: maximum number of copies permitted (-1 = unlimited, defaults to min)
+/// - initial: starting copies during empty merge (defaults to min)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OccurConstraints {
+    pub min: u32,
+    pub max: Option<u32>,  // None = unlimited (-1 in XFA)
+    pub initial: u32,
+}
+
+impl Default for OccurConstraints {
+    fn default() -> Self {
+        OccurConstraints { min: 1, max: Some(1), initial: 1 }
+    }
+}
+
+impl OccurConstraints {
+    /// Returns true if this is a repeatable section (can have more than one instance)
+    pub fn is_repeatable(&self) -> bool {
+        self.max.map(|m| m > 1).unwrap_or(true)
+    }
+    
+    /// Returns true if at least one instance should exist initially.
+    /// Per XFA spec, `initial` specifies how many instances to create when the form loads.
+    /// If initial == 0, no instances exist until the user adds them.
+    pub fn has_initial_instances(&self) -> bool {
+        self.initial > 0
+    }
+}
+
 /// Bundles all state needed during the recursive flattening process:
 /// - Embed resolution data (computed_values, id_to_field) for xfa:embed references
 /// - Inherited presence from parent containers (inherited_presence)
+/// - Occurrence constraints from parent repeatable sections
 /// 
 /// Per XFA 3.3 spec (page 221, "Rich Text That Contains External Objects"):
 /// External references via xfa:embed are resolved during the layout process.
@@ -606,6 +1274,9 @@ pub enum Layout {
 /// Per XFA 3.3 spec (section 2, "Explicitly Concealing Containers"):
 /// Children inherit presence from their parent container - if a parent is hidden,
 /// all its children are also hidden regardless of their individual presence values.
+/// 
+/// Per XFA 3.3 spec (Chapter 9, "The Occur Element"):
+/// Subforms can have occurrence constraints that define repeatability.
 #[derive(Clone)]
 pub struct FlattenContext<'a> {
     /// Map of field SOM path -> computed value from scripts
@@ -620,6 +1291,9 @@ pub struct FlattenContext<'a> {
     /// Current SOM path - tracks the path as we descend into the tree
     /// Used for path-based lookups in computed_values
     pub current_path: String,
+    /// Occurrence constraints from parent repeatable section (if any)
+    /// Used to attach Hint::Occurrence to first child node
+    pub pending_occur: Option<OccurConstraints>,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -634,6 +1308,7 @@ impl<'a> FlattenContext<'a> {
             inherited_presence: None,
             parent_exclgroup_value: None,
             current_path: String::new(),
+            pending_occur: None,
         }
     }
     
@@ -650,6 +1325,7 @@ impl<'a> FlattenContext<'a> {
             inherited_presence: None,
             parent_exclgroup_value: None,
             current_path: initial_path,
+            pending_occur: None,
         }
     }
     
@@ -663,6 +1339,7 @@ impl<'a> FlattenContext<'a> {
             inherited_presence: None,
             parent_exclgroup_value: None,
             current_path: String::new(),
+            pending_occur: None,
         }
     }
     
@@ -674,7 +1351,19 @@ impl<'a> FlattenContext<'a> {
             inherited_presence: self.inherited_presence,
             parent_exclgroup_value: self.parent_exclgroup_value.clone(),
             current_path: self.current_path.clone(),
+            pending_occur: self.pending_occur,
         }
+    }
+    
+    /// Create a child context with occurrence constraints from a repeatable section
+    /// The occur hint will be attached to the first content node created
+    pub fn with_occur_constraints(&self, occur: OccurConstraints) -> FlattenContext<'a> {
+        let mut ctx = self.derive();
+        // Only propagate if this is actually a repeatable section
+        if occur.is_repeatable() {
+            ctx.pending_occur = Some(occur);
+        }
+        ctx
     }
 
     /// Create a child context with inherited presence
@@ -764,7 +1453,97 @@ impl Layout {
     }
 }
 
+// ============================================================================
+// Content Area Bounds for Master Page Region Classification
+// ============================================================================
+
+/// Content area bounds for master page region classification.
+/// Used to determine whether page background elements are in header, footer, or background regions.
+#[derive(Debug, Clone)]
+struct ContentAreaBounds {
+    x: Num,
+    y: Num,
+    w: Num,
+    h: Num,
+}
+
+impl ContentAreaBounds {
+    /// Create from an XfaNode (expected to be a ContentArea)
+    fn from_node(node: &XfaNode, page_width: Num, page_height: Num) -> Self {
+        ContentAreaBounds {
+            x: node.x.unwrap_or(Decimal::ZERO),
+            y: node.y.unwrap_or(Decimal::ZERO),
+            w: node.w.unwrap_or(page_width),
+            h: node.h.unwrap_or(page_height),
+        }
+    }
+    
+    /// Calculate the top edge (y coordinate)
+    fn top(&self) -> Num {
+        self.y
+    }
+    
+    /// Calculate the bottom edge (y + height)
+    fn bottom(&self) -> Num {
+        self.y + self.h
+    }
+}
+
 impl Flattened {
+    /// Create a new Flattened instance with the given page and children.
+    pub fn new(page: Page, children: Vec<FlattenedKind>) -> Self {
+        Flattened {
+            page,
+            children,
+        }
+    }
+    
+    /// Create a Flattened from a flat list of nodes (wraps each in FlattenedKind::Node)
+    pub fn from_nodes(page: Page, nodes: Vec<FlattenedNode>) -> Self {
+        let children = nodes.into_iter().map(FlattenedKind::Node).collect();
+        Flattened { page, children }
+    }
+    
+    /// Iterate over all leaf nodes recursively
+    pub fn iter_nodes(&self) -> FlattenedNodeIter<'_> {
+        FlattenedNodeIter::new(&self.children)
+    }
+    
+    /// Iterate over all leaf nodes mutably
+    pub fn iter_nodes_mut(&mut self) -> FlattenedNodeIterMut<'_> {
+        FlattenedNodeIterMut::new(&mut self.children)
+    }
+    
+    /// Find a node by FieldId, searching recursively
+    pub fn find_by_id(&self, id: &FieldId) -> Option<&FlattenedNode> {
+        for child in &self.children {
+            if let Some(found) = child.find_by_id(id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    
+    /// Find a node mutably by FieldId, searching recursively
+    pub fn find_by_id_mut(&mut self, id: &FieldId) -> Option<&mut FlattenedNode> {
+        for child in &mut self.children {
+            if let Some(found) = child.find_by_id_mut(id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    
+    /// Count all leaf nodes
+    pub fn node_count(&self) -> usize {
+        self.children.iter().map(|c| c.node_count()).sum()
+    }
+    
+    /// Collect all leaf nodes into a flat Vec (for compatibility with old code)
+    pub fn collect_nodes(&self) -> Vec<&FlattenedNode> {
+        self.iter_nodes().collect()
+    }
+    
     /// Create a flattened representation from XFA nodes with computed absolute positions.
     /// 
     /// This implements the XFA Layout process per the spec (section 3, "Template DOM, Form DOM, and Layout DOM"):
@@ -846,6 +1625,92 @@ impl Flattened {
         }
     }
     
+    /// Collect all content areas from a pageArea node
+    fn collect_content_areas(page_area: &XfaNode, page_width: Num, page_height: Num) -> Vec<ContentAreaBounds> {
+        let mut content_areas = Vec::new();
+        
+        for child in &page_area.children {
+            if matches!(child.kind, XfaNodeKind::ContentArea) {
+                content_areas.push(ContentAreaBounds::from_node(child, page_width, page_height));
+            } else if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "contentArea" {
+                    content_areas.push(ContentAreaBounds::from_node(child, page_width, page_height));
+                }
+            }
+        }
+        
+        content_areas
+    }
+    
+    /// Classify an element's master page region based on its position relative to content areas.
+    /// 
+    /// Uses >50% overlap rule:
+    /// - Header: >50% of element area is above all content areas
+    /// - Footer: >50% of element area is below all content areas  
+    /// - Background: otherwise (alongside or overlapping content areas)
+    fn classify_master_page_region(
+        elem_y: Num,
+        elem_h: Num,
+        content_areas: &[ContentAreaBounds],
+    ) -> MasterPageRegion {
+        if content_areas.is_empty() {
+            // No content areas defined - treat as background
+            return MasterPageRegion::Background;
+        }
+        
+        let elem_center_y = elem_y + elem_h / num(2.0);
+        
+        // Find the topmost and bottommost content area boundaries
+        let content_top = content_areas.iter()
+            .map(|ca| ca.top())
+            .min()
+            .unwrap_or(Decimal::ZERO);
+        let content_bottom = content_areas.iter()
+            .map(|ca| ca.bottom())
+            .max()
+            .unwrap_or(Decimal::ZERO);
+        
+        // >50% above all content areas = header
+        // This means the center of the element is above the top of content areas
+        if elem_center_y < content_top {
+            return MasterPageRegion::Header;
+        }
+        
+        // >50% below all content areas = footer
+        // This means the center of the element is below the bottom of content areas
+        if elem_center_y > content_bottom {
+            return MasterPageRegion::Footer;
+        }
+        
+        // Otherwise, it's alongside or overlapping content areas
+        MasterPageRegion::Background
+    }
+    
+    /// Recursively add MasterPage hint to a flattened element and all its children,
+    /// classifying each node based on its own rendered position.
+    fn add_master_page_hint_by_position(item: &mut FlattenedKind, content_areas: &[ContentAreaBounds]) {
+        match item {
+            FlattenedKind::Node(node) => {
+                // Classify based on the node's actual rendered y-position
+                let region = Self::classify_master_page_region(node.y, node.height, content_areas);
+                node.add_hint(Hint::MasterPage { region });
+            }
+            FlattenedKind::Group { children, hints, .. } => {
+                // Process all children first
+                for child in children.iter_mut() {
+                    Self::add_master_page_hint_by_position(child, content_areas);
+                }
+                // For the group, use the region of the first child or Background if empty
+                let group_region = children.first()
+                    .and_then(|c| c.hints().iter().find_map(|h| {
+                        if let Hint::MasterPage { region } = h { Some(*region) } else { None }
+                    }))
+                    .unwrap_or(MasterPageRegion::Background);
+                hints.push(Hint::MasterPage { region: group_region });
+            }
+        }
+    }
+    
     /// Create a flattened representation with pre-computed field values
     /// 
     /// Parameters:
@@ -857,7 +1722,7 @@ impl Flattened {
         computed_values: &HashMap<SomPath, String>,
         id_to_field: &HashMap<String, String>,
     ) -> Result<Self, String> {
-        let mut flattened_nodes = Vec::new();
+        let mut flattened_children: Vec<FlattenedKind> = Vec::new();
         
         // Default to A4 size (210mm x 297mm in points)
         let mut page = Page { 
@@ -897,6 +1762,10 @@ impl Flattened {
             // NOT the contentArea. They use positioned layout (absolute coordinates).
             let page_position = Position::new(Decimal::ZERO, Decimal::ZERO, page.width, page.height);
             
+            // Collect all content areas for region classification
+            // Each content area is handled separately when determining header/footer regions
+            let content_areas = Self::collect_content_areas(page_area, page.width, page.height);
+            
             // Create context for page background
             let page_ctx = FlattenContext::new(computed_values, id_to_field);
             
@@ -911,7 +1780,14 @@ impl Flattened {
                     }
                 
                 // Render page background element with positioned layout relative to page origin
-                Self::flatten_single_node(child, page_position, Layout::Position, &mut flattened_nodes, &page_ctx)?;
+                let start_idx = flattened_children.len();
+                Self::flatten_single_node(child, page_position, Layout::Position, &mut flattened_children, &page_ctx)?;
+                
+                // Add MasterPage hint to all newly created nodes/groups
+                // Classify each node based on its actual rendered position, not the parent container's position
+                for item in &mut flattened_children[start_idx..] {
+                    Self::add_master_page_hint_by_position(item, &content_areas);
+                }
             }
         }
         
@@ -943,38 +1819,48 @@ impl Flattened {
                 .map(|l| Layout::from_str(l))
                 .unwrap_or(Layout::Position);
             
-            Self::flatten_nodes(&root_subform.children, root_position, layout, &mut flattened_nodes, &ctx)?;
+            Self::flatten_nodes(&root_subform.children, root_position, layout, &mut flattened_children, &ctx)?;
         } else {
             // Fallback: flatten all nodes (old behavior for simple forms without proper structure)
             let ctx = FlattenContext::new(computed_values, id_to_field);
-            Self::flatten_nodes(xfa_nodes, root_position, Layout::Position, &mut flattened_nodes, &ctx)?;
+            Self::flatten_nodes(xfa_nodes, root_position, Layout::Position, &mut flattened_children, &ctx)?;
         };
         
-        // Apply computed values from scripts to nodes
-        for node in &mut flattened_nodes {
-            match &mut node.kind {
-                FlattenedNodeKind::Field { name, value, .. } => {
-                    // If we have a computed value for this field and it currently has no value,
-                    // use the computed value
-                    if value.is_empty()
-                        && let Some(computed) = computed_values.get(name.as_str()) {
-                            *value = computed.clone();
-                        }
-                }
-                FlattenedNodeKind::Text { content, source_name, .. } => {
-                    // For Draw elements with a source name, check if we have a computed value
-                    if let Some(name) = source_name
-                        && content.is_empty()
-                            && let Some(computed) = computed_values.get(name.as_str()) {
-                                *content = computed.clone();
+        // Apply computed values from scripts to nodes (recursive helper)
+        fn apply_computed_values(children: &mut [FlattenedKind], computed_values: &HashMap<SomPath, String>) {
+            for child in children {
+                match child {
+                    FlattenedKind::Node(node) => {
+                        match &mut node.kind {
+                            FlattenedNodeKind::Field { name, value, .. } => {
+                                if value.is_empty() {
+                                    if let Some(computed) = computed_values.get(name.as_str()) {
+                                        *value = computed.clone();
+                                    }
+                                }
                             }
+                            FlattenedNodeKind::Text { content, source_name, .. } => {
+                                if let Some(name) = source_name {
+                                    if content.is_empty() {
+                                        if let Some(computed) = computed_values.get(name.as_str()) {
+                                            *content = computed.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    FlattenedKind::Group { children, .. } => {
+                        apply_computed_values(children, computed_values);
+                    }
                 }
             }
         }
+        apply_computed_values(&mut flattened_children, computed_values);
         
         Ok(Flattened {
             page,
-            nodes: flattened_nodes,
+            children: flattened_children,
         })
     }
     
@@ -1133,7 +2019,7 @@ impl Flattened {
         node: &XfaNode,
         parent_position: Position,
         _parent_layout: Layout,
-        flattened_nodes: &mut Vec<FlattenedNode>,
+        flattened_children: &mut Vec<FlattenedKind>,
         ctx: &FlattenContext,
     ) -> Result<(), String> {
         // Check presence - per XFA spec, hidden/inactive nodes should not be rendered
@@ -1186,7 +2072,7 @@ impl Flattened {
                 // Extract rich text if this is HTML content (exData with contentType="text/html")
                 let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
                 
-                flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
+                let draw_node = FlattenedNode::new_text_with_rich_text(
                     text_content,
                     font_size,
                     font_name,
@@ -1198,15 +2084,17 @@ impl Flattened {
                     node.rotate,
                     node.name.clone(),
                     rich_text,
-                ));
+                );
+                flattened_children.push(FlattenedKind::Node(draw_node));
             }
             XfaNodeKind::Field => {
                 let field_name = node.name.clone().unwrap_or_else(|| "unnamed".to_string());
                 let field_value = Self::extract_field_value(&node.children);
                 let style = Self::extract_style(node);
                 let is_checked = Self::compute_field_checked_state(&node.children, &ctx.parent_exclgroup_value);
+                let access = Self::extract_field_access(node);
                 
-                flattened_nodes.push(FlattenedNode::new_field_with_checked(
+                let mut field_node = FlattenedNode::new_field_with_checked(
                     field_name.clone(),
                     field_value,
                     field_name,
@@ -1217,12 +2105,41 @@ impl Flattened {
                     style,
                     node.rotate,
                     is_checked,
-                ));
+                );
+                // Add FieldBehavior hint with access level
+                field_node.add_hint(Hint::FieldBehavior {
+                    access,
+                    multiline: false,
+                    max_length: None,
+                    comb_cells: None,
+                });
+                flattened_children.push(FlattenedKind::Node(field_node));
             }
             XfaNodeKind::Subform | XfaNodeKind::Element { .. } => {
-                // Recurse into subform children with positioned layout
+                // Check if this subform has an <occur> element (repeatable section)
+                if let Some(occur) = Self::extract_occur_constraints(node) {
+                    if occur.is_repeatable() && occur.has_initial_instances() {
+                        // Create a group for repeatable sections that have initial instances
+                        let mut group_children = Vec::new();
+                        let subform_ctx = ctx.with_occur_constraints(occur);
+                        for child in &node.children {
+                            Self::flatten_single_node(child, pos, Layout::Position, &mut group_children, &subform_ctx)?;
+                        }
+                        let hints = vec![Hint::Occurrence { min: occur.min, max: occur.max }];
+                        flattened_children.push(FlattenedKind::Group {
+                            children: group_children,
+                            hints,
+                            condition: None,
+                        });
+                        return Ok(());
+                    } else if occur.is_repeatable() && !occur.has_initial_instances() {
+                        // Repeatable but initial=0: skip entirely (no instances exist yet)
+                        return Ok(());
+                    }
+                }
+                // No occur or not repeatable - just recurse without creating a group
                 for child in &node.children {
-                    Self::flatten_single_node(child, pos, Layout::Position, flattened_nodes, ctx)?;
+                    Self::flatten_single_node(child, pos, Layout::Position, flattened_children, ctx)?;
                 }
             }
             _ => {}
@@ -1289,6 +2206,46 @@ impl Flattened {
             font: node.font.clone(),
             para: node.para.clone(),
         }
+    }
+    
+    /// Extract field access level from an XFA node's attributes.
+    /// Defaults to Open if no access attribute is specified.
+    fn extract_field_access(node: &XfaNode) -> FieldAccess {
+        node.attributes.get("access")
+            .map(|s| FieldAccess::from_str(s))
+            .unwrap_or(FieldAccess::Open)
+    }
+    
+    /// Extract occurrence constraints from a node's <occur> child element.
+    /// Per XFA 3.3 spec (Chapter 9, "The Occur Element"):
+    /// - min: minimum occurrences (default 1)
+    /// - max: maximum occurrences, -1 = unlimited (default = min)
+    /// - initial: starting occurrences during empty merge (default = min)
+    fn extract_occur_constraints(node: &XfaNode) -> Option<OccurConstraints> {
+        for child in &node.children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "occur" {
+                    // Parse attributes with defaults per XFA spec
+                    let min = child.attributes.get("min")
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .map(|v| v.max(0) as u32)
+                        .unwrap_or(1);
+                    
+                    let max = child.attributes.get("max")
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .map(|v| if v == -1 { None } else { Some(v.max(0) as u32) })
+                        .unwrap_or(Some(min)); // Default max = min
+                    
+                    let initial = child.attributes.get("initial")
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .map(|v| v.max(0) as u32)
+                        .unwrap_or(min); // Default initial = min
+                    
+                    return Some(OccurConstraints { min, max, initial });
+                }
+            }
+        }
+        None
     }
     
     /// Extract font size from node, with default fallback
@@ -1454,7 +2411,7 @@ impl Flattened {
         nodes: &[XfaNode],
         parent_position: Position,
         parent_layout: Layout,
-        flattened_nodes: &mut Vec<FlattenedNode>,
+        flattened_children: &mut Vec<FlattenedKind>,
         ctx: &FlattenContext,
     ) -> Result<Num, String> {
         // Returns the total height consumed by these nodes
@@ -1522,7 +2479,7 @@ impl Flattened {
                         &mut current_x,
                         &mut current_y,
                         &mut max_height_in_row,
-                        flattened_nodes,
+                        flattened_children,
                         &child_ctx,
                     )?;
                     
@@ -1532,10 +2489,32 @@ impl Flattened {
                         max_extent_y = max_extent_y.max(node_bottom);
                     }
                     
-                    // Recurse into subform children with the content position (inside margins)
-                    // The subform's layout applies to its children
-                    // Pass child_ctx to propagate inherited presence to children
-                    let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;
+                    // Check if this subform has an <occur> element (repeatable section)
+                    // If so, create a group to contain its children
+                    let children_height = if let Some(occur) = Self::extract_occur_constraints(node) {
+                        if occur.is_repeatable() && occur.has_initial_instances() {
+                            // Create a group for repeatable sections that have initial instances
+                            let mut group_children = Vec::new();
+                            let subform_ctx = child_ctx.with_occur_constraints(occur);
+                            let height = Self::flatten_nodes(&node.children, content_pos, layout, &mut group_children, &subform_ctx)?;
+                            let hints = vec![Hint::Occurrence { min: occur.min, max: occur.max }];
+                            flattened_children.push(FlattenedKind::Group {
+                                children: group_children,
+                                hints,
+                                condition: None,
+                            });
+                            height
+                        } else if occur.is_repeatable() && !occur.has_initial_instances() {
+                            // Repeatable but initial=0: skip entirely (no instances exist yet)
+                            Decimal::ZERO
+                        } else {
+                            // Not repeatable, just recurse normally
+                            Self::flatten_nodes(&node.children, content_pos, layout, flattened_children, &child_ctx)?
+                        }
+                    } else {
+                        // No occur element, just recurse normally
+                        Self::flatten_nodes(&node.children, content_pos, layout, flattened_children, &child_ctx)?
+                    };
                     
                     // For tb layout, update current_y based on actual content height if no explicit height
                     if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1558,7 +2537,7 @@ impl Flattened {
                         &mut current_x,
                         &mut current_y,
                         &mut max_height_in_row,
-                        flattened_nodes,
+                        flattened_children,
                         &child_ctx,
                     )?;
                     
@@ -1575,8 +2554,9 @@ impl Flattened {
                         let field_value = Self::extract_field_value(&node.children);
                         let style = Self::extract_style(node);
                         let is_checked = Self::compute_field_checked_state(&node.children, &child_ctx.parent_exclgroup_value);
+                        let access = Self::extract_field_access(node);
                         
-                        flattened_nodes.push(FlattenedNode::new_field_with_checked(
+                        let mut field_node = FlattenedNode::new_field_with_checked(
                             field_name.clone(),
                             field_value,
                             field_name,
@@ -1587,7 +2567,15 @@ impl Flattened {
                             style,
                             node.rotate,
                             is_checked,
-                        ));
+                        );
+                        // Add FieldBehavior hint with access level
+                        field_node.add_hint(Hint::FieldBehavior {
+                            access,
+                            multiline: false,
+                            max_length: None,
+                            comb_cells: None,
+                        });
+                        flattened_children.push(FlattenedKind::Node(field_node));
                     }
                     
                     // Don't recurse into field children for positioning
@@ -1600,7 +2588,7 @@ impl Flattened {
                         &mut current_x,
                         &mut current_y,
                         &mut max_height_in_row,
-                        flattened_nodes,
+                        flattened_children,
                         ctx,
                     )?;
                     
@@ -1626,7 +2614,7 @@ impl Flattened {
                         // This preserves paragraph structure, text-indent, and xfa-spacerun spacing
                         let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
                         
-                        flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
+                        let draw_node = FlattenedNode::new_text_with_rich_text(
                             text_content,
                             font_size,
                             font_name,
@@ -1638,7 +2626,8 @@ impl Flattened {
                             node.rotate,
                             node.name.clone(),
                             rich_text,
-                        ));
+                        );
+                        flattened_children.push(FlattenedKind::Node(draw_node));
                     }
                     
                     // Don't recurse into draw children for positioning
@@ -1654,7 +2643,7 @@ impl Flattened {
                                 &mut current_x,
                                 &mut current_y,
                                 &mut max_height_in_row,
-                                flattened_nodes,
+                                flattened_children,
                                 &child_ctx,
                             )?;
                             
@@ -1664,7 +2653,32 @@ impl Flattened {
                                 max_extent_y = max_extent_y.max(node_bottom);
                             }
                             
-                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &child_ctx)?;
+                            // Check if this subform has an <occur> element (repeatable section)
+                            // If so, create a group to contain its children
+                            let children_height = if let Some(occur) = Self::extract_occur_constraints(node) {
+                                if occur.is_repeatable() && occur.has_initial_instances() {
+                                    // Create a group for repeatable sections that have initial instances
+                                    let mut group_children = Vec::new();
+                                    let subform_ctx = child_ctx.with_occur_constraints(occur);
+                                    let height = Self::flatten_nodes(&node.children, content_pos, layout, &mut group_children, &subform_ctx)?;
+                                    let hints = vec![Hint::Occurrence { min: occur.min, max: occur.max }];
+                                    flattened_children.push(FlattenedKind::Group {
+                                        children: group_children,
+                                        hints,
+                                        condition: None,
+                                    });
+                                    height
+                                } else if occur.is_repeatable() && !occur.has_initial_instances() {
+                                    // Repeatable but initial=0: skip entirely (no instances exist yet)
+                                    Decimal::ZERO
+                                } else {
+                                    // Not repeatable, just recurse normally
+                                    Self::flatten_nodes(&node.children, content_pos, layout, flattened_children, &child_ctx)?
+                                }
+                            } else {
+                                // No occur element, just recurse normally
+                                Self::flatten_nodes(&node.children, content_pos, layout, flattened_children, &child_ctx)?
+                            };
                             
                             // For tb layout, update current_y based on actual content height
                             if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1685,7 +2699,7 @@ impl Flattened {
                                 &mut current_x,
                                 &mut current_y,
                                 &mut max_height_in_row,
-                                flattened_nodes,
+                                flattened_children,
                                 &child_ctx,
                             )?;
                             
@@ -1701,8 +2715,9 @@ impl Flattened {
                                 let field_value = Self::extract_field_value(&node.children);
                                 let style = Self::extract_style(node);
                                 let is_checked = Self::compute_field_checked_state(&node.children, &child_ctx.parent_exclgroup_value);
+                                let access = Self::extract_field_access(node);
                                 
-                                flattened_nodes.push(FlattenedNode::new_field_with_checked(
+                                let mut field_node = FlattenedNode::new_field_with_checked(
                                     field_name,
                                     field_value.clone(),
                                     field_value,
@@ -1713,7 +2728,15 @@ impl Flattened {
                                     style,
                                     node.rotate,
                                     is_checked,
-                                ));
+                                );
+                                // Add FieldBehavior hint with access level
+                                field_node.add_hint(Hint::FieldBehavior {
+                                    access,
+                                    multiline: false,
+                                    max_length: None,
+                                    comb_cells: None,
+                                });
+                                flattened_children.push(FlattenedKind::Node(field_node));
                             }
                         }
                         "draw" => {
@@ -1724,7 +2747,7 @@ impl Flattened {
                                 &mut current_x,
                                 &mut current_y,
                                 &mut max_height_in_row,
-                                flattened_nodes,
+                                flattened_children,
                                 &child_ctx,
                             )?;
                             
@@ -1749,7 +2772,7 @@ impl Flattened {
                                 // Extract rich text if this is HTML content (exData with contentType="text/html")
                                 let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
                                 
-                                flattened_nodes.push(FlattenedNode::new_text_with_rich_text(
+                                let draw_node = FlattenedNode::new_text_with_rich_text(
                                     text_content,
                                     font_size,
                                     font_name,
@@ -1761,7 +2784,8 @@ impl Flattened {
                                     node.rotate,
                                     node.name.clone(),
                                     rich_text,
-                                ));
+                                );
+                                flattened_children.push(FlattenedKind::Node(draw_node));
                             }
                             
                             // Don't recurse into draw children for positioning
@@ -1777,7 +2801,7 @@ impl Flattened {
                                 parent_layout
                             };
                             
-                            Self::flatten_nodes(&node.children, parent_position, child_layout, flattened_nodes, &child_ctx)?;
+                            Self::flatten_nodes(&node.children, parent_position, child_layout, flattened_children, &child_ctx)?;
                         }
                         "exclGroup" => {
                             // Per XFA spec (section 17 "The exclGroup element"):
@@ -1791,7 +2815,7 @@ impl Flattened {
                                 &mut current_x,
                                 &mut current_y,
                                 &mut max_height_in_row,
-                                flattened_nodes,
+                                flattened_children,
                                 &child_ctx,
                             )?;
                             
@@ -1828,7 +2852,7 @@ impl Flattened {
                             
                             // Recurse into exclGroup children with the computed content position
                             // The exclGroup's layout applies to its children (the fields)
-                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_nodes, &exclgroup_ctx)?;
+                            let children_height = Self::flatten_nodes(&node.children, content_pos, layout, flattened_children, &exclgroup_ctx)?;
                             
                             // For tb layout, update current_y based on actual content height if no explicit height
                             if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -1851,20 +2875,20 @@ impl Flattened {
                         }
                         _ => {
                             // Other elements, recurse with current position
-                            Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes, &child_ctx)?;
+                            Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_children, &child_ctx)?;
                         }
                     }
                 }
                 XfaNodeKind::Template | XfaNodeKind::ContentArea | XfaNodeKind::PageSet => {
                     // NOTE: These should NOT normally be encountered when processing Form DOM content.
                     // This handles fallback cases. Pass through with same parent position and layout.
-                    Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_nodes, &child_ctx)?;
+                    Self::flatten_nodes(&node.children, parent_position, parent_layout, flattened_children, &child_ctx)?;
                 }
                 XfaNodeKind::PageArea => {
                     // NOTE: PageArea should NOT normally be encountered when processing Form DOM content.
                     // Page background (pageArea children) are handled separately in from_xfa().
                     // This fallback handles edge cases - pass through with positioned layout.
-                    Self::flatten_nodes(&node.children, parent_position, Layout::Position, flattened_nodes, &child_ctx)?;
+                    Self::flatten_nodes(&node.children, parent_position, Layout::Position, flattened_children, &child_ctx)?;
                 }
                 _ => {}
             }
@@ -1888,7 +2912,7 @@ impl Flattened {
         current_x: &mut Num,
         current_y: &mut Num,
         max_height_in_row: &mut Num,
-        _flattened_nodes: &mut Vec<FlattenedNode>,
+        _flattened_children: &mut Vec<FlattenedKind>,
         ctx: &FlattenContext,
     ) -> Result<(Position, Position, Layout, Num), String> {
         // Check if explicit coordinates are provided
@@ -2649,7 +3673,7 @@ impl Flattened {
         // ============================================
         // PASS 2: Draw debug overlay in red
         // ============================================
-        for node in &self.nodes {
+        for node in self.iter_nodes() {
             // Handle rotation: for 90/270 degrees, we swap width/height and adjust position
             let (x, y, w, h) = Self::apply_rotation_to_bounds(
                 node.x, node.y, node.width, node.height, 
@@ -2698,7 +3722,7 @@ impl Flattened {
         let img_width = (self.page.width * scale_dec).to_f32().unwrap_or(0.0) as u32;
         
         // Height adapts to actual content bounds (maximum y + height of all nodes)
-        let actual_content_height = self.nodes.iter()
+        let actual_content_height = self.iter_nodes()
             .map(|node| node.y + node.height)
             .max()
             .unwrap_or(self.page.height);
@@ -2721,7 +3745,7 @@ impl Flattened {
         // ============================================
         // Draw actual content (as in PDF) - no debug overlay
         // ============================================
-        for node in &self.nodes {
+        for node in self.iter_nodes() {
             // Handle rotation: for 90/270 degrees, we swap width/height and adjust position
             // Per XFA spec: rotation is counter-clockwise about anchor point
             let (x, y, w, h) = Self::apply_rotation_to_bounds(
@@ -2816,8 +3840,11 @@ impl Flattened {
                         );
                     }
                 }
-                FlattenedNodeKind::Text { content, font_size, rich_text, source_name: _, .. } => {
+                FlattenedNodeKind::Text { content, font_size, source_name: _, .. } => {
                     // Draw text content (draw elements/labels)
+                    // Get rich text from hints if present
+                    let rich_text = node.rich_text();
+                    
                     // Get font style from node, or use XFA defaults
                     let xfa_font = node.style.font.clone().unwrap_or_default();
                     // Use style font size if available, otherwise use the passed value
@@ -2888,7 +3915,7 @@ impl Flattened {
                     };
                     
                     // Check if we have rich text (HTML content with paragraph structure)
-                    let has_rich_content = rich_text.as_ref().is_some_and(|rt| {
+                    let has_rich_content = rich_text.is_some_and(|rt| {
                         rt.paragraphs.iter().any(|p| !p.is_empty && p.runs.iter().any(|r| !r.text.is_empty()))
                     });
                     
@@ -2898,7 +3925,7 @@ impl Flattened {
                         .unwrap_or(0.0);
                     
                     if has_rich_content {
-                        let rt = rich_text.as_ref().unwrap();
+                        let rt = rich_text.unwrap();
                         // For rich text, use normal weight font as base
                         let base_font = normal_font.as_ref().unwrap_or(&render_font);
                         

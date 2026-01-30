@@ -263,18 +263,81 @@ impl Default for Font {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// Font weight per XFA spec (normal/bold) with extended internal weights for font matching
+/// XFA only specifies "normal" or "bold", but we support finer weights internally
+/// to better match fonts like "Frutiger 45 Light"
 pub enum FontWeight {
+    Thin,       // 100
+    ExtraLight, // 200
+    Light,      // 300
     #[default]
-    Normal,
-    Bold,
+    Normal,     // 400
+    Medium,     // 500
+    SemiBold,   // 600
+    Bold,       // 700
+    ExtraBold,  // 800
+    Black,      // 900
+}
+
+impl FontWeight {
+    /// Convert from numeric weight (100-900 scale, CSS/OpenType standard)
+    pub fn from_numeric(weight: u16) -> Self {
+        match weight {
+            0..=149 => FontWeight::Thin,
+            150..=249 => FontWeight::ExtraLight,
+            250..=349 => FontWeight::Light,
+            350..=449 => FontWeight::Normal,
+            450..=549 => FontWeight::Medium,
+            550..=649 => FontWeight::SemiBold,
+            650..=749 => FontWeight::Bold,
+            750..=849 => FontWeight::ExtraBold,
+            _ => FontWeight::Black,
+        }
+    }
+    
+    /// Convert to numeric weight (100-900 scale)
+    pub fn to_numeric(self) -> u16 {
+        match self {
+            FontWeight::Thin => 100,
+            FontWeight::ExtraLight => 200,
+            FontWeight::Light => 300,
+            FontWeight::Normal => 400,
+            FontWeight::Medium => 500,
+            FontWeight::SemiBold => 600,
+            FontWeight::Bold => 700,
+            FontWeight::ExtraBold => 800,
+            FontWeight::Black => 900,
+        }
+    }
+    
+    /// Convert to XFA-compatible weight (only normal or bold per spec)
+    pub fn to_xfa(self) -> FontWeight {
+        if self.to_numeric() >= 600 {
+            FontWeight::Bold
+        } else {
+            FontWeight::Normal
+        }
+    }
+    
+    /// Check if this weight is considered "bold" for XFA purposes
+    pub fn is_bold(self) -> bool {
+        self.to_numeric() >= 600
+    }
 }
 
 impl FromStr for FontWeight {
     type Err = ();
     
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        Ok(match s.to_lowercase().as_str() {
             "bold" => FontWeight::Bold,
+            "thin" | "hairline" => FontWeight::Thin,
+            "extralight" | "ultralight" | "extra-light" | "ultra-light" => FontWeight::ExtraLight,
+            "light" => FontWeight::Light,
+            "medium" => FontWeight::Medium,
+            "semibold" | "demibold" | "semi-bold" | "demi-bold" => FontWeight::SemiBold,
+            "extrabold" | "ultrabold" | "extra-bold" | "ultra-bold" => FontWeight::ExtraBold,
+            "black" | "heavy" => FontWeight::Black,
             _ => FontWeight::Normal,
         })
     }

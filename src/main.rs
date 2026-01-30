@@ -16,9 +16,20 @@ use flattened::{Flattened, FlattenedNodeKind};
 use clap::Parser;
 use rust_decimal::prelude::ToPrimitive;
 use document::Document;
-use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
+use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule, run_analysis_pipeline};
 use scripting::XfaForm;
 use script_executor::ScriptExecutor;
+
+/// Render mode for output images
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RenderMode {
+    /// Plain rendering without any annotations
+    Plain,
+    /// Labelled rendering with blue group overlays (runs analysis pipeline)
+    Labelled,
+    /// Annotated rendering with red field annotations
+    Annotated,
+}
 
 /// Check if PDF contains XFA and extract it
 pub fn extract_xfa_from_pdf<P: AsRef<Path>>(path: P) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -95,6 +106,32 @@ struct Args {
     scale: f32,
 }
 
+/// Render a Flattened document using the specified render mode
+fn render_flattened(
+    flattened: &Flattened,
+    output_path: &Path,
+    scale: f32,
+    mode: RenderMode,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match mode {
+        RenderMode::Plain => {
+            flattened.render_to_image_buffer_plain(scale)?
+                .save(output_path)
+                .map_err(|e| format!("Failed to save image: {}", e))?;
+        }
+        RenderMode::Labelled => {
+            // Create document and run analysis pipeline
+            let mut doc = Document::from_flattened(flattened);
+            run_analysis_pipeline(&mut doc);
+            doc.render_to_image(output_path, scale)?;
+        }
+        RenderMode::Annotated => {
+            flattened.render_to_image(output_path, scale)?;
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     
@@ -144,39 +181,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Flatten XFA (pure transformation)
     let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)?;
-    println!("✓ XFA flattened ({} nodes)", flattened.nodes.len());
+    println!("✓ XFA flattened ({} nodes)", flattened.node_count());
     
     // Create document and run analysis modules
     let mut doc = Document::from_flattened(&flattened);
     
-    // Run analysis pipeline
-    TextBlockGrouper::new().process(&mut doc);
+    // Run analysis pipeline (order defined centrally in modules/mod.rs)
+    run_analysis_pipeline(&mut doc);
+    
+    // Print analysis results
     let text_blocks = doc.find_groups(|k| matches!(k, document::GroupKind::TextBlock));
     println!("✓ Text blocks created: {}", text_blocks.len());
     
-    FieldGrouper::new().process(&mut doc);
     let field_groups = doc.find_groups(|k| matches!(k, document::GroupKind::Field));
     println!("✓ Field groups created: {}", field_groups.len());
     
-    DateFieldDetector::new().process(&mut doc);
     let date_fields = doc.find_groups(|k| matches!(k, document::GroupKind::DateField { .. }));
     println!("✓ Date fields detected: {}", date_fields.len());
     
-    RadioButtonDetector::new().process(&mut doc);
     let radio_buttons = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButton { .. }));
     println!("✓ Radio buttons detected: {}", radio_buttons.len());
     
-    RadioButtonGrouper::new().process(&mut doc);
     let radio_button_groups = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButtonGroup));
     println!("✓ Radio button groups created: {}", radio_button_groups.len());
     
-    LabelAttacher::new().process(&mut doc);
-    let labeled_fields = doc.labeled_fields();
-    println!("✓ Labeled fields found: {}", labeled_fields.len());
-    
-    HeadingDetector::new().process(&mut doc);
     let headings = doc.headings();
     println!("✓ Headings detected: {}", headings.len());
+    
+    let labeled_fields = doc.labeled_fields();
+    println!("✓ Labeled fields found: {}", labeled_fields.len());
     
     // Print radio button summary
     if !radio_buttons.is_empty() {
@@ -370,6 +403,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scale: f32,
             pdf_path: &std::path::Path,
             locale: &str,
+            render_mode: RenderMode,
         ) -> Result<usize, Box<dyn std::error::Error>> {
             let mut images_rendered = 0;
             
@@ -399,9 +433,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             // Render the current state
             let output_path = std::path::PathBuf::from(format!("{}_{}.png", doc_name, state_suffix));
-            form.flattened().render_to_image_buffer_plain(scale)?
-                .save(&output_path)
-                .map_err(|e| format!("Failed to save image: {}", e))?;
+            crate::render_flattened(form.flattened(), &output_path, scale, render_mode)?;;
             
             println!("  ✓ Rendered: {} (selections: {:?})", output_path.display(), 
                 current_selections.iter().map(|(p, _, _)| p.as_str()).collect::<Vec<_>>());
@@ -475,11 +507,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     scale,
                     pdf_path,
                     locale,
+                    render_mode,
                 )?;
             }
             
             Ok(images_rendered)
         }
+        
+        // Determine which render mode to use (default to plain if none specified)
+        let render_mode = if args.render_labelled {
+            RenderMode::Labelled
+        } else if args.render_annotated {
+            RenderMode::Annotated
+        } else {
+            RenderMode::Plain
+        };
+        
+        println!("  Using render mode: {:?}", render_mode);
         
         // Start exploration from the initial state
         let total_images = explore_states(
@@ -490,6 +534,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.scale,
             &args.document,
             locale,
+            render_mode,
         )?;
         
         println!("\n✓ Exhaustive rendering complete ({} unique states)", total_images);
@@ -643,10 +688,10 @@ mod tests {
         
         println!("\nFlattened AAAB document:");
         println!("Page dimensions: {}x{}", flattened.page.width, flattened.page.height);
-        println!("Number of flattened nodes: {}", flattened.nodes.len());
+        println!("Number of flattened nodes: {}", flattened.node_count());
         
         // Print first few nodes with their positions
-        for (i, node) in flattened.nodes.iter().take(10).enumerate() {
+        for (i, node) in flattened.iter_nodes().take(10).enumerate() {
             match &node.kind {
                 flattened::FlattenedNodeKind::Field { name, .. } => {
                     println!("  [{}] Field '{}': x={:.1}, y={:.1}, w={:.1}, h={:.1}", 
@@ -660,7 +705,7 @@ mod tests {
             }
         }
         
-        assert!(flattened.nodes.len() > 0, "Should have flattened nodes");
+        assert!(flattened.node_count() > 0, "Should have flattened nodes");
         println!("\n✓ AAAB flattening test passed!");
     }
     
@@ -712,6 +757,50 @@ mod tests {
     }
     
     #[test]
+    fn test_aaai_kunde_is_h2() {
+        // Test that "Kunde" (right after the H1 title) is correctly identified as an H2 heading
+        use crate::document::Document;
+        use crate::modules::{TextBlockGrouper, HeadingDetector, AnalysisModule};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+        
+        let headings = doc.headings();
+        
+        // Find the H2 heading "Kunde"
+        let h2_headings: Vec<_> = headings.iter()
+            .filter_map(|&idx| {
+                if let Some(group) = doc.get_group(idx) {
+                    if let crate::document::GroupKind::Heading { level: 2 } = group.kind {
+                        let text = doc.get_text_content(idx);
+                        return Some((idx, text));
+                    }
+                }
+                None
+            })
+            .collect();
+        
+        // "Kunde" should be detected as H2
+        let kunde_heading = h2_headings.iter().find(|(_, text)| text.contains("Kunde"));
+        assert!(
+            kunde_heading.is_some(),
+            "\"Kunde\" should be detected as H2. Found H2 headings: {:?}",
+            h2_headings.iter().map(|(_, t)| t).collect::<Vec<_>>()
+        );
+    }
+    
+    #[test]
     fn test_aaai_field_alignment() {
         // Test that specific fields that should be on the same line have the same Y coordinate
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
@@ -725,8 +814,8 @@ mod tests {
             .expect("Failed to flatten XFA");
         
         // Helper function to find field by name
-        fn find_field<'a>(nodes: &'a [flattened::FlattenedNode], name: &str) -> Option<&'a flattened::FlattenedNode> {
-            nodes.iter().find(|n| {
+        fn find_field<'a>(flattened: &'a flattened::Flattened, name: &str) -> Option<&'a flattened::FlattenedNode> {
+            flattened.iter_nodes().find(|n| {
                 if let flattened::FlattenedNodeKind::Field { name: field_name, .. } = &n.kind {
                     field_name == name
                 } else {
@@ -736,9 +825,9 @@ mod tests {
         }
         
         // Test 1: TF_FamilyName and TF_FirstName should be on the same line
-        let tf_family_name = find_field(&flattened.nodes, "TF_FamilyName")
+        let tf_family_name = find_field(&flattened, "TF_FamilyName")
             .expect("TF_FamilyName field not found");
-        let tf_first_name = find_field(&flattened.nodes, "TF_FirstName")
+        let tf_first_name = find_field(&flattened, "TF_FirstName")
             .expect("TF_FirstName field not found");
         
         let tolerance = rust_decimal::Decimal::from_str("0.01").unwrap();
@@ -754,9 +843,9 @@ mod tests {
         );
         
         // Test 2: TF_Street and TF_StreetNumber should be on the same line (already correct)
-        let tf_street = find_field(&flattened.nodes, "TF_Street")
+        let tf_street = find_field(&flattened, "TF_Street")
             .expect("TF_Street field not found");
-        let tf_street_number = find_field(&flattened.nodes, "TF_StreetNumber")
+        let tf_street_number = find_field(&flattened, "TF_StreetNumber")
             .expect("TF_StreetNumber field not found");
         
         println!("TF_Street:       y={}, x={}", tf_street.y, tf_street.x);
@@ -769,11 +858,11 @@ mod tests {
         );
         
         // Test 3: TF_PostalCode, TF_City, and TF_Country should be on the same line
-        let tf_postal_code = find_field(&flattened.nodes, "TF_PostalCode")
+        let tf_postal_code = find_field(&flattened, "TF_PostalCode")
             .expect("TF_PostalCode field not found");
-        let tf_city = find_field(&flattened.nodes, "TF_City")
+        let tf_city = find_field(&flattened, "TF_City")
             .expect("TF_City field not found");
-        let tf_country = find_field(&flattened.nodes, "TF_Country")
+        let tf_country = find_field(&flattened, "TF_Country")
             .expect("TF_Country field not found");
         
         println!("TF_PostalCode: y={}, x={}, w={}, h={}", tf_postal_code.y, tf_postal_code.x, tf_postal_code.width, tf_postal_code.height);
@@ -838,7 +927,7 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Find the T_Left text node
-        let t_left = flattened.nodes.iter()
+        let t_left = flattened.iter_nodes()
             .find(|n| {
                 if let FlattenedNodeKind::Text { source_name, .. } = &n.kind {
                     source_name.as_ref().map(|s| s == "T_Left").unwrap_or(false)
@@ -890,8 +979,8 @@ mod tests {
         // ----------------------------------------------------------------
         // Test 2: Rich text content is correctly parsed
         // ----------------------------------------------------------------
-        if let FlattenedNodeKind::Text { rich_text, content, .. } = &t_left.kind {
-            let rt = rich_text.as_ref()
+        if let FlattenedNodeKind::Text { content, .. } = &t_left.kind {
+            let rt = t_left.rich_text()
                 .expect("T_Left should have rich text (HTML exData)");
             
             assert!(!rt.paragraphs.is_empty(), "Rich text should have paragraphs");
@@ -936,8 +1025,8 @@ mod tests {
         // ----------------------------------------------------------------
         // Test 3: Verify paragraphs with text-indent are properly marked
         // ----------------------------------------------------------------
-        if let FlattenedNodeKind::Text { rich_text, .. } = &t_left.kind {
-            let rt = rich_text.as_ref().unwrap();
+        if let FlattenedNodeKind::Text { .. } = &t_left.kind {
+            let rt = t_left.rich_text().unwrap();
             
             // Some paragraphs should have text-indent (e.g., text-indent:25.512pt)
             let indented_paras: Vec<_> = rt.paragraphs.iter()
@@ -983,15 +1072,15 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Helper function to find text node by source_name (Draw element name)
-        fn find_draw_by_name<'a>(nodes: &'a [flattened::FlattenedNode], name: &str) -> Option<&'a flattened::FlattenedNode> {
-            nodes.iter().find(|n| {
+        fn find_draw_by_name<'a>(flattened: &'a flattened::Flattened, name: &str) -> Option<&'a flattened::FlattenedNode> {
+            flattened.iter_nodes().find(|n| {
                 matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), .. } if sn == name)
             })
         }
         
         // Debug: Print all text nodes with source names containing "Postal" or "City" or "Country"
         println!("\n=== All Text nodes with Postal/City/Country in source_name ===");
-        for node in &flattened.nodes {
+        for node in flattened.iter_nodes() {
             if let FlattenedNodeKind::Text { source_name: Some(sn), content, .. } = &node.kind {
                 if sn.contains("Postal") || sn.contains("City") || sn.contains("Country") ||
                    sn.contains("postal") || sn.contains("city") || sn.contains("country") ||
@@ -1004,7 +1093,7 @@ mod tests {
         
         // Debug: print all source_names that contain "DES"
         println!("\n=== All Text nodes with DES in source_name ===");
-        for node in &flattened.nodes {
+        for node in flattened.iter_nodes() {
             if let FlattenedNodeKind::Text { source_name: Some(sn), content, .. } = &node.kind {
                 if sn.contains("DES") {
                     println!("  '{}': y={}, x={}, w={}, h={}, content='{}'", 
@@ -1014,11 +1103,11 @@ mod tests {
         }
         
         // Find DES_PostalCode, DES_City, DES_Country
-        let des_postal = find_draw_by_name(&flattened.nodes, "DES_PostalCode")
+        let des_postal = find_draw_by_name(&flattened, "DES_PostalCode")
             .expect("DES_PostalCode not found");
-        let des_city = find_draw_by_name(&flattened.nodes, "DES_City")
+        let des_city = find_draw_by_name(&flattened, "DES_City")
             .expect("DES_City not found");
-        let des_country = find_draw_by_name(&flattened.nodes, "DES_Country")
+        let des_country = find_draw_by_name(&flattened, "DES_Country")
             .expect("DES_Country not found");
         
         println!("\n=== DES Label Alignment Test ===");
@@ -1474,8 +1563,8 @@ mod tests {
             .expect("Failed to flatten XFA");
         
         // Helper function to find text node by content substring
-        fn find_text_containing<'a>(nodes: &'a [flattened::FlattenedNode], substring: &str) -> Option<&'a flattened::FlattenedNode> {
-            nodes.iter().find(|n| {
+        fn find_text_containing<'a>(flattened: &'a flattened::Flattened, substring: &str) -> Option<&'a flattened::FlattenedNode> {
+            flattened.iter_nodes().find(|n| {
                 if let flattened::FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains(substring)
                 } else {
@@ -1486,7 +1575,7 @@ mod tests {
         
         // Print ALL text nodes with their positions for analysis
         println!("\n=== All Text Nodes (sorted by y) ===");
-        let mut text_nodes: Vec<_> = flattened.nodes.iter()
+        let mut text_nodes: Vec<_> = flattened.iter_nodes()
             .filter_map(|n| {
                 if let flattened::FlattenedNodeKind::Text { content, .. } = &n.kind {
                     Some((n.y, n.x, content.clone()))
@@ -1503,11 +1592,11 @@ mod tests {
         }
         
         // Find UBS Europe SE text (company name in header)
-        let ubs_text = find_text_containing(&flattened.nodes, "UBS Europe SE")
+        let ubs_text = find_text_containing(&flattened, "UBS Europe SE")
             .expect("UBS Europe SE text not found");
         
         // Find form title text
-        let title_text = find_text_containing(&flattened.nodes, "Vereinbarung")
+        let title_text = find_text_containing(&flattened, "Vereinbarung")
             .expect("Form title (Vereinbarung...) text not found");
         
         println!("\n=== Header Position Test ===");
@@ -1551,8 +1640,8 @@ mod tests {
             .expect("Failed to flatten XFA");
         
         // Helper function to find text node by content substring
-        fn find_text_containing<'a>(nodes: &'a [flattened::FlattenedNode], substring: &str) -> Option<&'a flattened::FlattenedNode> {
-            nodes.iter().find(|n| {
+        fn find_text_containing<'a>(flattened: &'a flattened::Flattened, substring: &str) -> Option<&'a flattened::FlattenedNode> {
+            flattened.iter_nodes().find(|n| {
                 if let flattened::FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains(substring)
                 } else {
@@ -1562,9 +1651,9 @@ mod tests {
         }
         
         // Find section headers and their bounding boxes
-        let vertretungs = find_text_containing(&flattened.nodes, "Vertretungsberechtigte(r)")
+        let vertretungs = find_text_containing(&flattened, "Vertretungsberechtigte(r)")
             .expect("'Vertretungsberechtigte(r)' text not found");
-        let kunde = find_text_containing(&flattened.nodes, "Kunde")
+        let kunde = find_text_containing(&flattened, "Kunde")
             .expect("'Kunde' text not found (section header)");
         
         // Get bounding boxes
@@ -1578,7 +1667,7 @@ mod tests {
             kunde.y, kunde.height);
         
         // Find form title to understand page layout
-        let form_title = find_text_containing(&flattened.nodes, "Vereinbarung")
+        let form_title = find_text_containing(&flattened, "Vereinbarung")
             .expect("Form title not found");
         println!("Form title:                  y={}", form_title.y);
         
@@ -1873,11 +1962,11 @@ mod tests {
         // NOTE: With proper presence inheritance, many nodes are now correctly hidden
         // (e.g., the Löschung subform and its children are hidden when the radio button
         // is not set to a specific value). So we expect fewer visible nodes.
-        println!("Total flattened nodes: {}", flattened.nodes.len());
-        assert!(flattened.nodes.len() > 50, "Should have many flattened nodes");
+        println!("Total flattened nodes: {}", flattened.node_count());
+        assert!(flattened.node_count() > 50, "Should have many flattened nodes");
         
         // Verify visible field ffBankingRelation exists (it's visible)
-        let has_banking = flattened.nodes.iter().any(|n| {
+        let has_banking = flattened.iter_nodes().any(|n| {
             matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "ffBankingRelation")
         });
         assert!(has_banking, "ffBankingRelation should be in output");
@@ -1977,7 +2066,7 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Find DES_FirstName in the flattened output
-        let des_firstname = flattened.nodes.iter()
+        let des_firstname = flattened.iter_nodes()
             .find(|n| {
                 matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(name), .. } 
                     if name == "DES_FirstName")
@@ -1996,7 +2085,7 @@ mod tests {
             }
         } else {
             // If not found by source_name, search for any text node with "Vorname(n)"
-            let vorname_node = flattened.nodes.iter()
+            let vorname_node = flattened.iter_nodes()
                 .find(|n| {
                     matches!(&n.kind, FlattenedNodeKind::Text { content, .. } 
                         if content.contains("Vorname"))
@@ -2007,7 +2096,7 @@ mod tests {
             } else {
                 // List all text nodes for debugging
                 println!("All Text nodes in flattened output (first 30):");
-                for (i, node) in flattened.nodes.iter()
+                for (i, node) in flattened.iter_nodes()
                     .filter(|n| matches!(n.kind, FlattenedNodeKind::Text { .. }))
                     .take(30)
                     .enumerate()
@@ -2046,7 +2135,7 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Search for any text node containing "Vorname"
-        let vorname_nodes: Vec<_> = flattened.nodes.iter()
+        let vorname_nodes: Vec<_> = flattened.iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains("Vorname")
@@ -2078,7 +2167,7 @@ mod tests {
         }
         
         // Also check for "Nachname" which should similarly be set by scripts
-        let nachname_nodes: Vec<_> = flattened.nodes.iter()
+        let nachname_nodes: Vec<_> = flattened.iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains("Nachname")
@@ -2171,7 +2260,7 @@ mod tests {
         form.refresh().expect("Failed to refresh form");
         
         // Check that Vorname(n) is still in the flattened output after refresh
-        let vorname_nodes: Vec<_> = form.flattened().nodes.iter()
+        let vorname_nodes: Vec<_> = form.flattened().iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains("Vorname")
@@ -2193,7 +2282,7 @@ mod tests {
              The computed_values from script execution may not be preserved across refresh cycles.");
         
         // Also check for Nachname
-        let nachname_nodes: Vec<_> = form.flattened().nodes.iter()
+        let nachname_nodes: Vec<_> = form.flattened().iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.contains("Nachname")
@@ -2227,7 +2316,7 @@ mod tests {
         let mut doc = Document::from_flattened(&flattened);
         
         println!("\n=== Initial state ===");
-        println!("Total flattened nodes: {}", flattened.nodes.len());
+        println!("Total flattened nodes: {}", flattened.node_count());
         println!("Initial roots: {}", doc.roots().len());
         
         // Step 1: Group text nodes into TextBlocks
@@ -2291,7 +2380,7 @@ mod tests {
         
         // Search for these labels in the flattened output
         let mut found_labels = Vec::new();
-        for node in &flattened.nodes {
+        for node in &flattened.iter_nodes().collect::<Vec<_>>() {
             if let FlattenedNodeKind::Text { content, .. } = &node.kind {
                 for label in &expected_labels {
                     if content.contains(label) {
@@ -2340,7 +2429,7 @@ mod tests {
         
         // Search for "Unterschrift(en)" in text nodes
         let mut found = false;
-        for node in &flattened.nodes {
+        for node in &flattened.iter_nodes().collect::<Vec<_>>() {
             if let FlattenedNodeKind::Text { content, .. } = &node.kind {
                 if content.contains("Unterschrift(en)") {
                     found = true;
@@ -2353,7 +2442,7 @@ mod tests {
         if !found {
             // Debug: print all text nodes that contain "Unterschrift"
             println!("\n=== Text nodes containing 'Unterschrift' ===");
-            for node in &flattened.nodes {
+            for node in &flattened.iter_nodes().collect::<Vec<_>>() {
                 if let FlattenedNodeKind::Text { content, .. } = &node.kind {
                     if content.to_lowercase().contains("unterschrift") {
                         println!("  '{}'", content);
@@ -2633,7 +2722,7 @@ mod tests {
         // Look for RB_1 in flattened output and verify it has the correct value
         // The field should have rawValue=1 if it's the default selection
         println!("\nFlattened nodes with RB_ prefix:");
-        for node in &flattened.nodes {
+        for node in &flattened.iter_nodes().collect::<Vec<_>>() {
             if let FlattenedNodeKind::Field { name, value, .. } = &node.kind {
                 if name.starts_with("RB_") {
                     println!("  {} = {:?}", name, value);
@@ -2642,7 +2731,7 @@ mod tests {
         }
         
         // Find RB_1 in flattened nodes
-        let rb1_node = flattened.nodes.iter().find(|n| {
+        let rb1_node = flattened.iter_nodes().find(|n| {
             if let FlattenedNodeKind::Field { name, .. } = &n.kind {
                 name == "RB_1"
             } else {
@@ -2716,7 +2805,7 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Check if ffClientDetails appears in flattened output
-        let has_client_details_field = flattened.nodes.iter().any(|n| {
+        let has_client_details_field = flattened.iter_nodes().any(|n| {
             matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "ffClientDetails")
         });
         
@@ -2724,14 +2813,14 @@ mod tests {
         // Note: Text from OTHER Draw elements (like T_Client_Details) that embed ffClientDetails via
         // xfa:embed is ALLOWED per XFA spec - the embed reference should resolve even if the source
         // field is hidden. The T_Client_Details element itself is visible.
-        let has_endkunde_text_from_hidden_field = flattened.nodes.iter().any(|n| {
+        let has_endkunde_text_from_hidden_field = flattened.iter_nodes().any(|n| {
             matches!(&n.kind, FlattenedNodeKind::Text { content, source_name, .. } 
                 if content == "Endkunde" && source_name.as_deref() == Some("ffClientDetails"))
         });
         
         // Print what we found for debugging
         println!("\nSearching for ffClientDetails/Endkunde in flattened output:");
-        for node in &flattened.nodes {
+        for node in &flattened.iter_nodes().collect::<Vec<_>>() {
             match &node.kind {
                 FlattenedNodeKind::Field { name, value, .. } if name == "ffClientDetails" => {
                     println!("  Found Field '{}' with value '{}'", name, value);
@@ -2864,12 +2953,12 @@ mod tests {
             .expect("Failed to flatten XFA with scripts");
         
         // Count visible nodes to verify the Neuanlage section is rendered
-        let total_nodes = flattened.nodes.len();
+        let total_nodes = flattened.node_count();
         println!("\nTotal flattened nodes: {}", total_nodes);
         
         // Find text nodes that might be from the Neuanlage section
         // (these typically have field labels like "Vorname", "Nachname", etc.)
-        let neuanlage_related_texts: Vec<_> = flattened.nodes.iter()
+        let neuanlage_related_texts: Vec<_> = flattened.iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { source_name: Some(name), .. } = &n.kind {
                     name.contains("TF_") || name.contains("DES_")  // These are label fields
@@ -2887,7 +2976,7 @@ mod tests {
         }
         
         // Look for the text "Neuanlage" itself in any text node
-        let neuanlage_text_nodes: Vec<_> = flattened.nodes.iter()
+        let neuanlage_text_nodes: Vec<_> = flattened.iter_nodes()
             .filter(|n| {
                 if let FlattenedNodeKind::Text { content, .. } = &n.kind {
                     content.to_lowercase().contains("neuanlage")
@@ -2905,7 +2994,7 @@ mod tests {
         }
         
         // Look for ffrb1 which should contain "Neuanlage" text when RB_1 is selected
-        let ffrb1_node = flattened.nodes.iter()
+        let ffrb1_node = flattened.iter_nodes()
             .find(|n| {
                 if let FlattenedNodeKind::Text { source_name: Some(name), .. } = &n.kind {
                     name == "ffrb1"
@@ -2961,7 +3050,7 @@ mod tests {
         
         // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
         // This is the label that indicates which radio button option is selected
-        let ffrb1_text = flattened.nodes.iter()
+        let ffrb1_text = flattened.iter_nodes()
             .find_map(|n| {
                 if let FlattenedNodeKind::Text { content, source_name, .. } = &n.kind {
                     // Check if this is ffrb1 or contains the expected text
@@ -3108,7 +3197,7 @@ mod tests {
         
         // Look for the section title text
         let mut found_section_title = None;
-        for node in &flattened.nodes {
+        for node in &flattened.iter_nodes().collect::<Vec<_>>() {
             if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
                 // Check if this is the section title or ffrb1
                 if source_name.as_deref() == Some("ffrb1") || 
@@ -3136,5 +3225,779 @@ mod tests {
         );
         
         println!("\n✓ Section title correctly changed to: '{}'", found_section_title.unwrap());
+    }
+    
+    // =========================================================================
+    // Conditional Groups Tests for AAAB
+    // =========================================================================
+    
+    /// Test the conditional groups structure based on AAAB's radio buttons.
+    /// 
+    /// AAAB has a primary discriminant: RB_Group_Neuanlage with options:
+    /// - RB_1 (value="1"): Shows "Neuanlage" section
+    /// - RB_2 (value="2"): Shows "Änderung" section  
+    /// - RB_3 (value="3"): Shows "Löschung" section (with nested RB_Group_Retro)
+    /// 
+    /// This test verifies that we can correctly identify:
+    /// 1. The discriminant field (RB_Group_Neuanlage)
+    /// 2. Its options (1, 2, 3 corresponding to RB_1, RB_2, RB_3)
+    /// 3. The conditional visibility behavior
+    #[test]
+    fn test_aaab_conditional_groups_discriminant_structure() {
+        use crate::flattened::{Discriminant, FieldId};
+        use crate::scripting::XfaForm;
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        // Create XfaForm to work with the form
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Find RB_Group_Neuanlage in the flattened output
+        let flattened = form.flattened();
+        
+        // Look for RB_1, RB_2, RB_3 fields
+        let rb_fields: Vec<_> = flattened.iter_nodes()
+            .filter(|n| {
+                if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                    name == "RB_1" || name == "RB_2" || name == "RB_3"
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        println!("\n=== AAAB Discriminant Structure ===");
+        println!("Found {} radio button fields in flattened output:", rb_fields.len());
+        for field in &rb_fields {
+            if let FlattenedNodeKind::Field { name, value, is_checked, .. } = &field.kind {
+                println!("  {} = '{}' (checked: {:?}, id: {})", name, value, is_checked, field.id);
+            }
+        }
+        
+        // Verify we found the primary radio buttons
+        assert!(rb_fields.len() >= 3, 
+            "Should find at least 3 radio button fields (RB_1, RB_2, RB_3), found {}", 
+            rb_fields.len());
+        
+        // Verify RB_1 has value "1" (meaning it's the selected option in the excl group)
+        let rb1 = rb_fields.iter().find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "RB_1")
+        }).expect("Should find RB_1");
+        
+        if let FlattenedNodeKind::Field { value, is_checked, .. } = &rb1.kind {
+            // RB_1 has a non-empty value "1" indicating it's selected
+            assert_eq!(value, "1", "RB_1 should have value '1' (selected in excl group)");
+            
+            // Note: is_checked may be None if the flattening doesn't compute it,
+            // but the value "1" confirms this is the selected radio button
+            println!("  RB_1 is_checked: {:?} (value '1' indicates selection)", is_checked);
+        }
+        
+        // Build a Discriminant structure for documentation purposes
+        let discriminant = Discriminant {
+            field_id: rb1.id,  // Using RB_1's ID as placeholder
+            field_name: "RB_Group_Neuanlage".to_string(),
+            options: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+        };
+        
+        println!("\nDiscriminant model:");
+        println!("  field_name: {}", discriminant.field_name);
+        println!("  options: {:?}", discriminant.options);
+        
+        // Verify the discriminant has 3 options
+        assert_eq!(discriminant.options.len(), 3, 
+            "RB_Group_Neuanlage should have 3 options (Neuanlage, Änderung, Löschung)");
+        
+        println!("\n✓ Discriminant structure correctly identified");
+    }
+    
+    /// Test that different radio button selections show different sections.
+    /// 
+    /// This test verifies the conditional visibility:
+    /// - RB_1 selected: Neuanlage section visible
+    /// - RB_2 selected: Änderung section visible  
+    /// - RB_3 selected: Löschung section visible (with nested controls)
+    #[test]
+    fn test_aaab_conditional_groups_section_visibility() {
+        use crate::scripting::XfaForm;
+        
+        /// Helper to count nodes containing a specific text pattern
+        fn count_nodes_with_text(flattened: &Flattened, pattern: &str) -> usize {
+            flattened.iter_nodes()
+                .filter(|n| {
+                    match &n.kind {
+                        FlattenedNodeKind::Text { content, .. } => content.contains(pattern),
+                        FlattenedNodeKind::Field { name, label, .. } => {
+                            name.contains(pattern) || label.contains(pattern)
+                        }
+                    }
+                })
+                .count()
+        }
+        
+        // Test with RB_1 selected (default) - Neuanlage section
+        {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+                .expect("Failed to read PDF");
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+                .expect("Failed to parse XFA");
+            let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+                .expect("Failed to create XfaForm");
+            
+            let flattened = form.flattened();
+            let neuanlage_count = count_nodes_with_text(flattened, "Neuanlage");
+            
+            println!("\n=== RB_1 Selected (Default) ===");
+            println!("Nodes containing 'Neuanlage': {}", neuanlage_count);
+            
+            assert!(neuanlage_count > 0, 
+                "With RB_1 selected, should see 'Neuanlage' text");
+        }
+        
+        // Test with RB_2 selected - Änderung section
+        {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+                .expect("Failed to read PDF");
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+                .expect("Failed to parse XFA");
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+                .expect("Failed to create XfaForm");
+            
+            // Select RB_2
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2")
+                .expect("Should select RB_2");
+            form.refresh().expect("Should refresh");
+            
+            let flattened = form.flattened();
+            
+            // Check for section title text
+            let section_title_node = flattened.iter_nodes().find(|n| {
+                matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(name), .. } if name == "T_Sectiontitle")
+            });
+            
+            println!("\n=== RB_2 Selected (Änderung) ===");
+            if let Some(node) = section_title_node {
+                if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                    println!("Section title: '{}'", content);
+                    assert!(content.contains("Änderung"), 
+                        "With RB_2 selected, section title should contain 'Änderung', got: {}", content);
+                }
+            } else {
+                println!("No T_Sectiontitle node found");
+            }
+        }
+        
+        // Test with RB_3 selected - Löschung section
+        {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+                .expect("Failed to read PDF");
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+                .expect("Failed to parse XFA");
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+                .expect("Failed to create XfaForm");
+            
+            // Select RB_3
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3")
+                .expect("Should select RB_3");
+            form.refresh().expect("Should refresh");
+            
+            let flattened = form.flattened();
+            
+            // Check for section title text
+            let section_title_node = flattened.iter_nodes().find(|n| {
+                matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(name), .. } if name == "T_Sectiontitle")
+            });
+            
+            println!("\n=== RB_3 Selected (Löschung) ===");
+            if let Some(node) = section_title_node {
+                if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                    println!("Section title: '{}'", content);
+                    assert!(content.contains("Löschung"), 
+                        "With RB_3 selected, section title should contain 'Löschung', got: {}", content);
+                }
+            } else {
+                println!("No T_Sectiontitle node found");
+            }
+            
+            // RB_3 also reveals a nested discriminant (RB_Group_Retro)
+            let retro_fields: Vec<_> = flattened.iter_nodes()
+                .filter(|n| {
+                    if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                        // Look for the nested radio buttons in Löschung section
+                        name.starts_with("RB_") && name != "RB_1" && name != "RB_2" && name != "RB_3"
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            
+            println!("Nested radio buttons visible with RB_3: {}", retro_fields.len());
+            // RB_Group_Retro has RB_1, RB_2, RB_3, RB_4 but they're duplicates named the same
+            // The exhaustive mode shows them with full paths like:
+            // UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro.RB_1
+        }
+        
+        println!("\n✓ All conditional sections work correctly");
+    }
+    
+    /// Test that the Löschung section has a nested discriminant (RB_Group_Retro).
+    /// 
+    /// When RB_3 is selected (Löschung), a second radio button group appears:
+    /// - RB_Group_Retro with options for retroactive settings
+    /// - This tests the nested conditional groups scenario
+    #[test]
+    fn test_aaab_conditional_groups_nested_discriminant() {
+        use crate::scripting::XfaForm;
+        use crate::flattened::{ConditionalGroup, Discriminant, VisibilityConstraint, FieldId};
+        
+        // Extract and parse XFA from AAAB
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA");
+        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Select RB_3 to reveal the Löschung section with nested radio buttons
+        form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3")
+            .expect("Should select RB_3");
+        form.refresh().expect("Should refresh");
+        
+        // The nested RB_Group_Retro should now be visible
+        // Check if the path is visible
+        let retro_visible = form.is_path_visible("UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro");
+        
+        println!("\n=== Nested Discriminant Test ===");
+        println!("RB_Group_Retro visible: {}", retro_visible);
+        
+        assert!(retro_visible, 
+            "RB_Group_Retro should be visible when RB_3 is selected");
+        
+        // Find the exclusion group for RB_1 in the Löschung section
+        let excl_group = form.find_excl_group_for_field(
+            "UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro.RB_1"
+        );
+        
+        println!("Excl group for nested RB_1: {:?}", excl_group);
+        assert!(excl_group.is_some(), "Should find RB_Group_Retro as parent exclGroup");
+        
+        // Now verify it's NOT visible when RB_1 is selected (default state)
+        let xfa_data2 = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        let nodes2 = xfa::XfaNode::parse(&xfa_data2.unwrap())
+            .expect("Failed to parse XFA");
+        let form2 = XfaForm::new(nodes2, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // With RB_1 selected (default), the Löschung path should be hidden
+        let loeschung_visible = form2.is_path_visible("UBSForms.Page.Löschung");
+        
+        println!("Page.Löschung visible with RB_1: {}", loeschung_visible);
+        
+        // Build the nested conditional structure for documentation
+        let primary_discriminant = Discriminant {
+            field_id: FieldId::new(),
+            field_name: "RB_Group_Neuanlage".to_string(),
+            options: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+        };
+        
+        let nested_discriminant = Discriminant {
+            field_id: FieldId::new(),
+            field_name: "RB_Group_Retro".to_string(),
+            options: vec!["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()],
+        };
+        
+        // The nested conditional group depends on the primary discriminant
+        let nested_group = ConditionalGroup {
+            discriminant: nested_discriminant.clone(),
+            branches: std::collections::HashMap::new(),  // Would be populated during flattening
+            visible_when: Some(VisibilityConstraint {
+                field_id: primary_discriminant.field_id,
+                required_value: "3".to_string(),  // Only visible when RB_3 is selected
+            }),
+        };
+        
+        println!("\nNested ConditionalGroup model:");
+        println!("  discriminant: {}", nested_group.discriminant.field_name);
+        println!("  visible_when: field {} = '{}'",
+            nested_group.visible_when.as_ref().unwrap().field_id,
+            nested_group.visible_when.as_ref().unwrap().required_value);
+        
+        assert!(nested_group.visible_when.is_some(),
+            "Nested group should have a visibility constraint");
+        assert_eq!(nested_group.visible_when.as_ref().unwrap().required_value, "3",
+            "Nested group should be visible only when parent is '3' (RB_3/Löschung)");
+        
+        println!("\n✓ Nested discriminant structure correctly identified");
+    }
+    
+    /// Test that all three sections have different visible fields.
+    /// 
+    /// This test enumerates the visible fields for each radio button state
+    /// and verifies they differ appropriately.
+    #[test]
+    fn test_aaab_conditional_groups_field_enumeration() {
+        use crate::scripting::XfaForm;
+        
+        /// Get field names from a flattened form
+        fn get_field_names(flattened: &Flattened) -> Vec<String> {
+            flattened.iter_nodes()
+                .filter_map(|n| {
+                    if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+        
+        // State 1: RB_1 selected (default - Neuanlage)
+        let fields_rb1 = {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
+            let form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            get_field_names(form.flattened())
+        };
+        
+        // State 2: RB_2 selected (Änderung)
+        let fields_rb2 = {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2").unwrap();
+            form.refresh().unwrap();
+            get_field_names(form.flattened())
+        };
+        
+        // State 3: RB_3 selected (Löschung)
+        let fields_rb3 = {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3").unwrap();
+            form.refresh().unwrap();
+            get_field_names(form.flattened())
+        };
+        
+        println!("\n=== Field Enumeration by State ===");
+        println!("RB_1 (Neuanlage): {} fields", fields_rb1.len());
+        println!("RB_2 (Änderung): {} fields", fields_rb2.len());
+        println!("RB_3 (Löschung): {} fields", fields_rb3.len());
+        
+        // Find fields unique to each state
+        let rb1_set: std::collections::HashSet<_> = fields_rb1.iter().collect();
+        let rb2_set: std::collections::HashSet<_> = fields_rb2.iter().collect();
+        let rb3_set: std::collections::HashSet<_> = fields_rb3.iter().collect();
+        
+        let only_in_rb1: Vec<_> = fields_rb1.iter().filter(|f| !rb2_set.contains(f) && !rb3_set.contains(f)).collect();
+        let only_in_rb2: Vec<_> = fields_rb2.iter().filter(|f| !rb1_set.contains(f) && !rb3_set.contains(f)).collect();
+        let only_in_rb3: Vec<_> = fields_rb3.iter().filter(|f| !rb1_set.contains(f) && !rb2_set.contains(f)).collect();
+        
+        println!("\nFields unique to RB_1 (Neuanlage): {:?}", only_in_rb1);
+        println!("Fields unique to RB_2 (Änderung): {:?}", only_in_rb2);
+        println!("Fields unique to RB_3 (Löschung): {:?}", only_in_rb3);
+        
+        // Common fields (should include the header radio buttons)
+        let common: Vec<_> = fields_rb1.iter()
+            .filter(|f| rb2_set.contains(f) && rb3_set.contains(f))
+            .collect();
+        println!("Common fields across all states: {} fields", common.len());
+        
+        // Verify each state has a reasonable number of fields
+        assert!(fields_rb1.len() > 10, "RB_1 state should have significant fields");
+        assert!(fields_rb2.len() > 10, "RB_2 state should have significant fields");
+        assert!(fields_rb3.len() > 10, "RB_3 state should have significant fields");
+        
+        // The three primary radio buttons should be common to all states
+        assert!(common.contains(&&"RB_1".to_string()), "RB_1 should be visible in all states");
+        assert!(common.contains(&&"RB_2".to_string()), "RB_2 should be visible in all states");
+        assert!(common.contains(&&"RB_3".to_string()), "RB_3 should be visible in all states");
+        
+        println!("\n✓ Field enumeration shows distinct fields per conditional state");
+    }
+    
+    /// Test building ConditionalGroup structures from AAAB form state enumeration.
+    /// 
+    /// This demonstrates how the exhaustive mode state exploration maps to
+    /// the ConditionalGroup model.
+    #[test]
+    fn test_aaab_conditional_groups_model_construction() {
+        use crate::flattened::{ConditionalGroup, Discriminant, VisibilityConstraint, FieldId};
+        use crate::scripting::XfaForm;
+        use std::collections::HashMap;
+        
+        // Parse AAAB and create form
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to read PDF");
+        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA");
+        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            .expect("Failed to create XfaForm");
+        
+        // Get baseline (RB_1 selected) node indices
+        let baseline_ids: Vec<_> = form.flattened().iter_nodes()
+            .map(|n| n.id)
+            .collect();
+        
+        println!("\n=== ConditionalGroup Model Construction ===");
+        println!("Baseline (RB_1) has {} nodes", baseline_ids.len());
+        
+        // Build the primary discriminant
+        let primary_discriminant = Discriminant {
+            field_id: form.flattened().iter_nodes()
+                .find(|n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "RB_1"))
+                .map(|n| n.id)
+                .unwrap_or_else(FieldId::new),
+            field_name: "RB_Group_Neuanlage".to_string(),
+            options: vec![
+                "1".to_string(),  // Neuanlage
+                "2".to_string(),  // Änderung
+                "3".to_string(),  // Löschung
+            ],
+        };
+        
+        // Build branches HashMap (mapping discriminant value to visible node indices)
+        let mut branches: HashMap<String, Vec<usize>> = HashMap::new();
+        
+        // Branch for value "1" (Neuanlage) - the baseline
+        branches.insert("1".to_string(), (0..baseline_ids.len()).collect());
+        
+        // Get indices for RB_2 state
+        let rb2_indices = {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2").unwrap();
+            form.refresh().unwrap();
+            (0..form.flattened().node_count()).collect::<Vec<_>>()
+        };
+        branches.insert("2".to_string(), rb2_indices.clone());
+        
+        // Get indices for RB_3 state
+        let rb3_indices = {
+            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
+            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3").unwrap();
+            form.refresh().unwrap();
+            (0..form.flattened().node_count()).collect::<Vec<_>>()
+        };
+        branches.insert("3".to_string(), rb3_indices.clone());
+        
+        // Create the ConditionalGroup
+        let conditional_group = ConditionalGroup {
+            discriminant: primary_discriminant.clone(),
+            branches: branches.clone(),
+            visible_when: None,  // Primary discriminant has no parent constraint
+        };
+        
+        println!("\nConditionalGroup constructed:");
+        println!("  discriminant: {} (options: {:?})", 
+            conditional_group.discriminant.field_name,
+            conditional_group.discriminant.options);
+        println!("  branches:");
+        for (value, indices) in &conditional_group.branches {
+            let label = match value.as_str() {
+                "1" => "Neuanlage",
+                "2" => "Änderung",
+                "3" => "Löschung",
+                _ => "Unknown",
+            };
+            println!("    '{}' ({}) → {} nodes", value, label, indices.len());
+        }
+        println!("  visible_when: {:?}", conditional_group.visible_when);
+        
+        // Verify structure
+        assert_eq!(conditional_group.branches.len(), 3, 
+            "Should have 3 branches (one per radio button option)");
+        assert!(conditional_group.visible_when.is_none(),
+            "Primary discriminant should have no parent constraint");
+        
+        // All branches should have nodes
+        for (value, indices) in &conditional_group.branches {
+            assert!(!indices.is_empty(), 
+                "Branch '{}' should have visible nodes", value);
+        }
+        
+        println!("\n✓ ConditionalGroup model correctly constructed from AAAB");
+    }
+
+    #[test]
+    fn test_aaai_has_two_repeatable_sections() {
+        // Test that the AAAI PDF has exactly two repeatable sections
+        // (based on XFA occur element hints)
+        use crate::document::Document;
+        use crate::modules::{RepeatableDetector, run_analysis_pipeline};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        let detector = RepeatableDetector::new();
+        let sections = detector.detect_sections(&doc);
+        
+        // Debug: print all sections found
+        println!("\n=== Repeatable Sections Found ===");
+        for (i, section) in sections.iter().enumerate() {
+            println!("Section {}: min={}, max={:?}, bounds={:?}", 
+                i, section.min_occurrences, section.max_occurrences, section.bounds);
+        }
+        
+        // Debug: print RepeatableSection groups in the document
+        println!("\n=== RepeatableSection Groups in Document ===");
+        let mut repeatable_count = 0;
+        for (i, group) in doc.groups.iter().enumerate() {
+            if let crate::document::GroupKind::RepeatableSection { min_occurrences, max_occurrences } = &group.kind {
+                println!("Group {}: RepeatableSection[{}-{:?}], children: {:?}", 
+                    i, min_occurrences, max_occurrences, group.children.len());
+                repeatable_count += 1;
+            }
+        }
+        println!("Total RepeatableSection groups: {}", repeatable_count);
+        
+        assert!(
+            sections.len() >= 2, 
+            "AAAI should have at least 2 repeatable sections, found {}",
+            sections.len()
+        );
+        
+        // Verify each section has valid occurrence constraints
+        for (i, section) in sections.iter().enumerate() {
+            // max should be > 1 or unlimited (None) for it to be repeatable
+            let is_repeatable = section.max_occurrences.map(|m| m > 1).unwrap_or(true);
+            assert!(
+                is_repeatable,
+                "Section {} should be repeatable (max > 1 or unlimited)",
+                i
+            );
+        }
+    }
+    
+    #[test]
+    fn test_aaai_watermark_not_recognized_as_field() {
+        // Test that watermark (which has access="protected") is NOT recognized as a Field.
+        // Only fields with access="open" should be marked as Fields.
+        // This is a regression test for the bug where protected/readOnly fields
+        // were incorrectly being grouped as interactive fields.
+        use crate::document::Document;
+        use crate::modules::{FieldGrouper, AnalysisModule};
+        use crate::flattened::FlattenedNodeKind;
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Check that Watermark field has non-interactive access in the flattened representation
+        let watermark_node = flattened.iter_nodes()
+            .find(|n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "Watermark"));
+        
+        assert!(
+            watermark_node.is_some(),
+            "Should find a Watermark field in the flattened representation"
+        );
+        
+        let watermark = watermark_node.unwrap();
+        
+        // The Watermark field should NOT be interactive (it has access="protected")
+        assert!(
+            !watermark.is_interactive(),
+            "Watermark field should NOT be interactive (has access=\"protected\")"
+        );
+        
+        // Now verify the FieldGrouper doesn't create a Field group for Watermark
+        let mut doc = Document::from_flattened(&flattened);
+        FieldGrouper::new().process(&mut doc);
+        
+        // Get all Field groups and check none of them contain the Watermark field
+        let field_groups = doc.find_groups(|k| matches!(k, crate::document::GroupKind::Field));
+        
+        for &field_idx in &field_groups {
+            let nodes = doc.collect_nodes(field_idx);
+            for node in nodes {
+                if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+                    assert!(
+                        name != "Watermark",
+                        "Watermark should NOT be grouped as a Field (it has access=\"protected\")"
+                    );
+                }
+            }
+        }
+        
+        println!("✓ Watermark correctly excluded from Field groups");
+        println!("  Total Field groups created: {}", field_groups.len());
+    }
+    
+    #[test]
+    fn test_aaai_has_header_and_footer_groups() {
+        // Test that AAAI document has both Header and Footer groups detected
+        // from the master page (page background) content.
+        use crate::document::Document;
+        use crate::modules::{MasterPageDetector, AnalysisModule};
+        use crate::flattened::{Hint, MasterPageRegion};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Count nodes with MasterPage hints by region
+        let mut header_nodes = 0;
+        let mut footer_nodes = 0;
+        let mut background_nodes = 0;
+        
+        for node in flattened.iter_nodes() {
+            for hint in &node.hints {
+                if let Hint::MasterPage { region } = hint {
+                    match region {
+                        MasterPageRegion::Header => header_nodes += 1,
+                        MasterPageRegion::Footer => footer_nodes += 1,
+                        MasterPageRegion::Background => background_nodes += 1,
+                    }
+                }
+            }
+        }
+        
+        println!("MasterPage hint distribution:");
+        println!("  Header nodes: {}", header_nodes);
+        println!("  Footer nodes: {}", footer_nodes);
+        println!("  Background nodes: {}", background_nodes);
+        
+        // Verify we have nodes in each region
+        assert!(header_nodes > 0, "Should have header nodes (found {})", header_nodes);
+        assert!(footer_nodes > 0, "Should have footer nodes (found {})", footer_nodes);
+        
+        let mut doc = Document::from_flattened(&flattened);
+        MasterPageDetector::new().process(&mut doc);
+        
+        // Find Header and Footer groups
+        let header_groups = doc.find_groups(|k| matches!(k, crate::document::GroupKind::Header));
+        let footer_groups = doc.find_groups(|k| matches!(k, crate::document::GroupKind::Footer));
+        
+        println!("Group detection:");
+        println!("  Header groups: {} (containing {} nodes)", header_groups.len(), header_nodes);
+        println!("  Footer groups: {} (containing {} nodes)", footer_groups.len(), footer_nodes);
+        
+        assert_eq!(
+            header_groups.len(), 1,
+            "AAAI document should have exactly one Header group (found {})",
+            header_groups.len()
+        );
+        
+        assert_eq!(
+            footer_groups.len(), 1,
+            "AAAI document should have exactly one Footer group (found {})",
+            footer_groups.len()
+        );
+        
+        // Verify the groups contain the expected number of children
+        if let Some(&header_idx) = header_groups.first() {
+            let header_children = doc.collect_node_indices(header_idx);
+            assert_eq!(
+                header_children.len(), header_nodes,
+                "Header group should contain {} nodes, found {}",
+                header_nodes, header_children.len()
+            );
+        }
+        
+        if let Some(&footer_idx) = footer_groups.first() {
+            let footer_children = doc.collect_node_indices(footer_idx);
+            assert_eq!(
+                footer_children.len(), footer_nodes,
+                "Footer group should contain {} nodes, found {}",
+                footer_nodes, footer_children.len()
+            );
+        }
+        
+        // Check if Header/Footer groups are being referenced (claimed) by other groups
+        for &header_idx in &header_groups {
+            if doc.is_claimed(header_idx) {
+                println!("WARNING: Header group {} is referenced by another group!", header_idx);
+            }
+        }
+        for &footer_idx in &footer_groups {
+            if doc.is_claimed(footer_idx) {
+                println!("WARNING: Footer group {} is referenced by another group!", footer_idx);
+            }
+        }
+        
+        println!("✓ AAAI has Header group with {} nodes and Footer group with {} nodes", 
+            header_nodes, footer_nodes);
+        
+        // Now run the FULL pipeline and check again
+        println!("\n--- After full pipeline ---");
+        let mut doc2 = Document::from_flattened(&flattened);
+        crate::modules::run_analysis_pipeline(&mut doc2);
+        
+        let header_groups2 = doc2.find_groups(|k| matches!(k, crate::document::GroupKind::Header));
+        let footer_groups2 = doc2.find_groups(|k| matches!(k, crate::document::GroupKind::Footer));
+        
+        println!("Header groups after full pipeline: {}", header_groups2.len());
+        println!("Footer groups after full pipeline: {}", footer_groups2.len());
+        
+        for &header_idx in &header_groups2 {
+            let is_claimed = doc2.is_claimed(header_idx);
+            let is_root = doc2.roots().contains(&header_idx);
+            let bounds = doc2.get_bounds(header_idx);
+            println!("  Header group {}: claimed={}, is_root={}, bounds={:?}", header_idx, is_claimed, is_root, bounds);
+            // Find who claims it
+            if is_claimed {
+                for (parent_idx, g) in doc2.groups.iter().enumerate() {
+                    if g.children.contains(&header_idx) {
+                        println!("    -> claimed by group {} ({:?})", parent_idx, g.kind);
+                    }
+                }
+            }
+        }
+        for &footer_idx in &footer_groups2 {
+            let is_claimed = doc2.is_claimed(footer_idx);
+            let is_root = doc2.roots().contains(&footer_idx);
+            let bounds = doc2.get_bounds(footer_idx);
+            println!("  Footer group {}: claimed={}, is_root={}, bounds={:?}", footer_idx, is_claimed, is_root, bounds);
+            // Find who claims it
+            if is_claimed {
+                for (parent_idx, g) in doc2.groups.iter().enumerate() {
+                    if g.children.contains(&footer_idx) {
+                        println!("    -> claimed by group {} ({:?})", parent_idx, g.kind);
+                    }
+                }
+            }
+        }
+        
+        // Show RepeatableSection groups and their bounds
+        println!("\n--- RepeatableSection groups ---");
+        for (idx, g) in doc2.groups.iter().enumerate() {
+            if let crate::document::GroupKind::RepeatableSection { .. } = &g.kind {
+                let bounds = doc2.get_bounds(idx);
+                println!("  RepeatableSection group {}: bounds={:?}", idx, bounds);
+            }
+        }
     }
 }

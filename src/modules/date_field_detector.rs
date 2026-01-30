@@ -265,57 +265,26 @@ mod tests {
     #[test]
     fn test_month_dot_year_detection() {
         // Create a flattened document with month field + "." + year field
-        let flattened = Flattened {
-            page: Page { width: num(595.0), height: num(842.0) },
-            nodes: vec![
+        let flattened = Flattened::from_nodes(
+            Page { width: num(595.0), height: num(842.0) },
+            vec![
                 // Month field
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Field {
-                        name: "month".to_string(),
-                        value: "".to_string(),
-                        label: "".to_string(),
-                        is_checked: None,
-                    },
-                    x: num(50.0),
-                    y: num(100.0),
-                    width: num(30.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
+                FlattenedNode::new_field(
+                    "month".to_string(), "".to_string(), "".to_string(),
+                    num(50.0), num(100.0), num(30.0), num(12.0),
+                ),
                 // Separator "."
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Text {
-                        content: ".".to_string(),
-                        font_size: num(10.0),
-                        font_name: "Helvetica".to_string(),
-                        source_name: None,
-                        rich_text: None,
-                    },
-                    x: num(82.0),
-                    y: num(100.0),
-                    width: num(5.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
+                FlattenedNode::new_text(
+                    ".".to_string(), num(10.0), "Helvetica".to_string(),
+                    num(82.0), num(100.0), num(5.0), num(12.0),
+                ),
                 // Year field
-                FlattenedNode {
-                    kind: FlattenedNodeKind::Field {
-                        name: "year".to_string(),
-                        value: "".to_string(),
-                        label: "".to_string(),
-                        is_checked: None,
-                    },
-                    x: num(90.0),
-                    y: num(100.0),
-                    width: num(40.0),
-                    height: num(12.0),
-                    rotate: 0,
-                    style: Default::default(),
-                },
+                FlattenedNode::new_field(
+                    "year".to_string(), "".to_string(), "".to_string(),
+                    num(90.0), num(100.0), num(40.0), num(12.0),
+                ),
             ],
-        };
+        );
         
         let mut doc = Document::from_flattened(&flattened);
         

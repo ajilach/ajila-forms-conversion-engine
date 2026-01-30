@@ -31,6 +31,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use thiserror::Error;
+use ttf_parser::{Face, name_id};
+use regex_lite::Regex;
 
 /// Font-related errors
 #[derive(Debug, Error)]
@@ -260,6 +262,79 @@ impl FontEquateRange {
     }
 }
 
+/// Normalize a typeface name to extract base family and weight hint
+/// Handles naming conventions like "Frutiger 45 Light", "Helvetica Neue Light", etc.
+fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
+    let typeface_lower = typeface.to_lowercase();
+    
+    // Frutiger-style numeric weights: 45=Light, 46=LightItalic, 55=Roman, 56=Italic, 65=Bold, etc.
+    if let Ok(re) = Regex::new(r"^(.+?)\s*(\d{2})\s*(.*)$") {
+        if let Some(caps) = re.captures(&typeface_lower) {
+            let base = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+            let num: u32 = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            
+            // Map Frutiger-style numbers to weights
+            let weight_from_num = match num {
+                35 | 36 => Some(FontWeight::Thin),
+                45 | 46 => Some(FontWeight::Light),
+                55 | 56 => Some(FontWeight::Normal),
+                65 | 66 => Some(FontWeight::Bold),
+                75 | 76 => Some(FontWeight::ExtraBold),
+                85 | 86 => Some(FontWeight::Black),
+                95 | 96 => Some(FontWeight::Black),
+                _ => None,
+            };
+            
+            if weight_from_num.is_some() && !base.is_empty() {
+                return (base.to_string(), weight_from_num);
+            }
+        }
+    }
+    
+    // Check for weight keywords in the name
+    let weight_keywords = [
+        ("ultra light", FontWeight::ExtraLight),
+        ("extra light", FontWeight::ExtraLight),
+        ("ultralight", FontWeight::ExtraLight),
+        ("extralight", FontWeight::ExtraLight),
+        ("thin", FontWeight::Thin),
+        ("hairline", FontWeight::Thin),
+        ("light", FontWeight::Light),
+        ("medium", FontWeight::Medium),
+        ("semi bold", FontWeight::SemiBold),
+        ("semibold", FontWeight::SemiBold),
+        ("demi bold", FontWeight::SemiBold),
+        ("demibold", FontWeight::SemiBold),
+        ("extra bold", FontWeight::ExtraBold),
+        ("extrabold", FontWeight::ExtraBold),
+        ("ultra bold", FontWeight::ExtraBold),
+        ("ultrabold", FontWeight::ExtraBold),
+        ("black", FontWeight::Black),
+        ("heavy", FontWeight::Black),
+        ("bold", FontWeight::Bold),
+        ("regular", FontWeight::Normal),
+        ("roman", FontWeight::Normal),
+        ("book", FontWeight::Normal),
+    ];
+    
+    for (keyword, weight) in weight_keywords {
+        if typeface_lower.contains(keyword) {
+            // Extract family by removing the weight keyword
+            let family = typeface_lower
+                .replace(keyword, "")
+                .trim()
+                .replace("  ", " ")
+                .trim()
+                .to_string();
+            if !family.is_empty() {
+                return (family, Some(weight));
+            }
+        }
+    }
+    
+    (typeface_lower, None)
+}
+
 /// Font variant key for caching
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FontVariant {
@@ -278,9 +353,19 @@ impl FontVariant {
     }
     
     pub fn from_xfa_font(font: &Font) -> Self {
+        // Normalize typeface to extract base family and weight hint
+        let (normalized_family, weight_hint) = normalize_typeface(&font.typeface);
+        
+        // Use detected weight if XFA weight is Normal and we found a weight hint
+        let weight = if font.weight == FontWeight::Normal {
+            weight_hint.unwrap_or(font.weight)
+        } else {
+            font.weight
+        };
+        
         FontVariant {
-            family: font.typeface.to_lowercase(),
-            weight: font.weight,
+            family: normalized_family,
+            weight,
             posture: font.posture,
         }
     }
@@ -375,7 +460,7 @@ impl FontManager {
     /// Register an embedded font from a PDF file
     /// Per XFA spec section 28: "When an XFA form is packaged inside a PDF file
     /// the PDF file may carry the required fonts along with the form."
-    pub fn register_embedded_font(&mut self, font: EmbeddedFont) -> Result<(), FontError> {
+    pub fn register_embedded_font(&mut self, mut font: EmbeddedFont) -> Result<(), FontError> {
         // Validate that we can parse the font data
         FontRef::try_from_slice(&font.data)
             .map_err(|e| FontError::InvalidEmbeddedFont {
@@ -383,8 +468,24 @@ impl FontManager {
                 reason: e.to_string(),
             })?;
         
-        let name_lower = font.name.to_lowercase();
-        self.embedded_fonts.insert(name_lower, font);
+        // Try to read accurate metadata from font data
+        if let Some((family, weight, posture)) = Self::read_font_metadata(&font.data, 0) {
+            // Update with detected values (more accurate than provided)
+            font.weight = weight;
+            font.posture = posture;
+            // Register under both the provided name and the detected family name
+            let name_lower = font.name.to_lowercase();
+            self.embedded_fonts.insert(name_lower.clone(), font.clone());
+            if family != name_lower {
+                let mut family_font = font.clone();
+                family_font.name = family.clone();
+                self.embedded_fonts.insert(family, family_font);
+            }
+        } else {
+            let name_lower = font.name.to_lowercase();
+            self.embedded_fonts.insert(name_lower, font);
+        }
+        
         Ok(())
     }
     
@@ -508,35 +609,6 @@ impl FontManager {
             "dejavu sans mono".to_string(),
         ]);
         
-        // Note: Per XFA spec (Chapter 28), font substitution should use:
-        // 1. equate elements from XFA config packet (not implemented yet)
-        // 2. Same typeface with different weight/posture (handled in resolution code)
-        // 3. Locale's typeFaces fallback fonts (not implemented yet)
-        // 4. genericFamily fallback (implemented)
-        //
-        // The aliases below are minimal cross-platform mappings for common font name variations,
-        // NOT arbitrary substitutions like "Frutiger" -> "Arial"
-        
-        // Frutiger family aliases - common in UBS/banking documents
-        // Frutiger is a humanist sans-serif; Helvetica/Arial are closest common substitutes
-        // Note: Frutiger 45 Light is narrower than Helvetica - text wrapping will differ
-        aliases.insert("frutiger".to_string(), vec![
-            "helvetica".to_string(),
-            "arial".to_string(),
-        ]);
-        aliases.insert("frutiger 45 light".to_string(), vec![
-            "helvetica".to_string(),
-            "arial".to_string(),
-        ]);
-        aliases.insert("frutiger 55 roman".to_string(), vec![
-            "helvetica".to_string(),
-            "arial".to_string(),
-        ]);
-        aliases.insert("frutiger 65 bold".to_string(), vec![
-            "helvetica".to_string(),
-            "arial".to_string(),
-        ]);
-        
         aliases
     }
     
@@ -615,28 +687,103 @@ impl FontManager {
         }
     }
     
-    /// Try to register a font file by parsing its name
+    /// Try to register a font file by reading its metadata
     fn try_register_font_file(&mut self, path: &PathBuf) {
-        let file_name = path.file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
+        // Read the font file
+        let font_data = match std::fs::read(path) {
+            Ok(data) => data,
+            Err(_) => return,
+        };
         
-        let file_name_lower = file_name.to_lowercase();
+        // Get number of faces (for TTC font collections)
+        let face_count = Self::get_face_count(&font_data);
+        let mut registered_any = false;
         
-        // Parse weight and posture from filename
-        let (family, weight, posture) = Self::parse_font_filename(&file_name_lower);
+        // Register all faces in the font file
+        for face_index in 0..face_count {
+            if let Some((family, weight, posture)) = Self::read_font_metadata(&font_data, face_index) {
+                if !family.is_empty() {
+                    let variant = FontVariant::new(&family, weight, posture);
+                    let font_file = FontFile {
+                        path: path.clone(),
+                        family: family.clone(),
+                        weight,
+                        posture,
+                    };
+                    
+                    // Only insert if we don't already have this variant
+                    self.font_files.entry(variant).or_insert(font_file);
+                    registered_any = true;
+                }
+            }
+        }
         
-        if !family.is_empty() {
-            let variant = FontVariant::new(&family, weight, posture);
-            let font_file = FontFile {
-                path: path.clone(),
-                family: family.clone(),
-                weight,
-                posture,
-            };
+        // Fallback to filename parsing if metadata reading failed for all faces
+        if !registered_any {
+            let file_name = path.file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             
-            // Only insert if we don't already have this variant
-            self.font_files.entry(variant).or_insert(font_file);
+            let file_name_lower = file_name.to_lowercase();
+            let (family, weight, posture) = Self::parse_font_filename(&file_name_lower);
+            
+            if !family.is_empty() {
+                let variant = FontVariant::new(&family, weight, posture);
+                let font_file = FontFile {
+                    path: path.clone(),
+                    family: family.clone(),
+                    weight,
+                    posture,
+                };
+                self.font_files.entry(variant).or_insert(font_file);
+            }
+        }
+    }
+    
+    /// Read font metadata (family, weight, posture) from font file data using ttf-parser
+    /// This extracts accurate information from the font's internal tables instead of guessing from filename
+    fn read_font_metadata(font_data: &[u8], face_index: u32) -> Option<(String, FontWeight, FontPosture)> {
+        let face = Face::parse(font_data, face_index).ok()?;
+        
+        // Extract family name from the name table
+        // Priority: Typographic Family (ID 16) > Font Family (ID 1)
+        // Typographic Family is the "clean" family name (e.g., "Frutiger")
+        // Font Family often includes style (e.g., "Frutiger 45 Light")
+        let typographic_family = face.names()
+            .into_iter()
+            .filter(|name| name.name_id == name_id::TYPOGRAPHIC_FAMILY)
+            .filter_map(|name| name.to_string())
+            .next();
+        
+        let font_family = face.names()
+            .into_iter()
+            .filter(|name| name.name_id == name_id::FAMILY)
+            .filter_map(|name| name.to_string())
+            .next();
+        
+        // Prefer typographic family (cleaner name) over font family
+        let family = typographic_family.or(font_family)?.to_lowercase();
+        
+        // Get weight from OS/2 table
+        let weight = FontWeight::from_numeric(face.weight().to_number());
+        
+        // Get style/posture
+        let posture = match face.style() {
+            ttf_parser::Style::Normal => FontPosture::Normal,
+            ttf_parser::Style::Italic | ttf_parser::Style::Oblique => FontPosture::Italic,
+        };
+        
+        Some((family, weight, posture))
+    }
+    
+    /// Get the number of faces in a font file (for TTC collections)
+    fn get_face_count(font_data: &[u8]) -> u32 {
+        // TTC files start with "ttcf" magic
+        if font_data.len() >= 12 && &font_data[0..4] == b"ttcf" {
+            // Number of fonts is at offset 8 (big-endian u32)
+            u32::from_be_bytes([font_data[8], font_data[9], font_data[10], font_data[11]])
+        } else {
+            1 // Single font file
         }
     }
     
@@ -800,13 +947,34 @@ impl FontManager {
             return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
         
-        // 4. Try original font with different weight/posture (per XFA spec step 2:
-        //    "ignore the weight and posture attributes and use any available font that matches")
-        // This is higher priority than aliases - better to use the right typeface with wrong weight
-        // than a different typeface
-        if variant.weight != FontWeight::Normal || variant.posture != FontPosture::Normal {
-            let normal_variant = FontVariant::new(&variant.family, FontWeight::Normal, FontPosture::Normal);
+        // 4. Try original font with Normal weight/posture first (per XFA spec step 2 + always fallback to Normal)
+        // Better to use the right typeface with wrong weight than a different typeface
+        let normal_variant = FontVariant::new(&variant.family, FontWeight::Normal, FontPosture::Normal);
+        if *variant != normal_variant {
             if let Some(font_file) = self.font_files.get(&normal_variant) {
+                return self.load_font_file(&font_file.path.clone(), variant.clone());
+            }
+        }
+        
+        // Also try any other available weight of the same family
+        let family_variants: Vec<_> = self.font_files.keys()
+            .filter(|v| v.family == variant.family)
+            .cloned()
+            .collect();
+        if let Some(any_variant) = family_variants.first() {
+            if let Some(font_file) = self.font_files.get(any_variant) {
+                return self.load_font_file(&font_file.path.clone(), variant.clone());
+            }
+        }
+        
+        // 4b. Try fuzzy matching - find fonts whose family name starts with or contains the requested family
+        // This handles cases like "frutiger" matching "frutiger lt std" or "frutiger neue"
+        let fuzzy_matches: Vec<_> = self.font_files.keys()
+            .filter(|v| v.family.starts_with(&variant.family) || v.family.contains(&format!("{} ", variant.family)))
+            .cloned()
+            .collect();
+        if let Some(fuzzy_variant) = fuzzy_matches.first() {
+            if let Some(font_file) = self.font_files.get(&fuzzy_variant) {
                 return self.load_font_file(&font_file.path.clone(), variant.clone());
             }
         }
@@ -830,8 +998,6 @@ impl FontManager {
                 // Check system fonts for alias with same weight/posture
                 let alias_variant = FontVariant::new(alias, variant.weight, variant.posture);
                 if let Some(font_file) = self.font_files.get(&alias_variant) {
-                    // Log font substitution (can affect text wrapping)
-                    eprintln!("Note: Substituting font '{}' with '{}'", variant.family, alias);
                     return self.load_font_file(&font_file.path.clone(), variant.clone());
                 }
             }
@@ -887,9 +1053,6 @@ impl FontManager {
                 tried_aliases,
             });
         }
-        
-        // Log font substitution warning (helps debug rendering differences)
-        eprintln!("Warning: Font '{}' not found, using system fallback. Text wrapping may differ from original.", variant.family);
         
         // Use fallback font
         self.get_fallback_font()
