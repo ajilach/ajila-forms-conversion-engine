@@ -123,6 +123,143 @@ pub struct EmbeddedFont {
     pub generic_family: Option<GenericFamily>,
 }
 
+/// Font equate mapping per XFA spec section 28
+/// Maps a font name to another font name for substitution
+/// Per XFA spec: "The equate element enables an XFA processor to map an unavailable
+/// font to an available one."
+#[derive(Debug, Clone)]
+pub struct FontEquate {
+    /// Source font name to match (case-insensitive)
+    pub from: String,
+    /// Target font name to substitute
+    pub to: String,
+    /// Optional: only apply when source has this weight
+    pub from_weight: Option<FontWeight>,
+    /// Optional: only apply when source has this posture
+    pub from_posture: Option<FontPosture>,
+    /// Optional: substitute with this weight (defaults to source weight)
+    pub to_weight: Option<FontWeight>,
+    /// Optional: substitute with this posture (defaults to source posture)
+    pub to_posture: Option<FontPosture>,
+}
+
+impl FontEquate {
+    /// Create a simple font name mapping
+    pub fn new(from: &str, to: &str) -> Self {
+        FontEquate {
+            from: from.to_lowercase(),
+            to: to.to_string(),
+            from_weight: None,
+            from_posture: None,
+            to_weight: None,
+            to_posture: None,
+        }
+    }
+    
+    /// Create a mapping with specific weight/posture variants
+    pub fn with_variants(
+        from: &str,
+        to: &str,
+        from_weight: Option<FontWeight>,
+        from_posture: Option<FontPosture>,
+        to_weight: Option<FontWeight>,
+        to_posture: Option<FontPosture>,
+    ) -> Self {
+        FontEquate {
+            from: from.to_lowercase(),
+            to: to.to_string(),
+            from_weight,
+            from_posture,
+            to_weight,
+            to_posture,
+        }
+    }
+    
+    /// Check if this equate applies to the given variant
+    pub fn matches(&self, variant: &FontVariant) -> bool {
+        if variant.family != self.from {
+            return false;
+        }
+        if let Some(w) = self.from_weight {
+            if variant.weight != w {
+                return false;
+            }
+        }
+        if let Some(p) = self.from_posture {
+            if variant.posture != p {
+                return false;
+            }
+        }
+        true
+    }
+    
+    /// Get the target variant for a matching source variant
+    pub fn target_variant(&self, source: &FontVariant) -> FontVariant {
+        FontVariant::new(
+            &self.to,
+            self.to_weight.unwrap_or(source.weight),
+            self.to_posture.unwrap_or(source.posture),
+        )
+    }
+}
+
+/// Font equate range for Unicode-based font substitution per XFA spec
+/// Per XFA spec: "The equateRange element enables an XFA processor to map specific
+/// Unicode ranges in an unavailable font to an available font."
+#[derive(Debug, Clone)]
+pub struct FontEquateRange {
+    /// Source font name (case-insensitive)
+    pub from: String,
+    /// Target font name for specified Unicode ranges
+    pub to: String,
+    /// Unicode ranges as (start, end) pairs (inclusive)
+    /// Per XFA spec: ranges like "U+20-37E" or "U+20,U+30-3F"
+    pub unicode_ranges: Vec<(u32, u32)>,
+}
+
+impl FontEquateRange {
+    /// Create a new equate range
+    pub fn new(from: &str, to: &str, ranges: Vec<(u32, u32)>) -> Self {
+        FontEquateRange {
+            from: from.to_lowercase(),
+            to: to.to_string(),
+            unicode_ranges: ranges,
+        }
+    }
+    
+    /// Parse Unicode range string per XFA spec format
+    /// Supports: "U+20-37E", "U+20,U+30-3F", "U+0041"
+    pub fn parse_unicode_range(range_str: &str) -> Vec<(u32, u32)> {
+        let mut ranges = Vec::new();
+        for part in range_str.split(',') {
+            let part = part.trim();
+            if let Some(range) = part.strip_prefix("U+").or_else(|| part.strip_prefix("u+")) {
+                if let Some((start_str, end_str)) = range.split_once('-') {
+                    if let (Ok(start), Ok(end)) = (
+                        u32::from_str_radix(start_str.trim(), 16),
+                        u32::from_str_radix(end_str.trim(), 16),
+                    ) {
+                        ranges.push((start, end));
+                    }
+                } else if let Ok(single) = u32::from_str_radix(range.trim(), 16) {
+                    ranges.push((single, single));
+                }
+            }
+        }
+        ranges
+    }
+    
+    /// Check if a codepoint falls within this equate range's Unicode ranges
+    pub fn contains_codepoint(&self, codepoint: u32) -> bool {
+        self.unicode_ranges.iter().any(|(start, end)| codepoint >= *start && codepoint <= *end)
+    }
+    
+    /// Check if this equate range applies to the given font
+    pub fn matches_font(&self, font_family: &str) -> bool {
+        font_family.to_lowercase() == self.from
+    }
+}
+
 /// Font variant key for caching
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FontVariant {
@@ -197,6 +334,11 @@ pub struct FontManager {
     embedded_fonts: HashMap<String, EmbeddedFont>,
     /// Loaded embedded font data (static lifetime)
     loaded_embedded: HashMap<String, &'static [u8]>,
+    /// Font equate mappings per XFA spec section 28
+    /// These are checked first in font resolution (step 1 of XFA algorithm)
+    equates: Vec<FontEquate>,
+    /// Font equate ranges for Unicode-based substitution per XFA spec
+    equate_ranges: Vec<FontEquateRange>,
     /// Configuration
     config: FontConfig,
 }
@@ -216,6 +358,8 @@ impl FontManager {
             fallback_font_data: None,
             embedded_fonts: HashMap::new(),
             loaded_embedded: HashMap::new(),
+            equates: Vec::new(),
+            equate_ranges: Vec::new(),
             config,
         };
         manager.scan_system_fonts();
@@ -260,6 +404,65 @@ impl FontManager {
     /// Get list of registered embedded fonts
     pub fn embedded_font_names(&self) -> Vec<&str> {
         self.embedded_fonts.values().map(|f| f.name.as_str()).collect()
+    }
+    
+    /// Register a font equate mapping per XFA spec section 28
+    /// Per XFA spec: "The equate element enables an XFA processor to map an unavailable
+    /// font to an available one."
+    /// 
+    /// Equates are checked first in font resolution (step 1 of XFA algorithm).
+    /// 
+    /// # Example
+    /// ```
+    /// manager.register_equate(FontEquate::new("Frutiger", "Helvetica"));
+    /// ```
+    pub fn register_equate(&mut self, equate: FontEquate) {
+        self.equates.push(equate);
+    }
+    
+    /// Register multiple font equate mappings
+    pub fn register_equates(&mut self, equates: Vec<FontEquate>) {
+        self.equates.extend(equates);
+    }
+    
+    /// Register a font equate range for Unicode-based substitution per XFA spec
+    /// Per XFA spec: "The equateRange element enables an XFA processor to map specific
+    /// Unicode ranges in an unavailable font to an available font."
+    /// 
+    /// This is used for per-codepoint font fallback (e.g., CJK characters).
+    /// 
+    /// # Example
+    /// ```
+    /// manager.register_equate_range(FontEquateRange::new(
+    ///     "Arial",
+    ///     "Noto Sans CJK",
+    ///     vec![(0x4E00, 0x9FFF)], // CJK Unified Ideographs
+    /// ));
+    /// ```
+    pub fn register_equate_range(&mut self, equate_range: FontEquateRange) {
+        self.equate_ranges.push(equate_range);
+    }
+    
+    /// Register multiple font equate ranges
+    pub fn register_equate_ranges(&mut self, equate_ranges: Vec<FontEquateRange>) {
+        self.equate_ranges.extend(equate_ranges);
+    }
+    
+    /// Get fallback font for a specific codepoint based on equate ranges
+    /// Returns the target font family if an equate range matches, None otherwise
+    pub fn get_fallback_for_codepoint(&self, font_family: &str, codepoint: u32) -> Option<&str> {
+        for range in &self.equate_ranges {
+            if range.matches_font(font_family) && range.contains_codepoint(codepoint) {
+                return Some(&range.to);
+            }
+        }
+        None
+    }
+    
+    /// Clear all registered equates and equate ranges
+    pub fn clear_equates(&mut self) {
+        self.equates.clear();
+        self.equate_ranges.clear();
     }
     
     /// Build font family aliases map
@@ -313,6 +516,26 @@ impl FontManager {
         //
         // The aliases below are minimal cross-platform mappings for common font name variations,
         // NOT arbitrary substitutions like "Frutiger" -> "Arial"
+        
+        // Frutiger family aliases - common in UBS/banking documents
+        // Frutiger is a humanist sans-serif; Helvetica/Arial are closest common substitutes
+        // Note: Frutiger 45 Light is narrower than Helvetica - text wrapping will differ
+        aliases.insert("frutiger".to_string(), vec![
+            "helvetica".to_string(),
+            "arial".to_string(),
+        ]);
+        aliases.insert("frutiger 45 light".to_string(), vec![
+            "helvetica".to_string(),
+            "arial".to_string(),
+        ]);
+        aliases.insert("frutiger 55 roman".to_string(), vec![
+            "helvetica".to_string(),
+            "arial".to_string(),
+        ]);
+        aliases.insert("frutiger 65 bold".to_string(), vec![
+            "helvetica".to_string(),
+            "arial".to_string(),
+        ]);
         
         aliases
     }
@@ -517,13 +740,14 @@ impl FontManager {
     /// Get font data for a specific variant
     /// Returns static font data that can be used with ab_glyph
     /// 
-    /// Resolution order per XFA spec:
-    /// 1. Embedded fonts from PDF
-    /// 2. Exact system font match
-    /// 3. Aliases
-    /// 4. Normal weight/posture variant
-    /// 5. Generic family fallback (if set)
-    /// 6. System fallback (if not in strict mode)
+    /// Resolution order per XFA spec section 28:
+    /// 1. Check equate elements for direct mapping (XFA step 1)
+    /// 2. Embedded fonts from PDF
+    /// 3. Exact system font match
+    /// 4. Ignore weight/posture and use any available font (XFA step 2)
+    /// 5. Aliases
+    /// 6. Generic family fallback (XFA step 5)
+    /// 7. System fallback (if not in strict mode)
     pub fn get_font_data(&mut self, variant: &FontVariant) -> Result<&'static [u8], FontError> {
         self.get_font_data_with_generic(variant, None)
     }
@@ -541,7 +765,23 @@ impl FontManager {
             return Ok(*data);
         }
         
-        // 1. Try embedded fonts first (per XFA spec: PDF embedded fonts take priority)
+        // 1. Check equate elements first (per XFA spec step 1)
+        // "Check the equate elements in the config packet for a direct mapping"
+        for equate in self.equates.clone() {
+            if equate.matches(variant) {
+                let target = equate.target_variant(variant);
+                tried_aliases.push(target.family.clone());
+                
+                // Try to resolve the equated font (recursive, but won't loop due to different variant)
+                if let Ok(data) = self.get_font_data(&target) {
+                    // Cache under original variant too
+                    self.loaded_fonts.insert(variant.clone(), data);
+                    return Ok(data);
+                }
+            }
+        }
+        
+        // 2. Try embedded fonts (per XFA spec: PDF embedded fonts take priority)
         let family_lower = variant.family.to_lowercase();
         if let Some(embedded) = self.embedded_fonts.get(&family_lower) {
             // Check if already loaded as static
@@ -555,12 +795,12 @@ impl FontManager {
             return Ok(static_data);
         }
         
-        // 2. Try to find system font file with exact match
+        // 3. Try to find system font file with exact match
         if let Some(font_file) = self.font_files.get(variant) {
             return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
         
-        // 3. Try original font with different weight/posture (per XFA spec step 2:
+        // 4. Try original font with different weight/posture (per XFA spec step 2:
         //    "ignore the weight and posture attributes and use any available font that matches")
         // This is higher priority than aliases - better to use the right typeface with wrong weight
         // than a different typeface
@@ -571,7 +811,7 @@ impl FontManager {
             }
         }
         
-        // 4. Try aliases - first pass: preserve weight and posture
+        // 5. Try aliases - first pass: preserve weight and posture
         if let Some(aliases) = self.aliases.get(&variant.family).cloned() {
             for alias in &aliases {
                 tried_aliases.push(alias.clone());
@@ -590,6 +830,8 @@ impl FontManager {
                 // Check system fonts for alias with same weight/posture
                 let alias_variant = FontVariant::new(alias, variant.weight, variant.posture);
                 if let Some(font_file) = self.font_files.get(&alias_variant) {
+                    // Log font substitution (can affect text wrapping)
+                    eprintln!("Note: Substituting font '{}' with '{}'", variant.family, alias);
                     return self.load_font_file(&font_file.path.clone(), variant.clone());
                 }
             }
@@ -645,6 +887,9 @@ impl FontManager {
                 tried_aliases,
             });
         }
+        
+        // Log font substitution warning (helps debug rendering differences)
+        eprintln!("Warning: Font '{}' not found, using system fallback. Text wrapping may differ from original.", variant.family);
         
         // Use fallback font
         self.get_fallback_font()
@@ -776,6 +1021,45 @@ pub fn set_strict_mode_global(strict: bool) -> Result<(), FontError> {
     Ok(())
 }
 
+/// Register a font equate mapping globally per XFA spec section 28
+pub fn register_equate_global(equate: FontEquate) -> Result<(), FontError> {
+    let manager = get_font_manager();
+    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    manager.register_equate(equate);
+    Ok(())
+}
+
+/// Register multiple font equate mappings globally
+pub fn register_equates_global(equates: Vec<FontEquate>) -> Result<(), FontError> {
+    let manager = get_font_manager();
+    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    manager.register_equates(equates);
+    Ok(())
+}
+
+/// Register a font equate range globally for Unicode-based substitution
+pub fn register_equate_range_global(equate_range: FontEquateRange) -> Result<(), FontError> {
+    let manager = get_font_manager();
+    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    manager.register_equate_range(equate_range);
+    Ok(())
+}
+
+/// Register multiple font equate ranges globally
+pub fn register_equate_ranges_global(equate_ranges: Vec<FontEquateRange>) -> Result<(), FontError> {
+    let manager = get_font_manager();
+    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    manager.register_equate_ranges(equate_ranges);
+    Ok(())
+}
+
+/// Get fallback font for a specific codepoint globally
+pub fn get_fallback_for_codepoint_global(font_family: &str, codepoint: u32) -> Result<Option<String>, FontError> {
+    let manager = get_font_manager();
+    let manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    Ok(manager.get_fallback_for_codepoint(font_family, codepoint).map(|s| s.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,6 +1147,8 @@ mod tests {
             fallback_font_data: None,
             embedded_fonts: HashMap::new(),
             loaded_embedded: HashMap::new(),
+            equates: Vec::new(),
+            equate_ranges: Vec::new(),
             config: FontConfig {
                 strict_mode: true,
                 default_generic_family: GenericFamily::SansSerif,

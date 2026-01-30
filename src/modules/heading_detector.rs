@@ -405,6 +405,9 @@ mod tests {
             baseline_shift: None,
             letter_spacing: None,
             generic_family: None,
+            kerning_mode: crate::xfa::KerningMode::None,
+            font_horizontal_scale: None,
+            font_vertical_scale: None,
         });
         node
     }

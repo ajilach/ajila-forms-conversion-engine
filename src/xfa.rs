@@ -198,6 +198,39 @@ pub struct Font {
     /// Generic font family for fallback when typeface is not available
     /// Per XFA spec section 28 (Font Mapping): used to select appropriate fallback
     pub generic_family: Option<GenericFamily>,
+    /// Kerning mode per XFA spec
+    /// Per XFA spec: \"kerningMode\" attribute controls pair kerning
+    /// - \"none\": No kerning applied (default)
+    /// - \"pair\": Apply pair kerning from font tables
+    pub kerning_mode: KerningMode,
+    /// Horizontal scaling factor (percentage, default 100%)
+    /// Per XFA spec: \"fontHorizontalScale\" - geometric scaling applied to glyphs
+    pub font_horizontal_scale: Option<Num>,
+    /// Vertical scaling factor (percentage, default 100%)
+    /// Per XFA spec: \"fontVerticalScale\" - geometric scaling applied to glyphs
+    pub font_vertical_scale: Option<Num>,
+}
+
+/// Kerning mode per XFA spec
+/// Controls whether pair kerning from font tables is applied
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum KerningMode {
+    /// No kerning applied (default per XFA spec)
+    #[default]
+    None,
+    /// Apply pair kerning from font GPOS/kern tables
+    Pair,
+}
+
+impl FromStr for KerningMode {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
+            "pair" => KerningMode::Pair,
+            _ => KerningMode::None,
+        })
+    }
 }
 
 impl Default for Font {
@@ -208,6 +241,9 @@ impl Default for Font {
         // - weight: Default is "normal"
         // - posture: Default is "normal"
         // - letterSpacing: Default is 0
+        // - kerningMode: Default is "none"
+        // - fontHorizontalScale: Default is 100%
+        // - fontVerticalScale: Default is 100%
         Font {
             typeface: "Courier".to_string(),
             size: num(10.0),  // 10pt default
@@ -219,6 +255,9 @@ impl Default for Font {
             baseline_shift: None,
             letter_spacing: None,  // 0 default (no adjustment)
             generic_family: Some(GenericFamily::Monospace), // Courier is monospace
+            kerning_mode: KerningMode::None,
+            font_horizontal_scale: None, // 100% default
+            font_vertical_scale: None,   // 100% default
         }
     }
 }
@@ -654,6 +693,16 @@ impl XfaNode {
             letter_spacing: node.attributes.get("letterSpacing")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             generic_family,
+            // Per XFA spec: kerningMode controls pair kerning ("none" or "pair")
+            kerning_mode: node.attributes.get("kerningMode")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_default(),
+            // Per XFA spec: fontHorizontalScale is a percentage (100 = normal)
+            font_horizontal_scale: node.attributes.get("fontHorizontalScale")
+                .and_then(|v| Self::parse_dimension(v).ok()),
+            // Per XFA spec: fontVerticalScale is a percentage (100 = normal)
+            font_vertical_scale: node.attributes.get("fontVerticalScale")
+                .and_then(|v| Self::parse_dimension(v).ok()),
         }
     }
     

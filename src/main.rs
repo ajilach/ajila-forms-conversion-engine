@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use xfa::{XfaNode, XfaNodeKind};
 use flattened::{Flattened, FlattenedNodeKind};
 use clap::Parser;
+use rust_decimal::prelude::ToPrimitive;
 use document::Document;
 use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule};
 use scripting::XfaForm;

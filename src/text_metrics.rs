@@ -17,12 +17,29 @@
 //! - weight: "normal" or "bold", default "normal"
 //! - posture: "normal" or "italic", default "normal"
 
-use crate::xfa::{Font, Para, Num, num};
+use crate::xfa::{Font, Para, Num, num, KerningMode};
 use crate::font_manager::{FontVariant, get_font_manager};
 use ab_glyph::{FontRef, Font as AbGlyphFont, ScaleFont, PxScale};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
+
+/// Constants for text measurement fallback values per AXTE spec
+/// These are used when font metrics are unavailable
+mod constants {
+    /// Missing glyph width as fraction of font size (60%)
+    pub const MISSING_GLYPH_WIDTH_RATIO: f32 = 0.6;
+    /// Space character width fallback as fraction of font size (30%)
+    pub const SPACE_WIDTH_RATIO: f32 = 0.3;
+    /// Em width fallback as fraction of font size (60%)
+    pub const EM_WIDTH_RATIO: f64 = 0.6;
+    /// Average character width fallback as fraction of em width (80%)
+    pub const AVG_CHAR_WIDTH_RATIO: f64 = 0.8;
+    /// AXTE line gap ratio: line gap is always 20% of font size
+    pub const AXTE_LINE_GAP_RATIO: f64 = 0.2;
+    /// Large width for single-line measurement (effectively unlimited)
+    pub const SINGLE_LINE_MAX_WIDTH: f64 = 10000.0;
+}
 
 /// Font metrics extracted from a font at a specific size
 #[derive(Debug, Clone)]
@@ -69,7 +86,7 @@ impl FontMetrics {
         // Per AXTE spec: "AXTE adopts the convention embraced by other Adobe applications
         // that line gap is always determined to be 20% of font size."
         // sLG = sFS * 0.2
-        let line_gap = font_size_pt * num(0.2);
+        let line_gap = font_size_pt * num(constants::AXTE_LINE_GAP_RATIO);
         
         // Estimate character width using 'M' as em-width
         let glyph_id = font.glyph_id('M');
@@ -77,7 +94,7 @@ impl FontMetrics {
             let advance = scaled_font.h_advance(glyph_id);
             num(advance as f64)
         } else {
-            font_size_pt * num(0.6) // Fallback: 60% of font size
+            font_size_pt * num(constants::EM_WIDTH_RATIO)
         };
         
         // Average character width (using 'x' for x-height reference, or 'e' as common char)
@@ -86,7 +103,7 @@ impl FontMetrics {
             let advance = scaled_font.h_advance(glyph_id_e);
             num(advance as f64)
         } else {
-            em_width * num(0.8) // Fallback: 80% of em width
+            em_width * num(constants::AVG_CHAR_WIDTH_RATIO)
         };
         
         FontMetrics {
@@ -158,6 +175,9 @@ pub struct LineMetrics {
     pub margin_top: Num,
     /// Bottom margin (from paragraph)
     pub margin_bottom: Num,
+    /// Ascent overflow for first line (accented capitals that exceed declared ascent)
+    /// Per AXTE: only applied on first line when no spacing override
+    pub ascent_overflow: Num,
 }
 
 impl LineMetrics {
@@ -172,6 +192,7 @@ impl LineMetrics {
             is_last_line,
             margin_top: Decimal::ZERO,
             margin_bottom: Decimal::ZERO,
+            ascent_overflow: Decimal::ZERO,
         }
     }
     
@@ -181,6 +202,41 @@ impl LineMetrics {
         self.ascent = self.ascent.max(font_metrics.ascent);
         self.descent = self.descent.max(font_metrics.descent);
         self.line_gap = self.line_gap.max(font_metrics.line_gap);
+    }
+    
+    /// Accumulate font metrics with baseline shift per AXTE spec
+    /// Per AXTE (page 1530):
+    /// - If baseline shift < 0 (up-shift): accumulate A + |shift| into ascent
+    /// - If baseline shift > 0 (down-shift): accumulate D + |shift| into descent
+    pub fn accumulate_with_baseline_shift(&mut self, font_metrics: &FontMetrics, baseline_shift: Option<Num>) {
+        // Basic accumulation
+        let mut adjusted_ascent = font_metrics.ascent;
+        let mut adjusted_descent = font_metrics.descent;
+        
+        // Per AXTE: baseline shift affects ascent/descent accumulation
+        if let Some(bs) = baseline_shift {
+            if bs < Decimal::ZERO {
+                // Up-shift (negative): increases effective ascent
+                adjusted_ascent = font_metrics.ascent + bs.abs();
+            } else if bs > Decimal::ZERO {
+                // Down-shift (positive): increases effective descent
+                adjusted_descent = font_metrics.descent + bs;
+            }
+        }
+        
+        self.ascent = self.ascent.max(adjusted_ascent);
+        self.descent = self.descent.max(adjusted_descent);
+        self.line_gap = self.line_gap.max(font_metrics.line_gap);
+    }
+    
+    /// Apply ascent overflow adjustment for first line per AXTE
+    /// Per AXTE (page 1531):
+    /// "if first line in block and AO > 0 and SP == 0 then
+    ///    A = A + AO; TH = TH + AO; FH = FH + AO"
+    pub fn apply_ascent_overflow(&mut self) {
+        if self.is_first_line && self.ascent_overflow > Decimal::ZERO && self.spacing_override.is_none() {
+            self.ascent += self.ascent_overflow;
+        }
     }
     
     /// Get text height
@@ -383,28 +439,93 @@ impl TextMeasurer {
         Ok(metrics)
     }
     
+    /// Measure width of a single character with fallback
+    /// Returns the horizontal advance for the glyph, or a fallback width
+    fn measure_char_width(
+        font: &FontRef<'_>,
+        scaled_font: &ab_glyph::PxScaleFont<&FontRef<'_>>,
+        ch: char,
+        size_f32: f32,
+    ) -> f32 {
+        let glyph_id = font.glyph_id(ch);
+        if glyph_id.0 != 0 {
+            scaled_font.h_advance(glyph_id)
+        } else {
+            // Fallback for missing glyphs
+            size_f32 * constants::MISSING_GLYPH_WIDTH_RATIO
+        }
+    }
+    
+    /// Get kerning adjustment between two characters
+    /// Per XFA spec: kerning is only applied when kerningMode="pair"
+    fn get_kerning(
+        font: &FontRef<'_>,
+        prev_char: char,
+        curr_char: char,
+        scale: PxScale,
+        kerning_mode: KerningMode,
+    ) -> f32 {
+        if kerning_mode != KerningMode::Pair {
+            return 0.0;
+        }
+        
+        let prev_glyph = font.glyph_id(prev_char);
+        let curr_glyph = font.glyph_id(curr_char);
+        
+        if prev_glyph.0 != 0 && curr_glyph.0 != 0 {
+            font.as_scaled(scale).kern(prev_glyph, curr_glyph)
+        } else {
+            0.0
+        }
+    }
+    
     /// Measure text width using specified font style
+    /// Per XFA spec: applies letter spacing between characters and kerning if enabled
     pub fn measure_text_width_styled(&mut self, text: &str, xfa_font: &Font) -> Result<Num, String> {
         let font = self.get_font_for_style(xfa_font)?.clone();
         let size_f32 = xfa_font.size.to_f32().unwrap_or(10.0);
+        
+        // Apply horizontal scale if specified
+        let h_scale = xfa_font.font_horizontal_scale
+            .and_then(|s| s.to_f32())
+            .map(|s| s / 100.0)
+            .unwrap_or(1.0);
+        
         let scale = PxScale::from(size_f32);
         let scaled_font = font.as_scaled(scale);
         
+        // Per XFA spec: letterSpacing affects inter-character spacing
+        let letter_spacing = xfa_font.letter_spacing
+            .and_then(|ls| ls.to_f32())
+            .unwrap_or(0.0);
+        
+        let chars: Vec<char> = text.chars().collect();
         let mut width: f32 = 0.0;
-        for ch in text.chars() {
-            let glyph_id = font.glyph_id(ch);
-            if glyph_id.0 != 0 {
-                width += scaled_font.h_advance(glyph_id);
-            } else {
-                // Fallback for missing glyphs
-                width += size_f32 * 0.6;
+        let mut prev_char: Option<char> = None;
+        
+        for (i, &ch) in chars.iter().enumerate() {
+            // Add kerning from previous character if enabled
+            if let Some(prev) = prev_char {
+                width += Self::get_kerning(&font, prev, ch, scale, xfa_font.kerning_mode);
             }
+            
+            // Add character width
+            let char_width = Self::measure_char_width(&font, &scaled_font, ch, size_f32);
+            width += char_width * h_scale;
+            
+            // Add letter spacing between characters (not after last character)
+            if i < chars.len() - 1 {
+                width += letter_spacing;
+            }
+            
+            prev_char = Some(ch);
         }
         
         Ok(num(width as f64))
     }
     
     /// Measure text width (backward compatible - uses current/default font)
+    /// Note: For full XFA compliance (kerning, letter spacing), use measure_text_width_styled
     pub fn measure_text_width(&mut self, text: &str, font_size: Num) -> Result<Num, String> {
         let font = self.get_current_font()?;
         let size_f32 = font_size.to_f32().unwrap_or(10.0);
@@ -413,23 +534,25 @@ impl TextMeasurer {
         
         let mut width: f32 = 0.0;
         for ch in text.chars() {
-            let glyph_id = font.glyph_id(ch);
-            if glyph_id.0 != 0 {
-                width += scaled_font.h_advance(glyph_id);
-            } else {
-                // Fallback for missing glyphs
-                width += size_f32 * 0.6;
-            }
+            width += Self::measure_char_width(&font, &scaled_font, ch, size_f32);
         }
         
         Ok(num(width as f64))
     }
     
     /// Wrap text to fit within a maximum width using specified font style
+    /// Per XFA spec: applies letter spacing and kerning during width calculation
     pub fn wrap_text_styled(&mut self, text: &str, max_width: Num, xfa_font: &Font) -> Result<Vec<String>, String> {
         let font = self.get_font_for_style(xfa_font)?.clone();
         let size_f32 = xfa_font.size.to_f32().unwrap_or(10.0);
-        Self::wrap_text_internal(&font, text, max_width, size_f32)
+        let letter_spacing = xfa_font.letter_spacing
+            .and_then(|ls| ls.to_f32())
+            .unwrap_or(0.0);
+        let h_scale = xfa_font.font_horizontal_scale
+            .and_then(|s| s.to_f32())
+            .map(|s| s / 100.0)
+            .unwrap_or(1.0);
+        Self::wrap_text_internal(&font, text, max_width, size_f32, letter_spacing, h_scale, xfa_font.kerning_mode)
     }
     
     /// Wrap text to fit within a maximum width
@@ -437,11 +560,20 @@ impl TextMeasurer {
     pub fn wrap_text(&mut self, text: &str, max_width: Num, font_size: Num) -> Result<Vec<String>, String> {
         let font = self.get_current_font()?;
         let size_f32 = font_size.to_f32().unwrap_or(10.0);
-        Self::wrap_text_internal(&font, text, max_width, size_f32)
+        Self::wrap_text_internal(&font, text, max_width, size_f32, 0.0, 1.0, KerningMode::None)
     }
     
     /// Internal text wrapping implementation
-    fn wrap_text_internal(font: &FontRef<'_>, text: &str, max_width: Num, size_f32: f32) -> Result<Vec<String>, String> {
+    /// Supports letter spacing, horizontal scale, and kerning per XFA spec
+    fn wrap_text_internal(
+        font: &FontRef<'_>,
+        text: &str,
+        max_width: Num,
+        size_f32: f32,
+        letter_spacing: f32,
+        h_scale: f32,
+        kerning_mode: KerningMode,
+    ) -> Result<Vec<String>, String> {
         let scale = PxScale::from(size_f32);
         let scaled_font = font.as_scaled(scale);
         let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
@@ -451,22 +583,63 @@ impl TextMeasurer {
         let mut current_width: f32 = 0.0;
         let space_glyph = font.glyph_id(' ');
         let space_width = if space_glyph.0 != 0 {
-            scaled_font.h_advance(space_glyph)
+            scaled_font.h_advance(space_glyph) * h_scale
         } else {
-            size_f32 * 0.3
+            size_f32 * constants::SPACE_WIDTH_RATIO * h_scale
         };
         
-        for word in text.split_whitespace() {
-            // Measure word width
-            let mut word_width: f32 = 0.0;
-            for ch in word.chars() {
-                let glyph_id = font.glyph_id(ch);
-                if glyph_id.0 != 0 {
-                    word_width += scaled_font.h_advance(glyph_id);
-                } else {
-                    word_width += size_f32 * 0.6;
+        /// Measure word width with letter spacing and kerning
+        fn measure_word_width(
+            font: &FontRef<'_>,
+            scaled_font: &ab_glyph::PxScaleFont<&FontRef<'_>>,
+            scale: PxScale,
+            word: &str,
+            size_f32: f32,
+            letter_spacing: f32,
+            h_scale: f32,
+            kerning_mode: KerningMode,
+        ) -> f32 {
+            let chars: Vec<char> = word.chars().collect();
+            let mut width: f32 = 0.0;
+            let mut prev_char: Option<char> = None;
+            
+            for (i, &ch) in chars.iter().enumerate() {
+                // Add kerning from previous character if enabled
+                if let Some(prev) = prev_char {
+                    if kerning_mode == KerningMode::Pair {
+                        let prev_glyph = font.glyph_id(prev);
+                        let curr_glyph = font.glyph_id(ch);
+                        if prev_glyph.0 != 0 && curr_glyph.0 != 0 {
+                            width += font.as_scaled(scale).kern(prev_glyph, curr_glyph);
+                        }
+                    }
                 }
+                
+                // Add character width
+                let glyph_id = font.glyph_id(ch);
+                let char_width = if glyph_id.0 != 0 {
+                    scaled_font.h_advance(glyph_id)
+                } else {
+                    size_f32 * constants::MISSING_GLYPH_WIDTH_RATIO
+                };
+                width += char_width * h_scale;
+                
+                // Add letter spacing between characters (not after last)
+                if i < chars.len() - 1 {
+                    width += letter_spacing;
+                }
+                
+                prev_char = Some(ch);
             }
+            width
+        }
+        
+        for word in text.split_whitespace() {
+            // Measure word width with all XFA text properties
+            let word_width = measure_word_width(
+                font, &scaled_font, scale, word,
+                size_f32, letter_spacing, h_scale, kerning_mode,
+            );
             
             if current_line.is_empty() {
                 // First word on line
@@ -593,7 +766,7 @@ impl TextMeasurer {
             .unwrap_or_else(|| num(10.0));
         
         // Use explicit width if provided, otherwise measure text for single-line width
-        let max_width = explicit_width.unwrap_or_else(|| num(10000.0)); // Large number for single-line
+        let max_width = explicit_width.unwrap_or_else(|| num(constants::SINGLE_LINE_MAX_WIDTH));
         
         let metrics = self.measure_text_block(text, font, para, max_width)?;
         
@@ -659,5 +832,57 @@ mod tests {
         
         // B = MT + TH - D = 0 + 10 - 2 = 8
         assert_eq!(line_metrics.baseline_from_top(), num(8.0));
+    }
+    
+    #[test]
+    fn test_baseline_shift_accumulation() {
+        // Per AXTE: negative shift increases ascent, positive increases descent
+        let font_metrics = FontMetrics {
+            font_size: num(10.0),
+            ascent: num(8.0),
+            descent: num(2.0),
+            line_gap: num(2.0),
+            em_width: num(6.0),
+            avg_char_width: num(5.0),
+        };
+        
+        // Test negative (up) shift
+        let mut line_metrics = LineMetrics::new(false, false);
+        line_metrics.accumulate_with_baseline_shift(&font_metrics, Some(num(-2.0)));
+        assert_eq!(line_metrics.ascent, num(10.0)); // 8 + |-2| = 10
+        assert_eq!(line_metrics.descent, num(2.0));  // unchanged
+        
+        // Test positive (down) shift
+        let mut line_metrics = LineMetrics::new(false, false);
+        line_metrics.accumulate_with_baseline_shift(&font_metrics, Some(num(3.0)));
+        assert_eq!(line_metrics.ascent, num(8.0));   // unchanged
+        assert_eq!(line_metrics.descent, num(5.0)); // 2 + 3 = 5
+    }
+    
+    #[test]
+    fn test_ascent_overflow_first_line() {
+        let mut line_metrics = LineMetrics::new(true, false); // first line
+        line_metrics.ascent = num(8.0);
+        line_metrics.descent = num(2.0);
+        line_metrics.ascent_overflow = num(1.5);
+        
+        // Before applying overflow
+        assert_eq!(line_metrics.text_height(), num(10.0));
+        
+        // Apply overflow (no spacing override, first line)
+        line_metrics.apply_ascent_overflow();
+        assert_eq!(line_metrics.ascent, num(9.5)); // 8 + 1.5
+        assert_eq!(line_metrics.text_height(), num(11.5)); // 9.5 + 2
+    }
+    
+    #[test]
+    fn test_ascent_overflow_not_applied_with_spacing_override() {
+        let mut line_metrics = LineMetrics::new(true, false);
+        line_metrics.ascent = num(8.0);
+        line_metrics.ascent_overflow = num(1.5);
+        line_metrics.spacing_override = Some(num(14.0)); // override present
+        
+        line_metrics.apply_ascent_overflow();
+        assert_eq!(line_metrics.ascent, num(8.0)); // unchanged due to override
     }
 }

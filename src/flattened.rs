@@ -2931,7 +2931,8 @@ impl Flattened {
                         );
                     } else if !content.is_empty() {
                         // Fallback to simple text rendering for plain text content
-                        let lines = Self::wrap_text_with_font(content, content_w as f32, scaled_font_size, &render_font);
+                        // Use styled version to account for letter spacing
+                        let lines = Self::wrap_text_with_font_styled(content, content_w as f32, scaled_font_size, &render_font, letter_spacing);
                         let total_lines = lines.len();
                         
                         for (i, line) in lines.iter().enumerate() {
@@ -3279,7 +3280,8 @@ impl Flattened {
     }
     
     /// Text wrapping using actual font metrics for accurate width measurement
-    fn wrap_text_with_font(text: &str, max_width: f32, font_size: f32, font: &FontRef<'_>) -> Vec<String> {
+    /// Per XFA spec: letterSpacing affects spacing between grapheme clusters
+    fn wrap_text_with_font_styled(text: &str, max_width: f32, font_size: f32, font: &FontRef<'_>, letter_spacing: f32) -> Vec<String> {
         if max_width <= 0.0 {
             return vec![text.to_string()];
         }
@@ -3287,29 +3289,23 @@ impl Flattened {
         let scale = PxScale::from(font_size);
         let scaled_font = font.as_scaled(scale);
         
-        // Get space width
+        // Get space width (also affected by letter spacing per XFA spec)
         let space_glyph = font.glyph_id(' ');
-        let space_width = if space_glyph.0 != 0 {
+        let base_space_width = if space_glyph.0 != 0 {
             scaled_font.h_advance(space_glyph)
         } else {
             font_size * 0.3
         };
+        // Per XFA spec: letterSpacing affects spacing between grapheme clusters, including spaces
+        let space_width = base_space_width + letter_spacing;
         
         let mut lines = Vec::new();
         let mut current_line = String::new();
         let mut current_width: f32 = 0.0;
         
         for word in text.split_whitespace() {
-            // Measure word width
-            let mut word_width: f32 = 0.0;
-            for ch in word.chars() {
-                let glyph_id = font.glyph_id(ch);
-                if glyph_id.0 != 0 {
-                    word_width += scaled_font.h_advance(glyph_id);
-                } else {
-                    word_width += font_size * 0.6;
-                }
-            }
+            // Measure word width (with letter spacing between characters)
+            let word_width = Self::measure_text_width(word, font_size, font, letter_spacing);
             
             if current_line.is_empty() {
                 // First word on line
@@ -3337,6 +3333,11 @@ impl Flattened {
         }
         
         lines
+    }
+    
+    /// Text wrapping using actual font metrics (backward compatible - no letter spacing)
+    fn wrap_text_with_font(text: &str, max_width: f32, font_size: f32, font: &FontRef<'_>) -> Vec<String> {
+        Self::wrap_text_with_font_styled(text, max_width, font_size, font, 0.0)
     }
     
     /// Calculate the total text block height using AXTE rules
