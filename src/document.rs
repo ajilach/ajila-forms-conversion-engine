@@ -152,6 +152,11 @@ pub enum GroupKind {
     /// An inline field - a field with text directly before/after but no label above/below
     /// These are fields embedded in flowing text rather than traditional form layouts
     InlineField,
+    
+    /// Non-printable content (elements with relevant="-print")
+    /// These are screen-only interactive elements like add/remove buttons
+    /// that should not appear in print or structured output.
+    NoPrint,
 }
 
 impl<'a> Document<'a> {
@@ -617,6 +622,7 @@ impl<'a> Document<'a> {
                 }
             }
             GroupKind::InlineField => "InlineField".to_string(),
+            GroupKind::NoPrint => "NoPrint".to_string(),
         }
     }
     

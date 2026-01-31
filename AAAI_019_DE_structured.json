@@ -1,0 +1,388 @@
+[
+  {
+    "type": "heading",
+    "level": "h1",
+    "content": [
+      {
+        "type": "text",
+        "content": "Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service"
+      }
+    ]
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Kunde"
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": null
+  },
+  {
+    "type": "field",
+    "id": "b7693b07-2be5-4d00-a533-65098f86cacb",
+    "name": "Firma",
+    "label": [
+      {
+        "type": "text",
+        "content": "Firma"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Vertretungsberechtigte(r)"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "0f7d2aee-03ad-4373-a873-dec9b56aa229",
+    "name": "TF_FamilyName",
+    "label": [
+      {
+        "type": "text",
+        "content": "Nachname"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "00c2719e-81f7-4bb2-800d-ba534c538e24",
+    "name": "TF_FirstName",
+    "label": [
+      {
+        "type": "text",
+        "content": "Vorname(n)"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "1a124103-213f-44fb-b350-bff05e80a8c2",
+    "name": "TF_Street",
+    "label": [
+      {
+        "type": "text",
+        "content": "Straße"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "6b3323e2-d60e-4620-8ba1-21349a46bcc2",
+    "name": "TF_StreetNumber",
+    "label": [
+      {
+        "type": "text",
+        "content": "Nr."
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "a58e42f3-1eb4-411c-ba0e-55f0b4921812",
+    "name": "TF_PostalCode",
+    "label": [
+      {
+        "type": "text",
+        "content": "PLZ"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "8a9cf2b8-ac2e-418e-a0b1-e458a0ef6e4a",
+    "name": "TF_City",
+    "label": [
+      {
+        "type": "text",
+        "content": "Stadt"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "acaa4cda-1232-4d8c-b992-34543452844b",
+    "name": "TF_Country",
+    "label": [
+      {
+        "type": "text",
+        "content": "Land"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Der Kunde beauftragt hiermit UBS Europe SE (nachstehend UBS), sämtliche über das SWIFT-Netz von der(nachstehend Vertragsbank) eingehenden Aufträge zu Lasten seiner bei UBS geführten Konten auszuführen. Die für den EFT-Service freigeschalteten Konten werden separat über das Kontenblatt EFT seitens des Kunden bestimmt.Gleichzeitig erkennt der Kunde/die Kundin ausdrücklich die nachfolgenden hierfür geltenden Bestimmungen an:Die Bearbeitung der seitens der Vertragsbank übermittelten Aufträge erfolgt an den für die Abwicklung der Auftragsart «Überweisung» im «Preis und Leistungsverzeichnis» bekannt gegebenen Geschäftstagen im Rahmen des ordnungsgemäßen Arbeitslaufes. Geht ein Auftrag nach dem im «Preis- und Leistungsverzeichnis» bestimmten Zeitpunkt (Annahmefrist) ein oder fällt der Zeitpunkt des Eingangs nicht auf einen Geschäftstag gemäß «Preis- und Leistungsverzeichnis», so gilt der Auftrag als am darauf folgenden Geschäftstag zugegangen. Die Bearbeitung beginnt erst an diesem Tag.UBS ist berechtigt, per SWIFT eingehende Aufträge für den Kunden auszuführen, sofern sie von der Vertragsbank übermittelt wurden.Der Widerruf eines von der Vertragsbank übermittelten Auftrages, der UBS zugegangen ist, ist ausgeschlossen.Die Kommunikation zwischen der Vertragsbank und UBS erfolgt unverschlüsselt über öffentliche, nicht speziell geschützte Datenübertragungsnetze. Für die aus Übermittlungsfehlern, technischen Mängeln, Cyber-Attacken oder Störungen resultierenden Schäden übernimmt UBS keine Haftung, es sei denn die Veränderungen erfolgen durch UBS Systeme. In diesem Fall ist die Haftung der UBS auf Schäden begrenzt, die unmittelbar vorsätzlich oder grob fahrlässig verursacht worden sind. Die Haftung wegen schuldhafter Verletzung des Lebens, des Körpers oder der Gesundheit bleibt unberührt.Sofern für die Erbringung des EFT Services erforderlich, entbindet der Kunde UBS vom Bankgeheimnis und stimmt der Datenübermittelung an die Vertragsbank ausdrücklich zu. Dem Kunden ist bewusst, dass das deutsche Recht nur innerhalb von Deutschland gilt und alle ins Ausland übermittelten Daten nicht mehr diesem Schutz unterliegen.Die Gebühren richten sich nach dem Allgemeinen Preis- und Leistungsverzeichnis. Der Kunde ermächtigt UBS, die Gebühren für die UBS Multibanking Services von seinem Konto mit der IBANeinzuziehen.Diese Vereinbarung kann jederzeit beidseitig unter Einhaltung einer Frist von 7 Tagen schriftlich gekündigt werden. Hiervon unbenommen ist das Recht der außerordentlichen Kündigung.Diese Vereinbarung unterliegt ausschließlich deutschem Recht. Erfüllungsort und Gerichtstand ist Frankfurt am Main. UBS ist befugt, ihre Rechte auch am Sitz des Kunden oder vor jeder anderen zuständigen Behörde bzw. Gericht geltend zu machen. Die im Rahmen der Kontoeröffnung getroffenen Vereinbarungen finden ergänzend Anwendung."
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "1.2.3.4.5.6.7.8."
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Unterschrift(en) "
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Kunde"
+      }
+    ]
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "id": "9d3baf74-d565-47bb-9495-dc0581ce6852",
+          "name": "Global_SignaturePlace",
+          "label": [
+            {
+              "type": "text",
+              "content": "Ort"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "28ab00ba-af49-4f98-9375-b4fab315fb08",
+          "name": "Global_SignatureDate",
+          "label": [
+            {
+              "type": "text",
+              "content": "Datum"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Unterschrift des Kunden"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "UBS Europe SE"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "b07a7bc5-60a3-47ae-8691-ea5d3086973b",
+          "name": "FullName",
+          "label": [
+            {
+              "type": "text",
+              "content": "Name des Kunden"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "id": "bc9b7492-4758-4b37-83d5-dd32c86f225e",
+          "name": "Global_SignaturePlace",
+          "label": [
+            {
+              "type": "text",
+              "content": "Ort"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "0bf5de0b-4dce-4ce2-90ca-42bc35d79649",
+          "name": "Global_SignatureDate",
+          "label": [
+            {
+              "type": "text",
+              "content": "Datum"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Unterschrift UBS Europe SE"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "db6ace51-06dc-4388-a3c1-bf30f14ed158",
+          "name": "FullName",
+          "label": [
+            {
+              "type": "text",
+              "content": "Name der verantwortlichen Person"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": null
+  }
+]

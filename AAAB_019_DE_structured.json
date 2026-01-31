@@ -1,0 +1,1034 @@
+[
+  {
+    "type": "heading",
+    "level": "h1",
+    "content": [
+      {
+        "type": "text",
+        "content": "Retro-Erfassung für EAM FIM Endkunden – B2C"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "bd694ac5-9b19-44a7-8c01-2a314b6afa22",
+    "name": "RB_1",
+    "label": null,
+    "inputType": {
+      "type": "radio",
+      "options": [
+        "Neuanlage",
+        "Änderung",
+        "Löschung"
+      ]
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Endkunde"
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": null
+  },
+  {
+    "type": "field",
+    "id": "3cf19e23-6cca-4e53-ac79-a9c1429aa1e2",
+    "name": "TF_FamilyName",
+    "label": [
+      {
+        "type": "text",
+        "content": "Nachname"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "e0c5f1ee-507f-410a-a29c-5e877cd3efff",
+    "name": "TF_FirstName",
+    "label": [
+      {
+        "type": "text",
+        "content": "Vorname(n)"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "FIM Company"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "27d055b5-b7de-4989-b2d5-871ca9d032ac",
+    "name": "Name_Company",
+    "label": [
+      {
+        "type": "text",
+        "content": "Name"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "8e277a14-7029-45f7-af05-43152b221eda",
+    "name": "Intermed",
+    "label": [
+      {
+        "type": "text",
+        "content": "Intermed Code"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Bankverbindung"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "0319 00"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "8bb5c467-4c36-4abe-82ca-31478a7b153d",
+    "name": "BC_AccountNumber",
+    "label": [
+      {
+        "type": "text",
+        "content": "Interne Konto-Nr. und dreistellige interne Konto-Nr."
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "3965fc83-624b-4f24-b068-dd5dd87305ba",
+    "name": "OBJ_Number_Depot",
+    "label": [
+      {
+        "type": "text",
+        "content": "Retro Rückzahlungssatz für Fonds:"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "."
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "EUR"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Währung"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "1c109e1c-4348-422c-b008-3f46335afd09",
+    "name": "Fur_Fonds",
+    "label": [
+      {
+        "type": "text",
+        "content": "Bankverbindung"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "47d403a1-74da-4da1-9046-e25429013bdf",
+    "name": "Year",
+    "label": [
+      {
+        "type": "text",
+        "content": "0319 00"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "%"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Ab:1"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "01."
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "365caba5-b4b6-41f9-bee9-7341fe9dbe44",
+    "name": "Month",
+    "label": [
+      {
+        "type": "text",
+        "content": "."
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "477ccc0c-9683-4b52-91c7-2bae445dac6e",
+    "name": "BC_AccountNumber",
+    "label": [
+      {
+        "type": "text",
+        "content": "Interne Konto-Nr. und dreistellige interne Konto-Nr."
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "62e64699-1d42-435b-8b8b-235dc956d0f7",
+    "name": "OBJ_Number_Depot",
+    "label": [
+      {
+        "type": "text",
+        "content": "Retro Rückzahlungssatz für Fonds:"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "."
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "EUR"
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Währung"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "ad57c03a-26db-415d-8b18-64150ec899fe",
+    "name": "Fur_Fonds",
+    "label": [
+      {
+        "type": "text",
+        "content": "Die Änderung gilt ab sofort für die noch nicht abgerechneten Quartale."
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "%"
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Sonderkondition"
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Fondsprovider"
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Satz in %"
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Ab"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "37563c13-625d-4159-b3cc-43ec8523d821",
+    "name": "Button_Add",
+    "label": [
+      {
+        "type": "text",
+        "content": "Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "id": "bb30d9d3-e57c-4e1b-a19d-bbb26e66a1d2",
+          "name": "Button_Minus",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "01."
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "4c0e744f-a085-4fc5-8abb-aa019a083583",
+          "name": "Month",
+          "label": [
+            {
+              "type": "text",
+              "content": "."
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "a6b8ae8a-5cc3-4614-9d45-83ca430b4f19",
+          "name": "Year",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": 4
+  },
+  {
+    "type": "field",
+    "id": "41851209-aea7-4347-9a99-faee1118c93a",
+    "name": "Fonds_Provider",
+    "label": [
+      {
+        "type": "text",
+        "content": "Satz in %"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "35f5a68b-8c1e-44a4-a71a-ed1d3cef9cec",
+    "name": "Satz_Percent",
+    "label": [
+      {
+        "type": "text",
+        "content": "Ab"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "ISIN"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "c03dadb7-1f39-46cc-ab77-c6e17bec0ee0",
+    "name": "Button_Add",
+    "label": [
+      {
+        "type": "text",
+        "content": "Fondsprovider"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "id": "09a64641-47cd-4be4-8299-4ed836ba8e9e",
+          "name": "Button_Minus",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "01."
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "a22d7785-49b4-4912-abea-ce2cc1163a57",
+          "name": "Month",
+          "label": [
+            {
+              "type": "text",
+              "content": "."
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "268fad4e-42d0-4a70-b90b-0683b4ab77ca",
+          "name": "Year",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": 4
+  },
+  {
+    "type": "field",
+    "id": "01875c07-175e-40ca-855d-abf46beced96",
+    "name": "ISIN",
+    "label": [
+      {
+        "type": "text",
+        "content": "Satz in %"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "f030bee7-c51e-401d-9615-74c22c22bbcb",
+    "name": "Satz_Percent",
+    "label": [
+      {
+        "type": "text",
+        "content": "Ab"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Direktvereinbarung2"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "6ff08477-9e6f-452b-a6ec-d9e122b65272",
+    "name": "Button_Add",
+    "label": [
+      {
+        "type": "text",
+        "content": "Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "5e700453-a8ff-4fbd-8d12-547d4d90cd84",
+    "name": "Button_Minus",
+    "label": [
+      {
+        "type": "text",
+        "content": "ISIN"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "01."
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "382dc72e-5503-49de-8700-b12aa9ab9509",
+          "name": "Month",
+          "label": [
+            {
+              "type": "text",
+              "content": "."
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "b1fff1b5-2eda-46e8-a108-6c193c87db94",
+          "name": "Year",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": 4
+  },
+  {
+    "type": "field",
+    "id": "8ad27ff1-6f60-4815-8c73-c6e93aa0bbfe",
+    "name": "Fonds_Provider_Direkt",
+    "label": [
+      {
+        "type": "text",
+        "content": "Satz in %"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "1d8b771c-80d6-4785-bb83-40606f00b981",
+    "name": "Satz_Percent_Direkt",
+    "label": [
+      {
+        "type": "text",
+        "content": "Ab"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "repeatable",
+    "item": {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "id": "67423fe1-8a92-4f97-92d8-0aa8dd76c1b1",
+          "name": "Button_Add",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "cbc2ab48-3544-449f-8c31-c2fe75bd6353",
+          "name": "Button_Minus",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "b22f59d5-2ee2-45e2-8a69-f121f4cbe0e6",
+          "name": "ISIN",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "252efe48-fc04-479a-be76-2227953f3f1d",
+          "name": "Satz",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "01."
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": "815ba356-f4b4-431f-b5f4-dda05fd21e2e",
+          "name": "Month",
+          "label": [
+            {
+              "type": "text",
+              "content": "."
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "field",
+          "id": "d055846e-897d-480d-bdfc-f45aa544c972",
+          "name": "Year",
+          "label": null,
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    "minOccurrences": 1,
+    "maxOccurrences": 4
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "Unterschrift(en) "
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Bitte senden Sie das Formular bis zum drittletzten Werktag des Monats an Client Onboarding. Nach dieser Frist kann die Rückvergütung erst für die Bestände ab dem Folgemonat erfolgen."
+      }
+    ]
+  },
+  {
+    "type": "heading",
+    "level": "h2",
+    "content": [
+      {
+        "type": "text",
+        "content": "CA/BD"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "e7e74723-5d4f-468e-aed8-77b6e9450177",
+    "name": "Global_SignaturePlace",
+    "label": [
+      {
+        "type": "text",
+        "content": "Ort"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "field",
+    "id": "7ccbd7c3-379c-47c5-9f20-02106edf066d",
+    "name": "Global_SignatureDate",
+    "label": [
+      {
+        "type": "text",
+        "content": "Datum"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "content": "Unterschrift"
+      }
+    ]
+  },
+  {
+    "type": "field",
+    "id": "17becbf1-cd0d-4e3f-8d8f-8f454f85b810",
+    "name": "FullName",
+    "label": [
+      {
+        "type": "text",
+        "content": "Vorname, Nachname"
+      }
+    ],
+    "inputType": {
+      "type": "text",
+      "regex": null,
+      "max_length": null,
+      "min_length": null
+    },
+    "value": null,
+    "placeholder": null
+  }
+]

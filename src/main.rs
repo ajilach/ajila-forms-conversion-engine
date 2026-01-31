@@ -6,6 +6,7 @@ mod text_metrics;
 mod scripting;
 mod font_manager;
 mod script_executor;
+mod structured;
 
 use pdf::file::FileOptions;
 use pdf::object::*;
@@ -104,6 +105,10 @@ struct Args {
     /// Scale factor for rendering (default: 1.5)
     #[arg(short, long, default_value = "1.5")]
     scale: f32,
+
+    /// Export the structured form as JSON
+    #[arg(long)]
+    structured: bool,
 }
 
 /// Render a Flattened document using the specified render mode
@@ -297,6 +302,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nRendering annotated document...");
         flattened.render_to_image(&output_path, args.scale)?;
         println!("✓ Document rendered to: {}", output_path.display());
+    }
+    
+    if args.structured {
+        let output_path = PathBuf::from(format!("{}_structured.json", doc_name));
+        
+        println!("\nConverting to structured form...");
+        let structured_nodes = modules::convert_to_structured(&doc);
+        
+        let json = serde_json::to_string_pretty(&structured_nodes)
+            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+        
+        std::fs::write(&output_path, json)
+            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+        
+        println!("✓ Structured form saved to: {} ({} nodes)", output_path.display(), structured_nodes.len());
     }
     
     if args.exhaustive {
@@ -3999,5 +4019,447 @@ mod tests {
                 println!("  RepeatableSection group {}: bounds={:?}", idx, bounds);
             }
         }
+    }
+
+    #[test]
+    fn test_aaai_structured_output_has_expected_field_labels() {
+        // Test that the structured output for AAAI contains fields with the expected labels
+        use crate::document::Document;
+        use crate::modules::{run_analysis_pipeline, convert_to_structured};
+        use crate::structured::{StructuredNode, FieldNode, InlineNode};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Debug: Print LabeledField groups
+        let labeled_fields = doc.labeled_fields();
+        println!("\n=== LabeledField groups in Document ===");
+        for &lf_idx in &labeled_fields {
+            let label_text = doc.get_label_text(lf_idx).unwrap_or_default();
+            let field_name = doc.get_field_name(lf_idx).unwrap_or_default();
+            let is_claimed = doc.is_claimed(lf_idx);
+            let is_root = doc.roots().contains(&lf_idx);
+            println!("  idx {}: '{}' -> {} (claimed={}, root={})", lf_idx, label_text, field_name, is_claimed, is_root);
+        }
+        
+        // Debug: Print root groups
+        println!("\n=== Root groups ===");
+        for &root_idx in &doc.roots() {
+            if let Some(group) = doc.get_group(root_idx) {
+                println!("  Root {}: {:?}", root_idx, group.kind);
+            }
+        }
+        
+        // Convert to structured form
+        let structured_nodes = convert_to_structured(&doc);
+        
+        // Debug: print what nodes we got
+        println!("\n=== Structured nodes ===");
+        for (i, node) in structured_nodes.iter().enumerate() {
+            match node {
+                crate::structured::StructuredNode::Field(f) => {
+                    let label = get_field_label(f);
+                    println!("  {}: Field '{}' label='{}'", i, f.name, label);
+                }
+                crate::structured::StructuredNode::Paragraph(_) => {
+                    println!("  {}: Paragraph", i);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    println!("  {}: Heading H{}", i, h.level.as_u8());
+                }
+                crate::structured::StructuredNode::Repeatable(r) => {
+                    println!("  {}: Repeatable (min={}, max={:?})", i, r.min_occurrences, r.max_occurrences);
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    println!("  {}: Group ({} children)", i, g.children.len());
+                }
+                _ => {
+                    println!("  {}: Other", i);
+                }
+            }
+        }
+        
+        // Helper to extract label text from a FieldNode
+        fn get_field_label(field: &FieldNode) -> String {
+            field.label.as_ref().map(|label| {
+                label.0.iter().map(|node| match node {
+                    InlineNode::Text(s) => s.clone(),
+                    InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                        fn extract(n: &InlineNode) -> String {
+                            match n {
+                                InlineNode::Text(s) => s.clone(),
+                                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => extract(inner),
+                                InlineNode::Link(link) => link.content.0.iter()
+                                    .map(|n| extract(n)).collect::<Vec<_>>().join("")
+                            }
+                        }
+                        extract(inner)
+                    }
+                    InlineNode::Link(link) => link.content.0.iter()
+                        .map(|n| match n {
+                            InlineNode::Text(s) => s.clone(),
+                            _ => String::new()
+                        }).collect::<Vec<_>>().join("")
+                }).collect::<Vec<_>>().join(" ")
+            }).unwrap_or_default().trim().to_string()
+        }
+        
+        // Collect all field labels from structured output
+        fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        let label = get_field_label(field);
+                        if !label.is_empty() {
+                            labels.push(label);
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_field_labels(&group.children, labels);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_field_labels(&[(*rep.item).clone()], labels);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        let mut field_labels: Vec<String> = Vec::new();
+        collect_field_labels(&structured_nodes, &mut field_labels);
+        
+        println!("\n=== Field labels found in structured output ===");
+        for label in &field_labels {
+            println!("  - '{}'", label);
+        }
+        
+        // Expected labels from the AAAI form
+        let expected_labels = [
+            "Firma",
+            "Nachname",
+            "Vorname(n)",
+            "Straße",
+            "Nr.",
+            "PLZ",
+            "Stadt",
+            "Land",
+        ];
+        
+        // Check each expected label is present
+        for expected in expected_labels {
+            let found = field_labels.iter().any(|label| label.contains(expected));
+            assert!(
+                found,
+                "Expected to find field with label containing '{}', but it was not found.\nFound labels: {:?}",
+                expected, field_labels
+            );
+        }
+        
+        println!("\n✓ All expected field labels found in structured output");
+    }
+    
+    #[test]
+    fn test_aaai_structured_output_no_invisible_content() {
+        // Test that the structured output does not contain invisible/hidden field content
+        // like "ffMandatory" which is a non-interactive field without a computed value
+        use crate::document::Document;
+        use crate::modules::{run_analysis_pipeline, convert_to_structured};
+        use crate::structured::{StructuredNode, InlineNode};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Convert to structured form
+        let structured_nodes = convert_to_structured(&doc);
+        
+        // Collect all text content from structured output
+        fn collect_text_content(nodes: &[StructuredNode], texts: &mut Vec<String>) {
+            fn extract_inline_text(nodes: &[InlineNode]) -> String {
+                nodes.iter().map(|node| match node {
+                    InlineNode::Text(s) => s.clone(),
+                    InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                        extract_inline_text(&[(**inner).clone()])
+                    }
+                    InlineNode::Link(link) => extract_inline_text(&link.content.0)
+                }).collect::<Vec<_>>().join("")
+            }
+            
+            for node in nodes {
+                match node {
+                    StructuredNode::Paragraph(p) => {
+                        let text = extract_inline_text(&p.content.0);
+                        if !text.trim().is_empty() {
+                            texts.push(text);
+                        }
+                    }
+                    StructuredNode::Heading(h) => {
+                        let text = extract_inline_text(&h.content.0);
+                        if !text.trim().is_empty() {
+                            texts.push(text);
+                        }
+                    }
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let text = extract_inline_text(&label.0);
+                            if !text.trim().is_empty() {
+                                texts.push(text);
+                            }
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_text_content(&group.children, texts);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_text_content(&[(*rep.item).clone()], texts);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        let mut all_text: Vec<String> = Vec::new();
+        collect_text_content(&structured_nodes, &mut all_text);
+        
+        // These strings should NOT appear in the structured output
+        // They are from invisible non-interactive fields without computed values
+        let forbidden_content = [
+            "ffMandatory",  // Non-interactive field marker, not visible in render
+        ];
+        
+        for forbidden in forbidden_content {
+            let found = all_text.iter().any(|text| text.contains(forbidden));
+            assert!(
+                !found,
+                "Found forbidden invisible content '{}' in structured output.\nThis content should not be visible.\nAll text found: {:?}",
+                forbidden, all_text
+            );
+        }
+        
+        println!("\n✓ No invisible content found in structured output");
+    }
+    
+    #[test]
+    fn test_aaai_structured_output_has_h1_heading() {
+        // Test that the structured output for AAAI contains the main H1 heading
+        // "Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service"
+        // This is a regression test - the heading was missing when the analysis pipeline
+        // was accidentally broken (modules removed from run_analysis_pipeline).
+        use crate::document::Document;
+        use crate::modules::{run_analysis_pipeline, convert_to_structured};
+        use crate::structured::{StructuredNode, HeadingNode, HeadingLevel, InlineNode};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Convert to structured form
+        let structured_nodes = convert_to_structured(&doc);
+        
+        // Find all H1 headings
+        fn collect_h1_headings(nodes: &[StructuredNode], headings: &mut Vec<String>) {
+            fn extract_text(nodes: &[InlineNode]) -> String {
+                nodes.iter().map(|node| match node {
+                    InlineNode::Text(s) => s.clone(),
+                    InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                        extract_text(&[(**inner).clone()])
+                    }
+                    InlineNode::Link(link) => extract_text(&link.content.0)
+                }).collect::<Vec<_>>().join("")
+            }
+            
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => {
+                        if matches!(h.level, HeadingLevel::H1) {
+                            let text = extract_text(&h.content.0);
+                            headings.push(text);
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        collect_h1_headings(&g.children, headings);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_h1_headings(&[(*r.item).clone()], headings);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        let mut h1_headings: Vec<String> = Vec::new();
+        collect_h1_headings(&structured_nodes, &mut h1_headings);
+        
+        println!("\n=== H1 headings found in structured output ===");
+        for heading in &h1_headings {
+            println!("  - '{}'", heading);
+        }
+        
+        // Check that the main heading is present
+        let expected_heading = "Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service";
+        let found = h1_headings.iter().any(|h| h.contains("Vereinbarung") && h.contains("EFT"));
+        
+        assert!(
+            found,
+            "Expected to find H1 heading containing '{}', but it was not found.\nH1 headings found: {:?}",
+            expected_heading, h1_headings
+        );
+        
+        println!("\n✓ H1 heading found in structured output");
+    }
+    
+    #[test]
+    fn test_aaai_structured_output_h1_is_first() {
+        // Test that the H1 heading is the first element in the structured output.
+        // This verifies the reading order sorting is working correctly.
+        use crate::document::Document;
+        use crate::modules::{run_analysis_pipeline, convert_to_structured};
+        use crate::structured::{StructuredNode, HeadingLevel};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Convert to structured form
+        let structured_nodes = convert_to_structured(&doc);
+        
+        // The first element should be an H1 heading
+        assert!(!structured_nodes.is_empty(), "Structured output should not be empty");
+        
+        let first = &structured_nodes[0];
+        match first {
+            StructuredNode::Heading(h) => {
+                assert!(
+                    matches!(h.level, HeadingLevel::H1),
+                    "First element should be an H1 heading, but got H{}",
+                    h.level.as_u8()
+                );
+                // Also verify it's the expected heading
+                let text = h.content.as_plain_text();
+                assert!(
+                    text.contains("Vereinbarung") && text.contains("EFT"),
+                    "First H1 heading should be the main title, but got: '{}'",
+                    text
+                );
+            }
+            other => {
+                panic!(
+                    "First element should be an H1 heading, but got: {:?}",
+                    std::mem::discriminant(other)
+                );
+            }
+        }
+        
+        println!("\n✓ H1 heading is correctly the first element in structured output");
+    }
+    
+    #[test]
+    fn test_aaai_structured_output_no_button_add_minus() {
+        // Test that Button_Add and Button_Minus fields are NOT in the structured output.
+        // These are screen-only interactive elements (relevant="-print") for adding/removing
+        // repeatable sections. They should be filtered out by NoPrintDetector.
+        use crate::document::Document;
+        use crate::modules::{run_analysis_pipeline, convert_to_structured};
+        use crate::structured::{StructuredNode, FieldNode};
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Convert to structured form
+        let structured_nodes = convert_to_structured(&doc);
+        
+        // Collect all field names from the structured output
+        fn collect_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        names.push(f.name.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        collect_field_names(&g.children, names);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_field_names(&[(*r.item).clone()], names);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        let mut field_names: Vec<String> = Vec::new();
+        collect_field_names(&structured_nodes, &mut field_names);
+        
+        println!("\n=== Field names in structured output ===");
+        for name in &field_names {
+            println!("  - '{}'", name);
+        }
+        
+        // These buttons should NOT appear - they have relevant="-print" (screen-only)
+        let forbidden_fields = ["Button_Add", "Button_Minus"];
+        
+        for forbidden in forbidden_fields {
+            let found = field_names.iter().any(|name| name == forbidden);
+            assert!(
+                !found,
+                "Found forbidden field '{}' in structured output.\n\
+                This field has relevant=\"-print\" and should be filtered out by NoPrintDetector.\n\
+                All field names found: {:?}",
+                forbidden, field_names
+            );
+        }
+        
+        println!("\n✓ Button_Add and Button_Minus correctly filtered from structured output");
     }
 }

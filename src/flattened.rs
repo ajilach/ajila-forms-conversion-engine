@@ -278,7 +278,7 @@ impl<'a> Iterator for FlattenedNodeIterMut<'a> {
 /// Unique identifier for a flattened node, using UUID v4.
 /// This enables self-contained references within the flattened representation,
 /// independent of any source format (XFA, PDF AcroForms, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct FieldId(pub Uuid);
 
 impl FieldId {
@@ -531,6 +531,11 @@ pub enum Hint {
         /// Which region of the master page this element is in
         region: MasterPageRegion,
     },
+    
+    /// Non-printable content indicator
+    /// Elements with relevant="-print" attribute should not appear in print output.
+    /// This is used for screen-only interactive elements.
+    NoPrint,
 }
 
 /// Region classification for master page (page background) content.
@@ -562,6 +567,7 @@ impl Hint {
             Hint::RichContent(_) => "RichContent",
             Hint::DataBinding { .. } => "DataBinding",
             Hint::MasterPage { .. } => "MasterPage",
+            Hint::NoPrint => "NoPrint",
         }
     }
 }
@@ -1294,6 +1300,9 @@ pub struct FlattenContext<'a> {
     /// Occurrence constraints from parent repeatable section (if any)
     /// Used to attach Hint::Occurrence to first child node
     pub pending_occur: Option<OccurConstraints>,
+    /// Hints inherited from parent nodes that should be applied to all descendants
+    /// Per XFA spec, certain attributes like `relevant` are inherited by descendants
+    pub inherited_hints: Vec<Hint>,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -1309,6 +1318,7 @@ impl<'a> FlattenContext<'a> {
             parent_exclgroup_value: None,
             current_path: String::new(),
             pending_occur: None,
+            inherited_hints: Vec::new(),
         }
     }
     
@@ -1326,6 +1336,7 @@ impl<'a> FlattenContext<'a> {
             parent_exclgroup_value: None,
             current_path: initial_path,
             pending_occur: None,
+            inherited_hints: Vec::new(),
         }
     }
     
@@ -1340,6 +1351,7 @@ impl<'a> FlattenContext<'a> {
             parent_exclgroup_value: None,
             current_path: String::new(),
             pending_occur: None,
+            inherited_hints: Vec::new(),
         }
     }
     
@@ -1352,6 +1364,7 @@ impl<'a> FlattenContext<'a> {
             parent_exclgroup_value: self.parent_exclgroup_value.clone(),
             current_path: self.current_path.clone(),
             pending_occur: self.pending_occur,
+            inherited_hints: self.inherited_hints.clone(),
         }
     }
     
@@ -1380,6 +1393,21 @@ impl<'a> FlattenContext<'a> {
         let mut ctx = self.derive();
         ctx.parent_exclgroup_value = Some(value);
         ctx
+    }
+    
+    /// Create a child context with an additional inherited hint
+    /// Used when recursing into nodes that have inheritable properties like relevant="-print"
+    pub fn with_inherited_hint(&self, hint: Hint) -> FlattenContext<'a> {
+        let mut ctx = self.derive();
+        if !ctx.inherited_hints.contains(&hint) {
+            ctx.inherited_hints.push(hint);
+        }
+        ctx
+    }
+    
+    /// Check if a specific hint is inherited from an ancestor
+    pub fn has_inherited_hint(&self, hint: &Hint) -> bool {
+        self.inherited_hints.contains(hint)
     }
     
     /// Create a child context with extended path for a named node
@@ -2085,7 +2113,12 @@ impl Flattened {
                     node.name.clone(),
                     rich_text,
                 );
-                flattened_children.push(FlattenedKind::Node(draw_node));
+                let mut draw_kind = FlattenedKind::Node(draw_node);
+                // Add NoPrint hint if relevant="-print" or inherited from parent
+                if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
+                    draw_kind.add_hint(Hint::NoPrint);
+                }
+                flattened_children.push(draw_kind);
             }
             XfaNodeKind::Field => {
                 let field_name = node.name.clone().unwrap_or_else(|| "unnamed".to_string());
@@ -2113,6 +2146,10 @@ impl Flattened {
                     max_length: None,
                     comb_cells: None,
                 });
+                // Add NoPrint hint if relevant="-print" or inherited from parent
+                if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
+                    field_node.add_hint(Hint::NoPrint);
+                }
                 flattened_children.push(FlattenedKind::Node(field_node));
             }
             XfaNodeKind::Subform | XfaNodeKind::Element { .. } => {
@@ -2214,6 +2251,15 @@ impl Flattened {
         node.attributes.get("access")
             .map(|s| FieldAccess::from_str(s))
             .unwrap_or(FieldAccess::Open)
+    }
+    
+    /// Check if a node has the relevant="-print" attribute.
+    /// Per XFA spec, relevant="-print" means the element should not appear in print output.
+    /// It's used for screen-only interactive elements like add/remove buttons.
+    fn is_no_print(node: &XfaNode) -> bool {
+        node.attributes.get("relevant")
+            .map(|s| s == "-print")
+            .unwrap_or(false)
     }
     
     /// Extract occurrence constraints from a node's <occur> child element.
@@ -2450,6 +2496,7 @@ impl Flattened {
             // Create child context - if this node's presence is hidden/inactive, 
             // children inherit that presence
             // Also extend the SOM path if this node has a name
+            // Also propagate NoPrint hint if this node has relevant="-print"
             let child_ctx = {
                 let base_ctx = if presence.should_skip_layout() {
                     ctx.with_inherited_presence(presence)
@@ -2461,6 +2508,13 @@ impl Flattened {
                         // No inheritance needed, use visible as default
                         ctx.with_inherited_presence(Presence::Visible)
                     }
+                };
+                // Propagate NoPrint hint if this node has relevant="-print"
+                // Per XFA spec, relevant is inherited by children
+                let base_ctx = if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
+                    base_ctx.with_inherited_hint(Hint::NoPrint)
+                } else {
+                    base_ctx
                 };
                 // Extend the SOM path if this node has a name
                 if let Some(name) = &node.name {
@@ -2575,6 +2629,10 @@ impl Flattened {
                             max_length: None,
                             comb_cells: None,
                         });
+                        // Add NoPrint hint if relevant="-print" or inherited from parent
+                        if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
+                            field_node.add_hint(Hint::NoPrint);
+                        }
                         flattened_children.push(FlattenedKind::Node(field_node));
                     }
                     
@@ -2627,7 +2685,12 @@ impl Flattened {
                             node.name.clone(),
                             rich_text,
                         );
-                        flattened_children.push(FlattenedKind::Node(draw_node));
+                        let mut draw_kind = FlattenedKind::Node(draw_node);
+                        // Add NoPrint hint if relevant="-print" or inherited from parent
+                        if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
+                            draw_kind.add_hint(Hint::NoPrint);
+                        }
+                        flattened_children.push(draw_kind);
                     }
                     
                     // Don't recurse into draw children for positioning
@@ -2736,6 +2799,10 @@ impl Flattened {
                                     max_length: None,
                                     comb_cells: None,
                                 });
+                                // Add NoPrint hint if relevant="-print" or inherited from parent
+                                if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
+                                    field_node.add_hint(Hint::NoPrint);
+                                }
                                 flattened_children.push(FlattenedKind::Node(field_node));
                             }
                         }
@@ -2785,7 +2852,12 @@ impl Flattened {
                                     node.name.clone(),
                                     rich_text,
                                 );
-                                flattened_children.push(FlattenedKind::Node(draw_node));
+                                let mut draw_kind = FlattenedKind::Node(draw_node);
+                                // Add NoPrint hint if relevant="-print" or inherited from parent
+                                if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
+                                    draw_kind.add_hint(Hint::NoPrint);
+                                }
+                                flattened_children.push(draw_kind);
                             }
                             
                             // Don't recurse into draw children for positioning
