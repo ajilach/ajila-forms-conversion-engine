@@ -5,9 +5,11 @@
 
 use super::dependency::DependencyTracker;
 use super::engine::XfaScriptEngine;
-use super::events::{parse_events_from_node, EventActivity, EventRef, RunAt, ScriptContentType, XfaScript};
+use super::events::{
+    EventActivity, EventRef, RunAt, ScriptContentType, XfaScript, parse_events_from_node,
+};
 use super::registry::{RegisteredScript, ScriptRegistry, ScriptType};
-use super::som::{walk_som_path_mut, SomPath, SomResolver};
+use super::som::{SomPath, SomResolver, walk_som_path_mut};
 use super::state::Presence;
 
 use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
@@ -289,12 +291,18 @@ impl<'a> XfaNodeRef<'a> {
 
     /// Get just the display values for dropdown options
     pub fn dropdown_display_values(&self) -> Vec<String> {
-        self.dropdown_options().into_iter().map(|(d, _)| d).collect()
+        self.dropdown_options()
+            .into_iter()
+            .map(|(d, _)| d)
+            .collect()
     }
 
     /// Get just the save values for dropdown options
     pub fn dropdown_save_values(&self) -> Vec<String> {
-        self.dropdown_options().into_iter().map(|(_, s)| s).collect()
+        self.dropdown_options()
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect()
     }
 
     /// Get the number of dropdown options
@@ -322,19 +330,17 @@ impl<'a> XfaNodeRef<'a> {
                 XfaNodeKind::Element {
                     tag_name,
                     text_content,
-                } => {
-                    match tag_name.as_str() {
-                        "text" | "integer" | "decimal" | "float" | "boolean" | "date"
-                        | "dateTime" | "time" => {
-                            if let Some(content) = text_content {
-                                values.push(content.clone());
-                            } else {
-                                values.push(String::new());
-                            }
+                } => match tag_name.as_str() {
+                    "text" | "integer" | "decimal" | "float" | "boolean" | "date" | "dateTime"
+                    | "time" => {
+                        if let Some(content) = text_content {
+                            values.push(content.clone());
+                        } else {
+                            values.push(String::new());
                         }
-                        _ => {}
                     }
-                }
+                    _ => {}
+                },
                 XfaNodeKind::Text { content } => {
                     values.push(content.clone());
                 }
@@ -597,14 +603,13 @@ impl XfaForm {
             }
         }
 
-        let mut presence_changed = if let Some(presence) =
-            self.script_engine.get_current_field_presence()
-        {
-            Self::apply_presence_by_path(&mut self.nodes, &resolved_path, presence);
-            true
-        } else {
-            false
-        };
+        let mut presence_changed =
+            if let Some(presence) = self.script_engine.get_current_field_presence() {
+                Self::apply_presence_by_path(&mut self.nodes, &resolved_path, presence);
+                true
+            } else {
+                false
+            };
 
         let som_presence_changes = self.script_engine.get_all_som_presence_changes();
         for (som_path, presence_str) in som_presence_changes {
@@ -734,7 +739,9 @@ impl XfaForm {
 
     /// Run calculate scripts for all fields that depend on the changed field.
     pub fn cascade_calculations(&mut self, changed_field: &SomPath) -> Result<(), String> {
-        let dependents = self.dependency_tracker.get_dependents_cascade(changed_field);
+        let dependents = self
+            .dependency_tracker
+            .get_dependents_cascade(changed_field);
 
         if dependents.is_empty() {
             return Ok(());
@@ -754,7 +761,8 @@ impl XfaForm {
                     "",
                 );
 
-                if let Ok(Some(value)) = self.script_engine.execute_script(&registered_script.script)
+                if let Ok(Some(value)) =
+                    self.script_engine.execute_script(&registered_script.script)
                 {
                     if !value.is_empty() {
                         self.computed_values
@@ -1383,7 +1391,12 @@ impl XfaForm {
                     if let Some(name) = &node.name {
                         let value = get_node_value(node, &node_path, computed_values);
                         let initial_presence = node.get_presence().as_str();
-                        engine.register_field_with_presence(&node_path, name, &value, initial_presence);
+                        engine.register_field_with_presence(
+                            &node_path,
+                            name,
+                            &value,
+                            initial_presence,
+                        );
                     }
                 }
 

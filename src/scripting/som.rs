@@ -291,7 +291,10 @@ impl SomResolver {
         if parts.len() == 2 {
             let target_name = parts[1];
             // Find all nodes with this name
-            self.nodes_by_name.get(target_name).cloned().unwrap_or_default()
+            self.nodes_by_name
+                .get(target_name)
+                .cloned()
+                .unwrap_or_default()
         } else {
             Vec::new()
         }
@@ -419,20 +422,13 @@ pub fn walk_som_path<'a>(nodes: &'a [XfaNode], som_path: &str) -> Option<&'a Xfa
 ///
 /// # Returns
 /// A mutable reference to the node if found, or None if the path doesn't match.
-pub fn walk_som_path_mut<'a>(
-    nodes: &'a mut [XfaNode],
-    som_path: &str,
-) -> Option<&'a mut XfaNode> {
+pub fn walk_som_path_mut<'a>(nodes: &'a mut [XfaNode], som_path: &str) -> Option<&'a mut XfaNode> {
     let parts: Vec<&str> = som_path.split('.').collect();
     if parts.is_empty() {
         return None;
     }
 
-    fn walk<'a>(
-        nodes: &'a mut [XfaNode],
-        parts: &[&str],
-        idx: usize,
-    ) -> Option<&'a mut XfaNode> {
+    fn walk<'a>(nodes: &'a mut [XfaNode], parts: &[&str], idx: usize) -> Option<&'a mut XfaNode> {
         if idx >= parts.len() {
             return None;
         }

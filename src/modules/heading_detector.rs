@@ -3,10 +3,10 @@
 //! Classifies text blocks into heading levels (h1-h6) based on statistical
 //! analysis of font sizes, weights, and other visual properties.
 
+use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::FlattenedNodeKind;
 use crate::xfa::FontWeight;
-use super::AnalysisModule;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
@@ -42,13 +42,13 @@ impl Default for HeadingDetector {
 impl HeadingDetector {
     pub fn new() -> Self {
         HeadingDetector {
-            min_size_ratio: 1.35,  // 35% larger than body size (or 3.5pt absolute difference)
+            min_size_ratio: 1.35, // 35% larger than body size (or 3.5pt absolute difference)
             max_heading_length: 150,
             boost_bold: true,
             min_samples: 5,
         }
     }
-    
+
     /// Check if the text is at most one sentence.
     /// Headings should not contain multiple sentences.
     fn is_single_sentence(text: &str) -> bool {
@@ -56,10 +56,10 @@ impl HeadingDetector {
         if trimmed.is_empty() {
             return false;
         }
-        
+
         // Sentence-ending punctuation marks
         let sentence_enders = ['.', '!', '?'];
-        
+
         // Find all positions of sentence-ending punctuation
         let mut end_positions: Vec<usize> = Vec::new();
         for (i, c) in trimmed.char_indices() {
@@ -75,19 +75,19 @@ impl HeadingDetector {
                 end_positions.push(i);
             }
         }
-        
+
         // If no sentence enders found, it's a single sentence (or fragment)
         if end_positions.is_empty() {
             return true;
         }
-        
+
         // If there's only one sentence ender and it's at the end, it's a single sentence
         if end_positions.len() == 1 {
             let last_ender_pos = end_positions[0];
             let remaining = trimmed[last_ender_pos + 1..].trim();
             return remaining.is_empty();
         }
-        
+
         // Multiple sentence enders - check if any are followed by substantial content
         for &pos in &end_positions[..end_positions.len() - 1] {
             let remaining = trimmed[pos + 1..].trim();
@@ -101,28 +101,28 @@ impl HeadingDetector {
                 }
             }
         }
-        
+
         true
     }
-    
+
     /// Set minimum size ratio for heading detection.
     pub fn with_min_size_ratio(mut self, ratio: f32) -> Self {
         self.min_size_ratio = ratio;
         self
     }
-    
+
     /// Set maximum heading text length.
     pub fn with_max_heading_length(mut self, length: usize) -> Self {
         self.max_heading_length = length;
         self
     }
-    
+
     /// Set whether to boost bold text.
     pub fn with_boost_bold(mut self, boost: bool) -> Self {
         self.boost_bold = boost;
         self
     }
-    
+
     /// Collect font size statistics from all text nodes.
     fn collect_font_stats(&self, doc: &Document) -> FontStats {
         let mut sizes: Vec<f32> = Vec::new();
@@ -130,66 +130,77 @@ impl HeadingDetector {
         // Track font style frequency: (size, is_bold) -> count
         let mut style_counts: HashMap<FontStyleKey, usize> = HashMap::new();
         let mut total_text_nodes = 0usize;
-        
+
         for node in doc.source.iter_nodes() {
-            if let FlattenedNodeKind::Text { font_size, content, .. } = &node.kind {
+            if let FlattenedNodeKind::Text {
+                font_size, content, ..
+            } = &node.kind
+            {
                 // Skip empty text
                 if content.trim().is_empty() {
                     continue;
                 }
-                
+
                 let size = font_size.to_f32().unwrap_or(10.0);
                 sizes.push(size);
                 total_text_nodes += 1;
-                
+
                 // Round to 0.5pt for bucketing
                 let rounded = OrderedFloat((size * 2.0).round() / 2.0);
                 *size_counts.entry(rounded).or_insert(0) += 1;
-                
+
                 // Track font style (size + bold) for frequency analysis
-                let is_bold = node.style.font.as_ref()
+                let is_bold = node
+                    .style
+                    .font
+                    .as_ref()
                     .map(|f| f.weight == FontWeight::Bold)
                     .unwrap_or(false);
-                let style_key = FontStyleKey { size: rounded, is_bold };
+                let style_key = FontStyleKey {
+                    size: rounded,
+                    is_bold,
+                };
                 *style_counts.entry(style_key).or_insert(0) += 1;
             }
         }
-        
+
         if sizes.is_empty() {
             return FontStats::default();
         }
-        
+
         sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let len = sizes.len();
         let median = if len.is_multiple_of(2) {
             (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
         } else {
             sizes[len / 2]
         };
-        
+
         let p75 = sizes[(len * 75 / 100).min(len - 1)];
         let p90 = sizes[(len * 90 / 100).min(len - 1)];
         let max = *sizes.last().unwrap_or(&10.0);
         let min = *sizes.first().unwrap_or(&10.0);
-        
+
         // Find the most common font size (body text)
-        let body_size = size_counts.iter()
+        let body_size = size_counts
+            .iter()
             .max_by_key(|(_, count)| *count)
             .map(|(size, _)| size.0)
             .unwrap_or(median);
-        
+
         // Find the most common font style (this is body text)
-        let most_common_style = style_counts.iter()
+        let most_common_style = style_counts
+            .iter()
             .max_by_key(|(_, count)| *count)
             .map(|(key, _)| *key);
-        
+
         // Calculate font ratio threshold: if a style is used more than X% of the time, it's likely body text
         let common_style_ratio = most_common_style
             .and_then(|style| style_counts.get(&style))
             .map(|&count| count as f32 / total_text_nodes.max(1) as f32)
             .unwrap_or(0.0);
-        
+
         FontStats {
             median,
             p75,
@@ -205,72 +216,87 @@ impl HeadingDetector {
             common_style_ratio,
         }
     }
-    
+
     /// Determine heading level based on font size and stats.
     /// Returns (level, is_bold_section_header) where is_bold_section_header indicates
     /// if this is a bold text at body size (used for filtering later).
-    fn determine_heading_level(&self, size: f32, is_bold: bool, text_len: usize, text_content: &str, stats: &FontStats) -> Option<(u8, bool)> {
+    fn determine_heading_level(
+        &self,
+        size: f32,
+        is_bold: bool,
+        text_len: usize,
+        text_content: &str,
+        stats: &FontStats,
+    ) -> Option<(u8, bool)> {
         // Text too long for a heading
         if text_len > self.max_heading_length {
             return None;
         }
-        
+
         // Empty or very short text is not a heading
         if text_len < 2 {
             return None;
         }
-        
+
         // Headings should be at most one sentence
         if !Self::is_single_sentence(text_content) {
             return None;
         }
-        
+
         let body_size = stats.body_size;
         let ratio = size / body_size;
-        
+
         // Check if this font style is the most common (body text)
         let rounded_size = OrderedFloat((size * 2.0).round() / 2.0);
-        let style_key = FontStyleKey { size: rounded_size, is_bold };
-        let style_frequency = stats.style_distribution.get(&style_key)
+        let style_key = FontStyleKey {
+            size: rounded_size,
+            is_bold,
+        };
+        let style_frequency = stats
+            .style_distribution
+            .get(&style_key)
             .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
             .unwrap_or(0.0);
-        
+
         // Also check the frequency of this SIZE regardless of bold status
-        let size_frequency = stats.size_distribution.get(&rounded_size)
+        let size_frequency = stats
+            .size_distribution
+            .get(&rounded_size)
             .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
             .unwrap_or(0.0);
-        
+
         // CRITICAL: Headings (h1-h4) must be DISTINCT from normal text.
         // Text that matches the most common style is NEVER a heading
-        let is_body_style = stats.most_common_style
+        let is_body_style = stats
+            .most_common_style
             .map(|common| common == style_key)
             .unwrap_or(false);
-        
+
         if is_body_style {
             return None;
         }
-        
+
         // Check if body text is non-bold at this size (makes bold at this size a valid heading)
-        let body_style_is_non_bold_same_size = stats.most_common_style
+        let body_style_is_non_bold_same_size = stats
+            .most_common_style
             .map(|common| common.size == rounded_size && !common.is_bold)
             .unwrap_or(false);
-        
+
         // Bold text at body size is a valid heading if:
         // 1. Body text is non-bold at the same size
         // 2. The bold variant is not too frequent (section headers vs field labels)
-        let is_bold_section_header = is_bold 
-            && body_style_is_non_bold_same_size 
-            && (size - body_size).abs() < 0.5; // Same size as body
-        
+        let is_bold_section_header =
+            is_bold && body_style_is_non_bold_same_size && (size - body_size).abs() < 0.5; // Same size as body
+
         // For bold section headers, allow higher frequency (up to 35%)
         // since documents often have multiple sections
         let max_style_frequency = if is_bold_section_header { 0.35 } else { 0.25 };
-        
+
         // If this style appears too frequently, it's body/label text
         if style_frequency > max_style_frequency {
             return None;
         }
-        
+
         // For non-bold text or bold text larger than body, require size distinction
         // Bold section headers (same size as non-bold body) skip this check
         if !is_bold_section_header {
@@ -279,14 +305,14 @@ impl HeadingDetector {
             let size_diff = size - body_size;
             let min_ratio = 1.35f32;
             let min_diff = 3.5f32;
-            
+
             let passes_ratio = ratio >= min_ratio;
             let passes_diff = size_diff >= min_diff;
-            
+
             if !passes_ratio && !passes_diff {
                 return None;
             }
-            
+
             // Additional frequency check for common sizes:
             // If a size is used for >30% of text AND we're just barely above threshold,
             // it's likely a field input size or secondary body size, not a heading
@@ -294,12 +320,12 @@ impl HeadingDetector {
                 return None;
             }
         }
-        
+
         // Determine level based on size ratio and boldness
         let max_ratio = stats.max / body_size;
         let size_diff = size - body_size;
         let min_ratio = 1.35f32;
-        
+
         // For bold section headers at body size, assign level based on document structure
         if is_bold_section_header {
             // Bold at body size is typically H2 or H3 (after a larger H1 title)
@@ -307,14 +333,14 @@ impl HeadingDetector {
             let _has_larger_text = stats.max > body_size * 1.2;
             return Some((2, true)); // Always H2 for bold section headers, flag as bold_section_header
         }
-        
+
         let normalized = if max_ratio > min_ratio {
             (ratio - min_ratio) / (max_ratio - min_ratio)
         } else {
             // All headings are near the threshold - use a simpler scale
             ((ratio - min_ratio) / 0.5).clamp(0.0, 1.0)
         };
-        
+
         // Base level from size
         let base_level = match normalized {
             n if n >= 0.8 => 1,
@@ -324,57 +350,61 @@ impl HeadingDetector {
             n if n >= 0.1 => 5,
             _ => 6,
         };
-        
+
         // Boost for bold (move up one level, min 1)
         let level = if self.boost_bold && is_bold && base_level > 1 {
             base_level - 1
         } else {
             base_level
         };
-        
+
         Some((level as u8, false)) // Not a bold section header (it's a true size-based heading)
     }
-    
+
     /// Get font properties from a group.
     fn get_text_properties(&self, doc: &Document, group_idx: usize) -> Option<TextProperties> {
         let nodes = doc.collect_nodes(group_idx);
         if nodes.is_empty() {
             return None;
         }
-        
+
         // Aggregate properties from all nodes
         let mut total_size = 0.0f32;
         let mut bold_count = 0;
         let mut text_node_count = 0;
         let mut text_content = String::new();
         let mut count = 0;
-        
+
         for node in nodes {
-            if let FlattenedNodeKind::Text { font_size, content, .. } = &node.kind {
+            if let FlattenedNodeKind::Text {
+                font_size, content, ..
+            } = &node.kind
+            {
                 total_size += font_size.to_f32().unwrap_or(10.0);
                 count += 1;
                 text_node_count += 1;
                 text_content.push_str(content);
                 text_content.push(' ');
-                
+
                 // Count bold nodes
                 if let Some(font) = &node.style.font
-                    && font.weight == FontWeight::Bold {
-                        bold_count += 1;
-                    }
+                    && font.weight == FontWeight::Bold
+                {
+                    bold_count += 1;
+                }
             }
         }
-        
+
         if count == 0 {
             return None;
         }
-        
+
         // Only consider as bold if ALL text nodes are bold
         let is_bold = text_node_count > 0 && bold_count == text_node_count;
-        
+
         let avg_size = total_size / count as f32;
         let text_len = text_content.trim().len();
-        
+
         Some(TextProperties {
             avg_font_size: avg_size,
             is_bold,
@@ -382,49 +412,54 @@ impl HeadingDetector {
             text_content: text_content.trim().to_string(),
         })
     }
-    
+
     /// Check if a group is a text group (Leaf with Text or TextBlock).
     fn is_text_group(&self, doc: &Document, group_idx: usize) -> bool {
         let group = match doc.get_group(group_idx) {
             Some(g) => g,
             None => return false,
         };
-        
+
         match &group.kind {
             GroupKind::Leaf { node_index } => {
-                matches!(doc.source.iter_nodes().nth(*node_index).map(|n| &n.kind),
-                    Some(FlattenedNodeKind::Text { .. }))
+                matches!(
+                    doc.source.iter_nodes().nth(*node_index).map(|n| &n.kind),
+                    Some(FlattenedNodeKind::Text { .. })
+                )
             }
             GroupKind::TextBlock => true,
             _ => false,
         }
     }
-    
+
     /// Normalize heading levels to ensure proper hierarchy.
-    /// 
+    ///
     /// Rules:
     /// - First heading is always h1
     /// - Same level can repeat: h1, h2, h2, h3, h2 is valid
     /// - Cannot skip levels: h1, h3 is invalid and becomes h1, h2
     /// - When going deeper, can only increase by 1
     /// - When going back up, can jump to any previously seen level
-    fn normalize_heading_levels(mut headings: Vec<(usize, u8, f32, bool)>) -> Vec<(usize, u8, f32, bool)> {
+    fn normalize_heading_levels(
+        mut headings: Vec<(usize, u8, f32, bool)>,
+    ) -> Vec<(usize, u8, f32, bool)> {
         if headings.is_empty() {
             return headings;
         }
-        
+
         // Track the maximum level we've seen so far at each depth
         // This allows us to know which levels are "valid" to return to
         let mut max_level_seen: u8 = 0;
         let mut current_level: u8 = 0;
-        
+
         // Find the minimum (highest priority) level in the original headings
         // This ensures actual H1 candidates (large text) become H1
-        let min_original_level = headings.iter()
+        let min_original_level = headings
+            .iter()
             .map(|(_, level, _, _)| *level)
             .min()
             .unwrap_or(1);
-        
+
         for (_group_idx, level, _y, _is_bold_section_header) in headings.iter_mut() {
             if current_level == 0 {
                 // First heading - preserve its relative level
@@ -444,7 +479,7 @@ impl HeadingDetector {
             } else {
                 // Calculate the proposed level based on original detection
                 let original_level = *level;
-                
+
                 if original_level <= current_level {
                     // Going back up or staying at same level
                     // This is always valid, but clamp to max_level_seen or 1
@@ -455,11 +490,11 @@ impl HeadingDetector {
                     *level = new_level;
                     max_level_seen = max_level_seen.max(new_level);
                 }
-                
+
                 current_level = *level;
             }
         }
-        
+
         headings
     }
 }
@@ -517,27 +552,28 @@ impl AnalysisModule for HeadingDetector {
     fn name(&self) -> &'static str {
         "HeadingDetector"
     }
-    
+
     fn process(&self, doc: &mut Document) {
         // Collect font statistics
         let stats = self.collect_font_stats(doc);
-        
+
         // Need enough samples for meaningful analysis
         if stats.sample_count < self.min_samples {
             return;
         }
-        
+
         // Find all unclaimed text groups (roots that are text)
         let roots = doc.roots();
-        let text_groups: Vec<usize> = roots.iter()
+        let text_groups: Vec<usize> = roots
+            .iter()
             .filter(|&&idx| self.is_text_group(doc, idx))
             .copied()
             .collect();
-        
+
         // Analyze each text group
         // Stores (group_idx, level, y_coord, is_bold_section_header) for ordering and validation
         let mut headings: Vec<(usize, u8, f32, bool)> = Vec::new();
-        
+
         for group_idx in text_groups {
             if let Some(props) = self.get_text_properties(doc, group_idx) {
                 if let Some((level, is_bold_section_header)) = self.determine_heading_level(
@@ -548,17 +584,18 @@ impl AnalysisModule for HeadingDetector {
                     &stats,
                 ) {
                     // Store y-coordinate for ordering
-                    let y_coord = doc.compute_group_bounds(group_idx)
+                    let y_coord = doc
+                        .compute_group_bounds(group_idx)
                         .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
                         .unwrap_or(0.0);
                     headings.push((group_idx, level, y_coord, is_bold_section_header));
                 }
             }
         }
-        
+
         // Sort headings by y-coordinate (top to bottom)
         headings.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         // Remove duplicate headings (same text content appearing multiple times)
         // Real headings typically appear only once in a document
         let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -573,41 +610,46 @@ impl AnalysisModule for HeadingDetector {
                 unique_headings.push((group_idx, level, y_coord, is_bold_section_header));
             }
         }
-        
+
         // Filter out bold section headers that appear before the first true heading.
         // Bold section headers (bold at body size) before a title are likely branding/company names,
         // not actual section headings. The first true heading (larger font) establishes H1.
-        let first_true_heading_idx = unique_headings.iter()
+        let first_true_heading_idx = unique_headings
+            .iter()
             .position(|(_, _, _, is_bold_section_header)| !*is_bold_section_header);
-        
-        let filtered_headings: Vec<(usize, u8, f32, bool)> = if let Some(first_true_idx) = first_true_heading_idx {
-            // Keep the first true heading and everything after it.
-            // Bold section headers before the first true heading are filtered out.
-            unique_headings.into_iter()
-                .enumerate()
-                .filter(|(idx, (_, _, _, is_bold_section_header))| {
-                    // Keep if: it's at or after the first true heading, OR it's not a bold section header
-                    *idx >= first_true_idx || !*is_bold_section_header
-                })
-                .map(|(_, h)| h)
-                .collect()
-        } else {
-            // No true heading found - keep all bold section headers as-is
-            unique_headings
-        };
-        
+
+        let filtered_headings: Vec<(usize, u8, f32, bool)> =
+            if let Some(first_true_idx) = first_true_heading_idx {
+                // Keep the first true heading and everything after it.
+                // Bold section headers before the first true heading are filtered out.
+                unique_headings
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(idx, (_, _, _, is_bold_section_header))| {
+                        // Keep if: it's at or after the first true heading, OR it's not a bold section header
+                        *idx >= first_true_idx || !*is_bold_section_header
+                    })
+                    .map(|(_, h)| h)
+                    .collect()
+            } else {
+                // No true heading found - keep all bold section headers as-is
+                unique_headings
+            };
+
         // Validate and fix heading levels according to document order rules:
         // - Headings must be ordered from top to bottom (h1, h2, h3)
         // - Same level can repeat (h1, h2, h2, h3, h2 is valid)
         // - Cannot skip levels (h1, h3 is NOT valid - must be h1, h2)
         let headings = Self::normalize_heading_levels(filtered_headings);
-        
+
         // Create Heading groups
         for (group_idx, level, _, _) in headings {
             doc.merge(
                 vec![group_idx],
                 GroupKind::Heading { level },
-                GroupSource::Inferred { module: self.name().to_string() },
+                GroupSource::Inferred {
+                    module: self.name().to_string(),
+                },
             );
         }
     }
@@ -617,18 +659,20 @@ impl AnalysisModule for HeadingDetector {
 mod tests {
     use super::*;
     use crate::flattened::{Flattened, FlattenedNode, Page};
-    use crate::xfa::{num, Font, FontWeight};
-    
+    use crate::xfa::{Font, FontWeight, num};
+
     fn make_text_node(content: &str, font_size: f32, x: f32, y: f32) -> FlattenedNode {
         FlattenedNode::new_text(
             content.to_string(),
             num(font_size as f64),
             "Helvetica".to_string(),
-            num(x as f64), num(y as f64),
-            num(200.0), num(font_size as f64 * 1.2),
+            num(x as f64),
+            num(y as f64),
+            num(200.0),
+            num(font_size as f64 * 1.2),
         )
     }
-    
+
     fn make_bold_text_node(content: &str, font_size: f32, x: f32, y: f32) -> FlattenedNode {
         let mut node = make_text_node(content, font_size, x, y);
         node.style.font = Some(Font {
@@ -648,34 +692,52 @@ mod tests {
         });
         node
     }
-    
+
     #[test]
     fn test_detect_headings_by_size() {
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Large heading (should be h1 or h2)
                 make_text_node("Main Title", 24.0, 10.0, 10.0),
                 // Medium heading (should be h3 or h4)
                 make_text_node("Section Title", 16.0, 10.0, 50.0),
                 // Body text (10pt) - multiple to establish baseline
-                make_text_node("This is body text paragraph one with some content.", 10.0, 10.0, 80.0),
-                make_text_node("This is body text paragraph two with more content.", 10.0, 10.0, 100.0),
+                make_text_node(
+                    "This is body text paragraph one with some content.",
+                    10.0,
+                    10.0,
+                    80.0,
+                ),
+                make_text_node(
+                    "This is body text paragraph two with more content.",
+                    10.0,
+                    10.0,
+                    100.0,
+                ),
                 make_text_node("This is body text paragraph three.", 10.0, 10.0, 120.0),
                 make_text_node("Another paragraph of body text here.", 10.0, 10.0, 140.0),
                 make_text_node("And more body text content.", 10.0, 10.0, 160.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         // Should detect headings
         let headings = doc.headings();
-        assert!(headings.len() >= 2, "Should detect at least 2 headings, got {}", headings.len());
-        
+        assert!(
+            headings.len() >= 2,
+            "Should detect at least 2 headings, got {}",
+            headings.len()
+        );
+
         // Get heading levels
-        let mut levels: Vec<u8> = headings.iter()
+        let mut levels: Vec<u8> = headings
+            .iter()
             .filter_map(|&idx| {
                 if let GroupKind::Heading { level } = doc.get_group(idx)?.kind {
                     Some(level)
@@ -685,7 +747,7 @@ mod tests {
             })
             .collect();
         levels.sort();
-        
+
         // Should have different heading levels
         assert!(levels.len() >= 2);
         // Largest font should have smallest level number (h1 < h2 < ...)
@@ -696,7 +758,10 @@ mod tests {
     fn test_bold_larger_text_detected_as_heading() {
         // Bold text that is LARGER than body size should still be detected as heading
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Bold text at larger size (should be detected as heading)
                 make_bold_text_node("Bold Subheading", 14.0, 10.0, 10.0),
@@ -708,20 +773,27 @@ mod tests {
                 make_text_node("Regular body text paragraph five.", 10.0, 10.0, 110.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         let headings = doc.headings();
-        assert_eq!(headings.len(), 1, "Bold larger text should be detected as heading");
+        assert_eq!(
+            headings.len(),
+            1,
+            "Bold larger text should be detected as heading"
+        );
     }
-    
+
     #[test]
     fn test_long_text_not_heading() {
         let long_text = "This is a very long paragraph that should not be detected as a heading even though it might have a larger font size because headings are typically short and concise not rambling on like this.";
-        
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Large font but too long to be heading
                 make_text_node(long_text, 18.0, 10.0, 10.0),
@@ -733,42 +805,56 @@ mod tests {
                 make_text_node("Body paragraph five.", 10.0, 10.0, 130.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         // Long text should not be detected as heading
         let headings = doc.headings();
         for &idx in &headings {
             let text = doc.get_text_content(idx);
-            assert!(text.len() <= 150, "Long text should not be heading: {}", text);
+            assert!(
+                text.len() <= 150,
+                "Long text should not be heading: {}",
+                text
+            );
         }
     }
-    
+
     #[test]
     fn test_insufficient_samples() {
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 make_text_node("Only Title", 24.0, 10.0, 10.0),
                 make_text_node("Single paragraph.", 10.0, 10.0, 50.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new()
             .with_min_size_ratio(1.1)
             .process(&mut doc);
-        
+
         // Not enough samples for statistical analysis
         let headings = doc.headings();
-        assert_eq!(headings.len(), 0, "Should not detect headings with insufficient samples");
+        assert_eq!(
+            headings.len(),
+            0,
+            "Should not detect headings with insufficient samples"
+        );
     }
-    
+
     #[test]
     fn test_heading_level_ordering() {
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 make_text_node("Huge Title", 32.0, 10.0, 10.0),
                 make_text_node("Large Title", 24.0, 10.0, 50.0),
@@ -782,10 +868,10 @@ mod tests {
                 make_text_node("Body five.", 10.0, 10.0, 230.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         // Collect headings with their sizes and levels
         let mut heading_info: Vec<(f32, u8, String)> = Vec::new();
         for &idx in &doc.headings() {
@@ -793,7 +879,10 @@ mod tests {
                 if let GroupKind::Heading { level } = group.kind {
                     let nodes = doc.collect_nodes(idx);
                     if let Some(node) = nodes.first() {
-                        if let FlattenedNodeKind::Text { font_size, content, .. } = &node.kind {
+                        if let FlattenedNodeKind::Text {
+                            font_size, content, ..
+                        } = &node.kind
+                        {
                             heading_info.push((
                                 font_size.to_f32().unwrap_or(0.0),
                                 level,
@@ -804,10 +893,10 @@ mod tests {
                 }
             }
         }
-        
+
         // Sort by font size descending
         heading_info.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-        
+
         // Verify larger fonts get smaller heading numbers (h1 < h2 < ...)
         for i in 1..heading_info.len() {
             assert!(
@@ -818,14 +907,17 @@ mod tests {
             );
         }
     }
-    
+
     #[test]
     fn test_multiple_sentences_not_heading() {
         // Text with multiple sentences should not be a heading
         let multi_sentence = "First sentence here. Second sentence follows.";
-        
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Large font but multiple sentences
                 make_text_node(multi_sentence, 20.0, 10.0, 10.0),
@@ -837,24 +929,30 @@ mod tests {
                 make_text_node("Body paragraph five.", 10.0, 10.0, 130.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         // Multiple sentences should not be detected as heading
         let headings = doc.headings();
         for &idx in &headings {
             let text = doc.get_text_content(idx);
-            assert!(!text.contains(". ") || text.ends_with('.'), 
-                "Multiple sentences should not be heading: {}", text);
+            assert!(
+                !text.contains(". ") || text.ends_with('.'),
+                "Multiple sentences should not be heading: {}",
+                text
+            );
         }
     }
-    
+
     #[test]
     fn test_single_sentence_heading() {
         // Single sentence with ending punctuation is valid
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 make_text_node("Introduction.", 20.0, 10.0, 10.0),
                 make_text_node("Body paragraph one.", 10.0, 10.0, 50.0),
@@ -864,14 +962,18 @@ mod tests {
                 make_text_node("Body paragraph five.", 10.0, 10.0, 130.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         let headings = doc.headings();
-        assert_eq!(headings.len(), 1, "Single sentence with period should be heading");
+        assert_eq!(
+            headings.len(),
+            1,
+            "Single sentence with period should be heading"
+        );
     }
-    
+
     #[test]
     fn test_is_single_sentence() {
         // Test the is_single_sentence helper
@@ -879,96 +981,101 @@ mod tests {
         assert!(HeadingDetector::is_single_sentence("Hello World."));
         assert!(HeadingDetector::is_single_sentence("Hello World!"));
         assert!(HeadingDetector::is_single_sentence("Hello World?"));
-        assert!(HeadingDetector::is_single_sentence("Section 1.2"));  // decimal
-        assert!(HeadingDetector::is_single_sentence("Price: $1.50"));  // decimal
-        
+        assert!(HeadingDetector::is_single_sentence("Section 1.2")); // decimal
+        assert!(HeadingDetector::is_single_sentence("Price: $1.50")); // decimal
+
         // Multiple sentences
         assert!(!HeadingDetector::is_single_sentence("First. Second"));
         assert!(!HeadingDetector::is_single_sentence("Hello. World here."));
-        assert!(!HeadingDetector::is_single_sentence("What? Another sentence here."));
+        assert!(!HeadingDetector::is_single_sentence(
+            "What? Another sentence here."
+        ));
     }
-    
+
     #[test]
     fn test_normalize_heading_levels_no_skip() {
         // Test that skipping levels is prevented
         // Input: detected h1, h3, h5 (skipping h2, h4)
         // Output should be: h1, h2, h3 (no skipping)
         let input = vec![
-            (0, 1, 10.0, false),  // h1, not bold section header
-            (1, 3, 50.0, false),  // h3 -> should become h2
-            (2, 5, 90.0, false),  // h5 -> should become h3
+            (0, 1, 10.0, false), // h1, not bold section header
+            (1, 3, 50.0, false), // h3 -> should become h2
+            (2, 5, 90.0, false), // h5 -> should become h3
         ];
-        
+
         let result = HeadingDetector::normalize_heading_levels(input);
-        
+
         assert_eq!(result[0].1, 1, "First should be h1");
         assert_eq!(result[1].1, 2, "Second should be h2 (not h3)");
         assert_eq!(result[2].1, 3, "Third should be h3 (not h5)");
     }
-    
+
     #[test]
     fn test_normalize_heading_levels_same_level_repeat() {
         // Valid: h1, h2, h2, h3, h2 (same level can repeat, can go back up)
         let input = vec![
-            (0, 1, 10.0, false),   // h1
-            (1, 2, 50.0, false),   // h2
-            (2, 2, 90.0, false),   // h2 again
-            (3, 3, 130.0, false),  // h3
-            (4, 2, 170.0, false),  // back to h2
+            (0, 1, 10.0, false),  // h1
+            (1, 2, 50.0, false),  // h2
+            (2, 2, 90.0, false),  // h2 again
+            (3, 3, 130.0, false), // h3
+            (4, 2, 170.0, false), // back to h2
         ];
-        
+
         let result = HeadingDetector::normalize_heading_levels(input);
-        
+
         assert_eq!(result[0].1, 1, "First should be h1");
         assert_eq!(result[1].1, 2, "Second should be h2");
         assert_eq!(result[2].1, 2, "Third should be h2 (repeat)");
         assert_eq!(result[3].1, 3, "Fourth should be h3");
         assert_eq!(result[4].1, 2, "Fifth should be h2 (back up)");
     }
-    
+
     #[test]
     fn test_normalize_heading_levels_preserves_relative_levels() {
         // When no true H1 (large text) exists, preserve relative levels
         // First heading at detected level 3 stays at 3 (not promoted to 1)
         let input = vec![
-            (0, 3, 10.0, false),  // detected h3 -> stays h3 (no H1 in document)
-            (1, 4, 50.0, false),  // h4 -> becomes h4 (one level deeper)
+            (0, 3, 10.0, false), // detected h3 -> stays h3 (no H1 in document)
+            (1, 4, 50.0, false), // h4 -> becomes h4 (one level deeper)
         ];
-        
+
         let result = HeadingDetector::normalize_heading_levels(input);
-        
+
         // Since min_original_level is 3 (no H1), preserve relative structure
         assert_eq!(result[0].1, 3, "First should stay h3 (no true H1)");
         assert_eq!(result[1].1, 4, "Second should be h4");
     }
-    
+
     #[test]
     fn test_normalize_heading_levels_h1_becomes_h1() {
         // When a true H1 exists, it becomes H1 and structure is preserved
         let input = vec![
-            (0, 2, 10.0, true),   // detected h2 (bold section header before title)
-            (1, 1, 50.0, false),  // detected h1 (true title)
-            (2, 2, 90.0, true),   // detected h2 (section header)
+            (0, 2, 10.0, true),  // detected h2 (bold section header before title)
+            (1, 1, 50.0, false), // detected h1 (true title)
+            (2, 2, 90.0, true),  // detected h2 (section header)
         ];
-        
+
         let result = HeadingDetector::normalize_heading_levels(input);
-        
+
         // First is H2, then H1 should be preserved
         assert_eq!(result[0].1, 2, "First (H2) should stay h2");
         assert_eq!(result[1].1, 1, "Second (H1) should be h1");
         assert_eq!(result[2].1, 2, "Third (H2) should be h2");
     }
-    
+
     #[test]
     fn test_headings_ordered_top_to_bottom() {
         // Headings placed out of order in y-coordinate should be sorted
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Headings in wrong vertical order in the vector
-                make_text_node("Section B", 18.0, 10.0, 100.0),  // y=100
-                make_text_node("Main Title", 24.0, 10.0, 10.0),  // y=10
-                make_text_node("Section A", 18.0, 10.0, 50.0),   // y=50
+                make_text_node("Section B", 18.0, 10.0, 100.0), // y=100
+                make_text_node("Main Title", 24.0, 10.0, 10.0), // y=10
+                make_text_node("Section A", 18.0, 10.0, 50.0),  // y=50
                 // Body text
                 make_text_node("Body one.", 10.0, 10.0, 150.0),
                 make_text_node("Body two.", 10.0, 10.0, 170.0),
@@ -977,16 +1084,17 @@ mod tests {
                 make_text_node("Body five.", 10.0, 10.0, 230.0),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
         HeadingDetector::new().process(&mut doc);
-        
+
         // Collect headings with their y-coordinates
         let mut heading_info: Vec<(f32, u8, String)> = Vec::new();
         for &idx in &doc.headings() {
             if let Some(group) = doc.get_group(idx) {
                 if let GroupKind::Heading { level } = group.kind {
-                    let y_coord = doc.compute_group_bounds(idx)
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
                         .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
                         .unwrap_or(0.0);
                     let content = doc.get_text_content(idx);
@@ -994,15 +1102,18 @@ mod tests {
                 }
             }
         }
-        
+
         // Sort by y-coordinate (as they should be in document order)
         heading_info.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        
+
         // "Main Title" at y=10 should be h1
         // "Section A" at y=50 should be h2
         // "Section B" at y=100 should be h2
-        assert!(heading_info.iter().any(|(_, level, content)| 
-            content.contains("Main Title") && *level == 1),
-            "Main Title should be h1");
+        assert!(
+            heading_info
+                .iter()
+                .any(|(_, level, content)| content.contains("Main Title") && *level == 1),
+            "Main Title should be h1"
+        );
     }
 }

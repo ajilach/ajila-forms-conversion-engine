@@ -20,10 +20,12 @@
 //! Header, Footer, and InlineField groups are ignored for now.
 
 use crate::document::{Document, GroupKind};
-use crate::flattened::{FlattenedNode, FlattenedNodeKind, WidgetKind, RichText, RichRun, Bounds, Hint};
+use crate::flattened::{
+    Bounds, FlattenedNode, FlattenedNodeKind, Hint, RichRun, RichText, WidgetKind,
+};
 use crate::structured::{
-    StructuredNode, HeadingNode, ParagraphNode, FieldNode, GroupNode, RepeatableNode,
-    InlineText, InlineNode, HeadingLevel, FieldType, InputValue,
+    FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
+    ParagraphNode, RepeatableNode, StructuredNode,
 };
 
 /// Check if a StructuredNode contains any fields (recursively).
@@ -33,7 +35,11 @@ fn contains_fields(node: &StructuredNode) -> bool {
         StructuredNode::Group(g) => g.children.iter().any(contains_fields),
         StructuredNode::Repeatable(r) => contains_fields(&r.item),
         StructuredNode::Conditional(c) => contains_fields(&c.content),
-        StructuredNode::Heading(_) | StructuredNode::Paragraph(_) | StructuredNode::Image(_) | StructuredNode::Table(_) | StructuredNode::Empty => false,
+        StructuredNode::Heading(_)
+        | StructuredNode::Paragraph(_)
+        | StructuredNode::Image(_)
+        | StructuredNode::Table(_)
+        | StructuredNode::Empty => false,
     }
 }
 
@@ -41,7 +47,7 @@ fn contains_fields(node: &StructuredNode) -> bool {
 /// Output is sorted in reading order: top to bottom, left to right.
 pub fn convert(doc: &Document) -> Vec<StructuredNode> {
     let converter = Converter { doc };
-    
+
     // Get roots and sort by reading order (y first, then x)
     let mut roots: Vec<usize> = doc.roots();
     roots.sort_by(|&a, &b| {
@@ -49,7 +55,7 @@ pub fn convert(doc: &Document) -> Vec<StructuredNode> {
         let bounds_b = doc.get_bounds(b);
         compare_bounds_reading_order(bounds_a, bounds_b)
     });
-    
+
     roots
         .into_iter()
         .filter_map(|idx| converter.convert_group(idx))
@@ -60,15 +66,15 @@ pub fn convert(doc: &Document) -> Vec<StructuredNode> {
 /// Elements on the same vertical line (within a threshold) are sorted left to right.
 fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    
+
     match (a, b) {
         (None, None) => Ordering::Equal,
-        (None, Some(_)) => Ordering::Greater,  // Items without bounds go to the end
+        (None, Some(_)) => Ordering::Greater, // Items without bounds go to the end
         (Some(_), None) => Ordering::Less,
         (Some(a), Some(b)) => {
             // Use a small threshold for "same line" comparison (about 2 points)
             let line_threshold = rust_decimal::Decimal::new(20, 1); // 2.0
-            
+
             let y_diff = a.y - b.y;
             if y_diff.abs() <= line_threshold {
                 // Same line - sort by x (left to right)
@@ -89,17 +95,17 @@ impl<'a, 'b> Converter<'a, 'b> {
     /// Convert a single group to a StructuredNode.
     fn convert_group(&self, group_idx: usize) -> Option<StructuredNode> {
         let group = self.doc.get_group(group_idx)?;
-        
+
         match &group.kind {
             // Skip header/footer for now
             GroupKind::Header | GroupKind::Footer => None,
-            
+
             // Skip inline fields for now
             GroupKind::InlineField => None,
-            
+
             // Skip non-printable elements (relevant="-print")
             GroupKind::NoPrint => None,
-            
+
             // Heading → HeadingNode
             GroupKind::Heading { level } => {
                 let text = self.extract_inline_text(group_idx);
@@ -108,7 +114,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     content: text,
                 }))
             }
-            
+
             // TextBlock / Paragraph → ParagraphNode
             GroupKind::TextBlock | GroupKind::Paragraph => {
                 let text = self.extract_inline_text(group_idx);
@@ -118,47 +124,44 @@ impl<'a, 'b> Converter<'a, 'b> {
                     Some(StructuredNode::Paragraph(ParagraphNode { content: text }))
                 }
             }
-            
+
             // LabeledField → FieldNode with label
             GroupKind::LabeledField { label, field } => {
                 let label_group = group.children.get(*label).copied()?;
                 let field_group = group.children.get(*field).copied()?;
-                
+
                 let label_text = self.extract_inline_text(label_group);
                 self.convert_field_group(field_group, Some(label_text))
             }
-            
+
             // RadioButton → FieldNode (single option, usually wrapped in RadioButtonGroup)
             GroupKind::RadioButton { field, label } => {
                 let label_group = group.children.get(*label).copied()?;
                 let field_group = group.children.get(*field).copied()?;
-                
+
                 let label_text = self.extract_inline_text(label_group);
                 self.convert_field_group(field_group, Some(label_text))
             }
-            
+
             // RadioButtonGroup → FieldNode with Radio type
-            GroupKind::RadioButtonGroup => {
-                self.convert_radio_button_group(group_idx)
-            }
-            
+            GroupKind::RadioButtonGroup => self.convert_radio_button_group(group_idx),
+
             // ExclGroup → FieldNode with Radio type
             GroupKind::ExclGroup { selected_value } => {
                 self.convert_excl_group(group_idx, selected_value.clone())
             }
-            
+
             // DateField → FieldNode with Date type
-            GroupKind::DateField { num_fields: _ } => {
-                self.convert_date_field(group_idx)
-            }
-            
+            GroupKind::DateField { num_fields: _ } => self.convert_date_field(group_idx),
+
             // Field → FieldNode (wrapped single field, unlabeled)
-            GroupKind::Field => {
-                self.convert_field_group(group_idx, None)
-            }
-            
+            GroupKind::Field => self.convert_field_group(group_idx, None),
+
             // RepeatableSection → RepeatableNode (only if it contains fields)
-            GroupKind::RepeatableSection { min_occurrences, max_occurrences } => {
+            GroupKind::RepeatableSection {
+                min_occurrences,
+                max_occurrences,
+            } => {
                 let children = self.convert_children(group_idx);
                 if children.is_empty() {
                     return None;
@@ -180,7 +183,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     Some(item)
                 }
             }
-            
+
             // Section / Unknown → GroupNode
             GroupKind::Section | GroupKind::Unknown => {
                 let children = self.convert_children(group_idx);
@@ -192,20 +195,18 @@ impl<'a, 'b> Converter<'a, 'b> {
                     Some(StructuredNode::Group(GroupNode { children }))
                 }
             }
-            
+
             // Leaf → depends on node type
-            GroupKind::Leaf { node_index } => {
-                self.convert_leaf(*node_index)
-            }
+            GroupKind::Leaf { node_index } => self.convert_leaf(*node_index),
         }
     }
-    
+
     /// Convert all children of a group, sorted in reading order.
     fn convert_children(&self, group_idx: usize) -> Vec<StructuredNode> {
         let Some(group) = self.doc.get_group(group_idx) else {
             return vec![];
         };
-        
+
         // Sort children by reading order before converting
         let mut children: Vec<usize> = group.children.clone();
         children.sort_by(|&a, &b| {
@@ -213,16 +214,17 @@ impl<'a, 'b> Converter<'a, 'b> {
             let bounds_b = self.doc.get_bounds(b);
             compare_bounds_reading_order(bounds_a, bounds_b)
         });
-        
-        children.iter()
+
+        children
+            .iter()
             .filter_map(|&child_idx| self.convert_group(child_idx))
             .collect()
     }
-    
+
     /// Convert a leaf node (text or field).
     fn convert_leaf(&self, node_index: usize) -> Option<StructuredNode> {
         let node = self.doc.get_node(node_index)?;
-        
+
         match &node.kind {
             FlattenedNodeKind::Text { content, .. } => {
                 if content.trim().is_empty() {
@@ -250,12 +252,18 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
         }
     }
-    
+
     /// Convert a Field group (wrapping a single field leaf) to FieldNode.
-    fn convert_field_group(&self, group_idx: usize, label: Option<InlineText>) -> Option<StructuredNode> {
+    fn convert_field_group(
+        &self,
+        group_idx: usize,
+        label: Option<InlineText>,
+    ) -> Option<StructuredNode> {
         let nodes = self.doc.collect_nodes(group_idx);
-        let field_node = nodes.into_iter().find(|n| matches!(n.kind, FlattenedNodeKind::Field { .. }))?;
-        
+        let field_node = nodes
+            .into_iter()
+            .find(|n| matches!(n.kind, FlattenedNodeKind::Field { .. }))?;
+
         // Non-interactive → text
         if !self.is_interactive(field_node) {
             let text = self.field_display_text(field_node);
@@ -266,19 +274,19 @@ impl<'a, 'b> Converter<'a, 'b> {
                 content: InlineText::plain(text),
             }));
         }
-        
+
         self.build_field_node(field_node, label)
     }
-    
+
     /// Convert a RadioButtonGroup to a single FieldNode with Radio type.
     fn convert_radio_button_group(&self, group_idx: usize) -> Option<StructuredNode> {
         let group = self.doc.get_group(group_idx)?;
-        
+
         // Collect all radio button labels as options
         let mut options = Vec::new();
         let mut first_field_node: Option<&FlattenedNode> = None;
         let mut selected_value: Option<String> = None;
-        
+
         for &child_idx in &group.children {
             if let Some(child_group) = self.doc.get_group(child_idx) {
                 if let GroupKind::RadioButton { field: _, label } = &child_group.kind {
@@ -287,7 +295,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         let label_text = self.doc.get_text_content(label_group_idx);
                         options.push(label_text.clone());
                     }
-                    
+
                     // Get field for checking selected state
                     let nodes = self.doc.collect_nodes(child_idx);
                     for node in nodes {
@@ -303,9 +311,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
         }
-        
+
         let field_node = first_field_node?;
-        
+
         Some(StructuredNode::Field(FieldNode {
             id: field_node.id,
             name: self.get_field_name(field_node),
@@ -315,15 +323,19 @@ impl<'a, 'b> Converter<'a, 'b> {
             placeholder: None,
         }))
     }
-    
+
     /// Convert an ExclGroup to a single FieldNode with Radio type.
-    fn convert_excl_group(&self, group_idx: usize, selected_value: Option<String>) -> Option<StructuredNode> {
+    fn convert_excl_group(
+        &self,
+        group_idx: usize,
+        selected_value: Option<String>,
+    ) -> Option<StructuredNode> {
         let nodes = self.doc.collect_nodes(group_idx);
-        
+
         // Collect all field labels/values as options
         let mut options = Vec::new();
         let mut first_field_node: Option<&FlattenedNode> = None;
-        
+
         for node in &nodes {
             if let FlattenedNodeKind::Field { label, .. } = &node.kind {
                 if !label.is_empty() {
@@ -334,9 +346,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
         }
-        
+
         let field_node = first_field_node?;
-        
+
         Some(StructuredNode::Field(FieldNode {
             id: field_node.id,
             name: self.get_field_name(field_node),
@@ -346,14 +358,17 @@ impl<'a, 'b> Converter<'a, 'b> {
             placeholder: None,
         }))
     }
-    
+
     /// Convert a DateField group.
     fn convert_date_field(&self, group_idx: usize) -> Option<StructuredNode> {
         let nodes = self.doc.collect_nodes(group_idx);
-        let first_field = nodes.iter().find(|n| matches!(n.kind, FlattenedNodeKind::Field { .. }))?;
-        
+        let first_field = nodes
+            .iter()
+            .find(|n| matches!(n.kind, FlattenedNodeKind::Field { .. }))?;
+
         // Concatenate values from all date component fields
-        let value_parts: Vec<String> = nodes.iter()
+        let value_parts: Vec<String> = nodes
+            .iter()
             .filter_map(|n| {
                 if let FlattenedNodeKind::Field { value, .. } = &n.kind {
                     if !value.is_empty() {
@@ -363,13 +378,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                 None
             })
             .collect();
-        
+
         let value = if value_parts.is_empty() {
             None
         } else {
             Some(InputValue::Date(value_parts.join(".")))
         };
-        
+
         Some(StructuredNode::Field(FieldNode {
             id: first_field.id,
             name: self.get_field_name(first_field),
@@ -379,16 +394,20 @@ impl<'a, 'b> Converter<'a, 'b> {
             placeholder: None,
         }))
     }
-    
+
     /// Build a FieldNode from a FlattenedNode.
-    fn build_field_node(&self, node: &FlattenedNode, label: Option<InlineText>) -> Option<StructuredNode> {
+    fn build_field_node(
+        &self,
+        node: &FlattenedNode,
+        label: Option<InlineText>,
+    ) -> Option<StructuredNode> {
         let FlattenedNodeKind::Field { name, value, .. } = &node.kind else {
             return None;
         };
-        
+
         let field_type = self.determine_field_type(node);
         let input_value = self.parse_input_value(value, &field_type);
-        
+
         Some(StructuredNode::Field(FieldNode {
             id: node.id,
             name: name.clone(),
@@ -398,7 +417,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             placeholder: self.get_placeholder(node),
         }))
     }
-    
+
     /// Determine FieldType from widget hints.
     fn determine_field_type(&self, node: &FlattenedNode) -> FieldType {
         // Check for widget type hint
@@ -440,11 +459,11 @@ impl<'a, 'b> Converter<'a, 'b> {
                 };
             }
         }
-        
+
         // Default to text
         self.text_field_type(node)
     }
-    
+
     /// Create a Text field type with constraints from hints.
     fn text_field_type(&self, node: &FlattenedNode) -> FieldType {
         FieldType::Text {
@@ -453,15 +472,17 @@ impl<'a, 'b> Converter<'a, 'b> {
             min_length: None,
         }
     }
-    
+
     /// Parse an input value based on field type.
     fn parse_input_value(&self, value: &str, field_type: &FieldType) -> Option<InputValue> {
         if value.is_empty() {
             return None;
         }
-        
+
         Some(match field_type {
-            FieldType::Checkbox => InputValue::Checkbox(value == "on" || value == "1" || value == "true"),
+            FieldType::Checkbox => {
+                InputValue::Checkbox(value == "on" || value == "1" || value == "true")
+            }
             FieldType::Radio { .. } => InputValue::Radio(value.to_string()),
             FieldType::Select { .. } => InputValue::Select(value.to_string()),
             FieldType::Date => InputValue::Date(value.to_string()),
@@ -478,11 +499,11 @@ impl<'a, 'b> Converter<'a, 'b> {
             FieldType::Text { .. } => InputValue::Text(value.to_string()),
         })
     }
-    
+
     // ========================================================================
     // Helper: Extract hints
     // ========================================================================
-    
+
     fn is_interactive(&self, node: &FlattenedNode) -> bool {
         for hint in &node.hints {
             if let Hint::FieldBehavior { access, .. } = hint {
@@ -491,7 +512,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
         true // Default to interactive
     }
-    
+
     fn get_format_pattern(&self, node: &FlattenedNode) -> Option<String> {
         for hint in &node.hints {
             if let Hint::Validation { format_pattern, .. } = hint {
@@ -500,7 +521,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
         None
     }
-    
+
     fn get_max_length(&self, node: &FlattenedNode) -> Option<usize> {
         for hint in &node.hints {
             if let Hint::FieldBehavior { max_length, .. } = hint {
@@ -509,7 +530,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
         None
     }
-    
+
     fn get_placeholder(&self, node: &FlattenedNode) -> Option<String> {
         for hint in &node.hints {
             if let Hint::Accessibility { tool_tip, .. } = hint {
@@ -518,7 +539,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
         None
     }
-    
+
     fn get_field_name(&self, node: &FlattenedNode) -> String {
         if let FlattenedNodeKind::Field { name, .. } = &node.kind {
             name.clone()
@@ -526,7 +547,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             String::new()
         }
     }
-    
+
     /// Get the display text for a non-interactive field.
     /// For readonly fields converted to paragraphs, only show the computed value (rawValue),
     /// not the field's label. If there's no value, the field shouldn't produce text output.
@@ -539,37 +560,39 @@ impl<'a, 'b> Converter<'a, 'b> {
             String::new()
         }
     }
-    
+
     // ========================================================================
     // Helper: InlineText extraction
     // ========================================================================
-    
+
     /// Extract InlineText from a group (recursively collecting all text).
     fn extract_inline_text(&self, group_idx: usize) -> InlineText {
         let nodes = self.doc.collect_nodes(group_idx);
         let mut result = Vec::new();
-        
+
         for node in nodes {
             self.append_inline_nodes_from_node(node, &mut result);
         }
-        
+
         InlineText::new(result)
     }
-    
+
     /// Build InlineText from a single FlattenedNode.
     fn build_inline_text_from_node(&self, node: &FlattenedNode) -> InlineText {
         let mut result = Vec::new();
         self.append_inline_nodes_from_node(node, &mut result);
         InlineText::new(result)
     }
-    
+
     /// Append InlineNodes from a FlattenedNode to the result vec.
     fn append_inline_nodes_from_node(&self, node: &FlattenedNode, result: &mut Vec<InlineNode>) {
         // Check for rich text content
         for hint in &node.hints {
             if let Hint::RichContent(rich_text) = hint {
                 // Only use rich text if it has actual text content (non-empty runs)
-                let has_content = rich_text.paragraphs.iter()
+                let has_content = rich_text
+                    .paragraphs
+                    .iter()
                     .any(|p| p.runs.iter().any(|r| !r.text.is_empty()));
                 if has_content {
                     self.append_inline_nodes_from_rich_text(rich_text, result);
@@ -577,7 +600,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
         }
-        
+
         // Plain text fallback
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             if !content.is_empty() {
@@ -585,9 +608,13 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
         }
     }
-    
+
     /// Convert RichText to InlineNodes.
-    fn append_inline_nodes_from_rich_text(&self, rich_text: &RichText, result: &mut Vec<InlineNode>) {
+    fn append_inline_nodes_from_rich_text(
+        &self,
+        rich_text: &RichText,
+        result: &mut Vec<InlineNode>,
+    ) {
         for para in &rich_text.paragraphs {
             for run in &para.runs {
                 let inline_node = self.rich_run_to_inline_node(run);
@@ -595,21 +622,21 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
         }
     }
-    
+
     /// Convert a RichRun to an InlineNode with appropriate styling wrappers.
     fn rich_run_to_inline_node(&self, run: &RichRun) -> InlineNode {
         let mut node = InlineNode::Text(run.text.clone());
-        
+
         // Wrap with emphasis if italic
         if run.italic {
             node = InlineNode::Emphasis(Box::new(node));
         }
-        
+
         // Wrap with strong if bold
         if run.bold {
             node = InlineNode::Strong(Box::new(node));
         }
-        
+
         node
     }
 }
@@ -617,6 +644,6 @@ impl<'a, 'b> Converter<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // TODO: Add tests when we have test fixtures
 }

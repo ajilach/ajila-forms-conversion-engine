@@ -1,6 +1,6 @@
+use crate::flattened::FieldId;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use crate::flattened::FieldId;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -103,7 +103,7 @@ pub enum FieldType {
     Tel,
     Checkbox,
     Radio {
-        options: Vec<String>
+        options: Vec<String>,
     },
     Select {
         options: Vec<String>,
@@ -199,7 +199,7 @@ impl InlineText {
                     // Different types
                     _ => false,
                 };
-                
+
                 if !merged {
                     consolidated.push(current);
                     current = next;
@@ -213,10 +213,11 @@ impl InlineText {
 
     /// Check if the inline text is empty
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty() || self.0.iter().all(|node| match node {
-            InlineNode::Text(s) => s.is_empty(),
-            _ => false,
-        })
+        self.0.is_empty()
+            || self.0.iter().all(|node| match node {
+                InlineNode::Text(s) => s.is_empty(),
+                _ => false,
+            })
     }
 
     /// Get the plain text content (stripping formatting)

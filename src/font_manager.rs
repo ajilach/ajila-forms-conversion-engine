@@ -25,56 +25,48 @@
 //! - fantasy: Decorative fonts
 //! - monospace: Fixed-width fonts
 
-use crate::xfa::{Font, FontWeight, FontPosture, GenericFamily};
+use crate::xfa::{Font, FontPosture, FontWeight, GenericFamily};
 use ab_glyph::FontRef;
+use regex_lite::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use thiserror::Error;
 use ttf_parser::{Face, name_id};
-use regex_lite::Regex;
 
 /// Font-related errors
 #[derive(Debug, Error)]
 pub enum FontError {
     /// The requested font was not found and no suitable fallback exists
-    #[error("Font not found: '{typeface}' (weight: {weight:?}, posture: {posture:?}). Tried aliases: {tried_aliases:?}. Consider embedding the font in the PDF or specifying a genericFamily fallback.")]
+    #[error(
+        "Font not found: '{typeface}' (weight: {weight:?}, posture: {posture:?}). Tried aliases: {tried_aliases:?}. Consider embedding the font in the PDF or specifying a genericFamily fallback."
+    )]
     FontNotFound {
         typeface: String,
         weight: FontWeight,
         posture: FontPosture,
         tried_aliases: Vec<String>,
     },
-    
+
     /// No fallback font available on the system
     #[error("No fallback font available. Searched paths: {searched_paths:?}")]
-    NoFallbackAvailable {
-        searched_paths: Vec<String>,
-    },
-    
+    NoFallbackAvailable { searched_paths: Vec<String> },
+
     /// Failed to read font file
     #[error("Failed to read font file '{path}': {reason}")]
-    FontFileReadError {
-        path: String,
-        reason: String,
-    },
-    
+    FontFileReadError { path: String, reason: String },
+
     /// Failed to parse font data
     #[error("Failed to parse font data: {reason}")]
-    FontParseError {
-        reason: String,
-    },
-    
+    FontParseError { reason: String },
+
     /// Lock error when accessing font manager
     #[error("Font manager lock error: {0}")]
     LockError(String),
-    
+
     /// Embedded font data is invalid
     #[error("Invalid embedded font data for '{name}': {reason}")]
-    InvalidEmbeddedFont {
-        name: String,
-        reason: String,
-    },
+    InvalidEmbeddedFont { name: String, reason: String },
 }
 
 /// Extension trait to add fallback_typefaces to GenericFamily
@@ -89,23 +81,31 @@ impl GenericFamilyExt for GenericFamily {
         match self {
             // Prefer Arial first since it has explicit bold/italic files on most systems
             GenericFamily::SansSerif => vec![
-                "arial", "helvetica", "helvetica neue", 
-                "liberation sans", "dejavu sans", "verdana"
+                "arial",
+                "helvetica",
+                "helvetica neue",
+                "liberation sans",
+                "dejavu sans",
+                "verdana",
             ],
             GenericFamily::Serif => vec![
-                "times new roman", "times", "georgia",
-                "liberation serif", "dejavu serif"
+                "times new roman",
+                "times",
+                "georgia",
+                "liberation serif",
+                "dejavu serif",
             ],
             GenericFamily::Monospace => vec![
-                "courier new", "courier", "consolas",
-                "liberation mono", "dejavu sans mono"
+                "courier new",
+                "courier",
+                "consolas",
+                "liberation mono",
+                "dejavu sans mono",
             ],
-            GenericFamily::Cursive => vec![
-                "comic sans ms", "brush script mt", "lucida handwriting"
-            ],
-            GenericFamily::Fantasy => vec![
-                "impact", "papyrus", "copperplate"
-            ],
+            GenericFamily::Cursive => {
+                vec!["comic sans ms", "brush script mt", "lucida handwriting"]
+            }
+            GenericFamily::Fantasy => vec!["impact", "papyrus", "copperplate"],
         }
     }
 }
@@ -157,7 +157,7 @@ impl FontEquate {
             to_posture: None,
         }
     }
-    
+
     /// Create a mapping with specific weight/posture variants
     pub fn with_variants(
         from: &str,
@@ -176,7 +176,7 @@ impl FontEquate {
             to_posture,
         }
     }
-    
+
     /// Check if this equate applies to the given variant
     pub fn matches(&self, variant: &FontVariant) -> bool {
         if variant.family != self.from {
@@ -194,7 +194,7 @@ impl FontEquate {
         }
         true
     }
-    
+
     /// Get the target variant for a matching source variant
     pub fn target_variant(&self, source: &FontVariant) -> FontVariant {
         FontVariant::new(
@@ -228,7 +228,7 @@ impl FontEquateRange {
             unicode_ranges: ranges,
         }
     }
-    
+
     /// Parse Unicode range string per XFA spec format
     /// Supports: "U+20-37E", "U+20,U+30-3F", "U+0041"
     pub fn parse_unicode_range(range_str: &str) -> Vec<(u32, u32)> {
@@ -250,12 +250,14 @@ impl FontEquateRange {
         }
         ranges
     }
-    
+
     /// Check if a codepoint falls within this equate range's Unicode ranges
     pub fn contains_codepoint(&self, codepoint: u32) -> bool {
-        self.unicode_ranges.iter().any(|(start, end)| codepoint >= *start && codepoint <= *end)
+        self.unicode_ranges
+            .iter()
+            .any(|(start, end)| codepoint >= *start && codepoint <= *end)
     }
-    
+
     /// Check if this equate range applies to the given font
     pub fn matches_font(&self, font_family: &str) -> bool {
         font_family.to_lowercase() == self.from
@@ -266,13 +268,16 @@ impl FontEquateRange {
 /// Handles naming conventions like "Frutiger 45 Light", "Helvetica Neue Light", etc.
 fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
     let typeface_lower = typeface.to_lowercase();
-    
+
     // Frutiger-style numeric weights: 45=Light, 46=LightItalic, 55=Roman, 56=Italic, 65=Bold, etc.
     if let Ok(re) = Regex::new(r"^(.+?)\s*(\d{2})\s*(.*)$") {
         if let Some(caps) = re.captures(&typeface_lower) {
             let base = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
-            let num: u32 = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-            
+            let num: u32 = caps
+                .get(2)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(0);
+
             // Map Frutiger-style numbers to weights
             let weight_from_num = match num {
                 35 | 36 => Some(FontWeight::Thin),
@@ -284,13 +289,13 @@ fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
                 95 | 96 => Some(FontWeight::Black),
                 _ => None,
             };
-            
+
             if weight_from_num.is_some() && !base.is_empty() {
                 return (base.to_string(), weight_from_num);
             }
         }
     }
-    
+
     // Check for weight keywords in the name
     let weight_keywords = [
         ("ultra light", FontWeight::ExtraLight),
@@ -316,7 +321,7 @@ fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
         ("roman", FontWeight::Normal),
         ("book", FontWeight::Normal),
     ];
-    
+
     for (keyword, weight) in weight_keywords {
         if typeface_lower.contains(keyword) {
             // Extract family by removing the weight keyword
@@ -331,7 +336,7 @@ fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
             }
         }
     }
-    
+
     (typeface_lower, None)
 }
 
@@ -351,18 +356,18 @@ impl FontVariant {
             posture,
         }
     }
-    
+
     pub fn from_xfa_font(font: &Font) -> Self {
         // Normalize typeface to extract base family and weight hint
         let (normalized_family, weight_hint) = normalize_typeface(&font.typeface);
-        
+
         // Use detected weight if XFA weight is Normal and we found a weight hint
         let weight = if font.weight == FontWeight::Normal {
             weight_hint.unwrap_or(font.weight)
         } else {
             font.weight
         };
-        
+
         FontVariant {
             family: normalized_family,
             weight,
@@ -399,7 +404,7 @@ impl Default for FontConfig {
 }
 
 /// Font manager that handles font resolution and loading
-/// 
+///
 /// Per XFA spec, font resolution follows this priority:
 /// 1. Embedded fonts from PDF (registered via `register_embedded_font`)
 /// 2. Exact typeface match from system fonts
@@ -433,7 +438,7 @@ impl FontManager {
     pub fn new() -> Self {
         Self::with_config(FontConfig::default())
     }
-    
+
     /// Create a new font manager with custom configuration
     pub fn with_config(config: FontConfig) -> Self {
         let mut manager = FontManager {
@@ -450,24 +455,23 @@ impl FontManager {
         manager.scan_system_fonts();
         manager
     }
-    
+
     /// Enable or disable strict mode
     /// In strict mode, returns an error when a font is not found instead of using fallback
     pub fn set_strict_mode(&mut self, strict: bool) {
         self.config.strict_mode = strict;
     }
-    
+
     /// Register an embedded font from a PDF file
     /// Per XFA spec section 28: "When an XFA form is packaged inside a PDF file
     /// the PDF file may carry the required fonts along with the form."
     pub fn register_embedded_font(&mut self, mut font: EmbeddedFont) -> Result<(), FontError> {
         // Validate that we can parse the font data
-        FontRef::try_from_slice(&font.data)
-            .map_err(|e| FontError::InvalidEmbeddedFont {
-                name: font.name.clone(),
-                reason: e.to_string(),
-            })?;
-        
+        FontRef::try_from_slice(&font.data).map_err(|e| FontError::InvalidEmbeddedFont {
+            name: font.name.clone(),
+            reason: e.to_string(),
+        })?;
+
         // Try to read accurate metadata from font data
         if let Some((family, weight, posture)) = Self::read_font_metadata(&font.data, 0) {
             // Update with detected values (more accurate than provided)
@@ -485,10 +489,10 @@ impl FontManager {
             let name_lower = font.name.to_lowercase();
             self.embedded_fonts.insert(name_lower, font);
         }
-        
+
         Ok(())
     }
-    
+
     /// Register multiple embedded fonts from a PDF
     pub fn register_embedded_fonts(&mut self, fonts: Vec<EmbeddedFont>) -> Result<(), FontError> {
         for font in fonts {
@@ -496,23 +500,26 @@ impl FontManager {
         }
         Ok(())
     }
-    
+
     /// Check if an embedded font with this name exists
     pub fn has_embedded_font(&self, name: &str) -> bool {
         self.embedded_fonts.contains_key(&name.to_lowercase())
     }
-    
+
     /// Get list of registered embedded fonts
     pub fn embedded_font_names(&self) -> Vec<&str> {
-        self.embedded_fonts.values().map(|f| f.name.as_str()).collect()
+        self.embedded_fonts
+            .values()
+            .map(|f| f.name.as_str())
+            .collect()
     }
-    
+
     /// Register a font equate mapping per XFA spec section 28
     /// Per XFA spec: "The equate element enables an XFA processor to map an unavailable
     /// font to an available one."
-    /// 
+    ///
     /// Equates are checked first in font resolution (step 1 of XFA algorithm).
-    /// 
+    ///
     /// # Example
     /// ```
     /// manager.register_equate(FontEquate::new("Frutiger", "Helvetica"));
@@ -520,18 +527,18 @@ impl FontManager {
     pub fn register_equate(&mut self, equate: FontEquate) {
         self.equates.push(equate);
     }
-    
+
     /// Register multiple font equate mappings
     pub fn register_equates(&mut self, equates: Vec<FontEquate>) {
         self.equates.extend(equates);
     }
-    
+
     /// Register a font equate range for Unicode-based substitution per XFA spec
     /// Per XFA spec: "The equateRange element enables an XFA processor to map specific
     /// Unicode ranges in an unavailable font to an available font."
-    /// 
+    ///
     /// This is used for per-codepoint font fallback (e.g., CJK characters).
-    /// 
+    ///
     /// # Example
     /// ```
     /// manager.register_equate_range(FontEquateRange::new(
@@ -543,12 +550,12 @@ impl FontManager {
     pub fn register_equate_range(&mut self, equate_range: FontEquateRange) {
         self.equate_ranges.push(equate_range);
     }
-    
+
     /// Register multiple font equate ranges
     pub fn register_equate_ranges(&mut self, equate_ranges: Vec<FontEquateRange>) {
         self.equate_ranges.extend(equate_ranges);
     }
-    
+
     /// Get fallback font for a specific codepoint based on equate ranges
     /// Returns the target font family if an equate range matches, None otherwise
     pub fn get_fallback_for_codepoint(&self, font_family: &str, codepoint: u32) -> Option<&str> {
@@ -559,59 +566,77 @@ impl FontManager {
         }
         None
     }
-    
+
     /// Clear all registered equates and equate ranges
     pub fn clear_equates(&mut self) {
         self.equates.clear();
         self.equate_ranges.clear();
     }
-    
+
     /// Build font family aliases map
     /// Per XFA spec: when requested font is unavailable, substitute best match
     fn build_aliases() -> HashMap<String, Vec<String>> {
         let mut aliases = HashMap::new();
-        
+
         // Sans-serif family aliases
-        aliases.insert("helvetica".to_string(), vec![
-            "arial".to_string(),
-            "helvetica neue".to_string(),
-            "liberation sans".to_string(),
-            "dejavu sans".to_string(),
-        ]);
-        aliases.insert("arial".to_string(), vec![
+        aliases.insert(
             "helvetica".to_string(),
-            "helvetica neue".to_string(),
-            "liberation sans".to_string(),
-            "dejavu sans".to_string(),
-        ]);
-        
-        // Serif family aliases  
-        aliases.insert("times".to_string(), vec![
-            "times new roman".to_string(),
-            "liberation serif".to_string(),
-            "dejavu serif".to_string(),
-        ]);
-        aliases.insert("times new roman".to_string(), vec![
+            vec![
+                "arial".to_string(),
+                "helvetica neue".to_string(),
+                "liberation sans".to_string(),
+                "dejavu sans".to_string(),
+            ],
+        );
+        aliases.insert(
+            "arial".to_string(),
+            vec![
+                "helvetica".to_string(),
+                "helvetica neue".to_string(),
+                "liberation sans".to_string(),
+                "dejavu sans".to_string(),
+            ],
+        );
+
+        // Serif family aliases
+        aliases.insert(
             "times".to_string(),
-            "liberation serif".to_string(),
-            "dejavu serif".to_string(),
-        ]);
-        
+            vec![
+                "times new roman".to_string(),
+                "liberation serif".to_string(),
+                "dejavu serif".to_string(),
+            ],
+        );
+        aliases.insert(
+            "times new roman".to_string(),
+            vec![
+                "times".to_string(),
+                "liberation serif".to_string(),
+                "dejavu serif".to_string(),
+            ],
+        );
+
         // Monospace family aliases (XFA default is Courier)
-        aliases.insert("courier".to_string(), vec![
-            "courier new".to_string(),
-            "liberation mono".to_string(),
-            "dejavu sans mono".to_string(),
-        ]);
-        aliases.insert("courier new".to_string(), vec![
+        aliases.insert(
             "courier".to_string(),
-            "liberation mono".to_string(),
-            "dejavu sans mono".to_string(),
-        ]);
-        
+            vec![
+                "courier new".to_string(),
+                "liberation mono".to_string(),
+                "dejavu sans mono".to_string(),
+            ],
+        );
+        aliases.insert(
+            "courier new".to_string(),
+            vec![
+                "courier".to_string(),
+                "liberation mono".to_string(),
+                "dejavu sans mono".to_string(),
+            ],
+        );
+
         aliases
     }
-    
+
     /// Scan system font directories and register available fonts
     fn scan_system_fonts(&mut self) {
         // macOS font directories
@@ -620,23 +645,21 @@ impl FontManager {
             "/System/Library/Fonts/Supplemental",
             "/Library/Fonts",
         ];
-        
+
         // User font directory (macOS)
         let home_dir = std::env::var("HOME").unwrap_or_default();
         let user_fonts_dir = format!("{}/Library/Fonts", home_dir);
-        
+
         // Linux font directories
         let linux_dirs = [
             "/usr/share/fonts/truetype",
             "/usr/share/fonts/TTF",
             "/usr/local/share/fonts",
         ];
-        
+
         // Windows font directory
-        let windows_dirs = [
-            "C:\\Windows\\Fonts",
-        ];
-        
+        let windows_dirs = ["C:\\Windows\\Fonts"];
+
         // Combine all directories
         let all_dirs: Vec<&str> = if cfg!(target_os = "macos") {
             macos_dirs.to_vec()
@@ -646,29 +669,34 @@ impl FontManager {
             windows_dirs.to_vec()
         } else {
             // Try all on unknown OS
-            macos_dirs.iter().chain(linux_dirs.iter()).chain(windows_dirs.iter()).copied().collect()
+            macos_dirs
+                .iter()
+                .chain(linux_dirs.iter())
+                .chain(windows_dirs.iter())
+                .copied()
+                .collect()
         };
-        
+
         for dir in all_dirs {
             self.scan_font_directory(dir);
         }
-        
+
         // Also scan user fonts directory on macOS
         if cfg!(target_os = "macos") && !user_fonts_dir.is_empty() {
             self.scan_font_directory(&user_fonts_dir);
         }
-        
+
         // Register specific known font files for common families
         self.register_common_fonts();
     }
-    
+
     /// Scan a font directory recursively
     fn scan_font_directory(&mut self, dir: &str) {
         let path = PathBuf::from(dir);
         if !path.exists() {
             return;
         }
-        
+
         if let Ok(entries) = std::fs::read_dir(&path) {
             for entry in entries.flatten() {
                 let file_path = entry.path();
@@ -686,7 +714,7 @@ impl FontManager {
             }
         }
     }
-    
+
     /// Try to register a font file by reading its metadata
     fn try_register_font_file(&mut self, path: &PathBuf) {
         // Read the font file
@@ -694,14 +722,16 @@ impl FontManager {
             Ok(data) => data,
             Err(_) => return,
         };
-        
+
         // Get number of faces (for TTC font collections)
         let face_count = Self::get_face_count(&font_data);
         let mut registered_any = false;
-        
+
         // Register all faces in the font file
         for face_index in 0..face_count {
-            if let Some((family, weight, posture)) = Self::read_font_metadata(&font_data, face_index) {
+            if let Some((family, weight, posture)) =
+                Self::read_font_metadata(&font_data, face_index)
+            {
                 if !family.is_empty() {
                     let variant = FontVariant::new(&family, weight, posture);
                     let font_file = FontFile {
@@ -710,23 +740,24 @@ impl FontManager {
                         weight,
                         posture,
                     };
-                    
+
                     // Only insert if we don't already have this variant
                     self.font_files.entry(variant).or_insert(font_file);
                     registered_any = true;
                 }
             }
         }
-        
+
         // Fallback to filename parsing if metadata reading failed for all faces
         if !registered_any {
-            let file_name = path.file_stem()
+            let file_name = path
+                .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-            
+
             let file_name_lower = file_name.to_lowercase();
             let (family, weight, posture) = Self::parse_font_filename(&file_name_lower);
-            
+
             if !family.is_empty() {
                 let variant = FontVariant::new(&family, weight, posture);
                 let font_file = FontFile {
@@ -739,43 +770,48 @@ impl FontManager {
             }
         }
     }
-    
+
     /// Read font metadata (family, weight, posture) from font file data using ttf-parser
     /// This extracts accurate information from the font's internal tables instead of guessing from filename
-    fn read_font_metadata(font_data: &[u8], face_index: u32) -> Option<(String, FontWeight, FontPosture)> {
+    fn read_font_metadata(
+        font_data: &[u8],
+        face_index: u32,
+    ) -> Option<(String, FontWeight, FontPosture)> {
         let face = Face::parse(font_data, face_index).ok()?;
-        
+
         // Extract family name from the name table
         // Priority: Typographic Family (ID 16) > Font Family (ID 1)
         // Typographic Family is the "clean" family name (e.g., "Frutiger")
         // Font Family often includes style (e.g., "Frutiger 45 Light")
-        let typographic_family = face.names()
+        let typographic_family = face
+            .names()
             .into_iter()
             .filter(|name| name.name_id == name_id::TYPOGRAPHIC_FAMILY)
             .filter_map(|name| name.to_string())
             .next();
-        
-        let font_family = face.names()
+
+        let font_family = face
+            .names()
             .into_iter()
             .filter(|name| name.name_id == name_id::FAMILY)
             .filter_map(|name| name.to_string())
             .next();
-        
+
         // Prefer typographic family (cleaner name) over font family
         let family = typographic_family.or(font_family)?.to_lowercase();
-        
+
         // Get weight from OS/2 table
         let weight = FontWeight::from_numeric(face.weight().to_number());
-        
+
         // Get style/posture
         let posture = match face.style() {
             ttf_parser::Style::Normal => FontPosture::Normal,
             ttf_parser::Style::Italic | ttf_parser::Style::Oblique => FontPosture::Italic,
         };
-        
+
         Some((family, weight, posture))
     }
-    
+
     /// Get the number of faces in a font file (for TTC collections)
     fn get_face_count(font_data: &[u8]) -> u32 {
         // TTC files start with "ttcf" magic
@@ -786,89 +822,261 @@ impl FontManager {
             1 // Single font file
         }
     }
-    
+
     /// Parse font filename to extract family, weight, and posture
     fn parse_font_filename(filename: &str) -> (String, FontWeight, FontPosture) {
         let mut weight = FontWeight::Normal;
         let mut posture = FontPosture::Normal;
-        
+
         // Check for weight indicators
-        let is_bold = filename.contains("bold") || filename.contains("-b") || filename.ends_with("b");
+        let is_bold =
+            filename.contains("bold") || filename.contains("-b") || filename.ends_with("b");
         if is_bold {
             weight = FontWeight::Bold;
         }
-        
+
         // Check for posture indicators
-        let is_italic = filename.contains("italic") || filename.contains("oblique") 
-            || filename.contains("-i") || filename.ends_with("i")
+        let is_italic = filename.contains("italic")
+            || filename.contains("oblique")
+            || filename.contains("-i")
+            || filename.ends_with("i")
             || filename.ends_with("it");
         if is_italic {
             posture = FontPosture::Italic;
         }
-        
+
         // Extract family name by removing weight/posture suffixes
         let mut family = filename.to_string();
-        for suffix in &["bold italic", "bolditalic", "bold", "italic", "oblique", 
-                        " bold", " italic", "-bold", "-italic", "-regular", "regular",
-                        "-b", "-i", " b", " i"] {
+        for suffix in &[
+            "bold italic",
+            "bolditalic",
+            "bold",
+            "italic",
+            "oblique",
+            " bold",
+            " italic",
+            "-bold",
+            "-italic",
+            "-regular",
+            "regular",
+            "-b",
+            "-i",
+            " b",
+            " i",
+        ] {
             family = family.replace(suffix, "");
         }
-        
+
         // Clean up family name
         family = family.trim().replace(['_', '-'], " ");
-        
+
         (family, weight, posture)
     }
-    
+
     /// Register commonly used fonts with explicit paths
     fn register_common_fonts(&mut self) {
         // Define common font mappings
         let common_fonts = [
             // Helvetica variants (macOS)
-            ("/System/Library/Fonts/Helvetica.ttc", "helvetica", FontWeight::Normal, FontPosture::Normal),
-            
+            (
+                "/System/Library/Fonts/Helvetica.ttc",
+                "helvetica",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
             // Arial variants (cross-platform)
-            ("/System/Library/Fonts/Supplemental/Arial.ttf", "arial", FontWeight::Normal, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "arial", FontWeight::Bold, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Arial Italic.ttf", "arial", FontWeight::Normal, FontPosture::Italic),
-            ("/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf", "arial", FontWeight::Bold, FontPosture::Italic),
-            
+            (
+                "/System/Library/Fonts/Supplemental/Arial.ttf",
+                "arial",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                "arial",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+                "arial",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+                "arial",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
             // Courier variants (XFA default)
-            ("/System/Library/Fonts/Courier.ttc", "courier", FontWeight::Normal, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Courier New.ttf", "courier new", FontWeight::Normal, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Courier New Bold.ttf", "courier new", FontWeight::Bold, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Courier New Italic.ttf", "courier new", FontWeight::Normal, FontPosture::Italic),
-            ("/System/Library/Fonts/Supplemental/Courier New Bold Italic.ttf", "courier new", FontWeight::Bold, FontPosture::Italic),
-            
+            (
+                "/System/Library/Fonts/Courier.ttc",
+                "courier",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Courier New.ttf",
+                "courier new",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Courier New Bold.ttf",
+                "courier new",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Courier New Italic.ttf",
+                "courier new",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Courier New Bold Italic.ttf",
+                "courier new",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
             // Times variants
-            ("/System/Library/Fonts/Supplemental/Times New Roman.ttf", "times new roman", FontWeight::Normal, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf", "times new roman", FontWeight::Bold, FontPosture::Normal),
-            ("/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf", "times new roman", FontWeight::Normal, FontPosture::Italic),
-            ("/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf", "times new roman", FontWeight::Bold, FontPosture::Italic),
-            
+            (
+                "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+                "times new roman",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+                "times new roman",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
+                "times new roman",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
+                "times new roman",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
             // DejaVu (Linux fallback)
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "dejavu sans", FontWeight::Normal, FontPosture::Normal),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "dejavu sans", FontWeight::Bold, FontPosture::Normal),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "dejavu sans", FontWeight::Normal, FontPosture::Italic),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf", "dejavu sans", FontWeight::Bold, FontPosture::Italic),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "dejavu sans mono", FontWeight::Normal, FontPosture::Normal),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", "dejavu sans mono", FontWeight::Bold, FontPosture::Normal),
-            
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "dejavu sans",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "dejavu sans",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+                "dejavu sans",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+                "dejavu sans",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+                "dejavu sans mono",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+                "dejavu sans mono",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
             // Windows fonts
-            ("C:\\Windows\\Fonts\\arial.ttf", "arial", FontWeight::Normal, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\arialbd.ttf", "arial", FontWeight::Bold, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\ariali.ttf", "arial", FontWeight::Normal, FontPosture::Italic),
-            ("C:\\Windows\\Fonts\\arialbi.ttf", "arial", FontWeight::Bold, FontPosture::Italic),
-            ("C:\\Windows\\Fonts\\cour.ttf", "courier new", FontWeight::Normal, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\courbd.ttf", "courier new", FontWeight::Bold, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\couri.ttf", "courier new", FontWeight::Normal, FontPosture::Italic),
-            ("C:\\Windows\\Fonts\\courbi.ttf", "courier new", FontWeight::Bold, FontPosture::Italic),
-            ("C:\\Windows\\Fonts\\times.ttf", "times new roman", FontWeight::Normal, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\timesbd.ttf", "times new roman", FontWeight::Bold, FontPosture::Normal),
-            ("C:\\Windows\\Fonts\\timesi.ttf", "times new roman", FontWeight::Normal, FontPosture::Italic),
-            ("C:\\Windows\\Fonts\\timesbi.ttf", "times new roman", FontWeight::Bold, FontPosture::Italic),
+            (
+                "C:\\Windows\\Fonts\\arial.ttf",
+                "arial",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\arialbd.ttf",
+                "arial",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\ariali.ttf",
+                "arial",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "C:\\Windows\\Fonts\\arialbi.ttf",
+                "arial",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
+            (
+                "C:\\Windows\\Fonts\\cour.ttf",
+                "courier new",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\courbd.ttf",
+                "courier new",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\couri.ttf",
+                "courier new",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "C:\\Windows\\Fonts\\courbi.ttf",
+                "courier new",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
+            (
+                "C:\\Windows\\Fonts\\times.ttf",
+                "times new roman",
+                FontWeight::Normal,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\timesbd.ttf",
+                "times new roman",
+                FontWeight::Bold,
+                FontPosture::Normal,
+            ),
+            (
+                "C:\\Windows\\Fonts\\timesi.ttf",
+                "times new roman",
+                FontWeight::Normal,
+                FontPosture::Italic,
+            ),
+            (
+                "C:\\Windows\\Fonts\\timesbi.ttf",
+                "times new roman",
+                FontWeight::Bold,
+                FontPosture::Italic,
+            ),
         ];
-        
+
         for (path, family, weight, posture) in common_fonts {
             let path_buf = PathBuf::from(path);
             if path_buf.exists() {
@@ -883,10 +1091,10 @@ impl FontManager {
             }
         }
     }
-    
+
     /// Get font data for a specific variant
     /// Returns static font data that can be used with ab_glyph
-    /// 
+    ///
     /// Resolution order per XFA spec section 28:
     /// 1. Check equate elements for direct mapping (XFA step 1)
     /// 2. Embedded fonts from PDF
@@ -898,27 +1106,27 @@ impl FontManager {
     pub fn get_font_data(&mut self, variant: &FontVariant) -> Result<&'static [u8], FontError> {
         self.get_font_data_with_generic(variant, None)
     }
-    
+
     /// Get font data with optional generic family fallback
     pub fn get_font_data_with_generic(
-        &mut self, 
+        &mut self,
         variant: &FontVariant,
         generic_family: Option<GenericFamily>,
     ) -> Result<&'static [u8], FontError> {
         let mut tried_aliases = Vec::new();
-        
+
         // Check if already loaded
         if let Some(data) = self.loaded_fonts.get(variant) {
             return Ok(*data);
         }
-        
+
         // 1. Check equate elements first (per XFA spec step 1)
         // "Check the equate elements in the config packet for a direct mapping"
         for equate in self.equates.clone() {
             if equate.matches(variant) {
                 let target = equate.target_variant(variant);
                 tried_aliases.push(target.family.clone());
-                
+
                 // Try to resolve the equated font (recursive, but won't loop due to different variant)
                 if let Ok(data) = self.get_font_data(&target) {
                     // Cache under original variant too
@@ -927,7 +1135,7 @@ impl FontManager {
                 }
             }
         }
-        
+
         // 2. Try embedded fonts (per XFA spec: PDF embedded fonts take priority)
         let family_lower = variant.family.to_lowercase();
         if let Some(embedded) = self.embedded_fonts.get(&family_lower) {
@@ -937,27 +1145,31 @@ impl FontManager {
             }
             // Load and cache embedded font
             let static_data: &'static [u8] = Box::leak(embedded.data.clone().into_boxed_slice());
-            self.loaded_embedded.insert(family_lower.clone(), static_data);
+            self.loaded_embedded
+                .insert(family_lower.clone(), static_data);
             self.loaded_fonts.insert(variant.clone(), static_data);
             return Ok(static_data);
         }
-        
+
         // 3. Try to find system font file with exact match
         if let Some(font_file) = self.font_files.get(variant) {
             return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
-        
+
         // 4. Try original font with Normal weight/posture first (per XFA spec step 2 + always fallback to Normal)
         // Better to use the right typeface with wrong weight than a different typeface
-        let normal_variant = FontVariant::new(&variant.family, FontWeight::Normal, FontPosture::Normal);
+        let normal_variant =
+            FontVariant::new(&variant.family, FontWeight::Normal, FontPosture::Normal);
         if *variant != normal_variant {
             if let Some(font_file) = self.font_files.get(&normal_variant) {
                 return self.load_font_file(&font_file.path.clone(), variant.clone());
             }
         }
-        
+
         // Also try any other available weight of the same family
-        let family_variants: Vec<_> = self.font_files.keys()
+        let family_variants: Vec<_> = self
+            .font_files
+            .keys()
             .filter(|v| v.family == variant.family)
             .cloned()
             .collect();
@@ -966,11 +1178,16 @@ impl FontManager {
                 return self.load_font_file(&font_file.path.clone(), variant.clone());
             }
         }
-        
+
         // 4b. Try fuzzy matching - find fonts whose family name starts with or contains the requested family
         // This handles cases like "frutiger" matching "frutiger lt std" or "frutiger neue"
-        let fuzzy_matches: Vec<_> = self.font_files.keys()
-            .filter(|v| v.family.starts_with(&variant.family) || v.family.contains(&format!("{} ", variant.family)))
+        let fuzzy_matches: Vec<_> = self
+            .font_files
+            .keys()
+            .filter(|v| {
+                v.family.starts_with(&variant.family)
+                    || v.family.contains(&format!("{} ", variant.family))
+            })
             .cloned()
             .collect();
         if let Some(fuzzy_variant) = fuzzy_matches.first() {
@@ -978,23 +1195,24 @@ impl FontManager {
                 return self.load_font_file(&font_file.path.clone(), variant.clone());
             }
         }
-        
+
         // 5. Try aliases - first pass: preserve weight and posture
         if let Some(aliases) = self.aliases.get(&variant.family).cloned() {
             for alias in &aliases {
                 tried_aliases.push(alias.clone());
-                
+
                 // Check embedded fonts for alias
                 if let Some(embedded) = self.embedded_fonts.get(alias) {
                     if let Some(data) = self.loaded_embedded.get(alias) {
                         return Ok(*data);
                     }
-                    let static_data: &'static [u8] = Box::leak(embedded.data.clone().into_boxed_slice());
+                    let static_data: &'static [u8] =
+                        Box::leak(embedded.data.clone().into_boxed_slice());
                     self.loaded_embedded.insert(alias.clone(), static_data);
                     self.loaded_fonts.insert(variant.clone(), static_data);
                     return Ok(static_data);
                 }
-                
+
                 // Check system fonts for alias with same weight/posture
                 let alias_variant = FontVariant::new(alias, variant.weight, variant.posture);
                 if let Some(font_file) = self.font_files.get(&alias_variant) {
@@ -1002,18 +1220,19 @@ impl FontManager {
                 }
             }
         }
-        
+
         // 5. Try aliases with normal weight if we were looking for bold/italic
         if (variant.weight != FontWeight::Normal || variant.posture != FontPosture::Normal)
-            && let Some(aliases) = self.aliases.get(&variant.family).cloned() {
-                for alias in &aliases {
-                    let alias_normal = FontVariant::new(alias, FontWeight::Normal, FontPosture::Normal);
-                    if let Some(font_file) = self.font_files.get(&alias_normal) {
-                        return self.load_font_file(&font_file.path.clone(), variant.clone());
-                    }
+            && let Some(aliases) = self.aliases.get(&variant.family).cloned()
+        {
+            for alias in &aliases {
+                let alias_normal = FontVariant::new(alias, FontWeight::Normal, FontPosture::Normal);
+                if let Some(font_file) = self.font_files.get(&alias_normal) {
+                    return self.load_font_file(&font_file.path.clone(), variant.clone());
                 }
             }
-        
+        }
+
         // 6. Try generic family fallback - preserve weight and posture
         let generic = generic_family.unwrap_or(self.config.default_generic_family);
         for fallback_typeface in generic.fallback_typefaces() {
@@ -1023,27 +1242,29 @@ impl FontManager {
             if !tried_aliases.contains(&fallback_typeface.to_string()) {
                 tried_aliases.push(fallback_typeface.to_string());
             }
-            
+
             // Try with requested weight/posture
-            let fallback_variant = FontVariant::new(fallback_typeface, variant.weight, variant.posture);
+            let fallback_variant =
+                FontVariant::new(fallback_typeface, variant.weight, variant.posture);
             if let Some(font_file) = self.font_files.get(&fallback_variant) {
                 return self.load_font_file(&font_file.path.clone(), variant.clone());
             }
         }
-        
+
         // 6. Try generic family with normal variant as last resort
         if variant.weight != FontWeight::Normal || variant.posture != FontPosture::Normal {
             for fallback_typeface in generic.fallback_typefaces() {
                 if fallback_typeface.to_lowercase() == variant.family {
                     continue;
                 }
-                let fallback_normal = FontVariant::new(fallback_typeface, FontWeight::Normal, FontPosture::Normal);
+                let fallback_normal =
+                    FontVariant::new(fallback_typeface, FontWeight::Normal, FontPosture::Normal);
                 if let Some(font_file) = self.font_files.get(&fallback_normal) {
                     return self.load_font_file(&font_file.path.clone(), variant.clone());
                 }
             }
         }
-        
+
         // 7. In strict mode, return error. Otherwise use system fallback.
         if self.config.strict_mode {
             return Err(FontError::FontNotFound {
@@ -1053,32 +1274,35 @@ impl FontManager {
                 tried_aliases,
             });
         }
-        
+
         // Use fallback font
         self.get_fallback_font()
     }
-    
+
     /// Load a font file and cache it
-    fn load_font_file(&mut self, path: &PathBuf, variant: FontVariant) -> Result<&'static [u8], FontError> {
-        let font_data = std::fs::read(path)
-            .map_err(|e| FontError::FontFileReadError {
-                path: path.to_string_lossy().to_string(),
-                reason: e.to_string(),
-            })?;
-        
+    fn load_font_file(
+        &mut self,
+        path: &PathBuf,
+        variant: FontVariant,
+    ) -> Result<&'static [u8], FontError> {
+        let font_data = std::fs::read(path).map_err(|e| FontError::FontFileReadError {
+            path: path.to_string_lossy().to_string(),
+            reason: e.to_string(),
+        })?;
+
         // Leak the data to get 'static lifetime (necessary for ab_glyph)
         let static_data: &'static [u8] = Box::leak(font_data.into_boxed_slice());
-        
+
         self.loaded_fonts.insert(variant, static_data);
         Ok(static_data)
     }
-    
+
     /// Get fallback font data
     fn get_fallback_font(&mut self) -> Result<&'static [u8], FontError> {
         if let Some(data) = self.fallback_font_data {
             return Ok(data);
         }
-        
+
         // Try common fallback fonts in order of preference
         let fallback_paths = [
             // macOS
@@ -1093,7 +1317,7 @@ impl FontManager {
             "C:\\Windows\\Fonts\\arial.ttf",
             "C:\\Windows\\Fonts\\segoeui.ttf",
         ];
-        
+
         for path in &fallback_paths {
             if let Ok(font_data) = std::fs::read(path) {
                 let static_data: &'static [u8] = Box::leak(font_data.into_boxed_slice());
@@ -1101,40 +1325,38 @@ impl FontManager {
                 return Ok(static_data);
             }
         }
-        
+
         Err(FontError::NoFallbackAvailable {
             searched_paths: fallback_paths.iter().map(|s| s.to_string()).collect(),
         })
     }
-    
+
     /// Get a FontRef for a specific XFA font style
     pub fn get_font(&mut self, xfa_font: &Font) -> Result<FontRef<'static>, FontError> {
         let variant = FontVariant::from_xfa_font(xfa_font);
         let data = self.get_font_data_with_generic(&variant, xfa_font.generic_family)?;
-        
-        FontRef::try_from_slice(data)
-            .map_err(|e| FontError::FontParseError {
-                reason: e.to_string(),
-            })
+
+        FontRef::try_from_slice(data).map_err(|e| FontError::FontParseError {
+            reason: e.to_string(),
+        })
     }
-    
+
     /// Get a FontRef using default XFA font settings
     pub fn get_default_font(&mut self) -> Result<FontRef<'static>, FontError> {
         let default_font = Font::default();
         self.get_font(&default_font)
     }
-    
+
     /// Check if a specific font variant is available
     pub fn has_font(&self, family: &str, weight: FontWeight, posture: FontPosture) -> bool {
         let variant = FontVariant::new(family, weight, posture);
         self.font_files.contains_key(&variant)
     }
-    
+
     /// Get list of available font families
     pub fn available_families(&self) -> Vec<String> {
-        let mut families: Vec<String> = self.font_files.values()
-            .map(|f| f.family.clone())
-            .collect();
+        let mut families: Vec<String> =
+            self.font_files.values().map(|f| f.family.clone()).collect();
         families.sort();
         families.dedup();
         families
@@ -1158,28 +1380,36 @@ pub fn get_font_manager() -> &'static std::sync::Mutex<FontManager> {
 /// Convenience function to get a font for an XFA font style
 pub fn get_font_for_style(xfa_font: &Font) -> Result<FontRef<'static>, FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.get_font(xfa_font)
 }
 
 /// Convenience function to get the default fallback font
 pub fn get_fallback_font() -> Result<FontRef<'static>, FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.get_default_font()
 }
 
 /// Register an embedded font globally (for use with PDFs that contain embedded fonts)
 pub fn register_embedded_font_global(font: EmbeddedFont) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.register_embedded_font(font)
 }
 
 /// Enable strict mode globally (returns errors instead of fallback)
 pub fn set_strict_mode_global(strict: bool) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.set_strict_mode(strict);
     Ok(())
 }
@@ -1187,7 +1417,9 @@ pub fn set_strict_mode_global(strict: bool) -> Result<(), FontError> {
 /// Register a font equate mapping globally per XFA spec section 28
 pub fn register_equate_global(equate: FontEquate) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.register_equate(equate);
     Ok(())
 }
@@ -1195,7 +1427,9 @@ pub fn register_equate_global(equate: FontEquate) -> Result<(), FontError> {
 /// Register multiple font equate mappings globally
 pub fn register_equates_global(equates: Vec<FontEquate>) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.register_equates(equates);
     Ok(())
 }
@@ -1203,7 +1437,9 @@ pub fn register_equates_global(equates: Vec<FontEquate>) -> Result<(), FontError
 /// Register a font equate range globally for Unicode-based substitution
 pub fn register_equate_range_global(equate_range: FontEquateRange) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.register_equate_range(equate_range);
     Ok(())
 }
@@ -1211,22 +1447,31 @@ pub fn register_equate_range_global(equate_range: FontEquateRange) -> Result<(),
 /// Register multiple font equate ranges globally
 pub fn register_equate_ranges_global(equate_ranges: Vec<FontEquateRange>) -> Result<(), FontError> {
     let manager = get_font_manager();
-    let mut manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
+    let mut manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
     manager.register_equate_ranges(equate_ranges);
     Ok(())
 }
 
 /// Get fallback font for a specific codepoint globally
-pub fn get_fallback_for_codepoint_global(font_family: &str, codepoint: u32) -> Result<Option<String>, FontError> {
+pub fn get_fallback_for_codepoint_global(
+    font_family: &str,
+    codepoint: u32,
+) -> Result<Option<String>, FontError> {
     let manager = get_font_manager();
-    let manager = manager.lock().map_err(|e| FontError::LockError(e.to_string()))?;
-    Ok(manager.get_fallback_for_codepoint(font_family, codepoint).map(|s| s.to_string()))
+    let manager = manager
+        .lock()
+        .map_err(|e| FontError::LockError(e.to_string()))?;
+    Ok(manager
+        .get_fallback_for_codepoint(font_family, codepoint)
+        .map(|s| s.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_font_variant_creation() {
         let variant = FontVariant::new("Arial", FontWeight::Bold, FontPosture::Italic);
@@ -1234,7 +1479,7 @@ mod tests {
         assert_eq!(variant.weight, FontWeight::Bold);
         assert_eq!(variant.posture, FontPosture::Italic);
     }
-    
+
     #[test]
     fn test_font_manager_creation() {
         let manager = FontManager::new();
@@ -1242,14 +1487,14 @@ mod tests {
         let families = manager.available_families();
         println!("Available font families: {:?}", families);
     }
-    
+
     #[test]
     fn test_fallback_font() {
         let mut manager = FontManager::new();
         let result = manager.get_fallback_font();
         assert!(result.is_ok(), "Should be able to load fallback font");
     }
-    
+
     #[test]
     fn test_default_xfa_font() {
         let mut manager = FontManager::new();
@@ -1262,44 +1507,65 @@ mod tests {
             assert!(fallback.is_ok(), "Fallback font should work");
         }
     }
-    
+
     #[test]
     fn test_parse_font_filename() {
         let (family, weight, posture) = FontManager::parse_font_filename("arial bold italic");
         assert_eq!(family, "arial");
         assert_eq!(weight, FontWeight::Bold);
         assert_eq!(posture, FontPosture::Italic);
-        
+
         let (family, weight, posture) = FontManager::parse_font_filename("times new roman");
         assert_eq!(family, "times new roman");
         assert_eq!(weight, FontWeight::Normal);
         assert_eq!(posture, FontPosture::Normal);
     }
-    
+
     #[test]
     fn test_generic_family_parsing() {
-        assert_eq!("serif".parse::<GenericFamily>().unwrap(), GenericFamily::Serif);
-        assert_eq!("sansSerif".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
-        assert_eq!("sans-serif".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
-        assert_eq!("monospace".parse::<GenericFamily>().unwrap(), GenericFamily::Monospace);
-        assert_eq!("cursive".parse::<GenericFamily>().unwrap(), GenericFamily::Cursive);
-        assert_eq!("fantasy".parse::<GenericFamily>().unwrap(), GenericFamily::Fantasy);
+        assert_eq!(
+            "serif".parse::<GenericFamily>().unwrap(),
+            GenericFamily::Serif
+        );
+        assert_eq!(
+            "sansSerif".parse::<GenericFamily>().unwrap(),
+            GenericFamily::SansSerif
+        );
+        assert_eq!(
+            "sans-serif".parse::<GenericFamily>().unwrap(),
+            GenericFamily::SansSerif
+        );
+        assert_eq!(
+            "monospace".parse::<GenericFamily>().unwrap(),
+            GenericFamily::Monospace
+        );
+        assert_eq!(
+            "cursive".parse::<GenericFamily>().unwrap(),
+            GenericFamily::Cursive
+        );
+        assert_eq!(
+            "fantasy".parse::<GenericFamily>().unwrap(),
+            GenericFamily::Fantasy
+        );
         // Unknown defaults to SansSerif
-        assert_eq!("unknown".parse::<GenericFamily>().unwrap(), GenericFamily::SansSerif);
+        assert_eq!(
+            "unknown".parse::<GenericFamily>().unwrap(),
+            GenericFamily::SansSerif
+        );
     }
-    
+
     #[test]
     fn test_generic_family_fallbacks() {
         let sans = GenericFamily::SansSerif;
         let fallbacks = sans.fallback_typefaces();
         assert!(fallbacks.contains(&"arial"));
         assert!(fallbacks.contains(&"helvetica"));
-        
+
         let mono = GenericFamily::Monospace;
         let fallbacks = mono.fallback_typefaces();
         assert!(fallbacks.contains(&"courier"));
     }
-    
+
     #[test]
     fn test_strict_mode_error() {
         // Create a manager with strict mode but clear the font files to ensure nothing is found
@@ -1317,23 +1583,30 @@ mod tests {
                 default_generic_family: GenericFamily::SansSerif,
             },
         };
-        
+
         // Try to get a font that definitely doesn't exist (with empty font_files, nothing will be found)
-        let variant = FontVariant::new("NonExistentFontXYZ123", FontWeight::Normal, FontPosture::Normal);
+        let variant = FontVariant::new(
+            "NonExistentFontXYZ123",
+            FontWeight::Normal,
+            FontPosture::Normal,
+        );
         let result = manager.get_font_data(&variant);
-        
-        assert!(result.is_err(), "Should return error in strict mode when font not found");
+
+        assert!(
+            result.is_err(),
+            "Should return error in strict mode when font not found"
+        );
         if let Err(FontError::FontNotFound { typeface, .. }) = result {
             assert_eq!(typeface, "nonexistentfontxyz123");
         } else {
             panic!("Expected FontNotFound error, got {:?}", result);
         }
     }
-    
+
     #[test]
     fn test_embedded_font_registration() {
         let mut manager = FontManager::new();
-        
+
         // Create a minimal valid TTF (this is a placeholder - in practice you'd use real font data)
         // For testing, we just verify the API works
         let font = EmbeddedFont {
@@ -1343,7 +1616,7 @@ mod tests {
             posture: FontPosture::Normal,
             generic_family: Some(GenericFamily::SansSerif),
         };
-        
+
         // Should fail due to invalid font data
         let result = manager.register_embedded_font(font);
         assert!(result.is_err());

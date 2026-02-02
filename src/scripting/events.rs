@@ -214,8 +214,7 @@ pub fn parse_variables_from_node(
                     {
                         if var_tag == "script" {
                             if let Some(name) = var_child.attributes.get("name") {
-                                variables
-                                    .insert(name.clone(), std::collections::HashMap::new());
+                                variables.insert(name.clone(), std::collections::HashMap::new());
                             }
                         }
                     }

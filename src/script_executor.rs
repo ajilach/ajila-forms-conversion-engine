@@ -20,8 +20,8 @@
 //! ```
 
 use crate::scripting::{
-    parse_events_from_node, EventActivity, EventRef, Presence, ScriptContentType, SomPath,
-    XfaScriptEngine,
+    EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScriptEngine,
+    parse_events_from_node,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
@@ -57,16 +57,17 @@ impl ScriptExecutor {
         match Self::execute_internal(xfa_nodes) {
             Ok(result) => result,
             Err(e) => {
-                eprintln!("Warning: Script execution failed: {}. Continuing without script results.", e);
+                eprintln!(
+                    "Warning: Script execution failed: {}. Continuing without script results.",
+                    e
+                );
                 ScriptExecutionResult::default()
             }
         }
     }
 
     /// Internal implementation that can return errors.
-    fn execute_internal(
-        xfa_nodes: &[XfaNode],
-    ) -> Result<ScriptExecutionResult, String> {
+    fn execute_internal(xfa_nodes: &[XfaNode]) -> Result<ScriptExecutionResult, String> {
         let mut computed_values = HashMap::new();
         let mut presence_changes: Vec<(String, Option<String>, Presence)> = Vec::new();
         let mut engine = XfaScriptEngine::new();
@@ -147,11 +148,7 @@ impl ScriptExecutor {
                 for (child_name, child_id) in child_fields {
                     if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
                         if !child_value.is_empty() {
-                            let storage_key = if !id.is_empty() {
-                                id
-                            } else {
-                                child_id.clone()
-                            };
+                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
 
                             if !storage_key.is_empty() {
                                 computed_values
@@ -181,11 +178,7 @@ impl ScriptExecutor {
                 for (child_name, child_id) in child_fields {
                     if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
                         if !child_value.is_empty() {
-                            let storage_key = if !id.is_empty() {
-                                id
-                            } else {
-                                child_id.clone()
-                            };
+                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
 
                             if !storage_key.is_empty() {
                                 computed_values
@@ -296,8 +289,7 @@ impl ScriptExecutor {
 
                 let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                let is_exclgroup =
-                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
 
                 if (is_subform || is_exclgroup) && !node_name.is_empty() {
                     let key = if !node_id.is_empty() {
@@ -327,7 +319,12 @@ impl ScriptExecutor {
     /// Find all events with child IDs and full SOM paths
     fn find_all_events_with_child_ids(
         nodes: &[XfaNode],
-        events: &mut Vec<(String, String, Vec<(String, String)>, crate::scripting::XfaScript)>,
+        events: &mut Vec<(
+            String,
+            String,
+            Vec<(String, String)>,
+            crate::scripting::XfaScript,
+        )>,
         parent_child_map: &HashMap<String, Vec<(String, String)>>,
         subform_counters: &mut HashMap<String, usize>,
         parent_path: Option<&str>,
@@ -338,8 +335,7 @@ impl ScriptExecutor {
 
             let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                 || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-            let is_exclgroup =
-                matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+            let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
 
             // Build the full SOM path for this node
             let full_path = if !name.is_empty() {
@@ -406,8 +402,7 @@ impl ScriptExecutor {
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
                 let is_field = matches!(node.kind, XfaNodeKind::Field)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                let is_exclgroup =
-                    matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
                 let is_draw = matches!(node.kind, XfaNodeKind::Draw)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
 
@@ -421,11 +416,7 @@ impl ScriptExecutor {
                     None => node_name.clone(),
                 };
 
-                let value = node
-                    .attributes
-                    .get("rawValue")
-                    .cloned()
-                    .unwrap_or_default();
+                let value = node.attributes.get("rawValue").cloned().unwrap_or_default();
 
                 engine.register_xfa_node(&node_name, &full_path, parent_path, is_field, &value);
 
@@ -442,28 +433,28 @@ impl ScriptExecutor {
             if !root_name.is_empty() {
                 engine.register_xfa_node(&root_name, &root_name, None, false, "");
             }
-            
+
             // IMPORTANT: Register immediate children of root as TOP-LEVEL globals
-            // This matches XFA behavior where scripts can access "Page.FormTitle..." 
+            // This matches XFA behavior where scripts can access "Page.FormTitle..."
             // without needing "UBSForms.Page.FormTitle..."
             for child in &root.children {
                 let child_name = child.name.clone().unwrap_or_default();
                 if child_name.is_empty() {
                     continue;
                 }
-                
+
                 let is_subform = matches!(child.kind, XfaNodeKind::Subform)
                     || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
                 let is_page_set = matches!(child.kind, XfaNodeKind::PageSet)
                     || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
                 let is_variables = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "variables");
                 let is_proto = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "proto");
-                
+
                 // Skip pageSet, variables, proto elements
                 if is_page_set || is_variables || is_proto {
                     continue;
                 }
-                
+
                 if is_subform {
                     // Register this child subform (e.g., "Page") as a global
                     engine.register_xfa_node(&child_name, &child_name, None, false, "");
@@ -479,8 +470,7 @@ impl ScriptExecutor {
         for node in xfa_nodes {
             let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                 || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-            let is_page_set =
-                matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
+            let is_page_set = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
 
             if is_page_set {
                 continue;

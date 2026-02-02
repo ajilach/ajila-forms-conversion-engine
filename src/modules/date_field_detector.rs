@@ -5,9 +5,9 @@
 //! - Month field + "." + Year field
 //! - Day field + "." + Month field + "." + Year field
 
+use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::Bounds;
-use super::AnalysisModule;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -40,40 +40,40 @@ impl DateFieldDetector {
             valid_separators: vec![".".to_string(), "/".to_string(), "-".to_string()],
         }
     }
-    
+
     /// Check if two elements are on the same line (vertically aligned).
     fn are_on_same_line(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
         bounds1.is_horizontally_aligned(bounds2, self.line_tolerance)
     }
-    
+
     /// Check if text is a valid date separator.
     fn is_date_separator(&self, text: &str) -> bool {
         let trimmed = text.trim();
         self.valid_separators.contains(&trimmed.to_string())
     }
-    
+
     /// Find text separator between two fields.
     fn find_separator_between(
         &self,
         doc: &Document,
         field1_idx: usize,
         field2_idx: usize,
-        text_groups: &[usize]
+        text_groups: &[usize],
     ) -> Option<usize> {
         let field1_bounds = doc.get_bounds(field1_idx)?;
         let field2_bounds = doc.get_bounds(field2_idx)?;
-        
+
         // Field2 should be to the right of field1
         if field2_bounds.x <= field1_bounds.right() {
             return None;
         }
-        
+
         // Find text elements between the two fields
         for &text_idx in text_groups {
             let Some(text_bounds) = doc.get_bounds(text_idx) else {
                 continue;
             };
-            
+
             // Text should be between the two fields
             if text_bounds.x >= field1_bounds.right() && text_bounds.right() <= field2_bounds.x {
                 // Check if it's on the same line
@@ -90,10 +90,10 @@ impl DateFieldDetector {
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Try to build a date field starting from a given field.
     fn try_build_date_field(
         &self,
@@ -102,57 +102,62 @@ impl DateFieldDetector {
         field_groups: &[usize],
         text_groups: &[usize],
         used_fields: &std::collections::HashSet<usize>,
-        used_texts: &std::collections::HashSet<usize>
+        used_texts: &std::collections::HashSet<usize>,
     ) -> Option<(Vec<usize>, Vec<usize>)> {
         if used_fields.contains(&start_field_idx) {
             return None;
         }
-        
+
         let start_bounds = doc.get_bounds(start_field_idx)?;
-        
+
         let mut date_fields = vec![start_field_idx];
         let mut separators = Vec::new();
         let mut current_field_idx = start_field_idx;
-        
+
         // Try to find up to 2 more fields (for day.month.year pattern)
         for _ in 0..2 {
             // Find the next field to the right
             let mut next_field: Option<(usize, Decimal)> = None;
-            
+
             for &field_idx in field_groups {
                 if used_fields.contains(&field_idx) || date_fields.contains(&field_idx) {
                     continue;
                 }
-                
+
                 let Some(field_bounds) = doc.get_bounds(field_idx) else {
                     continue;
                 };
-                
+
                 // Must be on the same line
                 if !self.are_on_same_line(&start_bounds, &field_bounds) {
                     continue;
                 }
-                
+
                 let current_bounds = doc.get_bounds(current_field_idx)?;
-                
+
                 // Must be to the right
                 if field_bounds.x <= current_bounds.right() {
                     continue;
                 }
-                
+
                 // Check for separator between current and this field
-                if let Some(sep_idx) = self.find_separator_between(doc, current_field_idx, field_idx, text_groups)
-                    && !used_texts.contains(&sep_idx) && !separators.contains(&sep_idx) {
-                        let distance = field_bounds.x - current_bounds.right();
-                        if next_field.map(|(_, d)| distance < d).unwrap_or(true) {
-                            next_field = Some((field_idx, distance));
-                        }
+                if let Some(sep_idx) =
+                    self.find_separator_between(doc, current_field_idx, field_idx, text_groups)
+                    && !used_texts.contains(&sep_idx)
+                    && !separators.contains(&sep_idx)
+                {
+                    let distance = field_bounds.x - current_bounds.right();
+                    if next_field.map(|(_, d)| distance < d).unwrap_or(true) {
+                        next_field = Some((field_idx, distance));
                     }
+                }
             }
-            
+
             if let Some((field_idx, _)) = next_field {
                 // Found a next field with separator
-                if let Some(sep_idx) = self.find_separator_between(doc, current_field_idx, field_idx, text_groups) {
+                if let Some(sep_idx) =
+                    self.find_separator_between(doc, current_field_idx, field_idx, text_groups)
+                {
                     date_fields.push(field_idx);
                     separators.push(sep_idx);
                     current_field_idx = field_idx;
@@ -163,7 +168,7 @@ impl DateFieldDetector {
                 break;
             }
         }
-        
+
         // We need at least 2 fields with 1 separator to make a date field
         if date_fields.len() >= 2 && !separators.is_empty() {
             Some((date_fields, separators))
@@ -177,42 +182,42 @@ impl AnalysisModule for DateFieldDetector {
     fn name(&self) -> &'static str {
         "DateFieldDetector"
     }
-    
+
     fn process(&self, doc: &mut Document) {
         // Get all root groups
         let roots = doc.roots();
-        
+
         // Find Field groups and TextBlock groups
-        let field_groups: Vec<usize> = roots.iter()
+        let field_groups: Vec<usize> = roots
+            .iter()
             .filter(|&&idx| doc.is_field(idx))
             .copied()
             .collect();
-        
-        let text_groups: Vec<usize> = roots.iter()
+
+        let text_groups: Vec<usize> = roots
+            .iter()
             .filter(|&&idx| doc.is_text_block(idx))
             .copied()
             .collect();
-        
+
         if field_groups.is_empty() || text_groups.is_empty() {
             return;
         }
-        
+
         let mut used_fields: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut used_texts: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        
+
         // Sort fields by position (left to right, top to bottom)
         let mut sorted_fields = field_groups.clone();
         sorted_fields.sort_by(|&a, &b| {
             let bounds_a = doc.get_bounds(a);
             let bounds_b = doc.get_bounds(b);
             match (bounds_a, bounds_b) {
-                (Some(a), Some(b)) => {
-                    a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x))
-                }
+                (Some(a), Some(b)) => a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x)),
                 _ => std::cmp::Ordering::Equal,
             }
         });
-        
+
         // Try to build date fields
         for &field_idx in &sorted_fields {
             if let Some((date_fields, separators)) = self.try_build_date_field(
@@ -221,7 +226,7 @@ impl AnalysisModule for DateFieldDetector {
                 &field_groups,
                 &text_groups,
                 &used_fields,
-                &used_texts
+                &used_texts,
             ) {
                 // Mark fields and separators as used
                 for &f in &date_fields {
@@ -230,10 +235,10 @@ impl AnalysisModule for DateFieldDetector {
                 for &s in &separators {
                     used_texts.insert(s);
                 }
-                
+
                 // Merge fields and separators into a DateField group
                 let mut children = Vec::new();
-                
+
                 // Interleave fields and separators
                 for i in 0..date_fields.len() {
                     children.push(date_fields[i]);
@@ -241,13 +246,15 @@ impl AnalysisModule for DateFieldDetector {
                         children.push(separators[i]);
                     }
                 }
-                
+
                 doc.merge(
                     children,
                     GroupKind::DateField {
                         num_fields: date_fields.len(),
                     },
-                    GroupSource::Inferred { module: self.name().to_string() },
+                    GroupSource::Inferred {
+                        module: self.name().to_string(),
+                    },
                 );
             }
         }
@@ -259,48 +266,66 @@ mod tests {
     use super::*;
     use crate::document::{Document, GroupKind};
     use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
-    use crate::xfa::num;
     use crate::modules::{FieldGrouper, TextBlockGrouper};
-    
+    use crate::xfa::num;
+
     #[test]
     fn test_month_dot_year_detection() {
         // Create a flattened document with month field + "." + year field
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             vec![
                 // Month field
                 FlattenedNode::new_field(
-                    "month".to_string(), "".to_string(), "".to_string(),
-                    num(50.0), num(100.0), num(30.0), num(12.0),
+                    "month".to_string(),
+                    "".to_string(),
+                    "".to_string(),
+                    num(50.0),
+                    num(100.0),
+                    num(30.0),
+                    num(12.0),
                 ),
                 // Separator "."
                 FlattenedNode::new_text(
-                    ".".to_string(), num(10.0), "Helvetica".to_string(),
-                    num(82.0), num(100.0), num(5.0), num(12.0),
+                    ".".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(82.0),
+                    num(100.0),
+                    num(5.0),
+                    num(12.0),
                 ),
                 // Year field
                 FlattenedNode::new_field(
-                    "year".to_string(), "".to_string(), "".to_string(),
-                    num(90.0), num(100.0), num(40.0), num(12.0),
+                    "year".to_string(),
+                    "".to_string(),
+                    "".to_string(),
+                    num(90.0),
+                    num(100.0),
+                    num(40.0),
+                    num(12.0),
                 ),
             ],
         );
-        
+
         let mut doc = Document::from_flattened(&flattened);
-        
+
         // Process with required modules
         FieldGrouper::new().process(&mut doc);
         TextBlockGrouper::new().process(&mut doc);
         DateFieldDetector::new().process(&mut doc);
-        
+
         // Should have created a DateField group
         let date_fields = doc.find_groups(|k| matches!(k, GroupKind::DateField { .. }));
         assert_eq!(date_fields.len(), 1);
-        
+
         // The group should contain 2 fields and 1 separator
         let group = doc.get_group(date_fields[0]).unwrap();
         assert_eq!(group.children.len(), 3); // field + separator + field
-        
+
         if let GroupKind::DateField { num_fields } = group.kind {
             assert_eq!(num_fields, 2);
         } else {

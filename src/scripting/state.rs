@@ -4,9 +4,9 @@
 //! plus value wrapper types for XFA field values.
 
 use super::som::SomPath;
-use boa_engine::{js_string, Context, JsValue};
-use rust_decimal::prelude::ToPrimitive;
+use boa_engine::{Context, JsValue, js_string};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};

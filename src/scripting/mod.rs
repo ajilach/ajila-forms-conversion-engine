@@ -63,12 +63,12 @@ pub mod state;
 
 // Events
 pub use events::{
-    parse_events_from_node, parse_variables_from_node, EventActivity, EventRef, RunAt,
-    ScriptContentType, XfaScript,
+    EventActivity, EventRef, RunAt, ScriptContentType, XfaScript, parse_events_from_node,
+    parse_variables_from_node,
 };
 
 // SOM
-pub use som::{walk_som_path, walk_som_path_mut, NodeInfo, SomPath, SomResolver};
+pub use som::{NodeInfo, SomPath, SomResolver, walk_som_path, walk_som_path_mut};
 
 // Dependency tracking
 pub use dependency::DependencyTracker;
@@ -86,7 +86,7 @@ pub use engine::XfaScriptEngine;
 pub use form::{EventResult, NodeBounds, XfaForm, XfaNodeRef, XfaNodeRefMut};
 
 // JS Helpers (for advanced usage)
-pub use js_helpers::{get_all_helpers, XFA_EXCLGROUP_HELPER, XFA_RESOLVE_PATH_HELPER};
+pub use js_helpers::{XFA_EXCLGROUP_HELPER, XFA_RESOLVE_PATH_HELPER, get_all_helpers};
 
 #[cfg(test)]
 mod tests;

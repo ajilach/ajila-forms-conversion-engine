@@ -1,7 +1,7 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use std::collections::HashMap;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 /// Numeric type alias for precision - using Decimal for arbitrary precision
@@ -29,7 +29,7 @@ pub enum StrokeStyle {
 
 impl FromStr for StrokeStyle {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "solid" => StrokeStyle::Solid,
@@ -56,7 +56,7 @@ pub enum JoinStyle {
 
 impl FromStr for JoinStyle {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "round" => JoinStyle::Round,
@@ -70,7 +70,7 @@ impl FromStr for JoinStyle {
 pub struct Edge {
     pub thickness: Option<Num>,
     pub stroke: StrokeStyle,
-    pub presence: String,  // "visible", "hidden", "inactive"
+    pub presence: String, // "visible", "hidden", "inactive"
     pub color: Option<(u8, u8, u8)>,
 }
 
@@ -80,7 +80,7 @@ pub struct Corner {
     pub thickness: Option<Num>,
     pub join: JoinStyle,
     pub presence: String,
-    pub radius: Option<Num>,  // for inverted corners
+    pub radius: Option<Num>, // for inverted corners
 }
 
 /// Border properties
@@ -109,7 +109,7 @@ impl Border {
             Some(&self.edges[index.min(self.edges.len() - 1)])
         }
     }
-    
+
     /// Get corner for a specific position (0=top-left, 1=top-right, 2=bottom-right, 3=bottom-left)
     pub fn get_corner(&self, index: usize) -> Option<&Corner> {
         if self.corners.is_empty() {
@@ -118,7 +118,7 @@ impl Border {
             Some(&self.corners[index.min(self.corners.len() - 1)])
         }
     }
-    
+
     /// Check if the border should be rendered
     pub fn is_visible(&self) -> bool {
         self.presence != "hidden" && self.presence != "inactive" && !self.edges.is_empty()
@@ -151,7 +151,7 @@ pub enum GenericFamily {
 
 impl FromStr for GenericFamily {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
             "serif" => GenericFamily::Serif,
@@ -165,7 +165,6 @@ impl FromStr for GenericFamily {
 }
 
 impl GenericFamily {
-    
     /// Get XFA attribute value string
     pub fn as_xfa_str(&self) -> &'static str {
         match self {
@@ -224,7 +223,7 @@ pub enum KerningMode {
 
 impl FromStr for KerningMode {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
             "pair" => KerningMode::Pair,
@@ -246,14 +245,14 @@ impl Default for Font {
         // - fontVerticalScale: Default is 100%
         Font {
             typeface: "Courier".to_string(),
-            size: num(10.0),  // 10pt default
+            size: num(10.0), // 10pt default
             weight: FontWeight::Normal,
             posture: FontPosture::Normal,
             underline: false,
             line_through: false,
             color: None,
             baseline_shift: None,
-            letter_spacing: None,  // 0 default (no adjustment)
+            letter_spacing: None, // 0 default (no adjustment)
             generic_family: Some(GenericFamily::Monospace), // Courier is monospace
             kerning_mode: KerningMode::None,
             font_horizontal_scale: None, // 100% default
@@ -271,7 +270,7 @@ pub enum FontWeight {
     ExtraLight, // 200
     Light,      // 300
     #[default]
-    Normal,     // 400
+    Normal, // 400
     Medium,     // 500
     SemiBold,   // 600
     Bold,       // 700
@@ -294,7 +293,7 @@ impl FontWeight {
             _ => FontWeight::Black,
         }
     }
-    
+
     /// Convert to numeric weight (100-900 scale)
     pub fn to_numeric(self) -> u16 {
         match self {
@@ -309,7 +308,7 @@ impl FontWeight {
             FontWeight::Black => 900,
         }
     }
-    
+
     /// Convert to XFA-compatible weight (only normal or bold per spec)
     pub fn to_xfa(self) -> FontWeight {
         if self.to_numeric() >= 600 {
@@ -318,7 +317,7 @@ impl FontWeight {
             FontWeight::Normal
         }
     }
-    
+
     /// Check if this weight is considered "bold" for XFA purposes
     pub fn is_bold(self) -> bool {
         self.to_numeric() >= 600
@@ -327,7 +326,7 @@ impl FontWeight {
 
 impl FromStr for FontWeight {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
             "bold" => FontWeight::Bold,
@@ -352,7 +351,7 @@ pub enum FontPosture {
 
 impl FromStr for FontPosture {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "italic" => FontPosture::Italic,
@@ -382,7 +381,7 @@ pub enum HAlign {
     Right,
     Justify,
     JustifyAll,
-    Radix,  // Align on decimal point
+    Radix, // Align on decimal point
 }
 
 impl HAlign {
@@ -417,8 +416,7 @@ impl VAlign {
 }
 
 /// Node presence values per XFA spec
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Presence {
     #[default]
     Visible,
@@ -436,7 +434,7 @@ impl Presence {
             _ => Presence::Visible,
         }
     }
-    
+
     /// Returns the XFA string representation of this presence value
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -446,12 +444,15 @@ impl Presence {
             Presence::Inactive => "inactive",
         }
     }
-    
+
     /// Returns true if this presence should skip rendering
     pub fn should_skip_render(&self) -> bool {
-        matches!(self, Presence::Hidden | Presence::Invisible | Presence::Inactive)
+        matches!(
+            self,
+            Presence::Hidden | Presence::Invisible | Presence::Inactive
+        )
     }
-    
+
     /// Returns true if this presence should skip layout (not take up space)
     pub fn should_skip_layout(&self) -> bool {
         matches!(self, Presence::Hidden | Presence::Inactive)
@@ -463,7 +464,7 @@ impl Presence {
 pub struct XfaNode {
     /// Node-specific information
     pub kind: XfaNodeKind,
-    
+
     /// Layout-related attributes (parsed from attributes)
     pub x: Option<Num>,
     pub y: Option<Num>,
@@ -476,27 +477,27 @@ pub struct XfaNode {
     pub layout: Option<String>,
     /// Rotation in degrees (counter-clockwise, multiples of 90)
     pub rotate: i32,
-    
+
     /// Margin insets (parsed from child <margin> element)
     pub margin_top: Option<Num>,
     pub margin_bottom: Option<Num>,
     pub margin_left: Option<Num>,
     pub margin_right: Option<Num>,
-    
+
     /// Border, font, and paragraph properties (parsed from child elements)
     pub border: Option<Border>,
     pub font: Option<Font>,
     pub para: Option<Para>,
-    
+
     /// Node name (for named nodes like subforms, fields, etc.)
     pub name: Option<String>,
-    
+
     /// Presence attribute (can be modified by scripts)
     pub presence: Presence,
-    
+
     /// All attributes from the XML (including layout attrs)
     pub attributes: HashMap<String, String>,
-    
+
     /// Child nodes
     pub children: Vec<XfaNode>,
 }
@@ -506,57 +507,80 @@ pub struct XfaNode {
 pub enum XfaNodeKind {
     /// Template node (root of form template)
     Template,
-    
+
     /// Subform container
     Subform,
-    
+
     /// Input field
     Field,
-    
+
     /// Page set container
     PageSet,
-    
+
     /// Page area definition
     PageArea,
-    
+
     /// Content area within a page
     ContentArea,
-    
+
     /// Draw/static text element
     Draw,
-    
+
     /// Value container
     Value,
-    
+
     /// Text content
     Text { content: String },
-    
+
     /// Bind element
     Bind,
-    
+
     /// Generic/unknown element
-    Element { tag_name: String, text_content: Option<String> },
+    Element {
+        tag_name: String,
+        text_content: Option<String>,
+    },
 }
 
 impl XfaNode {
     /// Create a new XFA node
     pub fn new(kind: XfaNodeKind, attributes: HashMap<String, String>) -> Self {
         // Extract layout-related attributes
-        let x = attributes.get("x").and_then(|v| Self::parse_dimension(v).ok());
-        let y = attributes.get("y").and_then(|v| Self::parse_dimension(v).ok());
-        let w = attributes.get("w").and_then(|v| Self::parse_dimension(v).ok());
-        let h = attributes.get("h").and_then(|v| Self::parse_dimension(v).ok());
-        let min_w = attributes.get("minW").and_then(|v| Self::parse_dimension(v).ok());
-        let min_h = attributes.get("minH").and_then(|v| Self::parse_dimension(v).ok());
-        let max_w = attributes.get("maxW").and_then(|v| Self::parse_dimension(v).ok());
-        let max_h = attributes.get("maxH").and_then(|v| Self::parse_dimension(v).ok());
+        let x = attributes
+            .get("x")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let y = attributes
+            .get("y")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let w = attributes
+            .get("w")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let h = attributes
+            .get("h")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let min_w = attributes
+            .get("minW")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let min_h = attributes
+            .get("minH")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let max_w = attributes
+            .get("maxW")
+            .and_then(|v| Self::parse_dimension(v).ok());
+        let max_h = attributes
+            .get("maxH")
+            .and_then(|v| Self::parse_dimension(v).ok());
         let layout = attributes.get("layout").cloned();
-        let rotate = attributes.get("rotate").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+        let rotate = attributes
+            .get("rotate")
+            .and_then(|v| v.parse::<i32>().ok())
+            .unwrap_or(0);
         let name = attributes.get("name").cloned();
-        let presence = attributes.get("presence")
+        let presence = attributes
+            .get("presence")
             .map(|s| Presence::from_str(s))
             .unwrap_or(Presence::Visible);
-        
+
         XfaNode {
             kind,
             x,
@@ -582,30 +606,39 @@ impl XfaNode {
             children: Vec::new(),
         }
     }
-    
+
     /// Extract margins from child <margin> element after parsing children
     pub fn extract_margins_from_children(&mut self) {
         for child in &self.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "margin" {
-                    self.margin_top = child.attributes.get("topInset")
-                        .and_then(|v| Self::parse_dimension(v).ok());
-                    self.margin_bottom = child.attributes.get("bottomInset")
-                        .and_then(|v| Self::parse_dimension(v).ok());
-                    self.margin_left = child.attributes.get("leftInset")
-                        .and_then(|v| Self::parse_dimension(v).ok());
-                    self.margin_right = child.attributes.get("rightInset")
-                        .and_then(|v| Self::parse_dimension(v).ok());
-                    break; // Only one margin element expected
-                }
+                && tag_name == "margin"
+            {
+                self.margin_top = child
+                    .attributes
+                    .get("topInset")
+                    .and_then(|v| Self::parse_dimension(v).ok());
+                self.margin_bottom = child
+                    .attributes
+                    .get("bottomInset")
+                    .and_then(|v| Self::parse_dimension(v).ok());
+                self.margin_left = child
+                    .attributes
+                    .get("leftInset")
+                    .and_then(|v| Self::parse_dimension(v).ok());
+                self.margin_right = child
+                    .attributes
+                    .get("rightInset")
+                    .and_then(|v| Self::parse_dimension(v).ok());
+                break; // Only one margin element expected
+            }
         }
     }
-    
+
     /// Extract border, font, and para from child elements after parsing children
     pub fn extract_styling_from_children(&mut self) {
         // Extract margins first
         self.extract_margins_from_children();
-        
+
         for child in &self.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
                 match tag_name.as_str() {
@@ -623,14 +656,18 @@ impl XfaNode {
             }
         }
     }
-    
+
     /// Parse a <border> element
     fn parse_border(node: &XfaNode) -> Border {
         let mut border = Border {
-            presence: node.attributes.get("presence").cloned().unwrap_or_else(|| "visible".to_string()),
+            presence: node
+                .attributes
+                .get("presence")
+                .cloned()
+                .unwrap_or_else(|| "visible".to_string()),
             ..Default::default()
         };
-        
+
         for child in &node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
                 match tag_name.as_str() {
@@ -644,216 +681,292 @@ impl XfaNode {
                         border.fill = Some(Self::parse_fill(child));
                     }
                     "margin" => {
-                        border.margin_top = child.attributes.get("topInset")
+                        border.margin_top = child
+                            .attributes
+                            .get("topInset")
                             .and_then(|v| Self::parse_dimension(v).ok());
-                        border.margin_bottom = child.attributes.get("bottomInset")
+                        border.margin_bottom = child
+                            .attributes
+                            .get("bottomInset")
                             .and_then(|v| Self::parse_dimension(v).ok());
-                        border.margin_left = child.attributes.get("leftInset")
+                        border.margin_left = child
+                            .attributes
+                            .get("leftInset")
                             .and_then(|v| Self::parse_dimension(v).ok());
-                        border.margin_right = child.attributes.get("rightInset")
+                        border.margin_right = child
+                            .attributes
+                            .get("rightInset")
                             .and_then(|v| Self::parse_dimension(v).ok());
                     }
                     _ => {}
                 }
             }
         }
-        
+
         border
     }
-    
+
     /// Parse an <edge> element
     fn parse_edge(node: &XfaNode) -> Edge {
         Edge {
-            thickness: node.attributes.get("thickness")
+            thickness: node
+                .attributes
+                .get("thickness")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            stroke: node.attributes.get("stroke")
+            stroke: node
+                .attributes
+                .get("stroke")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            presence: node.attributes.get("presence")
+            presence: node
+                .attributes
+                .get("presence")
                 .cloned()
                 .unwrap_or_else(|| "visible".to_string()),
             color: Self::parse_color_from_children(&node.children),
         }
     }
-    
+
     /// Parse a <corner> element
     fn parse_corner(node: &XfaNode) -> Corner {
         Corner {
-            thickness: node.attributes.get("thickness")
+            thickness: node
+                .attributes
+                .get("thickness")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            join: node.attributes.get("join")
+            join: node
+                .attributes
+                .get("join")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            presence: node.attributes.get("presence")
+            presence: node
+                .attributes
+                .get("presence")
                 .cloned()
                 .unwrap_or_else(|| "visible".to_string()),
-            radius: node.attributes.get("radius")
+            radius: node
+                .attributes
+                .get("radius")
                 .and_then(|v| Self::parse_dimension(v).ok()),
         }
     }
-    
+
     /// Parse a <fill> element
     fn parse_fill(node: &XfaNode) -> Fill {
         Fill {
-            presence: node.attributes.get("presence")
+            presence: node
+                .attributes
+                .get("presence")
                 .cloned()
                 .unwrap_or_else(|| "visible".to_string()),
             color: Self::parse_color_from_children(&node.children),
         }
     }
-    
+
     /// Parse a <font> element
     /// Per XFA spec section 17: typeface defaults to Courier, size to 10pt
     /// Per XFA spec section 28: genericFamily is used for font fallback
     fn parse_font(node: &XfaNode) -> Font {
-        let typeface = node.attributes.get("typeface")
+        let typeface = node
+            .attributes
+            .get("typeface")
             .cloned()
             .unwrap_or_else(|| "Courier".to_string());
-        
+
         let _weight_attr = node.attributes.get("weight");
-        
+
         // Determine generic family: from attribute, or infer from typeface
-        let generic_family = node.attributes.get("genericFamily")
+        let generic_family = node
+            .attributes
+            .get("genericFamily")
             .and_then(|s| s.parse().ok())
             .or_else(|| {
                 // Infer generic family from common typeface names
                 let tf_lower = typeface.to_lowercase();
-                if tf_lower.contains("courier") || tf_lower.contains("mono") || tf_lower.contains("consolas") {
+                if tf_lower.contains("courier")
+                    || tf_lower.contains("mono")
+                    || tf_lower.contains("consolas")
+                {
                     Some(GenericFamily::Monospace)
-                } else if tf_lower.contains("times") || tf_lower.contains("georgia") || tf_lower.contains("serif") {
+                } else if tf_lower.contains("times")
+                    || tf_lower.contains("georgia")
+                    || tf_lower.contains("serif")
+                {
                     Some(GenericFamily::Serif)
-                } else if tf_lower.contains("helvetica") || tf_lower.contains("arial") || tf_lower.contains("verdana") {
+                } else if tf_lower.contains("helvetica")
+                    || tf_lower.contains("arial")
+                    || tf_lower.contains("verdana")
+                {
                     Some(GenericFamily::SansSerif)
-                } else if tf_lower.contains("comic") || tf_lower.contains("script") || tf_lower.contains("cursive") {
+                } else if tf_lower.contains("comic")
+                    || tf_lower.contains("script")
+                    || tf_lower.contains("cursive")
+                {
                     Some(GenericFamily::Cursive)
                 } else {
                     None // Will use default
                 }
             });
-        
+
         Font {
             typeface,
-            size: node.attributes.get("size")
+            size: node
+                .attributes
+                .get("size")
                 .and_then(|v| Self::parse_dimension(v).ok())
                 .unwrap_or_else(|| num(10.0)),
-            weight: node.attributes.get("weight")
+            weight: node
+                .attributes
+                .get("weight")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            posture: node.attributes.get("posture")
+            posture: node
+                .attributes
+                .get("posture")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            underline: node.attributes.get("underline")
+            underline: node
+                .attributes
+                .get("underline")
                 .map(|s| s != "0")
                 .unwrap_or(false),
-            line_through: node.attributes.get("lineThrough")
+            line_through: node
+                .attributes
+                .get("lineThrough")
                 .map(|s| s != "0")
                 .unwrap_or(false),
             color: Self::parse_color_from_children(&node.children),
-            baseline_shift: node.attributes.get("baselineShift")
+            baseline_shift: node
+                .attributes
+                .get("baselineShift")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             // Per XFA spec: letterSpacing is a relative measurement (e.g., "0.5pt", "-0.1em")
             // that adjusts spacing between grapheme clusters. Default is 0.
-            letter_spacing: node.attributes.get("letterSpacing")
+            letter_spacing: node
+                .attributes
+                .get("letterSpacing")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             generic_family,
             // Per XFA spec: kerningMode controls pair kerning ("none" or "pair")
-            kerning_mode: node.attributes.get("kerningMode")
+            kerning_mode: node
+                .attributes
+                .get("kerningMode")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             // Per XFA spec: fontHorizontalScale is a percentage (100 = normal)
-            font_horizontal_scale: node.attributes.get("fontHorizontalScale")
+            font_horizontal_scale: node
+                .attributes
+                .get("fontHorizontalScale")
                 .and_then(|v| Self::parse_dimension(v).ok()),
             // Per XFA spec: fontVerticalScale is a percentage (100 = normal)
-            font_vertical_scale: node.attributes.get("fontVerticalScale")
+            font_vertical_scale: node
+                .attributes
+                .get("fontVerticalScale")
                 .and_then(|v| Self::parse_dimension(v).ok()),
         }
     }
-    
+
     /// Parse a <para> element
     fn parse_para(node: &XfaNode) -> Para {
         Para {
-            h_align: node.attributes.get("hAlign")
+            h_align: node
+                .attributes
+                .get("hAlign")
                 .map(|s| HAlign::from_str(s))
                 .unwrap_or_default(),
-            v_align: node.attributes.get("vAlign")
+            v_align: node
+                .attributes
+                .get("vAlign")
                 .map(|s| VAlign::from_str(s))
                 .unwrap_or_default(),
-            line_height: node.attributes.get("lineHeight")
+            line_height: node
+                .attributes
+                .get("lineHeight")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            space_above: node.attributes.get("spaceAbove")
+            space_above: node
+                .attributes
+                .get("spaceAbove")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            space_below: node.attributes.get("spaceBelow")
+            space_below: node
+                .attributes
+                .get("spaceBelow")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            text_indent: node.attributes.get("textIndent")
+            text_indent: node
+                .attributes
+                .get("textIndent")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            margin_left: node.attributes.get("marginLeft")
+            margin_left: node
+                .attributes
+                .get("marginLeft")
                 .and_then(|v| Self::parse_dimension(v).ok()),
-            margin_right: node.attributes.get("marginRight")
+            margin_right: node
+                .attributes
+                .get("marginRight")
                 .and_then(|v| Self::parse_dimension(v).ok()),
         }
     }
-    
+
     /// Parse color from child <color> element (value attribute like "255,0,0")
     fn parse_color_from_children(children: &[XfaNode]) -> Option<(u8, u8, u8)> {
         for child in children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
                 && tag_name == "color"
-                    && let Some(value) = child.attributes.get("value") {
-                        let parts: Vec<&str> = value.split(',').collect();
-                        if parts.len() >= 3 {
-                            let r = parts[0].trim().parse::<u8>().ok()?;
-                            let g = parts[1].trim().parse::<u8>().ok()?;
-                            let b = parts[2].trim().parse::<u8>().ok()?;
-                            return Some((r, g, b));
-                        }
-                    }
+                && let Some(value) = child.attributes.get("value")
+            {
+                let parts: Vec<&str> = value.split(',').collect();
+                if parts.len() >= 3 {
+                    let r = parts[0].trim().parse::<u8>().ok()?;
+                    let g = parts[1].trim().parse::<u8>().ok()?;
+                    let b = parts[2].trim().parse::<u8>().ok()?;
+                    return Some((r, g, b));
+                }
+            }
         }
         None
     }
-    
+
     /// Parse dimension string to Num (handles units like pt, mm, in)
     pub fn parse_dimension(s: &str) -> Result<Num, String> {
         let s = s.trim();
-        
+
         // Conversion constants with full precision
         let pts_per_inch = Decimal::from_str("72").unwrap();
         let pts_per_mm = Decimal::from_str("2.834645669291339").unwrap(); // 72 / 25.4 with high precision
         let pts_per_cm = Decimal::from_str("28.34645669291339").unwrap(); // 72 / 2.54 with high precision
-        
+
         if s.ends_with("pt") {
-            Decimal::from_str(s[..s.len()-2].trim())
+            Decimal::from_str(s[..s.len() - 2].trim())
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else if s.ends_with("in") {
-            Decimal::from_str(s[..s.len()-2].trim())
+            Decimal::from_str(s[..s.len() - 2].trim())
                 .map(|v| v * pts_per_inch)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else if s.ends_with("mm") {
-            Decimal::from_str(s[..s.len()-2].trim())
+            Decimal::from_str(s[..s.len() - 2].trim())
                 .map(|v| v * pts_per_mm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else if s.ends_with("cm") {
-            Decimal::from_str(s[..s.len()-2].trim())
+            Decimal::from_str(s[..s.len() - 2].trim())
                 .map(|v| v * pts_per_cm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else {
             // No unit, assume points or just a number
-            Decimal::from_str(s)
-                .map_err(|e| format!("Failed to parse dimension: {}", e))
+            Decimal::from_str(s).map_err(|e| format!("Failed to parse dimension: {}", e))
         }
     }
-    
+
     /// Parse XFA XML structure from a buffer
     pub fn parse(buffer: &[u8]) -> Result<Vec<XfaNode>, String> {
         let mut reader = Reader::from_reader(buffer);
         reader.config_mut().trim_text(true);
-        
+
         let mut root_nodes = Vec::new();
-        
+
         Self::parse_nodes(&mut reader, &mut root_nodes, None)?;
-        
+
         Ok(root_nodes)
     }
-    
+
     fn parse_nodes(
         reader: &mut Reader<&[u8]>,
         nodes: &mut Vec<XfaNode>,
@@ -861,16 +974,16 @@ impl XfaNode {
     ) -> Result<(), String> {
         let mut buf = Vec::new();
         let mut text_content = String::new();
-        
+
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
                     let tag_name = std::str::from_utf8(e.name().as_ref())
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
-                    
+
                     let attributes = Self::parse_attributes(&e)?;
-                    
+
                     let kind = match tag_name.as_str() {
                         "template" => XfaNodeKind::Template,
                         "subform" => XfaNodeKind::Subform,
@@ -881,21 +994,26 @@ impl XfaNode {
                         "draw" => XfaNodeKind::Draw,
                         "value" => XfaNodeKind::Value,
                         "bind" => XfaNodeKind::Bind,
-                        _ => XfaNodeKind::Element { 
-                            tag_name: tag_name.clone(), 
-                            text_content: None 
+                        _ => XfaNodeKind::Element {
+                            tag_name: tag_name.clone(),
+                            text_content: None,
                         },
                     };
-                    
+
                     let mut node = Self::new(kind, attributes);
-                    
+
                     // Parse children (except for bind which we skip)
                     if matches!(node.kind, XfaNodeKind::Bind) {
                         Self::skip_to_end(reader, &tag_name)?;
                     } else if matches!(node.kind, XfaNodeKind::Element { .. }) {
                         let mut text = String::new();
-                        Self::parse_element_content(reader, &mut node.children, &mut text, &tag_name)?;
-                        
+                        Self::parse_element_content(
+                            reader,
+                            &mut node.children,
+                            &mut text,
+                            &tag_name,
+                        )?;
+
                         // Update the kind with text content if present
                         if !text.trim().is_empty() {
                             node.kind = XfaNodeKind::Element {
@@ -906,24 +1024,26 @@ impl XfaNode {
                     } else {
                         Self::parse_nodes(reader, &mut node.children, Some(&tag_name))?;
                     }
-                    
+
                     // Extract styling (margins, border, font, para) from child elements
                     node.extract_styling_from_children();
-                    
+
                     nodes.push(node);
                 }
                 Ok(Event::End(e)) => {
                     let tag_name = std::str::from_utf8(e.name().as_ref())
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
-                    
+
                     if let Some(expected_end) = end_tag
-                        && tag_name == expected_end {
-                            return Ok(());
-                        }
+                        && tag_name == expected_end
+                    {
+                        return Ok(());
+                    }
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape()
+                    let text = e
+                        .unescape()
                         .map_err(|e| format!("Failed to unescape text: {}", e))?;
                     text_content.push_str(&text);
                 }
@@ -934,14 +1054,18 @@ impl XfaNode {
                     return Ok(());
                 }
                 Err(e) => {
-                    return Err(format!("Error parsing XML at position {}: {}", reader.buffer_position(), e));
+                    return Err(format!(
+                        "Error parsing XML at position {}: {}",
+                        reader.buffer_position(),
+                        e
+                    ));
                 }
                 _ => {}
             }
             buf.clear();
         }
     }
-    
+
     fn parse_element_content(
         reader: &mut Reader<&[u8]>,
         children: &mut Vec<XfaNode>,
@@ -949,16 +1073,16 @@ impl XfaNode {
         end_tag: &str,
     ) -> Result<(), String> {
         let mut buf = Vec::new();
-        
+
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
                     let tag_name = std::str::from_utf8(e.name().as_ref())
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
-                    
+
                     let attributes = Self::parse_attributes(&e)?;
-                    
+
                     // Use the same tag name matching as parse_tree
                     let kind = match tag_name.as_str() {
                         "template" => XfaNodeKind::Template,
@@ -975,37 +1099,44 @@ impl XfaNode {
                             text_content: None,
                         },
                     };
-                    
+
                     let mut child_node = Self::new(kind, attributes);
                     let mut child_text = String::new();
-                    
-                    Self::parse_element_content(reader, &mut child_node.children, &mut child_text, &tag_name)?;
-                    
+
+                    Self::parse_element_content(
+                        reader,
+                        &mut child_node.children,
+                        &mut child_text,
+                        &tag_name,
+                    )?;
+
                     // Update kind with text if present (only for Element type)
                     if !child_text.trim().is_empty()
-                        && let XfaNodeKind::Element { tag_name: t, .. } = &child_node.kind {
-                            child_node.kind = XfaNodeKind::Element {
-                                tag_name: t.clone(),
-                                text_content: Some(child_text),
-                            };
-                        }
-                    
+                        && let XfaNodeKind::Element { tag_name: t, .. } = &child_node.kind
+                    {
+                        child_node.kind = XfaNodeKind::Element {
+                            tag_name: t.clone(),
+                            text_content: Some(child_text),
+                        };
+                    }
+
                     // Extract styling (margins, border, font, para) from child elements
                     child_node.extract_styling_from_children();
-                    
+
                     children.push(child_node);
                 }
                 Ok(Event::End(e)) => {
                     let tag_name = std::str::from_utf8(e.name().as_ref())
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
-                    
+
                     if tag_name == end_tag {
                         return Ok(());
                     }
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape()
+                    let text = e
+                        .unescape()
                         .map_err(|e| format!("Failed to unescape text: {}", e))?;
                     text_content.push_str(&text);
                 }
@@ -1014,9 +1145,9 @@ impl XfaNode {
                     let tag_name = std::str::from_utf8(e.name().as_ref())
                         .map_err(|e| format!("Invalid UTF-8: {}", e))?
                         .to_string();
-                    
+
                     let attributes = Self::parse_attributes(&e)?;
-                    
+
                     let kind = match tag_name.as_str() {
                         "template" => XfaNodeKind::Template,
                         "subform" => XfaNodeKind::Subform,
@@ -1032,24 +1163,28 @@ impl XfaNode {
                             text_content: None,
                         },
                     };
-                    
+
                     let child_node = Self::new(kind, attributes);
                     children.push(child_node);
                 }
                 Ok(Event::Eof) => return Ok(()),
                 Err(e) => {
-                    return Err(format!("Error parsing XML at position {}: {}", reader.buffer_position(), e));
+                    return Err(format!(
+                        "Error parsing XML at position {}: {}",
+                        reader.buffer_position(),
+                        e
+                    ));
                 }
                 _ => {}
             }
             buf.clear();
         }
     }
-    
+
     fn skip_to_end(reader: &mut Reader<&[u8]>, tag_name: &str) -> Result<(), String> {
         let mut buf = Vec::new();
         let mut depth = 1;
-        
+
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
@@ -1074,17 +1209,23 @@ impl XfaNode {
                 Ok(Event::Empty(_)) => {}
                 Ok(Event::Eof) => return Ok(()),
                 Err(e) => {
-                    return Err(format!("Error skipping to end at position {}: {}", reader.buffer_position(), e));
+                    return Err(format!(
+                        "Error skipping to end at position {}: {}",
+                        reader.buffer_position(),
+                        e
+                    ));
                 }
                 _ => {}
             }
             buf.clear();
         }
     }
-    
-    fn parse_attributes<'a>(e: &'a quick_xml::events::BytesStart<'a>) -> Result<HashMap<String, String>, String> {
+
+    fn parse_attributes<'a>(
+        e: &'a quick_xml::events::BytesStart<'a>,
+    ) -> Result<HashMap<String, String>, String> {
         let mut attributes = HashMap::new();
-        
+
         for attr in e.attributes() {
             let attr = attr.map_err(|e| format!("Failed to parse attribute: {}", e))?;
             let key = std::str::from_utf8(attr.key.as_ref())
@@ -1095,10 +1236,10 @@ impl XfaNode {
                 .to_string();
             attributes.insert(key, value);
         }
-        
+
         Ok(attributes)
     }
-    
+
     /// Count all nodes recursively
     pub fn count_nodes(nodes: &[XfaNode]) -> usize {
         let mut count = nodes.len();
@@ -1107,13 +1248,14 @@ impl XfaNode {
         }
         count
     }
-    
+
     /// Get a summary of the structure
     pub fn summarize_structure(nodes: &[XfaNode], indent: usize) -> String {
         let mut result = String::new();
         let indent_str = "  ".repeat(indent);
-        
-        for node in nodes.iter().take(10) { // Limit to first 10 at each level
+
+        for node in nodes.iter().take(10) {
+            // Limit to first 10 at each level
             let node_type = match &node.kind {
                 XfaNodeKind::Template => "Template",
                 XfaNodeKind::Subform => "Subform",
@@ -1127,32 +1269,42 @@ impl XfaNode {
                 XfaNodeKind::Bind => "Bind",
                 XfaNodeKind::Element { tag_name, .. } => tag_name,
             };
-            
+
             let name_str = if let Some(name) = &node.name {
                 format!(" '{}'", name)
             } else {
                 String::new()
             };
-            
-            let text_str = if let XfaNodeKind::Element { text_content: Some(text), .. } = &node.kind {
+
+            let text_str = if let XfaNodeKind::Element {
+                text_content: Some(text),
+                ..
+            } = &node.kind
+            {
                 format!(" = '{}'", text.chars().take(30).collect::<String>())
             } else if let XfaNodeKind::Text { content } = &node.kind {
                 format!(" = '{}'", content.chars().take(30).collect::<String>())
             } else {
                 String::new()
             };
-            
-            result.push_str(&format!("{}{}{} ({} children){}\n", 
-                indent_str, node_type, name_str, node.children.len(), text_str));
-            
+
+            result.push_str(&format!(
+                "{}{}{} ({} children){}\n",
+                indent_str,
+                node_type,
+                name_str,
+                node.children.len(),
+                text_str
+            ));
+
             if indent < 3 && !node.children.is_empty() {
                 result.push_str(&Self::summarize_structure(&node.children, indent + 1));
             }
         }
-        
+
         result
     }
-    
+
     /// Recursively find all nodes matching a predicate
     pub fn find_nodes_by_type<'a, F>(&'a self, predicate: &F, results: &mut Vec<&'a XfaNode>)
     where
@@ -1161,22 +1313,22 @@ impl XfaNode {
         if predicate(self) {
             results.push(self);
         }
-        
+
         for child in &self.children {
             child.find_nodes_by_type(predicate, results);
         }
     }
-    
+
     /// Get the current presence value for this node
     pub fn get_presence(&self) -> Presence {
         self.presence
     }
-    
+
     /// Set the presence value for this node
     pub fn set_presence(&mut self, presence: Presence) {
         self.presence = presence;
     }
-    
+
     /// Find a mutable reference to a descendant node by name
     pub fn find_node_by_name_mut(&mut self, name: &str) -> Option<&mut XfaNode> {
         if self.name.as_deref() == Some(name) {
@@ -1189,7 +1341,7 @@ impl XfaNode {
         }
         None
     }
-    
+
     /// Find a mutable reference to a descendant node by ID attribute
     pub fn find_node_by_id_mut(&mut self, id: &str) -> Option<&mut XfaNode> {
         if self.attributes.get("id").map(|s| s.as_str()) == Some(id) {

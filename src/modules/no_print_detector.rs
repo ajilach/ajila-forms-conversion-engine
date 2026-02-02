@@ -7,9 +7,9 @@
 //! This module MUST run first in the analysis pipeline so that NoPrint elements
 //! are claimed before other modules can process them.
 
+use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::Hint;
-use super::AnalysisModule;
 
 /// Detects and claims elements with the NoPrint hint.
 ///
@@ -28,7 +28,7 @@ impl NoPrintDetector {
     pub fn new() -> Self {
         NoPrintDetector
     }
-    
+
     /// Check if a leaf group has the NoPrint hint.
     fn has_no_print_hint(&self, doc: &Document, group_idx: usize) -> bool {
         let group = doc.groups.get(group_idx);
@@ -41,11 +41,11 @@ impl NoPrintDetector {
         }
         false
     }
-    
+
     /// Find all leaf groups with the NoPrint hint.
     fn find_no_print_groups(&self, doc: &Document) -> Vec<usize> {
         let mut groups = Vec::new();
-        
+
         for (idx, group) in doc.groups.iter().enumerate() {
             // Only process leaf groups
             if let GroupKind::Leaf { .. } = &group.kind {
@@ -54,7 +54,7 @@ impl NoPrintDetector {
                 }
             }
         }
-        
+
         groups
     }
 }
@@ -63,18 +63,20 @@ impl AnalysisModule for NoPrintDetector {
     fn process(&self, doc: &mut Document) {
         // Find all NoPrint groups
         let no_print_groups = self.find_no_print_groups(doc);
-        
+
         // Create individual NoPrint wrapper groups for each element
         // This claims them so other modules won't process them
         for group_idx in no_print_groups {
             doc.merge(
                 vec![group_idx],
                 GroupKind::NoPrint,
-                GroupSource::Inferred { module: self.name().to_string() },
+                GroupSource::Inferred {
+                    module: self.name().to_string(),
+                },
             );
         }
     }
-    
+
     fn name(&self) -> &'static str {
         "NoPrintDetector"
     }
