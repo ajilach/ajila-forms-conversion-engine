@@ -7,6 +7,7 @@ mod scripting;
 mod font_manager;
 mod script_executor;
 mod structured;
+mod exhaustive;
 
 use pdf::file::FileOptions;
 use pdf::object::*;
@@ -363,238 +364,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Handle --exhaustive
     if args.exhaustive {
-        vprintln!(quiet, "\nExhaustive mode: recursively discovering all form states...");
-        
         // Re-parse XFA nodes for XfaForm (it takes ownership)
         let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
         let nodes_for_form = XfaNode::parse(&xfa_data_for_form)?;
         let mut form = XfaForm::new(nodes_for_form)
             .map_err(|e| format!("Failed to create XfaForm: {}", e))?;
         
-        // Track rendered states to avoid duplicates
-        // State is represented as a sorted list of (field_name, value) pairs for selected buttons
-        let mut rendered_states: std::collections::HashSet<Vec<(String, String)>> = std::collections::HashSet::new();
-        
-        // Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections)
-        // Returns (som_path, name, shape) tuples where som_path uniquely identifies each field
-        fn find_all_checkbutton_fields_with_paths(nodes: &[XfaNode]) -> Vec<(String, String, String)> {
-            let mut results = Vec::new();
-            
-            fn search(nodes: &[XfaNode], current_path: &str, results: &mut Vec<(String, String, String)>) {
-                for node in nodes {
-                    // Build the SOM path for this node
-                    let node_path = if let Some(name) = &node.name {
-                        if current_path.is_empty() {
-                            name.clone()
-                        } else {
-                            format!("{}.{}", current_path, name)
-                        }
-                    } else {
-                        current_path.to_string()
-                    };
-                    
-                    // Check if this is a Field node
-                    if matches!(&node.kind, XfaNodeKind::Field) {
-                        // Check if this field has a checkButton UI element
-                        let shape = node.children.iter()
-                            .find_map(|c| {
-                                if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind {
-                                    if t == "ui" {
-                                        return c.children.iter().find_map(|ui_c| {
-                                            if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
-                                                if t2 == "checkButton" {
-                                                    return Some(ui_c.attributes.get("shape")
-                                                        .cloned()
-                                                        .unwrap_or_else(|| "square".to_string()));
-                                                }
-                                            }
-                                            None
-                                        });
-                                    }
-                                }
-                                None
-                            });
-                        
-                        if let Some(shape) = shape {
-                            let name = node.name.clone().unwrap_or_default();
-                            if !name.is_empty() {
-                                // Convert shape to our standard format
-                                let shape_normalized = if shape == "round" { "round" } else { "square" };
-                                results.push((node_path.clone(), name, shape_normalized.to_string()));
-                            }
-                        }
-                    }
-                    // Recurse into children
-                    search(&node.children, &node_path, results);
-                }
-            }
-            
-            search(nodes, "", &mut results);
-            results
-        }
-        
-        // Get the list of all VISIBLE radio buttons/checkboxes in a given form state
-        // Returns (som_path, name, shape) tuples for visible fields only
-        fn get_visible_selectable_fields(form: &XfaForm) -> Vec<(String, String, String)> {
-            // Get ALL checkButton fields with their SOM paths
-            let all_fields = find_all_checkbutton_fields_with_paths(form.xfa_nodes());
-            
-            // Filter to only those that are currently visible (checking XFA tree)
-            let mut result = Vec::new();
-            for (som_path, name, shape) in all_fields {
-                if form.is_path_visible(&som_path) {
-                    result.push((som_path, name, shape));
-                }
-            }
-            result
-        }
-        
-        // Convert current selection state to a canonical representation
-        fn get_current_state(selections: &[(String, String)]) -> Vec<(String, String)> {
-            let mut state: Vec<_> = selections.iter().cloned().collect();
-            state.sort();
-            state
-        }
-        
-        // Recursive function to explore all states
-        // Selections are now (som_path, field_name, value) tuples for unique identification
-        fn explore_states(
-            form: &mut XfaForm,
-            current_selections: Vec<(String, String, String)>,  // (som_path, field_name, value) tuples
-            rendered_states: &mut std::collections::HashSet<Vec<(String, String)>>,
-            doc_name: &str,
-            scale: f32,
-            pdf_path: &std::path::Path,
-            locale: &str,
-            render_mode: RenderMode,
-        ) -> Result<usize, Box<dyn std::error::Error>> {
-            let mut images_rendered = 0;
-            
-            // Get the canonical state representation (using SOM paths for uniqueness)
-            let state: Vec<(String, String)> = current_selections.iter()
-                .map(|(path, _, value)| (path.clone(), value.clone()))
-                .collect();
-            let state = get_current_state(&state);
-            
-            // Skip if we've already rendered this state
-            if rendered_states.contains(&state) {
-                return Ok(0);
-            }
-            
-            // Mark this state as rendered
-            rendered_states.insert(state.clone());
-            
-            // Generate a filename based on the current selections (use short names for readability)
-            let state_suffix = if current_selections.is_empty() {
-                "default".to_string()
-            } else {
-                current_selections.iter()
-                    .map(|(_, name, _)| name.clone())
-                    .collect::<Vec<_>>()
-                    .join("_")
-            };
-            
-            // Render the current state
-            let output_path = std::path::PathBuf::from(format!("{}_{}.png", doc_name, state_suffix));
-            crate::render_flattened(form.flattened(), &output_path, scale, render_mode)?;;
-            
-            println!("  ✓ Rendered: {} (selections: {:?})", output_path.display(), 
-                current_selections.iter().map(|(p, _, _)| p.as_str()).collect::<Vec<_>>());
-            images_rendered += 1;
-            
-            // Get visible selectable fields in this state (with SOM paths)
-            let visible_fields = get_visible_selectable_fields(form);
-            
-            // For each visible field that is NOT already selected, try selecting it
-            for (som_path, field_name, shape) in &visible_fields {
-                // Skip if this field (by SOM path) is already in our current selections
-                if current_selections.iter().any(|(p, _, _)| p == som_path) {
-                    continue;
-                }
-                
-                // For radio buttons, also skip if a sibling from the same group is selected
-                // (we only select one radio button per group)
-                let is_radio = shape == "round";
-                if is_radio {
-                    // Check if any sibling in the same exclGroup is already selected
-                    // Use the SOM path for proper path-based exclGroup lookup
-                    if let Some(excl_group) = form.find_excl_group_for_field(som_path) {
-                        let group_already_has_selection = current_selections.iter()
-                            .any(|(sel_path, _, _)| {
-                                form.find_excl_group_for_field(sel_path)
-                                    .map(|g| g == excl_group)
-                                    .unwrap_or(false)
-                            });
-                        if group_already_has_selection {
-                            continue;
-                        }
-                    }
-                }
-                
-                // Create a fresh form from the PDF
-                let xfa_data_reset = crate::extract_xfa_from_pdf(pdf_path)?.unwrap();
-                let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
-                let mut new_form = XfaForm::new(nodes_reset)
-                    .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
-                
-                // Apply all current selections to the new form using FULL SOM paths
-                // This ensures we select the correct field when there are duplicates (e.g., RB_1 in different sections)
-                let mut new_selections = current_selections.clone();
-                for (sel_path, _, _) in &current_selections {
-                    let _ = new_form.select_radio_button(sel_path);
-                    new_form.refresh()?;
-                }
-                
-                // Now select the new field using its SOM path
-                if is_radio {
-                    let _ = new_form.select_radio_button(som_path);
-                } else {
-                    // For checkboxes, use the SOM path for resolution
-                    if let Some(mut node) = new_form.resolve_mut(som_path) {
-                        node.set_raw_value("1");
-                    }
-                }
-                
-                // Add this field to our selections (with SOM path)
-                new_selections.push((som_path.clone(), field_name.clone(), "1".to_string()));
-                
-                // Refresh the form to apply changes
-                new_form.refresh()?;
-                
-                // Recursively explore from this new state
-                images_rendered += explore_states(
-                    &mut new_form,
-                    new_selections,
-                    rendered_states,
-                    doc_name,
-                    scale,
-                    pdf_path,
-                    locale,
-                    render_mode,
-                )?;
-            }
-            
-            Ok(images_rendered)
-        }
-        
         // Determine which render mode to use (default to plain if none specified)
         let render_mode = args.render_modes.first().copied().unwrap_or(RenderMode::Plain);
         
-        vprintln!(quiet, "  Using render mode: {:?}", render_mode);
-        
-        // Start exploration from the initial state
-        let total_images = explore_states(
-            &mut form,
-            Vec::new(),  // No selections initially
-            &mut rendered_states,
+        let config = exhaustive::ExhaustiveConfig {
             doc_name,
-            args.scale,
-            &args.document,
+            scale: args.scale,
+            pdf_path: &args.document,
             locale,
             render_mode,
-        )?;
+            quiet,
+        };
         
-        vprintln!(quiet, "\n✓ Exhaustive rendering complete ({} unique states)", total_images);
+        exhaustive::run_exhaustive(&mut form, &config)?;
     }
     
     Ok(())

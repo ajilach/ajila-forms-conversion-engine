@@ -275,14 +275,27 @@ impl<'a> Iterator for FlattenedNodeIterMut<'a> {
 // Unique Field Identification
 // ============================================================================
 
-/// Unique identifier for a flattened node, using UUID v4.
-/// This enables self-contained references within the flattened representation,
-/// independent of any source format (XFA, PDF AcroForms, etc.).
+/// Unique identifier for a flattened node, using UUID v5 derived from SOM path.
+/// This enables deterministic, reproducible IDs based on the field's position in the form.
+/// The same SOM path will always produce the same FieldId.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct FieldId(pub Uuid);
 
+/// Namespace UUID for generating FieldIds from SOM paths.
+/// This is a custom namespace specific to this application.
+const FIELD_ID_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
+    0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+]);
+
 impl FieldId {
-    /// Generate a new unique field ID
+    /// Generate a deterministic field ID from a SOM path.
+    /// The same path will always produce the same UUID.
+    pub fn from_som_path(path: &SomPath) -> Self {
+        FieldId(Uuid::new_v5(&FIELD_ID_NAMESPACE, path.as_str().as_bytes()))
+    }
+    
+    /// Generate a random unique field ID (fallback for nodes without a SOM path)
     pub fn new() -> Self {
         FieldId(Uuid::new_v4())
     }
@@ -717,6 +730,7 @@ pub struct LayoutToken {
 #[derive(Debug, Clone)]
 pub struct FlattenedNodeBuilder {
     kind: Option<FlattenedNodeKind>,
+    som_path: Option<SomPath>,
     x: Num,
     y: Num,
     width: Num,
@@ -730,6 +744,7 @@ impl Default for FlattenedNodeBuilder {
     fn default() -> Self {
         Self {
             kind: None,
+            som_path: None,
             x: Decimal::ZERO,
             y: Decimal::ZERO,
             width: Decimal::ZERO,
@@ -842,10 +857,23 @@ impl FlattenedNodeBuilder {
         self
     }
 
+    /// Set the SOM path for deterministic ID generation.
+    /// When set, the FieldId will be derived from this path using UUID v5.
+    pub fn som_path(mut self, path: SomPath) -> Self {
+        self.som_path = Some(path);
+        self
+    }
+
     /// Build the FlattenedNode. Panics if kind was not set.
+    /// If a SOM path was set, the ID will be deterministic based on that path.
+    /// Otherwise, a random UUID v4 will be used.
     pub fn build(self) -> FlattenedNode {
+        let id = match self.som_path {
+            Some(ref path) => FieldId::from_som_path(path),
+            None => FieldId::new(),
+        };
         FlattenedNode {
-            id: FieldId::new(),
+            id,
             kind: self.kind.expect("FlattenedNodeBuilder: kind must be set before building"),
             x: self.x,
             y: self.y,
@@ -910,6 +938,30 @@ impl FlattenedNode {
             .build()
     }
 
+    /// Create a new text node with rich text content and deterministic ID from SOM path
+    pub fn new_text_with_rich_text_and_path(
+        content: String,
+        font_size: Num,
+        font_name: String,
+        x: Num,
+        y: Num,
+        width: Num,
+        height: Num,
+        style: RenderStyle,
+        rotate: i32,
+        source_name: Option<String>,
+        rich_text: Option<RichText>,
+        path: SomPath,
+    ) -> Self {
+        Self::builder()
+            .bounds(x, y, width, height)
+            .style(style)
+            .rotate(rotate)
+            .text_rich(content, font_size, font_name, source_name, rich_text)
+            .som_path(path)
+            .build()
+    }
+
     /// Create a new field node with all options
     pub fn new_field_with_checked(
         name: String,
@@ -928,6 +980,29 @@ impl FlattenedNode {
             .style(style)
             .rotate(rotate)
             .field_checked(name, value, label, is_checked)
+            .build()
+    }
+
+    /// Create a new field node with all options and deterministic ID from SOM path
+    pub fn new_field_with_checked_and_path(
+        name: String,
+        value: String,
+        label: String,
+        x: Num,
+        y: Num,
+        width: Num,
+        height: Num,
+        style: RenderStyle,
+        rotate: i32,
+        is_checked: Option<bool>,
+        path: SomPath,
+    ) -> Self {
+        Self::builder()
+            .bounds(x, y, width, height)
+            .style(style)
+            .rotate(rotate)
+            .field_checked(name, value, label, is_checked)
+            .som_path(path)
             .build()
     }
 
