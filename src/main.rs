@@ -608,7 +608,7 @@ mod tests {
     
     /// Helper function to flatten XFA with script execution using the new architecture.
     /// This replaces the old `Flattened::from_xfa_with_scripts` API.
-    fn flatten_with_scripts(nodes: &mut [XfaNode], language: &str, form_id: &str) -> Result<Flattened, String> {
+    fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> {
         let script_result = ScriptExecutor::execute(nodes);
         ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
         Flattened::from_xfa(nodes, &script_result.computed_values)
@@ -780,7 +780,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -826,7 +826,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -980,7 +980,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data)
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Find the T_Left text node
@@ -1125,7 +1125,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Use flatten_with_scripts to get the computed label text
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Helper function to find text node by source_name (Draw element name)
@@ -2007,7 +2007,7 @@ mod tests {
         // Flatten WITH script execution (German language)
         // Even though ffFirstName_s is hidden, the script should execute and the value
         // should be available in the computed_values map
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Hidden fields are intentionally skipped in flattening per XFA spec
@@ -2119,7 +2119,7 @@ mod tests {
         // 1. Execute scripts -> ffFirstName_s gets "Vorname(n)" 
         // 2. Build ID map -> "5a604bee...floatingField010860" -> "ffFirstName_s"
         // 3. During text extraction, resolve xfa:embed in DES_FirstName -> "Vorname(n)"
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Find DES_FirstName in the flattened output
@@ -2188,7 +2188,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Flatten WITH script execution (German language)
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Search for any text node containing "Vorname"
@@ -2366,7 +2366,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run analysis modules in the correct order
@@ -2424,7 +2424,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Expected signature labels (set by scripts)
@@ -2481,7 +2481,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Search for "Unterschrift(en)" in text nodes
@@ -2771,9 +2771,7 @@ mod tests {
         // it should be detected as the default, and the exclGroup's rawValue should be "1".
         
         // Now test with the flattening that uses scripts
-        let doc_name = "AAAB_019_DE";
-        let locale = "DE";
-        let flattened = flatten_with_scripts(&mut nodes, locale, doc_name)
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA");
         
         // Look for RB_1 in flattened output and verify it has the correct value
@@ -2858,7 +2856,7 @@ mod tests {
         // Flatten WITH script execution
         // The script sets ffClientDetails.rawValue = "Endkunde"
         // But per XFA spec, this should NOT change the field's visibility
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Check if ffClientDetails appears in flattened output
@@ -3006,7 +3004,7 @@ mod tests {
         }
         
         // Flatten with script execution
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Count visible nodes to verify the Neuanlage section is rendered
@@ -3102,7 +3100,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Flatten with script execution
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAB_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
@@ -3801,7 +3799,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -3862,7 +3860,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         let mut doc = Document::from_flattened(&flattened);
@@ -3937,7 +3935,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Check that Watermark field has non-interactive access in the flattened representation
@@ -3995,7 +3993,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Count nodes with MasterPage hints by region
@@ -4145,7 +4143,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run full analysis pipeline
@@ -4294,7 +4292,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run full analysis pipeline
@@ -4387,7 +4385,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run full analysis pipeline
@@ -4464,7 +4462,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run full analysis pipeline
@@ -4520,7 +4518,7 @@ mod tests {
         let mut nodes = XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA structure");
         
-        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+        let flattened = flatten_with_scripts(&mut nodes)
             .expect("Failed to flatten XFA with scripts");
         
         // Create Document and run full analysis pipeline
