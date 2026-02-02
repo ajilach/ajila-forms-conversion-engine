@@ -11,9 +11,9 @@
 //! - `max`: maximum number permitted (-1 = unlimited)
 //! - A section is "repeatable" if max > 1 or max is unlimited
 
+use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::{Bounds, Hint};
-use super::AnalysisModule;
 use rust_decimal::Decimal;
 use std::collections::HashSet;
 
@@ -60,19 +60,19 @@ impl RepeatableDetector {
             max_vertical_gap: Decimal::from_str_exact("20.0").unwrap(),
         }
     }
-    
+
     /// Configure whether to group spatially adjacent repeatable items.
     pub fn with_group_adjacent(mut self, group: bool) -> Self {
         self.group_adjacent = group;
         self
     }
-    
+
     /// Configure maximum vertical gap for grouping.
     pub fn with_max_vertical_gap(mut self, gap: Decimal) -> Self {
         self.max_vertical_gap = gap;
         self
     }
-    
+
     /// Extract occurrence hint from the flattened structure.
     /// Searches for Occurrence hints on the specific leaf node for the given group.
     fn get_occurrence_hint(&self, doc: &Document, group_idx: usize) -> Option<(u32, Option<u32>)> {
@@ -88,21 +88,26 @@ impl RepeatableDetector {
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Find repeatable groups from the flattened structure.
     /// This searches FlattenedKind::Group elements for Occurrence hints.
     fn find_repeatable_from_flattened(&self, doc: &Document) -> Vec<RepeatableSection> {
         let mut sections = Vec::new();
-        
+
         fn search_groups(
             children: &[crate::flattened::FlattenedKind],
             sections: &mut Vec<RepeatableSection>,
         ) {
             for child in children {
-                if let crate::flattened::FlattenedKind::Group { hints, children: group_children, .. } = child {
+                if let crate::flattened::FlattenedKind::Group {
+                    hints,
+                    children: group_children,
+                    ..
+                } = child
+                {
                     // Check if this group has an Occurrence hint
                     for hint in hints {
                         if let crate::flattened::Hint::Occurrence { min, max } = hint {
@@ -125,28 +130,34 @@ impl RepeatableDetector {
                 }
             }
         }
-        
-        fn calculate_group_bounds(children: &[crate::flattened::FlattenedKind]) -> Option<crate::flattened::Bounds> {
+
+        fn calculate_group_bounds(
+            children: &[crate::flattened::FlattenedKind],
+        ) -> Option<crate::flattened::Bounds> {
             let mut min_x = None;
             let mut min_y = None;
             let mut max_x = None;
             let mut max_y = None;
-            
+
             fn update_bounds(
                 node: &crate::flattened::FlattenedNode,
-                min_x: &mut Option<Num>, min_y: &mut Option<Num>,
-                max_x: &mut Option<Num>, max_y: &mut Option<Num>,
+                min_x: &mut Option<Num>,
+                min_y: &mut Option<Num>,
+                max_x: &mut Option<Num>,
+                max_y: &mut Option<Num>,
             ) {
                 *min_x = Some(min_x.map_or(node.x, |v| v.min(node.x)));
                 *min_y = Some(min_y.map_or(node.y, |v| v.min(node.y)));
                 *max_x = Some(max_x.map_or(node.x + node.width, |v| v.max(node.x + node.width)));
                 *max_y = Some(max_y.map_or(node.y + node.height, |v| v.max(node.y + node.height)));
             }
-            
+
             fn traverse(
                 children: &[crate::flattened::FlattenedKind],
-                min_x: &mut Option<Num>, min_y: &mut Option<Num>,
-                max_x: &mut Option<Num>, max_y: &mut Option<Num>,
+                min_x: &mut Option<Num>,
+                min_y: &mut Option<Num>,
+                max_x: &mut Option<Num>,
+                max_y: &mut Option<Num>,
             ) {
                 for child in children {
                     match child {
@@ -159,9 +170,9 @@ impl RepeatableDetector {
                     }
                 }
             }
-            
+
             traverse(children, &mut min_x, &mut min_y, &mut max_x, &mut max_y);
-            
+
             match (min_x, min_y, max_x, max_y) {
                 (Some(x), Some(y), Some(max_x), Some(max_y)) => {
                     Some(crate::flattened::Bounds::new(x, y, max_x - x, max_y - y))
@@ -169,16 +180,16 @@ impl RepeatableDetector {
                 _ => None,
             }
         }
-        
+
         search_groups(&doc.source.children, &mut sections);
         sections
     }
-    
+
     /// Find all groups that have occurrence hints indicating repeatability.
     fn find_repeatable_groups(&self, doc: &Document) -> Vec<(usize, u32, Option<u32>)> {
         let roots = doc.roots();
         let mut repeatable = Vec::new();
-        
+
         for &group_idx in &roots {
             if let Some((min, max)) = self.get_occurrence_hint(doc, group_idx) {
                 // Check if this is actually repeatable (max > 1 or unlimited)
@@ -188,24 +199,25 @@ impl RepeatableDetector {
                 }
             }
         }
-        
+
         repeatable
     }
-    
+
     /// Group repeatable items by spatial proximity.
     /// Items that are vertically adjacent are likely part of the same repeatable section.
     fn group_by_proximity(
         &self,
         doc: &Document,
-        repeatable_groups: Vec<(usize, u32, Option<u32>)>
+        repeatable_groups: Vec<(usize, u32, Option<u32>)>,
     ) -> Vec<RepeatableSection> {
         if repeatable_groups.is_empty() {
             return Vec::new();
         }
-        
+
         if !self.group_adjacent {
             // Return each as its own section
-            return repeatable_groups.into_iter()
+            return repeatable_groups
+                .into_iter()
                 .map(|(idx, min, max)| RepeatableSection {
                     member_groups: vec![idx],
                     min_occurrences: min,
@@ -214,25 +226,24 @@ impl RepeatableDetector {
                 })
                 .collect();
         }
-        
+
         // Sort by vertical position (top to bottom)
-        let mut sorted: Vec<_> = repeatable_groups.into_iter()
-            .filter_map(|(idx, min, max)| {
-                doc.get_bounds(idx).map(|b| (idx, min, max, b))
-            })
+        let mut sorted: Vec<_> = repeatable_groups
+            .into_iter()
+            .filter_map(|(idx, min, max)| doc.get_bounds(idx).map(|b| (idx, min, max, b)))
             .collect();
-        
+
         sorted.sort_by(|a, b| a.3.y.cmp(&b.3.y));
-        
+
         // Group by occurrence constraints and vertical proximity
         let mut sections: Vec<RepeatableSection> = Vec::new();
         let mut used: HashSet<usize> = HashSet::new();
-        
+
         for (idx, min, max, bounds) in &sorted {
             if used.contains(idx) {
                 continue;
             }
-            
+
             // Start a new section with this item
             let mut section = RepeatableSection {
                 member_groups: vec![*idx],
@@ -241,18 +252,18 @@ impl RepeatableDetector {
                 bounds: Some(*bounds),
             };
             used.insert(*idx);
-            
+
             // Find other items with matching constraints that are vertically adjacent
             for (other_idx, other_min, other_max, other_bounds) in &sorted {
                 if used.contains(other_idx) {
                     continue;
                 }
-                
+
                 // Must have same occurrence constraints
                 if other_min != min || other_max != max {
                     continue;
                 }
-                
+
                 // Check vertical proximity - is other_bounds close to section bounds?
                 if let Some(ref section_bounds) = section.bounds {
                     let vertical_gap = if other_bounds.y > section_bounds.bottom() {
@@ -263,7 +274,7 @@ impl RepeatableDetector {
                         // Overlapping - no gap
                         Decimal::ZERO
                     };
-                    
+
                     if vertical_gap <= self.max_vertical_gap {
                         section.member_groups.push(*other_idx);
                         // Expand section bounds
@@ -272,13 +283,13 @@ impl RepeatableDetector {
                     }
                 }
             }
-            
+
             sections.push(section);
         }
-        
+
         sections
     }
-    
+
     /// Get all detected repeatable sections without modifying the document.
     /// Useful for analysis or debugging.
     pub fn detect_sections(&self, doc: &Document) -> Vec<RepeatableSection> {
@@ -287,7 +298,7 @@ impl RepeatableDetector {
         if !from_flattened.is_empty() {
             return from_flattened;
         }
-        
+
         // Fallback: search leaf node hints (for test cases that add hints to nodes)
         let repeatable_groups = self.find_repeatable_groups(doc);
         self.group_by_proximity(doc, repeatable_groups)
@@ -298,30 +309,36 @@ impl AnalysisModule for RepeatableDetector {
     fn name(&self) -> &'static str {
         "RepeatableDetector"
     }
-    
+
     fn process(&self, doc: &mut Document) {
         let sections = self.detect_sections(doc);
-        
+
         for section in sections {
             if section.member_groups.len() > 1 {
-                // Multiple member groups - merge them into a RepeatableSection
-                doc.merge(
-                    section.member_groups,
-                    GroupKind::RepeatableSection {
-                        min_occurrences: section.min_occurrences,
-                        max_occurrences: section.max_occurrences,
-                    },
-                    GroupSource::Inferred { module: self.name().to_string() },
-                );
+                // Only create a repeatable section if it contains at least one field
+                let has_fields = section.member_groups.iter().any(|&g| doc.contains_field(g));
+                if has_fields {
+                    // Multiple member groups - merge them into a RepeatableSection
+                    doc.merge(
+                        section.member_groups,
+                        GroupKind::RepeatableSection {
+                            min_occurrences: section.min_occurrences,
+                            max_occurrences: section.max_occurrences,
+                        },
+                        GroupSource::Inferred {
+                            module: self.name().to_string(),
+                        },
+                    );
+                }
             } else if section.member_groups.is_empty() && section.bounds.is_some() {
                 // Sections from find_repeatable_from_flattened have bounds but no member_groups.
-                // Find all ROOT groups (not referenced by other groups) whose bounds fall within 
+                // Find all ROOT groups (not referenced by other groups) whose bounds fall within
                 // the section bounds. This ensures we collect outermost groups like LabeledField
                 // rather than raw Leaf groups.
                 let bounds = section.bounds.unwrap();
                 let roots = doc.roots();
                 let mut contained_groups = Vec::new();
-                
+
                 for &group_idx in &roots {
                     if let Some(group_bounds) = doc.get_bounds(group_idx) {
                         // Check if group is within the section bounds
@@ -334,15 +351,19 @@ impl AnalysisModule for RepeatableDetector {
                         }
                     }
                 }
-                
-                if !contained_groups.is_empty() {
+
+                // Only create a repeatable section if it contains at least one field
+                let has_fields = contained_groups.iter().any(|&g| doc.contains_field(g));
+                if !contained_groups.is_empty() && has_fields {
                     doc.merge(
                         contained_groups,
                         GroupKind::RepeatableSection {
                             min_occurrences: section.min_occurrences,
                             max_occurrences: section.max_occurrences,
                         },
-                        GroupSource::Inferred { module: self.name().to_string() },
+                        GroupSource::Inferred {
+                            module: self.name().to_string(),
+                        },
                     );
                 }
             }
@@ -354,62 +375,80 @@ impl AnalysisModule for RepeatableDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page, Hint};
+    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Hint, Page};
     use crate::xfa::num;
-    
+
     fn create_test_node_with_occurrence(
-        x: f64, y: f64, w: f64, h: f64,
-        min: u32, max: Option<u32>
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        min: u32,
+        max: Option<u32>,
     ) -> FlattenedNode {
         let mut node = FlattenedNode::new_field(
             "test".to_string(),
             "".to_string(),
             "test".to_string(),
-            num(x), num(y), num(w), num(h),
+            num(x),
+            num(y),
+            num(w),
+            num(h),
         );
         node.add_hint(Hint::Occurrence { min, max });
         node
     }
-    
+
     #[test]
     fn test_detect_single_repeatable() {
-        let nodes = vec![
-            create_test_node_with_occurrence(10.0, 10.0, 100.0, 20.0, 1, None),
-        ];
-        
+        let nodes = vec![create_test_node_with_occurrence(
+            10.0, 10.0, 100.0, 20.0, 1, None,
+        )];
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             nodes,
         );
-        
+
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
-        
+
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].min_occurrences, 1);
         assert_eq!(sections[0].max_occurrences, None); // unlimited
     }
-    
+
     #[test]
     fn test_detect_non_repeatable_ignored() {
         // max=1 means not repeatable
-        let nodes = vec![
-            create_test_node_with_occurrence(10.0, 10.0, 100.0, 20.0, 1, Some(1)),
-        ];
-        
+        let nodes = vec![create_test_node_with_occurrence(
+            10.0,
+            10.0,
+            100.0,
+            20.0,
+            1,
+            Some(1),
+        )];
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             nodes,
         );
-        
+
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
-        
+
         assert_eq!(sections.len(), 0); // Not repeatable
     }
-    
+
     #[test]
     fn test_group_adjacent_repeatables() {
         let nodes = vec![
@@ -417,40 +456,46 @@ mod tests {
             create_test_node_with_occurrence(10.0, 35.0, 100.0, 20.0, 0, Some(5)), // 5px gap
             create_test_node_with_occurrence(10.0, 100.0, 100.0, 20.0, 0, Some(5)), // 45px gap - too far
         ];
-        
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             nodes,
         );
-        
+
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
-        
+
         // First two should be grouped, third is separate
         assert_eq!(sections.len(), 2);
-        
+
         // Find the section with 2 members
         let grouped = sections.iter().find(|s| s.member_groups.len() == 2);
         assert!(grouped.is_some());
     }
-    
+
     #[test]
     fn test_different_constraints_not_grouped() {
         let nodes = vec![
             create_test_node_with_occurrence(10.0, 10.0, 100.0, 20.0, 0, Some(5)),
             create_test_node_with_occurrence(10.0, 35.0, 100.0, 20.0, 1, Some(10)), // Different constraints
         ];
-        
+
         let flattened = Flattened::from_nodes(
-            Page { width: num(595.0), height: num(842.0) },
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
             nodes,
         );
-        
+
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
-        
+
         // Should be separate sections despite proximity
         assert_eq!(sections.len(), 2);
         assert!(sections.iter().all(|s| s.member_groups.len() == 1));

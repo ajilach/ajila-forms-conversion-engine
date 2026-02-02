@@ -3848,6 +3848,79 @@ mod tests {
     }
     
     #[test]
+    fn test_aaai_kunde_heading_not_in_repeatable() {
+        // Test that the "Kunde" H2 heading is NOT inside a RepeatableSection.
+        // Repeatable sections should only be created when they contain fields,
+        // so a header-only section should not become a repeatable.
+        use crate::document::{Document, GroupKind};
+        use crate::modules::run_analysis_pipeline;
+        
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+        
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap())
+            .expect("Failed to parse XFA structure");
+        
+        let flattened = flatten_with_scripts(&mut nodes, "DE", "AAAI_019_DE")
+            .expect("Failed to flatten XFA with scripts");
+        
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        
+        // Find the "Kunde" H2 heading
+        let headings = doc.headings();
+        let kunde_heading_idx = headings.iter()
+            .find(|&&idx| {
+                if let Some(group) = doc.get_group(idx) {
+                    if let GroupKind::Heading { level: 2 } = group.kind {
+                        let text = doc.get_text_content(idx);
+                        return text.contains("Kunde");
+                    }
+                }
+                false
+            })
+            .copied();
+        
+        assert!(
+            kunde_heading_idx.is_some(),
+            "\"Kunde\" should be detected as H2 heading"
+        );
+        
+        let kunde_idx = kunde_heading_idx.unwrap();
+        
+        // Check that no RepeatableSection group contains the "Kunde" heading
+        let repeatable_sections: Vec<_> = doc.groups.iter().enumerate()
+            .filter(|(_, g)| matches!(g.kind, GroupKind::RepeatableSection { .. }))
+            .collect();
+        
+        for (rep_idx, rep_group) in &repeatable_sections {
+            // Check if kunde_idx is in the children (directly or transitively)
+            fn is_descendant(doc: &Document, parent_idx: usize, target_idx: usize) -> bool {
+                if let Some(group) = doc.get_group(parent_idx) {
+                    for &child_idx in &group.children {
+                        if child_idx == target_idx {
+                            return true;
+                        }
+                        if is_descendant(doc, child_idx, target_idx) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            
+            assert!(
+                !is_descendant(&doc, *rep_idx, kunde_idx),
+                "\"Kunde\" H2 heading (group {}) should NOT be inside RepeatableSection (group {})",
+                kunde_idx, rep_idx
+            );
+        }
+        
+        println!("✓ \"Kunde\" H2 heading is correctly NOT inside any RepeatableSection");
+    }
+    
+    #[test]
     fn test_aaai_watermark_not_recognized_as_field() {
         // Test that watermark (which has access="protected") is NOT recognized as a Field.
         // Only fields with access="open" should be marked as Fields.
