@@ -13,8 +13,8 @@ use clap::{Parser, ValueEnum};
 use document::Document;
 use flattened::{Flattened, FlattenedNodeKind};
 use modules::{
-    AnalysisModule, DateFieldDetector, FieldGrouper, HeadingDetector, LabelAttacher,
-    RadioButtonDetector, RadioButtonGrouper, TextBlockGrouper, run_analysis_pipeline,
+    AnalysisModule, FieldGrouper, HeadingDetector, LabelAttacher, RadioButtonDetector,
+    RadioButtonGrouper, TextBlockGrouper, run_analysis_pipeline,
 };
 use pdf::file::FileOptions;
 use pdf::object::*;
@@ -343,14 +343,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // PIPELINE STAGE 5: Output (composable flags)
     // =========================================================================
 
-    // Handle --structured --exhaustive (merged JSON of all states)
-    if args.structured && args.exhaustive {
-        unimplemented!(
-            "--structured --exhaustive: Merged JSON output of all form states is not yet implemented"
-        );
-    }
-
-    // Handle --structured (single state)
+    // Handle --structured (single state, non-exhaustive mode only)
+    // Exhaustive mode will handle structured output per state
     if args.structured {
         let output_path = PathBuf::from(format!("{}_structured.json", doc_name));
 
@@ -414,19 +408,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut form =
             XfaForm::new(nodes_for_form).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
 
-        // Determine which render mode to use (default to plain if none specified)
-        let render_mode = args
-            .render_modes
-            .first()
-            .copied()
-            .unwrap_or(RenderMode::Plain);
-
         let config = exhaustive::ExhaustiveConfig {
             doc_name,
             scale: args.scale,
             pdf_path: &args.document,
             locale,
-            render_mode,
+            render_modes: args.render_modes.clone(),
+            structured: args.structured,
             quiet,
         };
 
@@ -3591,118 +3579,6 @@ mod tests {
     // Conditional Groups Tests for AAAB
     // =========================================================================
 
-    /// Test the conditional groups structure based on AAAB's radio buttons.
-    ///
-    /// AAAB has a primary discriminant: RB_Group_Neuanlage with options:
-    /// - RB_1 (value="1"): Shows "Neuanlage" section
-    /// - RB_2 (value="2"): Shows "Änderung" section  
-    /// - RB_3 (value="3"): Shows "Löschung" section (with nested RB_Group_Retro)
-    ///
-    /// This test verifies that we can correctly identify:
-    /// 1. The discriminant field (RB_Group_Neuanlage)
-    /// 2. Its options (1, 2, 3 corresponding to RB_1, RB_2, RB_3)
-    /// 3. The conditional visibility behavior
-    #[test]
-    fn test_aaab_conditional_groups_discriminant_structure() {
-        use crate::flattened::{Discriminant, FieldId};
-        use crate::scripting::XfaForm;
-
-        // Extract and parse XFA from AAAB
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        assert!(xfa_data.is_some(), "PDF should contain XFA data");
-
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
-
-        // Create XfaForm to work with the form
-        let form = XfaForm::new(nodes).expect("Failed to create XfaForm");
-
-        // Find RB_Group_Neuanlage in the flattened output
-        let flattened = form.flattened();
-
-        // Look for RB_1, RB_2, RB_3 fields
-        let rb_fields: Vec<_> = flattened
-            .iter_nodes()
-            .filter(|n| {
-                if let FlattenedNodeKind::Field { name, .. } = &n.kind {
-                    name == "RB_1" || name == "RB_2" || name == "RB_3"
-                } else {
-                    false
-                }
-            })
-            .collect();
-
-        println!("\n=== AAAB Discriminant Structure ===");
-        println!(
-            "Found {} radio button fields in flattened output:",
-            rb_fields.len()
-        );
-        for field in &rb_fields {
-            if let FlattenedNodeKind::Field {
-                name,
-                value,
-                is_checked,
-                ..
-            } = &field.kind
-            {
-                println!(
-                    "  {} = '{}' (checked: {:?}, id: {})",
-                    name, value, is_checked, field.id
-                );
-            }
-        }
-
-        // Verify we found the primary radio buttons
-        assert!(
-            rb_fields.len() >= 3,
-            "Should find at least 3 radio button fields (RB_1, RB_2, RB_3), found {}",
-            rb_fields.len()
-        );
-
-        // Verify RB_1 has value "1" (meaning it's the selected option in the excl group)
-        let rb1 = rb_fields
-            .iter()
-            .find(|n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "RB_1"))
-            .expect("Should find RB_1");
-
-        if let FlattenedNodeKind::Field {
-            value, is_checked, ..
-        } = &rb1.kind
-        {
-            // RB_1 has a non-empty value "1" indicating it's selected
-            assert_eq!(
-                value, "1",
-                "RB_1 should have value '1' (selected in excl group)"
-            );
-
-            // Note: is_checked may be None if the flattening doesn't compute it,
-            // but the value "1" confirms this is the selected radio button
-            println!(
-                "  RB_1 is_checked: {:?} (value '1' indicates selection)",
-                is_checked
-            );
-        }
-
-        // Build a Discriminant structure for documentation purposes
-        let discriminant = Discriminant {
-            field_id: rb1.id, // Using RB_1's ID as placeholder
-            field_name: "RB_Group_Neuanlage".to_string(),
-            options: vec!["1".to_string(), "2".to_string(), "3".to_string()],
-        };
-
-        println!("\nDiscriminant model:");
-        println!("  field_name: {}", discriminant.field_name);
-        println!("  options: {:?}", discriminant.options);
-
-        // Verify the discriminant has 3 options
-        assert_eq!(
-            discriminant.options.len(),
-            3,
-            "RB_Group_Neuanlage should have 3 options (Neuanlage, Änderung, Löschung)"
-        );
-
-        println!("\n✓ Discriminant structure correctly identified");
-    }
-
     /// Test that different radio button selections show different sections.
     ///
     /// This test verifies the conditional visibility:
@@ -3844,111 +3720,6 @@ mod tests {
         println!("\n✓ All conditional sections work correctly");
     }
 
-    /// Test that the Löschung section has a nested discriminant (RB_Group_Retro).
-    ///
-    /// When RB_3 is selected (Löschung), a second radio button group appears:
-    /// - RB_Group_Retro with options for retroactive settings
-    /// - This tests the nested conditional groups scenario
-    #[test]
-    fn test_aaab_conditional_groups_nested_discriminant() {
-        use crate::flattened::{ConditionalGroup, Discriminant, FieldId, VisibilityConstraint};
-        use crate::scripting::XfaForm;
-
-        // Extract and parse XFA from AAAB
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
-        let mut form = XfaForm::new(nodes).expect("Failed to create XfaForm");
-
-        // Select RB_3 to reveal the Löschung section with nested radio buttons
-        form.select_radio_button(
-            "UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3",
-        )
-        .expect("Should select RB_3");
-        form.refresh().expect("Should refresh");
-
-        // The nested RB_Group_Retro should now be visible
-        // Check if the path is visible
-        let retro_visible =
-            form.is_path_visible("UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro");
-
-        println!("\n=== Nested Discriminant Test ===");
-        println!("RB_Group_Retro visible: {}", retro_visible);
-
-        assert!(
-            retro_visible,
-            "RB_Group_Retro should be visible when RB_3 is selected"
-        );
-
-        // Find the exclusion group for RB_1 in the Löschung section
-        let excl_group = form.find_excl_group_for_field(
-            "UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro.RB_1",
-        );
-
-        println!("Excl group for nested RB_1: {:?}", excl_group);
-        assert!(
-            excl_group.is_some(),
-            "Should find RB_Group_Retro as parent exclGroup"
-        );
-
-        // Now verify it's NOT visible when RB_1 is selected (default state)
-        let xfa_data2 = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        let nodes2 = xfa::XfaNode::parse(&xfa_data2.unwrap()).expect("Failed to parse XFA");
-        let form2 = XfaForm::new(nodes2).expect("Failed to create XfaForm");
-
-        // With RB_1 selected (default), the Löschung path should be hidden
-        let loeschung_visible = form2.is_path_visible("UBSForms.Page.Löschung");
-
-        println!("Page.Löschung visible with RB_1: {}", loeschung_visible);
-
-        // Build the nested conditional structure for documentation
-        let primary_discriminant = Discriminant {
-            field_id: FieldId::new(),
-            field_name: "RB_Group_Neuanlage".to_string(),
-            options: vec!["1".to_string(), "2".to_string(), "3".to_string()],
-        };
-
-        let nested_discriminant = Discriminant {
-            field_id: FieldId::new(),
-            field_name: "RB_Group_Retro".to_string(),
-            options: vec![
-                "1".to_string(),
-                "2".to_string(),
-                "3".to_string(),
-                "4".to_string(),
-            ],
-        };
-
-        // The nested conditional group depends on the primary discriminant
-        let nested_group = ConditionalGroup {
-            discriminant: nested_discriminant.clone(),
-            branches: std::collections::HashMap::new(), // Would be populated during flattening
-            visible_when: Some(VisibilityConstraint {
-                field_id: primary_discriminant.field_id,
-                required_value: "3".to_string(), // Only visible when RB_3 is selected
-            }),
-        };
-
-        println!("\nNested ConditionalGroup model:");
-        println!("  discriminant: {}", nested_group.discriminant.field_name);
-        println!(
-            "  visible_when: field {} = '{}'",
-            nested_group.visible_when.as_ref().unwrap().field_id,
-            nested_group.visible_when.as_ref().unwrap().required_value
-        );
-
-        assert!(
-            nested_group.visible_when.is_some(),
-            "Nested group should have a visibility constraint"
-        );
-        assert_eq!(
-            nested_group.visible_when.as_ref().unwrap().required_value,
-            "3",
-            "Nested group should be visible only when parent is '3' (RB_3/Löschung)"
-        );
-
-        println!("\n✓ Nested discriminant structure correctly identified");
-    }
-
     /// Test that all three sections have different visible fields.
     ///
     /// This test enumerates the visible fields for each radio button state
@@ -4068,126 +3839,6 @@ mod tests {
         );
 
         println!("\n✓ Field enumeration shows distinct fields per conditional state");
-    }
-
-    /// Test building ConditionalGroup structures from AAAB form state enumeration.
-    ///
-    /// This demonstrates how the exhaustive mode state exploration maps to
-    /// the ConditionalGroup model.
-    #[test]
-    fn test_aaab_conditional_groups_model_construction() {
-        use crate::flattened::{ConditionalGroup, Discriminant, FieldId, VisibilityConstraint};
-        use crate::scripting::XfaForm;
-        use std::collections::HashMap;
-
-        // Parse AAAB and create form
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
-        let form = XfaForm::new(nodes).expect("Failed to create XfaForm");
-
-        // Get baseline (RB_1 selected) node indices
-        let baseline_ids: Vec<_> = form.flattened().iter_nodes().map(|n| n.id).collect();
-
-        println!("\n=== ConditionalGroup Model Construction ===");
-        println!("Baseline (RB_1) has {} nodes", baseline_ids.len());
-
-        // Build the primary discriminant
-        let primary_discriminant = Discriminant {
-            field_id: form
-                .flattened()
-                .iter_nodes()
-                .find(
-                    |n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "RB_1"),
-                )
-                .map(|n| n.id)
-                .unwrap_or_else(FieldId::new),
-            field_name: "RB_Group_Neuanlage".to_string(),
-            options: vec![
-                "1".to_string(), // Neuanlage
-                "2".to_string(), // Änderung
-                "3".to_string(), // Löschung
-            ],
-        };
-
-        // Build branches HashMap (mapping discriminant value to visible node indices)
-        let mut branches: HashMap<String, Vec<usize>> = HashMap::new();
-
-        // Branch for value "1" (Neuanlage) - the baseline
-        branches.insert("1".to_string(), (0..baseline_ids.len()).collect());
-
-        // Get indices for RB_2 state
-        let rb2_indices = {
-            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
-            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes).unwrap();
-            form.select_radio_button(
-                "UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2",
-            )
-            .unwrap();
-            form.refresh().unwrap();
-            (0..form.flattened().node_count()).collect::<Vec<_>>()
-        };
-        branches.insert("2".to_string(), rb2_indices.clone());
-
-        // Get indices for RB_3 state
-        let rb3_indices = {
-            let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
-            let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes).unwrap();
-            form.select_radio_button(
-                "UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3",
-            )
-            .unwrap();
-            form.refresh().unwrap();
-            (0..form.flattened().node_count()).collect::<Vec<_>>()
-        };
-        branches.insert("3".to_string(), rb3_indices.clone());
-
-        // Create the ConditionalGroup
-        let conditional_group = ConditionalGroup {
-            discriminant: primary_discriminant.clone(),
-            branches: branches.clone(),
-            visible_when: None, // Primary discriminant has no parent constraint
-        };
-
-        println!("\nConditionalGroup constructed:");
-        println!(
-            "  discriminant: {} (options: {:?})",
-            conditional_group.discriminant.field_name, conditional_group.discriminant.options
-        );
-        println!("  branches:");
-        for (value, indices) in &conditional_group.branches {
-            let label = match value.as_str() {
-                "1" => "Neuanlage",
-                "2" => "Änderung",
-                "3" => "Löschung",
-                _ => "Unknown",
-            };
-            println!("    '{}' ({}) → {} nodes", value, label, indices.len());
-        }
-        println!("  visible_when: {:?}", conditional_group.visible_when);
-
-        // Verify structure
-        assert_eq!(
-            conditional_group.branches.len(),
-            3,
-            "Should have 3 branches (one per radio button option)"
-        );
-        assert!(
-            conditional_group.visible_when.is_none(),
-            "Primary discriminant should have no parent constraint"
-        );
-
-        // All branches should have nodes
-        for (value, indices) in &conditional_group.branches {
-            assert!(
-                !indices.is_empty(),
-                "Branch '{}' should have visible nodes",
-                value
-            );
-        }
-
-        println!("\n✓ ConditionalGroup model correctly constructed from AAAB");
     }
 
     #[test]

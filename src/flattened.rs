@@ -9,7 +9,6 @@ use rust_decimal::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
-use uuid::Uuid;
 
 pub struct Flattened {
     pub page: Page,
@@ -20,20 +19,18 @@ pub struct Flattened {
 // Recursive Flattened Structure
 // ============================================================================
 
-/// A flattened element: either a group (with hints/conditions) or a leaf node.
+/// A flattened element: either a group (with hints) or a leaf node.
 /// Groups can be nested recursively and carry semantic hints.
 /// Leaf nodes contain actual layout information (position, dimensions, content).
 #[derive(Debug, Clone)]
 pub enum FlattenedKind {
-    /// A group of elements with optional hints and visibility condition.
+    /// A group of elements with optional hints.
     /// Groups are created when an XFA node has an <occur> element (repeatable section).
     Group {
         /// Child elements (can be nested groups or leaf nodes)
         children: Vec<FlattenedKind>,
         /// Semantic hints for this group (format-agnostic)
         hints: Vec<Hint>,
-        /// Optional visibility constraint
-        condition: Option<VisibilityConstraint>,
     },
     /// A leaf node with position and rendering information
     Node(FlattenedNode),
@@ -45,20 +42,6 @@ impl FlattenedKind {
         FlattenedKind::Group {
             children,
             hints,
-            condition: None,
-        }
-    }
-
-    /// Create a new group with children, hints, and a visibility condition
-    pub fn group_conditional(
-        children: Vec<FlattenedKind>,
-        hints: Vec<Hint>,
-        condition: VisibilityConstraint,
-    ) -> Self {
-        FlattenedKind::Group {
-            children,
-            hints,
-            condition: Some(condition),
         }
     }
 
@@ -104,14 +87,6 @@ impl FlattenedKind {
             .find(|h| h.discriminant() == discriminant)
     }
 
-    /// Get the visibility condition (only groups can have conditions)
-    pub fn condition(&self) -> Option<&VisibilityConstraint> {
-        match self {
-            FlattenedKind::Group { condition, .. } => condition.as_ref(),
-            FlattenedKind::Node(_) => None,
-        }
-    }
-
     /// Returns true if this is a group
     pub fn is_group(&self) -> bool {
         matches!(self, FlattenedKind::Group { .. })
@@ -143,48 +118,6 @@ impl FlattenedKind {
         match self {
             FlattenedKind::Group { children, .. } => Some(children),
             FlattenedKind::Node(_) => None,
-        }
-    }
-
-    /// Find a node by FieldId, searching recursively
-    pub fn find_by_id(&self, id: &FieldId) -> Option<&FlattenedNode> {
-        match self {
-            FlattenedKind::Node(node) => {
-                if &node.id == id {
-                    Some(node)
-                } else {
-                    None
-                }
-            }
-            FlattenedKind::Group { children, .. } => {
-                for child in children {
-                    if let Some(found) = child.find_by_id(id) {
-                        return Some(found);
-                    }
-                }
-                None
-            }
-        }
-    }
-
-    /// Find a node mutably by FieldId, searching recursively
-    pub fn find_by_id_mut(&mut self, id: &FieldId) -> Option<&mut FlattenedNode> {
-        match self {
-            FlattenedKind::Node(node) => {
-                if &node.id == id {
-                    Some(node)
-                } else {
-                    None
-                }
-            }
-            FlattenedKind::Group { children, .. } => {
-                for child in children {
-                    if let Some(found) = child.find_by_id_mut(id) {
-                        return Some(found);
-                    }
-                }
-                None
-            }
         }
     }
 
@@ -275,90 +208,6 @@ impl<'a> Iterator for FlattenedNodeIterMut<'a> {
     }
 }
 
-// ============================================================================
-// Unique Field Identification
-// ============================================================================
-
-/// Unique identifier for a flattened node, using UUID v5 derived from SOM path.
-/// This enables deterministic, reproducible IDs based on the field's position in the form.
-/// The same SOM path will always produce the same FieldId.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
-pub struct FieldId(pub Uuid);
-
-/// Namespace UUID for generating FieldIds from SOM paths.
-/// This is a custom namespace specific to this application.
-const FIELD_ID_NAMESPACE: Uuid = Uuid::from_bytes([
-    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
-]);
-
-impl FieldId {
-    /// Generate a deterministic field ID from a SOM path.
-    /// The same path will always produce the same UUID.
-    pub fn from_som_path(path: &SomPath) -> Self {
-        FieldId(Uuid::new_v5(&FIELD_ID_NAMESPACE, path.as_str().as_bytes()))
-    }
-
-    /// Generate a random unique field ID (fallback for nodes without a SOM path)
-    pub fn new() -> Self {
-        FieldId(Uuid::new_v4())
-    }
-
-    /// Get the underlying UUID
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-}
-
-impl Default for FieldId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for FieldId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-// ============================================================================
-// Conditional Flattening Model
-// ============================================================================
-
-/// A discriminant field that controls conditional visibility.
-/// References flattened fields by their unique ID.
-#[derive(Debug, Clone)]
-pub struct Discriminant {
-    /// Unique ID of the discriminant field
-    pub field_id: FieldId,
-    /// Human-readable name of the field (for debugging/display)
-    pub field_name: String,
-    /// Possible values this discriminant can take
-    pub options: Vec<String>,
-}
-
-/// A constraint that determines when a conditional group is visible.
-/// References are to flattened field IDs, making this self-contained.
-#[derive(Debug, Clone)]
-pub struct VisibilityConstraint {
-    /// ID of the field that controls visibility
-    pub field_id: FieldId,
-    /// The value the field must have for this group to be visible
-    pub required_value: String,
-}
-
-/// A group of nodes whose visibility depends on a discriminant's value.
-/// Each branch maps a discriminant value to the node indices visible for that value.
-#[derive(Debug, Clone)]
-pub struct ConditionalGroup {
-    /// The discriminant controlling this group
-    pub discriminant: Discriminant,
-    /// Map from discriminant value to node indices visible for that value
-    pub branches: HashMap<String, Vec<usize>>,
-    /// Optional constraint from a parent discriminant
-    pub visible_when: Option<VisibilityConstraint>,
-}
-
 pub struct Page {
     pub width: Num,
     pub height: Num,
@@ -378,9 +227,6 @@ pub struct RenderStyle {
 /// Main flattened node structure containing position and rendering information
 #[derive(Debug, Clone)]
 pub struct FlattenedNode {
-    /// Unique identifier for this node
-    pub id: FieldId,
-
     /// Node-specific information
     pub kind: FlattenedNodeKind,
 
@@ -732,7 +578,6 @@ pub struct LayoutToken {
 #[derive(Debug, Clone)]
 pub struct FlattenedNodeBuilder {
     kind: Option<FlattenedNodeKind>,
-    som_path: Option<SomPath>,
     x: Num,
     y: Num,
     width: Num,
@@ -746,7 +591,6 @@ impl Default for FlattenedNodeBuilder {
     fn default() -> Self {
         Self {
             kind: None,
-            som_path: None,
             x: Decimal::ZERO,
             y: Decimal::ZERO,
             width: Decimal::ZERO,
@@ -878,23 +722,9 @@ impl FlattenedNodeBuilder {
         self
     }
 
-    /// Set the SOM path for deterministic ID generation.
-    /// When set, the FieldId will be derived from this path using UUID v5.
-    pub fn som_path(mut self, path: SomPath) -> Self {
-        self.som_path = Some(path);
-        self
-    }
-
     /// Build the FlattenedNode. Panics if kind was not set.
-    /// If a SOM path was set, the ID will be deterministic based on that path.
-    /// Otherwise, a random UUID v4 will be used.
     pub fn build(self) -> FlattenedNode {
-        let id = match self.som_path {
-            Some(ref path) => FieldId::from_som_path(path),
-            None => FieldId::new(),
-        };
         FlattenedNode {
-            id,
             kind: self
                 .kind
                 .expect("FlattenedNodeBuilder: kind must be set before building"),
@@ -977,30 +807,6 @@ impl FlattenedNode {
             .build()
     }
 
-    /// Create a new text node with rich text content and deterministic ID from SOM path
-    pub fn new_text_with_rich_text_and_path(
-        content: String,
-        font_size: Num,
-        font_name: String,
-        x: Num,
-        y: Num,
-        width: Num,
-        height: Num,
-        style: RenderStyle,
-        rotate: i32,
-        source_name: Option<String>,
-        rich_text: Option<RichText>,
-        path: SomPath,
-    ) -> Self {
-        Self::builder()
-            .bounds(x, y, width, height)
-            .style(style)
-            .rotate(rotate)
-            .text_rich(content, font_size, font_name, source_name, rich_text)
-            .som_path(path)
-            .build()
-    }
-
     /// Create a new field node with all options
     pub fn new_field_with_checked(
         name: String,
@@ -1019,29 +825,6 @@ impl FlattenedNode {
             .style(style)
             .rotate(rotate)
             .field_checked(name, value, label, is_checked)
-            .build()
-    }
-
-    /// Create a new field node with all options and deterministic ID from SOM path
-    pub fn new_field_with_checked_and_path(
-        name: String,
-        value: String,
-        label: String,
-        x: Num,
-        y: Num,
-        width: Num,
-        height: Num,
-        style: RenderStyle,
-        rotate: i32,
-        is_checked: Option<bool>,
-        path: SomPath,
-    ) -> Self {
-        Self::builder()
-            .bounds(x, y, width, height)
-            .style(style)
-            .rotate(rotate)
-            .field_checked(name, value, label, is_checked)
-            .som_path(path)
             .build()
     }
 
@@ -1685,26 +1468,6 @@ impl Flattened {
     /// Iterate over all leaf nodes mutably
     pub fn iter_nodes_mut(&mut self) -> FlattenedNodeIterMut<'_> {
         FlattenedNodeIterMut::new(&mut self.children)
-    }
-
-    /// Find a node by FieldId, searching recursively
-    pub fn find_by_id(&self, id: &FieldId) -> Option<&FlattenedNode> {
-        for child in &self.children {
-            if let Some(found) = child.find_by_id(id) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
-    /// Find a node mutably by FieldId, searching recursively
-    pub fn find_by_id_mut(&mut self, id: &FieldId) -> Option<&mut FlattenedNode> {
-        for child in &mut self.children {
-            if let Some(found) = child.find_by_id_mut(id) {
-                return Some(found);
-            }
-        }
-        None
     }
 
     /// Count all leaf nodes
@@ -2391,7 +2154,6 @@ impl Flattened {
                         flattened_children.push(FlattenedKind::Group {
                             children: group_children,
                             hints,
-                            condition: None,
                         });
                         return Ok(());
                     } else if occur.is_repeatable() && !occur.has_initial_instances() {
@@ -2858,7 +2620,6 @@ impl Flattened {
                             flattened_children.push(FlattenedKind::Group {
                                 children: group_children,
                                 hints,
-                                condition: None,
                             });
                             height
                         } else if occur.is_repeatable() && !occur.has_initial_instances() {
@@ -3069,7 +2830,6 @@ impl Flattened {
                                     flattened_children.push(FlattenedKind::Group {
                                         children: group_children,
                                         hints,
-                                        condition: None,
                                     });
                                     height
                                 } else if occur.is_repeatable() && !occur.has_initial_instances() {

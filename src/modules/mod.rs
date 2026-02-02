@@ -27,9 +27,6 @@
 //! FieldGrouper                ─── wraps fields in Field groups
 //!     │
 //!     ▼
-//! DateFieldDetector           ─── detects date fields (day.month.year)
-//!     │
-//!     ▼
 //! RadioButtonDetector         ─── detects radio buttons (square fields with labels)
 //!     │
 //!     ▼
@@ -61,7 +58,6 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
-mod date_field_detector;
 mod field_grouper;
 mod heading_detector;
 mod inline_field_detector;
@@ -74,7 +70,6 @@ mod repeatable_detector;
 mod structured_converter;
 mod text_block;
 
-pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use heading_detector::HeadingDetector;
 pub use inline_field_detector::InlineFieldDetector;
@@ -103,7 +98,6 @@ pub trait AnalysisModule {
 /// 2. MasterPageDetector - identify header/footer from master page content
 /// 3. TextBlockGrouper - merge adjacent text into TextBlocks
 /// 4. FieldGrouper - wrap fields in Field groups  
-/// 5. DateFieldDetector - detect date fields
 /// 6. RadioButtonDetector - detect radio buttons
 /// 7. RadioButtonGrouper - group radio buttons on same line
 /// 8. HeadingDetector - identify headings (MUST run before LabelAttacher)
@@ -122,7 +116,6 @@ pub fn run_analysis_pipeline(doc: &mut crate::document::Document) {
     MasterPageDetector::new().process(doc);
     TextBlockGrouper::new().process(doc);
     FieldGrouper::new().process(doc);
-    //DateFieldDetector::new().process(doc);  // Disabled for now
     RadioButtonDetector::new().process(doc);
     RadioButtonGrouper::new().process(doc);
     HeadingDetector::new().process(doc);

@@ -1,4 +1,3 @@
-use crate::flattened::FieldId;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
@@ -68,7 +67,7 @@ pub struct ConditionalNode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
-    pub field: FieldId,
+    pub field_name: String,
     pub value: InputValue,
 }
 
@@ -113,7 +112,6 @@ pub enum FieldType {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldNode {
-    pub id: FieldId,
     pub name: String,
     pub label: Option<InlineText>,
     pub input_type: FieldType,

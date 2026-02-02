@@ -315,7 +315,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         let field_node = first_field_node?;
 
         Some(StructuredNode::Field(FieldNode {
-            id: field_node.id,
             name: self.get_field_name(field_node),
             label: None, // Radio groups typically have options as labels
             input_type: FieldType::Radio { options },
@@ -350,7 +349,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         let field_node = first_field_node?;
 
         Some(StructuredNode::Field(FieldNode {
-            id: field_node.id,
             name: self.get_field_name(field_node),
             label: None,
             input_type: FieldType::Radio { options },
@@ -386,7 +384,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         };
 
         Some(StructuredNode::Field(FieldNode {
-            id: first_field.id,
             name: self.get_field_name(first_field),
             label: None, // Label typically attached by LabeledField wrapper
             input_type: FieldType::Date,
@@ -409,7 +406,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         let input_value = self.parse_input_value(value, &field_type);
 
         Some(StructuredNode::Field(FieldNode {
-            id: node.id,
             name: name.clone(),
             label,
             input_type: field_type,

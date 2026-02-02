@@ -46,8 +46,10 @@ pub struct ExhaustiveConfig<'a> {
     pub pdf_path: &'a Path,
     /// Locale identifier (e.g., "DE", "EN")
     pub locale: &'a str,
-    /// Render mode to use
-    pub render_mode: RenderMode,
+    /// Render modes to use (can be multiple: plain, labelled, annotated)
+    pub render_modes: Vec<RenderMode>,
+    /// Whether to output structured JSON for each state
+    pub structured: bool,
     /// Whether to suppress verbose output
     pub quiet: bool,
 }
@@ -73,7 +75,12 @@ pub fn run_exhaustive(
 ) -> Result<ExhaustiveResult, Box<dyn std::error::Error>> {
     if !config.quiet {
         println!("\nExhaustive mode: recursively discovering all form states...");
-        println!("  Using render mode: {:?}", config.render_mode);
+        if !config.render_modes.is_empty() {
+            println!("  Render modes: {:?}", config.render_modes);
+        }
+        if config.structured {
+            println!("  Structured JSON: enabled");
+        }
     }
 
     let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
@@ -208,24 +215,67 @@ fn explore_states(
             .join("_")
     };
 
-    // Render the current state
-    let output_path = std::path::PathBuf::from(format!("{}_{}.png", config.doc_name, state_suffix));
-    render_flattened(
-        form.flattened(),
-        &output_path,
-        config.scale,
-        config.render_mode,
-    )?;
+    // Create Document and run analysis pipeline once for this state
+    let flattened = form.flattened();
+    let mut doc = crate::document::Document::from_flattened(flattened);
+    crate::modules::run_analysis_pipeline(&mut doc);
 
-    println!(
-        "  ✓ Rendered: {} (selections: {:?})",
-        output_path.display(),
-        current_selections
-            .iter()
-            .map(|p| p.as_str())
-            .collect::<Vec<_>>()
-    );
-    images_rendered += 1;
+    // Output all requested formats from the analyzed document
+    let mut outputs = Vec::new();
+
+    // Render PNGs for each requested render mode
+    for mode in &config.render_modes {
+        let suffix = match mode {
+            RenderMode::Plain => "plain",
+            RenderMode::Labelled => "labelled",
+            RenderMode::Annotated => "annotated",
+        };
+        let output_path = std::path::PathBuf::from(format!(
+            "{}_{}.{}.png",
+            config.doc_name, state_suffix, suffix
+        ));
+
+        match mode {
+            RenderMode::Plain => {
+                flattened
+                    .render_to_image_buffer_plain(config.scale)?
+                    .save(&output_path)
+                    .map_err(|e| format!("Failed to save image: {}", e))?;
+            }
+            RenderMode::Labelled => {
+                doc.render_to_image(&output_path, config.scale)?;
+            }
+            RenderMode::Annotated => {
+                flattened.render_to_image(&output_path, config.scale)?;
+            }
+        }
+        outputs.push(output_path.display().to_string());
+        images_rendered += 1;
+    }
+
+    // Output structured JSON if requested
+    if config.structured {
+        let structured_nodes = crate::modules::convert_to_structured(&doc);
+        let json = serde_json::to_string_pretty(&structured_nodes)
+            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+
+        let json_path =
+            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state_suffix));
+        std::fs::write(&json_path, json)
+            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+        outputs.push(json_path.display().to_string());
+    }
+
+    if !config.quiet {
+        println!(
+            "  ✓ Generated: {} (selections: {:?})",
+            outputs.join(", "),
+            current_selections
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
 
     // Get visible selectable fields in this state (with SOM paths)
     let visible_fields = get_visible_selectable_fields(form);
@@ -289,34 +339,4 @@ fn explore_states(
     }
 
     Ok(images_rendered)
-}
-
-/// Render a Flattened document using the specified render mode.
-fn render_flattened(
-    flattened: &Flattened,
-    output_path: &Path,
-    scale: f32,
-    mode: RenderMode,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::document::Document;
-    use crate::modules::run_analysis_pipeline;
-
-    match mode {
-        RenderMode::Plain => {
-            flattened
-                .render_to_image_buffer_plain(scale)?
-                .save(output_path)
-                .map_err(|e| format!("Failed to save image: {}", e))?;
-        }
-        RenderMode::Labelled => {
-            // Create document and run analysis pipeline
-            let mut doc = Document::from_flattened(flattened);
-            run_analysis_pipeline(&mut doc);
-            doc.render_to_image(output_path, scale)?;
-        }
-        RenderMode::Annotated => {
-            flattened.render_to_image(output_path, scale)?;
-        }
-    }
-    Ok(())
 }
