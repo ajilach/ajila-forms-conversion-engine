@@ -34,7 +34,7 @@
 //! use blueprint::scripting::{XfaForm, EventActivity};
 //!
 //! // Create a form from parsed XFA nodes
-//! let form = XfaForm::new(nodes, "EN", "form_001")?;
+//! let form = XfaForm::new(nodes)?;
 //!
 //! // Resolve a field by SOM path
 //! if let Some(field) = form.resolve("Page1.TextField1") {

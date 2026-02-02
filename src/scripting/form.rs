@@ -457,10 +457,6 @@ pub struct XfaForm {
     nodes: Vec<XfaNode>,
     /// The current flattened layout
     flattened: Flattened,
-    /// Language code for translations (e.g., "DE", "EN")
-    language: String,
-    /// Form identifier
-    form_id: String,
     /// SOM resolver for node lookups
     som_resolver: SomResolver,
     /// Cached mapping of field names to their flattened node indices
@@ -479,13 +475,12 @@ pub struct XfaForm {
 
 impl XfaForm {
     /// Create a new XFA form from parsed nodes
-    pub fn new(mut nodes: Vec<XfaNode>, language: &str, form_id: &str) -> Result<Self, String> {
+    pub fn new(mut nodes: Vec<XfaNode>) -> Result<Self, String> {
         let script_registry = Self::build_script_registry(&nodes);
         let dependency_tracker = DependencyTracker::new();
 
         // Execute scripts using ScriptExecutor
-        let script_result =
-            crate::script_executor::ScriptExecutor::execute(&nodes, language, form_id);
+        let script_result = crate::script_executor::ScriptExecutor::execute(&nodes);
 
         // Apply presence changes to the nodes
         crate::script_executor::ScriptExecutor::apply_presence_changes(
@@ -504,17 +499,14 @@ impl XfaForm {
         // Create persistent script engine
         let mut script_engine = XfaScriptEngine::new();
 
-        // Initialize engine with form context
-        script_engine.register_field("Footer_Line_txtlanguage", "Footer_Line_txtlanguage", language);
-        script_engine.register_field("Footer_Line_txtformid", "Footer_Line_txtformid", form_id);
+        // Initialize engine with form context - variables like Footer_Line_txtlanguage
+        // and Footer_Line_txtformid are extracted from XFA <variables><text> elements
         Self::extract_and_register_translations(&nodes, &mut script_engine);
         Self::build_som_hierarchy_with_values(&nodes, &computed_values, &mut script_engine);
 
         Ok(XfaForm {
             nodes,
             flattened,
-            language: language.to_string(),
-            form_id: form_id.to_string(),
             som_resolver,
             field_index_cache,
             computed_values,

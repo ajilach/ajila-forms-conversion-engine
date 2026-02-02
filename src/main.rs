@@ -178,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     // Execute scripts to get computed values and presence changes
-    let script_result = ScriptExecutor::execute(&nodes, locale, doc_name);
+    let script_result = ScriptExecutor::execute(&nodes);
     println!("✓ Scripts executed ({} computed values)", script_result.computed_values.len());
     
     // Apply presence changes to the XFA tree
@@ -325,7 +325,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Re-parse XFA nodes for XfaForm (it takes ownership)
         let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
         let nodes_for_form = XfaNode::parse(&xfa_data_for_form)?;
-        let mut form = XfaForm::new(nodes_for_form, locale, doc_name)
+        let mut form = XfaForm::new(nodes_for_form)
             .map_err(|e| format!("Failed to create XfaForm: {}", e))?;
         
         // Track rendered states to avoid duplicates
@@ -491,7 +491,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Create a fresh form from the PDF
                 let xfa_data_reset = crate::extract_xfa_from_pdf(pdf_path)?.unwrap();
                 let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
-                let mut new_form = XfaForm::new(nodes_reset, locale, doc_name)
+                let mut new_form = XfaForm::new(nodes_reset)
                     .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
                 
                 // Apply all current selections to the new form using FULL SOM paths
@@ -572,7 +572,7 @@ mod tests {
     /// Helper function to flatten XFA with script execution using the new architecture.
     /// This replaces the old `Flattened::from_xfa_with_scripts` API.
     fn flatten_with_scripts(nodes: &mut [XfaNode], language: &str, form_id: &str) -> Result<Flattened, String> {
-        let script_result = ScriptExecutor::execute(nodes, language, form_id);
+        let script_result = ScriptExecutor::execute(nodes);
         ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
         Flattened::from_xfa(nodes, &script_result.computed_values)
     }
@@ -2270,7 +2270,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Create XfaForm (this is used in exhaustive mode)
-        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+        let mut form = XfaForm::new(nodes)
             .expect("Failed to create XfaForm");
         
         // Simulate what exhaustive mode does: set exclGroup value and refresh
@@ -3144,7 +3144,7 @@ mod tests {
         }
         
         // Create XfaForm
-        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+        let mut form = XfaForm::new(nodes)
             .expect("Failed to create XfaForm");
         
         // Debug: Test the script engine directly with ffrb1
@@ -3276,7 +3276,7 @@ mod tests {
             .expect("Failed to parse XFA structure");
         
         // Create XfaForm to work with the form
-        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+        let form = XfaForm::new(nodes)
             .expect("Failed to create XfaForm");
         
         // Find RB_Group_Neuanlage in the flattened output
@@ -3368,7 +3368,7 @@ mod tests {
                 .expect("Failed to read PDF");
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
                 .expect("Failed to parse XFA");
-            let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            let form = XfaForm::new(nodes)
                 .expect("Failed to create XfaForm");
             
             let flattened = form.flattened();
@@ -3387,7 +3387,7 @@ mod tests {
                 .expect("Failed to read PDF");
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
                 .expect("Failed to parse XFA");
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            let mut form = XfaForm::new(nodes)
                 .expect("Failed to create XfaForm");
             
             // Select RB_2
@@ -3420,7 +3420,7 @@ mod tests {
                 .expect("Failed to read PDF");
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
                 .expect("Failed to parse XFA");
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+            let mut form = XfaForm::new(nodes)
                 .expect("Failed to create XfaForm");
             
             // Select RB_3
@@ -3482,7 +3482,7 @@ mod tests {
             .expect("Failed to read PDF");
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA");
-        let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+        let mut form = XfaForm::new(nodes)
             .expect("Failed to create XfaForm");
         
         // Select RB_3 to reveal the Löschung section with nested radio buttons
@@ -3513,7 +3513,7 @@ mod tests {
             .expect("Failed to read PDF");
         let nodes2 = xfa::XfaNode::parse(&xfa_data2.unwrap())
             .expect("Failed to parse XFA");
-        let form2 = XfaForm::new(nodes2, "DE", "AAAB_019_DE")
+        let form2 = XfaForm::new(nodes2)
             .expect("Failed to create XfaForm");
         
         // With RB_1 selected (default), the Löschung path should be hidden
@@ -3583,7 +3583,7 @@ mod tests {
         let fields_rb1 = {
             let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            let form = XfaForm::new(nodes).unwrap();
             get_field_names(form.flattened())
         };
         
@@ -3591,7 +3591,7 @@ mod tests {
         let fields_rb2 = {
             let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            let mut form = XfaForm::new(nodes).unwrap();
             form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2").unwrap();
             form.refresh().unwrap();
             get_field_names(form.flattened())
@@ -3601,7 +3601,7 @@ mod tests {
         let fields_rb3 = {
             let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            let mut form = XfaForm::new(nodes).unwrap();
             form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3").unwrap();
             form.refresh().unwrap();
             get_field_names(form.flattened())
@@ -3659,7 +3659,7 @@ mod tests {
             .expect("Failed to read PDF");
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap())
             .expect("Failed to parse XFA");
-        let form = XfaForm::new(nodes, "DE", "AAAB_019_DE")
+        let form = XfaForm::new(nodes)
             .expect("Failed to create XfaForm");
         
         // Get baseline (RB_1 selected) node indices
@@ -3694,7 +3694,7 @@ mod tests {
         let rb2_indices = {
             let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            let mut form = XfaForm::new(nodes).unwrap();
             form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_2").unwrap();
             form.refresh().unwrap();
             (0..form.flattened().node_count()).collect::<Vec<_>>()
@@ -3705,7 +3705,7 @@ mod tests {
         let rb3_indices = {
             let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
             let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
-            let mut form = XfaForm::new(nodes, "DE", "AAAB_019_DE").unwrap();
+            let mut form = XfaForm::new(nodes).unwrap();
             form.select_radio_button("UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage.RB_3").unwrap();
             form.refresh().unwrap();
             (0..form.flattened().node_count()).collect::<Vec<_>>()

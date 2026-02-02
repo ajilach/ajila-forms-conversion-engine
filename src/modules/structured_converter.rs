@@ -26,6 +26,17 @@ use crate::structured::{
     InlineText, InlineNode, HeadingLevel, FieldType, InputValue,
 };
 
+/// Check if a StructuredNode contains any fields (recursively).
+fn contains_fields(node: &StructuredNode) -> bool {
+    match node {
+        StructuredNode::Field(_) => true,
+        StructuredNode::Group(g) => g.children.iter().any(contains_fields),
+        StructuredNode::Repeatable(r) => contains_fields(&r.item),
+        StructuredNode::Conditional(c) => contains_fields(&c.content),
+        StructuredNode::Heading(_) | StructuredNode::Paragraph(_) | StructuredNode::Image(_) | StructuredNode::Table(_) | StructuredNode::Empty => false,
+    }
+}
+
 /// Convert a Document to a list of StructuredNodes (one per root group).
 /// Output is sorted in reading order: top to bottom, left to right.
 pub fn convert(doc: &Document) -> Vec<StructuredNode> {
@@ -146,19 +157,28 @@ impl<'a, 'b> Converter<'a, 'b> {
                 self.convert_field_group(group_idx, None)
             }
             
-            // RepeatableSection → RepeatableNode
+            // RepeatableSection → RepeatableNode (only if it contains fields)
             GroupKind::RepeatableSection { min_occurrences, max_occurrences } => {
                 let children = self.convert_children(group_idx);
+                if children.is_empty() {
+                    return None;
+                }
                 let item = if children.len() == 1 {
                     children.into_iter().next().unwrap()
                 } else {
                     StructuredNode::Group(GroupNode { children })
                 };
-                Some(StructuredNode::Repeatable(RepeatableNode {
-                    item: Box::new(item),
-                    min_occurrences: *min_occurrences,
-                    max_occurrences: *max_occurrences,
-                }))
+                // Only create a RepeatableNode if it contains at least one field
+                if contains_fields(&item) {
+                    Some(StructuredNode::Repeatable(RepeatableNode {
+                        item: Box::new(item),
+                        min_occurrences: *min_occurrences,
+                        max_occurrences: *max_occurrences,
+                    }))
+                } else {
+                    // No fields - just return the content without the repeatable wrapper
+                    Some(item)
+                }
             }
             
             // Section / Unknown → GroupNode

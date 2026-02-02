@@ -50,13 +50,11 @@ impl ScriptExecutor {
     ///
     /// # Arguments
     /// * `xfa_nodes` - The XFA node tree (read-only)
-    /// * `language` - Language code for translations (e.g., "DE", "EN")
-    /// * `form_id` - Form identifier used by some scripts
     ///
     /// # Returns
     /// `ScriptExecutionResult` on success, or prints a warning and returns default on failure.
-    pub fn execute(xfa_nodes: &[XfaNode], language: &str, form_id: &str) -> ScriptExecutionResult {
-        match Self::execute_internal(xfa_nodes, language, form_id) {
+    pub fn execute(xfa_nodes: &[XfaNode]) -> ScriptExecutionResult {
+        match Self::execute_internal(xfa_nodes) {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("Warning: Script execution failed: {}. Continuing without script results.", e);
@@ -68,18 +66,13 @@ impl ScriptExecutor {
     /// Internal implementation that can return errors.
     fn execute_internal(
         xfa_nodes: &[XfaNode],
-        language: &str,
-        form_id: &str,
     ) -> Result<ScriptExecutionResult, String> {
         let mut computed_values = HashMap::new();
         let mut presence_changes: Vec<(String, Option<String>, Presence)> = Vec::new();
         let mut engine = XfaScriptEngine::new();
 
-        // Register control fields used by scripts
-        engine.register_field("Footer_Line_txtlanguage", "Footer_Line_txtlanguage", language);
-        engine.register_field("Footer_Line_txtformid", "Footer_Line_txtformid", form_id);
-
         // Extract and register translation objects from the XFA
+        // (includes Footer_Line_txtlanguage, Footer_Line_txtformid, etc.)
         Self::extract_and_register_translations(xfa_nodes, &mut engine);
 
         // Build the XFA SOM hierarchy for unqualified references
@@ -505,10 +498,18 @@ impl ScriptExecutor {
     }
 
     /// Extract and register translations from <variables> elements.
+    /// This handles both <text> variables (simple values) and <script> variables (code objects).
     fn extract_and_register_translations(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
         let mut variable_scripts: Vec<(String, String)> = Vec::new();
-        Self::collect_variable_scripts(xfa_nodes, &mut variable_scripts);
+        let mut text_vars: Vec<(String, String)> = Vec::new();
+        Self::collect_variable_items(xfa_nodes, &mut variable_scripts, &mut text_vars);
 
+        // Register <text> variables as fields (e.g., Footer_Line_txtlanguage, Footer_Line_txtformid)
+        for (name, value) in &text_vars {
+            engine.register_field(name, name, value);
+        }
+
+        // Register <script> variables as JavaScript objects
         for (name, content) in &variable_scripts {
             let wrapped = format!(
                 r#"
@@ -544,8 +545,12 @@ impl ScriptExecutor {
         }
     }
 
-    /// Recursively collect script content from <variables> elements
-    fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
+    /// Recursively collect both <script> and <text> content from <variables> elements
+    fn collect_variable_items(
+        nodes: &[XfaNode],
+        scripts: &mut Vec<(String, String)>,
+        text_vars: &mut Vec<(String, String)>,
+    ) {
         for node in nodes {
             if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
                 if tag_name == "variables" {
@@ -556,13 +561,28 @@ impl ScriptExecutor {
                             ..
                         } = &child.kind
                         {
-                            if child_tag == "script" {
-                                if let Some(name) =
-                                    child.name.as_ref().or_else(|| child.attributes.get("name"))
-                                {
+                            if let Some(name) =
+                                child.name.as_ref().or_else(|| child.attributes.get("name"))
+                            {
+                                if child_tag == "script" {
+                                    // Handle <script> - may have content directly or in children
                                     if let Some(content) = text_content {
-                                        scripts.push((name.clone(), content.clone()));
+                                        if !content.is_empty() {
+                                            scripts.push((name.clone(), content.clone()));
+                                        }
                                     }
+                                    // Also check for content in child nodes
+                                    for script_child in &child.children {
+                                        if let XfaNodeKind::Text { content } = &script_child.kind {
+                                            if !content.is_empty() {
+                                                scripts.push((name.clone(), content.clone()));
+                                            }
+                                        }
+                                    }
+                                } else if child_tag == "text" {
+                                    // Handle <text> variables - these are simple string values
+                                    let value = text_content.clone().unwrap_or_default();
+                                    text_vars.push((name.clone(), value));
                                 }
                             }
                         }
@@ -570,7 +590,7 @@ impl ScriptExecutor {
                 }
             }
 
-            Self::collect_variable_scripts(&node.children, scripts);
+            Self::collect_variable_items(&node.children, scripts, text_vars);
         }
     }
 }
