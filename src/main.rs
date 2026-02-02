@@ -14,7 +14,7 @@ use pdf::primitive::Primitive;
 use std::path::{Path, PathBuf};
 use xfa::{XfaNode, XfaNodeKind};
 use flattened::{Flattened, FlattenedNodeKind};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rust_decimal::prelude::ToPrimitive;
 use document::Document;
 use modules::{TextBlockGrouper, FieldGrouper, LabelAttacher, HeadingDetector, RadioButtonDetector, RadioButtonGrouper, DateFieldDetector, AnalysisModule, run_analysis_pipeline};
@@ -22,8 +22,8 @@ use scripting::XfaForm;
 use script_executor::ScriptExecutor;
 
 /// Render mode for output images
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum RenderMode {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum RenderMode {
     /// Plain rendering without any annotations
     Plain,
     /// Labelled rendering with blue group overlays (runs analysis pipeline)
@@ -86,17 +86,10 @@ struct Args {
     #[arg(value_name = "DOCUMENT")]
     document: PathBuf,
     
-    /// Render the document with labeled fields (blue group overlays)
-    #[arg(long)]
-    render_labelled: bool,
-    
-    /// Render the plain document without annotations
-    #[arg(long)]
-    render_plain: bool,
-    
-    /// Render the document with red field annotations
-    #[arg(long)]
-    render_annotated: bool,
+    /// Render mode(s) for output images. Can be specified multiple times.
+    /// Modes: plain, labelled, annotated
+    #[arg(long = "render", value_enum)]
+    render_modes: Vec<RenderMode>,
     
     /// Render exhaustively: click each selectable element, render, then unselect
     #[arg(long)]
@@ -109,6 +102,10 @@ struct Args {
     /// Export the structured form as JSON
     #[arg(long)]
     structured: bool,
+    
+    /// Suppress verbose output (only show errors and final results)
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 /// Render a Flattened document using the specified render mode
@@ -137,64 +134,21 @@ fn render_flattened(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-    
-    // Check if document exists
-    if !args.document.exists() {
-        eprintln!("Error: Document not found: {}", args.document.display());
-        std::process::exit(1);
-    }
-    
-    println!("Processing document: {}", args.document.display());
-    
-    // Extract XFA data from PDF
-    let xfa_data = extract_xfa_from_pdf(&args.document)?;
-    
-    if xfa_data.is_none() {
-        eprintln!("Error: No XFA data found in PDF");
-        std::process::exit(1);
-    }
-    
-    println!("✓ XFA data extracted");
-    
-    // Parse XFA structure
-    let mut nodes = XfaNode::parse(&xfa_data.unwrap())?;
-    println!("✓ XFA structure parsed");
-    
-    // Get document name for locale detection
-    let doc_name = args.document
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("document");
-    
-    // Detect locale from filename (e.g., "_DE", "_EN")
-    let locale = if doc_name.ends_with("_DE") {
-        "DE"
-    } else if doc_name.ends_with("_EN") {
-        "EN"
-    } else {
-        "EN" // default
+/// Macro for verbose-only output
+macro_rules! vprintln {
+    ($quiet:expr, $($arg:tt)*) => {
+        if !$quiet {
+            println!($($arg)*);
+        }
     };
+}
+
+/// Helper to print verbose analysis summary
+fn print_analysis_summary(doc: &Document, quiet: bool) {
+    if quiet {
+        return;
+    }
     
-    // Execute scripts to get computed values and presence changes
-    let script_result = ScriptExecutor::execute(&nodes);
-    println!("✓ Scripts executed ({} computed values)", script_result.computed_values.len());
-    
-    // Apply presence changes to the XFA tree
-    ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
-    
-    // Flatten XFA (pure transformation)
-    let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)?;
-    println!("✓ XFA flattened ({} nodes)", flattened.node_count());
-    
-    // Create document and run analysis modules
-    let mut doc = Document::from_flattened(&flattened);
-    
-    // Run analysis pipeline (order defined centrally in modules/mod.rs)
-    run_analysis_pipeline(&mut doc);
-    
-    // Print analysis results
     let text_blocks = doc.find_groups(|k| matches!(k, document::GroupKind::TextBlock));
     println!("✓ Text blocks created: {}", text_blocks.len());
     
@@ -276,39 +230,98 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  ... and {} more", labeled_fields.len() - 10);
         }
     }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    let quiet = args.quiet;
     
-    // Render if requested
-    if args.render_labelled {
-        let output_path = PathBuf::from(format!("{}_labelled.png", doc_name));
-        
-        println!("\nRendering document with labels...");
-        doc.render_to_image(&output_path, args.scale)?;
-        println!("✓ Document rendered to: {}", output_path.display());
+    // Check if document exists
+    if !args.document.exists() {
+        eprintln!("Error: Document not found: {}", args.document.display());
+        std::process::exit(1);
     }
     
-    if args.render_plain {
-        let output_path = PathBuf::from(format!("{}_plain.png", doc_name));
-        
-        println!("\nRendering plain document...");
-        flattened.render_to_image_buffer_plain(args.scale)?
-            .save(&output_path)
-            .map_err(|e| format!("Failed to save image: {}", e))?;
-        println!("✓ Document rendered to: {}", output_path.display());
+    vprintln!(quiet, "Processing document: {}", args.document.display());
+    
+    // Get document name for output files
+    let doc_name = args.document
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    
+    // Detect locale from filename (e.g., "_DE", "_EN")
+    let locale = if doc_name.ends_with("_DE") {
+        "DE"
+    } else if doc_name.ends_with("_EN") {
+        "EN"
+    } else {
+        "EN" // default
+    };
+    
+    // =========================================================================
+    // PIPELINE STAGE 1: Extract and parse XFA
+    // =========================================================================
+    let xfa_data = extract_xfa_from_pdf(&args.document)?;
+    
+    if xfa_data.is_none() {
+        eprintln!("Error: No XFA data found in PDF");
+        std::process::exit(1);
     }
     
-    if args.render_annotated {
-        let output_path = PathBuf::from(format!("{}_annotated.png", doc_name));
-        
-        println!("\nRendering annotated document...");
-        flattened.render_to_image(&output_path, args.scale)?;
-        println!("✓ Document rendered to: {}", output_path.display());
+    vprintln!(quiet, "✓ XFA data extracted");
+    
+    let mut nodes = XfaNode::parse(&xfa_data.unwrap())?;
+    vprintln!(quiet, "✓ XFA structure parsed");
+    
+    // =========================================================================
+    // PIPELINE STAGE 2: Execute scripts
+    // =========================================================================
+    let script_result = ScriptExecutor::execute(&nodes);
+    vprintln!(quiet, "✓ Scripts executed ({} computed values)", script_result.computed_values.len());
+    
+    // Apply presence changes to the XFA tree
+    ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
+    
+    // =========================================================================
+    // PIPELINE STAGE 3: Flatten XFA (pure transformation)
+    // =========================================================================
+    let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)?;
+    vprintln!(quiet, "✓ XFA flattened ({} nodes)", flattened.node_count());
+    
+    // =========================================================================
+    // PIPELINE STAGE 4: Analysis (only if needed)
+    // Analysis is needed for: --render labelled, --structured, or verbose output
+    // =========================================================================
+    let needs_analysis = args.render_modes.contains(&RenderMode::Labelled) 
+        || args.structured 
+        || !quiet;
+    
+    let doc = if needs_analysis {
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+        print_analysis_summary(&doc, quiet);
+        Some(doc)
+    } else {
+        None
+    };
+    
+    // =========================================================================
+    // PIPELINE STAGE 5: Output (composable flags)
+    // =========================================================================
+    
+    // Handle --structured --exhaustive (merged JSON of all states)
+    if args.structured && args.exhaustive {
+        unimplemented!("--structured --exhaustive: Merged JSON output of all form states is not yet implemented");
     }
     
+    // Handle --structured (single state)
     if args.structured {
         let output_path = PathBuf::from(format!("{}_structured.json", doc_name));
         
-        println!("\nConverting to structured form...");
-        let structured_nodes = modules::convert_to_structured(&doc);
+        vprintln!(quiet, "\nConverting to structured form...");
+        let doc = doc.as_ref().expect("Document should be created when --structured is used");
+        let structured_nodes = modules::convert_to_structured(doc);
         
         let json = serde_json::to_string_pretty(&structured_nodes)
             .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
@@ -316,11 +329,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(&output_path, json)
             .map_err(|e| format!("Failed to write JSON file: {}", e))?;
         
-        println!("✓ Structured form saved to: {} ({} nodes)", output_path.display(), structured_nodes.len());
+        vprintln!(quiet, "✓ Structured form saved to: {} ({} nodes)", output_path.display(), structured_nodes.len());
     }
     
+    // Handle --render (composable: can specify multiple modes)
+    for mode in &args.render_modes {
+        let suffix = match mode {
+            RenderMode::Plain => "plain",
+            RenderMode::Labelled => "labelled",
+            RenderMode::Annotated => "annotated",
+        };
+        let output_path = PathBuf::from(format!("{}_{}.png", doc_name, suffix));
+        
+        vprintln!(quiet, "\nRendering {} document...", suffix);
+        
+        match mode {
+            RenderMode::Plain => {
+                flattened.render_to_image_buffer_plain(args.scale)?
+                    .save(&output_path)
+                    .map_err(|e| format!("Failed to save image: {}", e))?;
+            }
+            RenderMode::Labelled => {
+                let doc = doc.as_ref().expect("Document should be created for labelled rendering");
+                doc.render_to_image(&output_path, args.scale)?;
+            }
+            RenderMode::Annotated => {
+                flattened.render_to_image(&output_path, args.scale)?;
+            }
+        }
+        
+        vprintln!(quiet, "✓ Document rendered to: {}", output_path.display());
+    }
+    
+    // Handle --exhaustive
     if args.exhaustive {
-        println!("\nExhaustive mode: recursively discovering all form states...");
+        vprintln!(quiet, "\nExhaustive mode: recursively discovering all form states...");
         
         // Re-parse XFA nodes for XfaForm (it takes ownership)
         let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
@@ -535,15 +578,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         // Determine which render mode to use (default to plain if none specified)
-        let render_mode = if args.render_labelled {
-            RenderMode::Labelled
-        } else if args.render_annotated {
-            RenderMode::Annotated
-        } else {
-            RenderMode::Plain
-        };
+        let render_mode = args.render_modes.first().copied().unwrap_or(RenderMode::Plain);
         
-        println!("  Using render mode: {:?}", render_mode);
+        vprintln!(quiet, "  Using render mode: {:?}", render_mode);
         
         // Start exploration from the initial state
         let total_images = explore_states(
@@ -557,7 +594,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             render_mode,
         )?;
         
-        println!("\n✓ Exhaustive rendering complete ({} unique states)", total_images);
+        vprintln!(quiet, "\n✓ Exhaustive rendering complete ({} unique states)", total_images);
     }
     
     Ok(())
