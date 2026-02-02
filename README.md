@@ -2,7 +2,7 @@
 
 Decodes PDFs and extracts structured data for automated forms conversion. 
 
-## Usage
+## Usage
 
 ```
 # Analyze document structure
