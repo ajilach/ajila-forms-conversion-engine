@@ -2,13 +2,25 @@
 //!
 //! This module provides functionality to recursively discover and render
 //! all possible form states by clicking through radio buttons and checkboxes.
+//!
+//! # Two-Pass Architecture
+//!
+//! When running in exhaustive mode, the module uses a two-pass approach:
+//! 1. **Collection Pass**: Explore all form states and collect flattened data
+//! 2. **Analysis Pass**: Compute global statistics from all states, then run
+//!    analysis pipeline on each state using the global context
+//!
+//! This ensures consistent heading detection and other statistics-based
+//! analysis across all form states.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::RenderMode;
 use crate::flattened::Flattened;
+use crate::modules::{GlobalContext, GlobalFontStats, MergeInput, merge_structured_trees};
 use crate::scripting::{SomPath, XfaForm};
+use crate::structured::{InputValue, StructuredNode};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
 /// A selectable field (radio button or checkbox) with its SOM path and shape.
@@ -36,6 +48,15 @@ impl SelectableField {
     }
 }
 
+/// Get a canonical state representation by sorting the selections.
+/// This ensures that the same set of selections always produces the same state key,
+/// regardless of the order in which the selections were made.
+fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
+    let mut sorted = selections.to_vec();
+    sorted.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    sorted
+}
+
 /// Configuration for exhaustive rendering
 pub struct ExhaustiveConfig<'a> {
     /// Name of the document (used for output filenames)
@@ -50,6 +71,8 @@ pub struct ExhaustiveConfig<'a> {
     pub render_modes: Vec<RenderMode>,
     /// Whether to output structured JSON for each state
     pub structured: bool,
+    /// Whether to merge all structured outputs into a single JSON with conditionals
+    pub merge: bool,
     /// Whether to suppress verbose output
     pub quiet: bool,
 }
@@ -58,6 +81,16 @@ pub struct ExhaustiveConfig<'a> {
 pub struct ExhaustiveResult {
     /// Total number of unique states rendered
     pub states_rendered: usize,
+}
+
+/// Collected state data from the first pass
+struct CollectedState {
+    /// The flattened data for this state
+    flattened: Flattened,
+    /// The selections that led to this state
+    selections: Vec<SomPath>,
+    /// State suffix for file naming
+    state_suffix: String,
 }
 
 /// Run exhaustive form state exploration.
@@ -81,25 +114,316 @@ pub fn run_exhaustive(
         if config.structured {
             println!("  Structured JSON: enabled");
         }
+        if config.merge {
+            println!("  Merge mode: enabled");
+        }
+    }
+
+    // ========================================================================
+    // Pass 1: Collect all form states and their flattened data
+    // ========================================================================
+    if !config.quiet {
+        println!("\n  Pass 1: Collecting all form states...");
     }
 
     let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
+    let mut collected_states: Vec<CollectedState> = Vec::new();
 
-    let states_rendered = explore_states(
+    collect_all_states(
         form,
-        Vec::new(), // No selections initially
+        Vec::new(),
         &mut rendered_states,
+        &mut collected_states,
         config,
     )?;
 
     if !config.quiet {
+        println!("    Found {} unique states", collected_states.len());
+    }
+
+    // ========================================================================
+    // Compute global font statistics from all collected flattened data
+    // ========================================================================
+    if !config.quiet {
+        println!("\n  Computing global font statistics...");
+    }
+
+    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
+    let global_font_stats = GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
+
+    if !config.quiet {
         println!(
-            "\n✓ Exhaustive rendering complete ({} unique states)",
-            states_rendered
+            "    Body size: {:.1}pt, {} text samples from {} states",
+            global_font_stats.body_size,
+            global_font_stats.sample_count,
+            collected_states.len()
         );
     }
 
-    Ok(ExhaustiveResult { states_rendered })
+    // ========================================================================
+    // Pass 2: Run analysis pipeline with global context and generate outputs
+    // ========================================================================
+    if !config.quiet {
+        println!("\n  Pass 2: Analyzing and generating outputs...");
+    }
+
+    let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
+    let mut merge_inputs: Vec<MergeInput> = Vec::new();
+    let mut images_rendered = 0;
+
+    for state in &collected_states {
+        images_rendered += process_state_with_context(
+            state,
+            &global_ctx,
+            &mut merge_inputs,
+            config,
+        )?;
+    }
+
+    // If merge mode is enabled, merge all collected structured outputs
+    if config.merge && !merge_inputs.is_empty() {
+        if !config.quiet {
+            println!("\nMerging {} structured outputs...", merge_inputs.len());
+        }
+
+        let merged = merge_structured_trees(merge_inputs);
+        let json = serde_json::to_string_pretty(&merged)
+            .map_err(|e| format!("Failed to serialize merged structured form: {}", e))?;
+
+        let json_path = std::path::PathBuf::from(format!("{}_merged.json", config.doc_name));
+        std::fs::write(&json_path, json)
+            .map_err(|e| format!("Failed to write merged JSON file: {}", e))?;
+
+        if !config.quiet {
+            println!("  ✓ Merged output: {}", json_path.display());
+        }
+    }
+
+    if !config.quiet {
+        println!(
+            "\n✓ Exhaustive rendering complete ({} unique states)",
+            collected_states.len()
+        );
+    }
+
+    Ok(ExhaustiveResult {
+        states_rendered: collected_states.len(),
+    })
+}
+
+/// Pass 1: Recursively collect all form states and their flattened data.
+/// This does NOT run the analysis pipeline yet.
+fn collect_all_states(
+    form: &mut XfaForm,
+    current_selections: Vec<SomPath>,
+    rendered_states: &mut HashSet<Vec<SomPath>>,
+    collected_states: &mut Vec<CollectedState>,
+    config: &ExhaustiveConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Get the canonical state representation
+    let state = get_current_state(&current_selections);
+
+    // Skip if we've already collected this state
+    if rendered_states.contains(&state) {
+        return Ok(());
+    }
+
+    // Mark this state as collected
+    rendered_states.insert(state.clone());
+
+    // Generate a filename suffix based on selections
+    let state_suffix = if current_selections.is_empty() {
+        "default".to_string()
+    } else {
+        current_selections
+            .iter()
+            .map(|path| path.name().to_string())
+            .collect::<Vec<_>>()
+            .join("_")
+    };
+
+    // Get flattened data for this state (but don't analyze yet)
+    let flattened = form.flattened().clone();
+
+    // Store the collected state
+    collected_states.push(CollectedState {
+        flattened,
+        selections: current_selections.clone(),
+        state_suffix,
+    });
+
+    // Get visible selectable fields in this state
+    let visible_fields = get_visible_selectable_fields(form);
+
+    // Recursively explore other states
+    for field in &visible_fields {
+        // Skip if already selected
+        if current_selections.iter().any(|p| p == &field.path) {
+            continue;
+        }
+
+        // For radio buttons, skip if a sibling from the same group is selected
+        if field.is_radio() {
+            if let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
+                let group_already_has_selection = current_selections.iter().any(|sel_path| {
+                    form.find_excl_group_for_field(sel_path.as_str())
+                        .map(|g| g == excl_group)
+                        .unwrap_or(false)
+                });
+                if group_already_has_selection {
+                    continue;
+                }
+            }
+        }
+
+        // Create a fresh form from the PDF
+        let xfa_data_reset = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
+        let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
+        let mut new_form =
+            XfaForm::new(nodes_reset).map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+
+        // Apply all current selections
+        let mut new_selections = current_selections.clone();
+        for sel_path in &current_selections {
+            let _ = new_form.select_radio_button(sel_path.as_str());
+            new_form.refresh()?;
+        }
+
+        // Select the new field
+        if field.is_radio() {
+            let _ = new_form.select_radio_button(field.path.as_str());
+        } else {
+            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
+                node.set_raw_value("1");
+            }
+        }
+
+        new_selections.push(field.path.clone());
+        new_form.refresh()?;
+
+        // Recursively collect from this new state
+        collect_all_states(&mut new_form, new_selections, rendered_states, collected_states, config)?;
+    }
+
+    Ok(())
+}
+
+/// Pass 2: Process a collected state using the global context.
+/// Runs analysis pipeline with global statistics and generates outputs.
+fn process_state_with_context(
+    state: &CollectedState,
+    global_ctx: &GlobalContext,
+    merge_inputs: &mut Vec<MergeInput>,
+    config: &ExhaustiveConfig,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut images_rendered = 0;
+
+    // Create Document and run analysis pipeline with global context
+    let mut doc = crate::document::Document::from_flattened(&state.flattened);
+    crate::modules::run_analysis_pipeline_with_context(&mut doc, global_ctx);
+
+    let mut outputs = Vec::new();
+
+    // Render PNGs for each requested render mode
+    for mode in &config.render_modes {
+        let suffix = match mode {
+            RenderMode::Plain => "plain",
+            RenderMode::Labelled => "labelled",
+            RenderMode::Annotated => "annotated",
+        };
+        let output_path = std::path::PathBuf::from(format!(
+            "{}_{}.{}.png",
+            config.doc_name, state.state_suffix, suffix
+        ));
+
+        match mode {
+            RenderMode::Plain => {
+                state.flattened
+                    .render_to_image_buffer_plain(config.scale)?
+                    .save(&output_path)
+                    .map_err(|e| format!("Failed to save image: {}", e))?;
+            }
+            RenderMode::Labelled => {
+                doc.render_to_image(&output_path, config.scale)?;
+            }
+            RenderMode::Annotated => {
+                state.flattened.render_to_image(&output_path, config.scale)?;
+            }
+        }
+        outputs.push(output_path.display().to_string());
+        images_rendered += 1;
+    }
+
+    // Output structured JSON if requested (or collect for merging)
+    if config.structured || config.merge {
+        let structured_nodes = crate::modules::convert_to_structured(&doc);
+
+        // Write individual JSON file if structured output is requested
+        if config.structured {
+            let json = serde_json::to_string_pretty(&structured_nodes)
+                .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+
+            let json_path =
+                std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
+            std::fs::write(&json_path, json)
+                .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+            outputs.push(json_path.display().to_string());
+        }
+
+        // Collect for merging if merge mode is enabled
+        if config.merge {
+            // Build the complete state_values map from all selections
+            let mut state_values = HashMap::new();
+            
+            if !state.selections.is_empty() {
+                // We need to get the values for all selections
+                // Since we don't have the form anymore, we need to recreate it temporarily
+                let xfa_data = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
+                let nodes = XfaNode::parse(&xfa_data)?;
+                let mut temp_form = XfaForm::new(nodes)
+                    .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+
+                // Apply selections to get the correct values
+                for sel_path in &state.selections {
+                    let _ = temp_form.select_radio_button(sel_path.as_str());
+                    temp_form.refresh()?;
+                }
+
+                // Now get the value for each selection and build state_values
+                for sel_path in &state.selections {
+                    let value = get_selection_value(&temp_form, sel_path);
+                    // Use the grouped field name (e.g., "RB_1_RB_2_RB_3") if it's a radio button group
+                    let field_name = get_field_name_for_path(&temp_form, sel_path);
+                    state_values.insert(field_name, value);
+                }
+            }
+
+            let last_path = state.selections.last()
+                .cloned()
+                .unwrap_or_else(|| SomPath::new("__default__"));
+
+            merge_inputs.push(MergeInput {
+                tree: StructuredNode::Group(crate::structured::GroupNode {
+                    children: structured_nodes,
+                }),
+                state_values,
+                last_path,
+            });
+        }
+    }
+
+    if !config.quiet {
+        println!(
+            "    ✓ Generated: {} (selections: {:?})",
+            outputs.join(", "),
+            state.selections
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    Ok(images_rendered)
 }
 
 /// Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections).
@@ -176,167 +500,56 @@ fn get_visible_selectable_fields(form: &XfaForm) -> Vec<SelectableField> {
         .collect()
 }
 
-/// Convert current selection state to a canonical representation.
-fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
-    let mut state: Vec<_> = selections.iter().cloned().collect();
-    state.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    state
-}
-
-/// Recursive function to explore all states.
-/// Selections are SomPath values for the selected fields.
-fn explore_states(
-    form: &mut XfaForm,
-    current_selections: Vec<SomPath>,
-    rendered_states: &mut HashSet<Vec<SomPath>>,
-    config: &ExhaustiveConfig,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut images_rendered = 0;
-
-    // Get the canonical state representation
-    let state = get_current_state(&current_selections);
-
-    // Skip if we've already rendered this state
-    if rendered_states.contains(&state) {
-        return Ok(0);
-    }
-
-    // Mark this state as rendered
-    rendered_states.insert(state.clone());
-
-    // Generate a filename based on the current selections (use short names for readability)
-    let state_suffix = if current_selections.is_empty() {
-        "default".to_string()
+/// Get the InputValue for a selected field.
+/// For radio buttons, this returns the radio button's name as the value
+/// (this distinguishes which option was selected within the group).
+/// For checkboxes, this returns Checkbox(true) since selecting means checking.
+fn get_selection_value(form: &XfaForm, path: &SomPath) -> InputValue {
+    // Check if this is a radio button or checkbox
+    let is_radio = find_all_checkbutton_fields(form.xfa_nodes())
+        .iter()
+        .any(|f| &f.path == path && f.is_radio());
+    
+    if is_radio {
+        // Use the button's name as the value (distinguishes which option in the group)
+        InputValue::Radio(path.name().to_string())
     } else {
-        current_selections
-            .iter()
-            .map(|path| path.name().to_string())
-            .collect::<Vec<_>>()
-            .join("_")
-    };
-
-    // Create Document and run analysis pipeline once for this state
-    let flattened = form.flattened();
-    let mut doc = crate::document::Document::from_flattened(flattened);
-    crate::modules::run_analysis_pipeline(&mut doc);
-
-    // Output all requested formats from the analyzed document
-    let mut outputs = Vec::new();
-
-    // Render PNGs for each requested render mode
-    for mode in &config.render_modes {
-        let suffix = match mode {
-            RenderMode::Plain => "plain",
-            RenderMode::Labelled => "labelled",
-            RenderMode::Annotated => "annotated",
-        };
-        let output_path = std::path::PathBuf::from(format!(
-            "{}_{}.{}.png",
-            config.doc_name, state_suffix, suffix
-        ));
-
-        match mode {
-            RenderMode::Plain => {
-                flattened
-                    .render_to_image_buffer_plain(config.scale)?
-                    .save(&output_path)
-                    .map_err(|e| format!("Failed to save image: {}", e))?;
-            }
-            RenderMode::Labelled => {
-                doc.render_to_image(&output_path, config.scale)?;
-            }
-            RenderMode::Annotated => {
-                flattened.render_to_image(&output_path, config.scale)?;
-            }
-        }
-        outputs.push(output_path.display().to_string());
-        images_rendered += 1;
+        // Checkbox - when selected, it's checked (true)
+        InputValue::Checkbox(true)
     }
-
-    // Output structured JSON if requested
-    if config.structured {
-        let structured_nodes = crate::modules::convert_to_structured(&doc);
-        let json = serde_json::to_string_pretty(&structured_nodes)
-            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
-
-        let json_path =
-            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state_suffix));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-        outputs.push(json_path.display().to_string());
-    }
-
-    if !config.quiet {
-        println!(
-            "  ✓ Generated: {} (selections: {:?})",
-            outputs.join(", "),
-            current_selections
-                .iter()
-                .map(|p| p.as_str())
-                .collect::<Vec<_>>()
-        );
-    }
-
-    // Get visible selectable fields in this state (with SOM paths)
-    let visible_fields = get_visible_selectable_fields(form);
-
-    // For each visible field that is NOT already selected, try selecting it
-    for field in &visible_fields {
-        // Skip if this field (by SOM path) is already in our current selections
-        if current_selections.iter().any(|p| p == &field.path) {
-            continue;
-        }
-
-        // For radio buttons, also skip if a sibling from the same group is selected
-        // (we only select one radio button per group)
-        if field.is_radio() {
-            // Check if any sibling in the same exclGroup is already selected
-            // Use the SOM path for proper path-based exclGroup lookup
-            if let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
-                let group_already_has_selection = current_selections.iter().any(|sel_path| {
-                    form.find_excl_group_for_field(sel_path.as_str())
-                        .map(|g| g == excl_group)
-                        .unwrap_or(false)
-                });
-                if group_already_has_selection {
-                    continue;
-                }
-            }
-        }
-
-        // Create a fresh form from the PDF
-        let xfa_data_reset = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
-        let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
-        let mut new_form =
-            XfaForm::new(nodes_reset).map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
-
-        // Apply all current selections to the new form using FULL SOM paths
-        // This ensures we select the correct field when there are duplicates (e.g., RB_1 in different sections)
-        let mut new_selections = current_selections.clone();
-        for sel_path in &current_selections {
-            let _ = new_form.select_radio_button(sel_path.as_str());
-            new_form.refresh()?;
-        }
-
-        // Now select the new field using its SOM path
-        if field.is_radio() {
-            let _ = new_form.select_radio_button(field.path.as_str());
-        } else {
-            // For checkboxes, use the SOM path for resolution
-            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
-                node.set_raw_value("1");
-            }
-        }
-
-        // Add this field to our selections
-        new_selections.push(field.path.clone());
-
-        // Refresh the form to apply changes
-        new_form.refresh()?;
-
-        // Recursively explore from this new state
-        images_rendered += explore_states(&mut new_form, new_selections, rendered_states, config)?;
-    }
-
-    Ok(images_rendered)
 }
+
+/// Get the logical field name for a selection path.
+/// For radio buttons in a group, this returns the combined name (e.g., "RB_1_RB_2_RB_3").
+/// For checkboxes, this returns the checkbox's own name.
+fn get_field_name_for_path(form: &XfaForm, path: &SomPath) -> String {
+    // Find all checkbutton fields to identify radio groups
+    let all_fields = find_all_checkbutton_fields(form.xfa_nodes());
+    
+    // Check if this is a radio button
+    let is_radio = all_fields.iter().any(|f| &f.path == path && f.is_radio());
+    
+    if is_radio {
+        // Find the parent subform that contains this radio button's group
+        // Radio buttons in the same group share a parent subform
+        let parent_path = path.parent();
+        
+        // Find all radio buttons with the same parent (siblings in the same group)
+        let siblings: Vec<_> = all_fields
+            .iter()
+            .filter(|f| f.is_radio() && f.path.parent() == parent_path)
+            .collect();
+        
+        if siblings.len() > 1 {
+            // Multiple radio buttons = a group. Combine their names.
+            let mut names: Vec<_> = siblings.iter().map(|f| f.path.name().to_string()).collect();
+            names.sort();
+            names.dedup();
+            return names.join("_");
+        }
+    }
+    
+    // Single field or checkbox: use its own name
+    path.name().to_string()
+}
+

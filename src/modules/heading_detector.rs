@@ -5,10 +5,161 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::FlattenedNodeKind;
+use crate::flattened::{Flattened, FlattenedNodeKind};
 use crate::xfa::FontWeight;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
+
+/// Global font statistics collected from multiple flattened form states.
+///
+/// This is used in exhaustive mode to ensure consistent heading detection
+/// across all form states by computing statistics from all states combined.
+#[derive(Debug, Clone, Default)]
+pub struct GlobalFontStats {
+    /// The most common font size (body text)
+    pub body_size: f32,
+    /// Total number of samples used
+    pub sample_count: usize,
+    /// Distribution of font sizes (rounded to 0.5pt)
+    pub size_distribution: HashMap<u32, usize>, // Using u32 bits representation for f32
+    /// Distribution of font styles (size bits + is_bold)
+    pub style_distribution: HashMap<(u32, bool), usize>,
+    /// Total number of text nodes analyzed
+    pub total_text_nodes: usize,
+    /// Most common style (size bits, is_bold)
+    pub most_common_style: Option<(u32, bool)>,
+    /// Ratio of most common style
+    pub common_style_ratio: f32,
+}
+
+impl GlobalFontStats {
+    /// Compute global font statistics from an iterator of Flattened references.
+    pub fn from_flattened_iter<'a>(flattened_iter: impl Iterator<Item = &'a Flattened>) -> Self {
+        let mut sizes: Vec<f32> = Vec::new();
+        let mut size_counts: HashMap<u32, usize> = HashMap::new();
+        let mut style_counts: HashMap<(u32, bool), usize> = HashMap::new();
+        let mut total_text_nodes = 0usize;
+
+        for flattened in flattened_iter {
+            for node in flattened.iter_nodes() {
+                if let FlattenedNodeKind::Text {
+                    font_size, content, ..
+                } = &node.kind
+                {
+                    // Skip empty text
+                    if content.trim().is_empty() {
+                        continue;
+                    }
+
+                    let size = font_size.to_f32().unwrap_or(10.0);
+                    sizes.push(size);
+                    total_text_nodes += 1;
+
+                    // Round to 0.5pt for bucketing, store as bits
+                    let rounded = (size * 2.0).round() / 2.0;
+                    let size_bits = rounded.to_bits();
+                    *size_counts.entry(size_bits).or_insert(0) += 1;
+
+                    // Track font style (size + bold) for frequency analysis
+                    let is_bold = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| f.weight == FontWeight::Bold)
+                        .unwrap_or(false);
+                    let style_key = (size_bits, is_bold);
+                    *style_counts.entry(style_key).or_insert(0) += 1;
+                }
+            }
+        }
+
+        if sizes.is_empty() {
+            return Self::default();
+        }
+
+        sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        let len = sizes.len();
+        let median = if len % 2 == 0 {
+            (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
+        } else {
+            sizes[len / 2]
+        };
+
+        // Find the most common font size (body text)
+        let body_size = size_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(size_bits, _)| f32::from_bits(*size_bits))
+            .unwrap_or(median);
+
+        // Find the most common font style
+        let most_common_style = style_counts
+            .iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(key, _)| *key);
+
+        // Calculate common style ratio
+        let common_style_ratio = most_common_style
+            .and_then(|style| style_counts.get(&style))
+            .map(|&count| count as f32 / total_text_nodes.max(1) as f32)
+            .unwrap_or(0.0);
+
+        Self {
+            body_size,
+            sample_count: len,
+            size_distribution: size_counts,
+            style_distribution: style_counts,
+            total_text_nodes,
+            most_common_style,
+            common_style_ratio,
+        }
+    }
+
+    /// Convert to internal FontStats format
+    fn to_font_stats(&self) -> FontStats {
+        // Convert HashMaps back to OrderedFloat format
+        let size_distribution: HashMap<OrderedFloat, usize> = self
+            .size_distribution
+            .iter()
+            .map(|(bits, count)| (OrderedFloat(f32::from_bits(*bits)), *count))
+            .collect();
+
+        let style_distribution: HashMap<FontStyleKey, usize> = self
+            .style_distribution
+            .iter()
+            .map(|((bits, is_bold), count)| {
+                (
+                    FontStyleKey {
+                        size: OrderedFloat(f32::from_bits(*bits)),
+                        is_bold: *is_bold,
+                    },
+                    *count,
+                )
+            })
+            .collect();
+
+        let most_common_style = self.most_common_style.map(|(bits, is_bold)| FontStyleKey {
+            size: OrderedFloat(f32::from_bits(bits)),
+            is_bold,
+        });
+
+        FontStats {
+            median: self.body_size, // Approximate
+            p75: self.body_size,    // Approximate
+            p90: self.body_size,    // Approximate
+            max: self.body_size,    // Approximate
+            min: self.body_size,    // Approximate
+            body_size: self.body_size,
+            sample_count: self.sample_count,
+            size_distribution,
+            style_distribution,
+            total_text_nodes: self.total_text_nodes,
+            most_common_style,
+            common_style_ratio: self.common_style_ratio,
+        }
+    }
+}
 
 /// Detects and classifies headings based on statistical analysis.
 ///
@@ -62,17 +213,28 @@ impl HeadingDetector {
 
         // Find all positions of sentence-ending punctuation
         let mut end_positions: Vec<usize> = Vec::new();
-        for (i, c) in trimmed.char_indices() {
+        let chars: Vec<char> = trimmed.chars().collect();
+        
+        for (char_idx, &c) in chars.iter().enumerate() {
             if sentence_enders.contains(&c) {
-                // Check if this is likely an abbreviation or decimal number
+                // Check if this is likely an abbreviation, decimal number, or ordinal/date
                 // Skip if followed by a digit (e.g., "1.5")
-                let next_char = trimmed[i + c.len_utf8()..].chars().next();
-                if let Some(next) = next_char {
+                if let Some(&next) = chars.get(char_idx + 1) {
                     if next.is_ascii_digit() {
                         continue;
                     }
                 }
-                end_positions.push(i);
+                
+                // Skip if preceded by a digit (e.g., "01." as in dates/ordinals)
+                if char_idx > 0 {
+                    if let Some(&prev) = chars.get(char_idx - 1) {
+                        if prev.is_ascii_digit() {
+                            continue;
+                        }
+                    }
+                }
+                
+                end_positions.push(char_idx);
             }
         }
 
@@ -84,16 +246,17 @@ impl HeadingDetector {
         // If there's only one sentence ender and it's at the end, it's a single sentence
         if end_positions.len() == 1 {
             let last_ender_pos = end_positions[0];
-            let remaining = trimmed[last_ender_pos + 1..].trim();
-            return remaining.is_empty();
+            // Check if it's the last character
+            return last_ender_pos == chars.len() - 1;
         }
 
         // Multiple sentence enders - check if any are followed by substantial content
         for &pos in &end_positions[..end_positions.len() - 1] {
-            let remaining = trimmed[pos + 1..].trim();
+            // Check remaining characters after this position
+            let remaining: String = chars[pos + 1..].iter().collect::<String>().trim().to_string();
             // If there's more than just whitespace after a sentence ender, it's multiple sentences
             if !remaining.is_empty() && remaining.len() > 1 {
-                // Check if the next character is uppercase (new sentence) or not
+                // Check if the next non-whitespace character is uppercase (new sentence) or not
                 if let Some(first_char) = remaining.chars().next() {
                     if first_char.is_uppercase() {
                         return false;
@@ -554,9 +717,30 @@ impl AnalysisModule for HeadingDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        // Collect font statistics
+        // Collect font statistics from this document only
         let stats = self.collect_font_stats(doc);
+        self.process_with_stats(doc, &stats);
+    }
 
+    fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
+        // Use global font statistics if available, otherwise compute local stats
+        let stats = if let Some(global_stats) = &ctx.font_stats {
+            global_stats.to_font_stats()
+        } else if !ctx.all_flattened.is_empty() {
+            // Compute global stats from all flattened data
+            let global_stats = GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
+            global_stats.to_font_stats()
+        } else {
+            // Fallback to local stats
+            self.collect_font_stats(doc)
+        };
+        self.process_with_stats(doc, &stats);
+    }
+}
+
+impl HeadingDetector {
+    /// Core processing logic using provided font statistics.
+    fn process_with_stats(&self, doc: &mut Document, stats: &FontStats) {
         // Need enough samples for meaningful analysis
         if stats.sample_count < self.min_samples {
             return;

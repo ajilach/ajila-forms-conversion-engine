@@ -71,7 +71,7 @@ pub struct FieldCondition {
     pub value: InputValue,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum InputValue {
     Text(String),

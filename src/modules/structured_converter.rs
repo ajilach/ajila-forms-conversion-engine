@@ -284,7 +284,7 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         // Collect all radio button labels as options
         let mut options = Vec::new();
-        let mut first_field_node: Option<&FlattenedNode> = None;
+        let mut field_names = Vec::new();
         let mut selected_value: Option<String> = None;
 
         for &child_idx in &group.children {
@@ -296,13 +296,11 @@ impl<'a, 'b> Converter<'a, 'b> {
                         options.push(label_text.clone());
                     }
 
-                    // Get field for checking selected state
+                    // Get field for checking selected state and collecting names
                     let nodes = self.doc.collect_nodes(child_idx);
                     for node in nodes {
-                        if let FlattenedNodeKind::Field { is_checked, .. } = &node.kind {
-                            if first_field_node.is_none() {
-                                first_field_node = Some(node);
-                            }
+                        if let FlattenedNodeKind::Field { is_checked, name, .. } = &node.kind {
+                            field_names.push(name.clone());
                             if *is_checked == Some(true) {
                                 selected_value = options.last().cloned();
                             }
@@ -312,10 +310,14 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
         }
 
-        let field_node = first_field_node?;
+        if field_names.is_empty() {
+            return None;
+        }
+
+        let name = field_names.join("_");
 
         Some(StructuredNode::Field(FieldNode {
-            name: self.get_field_name(field_node),
+            name,
             label: None, // Radio groups typically have options as labels
             input_type: FieldType::Radio { options },
             value: selected_value.map(InputValue::Radio),

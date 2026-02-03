@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
+#[derive(Clone)]
 pub struct Flattened {
     pub page: Page,
     pub children: Vec<FlattenedKind>,
@@ -208,6 +209,7 @@ impl<'a> Iterator for FlattenedNodeIterMut<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct Page {
     pub width: Num,
     pub height: Num,

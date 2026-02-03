@@ -6,6 +6,7 @@ mod modules;
 mod script_executor;
 mod scripting;
 mod structured;
+mod structured_diff;
 mod text_metrics;
 mod xfa;
 
@@ -112,6 +113,11 @@ struct Args {
     /// Export the structured form as JSON
     #[arg(long)]
     structured: bool,
+
+    /// Merge all exhaustive structured outputs into a single JSON with conditionals
+    /// (requires --exhaustive and --structured)
+    #[arg(long)]
+    merge: bool,
 
     /// Suppress verbose output (only show errors and final results)
     #[arg(short, long)]
@@ -415,6 +421,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             locale,
             render_modes: args.render_modes.clone(),
             structured: args.structured,
+            merge: args.merge,
             quiet,
         };
 
