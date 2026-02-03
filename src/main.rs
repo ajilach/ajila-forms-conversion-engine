@@ -119,6 +119,10 @@ struct Args {
     #[arg(long)]
     merge: bool,
 
+    /// Export the form as a standalone HTML file with embedded CSS and JavaScript
+    #[arg(long)]
+    html: bool,
+
     /// Suppress verbose output (only show errors and final results)
     #[arg(short, long)]
     quiet: bool,
@@ -331,10 +335,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // =========================================================================
     // PIPELINE STAGE 4: Analysis (only if needed)
-    // Analysis is needed for: --render labelled, --structured, or verbose output
+    // Analysis is needed for: --render labelled, --structured, --html, or verbose output
     // =========================================================================
     let needs_analysis =
-        args.render_modes.contains(&RenderMode::Labelled) || args.structured || !quiet;
+        args.render_modes.contains(&RenderMode::Labelled) || args.structured || args.html || !quiet;
 
     let doc = if needs_analysis {
         let mut doc = Document::from_flattened(&flattened);
@@ -371,6 +375,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "✓ Structured form saved to: {} ({} nodes)",
             output_path.display(),
             structured_nodes.len()
+        );
+    }
+
+    // Handle --html (single state, non-exhaustive mode only)
+    // For exhaustive mode with --merge, HTML will be generated from the merged output
+    if args.html && !args.exhaustive {
+        let output_path = PathBuf::from(format!("{}.html", doc_name));
+
+        vprintln!(quiet, "\nGenerating HTML form...");
+        let doc = doc
+            .as_ref()
+            .expect("Document should be created when --html is used");
+        let structured_nodes = modules::convert_to_structured(doc);
+
+        let html_config = modules::HtmlConfig {
+            form_id: doc_name.to_string(),
+            include_styles: true,
+            include_scripts: true,
+        };
+        let html = modules::generate_html(&structured_nodes, &html_config);
+
+        std::fs::write(&output_path, html)
+            .map_err(|e| format!("Failed to write HTML file: {}", e))?;
+
+        vprintln!(
+            quiet,
+            "✓ HTML form saved to: {}",
+            output_path.display()
         );
     }
 
@@ -422,6 +454,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             render_modes: args.render_modes.clone(),
             structured: args.structured,
             merge: args.merge,
+            html: args.html,
             quiet,
         };
 

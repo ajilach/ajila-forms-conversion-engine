@@ -474,8 +474,9 @@ fn wrap_state_specific_nodes(
             result.push(node);
         } else if let Some((field_name, values)) = find_distinguishing_field(&state_indices, inputs)
         {
-            // Create one conditional for each value
-            for value in values {
+            // Create one conditional for each UNIQUE value
+            let unique_values = dedupe_values(values);
+            for value in unique_values {
                 result.push(StructuredNode::Conditional(ConditionalNode {
                     condition: FieldCondition {
                         field_name: field_name.clone(),
@@ -498,7 +499,8 @@ fn wrap_state_specific_nodes(
                 if let Some((field_name, values)) =
                     find_distinguishing_field(&non_default_indices, inputs)
                 {
-                    for value in values {
+                    let unique_values = dedupe_values(values);
+                    for value in unique_values {
                         result.push(StructuredNode::Conditional(ConditionalNode {
                             condition: FieldCondition {
                                 field_name: field_name.clone(),
@@ -1082,6 +1084,7 @@ mod tests {
             label: None,
             input_type: FieldType::Radio {
                 options: options.into_iter().map(String::from).collect(),
+                option_names: None,
             },
             value: value.map(|v| InputValue::Radio(v.to_string())),
             placeholder: None,

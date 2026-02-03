@@ -299,7 +299,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                     // Get field for checking selected state and collecting names
                     let nodes = self.doc.collect_nodes(child_idx);
                     for node in nodes {
-                        if let FlattenedNodeKind::Field { is_checked, name, .. } = &node.kind {
+                        if let FlattenedNodeKind::Field {
+                            is_checked, name, ..
+                        } = &node.kind
+                        {
                             field_names.push(name.clone());
                             if *is_checked == Some(true) {
                                 selected_value = options.last().cloned();
@@ -319,7 +322,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name,
             label: None, // Radio groups typically have options as labels
-            input_type: FieldType::Radio { options },
+            input_type: FieldType::Radio {
+                options,
+                option_names: Some(field_names),
+            },
             value: selected_value.map(InputValue::Radio),
             placeholder: None,
         }))
@@ -353,7 +359,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: self.get_field_name(field_node),
             label: None,
-            input_type: FieldType::Radio { options },
+            input_type: FieldType::Radio {
+                options,
+                option_names: None,
+            },
             value: selected_value.map(InputValue::Radio),
             placeholder: None,
         }))
@@ -429,7 +438,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                         min_length: None,
                     },
                     WidgetKind::Checkbox => FieldType::Checkbox,
-                    WidgetKind::Radio => FieldType::Radio { options: vec![] },
+                    WidgetKind::Radio => FieldType::Radio {
+                        options: vec![],
+                        option_names: None,
+                    },
                     WidgetKind::Dropdown => {
                         // TODO: extract options from somewhere
                         FieldType::Select { options: vec![] }

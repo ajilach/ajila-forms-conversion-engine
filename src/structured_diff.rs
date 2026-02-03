@@ -140,7 +140,7 @@ pub fn field_type_structural_eq(a: &FieldType, b: &FieldType) -> bool {
         (FieldType::Tel, FieldType::Tel) => true,
         (FieldType::Checkbox, FieldType::Checkbox) => true,
 
-        (FieldType::Radio { options: opts_a }, FieldType::Radio { options: opts_b }) => {
+        (FieldType::Radio { options: opts_a, .. }, FieldType::Radio { options: opts_b, .. }) => {
             opts_a == opts_b
         }
 
@@ -682,6 +682,7 @@ mod tests {
             label: None,
             input_type: FieldType::Radio {
                 options: vec!["A".to_string(), "B".to_string()],
+                option_names: None,
             },
             value: None,
             placeholder: None,
@@ -692,6 +693,7 @@ mod tests {
             label: None,
             input_type: FieldType::Radio {
                 options: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                option_names: None,
             },
             value: None,
             placeholder: None,

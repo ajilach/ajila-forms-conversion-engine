@@ -73,6 +73,8 @@ pub struct ExhaustiveConfig<'a> {
     pub structured: bool,
     /// Whether to merge all structured outputs into a single JSON with conditionals
     pub merge: bool,
+    /// Whether to generate HTML output
+    pub html: bool,
     /// Whether to suppress verbose output
     pub quiet: bool,
 }
@@ -172,12 +174,8 @@ pub fn run_exhaustive(
     let mut images_rendered = 0;
 
     for state in &collected_states {
-        images_rendered += process_state_with_context(
-            state,
-            &global_ctx,
-            &mut merge_inputs,
-            config,
-        )?;
+        images_rendered +=
+            process_state_with_context(state, &global_ctx, &mut merge_inputs, config)?;
     }
 
     // If merge mode is enabled, merge all collected structured outputs
@@ -196,6 +194,33 @@ pub fn run_exhaustive(
 
         if !config.quiet {
             println!("  ✓ Merged output: {}", json_path.display());
+        }
+
+        // Generate HTML from merged output if requested
+        if config.html {
+            use crate::modules::{HtmlConfig, generate_html};
+
+            if !config.quiet {
+                println!("\nGenerating HTML form from merged output...");
+            }
+
+            let html_config = HtmlConfig {
+                form_id: config.doc_name.to_string(),
+                include_styles: true,
+                include_scripts: true,
+            };
+
+            // Wrap merged node in a slice for generate_html
+            let nodes = vec![merged];
+            let html = generate_html(&nodes, &html_config);
+
+            let html_path = std::path::PathBuf::from(format!("{}_merged.html", config.doc_name));
+            std::fs::write(&html_path, html)
+                .map_err(|e| format!("Failed to write merged HTML file: {}", e))?;
+
+            if !config.quiet {
+                println!("  ✓ HTML form: {}", html_path.display());
+            }
         }
     }
 
@@ -302,7 +327,13 @@ fn collect_all_states(
         new_form.refresh()?;
 
         // Recursively collect from this new state
-        collect_all_states(&mut new_form, new_selections, rendered_states, collected_states, config)?;
+        collect_all_states(
+            &mut new_form,
+            new_selections,
+            rendered_states,
+            collected_states,
+            config,
+        )?;
     }
 
     Ok(())
@@ -338,7 +369,8 @@ fn process_state_with_context(
 
         match mode {
             RenderMode::Plain => {
-                state.flattened
+                state
+                    .flattened
                     .render_to_image_buffer_plain(config.scale)?
                     .save(&output_path)
                     .map_err(|e| format!("Failed to save image: {}", e))?;
@@ -347,7 +379,9 @@ fn process_state_with_context(
                 doc.render_to_image(&output_path, config.scale)?;
             }
             RenderMode::Annotated => {
-                state.flattened.render_to_image(&output_path, config.scale)?;
+                state
+                    .flattened
+                    .render_to_image(&output_path, config.scale)?;
             }
         }
         outputs.push(output_path.display().to_string());
@@ -363,8 +397,10 @@ fn process_state_with_context(
             let json = serde_json::to_string_pretty(&structured_nodes)
                 .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
 
-            let json_path =
-                std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
+            let json_path = std::path::PathBuf::from(format!(
+                "{}_{}.json",
+                config.doc_name, state.state_suffix
+            ));
             std::fs::write(&json_path, json)
                 .map_err(|e| format!("Failed to write JSON file: {}", e))?;
             outputs.push(json_path.display().to_string());
@@ -374,8 +410,12 @@ fn process_state_with_context(
         if config.merge {
             // Build the complete state_values map from all selections
             let mut state_values = HashMap::new();
-            
+
             if !state.selections.is_empty() {
+                // Build a mapping from (grouped_field_name, internal_name) -> option_label
+                // by traversing the structured output
+                let radio_mapping = build_radio_option_mapping(&structured_nodes);
+
                 // We need to get the values for all selections
                 // Since we don't have the form anymore, we need to recreate it temporarily
                 let xfa_data = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
@@ -391,14 +431,26 @@ fn process_state_with_context(
 
                 // Now get the value for each selection and build state_values
                 for sel_path in &state.selections {
-                    let value = get_selection_value(&temp_form, sel_path);
                     // Use the grouped field name (e.g., "RB_1_RB_2_RB_3") if it's a radio button group
                     let field_name = get_field_name_for_path(&temp_form, sel_path);
+                    let internal_name = sel_path.name().to_string();
+
+                    // Look up the option label from the mapping, fall back to internal name
+                    let value = if let Some(label) =
+                        radio_mapping.get(&(field_name.clone(), internal_name.clone()))
+                    {
+                        InputValue::Radio(label.clone())
+                    } else {
+                        get_selection_value(&temp_form, sel_path)
+                    };
+
                     state_values.insert(field_name, value);
                 }
             }
 
-            let last_path = state.selections.last()
+            let last_path = state
+                .selections
+                .last()
                 .cloned()
                 .unwrap_or_else(|| SomPath::new("__default__"));
 
@@ -416,7 +468,8 @@ fn process_state_with_context(
         println!(
             "    ✓ Generated: {} (selections: {:?})",
             outputs.join(", "),
-            state.selections
+            state
+                .selections
                 .iter()
                 .map(|p| p.as_str())
                 .collect::<Vec<_>>()
@@ -509,7 +562,7 @@ fn get_selection_value(form: &XfaForm, path: &SomPath) -> InputValue {
     let is_radio = find_all_checkbutton_fields(form.xfa_nodes())
         .iter()
         .any(|f| &f.path == path && f.is_radio());
-    
+
     if is_radio {
         // Use the button's name as the value (distinguishes which option in the group)
         InputValue::Radio(path.name().to_string())
@@ -525,21 +578,21 @@ fn get_selection_value(form: &XfaForm, path: &SomPath) -> InputValue {
 fn get_field_name_for_path(form: &XfaForm, path: &SomPath) -> String {
     // Find all checkbutton fields to identify radio groups
     let all_fields = find_all_checkbutton_fields(form.xfa_nodes());
-    
+
     // Check if this is a radio button
     let is_radio = all_fields.iter().any(|f| &f.path == path && f.is_radio());
-    
+
     if is_radio {
         // Find the parent subform that contains this radio button's group
         // Radio buttons in the same group share a parent subform
         let parent_path = path.parent();
-        
+
         // Find all radio buttons with the same parent (siblings in the same group)
         let siblings: Vec<_> = all_fields
             .iter()
             .filter(|f| f.is_radio() && f.path.parent() == parent_path)
             .collect();
-        
+
         if siblings.len() > 1 {
             // Multiple radio buttons = a group. Combine their names.
             let mut names: Vec<_> = siblings.iter().map(|f| f.path.name().to_string()).collect();
@@ -548,8 +601,65 @@ fn get_field_name_for_path(form: &XfaForm, path: &SomPath) -> String {
             return names.join("_");
         }
     }
-    
+
     // Single field or checkbox: use its own name
     path.name().to_string()
 }
 
+/// Build a mapping from (grouped_field_name, internal_name) -> option_label
+/// by traversing the structured nodes and extracting radio field information.
+fn build_radio_option_mapping(nodes: &[StructuredNode]) -> HashMap<(String, String), String> {
+    use crate::structured::FieldType;
+
+    let mut mapping = HashMap::new();
+
+    fn traverse(node: &StructuredNode, mapping: &mut HashMap<(String, String), String>) {
+        match node {
+            StructuredNode::Field(field) => {
+                if let FieldType::Radio {
+                    options,
+                    option_names,
+                } = &field.input_type
+                {
+                    if let Some(names) = option_names {
+                        // Both options and names should have the same length
+                        for (internal_name, label) in names.iter().zip(options.iter()) {
+                            mapping
+                                .insert((field.name.clone(), internal_name.clone()), label.clone());
+                        }
+                    }
+                }
+            }
+            StructuredNode::Group(group) => {
+                for child in &group.children {
+                    traverse(child, mapping);
+                }
+            }
+            StructuredNode::Repeatable(rep) => {
+                traverse(&rep.item, mapping);
+            }
+            StructuredNode::Conditional(cond) => {
+                traverse(&cond.content, mapping);
+            }
+            StructuredNode::Table(table) => {
+                if let Some(header) = &table.header {
+                    for cell in &header.cells {
+                        traverse(cell, mapping);
+                    }
+                }
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        traverse(cell, mapping);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for node in nodes {
+        traverse(node, &mut mapping);
+    }
+
+    mapping
+}

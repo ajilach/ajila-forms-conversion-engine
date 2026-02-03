@@ -66,6 +66,7 @@
 
 mod field_grouper;
 mod heading_detector;
+mod html_generator;
 mod inline_field_detector;
 mod label_attacher;
 mod master_page_detector;
@@ -79,6 +80,7 @@ mod text_block;
 
 pub use field_grouper::FieldGrouper;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
+pub use html_generator::{HtmlConfig, generate_form_body, generate_html};
 pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
 pub use master_page_detector::MasterPageDetector;

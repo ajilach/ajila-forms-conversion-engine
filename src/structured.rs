@@ -103,6 +103,10 @@ pub enum FieldType {
     Checkbox,
     Radio {
         options: Vec<String>,
+        /// Internal field names corresponding to each option (e.g., ["RB_1", "RB_2", "RB_3"])
+        /// Used to map from internal names to option labels in conditionals
+        #[serde(skip_serializing_if = "Option::is_none")]
+        option_names: Option<Vec<String>>,
     },
     Select {
         options: Vec<String>,
