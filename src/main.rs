@@ -114,11 +114,6 @@ struct Args {
     #[arg(long)]
     structured: bool,
 
-    /// Merge all exhaustive structured outputs into a single JSON with conditionals
-    /// (requires --exhaustive and --structured)
-    #[arg(long)]
-    merge: bool,
-
     /// Export the form as a standalone HTML file with embedded CSS and JavaScript
     #[arg(long)]
     html: bool,
@@ -379,7 +374,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Handle --html (single state, non-exhaustive mode only)
-    // For exhaustive mode with --merge, HTML will be generated from the merged output
     if args.html && !args.exhaustive {
         let output_path = PathBuf::from(format!("{}.html", doc_name));
 
@@ -453,7 +447,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             locale,
             render_modes: args.render_modes.clone(),
             structured: args.structured,
-            merge: args.merge,
             html: args.html,
             quiet,
         };

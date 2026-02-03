@@ -13,14 +13,13 @@
 //! This ensures consistent heading detection and other statistics-based
 //! analysis across all form states.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::RenderMode;
 use crate::flattened::Flattened;
-use crate::modules::{GlobalContext, GlobalFontStats, MergeInput, merge_structured_trees};
+use crate::modules::{GlobalContext, GlobalFontStats};
 use crate::scripting::{SomPath, XfaForm};
-use crate::structured::{InputValue, StructuredNode};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
 /// A selectable field (radio button or checkbox) with its SOM path and shape.
@@ -71,8 +70,6 @@ pub struct ExhaustiveConfig<'a> {
     pub render_modes: Vec<RenderMode>,
     /// Whether to output structured JSON for each state
     pub structured: bool,
-    /// Whether to merge all structured outputs into a single JSON with conditionals
-    pub merge: bool,
     /// Whether to generate HTML output
     pub html: bool,
     /// Whether to suppress verbose output
@@ -115,9 +112,6 @@ pub fn run_exhaustive(
         }
         if config.structured {
             println!("  Structured JSON: enabled");
-        }
-        if config.merge {
-            println!("  Merge mode: enabled");
         }
     }
 
@@ -170,58 +164,10 @@ pub fn run_exhaustive(
     }
 
     let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
-    let mut merge_inputs: Vec<MergeInput> = Vec::new();
     let mut images_rendered = 0;
 
     for state in &collected_states {
-        images_rendered +=
-            process_state_with_context(state, &global_ctx, &mut merge_inputs, config)?;
-    }
-
-    // If merge mode is enabled, merge all collected structured outputs
-    if config.merge && !merge_inputs.is_empty() {
-        if !config.quiet {
-            println!("\nMerging {} structured outputs...", merge_inputs.len());
-        }
-
-        let merged = merge_structured_trees(merge_inputs);
-        let json = serde_json::to_string_pretty(&merged)
-            .map_err(|e| format!("Failed to serialize merged structured form: {}", e))?;
-
-        let json_path = std::path::PathBuf::from(format!("{}_merged.json", config.doc_name));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write merged JSON file: {}", e))?;
-
-        if !config.quiet {
-            println!("  ✓ Merged output: {}", json_path.display());
-        }
-
-        // Generate HTML from merged output if requested
-        if config.html {
-            use crate::modules::{HtmlConfig, generate_html};
-
-            if !config.quiet {
-                println!("\nGenerating HTML form from merged output...");
-            }
-
-            let html_config = HtmlConfig {
-                form_id: config.doc_name.to_string(),
-                include_styles: true,
-                include_scripts: true,
-            };
-
-            // Wrap merged node in a slice for generate_html
-            let nodes = vec![merged];
-            let html = generate_html(&nodes, &html_config);
-
-            let html_path = std::path::PathBuf::from(format!("{}_merged.html", config.doc_name));
-            std::fs::write(&html_path, html)
-                .map_err(|e| format!("Failed to write merged HTML file: {}", e))?;
-
-            if !config.quiet {
-                println!("  ✓ HTML form: {}", html_path.display());
-            }
-        }
+        images_rendered += process_state_with_context(state, &global_ctx, config)?;
     }
 
     if !config.quiet {
@@ -344,7 +290,6 @@ fn collect_all_states(
 fn process_state_with_context(
     state: &CollectedState,
     global_ctx: &GlobalContext,
-    merge_inputs: &mut Vec<MergeInput>,
     config: &ExhaustiveConfig,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut images_rendered = 0;
@@ -388,80 +333,18 @@ fn process_state_with_context(
         images_rendered += 1;
     }
 
-    // Output structured JSON if requested (or collect for merging)
-    if config.structured || config.merge {
+    // Output structured JSON if requested
+    if config.structured {
         let structured_nodes = crate::modules::convert_to_structured(&doc);
 
-        // Write individual JSON file if structured output is requested
-        if config.structured {
-            let json = serde_json::to_string_pretty(&structured_nodes)
-                .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+        let json = serde_json::to_string_pretty(&structured_nodes)
+            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
 
-            let json_path = std::path::PathBuf::from(format!(
-                "{}_{}.json",
-                config.doc_name, state.state_suffix
-            ));
-            std::fs::write(&json_path, json)
-                .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-            outputs.push(json_path.display().to_string());
-        }
-
-        // Collect for merging if merge mode is enabled
-        if config.merge {
-            // Build the complete state_values map from all selections
-            let mut state_values = HashMap::new();
-
-            if !state.selections.is_empty() {
-                // Build a mapping from (grouped_field_name, internal_name) -> option_label
-                // by traversing the structured output
-                let radio_mapping = build_radio_option_mapping(&structured_nodes);
-
-                // We need to get the values for all selections
-                // Since we don't have the form anymore, we need to recreate it temporarily
-                let xfa_data = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
-                let nodes = XfaNode::parse(&xfa_data)?;
-                let mut temp_form = XfaForm::new(nodes)
-                    .map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
-
-                // Apply selections to get the correct values
-                for sel_path in &state.selections {
-                    let _ = temp_form.select_radio_button(sel_path.as_str());
-                    temp_form.refresh()?;
-                }
-
-                // Now get the value for each selection and build state_values
-                for sel_path in &state.selections {
-                    // Use the grouped field name (e.g., "RB_1_RB_2_RB_3") if it's a radio button group
-                    let field_name = get_field_name_for_path(&temp_form, sel_path);
-                    let internal_name = sel_path.name().to_string();
-
-                    // Look up the option label from the mapping, fall back to internal name
-                    let value = if let Some(label) =
-                        radio_mapping.get(&(field_name.clone(), internal_name.clone()))
-                    {
-                        InputValue::Radio(label.clone())
-                    } else {
-                        get_selection_value(&temp_form, sel_path)
-                    };
-
-                    state_values.insert(field_name, value);
-                }
-            }
-
-            let last_path = state
-                .selections
-                .last()
-                .cloned()
-                .unwrap_or_else(|| SomPath::new("__default__"));
-
-            merge_inputs.push(MergeInput {
-                tree: StructuredNode::Group(crate::structured::GroupNode {
-                    children: structured_nodes,
-                }),
-                state_values,
-                last_path,
-            });
-        }
+        let json_path =
+            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
+        std::fs::write(&json_path, json)
+            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+        outputs.push(json_path.display().to_string());
     }
 
     if !config.quiet {
@@ -551,115 +434,4 @@ fn get_visible_selectable_fields(form: &XfaForm) -> Vec<SelectableField> {
         .into_iter()
         .filter(|field| form.is_path_visible(field.path.as_str()))
         .collect()
-}
-
-/// Get the InputValue for a selected field.
-/// For radio buttons, this returns the radio button's name as the value
-/// (this distinguishes which option was selected within the group).
-/// For checkboxes, this returns Checkbox(true) since selecting means checking.
-fn get_selection_value(form: &XfaForm, path: &SomPath) -> InputValue {
-    // Check if this is a radio button or checkbox
-    let is_radio = find_all_checkbutton_fields(form.xfa_nodes())
-        .iter()
-        .any(|f| &f.path == path && f.is_radio());
-
-    if is_radio {
-        // Use the button's name as the value (distinguishes which option in the group)
-        InputValue::Radio(path.name().to_string())
-    } else {
-        // Checkbox - when selected, it's checked (true)
-        InputValue::Checkbox(true)
-    }
-}
-
-/// Get the logical field name for a selection path.
-/// For radio buttons in a group, this returns the combined name (e.g., "RB_1_RB_2_RB_3").
-/// For checkboxes, this returns the checkbox's own name.
-fn get_field_name_for_path(form: &XfaForm, path: &SomPath) -> String {
-    // Find all checkbutton fields to identify radio groups
-    let all_fields = find_all_checkbutton_fields(form.xfa_nodes());
-
-    // Check if this is a radio button
-    let is_radio = all_fields.iter().any(|f| &f.path == path && f.is_radio());
-
-    if is_radio {
-        // Find the parent subform that contains this radio button's group
-        // Radio buttons in the same group share a parent subform
-        let parent_path = path.parent();
-
-        // Find all radio buttons with the same parent (siblings in the same group)
-        let siblings: Vec<_> = all_fields
-            .iter()
-            .filter(|f| f.is_radio() && f.path.parent() == parent_path)
-            .collect();
-
-        if siblings.len() > 1 {
-            // Multiple radio buttons = a group. Combine their names.
-            let mut names: Vec<_> = siblings.iter().map(|f| f.path.name().to_string()).collect();
-            names.sort();
-            names.dedup();
-            return names.join("_");
-        }
-    }
-
-    // Single field or checkbox: use its own name
-    path.name().to_string()
-}
-
-/// Build a mapping from (grouped_field_name, internal_name) -> option_label
-/// by traversing the structured nodes and extracting radio field information.
-fn build_radio_option_mapping(nodes: &[StructuredNode]) -> HashMap<(String, String), String> {
-    use crate::structured::FieldType;
-
-    let mut mapping = HashMap::new();
-
-    fn traverse(node: &StructuredNode, mapping: &mut HashMap<(String, String), String>) {
-        match node {
-            StructuredNode::Field(field) => {
-                if let FieldType::Radio {
-                    options,
-                    option_names,
-                } = &field.input_type
-                {
-                    if let Some(names) = option_names {
-                        // Both options and names should have the same length
-                        for (internal_name, label) in names.iter().zip(options.iter()) {
-                            mapping
-                                .insert((field.name.clone(), internal_name.clone()), label.clone());
-                        }
-                    }
-                }
-            }
-            StructuredNode::Group(group) => {
-                for child in &group.children {
-                    traverse(child, mapping);
-                }
-            }
-            StructuredNode::Repeatable(rep) => {
-                traverse(&rep.item, mapping);
-            }
-            StructuredNode::Conditional(cond) => {
-                traverse(&cond.content, mapping);
-            }
-            StructuredNode::Table(table) => {
-                if let Some(header) = &table.header {
-                    for cell in &header.cells {
-                        traverse(cell, mapping);
-                    }
-                }
-                for row in &table.rows {
-                    for cell in &row.cells {
-                        traverse(cell, mapping);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    for node in nodes {
-        traverse(node, &mut mapping);
-    }
-
-    mapping
 }
