@@ -146,17 +146,19 @@ impl GridTemplateDetector {
                 // Include any group with bounds, but skip headers/footers/headings/grids
                 if let Some(group) = doc.get_group(idx) {
                     // Accept fields and labeled fields as grid candidates
-                    matches!(group.kind, 
-                        GroupKind::Field | 
-                        GroupKind::LabeledField { .. } |
-                        GroupKind::RadioButton { .. } |
-                        GroupKind::DateField { .. })
+                    matches!(
+                        group.kind,
+                        GroupKind::Field
+                            | GroupKind::LabeledField { .. }
+                            | GroupKind::RadioButton { .. }
+                            | GroupKind::DateField { .. }
+                    )
                 } else {
                     false
                 }
             })
             .collect();
-        
+
         // Skip if we don't have enough groups
         if unclaimed.len() < self.min_rows * self.min_columns {
             return Vec::new();
@@ -179,7 +181,7 @@ impl GridTemplateDetector {
             // Find all elements on the same horizontal line (within alignment tolerance)
             let mut row_group = vec![start_idx];
             let remaining_vec: Vec<usize> = remaining.iter().copied().collect();
-            
+
             for &other_idx in &remaining_vec {
                 if let Some(other_bounds) = doc.get_bounds(other_idx) {
                     // Check if on same horizontal line
@@ -210,7 +212,8 @@ impl AnalysisModule for GridTemplateDetector {
 
         for candidate in candidates {
             // Create the GridLayout group
-            let group_indices: Vec<usize> = candidate.elements.iter().map(|e| e.group_idx).collect();
+            let group_indices: Vec<usize> =
+                candidate.elements.iter().map(|e| e.group_idx).collect();
             let spans: Vec<usize> = candidate.elements.iter().map(|e| e.span).collect();
 
             doc.merge(

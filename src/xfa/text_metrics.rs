@@ -17,7 +17,7 @@
 //! - weight: "normal" or "bold", default "normal"
 //! - posture: "normal" or "italic", default "normal"
 
-use crate::font_manager::{FontVariant, get_font_manager};
+use crate::xfa::font_manager::{FontVariant, get_font_manager};
 use crate::xfa::{Font, KerningMode, Num, Para, num};
 use ab_glyph::{Font as AbGlyphFont, FontRef, PxScale, ScaleFont};
 use rust_decimal::Decimal;

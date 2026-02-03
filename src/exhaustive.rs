@@ -12,14 +12,13 @@
 //!
 //! This ensures consistent heading detection and other statistics-based
 //! analysis across all form states.
-
 use std::collections::HashSet;
 use std::path::Path;
 
 use crate::RenderMode;
+use crate::document::modules::{GlobalContext, GlobalFontStats};
 use crate::flattened::Flattened;
-use crate::modules::{GlobalContext, GlobalFontStats};
-use crate::scripting::{SomPath, XfaForm};
+use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
 /// A selectable field (radio button or checkbox) with its SOM path and shape.
@@ -296,7 +295,7 @@ fn process_state_with_context(
 
     // Create Document and run analysis pipeline with global context
     let mut doc = crate::document::Document::from_flattened(&state.flattened);
-    crate::modules::run_analysis_pipeline_with_context(&mut doc, global_ctx);
+    crate::document::modules::run_analysis_pipeline_with_context(&mut doc, global_ctx);
 
     let mut outputs = Vec::new();
 

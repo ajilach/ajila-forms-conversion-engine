@@ -302,8 +302,8 @@ impl AnalysisModule for LabelAttacher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::modules::{AnalysisModule, FieldGrouper, TextBlockGrouper};
     use crate::flattened::{Flattened, FlattenedNode, Page};
-    use crate::modules::{AnalysisModule, FieldGrouper, TextBlockGrouper};
     use crate::xfa::num;
 
     #[test]

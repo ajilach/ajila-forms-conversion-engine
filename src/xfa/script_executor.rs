@@ -19,7 +19,7 @@
 //!                           Flattened (pure)
 //! ```
 
-use crate::scripting::{
+use crate::xfa::scripting::{
     EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScriptEngine,
     parse_events_from_node,
 };
@@ -323,7 +323,7 @@ impl ScriptExecutor {
             String,
             String,
             Vec<(String, String)>,
-            crate::scripting::XfaScript,
+            crate::xfa::scripting::XfaScript,
         )>,
         parent_child_map: &HashMap<String, Vec<(String, String)>>,
         subform_counters: &mut HashMap<String, usize>,

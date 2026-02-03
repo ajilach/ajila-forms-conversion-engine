@@ -486,10 +486,10 @@ impl XfaForm {
         let dependency_tracker = DependencyTracker::new();
 
         // Execute scripts using ScriptExecutor
-        let script_result = crate::script_executor::ScriptExecutor::execute(&nodes);
+        let script_result = crate::xfa::script_executor::ScriptExecutor::execute(&nodes);
 
         // Apply presence changes to the nodes
-        crate::script_executor::ScriptExecutor::apply_presence_changes(
+        crate::xfa::script_executor::ScriptExecutor::apply_presence_changes(
             &mut nodes,
             &script_result.presence_changes,
         );

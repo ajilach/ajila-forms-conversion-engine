@@ -234,9 +234,9 @@ impl AnalysisModule for RadioButtonGrouper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::modules::{FieldGrouper, RadioButtonDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
     use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
-    use crate::modules::{FieldGrouper, RadioButtonDetector, TextBlockGrouper};
     use crate::xfa::num;
 
     #[test]

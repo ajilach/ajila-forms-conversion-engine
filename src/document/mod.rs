@@ -26,6 +26,11 @@
 //! - **Claimed**: Leaf groups referenced (directly or transitively) by a composite group
 //!
 //! This is computed dynamically from the group structure - no separate tracking needed.
+//!
+//!
+//!
+
+pub mod modules;
 
 use crate::flattened::{Bounds, Flattened, FlattenedNode, FlattenedNodeKind};
 use crate::xfa::num;

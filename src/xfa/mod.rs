@@ -1,3 +1,8 @@
+pub mod font_manager;
+pub mod script_executor;
+pub mod scripting;
+pub mod text_metrics;
+
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use rust_decimal::Decimal;

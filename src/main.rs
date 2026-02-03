@@ -1,18 +1,15 @@
 mod document;
 mod exhaustive;
 mod flattened;
-mod font_manager;
-mod modules;
-mod script_executor;
-mod scripting;
 mod structured;
-mod text_metrics;
 mod xfa;
+mod html;
+
 
 use clap::{Parser, ValueEnum};
 use document::Document;
 use flattened::{Flattened, FlattenedNodeKind};
-use modules::{
+use document::modules::{
     AnalysisModule, FieldGrouper, HeadingDetector, LabelAttacher, RadioButtonDetector,
     RadioButtonGrouper, TextBlockGrouper, run_analysis_pipeline,
 };
@@ -20,10 +17,12 @@ use pdf::file::FileOptions;
 use pdf::object::*;
 use pdf::primitive::Primitive;
 use rust_decimal::prelude::ToPrimitive;
-use script_executor::ScriptExecutor;
-use scripting::XfaForm;
+use xfa::script_executor::ScriptExecutor;
+use xfa::scripting::XfaForm;
 use std::path::{Path, PathBuf};
 use xfa::{XfaNode, XfaNodeKind};
+pub use html::{HtmlConfig, generate_form_body, generate_html};
+
 
 /// Render mode for output images
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -382,12 +381,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Document should be created when --html is used");
         let structured_nodes = crate::structured::convert(doc);
 
-        let html_config = modules::HtmlConfig {
+        let html_config = HtmlConfig {
             form_id: doc_name.to_string(),
             include_styles: true,
             include_scripts: true,
         };
-        let html = modules::generate_html(&structured_nodes, &html_config);
+        let html = generate_html(&structured_nodes, &html_config);
 
         std::fs::write(&output_path, html)
             .map_err(|e| format!("Failed to write HTML file: {}", e))?;
@@ -646,7 +645,7 @@ mod tests {
         // Test that the AAAI document title "Vereinbarung für die Erteilung von Zahlungsaufträgen"
         // is correctly identified as an H1 heading
         use crate::document::Document;
-        use crate::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -694,7 +693,7 @@ mod tests {
     fn test_aaai_kunde_is_h2() {
         // Test that "Kunde" (right after the H1 title) is correctly identified as an H2 heading
         use crate::document::Document;
-        use crate::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -741,7 +740,7 @@ mod tests {
         // - "Kunde" (first), "Unterschrift(en)": h2 (with underlines)
         // - "Vertretungsberechtigte(r)", "Kunde" (second), "UBS Europe SE": h3 (without underlines)
         use crate::document::{Document, GroupKind};
-        use crate::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -1987,7 +1986,7 @@ mod tests {
 
     #[test]
     fn test_aaab_script_extraction_and_execution() {
-        use crate::scripting::{
+        use crate::xfa::scripting::{
             EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
         };
         use std::collections::HashMap;
@@ -2001,7 +2000,7 @@ mod tests {
         // Helper function to find events recursively
         fn find_all_events(
             nodes: &[xfa::XfaNode],
-            events: &mut Vec<(String, crate::scripting::XfaScript)>,
+            events: &mut Vec<(String, crate::xfa::scripting::XfaScript)>,
         ) {
             for node in nodes {
                 let name = node.name.clone().unwrap_or_default();
@@ -2118,7 +2117,7 @@ mod tests {
 
     #[test]
     fn test_aaab_ffFirstName_s_gets_vorname() {
-        use crate::scripting::{
+        use crate::xfa::scripting::{
             EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
         };
         use std::collections::HashMap;
@@ -2132,7 +2131,7 @@ mod tests {
         // Helper function to find events recursively
         fn find_all_events(
             nodes: &[xfa::XfaNode],
-            events: &mut Vec<(String, crate::scripting::XfaScript)>,
+            events: &mut Vec<(String, crate::xfa::scripting::XfaScript)>,
         ) {
             for node in nodes {
                 let name = node.name.clone().unwrap_or_default();
@@ -2633,7 +2632,7 @@ mod tests {
     #[test]
     fn test_vorname_visible_after_xfa_form_refresh() {
         use crate::flattened::FlattenedNodeKind;
-        use crate::scripting::XfaForm;
+        use crate::xfa::scripting::XfaForm;
 
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
@@ -2707,7 +2706,7 @@ mod tests {
     fn test_aaai_label_attachment() {
         // Test that labels are correctly attached to fields in the AAAI document
         use crate::document::Document;
-        use crate::modules::{AnalysisModule, FieldGrouper, LabelAttacher, TextBlockGrouper};
+        use crate::document::modules::{AnalysisModule, FieldGrouper, LabelAttacher, TextBlockGrouper};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -2867,7 +2866,7 @@ mod tests {
     fn test_aaai_ffdesignature_script_execution() {
         // Test that the ffDesSignature and ffDesFullName scripts execute correctly
         // when the parent subform sets their values
-        use crate::scripting::{
+        use crate::xfa::scripting::{
             EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
         };
         use std::collections::HashMap;
@@ -2880,7 +2879,7 @@ mod tests {
         // Helper function to find events recursively
         fn find_all_events(
             nodes: &[xfa::XfaNode],
-            events: &mut Vec<(String, crate::scripting::XfaScript)>,
+            events: &mut Vec<(String, crate::xfa::scripting::XfaScript)>,
         ) {
             for node in nodes {
                 let name = node.name.clone().unwrap_or_default();
@@ -3308,7 +3307,7 @@ mod tests {
     /// This requires click events on RB_1 to be executed even when it's the default selection.
     #[test]
     fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
-        use crate::scripting::{EventActivity, parse_events_from_node};
+        use crate::xfa::scripting::{EventActivity, parse_events_from_node};
 
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
@@ -3607,8 +3606,8 @@ mod tests {
     /// 5. After refresh, T_Sectiontitle should embed the "Löschung" text
     #[test]
     fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
-        use crate::scripting::XfaForm;
-        use crate::scripting::XfaScriptEngine;
+        use crate::xfa::scripting::XfaForm;
+        use crate::xfa::scripting::XfaScriptEngine;
 
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
@@ -3622,7 +3621,7 @@ mod tests {
             for node in nodes {
                 if node.name.as_deref() == Some(target_name) {
                     // Found the node, look at events
-                    let events = crate::scripting::parse_events_from_node(&node.children);
+                    let events = crate::xfa::scripting::parse_events_from_node(&node.children);
                     for event in events {
                         results.push((
                             format!("{:?}", event.activity),
@@ -3661,13 +3660,13 @@ mod tests {
                     console.log('Set ffrb1.rawValue to:', f.rawValue);
                 }
             "#;
-            let result = engine.execute_script(&crate::scripting::XfaScript {
+            let result = engine.execute_script(&crate::xfa::scripting::XfaScript {
                 source: test_script.to_string(),
-                content_type: crate::scripting::ScriptContentType::JavaScript,
-                activity: crate::scripting::EventActivity::Initialize,
-                event_ref: crate::scripting::EventRef::Form,
+                content_type: crate::xfa::scripting::ScriptContentType::JavaScript,
+                activity: crate::xfa::scripting::EventActivity::Initialize,
+                event_ref: crate::xfa::scripting::EventRef::Form,
                 name: Some("test".to_string()),
-                run_at: crate::scripting::RunAt::Client,
+                run_at: crate::xfa::scripting::RunAt::Client,
             });
             println!("Script result: {:?}", result);
 
@@ -3775,7 +3774,7 @@ mod tests {
     /// - RB_3 selected: Löschung section visible (with nested controls)
     #[test]
     fn test_aaab_conditional_groups_section_visibility() {
-        use crate::scripting::XfaForm;
+        use crate::xfa::scripting::XfaForm;
 
         /// Helper to count nodes containing a specific text pattern
         fn count_nodes_with_text(flattened: &Flattened, pattern: &str) -> usize {
@@ -3914,7 +3913,7 @@ mod tests {
     /// and verifies they differ appropriately.
     #[test]
     fn test_aaab_conditional_groups_field_enumeration() {
-        use crate::scripting::XfaForm;
+        use crate::xfa::scripting::XfaForm;
 
         /// Get field names from a flattened form
         fn get_field_names(flattened: &Flattened) -> Vec<String> {
@@ -4034,7 +4033,7 @@ mod tests {
         // Test that the AAAI PDF has exactly two repeatable sections
         // (based on XFA occur element hints)
         use crate::document::Document;
-        use crate::modules::{RepeatableDetector, run_analysis_pipeline};
+        use crate::document::modules::{RepeatableDetector, run_analysis_pipeline};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4104,7 +4103,7 @@ mod tests {
         // Repeatable sections should only be created when they contain fields,
         // so a header-only section should not become a repeatable.
         use crate::document::{Document, GroupKind};
-        use crate::modules::run_analysis_pipeline;
+        use crate::document::modules::run_analysis_pipeline;
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4182,7 +4181,7 @@ mod tests {
         // were incorrectly being grouped as interactive fields.
         use crate::document::Document;
         use crate::flattened::FlattenedNodeKind;
-        use crate::modules::{AnalysisModule, FieldGrouper};
+        use crate::document::modules::{AnalysisModule, FieldGrouper};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4239,7 +4238,7 @@ mod tests {
         // from the master page (page background) content.
         use crate::document::Document;
         use crate::flattened::{Hint, MasterPageRegion};
-        use crate::modules::{AnalysisModule, MasterPageDetector};
+        use crate::document::modules::{AnalysisModule, MasterPageDetector};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4365,7 +4364,7 @@ mod tests {
         // Now run the FULL pipeline and check again
         println!("\n--- After full pipeline ---");
         let mut doc2 = Document::from_flattened(&flattened);
-        crate::modules::run_analysis_pipeline(&mut doc2);
+        crate::document::modules::run_analysis_pipeline(&mut doc2);
 
         let header_groups2 = doc2.find_groups(|k| matches!(k, crate::document::GroupKind::Header));
         let footer_groups2 = doc2.find_groups(|k| matches!(k, crate::document::GroupKind::Footer));
@@ -4428,7 +4427,7 @@ mod tests {
     fn test_aaai_structured_output_has_expected_field_labels() {
         // Test that the structured output for AAAI contains fields with the expected labels
         use crate::document::Document;
-        use crate::modules::{run_analysis_pipeline};
+        use crate::document::modules::{run_analysis_pipeline};
         use crate::structured::{FieldNode, InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4561,6 +4560,12 @@ mod tests {
                     StructuredNode::Repeatable(rep) => {
                         collect_field_labels(&[(*rep.item).clone()], labels);
                     }
+                    StructuredNode::GridLayout(grid) => {
+                        // Collect labels from grid elements
+                        for element in &grid.elements {
+                            collect_field_labels(&[element.node.clone()], labels);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -4604,7 +4609,7 @@ mod tests {
         // Test that the structured output does not contain invisible/hidden field content
         // like "ffMandatory" which is a non-interactive field without a computed value
         use crate::document::Document;
-        use crate::modules::{run_analysis_pipeline};
+        use crate::document::modules::{run_analysis_pipeline};
         use crate::structured::{InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4699,7 +4704,7 @@ mod tests {
         // This is a regression test - the heading was missing when the analysis pipeline
         // was accidentally broken (modules removed from run_analysis_pipeline).
         use crate::document::Document;
-        use crate::modules::{run_analysis_pipeline};
+        use crate::document::modules::{run_analysis_pipeline};
         use crate::structured::{HeadingLevel, HeadingNode, InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4780,7 +4785,7 @@ mod tests {
         // Test that the H1 heading is the first element in the structured output.
         // This verifies the reading order sorting is working correctly.
         use crate::document::Document;
-        use crate::modules::{run_analysis_pipeline};
+        use crate::document::modules::{run_analysis_pipeline};
         use crate::structured::{HeadingLevel, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4837,7 +4842,7 @@ mod tests {
         // These are screen-only interactive elements (relevant="-print") for adding/removing
         // repeatable sections. They should be filtered out by NoPrintDetector.
         use crate::document::Document;
-        use crate::modules::{run_analysis_pipeline};
+        use crate::document::modules::{run_analysis_pipeline};
         use crate::structured::{FieldNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");

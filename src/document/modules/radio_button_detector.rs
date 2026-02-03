@@ -250,7 +250,7 @@ mod tests {
         let mut doc = Document::from_flattened(&flattened);
 
         // Process with FieldGrouper first
-        use crate::modules::{FieldGrouper, TextBlockGrouper};
+        use crate::document::modules::{FieldGrouper, TextBlockGrouper};
         FieldGrouper::new().process(&mut doc);
         TextBlockGrouper::new().process(&mut doc);
 
@@ -296,7 +296,7 @@ mod tests {
 
         let mut doc = Document::from_flattened(&flattened);
 
-        use crate::modules::{FieldGrouper, TextBlockGrouper};
+        use crate::document::modules::{FieldGrouper, TextBlockGrouper};
         FieldGrouper::new().process(&mut doc);
         TextBlockGrouper::new().process(&mut doc);
         RadioButtonDetector::new().process(&mut doc);

@@ -1,5 +1,5 @@
-use crate::font_manager::get_font_manager;
-use crate::scripting::{Presence, SomPath};
+use crate::xfa::font_manager::get_font_manager;
+use crate::xfa::scripting::{Presence, SomPath};
 use crate::xfa::{Border, Font, HAlign, Num, Para, StrokeStyle, VAlign, XfaNode, XfaNodeKind, num};
 use ab_glyph::{Font as AbGlyphFont, FontRef, PxScale, ScaleFont};
 use image::{ImageBuffer, Rgba, RgbaImage};
@@ -6160,7 +6160,7 @@ impl Flattened {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font_manager::get_font_manager;
+    use crate::xfa::font_manager::get_font_manager;
     use crate::xfa::{Para, VAlign, num};
 
     /// Test that line height from para element is properly scaled.
