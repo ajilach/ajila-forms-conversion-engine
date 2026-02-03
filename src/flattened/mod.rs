@@ -40,10 +40,7 @@ pub enum FlattenedKind {
 impl FlattenedKind {
     /// Create a new group with children and hints
     pub fn group(children: Vec<FlattenedKind>, hints: Vec<Hint>) -> Self {
-        FlattenedKind::Group {
-            children,
-            hints,
-        }
+        FlattenedKind::Group { children, hints }
     }
 
     /// Create a leaf node
