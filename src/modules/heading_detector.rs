@@ -214,7 +214,7 @@ impl HeadingDetector {
         // Find all positions of sentence-ending punctuation
         let mut end_positions: Vec<usize> = Vec::new();
         let chars: Vec<char> = trimmed.chars().collect();
-        
+
         for (char_idx, &c) in chars.iter().enumerate() {
             if sentence_enders.contains(&c) {
                 // Check if this is likely an abbreviation, decimal number, or ordinal/date
@@ -224,7 +224,7 @@ impl HeadingDetector {
                         continue;
                     }
                 }
-                
+
                 // Skip if preceded by a digit (e.g., "01." as in dates/ordinals)
                 if char_idx > 0 {
                     if let Some(&prev) = chars.get(char_idx - 1) {
@@ -233,7 +233,7 @@ impl HeadingDetector {
                         }
                     }
                 }
-                
+
                 end_positions.push(char_idx);
             }
         }
@@ -253,7 +253,11 @@ impl HeadingDetector {
         // Multiple sentence enders - check if any are followed by substantial content
         for &pos in &end_positions[..end_positions.len() - 1] {
             // Check remaining characters after this position
-            let remaining: String = chars[pos + 1..].iter().collect::<String>().trim().to_string();
+            let remaining: String = chars[pos + 1..]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string();
             // If there's more than just whitespace after a sentence ender, it's multiple sentences
             if !remaining.is_empty() && remaining.len() > 1 {
                 // Check if the next non-whitespace character is uppercase (new sentence) or not
@@ -390,6 +394,10 @@ impl HeadingDetector {
         text_len: usize,
         text_content: &str,
         stats: &FontStats,
+        has_top_border: bool,
+        has_bottom_border: bool,
+        has_font_underline: bool,
+        border_stats: &BorderStats,
     ) -> Option<(u8, bool)> {
         // Text too long for a heading
         if text_len > self.max_heading_length {
@@ -490,11 +498,25 @@ impl HeadingDetector {
         let min_ratio = 1.35f32;
 
         // For bold section headers at body size, assign level based on document structure
+        // and border information if available
         if is_bold_section_header {
             // Bold at body size is typically H2 or H3 (after a larger H1 title)
             // Never H1 - H1 should be reserved for larger text (true document titles)
-            let _has_larger_text = stats.max > body_size * 1.2;
-            return Some((2, true)); // Always H2 for bold section headers, flag as bold_section_header
+
+            // Use border statistics to distinguish between H2 and H3
+            // Any visible border (top or bottom) or underline marks higher-level headings
+            let has_any_border = has_top_border || has_bottom_border || has_font_underline;
+            let level = if border_stats.should_use_borders() {
+                if has_any_border {
+                    2 // H2 for section headers with borders/underlines
+                } else {
+                    3 // H3 for section headers without borders
+                }
+            } else {
+                2 // Default to H2 when no border distinction is available
+            };
+
+            return Some((level, true)); // Flag as bold_section_header
         }
 
         let normalized = if max_ratio > min_ratio {
@@ -537,6 +559,9 @@ impl HeadingDetector {
         let mut text_node_count = 0;
         let mut text_content = String::new();
         let mut count = 0;
+        let mut top_border_count = 0;
+        let mut bottom_border_count = 0;
+        let mut font_underline_count = 0;
 
         for node in nodes {
             if let FlattenedNodeKind::Text {
@@ -550,10 +575,30 @@ impl HeadingDetector {
                 text_content.push(' ');
 
                 // Count bold nodes
-                if let Some(font) = &node.style.font
-                    && font.weight == FontWeight::Bold
-                {
-                    bold_count += 1;
+                if let Some(font) = &node.style.font {
+                    if font.weight == FontWeight::Bold {
+                        bold_count += 1;
+                    }
+                    // Check font underline property
+                    if font.underline {
+                        font_underline_count += 1;
+                    }
+                }
+
+                // Check for visible borders (top and bottom edges)
+                if let Some(border) = &node.style.border {
+                    // Check top edge (index 0)
+                    if let Some(top_edge) = border.get_edge(0) {
+                        if top_edge.presence == "visible" && top_edge.thickness.is_some() {
+                            top_border_count += 1;
+                        }
+                    }
+                    // Check bottom edge (index 2)
+                    if let Some(bottom_edge) = border.get_edge(2) {
+                        if bottom_edge.presence == "visible" && bottom_edge.thickness.is_some() {
+                            bottom_border_count += 1;
+                        }
+                    }
                 }
             }
         }
@@ -565,6 +610,11 @@ impl HeadingDetector {
         // Only consider as bold if ALL text nodes are bold
         let is_bold = text_node_count > 0 && bold_count == text_node_count;
 
+        // Consider border/underline present if ANY node has it
+        let has_top_border = top_border_count > 0;
+        let has_bottom_border = bottom_border_count > 0;
+        let has_font_underline = font_underline_count > 0;
+
         let avg_size = total_size / count as f32;
         let text_len = text_content.trim().len();
 
@@ -573,6 +623,9 @@ impl HeadingDetector {
             is_bold,
             text_length: text_len,
             text_content: text_content.trim().to_string(),
+            has_top_border,
+            has_bottom_border,
+            has_font_underline,
         })
     }
 
@@ -697,6 +750,38 @@ struct TextProperties {
     is_bold: bool,
     text_length: usize,
     text_content: String,
+    has_top_border: bool,
+    has_bottom_border: bool,
+    has_font_underline: bool,
+}
+
+/// Border statistics for distinguishing heading levels.
+#[derive(Debug, Clone, Default)]
+struct BorderStats {
+    /// Number of potential headings with any border (top, bottom, or font underline)
+    underlined_count: usize,
+    /// Number of potential headings without any borders
+    non_underlined_count: usize,
+    /// Total potential headings analyzed
+    total_count: usize,
+}
+
+impl BorderStats {
+    /// Check if border information should be used to distinguish heading levels.
+    /// Returns true if there's a meaningful pattern indicating borders distinguish hierarchy.
+    fn should_use_borders(&self) -> bool {
+        if self.total_count < 3 {
+            // Not enough headings to establish a pattern
+            return false;
+        }
+
+        let border_ratio = self.underlined_count as f32 / self.total_count as f32;
+
+        // Use borders if there's a clear distinction:
+        // - Between 20% and 80% have borders (mixed usage indicates hierarchy)
+        // - If <20% or >80%, the pattern is not useful for distinguishing levels
+        border_ratio >= 0.20 && border_ratio <= 0.80
+    }
 }
 
 /// Wrapper for f32 that implements Hash and Eq.
@@ -728,7 +813,8 @@ impl AnalysisModule for HeadingDetector {
             global_stats.to_font_stats()
         } else if !ctx.all_flattened.is_empty() {
             // Compute global stats from all flattened data
-            let global_stats = GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
+            let global_stats =
+                GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
             global_stats.to_font_stats()
         } else {
             // Fallback to local stats
@@ -754,18 +840,57 @@ impl HeadingDetector {
             .copied()
             .collect();
 
-        // Analyze each text group
+        // First pass: collect border statistics from potential headings
+        let mut border_stats = BorderStats::default();
+        let mut text_properties_cache: HashMap<usize, TextProperties> = HashMap::new();
+
+        for &group_idx in &text_groups {
+            if let Some(props) = self.get_text_properties(doc, group_idx) {
+                // Check if this would be considered a heading based on font properties only
+                // (we pass empty border stats for this initial check)
+                let empty_border_stats = BorderStats::default();
+                if self
+                    .determine_heading_level(
+                        props.avg_font_size,
+                        props.is_bold,
+                        props.text_length,
+                        &props.text_content,
+                        &stats,
+                        props.has_top_border,
+                        props.has_bottom_border,
+                        props.has_font_underline,
+                        &empty_border_stats,
+                    )
+                    .is_some()
+                {
+                    border_stats.total_count += 1;
+                    // Count any border (top, bottom, or font underline) as a distinguishing feature
+                    if props.has_top_border || props.has_bottom_border || props.has_font_underline {
+                        border_stats.underlined_count += 1;
+                    } else {
+                        border_stats.non_underlined_count += 1;
+                    }
+                }
+                text_properties_cache.insert(group_idx, props);
+            }
+        }
+
+        // Second pass: analyze each text group with border statistics
         // Stores (group_idx, level, y_coord, is_bold_section_header) for ordering and validation
         let mut headings: Vec<(usize, u8, f32, bool)> = Vec::new();
 
         for group_idx in text_groups {
-            if let Some(props) = self.get_text_properties(doc, group_idx) {
+            if let Some(props) = text_properties_cache.get(&group_idx) {
                 if let Some((level, is_bold_section_header)) = self.determine_heading_level(
                     props.avg_font_size,
                     props.is_bold,
                     props.text_length,
                     &props.text_content,
                     &stats,
+                    props.has_top_border,
+                    props.has_bottom_border,
+                    props.has_font_underline,
+                    &border_stats,
                 ) {
                     // Store y-coordinate for ordering
                     let y_coord = doc
@@ -780,25 +905,10 @@ impl HeadingDetector {
         // Sort headings by y-coordinate (top to bottom)
         headings.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Remove duplicate headings (same text content appearing multiple times)
-        // Real headings typically appear only once in a document
-        let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut unique_headings: Vec<(usize, u8, f32, bool)> = Vec::new();
-        for (group_idx, level, y_coord, is_bold_section_header) in headings {
-            if let Some(props) = self.get_text_properties(doc, group_idx) {
-                let normalized_text = props.text_content.trim().to_lowercase();
-                if seen_content.contains(&normalized_text) {
-                    continue;
-                }
-                seen_content.insert(normalized_text);
-                unique_headings.push((group_idx, level, y_coord, is_bold_section_header));
-            }
-        }
-
         // Filter out bold section headers that appear before the first true heading.
         // Bold section headers (bold at body size) before a title are likely branding/company names,
         // not actual section headings. The first true heading (larger font) establishes H1.
-        let first_true_heading_idx = unique_headings
+        let first_true_heading_idx = headings
             .iter()
             .position(|(_, _, _, is_bold_section_header)| !*is_bold_section_header);
 
@@ -806,7 +916,7 @@ impl HeadingDetector {
             if let Some(first_true_idx) = first_true_heading_idx {
                 // Keep the first true heading and everything after it.
                 // Bold section headers before the first true heading are filtered out.
-                unique_headings
+                headings
                     .into_iter()
                     .enumerate()
                     .filter(|(idx, (_, _, _, is_bold_section_header))| {
@@ -817,7 +927,7 @@ impl HeadingDetector {
                     .collect()
             } else {
                 // No true heading found - keep all bold section headers as-is
-                unique_headings
+                headings
             };
 
         // Validate and fix heading levels according to document order rules:
@@ -843,7 +953,7 @@ impl HeadingDetector {
 mod tests {
     use super::*;
     use crate::flattened::{Flattened, FlattenedNode, Page};
-    use crate::xfa::{Font, FontWeight, num};
+    use crate::xfa::{Border, Edge, Font, FontWeight, StrokeStyle, num};
 
     fn make_text_node(content: &str, font_size: f32, x: f32, y: f32) -> FlattenedNode {
         FlattenedNode::new_text(
@@ -859,6 +969,104 @@ mod tests {
 
     fn make_bold_text_node(content: &str, font_size: f32, x: f32, y: f32) -> FlattenedNode {
         let mut node = make_text_node(content, font_size, x, y);
+        node.style.font = Some(Font {
+            typeface: "Helvetica".to_string(),
+            size: num(font_size as f64),
+            weight: FontWeight::Bold,
+            posture: crate::xfa::FontPosture::Normal,
+            underline: false,
+            line_through: false,
+            color: None,
+            baseline_shift: None,
+            letter_spacing: None,
+            generic_family: None,
+            kerning_mode: crate::xfa::KerningMode::None,
+            font_horizontal_scale: None,
+            font_vertical_scale: None,
+        });
+        node
+    }
+
+    fn make_text_node_with_border(
+        content: &str,
+        font_size: f32,
+        x: f32,
+        y: f32,
+        has_top_border: bool,
+        has_bottom_border: bool,
+    ) -> FlattenedNode {
+        let mut node = make_text_node(content, font_size, x, y);
+
+        let mut edges = Vec::new();
+
+        // Top edge (index 0)
+        edges.push(Edge {
+            thickness: if has_top_border { Some(num(1.0)) } else { None },
+            stroke: StrokeStyle::Solid,
+            presence: if has_top_border {
+                "visible".to_string()
+            } else {
+                "hidden".to_string()
+            },
+            color: Some((0, 0, 0)),
+        });
+
+        // Right edge (index 1)
+        edges.push(Edge {
+            thickness: None,
+            stroke: StrokeStyle::Solid,
+            presence: "hidden".to_string(),
+            color: None,
+        });
+
+        // Bottom edge (index 2)
+        edges.push(Edge {
+            thickness: if has_bottom_border {
+                Some(num(1.0))
+            } else {
+                None
+            },
+            stroke: StrokeStyle::Solid,
+            presence: if has_bottom_border {
+                "visible".to_string()
+            } else {
+                "hidden".to_string()
+            },
+            color: Some((0, 0, 0)),
+        });
+
+        // Left edge (index 3)
+        edges.push(Edge {
+            thickness: None,
+            stroke: StrokeStyle::Solid,
+            presence: "hidden".to_string(),
+            color: None,
+        });
+
+        node.style.border = Some(Border {
+            edges,
+            corners: Vec::new(),
+            fill: None,
+            presence: "visible".to_string(),
+            margin_left: None,
+            margin_top: None,
+            margin_right: None,
+            margin_bottom: None,
+        });
+
+        node
+    }
+
+    fn make_bold_text_node_with_border(
+        content: &str,
+        font_size: f32,
+        x: f32,
+        y: f32,
+        has_top_border: bool,
+        has_bottom_border: bool,
+    ) -> FlattenedNode {
+        let mut node =
+            make_text_node_with_border(content, font_size, x, y, has_top_border, has_bottom_border);
         node.style.font = Some(Font {
             typeface: "Helvetica".to_string(),
             size: num(font_size as f64),
@@ -1298,6 +1506,196 @@ mod tests {
                 .iter()
                 .any(|(_, level, content)| content.contains("Main Title") && *level == 1),
             "Main Title should be h1"
+        );
+    }
+
+    #[test]
+    fn test_border_based_heading_distinction() {
+        // Test that borders can distinguish between h2 and h3 levels
+        // When multiple bold section headers exist, those with underlines should be h2,
+        // those without should be h3
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                // Large title (h1)
+                make_text_node("Main Title", 18.0, 10.0, 10.0),
+                // Bold section header with underline (should be h2)
+                make_bold_text_node_with_border(
+                    "Section with Underline",
+                    10.0,
+                    10.0,
+                    50.0,
+                    false,
+                    true,
+                ),
+                make_text_node("Body text one here.", 10.0, 10.0, 80.0),
+                make_text_node("More body text one.", 10.0, 10.0, 95.0),
+                // Bold section header without underline (should be h3)
+                make_bold_text_node_with_border(
+                    "Subsection No Underline",
+                    10.0,
+                    10.0,
+                    120.0,
+                    false,
+                    false,
+                ),
+                make_text_node("Body text two here.", 10.0, 10.0, 150.0),
+                make_text_node("More body text two.", 10.0, 10.0, 165.0),
+                // Another bold section header with underline (should be h2)
+                make_bold_text_node_with_border("Another Section", 10.0, 10.0, 190.0, false, true),
+                make_text_node("Body text three here.", 10.0, 10.0, 220.0),
+                make_text_node("More body text three.", 10.0, 10.0, 235.0),
+                // Another subsection without underline (should be h3)
+                make_bold_text_node_with_border(
+                    "Another Subsection",
+                    10.0,
+                    10.0,
+                    260.0,
+                    false,
+                    false,
+                ),
+                make_text_node("Body text four here.", 10.0, 10.0, 290.0),
+                make_text_node("More body text four.", 10.0, 10.0, 305.0),
+                make_text_node("Body text five here.", 10.0, 10.0, 320.0),
+                make_text_node("More body text five.", 10.0, 10.0, 335.0),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Collect heading info
+        let mut heading_info: Vec<(String, u8)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let content = doc.get_text_content(idx);
+                    heading_info.push((content, level));
+                }
+            }
+        }
+
+        // Find specific headings and check their levels
+        let main_title = heading_info.iter().find(|(c, _)| c.contains("Main Title"));
+        let section_underline = heading_info
+            .iter()
+            .find(|(c, _)| c.contains("Section with Underline"));
+        let subsection_no_underline = heading_info
+            .iter()
+            .find(|(c, _)| c.contains("Subsection No Underline"));
+        let another_section = heading_info
+            .iter()
+            .find(|(c, _)| c.contains("Another Section"));
+        let another_subsection = heading_info
+            .iter()
+            .find(|(c, _)| c.contains("Another Subsection"));
+
+        assert!(main_title.is_some(), "Main Title should be detected");
+        assert_eq!(main_title.unwrap().1, 1, "Main Title should be h1");
+
+        assert!(
+            section_underline.is_some(),
+            "Section with underline should be detected"
+        );
+        assert_eq!(
+            section_underline.unwrap().1,
+            2,
+            "Section with underline should be h2"
+        );
+
+        assert!(
+            subsection_no_underline.is_some(),
+            "Subsection without underline should be detected"
+        );
+        assert_eq!(
+            subsection_no_underline.unwrap().1,
+            3,
+            "Subsection without underline should be h3"
+        );
+
+        assert!(
+            another_section.is_some(),
+            "Another section should be detected"
+        );
+        assert_eq!(
+            another_section.unwrap().1,
+            2,
+            "Another section with underline should be h2"
+        );
+
+        assert!(
+            another_subsection.is_some(),
+            "Another subsection should be detected"
+        );
+        assert_eq!(
+            another_subsection.unwrap().1,
+            3,
+            "Another subsection without underline should be h3"
+        );
+    }
+
+    #[test]
+    fn test_border_stats_threshold() {
+        // Test BorderStats logic
+        let mut stats = BorderStats::default();
+
+        // Not enough headings
+        stats.total_count = 2;
+        stats.underlined_count = 1;
+        stats.non_underlined_count = 1;
+        assert!(
+            !stats.should_use_borders(),
+            "Should not use borders with < 3 headings"
+        );
+
+        // Clear pattern: 50% underlined (should use)
+        stats.total_count = 6;
+        stats.underlined_count = 3;
+        stats.non_underlined_count = 3;
+        assert!(
+            stats.should_use_borders(),
+            "Should use borders with clear 50/50 split"
+        );
+
+        // Too few underlined (< 20%)
+        stats.total_count = 10;
+        stats.underlined_count = 1;
+        stats.non_underlined_count = 9;
+        assert!(
+            !stats.should_use_borders(),
+            "Should not use borders when < 20% underlined"
+        );
+
+        // Too many underlined (> 80%)
+        stats.total_count = 10;
+        stats.underlined_count = 9;
+        stats.non_underlined_count = 1;
+        assert!(
+            !stats.should_use_borders(),
+            "Should not use borders when > 80% underlined"
+        );
+
+        // Edge case: exactly 20%
+        stats.total_count = 5;
+        stats.underlined_count = 1;
+        stats.non_underlined_count = 4;
+        assert!(
+            stats.should_use_borders(),
+            "Should use borders at 20% threshold"
+        );
+
+        // Edge case: exactly 80%
+        stats.total_count = 5;
+        stats.underlined_count = 4;
+        stats.non_underlined_count = 1;
+        assert!(
+            stats.should_use_borders(),
+            "Should use borders at 80% threshold"
         );
     }
 }

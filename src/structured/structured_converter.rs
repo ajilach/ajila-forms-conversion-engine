@@ -35,6 +35,7 @@ fn contains_fields(node: &StructuredNode) -> bool {
         StructuredNode::Group(g) => g.children.iter().any(contains_fields),
         StructuredNode::Repeatable(r) => contains_fields(&r.item),
         StructuredNode::Conditional(c) => contains_fields(&c.content),
+        StructuredNode::GridLayout(g) => g.elements.iter().any(|e| contains_fields(&e.node)),
         StructuredNode::Heading(_)
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
@@ -115,8 +116,31 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }))
             }
 
-            // TextBlock / Paragraph → ParagraphNode
+            // TextBlock / Paragraph → ParagraphNode (or multiple if rich text with multiple paragraphs)
             GroupKind::TextBlock | GroupKind::Paragraph => {
+                // Check if this is a single-node group with rich text containing multiple paragraphs
+                let nodes = self.doc.collect_nodes(group_idx);
+                if nodes.len() == 1 {
+                    let node = nodes[0];
+                    for hint in &node.hints {
+                        if let Hint::RichContent(rich_text) = hint {
+                            let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                            if paragraphs.len() > 1 {
+                                // Multiple paragraphs - wrap in a GroupNode
+                                return Some(StructuredNode::Group(GroupNode {
+                                    children: paragraphs,
+                                }));
+                            } else if paragraphs.len() == 1 {
+                                // Single paragraph - return it directly
+                                return Some(paragraphs.into_iter().next().unwrap());
+                            }
+                            // No paragraphs (all empty) - return None
+                            return None;
+                        }
+                    }
+                }
+
+                // Fallback: extract as single inline text
                 let text = self.extract_inline_text(group_idx);
                 if text.is_empty() {
                     None
@@ -184,6 +208,31 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
 
+            // GridLayout → StructuredNode::GridLayout
+            GroupKind::GridLayout { columns, spans } => {
+                use crate::structured::{GridLayout, GridLayoutElement};
+
+                let children = self.convert_children(group_idx);
+                if children.is_empty() {
+                    return None;
+                }
+
+                // Create grid layout elements with spans
+                let elements: Vec<GridLayoutElement> = children
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, node)| GridLayoutElement {
+                        span: spans.get(i).copied().unwrap_or(1),
+                        node,
+                    })
+                    .collect();
+
+                Some(StructuredNode::GridLayout(GridLayout {
+                    columns: *columns,
+                    elements,
+                }))
+            }
+
             // Section / Unknown → GroupNode
             GroupKind::Section | GroupKind::Unknown => {
                 let children = self.convert_children(group_idx);
@@ -230,8 +279,29 @@ impl<'a, 'b> Converter<'a, 'b> {
                 if content.trim().is_empty() {
                     None
                 } else {
+                    // Check if this node has rich text with multiple paragraphs
+                    for hint in &node.hints {
+                        if let Hint::RichContent(rich_text) = hint {
+                            let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                            if paragraphs.len() > 1 {
+                                // Multiple paragraphs - wrap in a GroupNode
+                                return Some(StructuredNode::Group(GroupNode {
+                                    children: paragraphs,
+                                }));
+                            } else if paragraphs.len() == 1 {
+                                // Single paragraph - return it directly
+                                return Some(paragraphs.into_iter().next().unwrap());
+                            }
+                            // No paragraphs (all empty) - fall through to None
+                        }
+                    }
+                    // No rich text or fallback - use plain text
                     let text = self.build_inline_text_from_node(node);
-                    Some(StructuredNode::Paragraph(ParagraphNode { content: text }))
+                    if text.is_empty() {
+                        None
+                    } else {
+                        Some(StructuredNode::Paragraph(ParagraphNode { content: text }))
+                    }
                 }
             }
             FlattenedNodeKind::Field { .. } => {
@@ -617,6 +687,32 @@ impl<'a, 'b> Converter<'a, 'b> {
                 result.push(InlineNode::Text(content.clone()));
             }
         }
+    }
+
+    /// Convert RichText to multiple ParagraphNodes (one per RichParagraph).
+    /// Skips empty paragraphs.
+    fn convert_rich_text_to_paragraph_nodes(&self, rich_text: &RichText) -> Vec<StructuredNode> {
+        rich_text
+            .paragraphs
+            .iter()
+            .filter(|para| !para.is_empty) // Skip empty paragraphs
+            .filter_map(|para| {
+                let mut inline_nodes = Vec::new();
+                for run in &para.runs {
+                    if !run.text.is_empty() {
+                        let inline_node = self.rich_run_to_inline_node(run);
+                        inline_nodes.push(inline_node);
+                    }
+                }
+                if inline_nodes.is_empty() {
+                    None
+                } else {
+                    Some(StructuredNode::Paragraph(ParagraphNode {
+                        content: InlineText::new(inline_nodes),
+                    }))
+                }
+            })
+            .collect()
     }
 
     /// Convert RichText to InlineNodes.

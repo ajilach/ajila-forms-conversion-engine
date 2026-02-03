@@ -65,6 +65,7 @@
 //! ```
 
 mod field_grouper;
+mod grid_template;
 mod heading_detector;
 mod html_generator;
 mod inline_field_detector;
@@ -74,10 +75,10 @@ mod no_print_detector;
 mod radio_button_detector;
 mod radio_button_grouper;
 mod repeatable_detector;
-mod structured_converter;
 mod text_block;
 
 pub use field_grouper::FieldGrouper;
+pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
 pub use html_generator::{HtmlConfig, generate_form_body, generate_html};
 pub use inline_field_detector::InlineFieldDetector;
@@ -87,7 +88,6 @@ pub use no_print_detector::NoPrintDetector;
 pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
 pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
-pub use structured_converter::convert as convert_to_structured;
 pub use text_block::TextBlockGrouper;
 
 use crate::flattened::Flattened;
@@ -174,6 +174,7 @@ pub fn run_analysis_pipeline(doc: &mut crate::document::Document) {
     HeadingDetector::new().process(doc);
     InlineFieldDetector::new().process(doc);
     LabelAttacher::new().process(doc);
+    GridTemplateDetector::new().process(doc);
     RepeatableDetector::new().process(doc);
 }
 
@@ -195,5 +196,6 @@ pub fn run_analysis_pipeline_with_context(
     HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
+    GridTemplateDetector::new().process_with_context(doc, ctx);
     RepeatableDetector::new().process_with_context(doc, ctx);
 }

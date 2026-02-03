@@ -335,7 +335,7 @@ fn process_state_with_context(
 
     // Output structured JSON if requested
     if config.structured {
-        let structured_nodes = crate::modules::convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         let json = serde_json::to_string_pretty(&structured_nodes)
             .map_err(|e| format!("Failed to serialize structured form: {}", e))?;

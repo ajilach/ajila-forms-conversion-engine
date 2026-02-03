@@ -258,13 +258,19 @@
 </div>
     </div>
     <h2>Endkunde</h2>
-    <div class="form-field">
-      <label for="TF_FamilyName">Nachname</label>
-      <input type="text" id="TF_FamilyName" name="TF_FamilyName" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="TF_FirstName">Vorname(n)</label>
-      <input type="text" id="TF_FirstName" name="TF_FirstName" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="TF_FamilyName">Nachname</label>
+          <input type="text" id="TF_FamilyName" name="TF_FamilyName" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="TF_FirstName">Vorname(n)</label>
+          <input type="text" id="TF_FirstName" name="TF_FirstName" class="form-input">
+        </div>
+      </div>
     </div>
     <p>FIM Company</p>
     <div class="form-field">
@@ -278,39 +284,59 @@
     <h2>Neuanlage (möglich ab dem 01. des aktuellen Monats)</h2>
     <p>Bankverbindung</p>
     <p>0319 00</p>
-    <div class="form-field">
-      <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-      <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
-      <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
+          <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
+        </div>
+      </div>
     </div>
     <p>.</p>
     <p>EUR</p>
     <p>Währung</p>
-    <div class="form-field">
-      <label for="Fur_Fonds">Bankverbindung</label>
-      <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Year">0319 00</label>
-      <input type="text" id="Year" name="Year" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Year">0319 00</label>
+          <input type="text" id="Year" name="Year" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Fur_Fonds">Bankverbindung</label>
+          <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Month">.</label>
+          <input type="text" id="Month" name="Month" class="form-input">
+        </div>
+      </div>
     </div>
     <p>%</p>
     <p>Ab:1</p>
     <p>01.</p>
-    <div class="form-field">
-      <label for="Month">.</label>
-      <input type="text" id="Month" name="Month" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-      <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
-      <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
+          <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
+        </div>
+      </div>
     </div>
     <p>.</p>
     <p>EUR</p>
@@ -328,11 +354,31 @@
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
           <div class="form-group">
-            <p>01.</p>
-            <div class="form-field">
-              <label for="Month">.</label>
-              <input type="text" id="Month" name="Month" class="form-input">
+            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Fonds_Provider">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
+                  <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Month">.</label>
+                  <input type="text" id="Month" name="Month" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Year" name="Year" class="form-input">
+                </div>
+              </div>
             </div>
+            <p>01.</p>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -340,28 +386,37 @@
       <div class="repeatable-items"></div>
       <button type="button" class="add-item-btn">+ Add Item</button>
     </div>
-    <div class="form-field">
-      <label for="Fonds_Provider">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
-      <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Satz_Percent">Satz in %</label>
-      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Year">Ab</label>
-      <input type="text" id="Year" name="Year" class="form-input">
-    </div>
     <h2>ISIN</h2>
+    <h2>Satz in %</h2>
+    <h2>Ab</h2>
     <div class="repeatable-container" id="repeatable_2" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
           <div class="form-group">
-            <p>01.</p>
-            <div class="form-field">
-              <label for="Month">.</label>
-              <input type="text" id="Month" name="Month" class="form-input">
+            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="ISIN" name="ISIN" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Month">.</label>
+                  <input type="text" id="Month" name="Month" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Year" name="Year" class="form-input">
+                </div>
+              </div>
             </div>
+            <p>01.</p>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -369,28 +424,39 @@
       <div class="repeatable-items"></div>
       <button type="button" class="add-item-btn">+ Add Item</button>
     </div>
-    <div class="form-field">
-      <label for="ISIN">Fondsprovider</label>
-      <input type="text" id="ISIN" name="ISIN" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Satz_Percent">Satz in %</label>
-      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Year">Ab</label>
-      <input type="text" id="Year" name="Year" class="form-input">
-    </div>
     <h2>Direktvereinbarung2</h2>
+    <h2>Fondsprovider</h2>
+    <h2>Satz in %</h2>
+    <h2>Ab</h2>
     <div class="repeatable-container" id="repeatable_3" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
           <div class="form-group">
-            <p>01.</p>
-            <div class="form-field">
-              <label for="Month">.</label>
-              <input type="text" id="Month" name="Month" class="form-input">
+            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Fonds_Provider_Direkt">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
+                  <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Month">.</label>
+                  <input type="text" id="Month" name="Month" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Year" name="Year" class="form-input">
+                </div>
+              </div>
             </div>
+            <p>01.</p>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -398,37 +464,37 @@
       <div class="repeatable-items"></div>
       <button type="button" class="add-item-btn">+ Add Item</button>
     </div>
-    <div class="form-field">
-      <label for="Fonds_Provider_Direkt">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
-      <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Satz_Percent_Direkt">ISIN</label>
-      <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
-    </div>
-    <div class="form-field">
-      <label for="Year">Ab</label>
-      <input type="text" id="Year" name="Year" class="form-input">
-    </div>
-    <p>Satz in %</p>
+    <h2>ISIN</h2>
+    <h2>Satz in %</h2>
+    <h2>Ab</h2>
     <div class="repeatable-container" id="repeatable_4" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
           <div class="form-group">
-            <div class="form-field">
-              <input type="text" id="ISIN" name="ISIN" class="form-input">
-            </div>
-            <div class="form-field">
-              <input type="text" id="Satz" name="Satz" class="form-input">
+            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="ISIN" name="ISIN" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Satz" name="Satz" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <label for="Month">.</label>
+                  <input type="text" id="Month" name="Month" class="form-input">
+                </div>
+              </div>
+              <div class="grid-item">
+                <div class="form-field">
+                  <input type="text" id="Year" name="Year" class="form-input">
+                </div>
+              </div>
             </div>
             <p>01.</p>
-            <div class="form-field">
-              <label for="Month">.</label>
-              <input type="text" id="Month" name="Month" class="form-input">
-            </div>
-            <div class="form-field">
-              <input type="text" id="Year" name="Year" class="form-input">
-            </div>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -437,17 +503,21 @@
       <button type="button" class="add-item-btn">+ Add Item</button>
     </div>
     <h2>Unterschrift(en) </h2>
-    <p>Bitte senden Sie das Formular bis zum drittletzten Werktag des Monats an Client Onboarding. Nach dieser Frist kann die Rückvergütung erst für die Bestände ab dem Folgemonat erfolgen.</p>
     <h2>CA/BD</h2>
-    <div class="form-field">
-      <label for="Global_SignaturePlace">Ort</label>
-      <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Global_SignaturePlace">Ort</label>
+          <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Global_SignatureDate">Datum</label>
+          <input type="text" id="Global_SignatureDate" name="Global_SignatureDate" class="form-input">
+        </div>
+      </div>
     </div>
-    <div class="form-field">
-      <label for="Global_SignatureDate">Datum</label>
-      <input type="text" id="Global_SignatureDate" name="Global_SignatureDate" class="form-input">
-    </div>
-    <p>Unterschrift</p>
     <div class="form-field">
       <label for="FullName">Vorname, Nachname</label>
       <input type="text" id="FullName" name="FullName" class="form-input">

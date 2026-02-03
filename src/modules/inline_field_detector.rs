@@ -240,6 +240,7 @@ impl AnalysisModule for InlineFieldDetector {
             .collect();
 
         // Find Field groups that are not already part of a labeled field, radio button, etc.
+        // Also consider MultiField groups.
         let field_groups: Vec<usize> = roots
             .iter()
             .filter(|&&idx| doc.is_field(idx))

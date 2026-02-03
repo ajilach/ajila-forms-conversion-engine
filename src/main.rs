@@ -6,7 +6,6 @@ mod modules;
 mod script_executor;
 mod scripting;
 mod structured;
-mod structured_diff;
 mod text_metrics;
 mod xfa;
 
@@ -357,7 +356,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let doc = doc
             .as_ref()
             .expect("Document should be created when --structured is used");
-        let structured_nodes = modules::convert_to_structured(doc);
+        let structured_nodes = crate::structured::convert(doc);
 
         let json = serde_json::to_string_pretty(&structured_nodes)
             .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
@@ -381,7 +380,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let doc = doc
             .as_ref()
             .expect("Document should be created when --html is used");
-        let structured_nodes = modules::convert_to_structured(doc);
+        let structured_nodes = crate::structured::convert(doc);
 
         let html_config = modules::HtmlConfig {
             form_id: doc_name.to_string(),
@@ -732,6 +731,162 @@ mod tests {
             "\"Kunde\" should be detected as H2. Found H2 headings: {:?}",
             h2_headings.iter().map(|(_, t)| t).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_aaai_comprehensive_heading_detection() {
+        // Comprehensive test for AAAI heading detection with border-based distinction
+        // This tests the full heading hierarchy as specified:
+        // - Title: h1
+        // - "Kunde" (first), "Unterschrift(en)": h2 (with underlines)
+        // - "Vertretungsberechtigte(r)", "Kunde" (second), "UBS Europe SE": h3 (without underlines)
+        use crate::document::{Document, GroupKind};
+        use crate::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Debug: Check if any nodes have borders
+        let mut border_count = 0;
+        let mut top_border_count = 0;
+        let mut bottom_border_count = 0;
+        let mut top_border_texts: Vec<String> = Vec::new();
+        let mut bottom_border_texts: Vec<String> = Vec::new();
+        for node in flattened.iter_nodes() {
+            if let Some(border) = &node.style.border {
+                border_count += 1;
+                // Check top edge (index 0)
+                if let Some(top_edge) = border.get_edge(0) {
+                    if top_edge.presence == "visible" && top_edge.thickness.is_some() {
+                        top_border_count += 1;
+                        if let crate::flattened::FlattenedNodeKind::Text { content, .. } = &node.kind {
+                            if !content.trim().is_empty() {
+                                top_border_texts.push(format!("'{}'", content.trim()));
+                            }
+                        }
+                    }
+                }
+                // Check bottom edge (index 2)
+                if let Some(bottom_edge) = border.get_edge(2) {
+                    if bottom_edge.presence == "visible" && bottom_edge.thickness.is_some() {
+                        bottom_border_count += 1;
+                        if let crate::flattened::FlattenedNodeKind::Text { content, .. } = &node.kind {
+                            if !content.trim().is_empty() {
+                                bottom_border_texts.push(format!("'{}'", content.trim()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("Total nodes with borders: {}", border_count);
+        println!("Nodes with visible top borders: {}", top_border_count);
+        println!("Text nodes with top borders: {}", top_border_texts.join(", "));
+        println!("Nodes with visible bottom borders: {}", bottom_border_count);
+        println!("Text nodes with bottom borders: {}", bottom_border_texts.join(", "));
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Collect all headings with their levels and text
+        let mut heading_info: Vec<(u8, String, f32)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
+                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                        .unwrap_or(0.0);
+                    heading_info.push((level, text, y_coord));
+                }
+            }
+        }
+
+        // Sort by y-coordinate for easier debugging
+        heading_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+        println!("\n=== AAAI Heading Structure ===");
+        for (level, text, y) in &heading_info {
+            println!("H{} (y={}): {}", level, y, text);
+        }
+
+        // Find specific headings
+        let title = heading_info.iter().find(|(_, text, _)| 
+            text.contains("Vereinbarung") && text.contains("Zahlungsaufträg"));
+        
+        let kunde_headings: Vec<_> = heading_info.iter()
+            .filter(|(_, text, _)| text.trim() == "Kunde")
+            .collect();
+        
+        let vertretung = heading_info.iter().find(|(_, text, _)| 
+            text.contains("Vertretungsberechtigte"));
+        
+        let unterschrift = heading_info.iter().find(|(_, text, _)| 
+            text.contains("Unterschrift"));
+        
+        let ubs = heading_info.iter().find(|(_, text, _)| 
+            text.contains("UBS Europe SE"));
+
+        // Assertions
+        assert!(title.is_some(), "Should find the main title");
+        assert_eq!(title.unwrap().0, 1, 
+            "Title 'Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service' should be h1");
+
+        assert!(kunde_headings.len() >= 2, 
+            "Should find at least 2 'Kunde' headings, found: {}", kunde_headings.len());
+        
+        // First "Kunde" should be h2 (with underline)
+        let first_kunde = kunde_headings.iter()
+            .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap())
+            .expect("Should have first Kunde heading");
+        assert_eq!(first_kunde.0, 2, 
+            "First 'Kunde' heading should be h2 (has underline)");
+
+        if let Some(vertretung) = vertretung {
+            println!("Vertretungsberechtigte level: h{}", vertretung.0);
+            assert_eq!(vertretung.0, 3, 
+                "'Vertretungsberechtigte(r)' should be h3 (no border)");
+        } else {
+            println!("Warning: 'Vertretungsberechtigte(r)' heading not found");
+        }
+
+        if let Some(unterschrift) = unterschrift {
+            assert_eq!(unterschrift.0, 2, 
+                "'Unterschrift(en)' should be h2 (has top border)");
+        } else {
+            println!("Warning: 'Unterschrift(en)' heading not found");
+        }
+
+        // Second "Kunde" (after Unterschrift) should be h3 (no border)
+        if kunde_headings.len() >= 2 {
+            let second_kunde = kunde_headings.iter()
+                .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap())
+                .expect("Should have second Kunde heading");
+            assert_eq!(second_kunde.0, 3,
+                "Second 'Kunde' heading should be h3 (no border)");
+        }
+
+        if let Some(ubs) = ubs {
+            println!("UBS Europe SE level: h{}", ubs.0);
+            assert_eq!(ubs.0, 3, 
+                "'UBS Europe SE' should be h3 (no border)");
+        } else {
+            println!("Warning: 'UBS Europe SE' heading not found");
+        }
+
+        println!("\n✓ AAAI comprehensive heading detection test passed!");
+        println!("✓ Border-based h2/h3 distinction working correctly:");
+        println!("  - Headings with borders (top or bottom): h2");
+        println!("  - Headings without borders: h3");
     }
 
     #[test]
@@ -4273,7 +4428,7 @@ mod tests {
     fn test_aaai_structured_output_has_expected_field_labels() {
         // Test that the structured output for AAAI contains fields with the expected labels
         use crate::document::Document;
-        use crate::modules::{convert_to_structured, run_analysis_pipeline};
+        use crate::modules::{run_analysis_pipeline};
         use crate::structured::{FieldNode, InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4311,7 +4466,7 @@ mod tests {
         }
 
         // Convert to structured form
-        let structured_nodes = convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         // Debug: print what nodes we got
         println!("\n=== Structured nodes ===");
@@ -4449,7 +4604,7 @@ mod tests {
         // Test that the structured output does not contain invisible/hidden field content
         // like "ffMandatory" which is a non-interactive field without a computed value
         use crate::document::Document;
-        use crate::modules::{convert_to_structured, run_analysis_pipeline};
+        use crate::modules::{run_analysis_pipeline};
         use crate::structured::{InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4465,7 +4620,7 @@ mod tests {
         run_analysis_pipeline(&mut doc);
 
         // Convert to structured form
-        let structured_nodes = convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         // Collect all text content from structured output
         fn collect_text_content(nodes: &[StructuredNode], texts: &mut Vec<String>) {
@@ -4544,7 +4699,7 @@ mod tests {
         // This is a regression test - the heading was missing when the analysis pipeline
         // was accidentally broken (modules removed from run_analysis_pipeline).
         use crate::document::Document;
-        use crate::modules::{convert_to_structured, run_analysis_pipeline};
+        use crate::modules::{run_analysis_pipeline};
         use crate::structured::{HeadingLevel, HeadingNode, InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4560,7 +4715,7 @@ mod tests {
         run_analysis_pipeline(&mut doc);
 
         // Convert to structured form
-        let structured_nodes = convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         // Find all H1 headings
         fn collect_h1_headings(nodes: &[StructuredNode], headings: &mut Vec<String>) {
@@ -4625,7 +4780,7 @@ mod tests {
         // Test that the H1 heading is the first element in the structured output.
         // This verifies the reading order sorting is working correctly.
         use crate::document::Document;
-        use crate::modules::{convert_to_structured, run_analysis_pipeline};
+        use crate::modules::{run_analysis_pipeline};
         use crate::structured::{HeadingLevel, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4641,7 +4796,7 @@ mod tests {
         run_analysis_pipeline(&mut doc);
 
         // Convert to structured form
-        let structured_nodes = convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         // The first element should be an H1 heading
         assert!(
@@ -4682,7 +4837,7 @@ mod tests {
         // These are screen-only interactive elements (relevant="-print") for adding/removing
         // repeatable sections. They should be filtered out by NoPrintDetector.
         use crate::document::Document;
-        use crate::modules::{convert_to_structured, run_analysis_pipeline};
+        use crate::modules::{run_analysis_pipeline};
         use crate::structured::{FieldNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
@@ -4698,7 +4853,7 @@ mod tests {
         run_analysis_pipeline(&mut doc);
 
         // Convert to structured form
-        let structured_nodes = convert_to_structured(&doc);
+        let structured_nodes = crate::structured::convert(&doc);
 
         // Collect all field names from the structured output
         fn collect_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {

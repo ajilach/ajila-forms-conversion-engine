@@ -114,6 +114,7 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Repeatable(r) => generate_repeatable(r, ctx, indent),
         StructuredNode::Group(g) => generate_group(g, ctx, indent),
         StructuredNode::Conditional(c) => generate_conditional(c, ctx, indent),
+        StructuredNode::GridLayout(g) => generate_grid_layout(g, ctx, indent),
         StructuredNode::Empty => String::new(),
     }
 }
@@ -456,6 +457,41 @@ fn generate_group(g: &GroupNode, ctx: &mut GeneratorContext, indent: usize) -> S
     for child in &g.children {
         html.push_str(&generate_node(child, ctx, indent + 1));
     }
+    html.push_str(&format!("{}</div>\n", ind));
+    html
+}
+
+fn generate_grid_layout(
+    g: &crate::structured::GridLayout,
+    ctx: &mut GeneratorContext,
+    indent: usize,
+) -> String {
+    let ind = "  ".repeat(indent);
+    let child_ind = "  ".repeat(indent + 1);
+
+    // Generate CSS grid with auto-sized columns
+    let grid_columns = format!("repeat({}, auto)", g.columns);
+    let mut html = format!(
+        "{}<div class=\"grid-layout\" style=\"display: grid; grid-template-columns: {}; gap: 1rem;\">\n",
+        ind, grid_columns
+    );
+
+    // Generate each grid element with its span
+    for element in &g.elements {
+        let span_style = if element.span > 1 {
+            format!(" style=\"grid-column: span {};\"", element.span)
+        } else {
+            String::new()
+        };
+
+        html.push_str(&format!(
+            "{}<div class=\"grid-item\"{}>\n",
+            child_ind, span_style
+        ));
+        html.push_str(&generate_node(&element.node, ctx, indent + 2));
+        html.push_str(&format!("{}</div>\n", child_ind));
+    }
+
     html.push_str(&format!("{}</div>\n", ind));
     html
 }

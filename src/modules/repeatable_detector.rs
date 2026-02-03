@@ -30,6 +30,10 @@ pub struct RepeatableSection {
     pub max_occurrences: Option<u32>,
     /// Bounding box of all members combined
     pub bounds: Option<Bounds>,
+    /// Node indices that belong to this repeatable section (from FlattenedKind::Group).
+    /// Used to determine which Document groups should be included based on structural
+    /// containment rather than spatial containment.
+    pub node_indices: Vec<usize>,
 }
 
 /// Detects repeatable sections by examining Hint::Occurrence on flattened nodes.
@@ -97,38 +101,72 @@ impl RepeatableDetector {
     fn find_repeatable_from_flattened(&self, doc: &Document) -> Vec<RepeatableSection> {
         let mut sections = Vec::new();
 
+        /// Search for groups with Occurrence hints and track node indices.
+        /// `current_index` tracks the current position in the flattened node iteration order.
         fn search_groups(
             children: &[crate::flattened::FlattenedKind],
             sections: &mut Vec<RepeatableSection>,
+            current_index: &mut usize,
         ) {
             for child in children {
-                if let crate::flattened::FlattenedKind::Group {
-                    hints,
-                    children: group_children,
-                    ..
-                } = child
-                {
-                    // Check if this group has an Occurrence hint
-                    for hint in hints {
-                        if let crate::flattened::Hint::Occurrence { min, max } = hint {
-                            // This is a repeatable group - check if actually repeatable
+                match child {
+                    crate::flattened::FlattenedKind::Group {
+                        hints,
+                        children: group_children,
+                        ..
+                    } => {
+                        // Check if this group has an Occurrence hint
+                        let occur_hint = hints.iter().find_map(|h| {
+                            if let crate::flattened::Hint::Occurrence { min, max } = h {
+                                Some((*min, *max))
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some((min, max)) = occur_hint {
                             let is_repeatable = max.map(|m| m > 1).unwrap_or(true);
                             if is_repeatable {
+                                // Collect node indices for this group
+                                let start_index = *current_index;
+                                let node_count = count_nodes(group_children);
+                                let node_indices: Vec<usize> =
+                                    (start_index..start_index + node_count).collect();
+
                                 // Calculate bounds from all nodes in this group
                                 let bounds = calculate_group_bounds(group_children);
+
                                 sections.push(RepeatableSection {
-                                    member_groups: vec![], // We don't track doc group indices here
-                                    min_occurrences: *min,
-                                    max_occurrences: *max,
+                                    member_groups: vec![],
+                                    min_occurrences: min,
+                                    max_occurrences: max,
                                     bounds,
+                                    node_indices,
                                 });
                             }
                         }
+                        // Recurse into children (this also advances current_index)
+                        search_groups(group_children, sections, current_index);
                     }
-                    // Recurse into children
-                    search_groups(group_children, sections);
+                    crate::flattened::FlattenedKind::Node(_) => {
+                        // Leaf node - increment the index
+                        *current_index += 1;
+                    }
                 }
             }
+        }
+
+        /// Count leaf nodes in a FlattenedKind tree.
+        fn count_nodes(children: &[crate::flattened::FlattenedKind]) -> usize {
+            children
+                .iter()
+                .map(|c| match c {
+                    crate::flattened::FlattenedKind::Node(_) => 1,
+                    crate::flattened::FlattenedKind::Group { children, .. } => {
+                        count_nodes(children)
+                    }
+                })
+                .sum()
         }
 
         fn calculate_group_bounds(
@@ -181,7 +219,8 @@ impl RepeatableDetector {
             }
         }
 
-        search_groups(&doc.source.children, &mut sections);
+        let mut current_index = 0;
+        search_groups(&doc.source.children, &mut sections, &mut current_index);
         sections
     }
 
@@ -223,6 +262,7 @@ impl RepeatableDetector {
                     min_occurrences: min,
                     max_occurrences: max,
                     bounds: doc.get_bounds(idx),
+                    node_indices: vec![], // Not used for leaf node-based detection
                 })
                 .collect();
         }
@@ -250,6 +290,7 @@ impl RepeatableDetector {
                 min_occurrences: *min,
                 max_occurrences: *max,
                 bounds: Some(*bounds),
+                node_indices: vec![], // Not used for leaf node-based detection
             };
             used.insert(*idx);
 
@@ -330,25 +371,25 @@ impl AnalysisModule for RepeatableDetector {
                         },
                     );
                 }
-            } else if section.member_groups.is_empty() && section.bounds.is_some() {
-                // Sections from find_repeatable_from_flattened have bounds but no member_groups.
-                // Find all ROOT groups (not referenced by other groups) whose bounds fall within
-                // the section bounds. This ensures we collect outermost groups like LabeledField
-                // rather than raw Leaf groups.
-                let bounds = section.bounds.unwrap();
+            } else if section.member_groups.is_empty() && !section.node_indices.is_empty() {
+                // Sections from find_repeatable_from_flattened have node_indices but no member_groups.
+                // Find all ROOT groups (not referenced by other groups) that contain at least one
+                // node from the section's node_indices. This ensures we only include groups that
+                // are structurally within the repeatable section, not sibling elements that happen
+                // to fall within the spatial bounds.
+                let node_index_set: HashSet<usize> = section.node_indices.iter().copied().collect();
                 let roots = doc.roots();
                 let mut contained_groups = Vec::new();
 
                 for &group_idx in &roots {
-                    if let Some(group_bounds) = doc.get_bounds(group_idx) {
-                        // Check if group is within the section bounds
-                        if group_bounds.x >= bounds.x
-                            && group_bounds.y >= bounds.y
-                            && group_bounds.right() <= bounds.right()
-                            && group_bounds.bottom() <= bounds.bottom()
-                        {
-                            contained_groups.push(group_idx);
-                        }
+                    // Check if this group contains any of the section's nodes
+                    let group_node_indices = doc.collect_node_indices(group_idx);
+                    let has_section_node = group_node_indices
+                        .iter()
+                        .any(|idx| node_index_set.contains(idx));
+
+                    if has_section_node {
+                        contained_groups.push(group_idx);
                     }
                 }
 

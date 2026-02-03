@@ -1,3 +1,7 @@
+mod structured_converter;
+
+pub use structured_converter::convert;
+
 use rust_decimal::Decimal;
 use serde::Serialize;
 
@@ -13,6 +17,21 @@ pub enum StructuredNode {
     Group(GroupNode),
     Conditional(ConditionalNode),
     Empty,
+    GridLayout(GridLayout),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridLayout {
+    pub columns: usize,
+    pub elements: Vec<GridLayoutElement>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridLayoutElement {
+    pub span: usize,
+    pub node: StructuredNode,
 }
 
 #[derive(Debug, Clone, Serialize)]

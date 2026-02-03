@@ -155,6 +155,14 @@ pub enum GroupKind {
     /// These are screen-only interactive elements like add/remove buttons
     /// that should not appear in print or structured output.
     NoPrint,
+
+    /// A grid layout with elements arranged in rows and columns
+    GridLayout {
+        /// Number of columns in the grid
+        columns: usize,
+        /// Column span for each child element (in order)
+        spans: Vec<usize>,
+    },
 }
 
 impl<'a> Document<'a> {
@@ -687,6 +695,7 @@ impl<'a> Document<'a> {
             },
             GroupKind::InlineField => "InlineField".to_string(),
             GroupKind::NoPrint => "NoPrint".to_string(),
+            GroupKind::GridLayout { columns, .. } => format!("GridLayout[{}cols]", columns),
         }
     }
 
