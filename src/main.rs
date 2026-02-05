@@ -98,15 +98,6 @@ struct Args {
     #[arg(long = "render", value_enum)]
     render_modes: Vec<RenderMode>,
 
-    /// Render exhaustively: click each selectable element, render, then unselect
-    #[arg(long)]
-    exhaustive: bool,
-
-    /// Merge exhaustive states into a single structured output with conditionals
-    /// (only applies when --exhaustive and --structured are both enabled)
-    #[arg(long)]
-    merge: bool,
-
     /// Scale factor for rendering (default: 1.5)
     #[arg(short, long, default_value = "1.5")]
     scale: f32,
@@ -349,54 +340,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // PIPELINE STAGE 5: Output (composable flags)
     // =========================================================================
 
-    // Handle --structured (single state, non-exhaustive mode only)
-    // Exhaustive mode will handle structured output per state
-    if args.structured {
-        let output_path = PathBuf::from(format!("{}_structured.json", doc_name));
-
-        vprintln!(quiet, "\nConverting to structured form...");
-        let doc = doc
-            .as_ref()
-            .expect("Document should be created when --structured is used");
-        let structured_nodes = crate::structured::convert(doc);
-
-        let json = serde_json::to_string_pretty(&structured_nodes)
-            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
-
-        std::fs::write(&output_path, json)
-            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-
-        vprintln!(
-            quiet,
-            "✓ Structured form saved to: {} ({} nodes)",
-            output_path.display(),
-            structured_nodes.len()
-        );
-    }
-
-    // Handle --html (single state, non-exhaustive mode only)
-    if args.html && !args.exhaustive {
-        let output_path = PathBuf::from(format!("{}.html", doc_name));
-
-        vprintln!(quiet, "\nGenerating HTML form...");
-        let doc = doc
-            .as_ref()
-            .expect("Document should be created when --html is used");
-        let structured_nodes = crate::structured::convert(doc);
-
-        let html_config = HtmlConfig {
-            form_id: doc_name.to_string(),
-            include_styles: true,
-            include_scripts: true,
-        };
-        let html = generate_html(&structured_nodes, &html_config);
-
-        std::fs::write(&output_path, html)
-            .map_err(|e| format!("Failed to write HTML file: {}", e))?;
-
-        vprintln!(quiet, "✓ HTML form saved to: {}", output_path.display());
-    }
-
     // Handle --render (composable: can specify multiple modes)
     for mode in &args.render_modes {
         let suffix = match mode {
@@ -429,8 +372,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vprintln!(quiet, "✓ Document rendered to: {}", output_path.display());
     }
 
-    // Handle --exhaustive
-    if args.exhaustive {
+    // Run exhaustive exploration when --structured or --html is requested
+    // This explores all form states and produces merged output
+    if args.structured || args.html {
         // Re-parse XFA nodes for XfaForm (it takes ownership)
         let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
         let nodes_for_form = XfaNode::parse(&xfa_data_for_form)?;
@@ -444,7 +388,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             locale,
             render_modes: args.render_modes.clone(),
             structured: args.structured,
-            merge: args.merge,
             html: args.html,
             quiet,
         };
@@ -4080,7 +4023,6 @@ mod tests {
             locale: "DE",
             render_modes: vec![],
             structured: true,
-            merge: true,
             quiet: true,
             html: false,
         };

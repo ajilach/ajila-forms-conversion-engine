@@ -70,8 +70,6 @@ pub struct ExhaustiveConfig<'a> {
     pub render_modes: Vec<RenderMode>,
     /// Whether to output structured JSON for each state
     pub structured: bool,
-    /// Whether to merge all states into a single structured output with conditionals
-    pub merge: bool,
     /// Whether to generate HTML output
     pub html: bool,
     /// Whether to suppress verbose output
@@ -168,7 +166,7 @@ pub fn run_exhaustive(
     let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
     let mut images_rendered = 0;
 
-    // If merging is enabled, collect all structured outputs for later merging
+    // Collect all structured outputs for merging
     let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =
         Vec::new();
 
@@ -176,15 +174,15 @@ pub fn run_exhaustive(
         let (rendered, structured_nodes) = process_state_with_context(state, &global_ctx, config)?;
         images_rendered += rendered;
 
-        if config.merge && config.structured {
+        if config.structured {
             if let Some(nodes) = structured_nodes {
                 structured_outputs.push((state.selections.clone(), nodes));
             }
         }
     }
 
-    // If merging is enabled, merge all structured outputs and write the merged JSON
-    if config.merge && config.structured && !structured_outputs.is_empty() {
+    // Merge all structured outputs and write the merged JSON
+    if config.structured && !structured_outputs.is_empty() {
         if !config.quiet {
             println!(
                 "\n  Merging {} structured outputs...",
@@ -405,23 +403,19 @@ fn process_state_with_context(
         images_rendered += 1;
     }
 
-    // Output structured JSON if requested
+    // Output structured JSON if requested - always write intermediate per-state files
     let structured_nodes = if config.structured {
         let nodes = crate::structured::convert(&doc);
 
-        // If not merging, write individual JSON files
-        if !config.merge {
-            let json = serde_json::to_string_pretty(&nodes)
-                .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+        // Write individual JSON files for each state (intermediate representations)
+        let json = serde_json::to_string_pretty(&nodes)
+            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
 
-            let json_path = std::path::PathBuf::from(format!(
-                "{}_{}.json",
-                config.doc_name, state.state_suffix
-            ));
-            std::fs::write(&json_path, json)
-                .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-            outputs.push(json_path.display().to_string());
-        }
+        let json_path =
+            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
+        std::fs::write(&json_path, json)
+            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+        outputs.push(json_path.display().to_string());
 
         Some(nodes)
     } else {
