@@ -397,6 +397,16 @@ pub enum Hint {
     /// Elements with relevant="-print" attribute should not appear in print output.
     /// This is used for screen-only interactive elements.
     NoPrint,
+
+    /// SOM (Scripting Object Model) path for this field
+    /// The full hierarchical path in the XFA form tree (e.g., "Form.Page.Subform.Field")
+    /// Used to uniquely identify fields and for radio button group naming.
+    SomPath(String),
+
+    /// SOM path of the parent exclGroup (for radio buttons)
+    /// When a field is inside an exclGroup, this stores the exclGroup's full SOM path.
+    /// Used by the radio button grouper to name the group correctly.
+    ExclGroupSomPath(String),
 }
 
 /// Region classification for master page (page background) content.
@@ -429,6 +439,8 @@ impl Hint {
             Hint::DataBinding { .. } => "DataBinding",
             Hint::MasterPage { .. } => "MasterPage",
             Hint::NoPrint => "NoPrint",
+            Hint::SomPath(_) => "SomPath",
+            Hint::ExclGroupSomPath(_) => "ExclGroupSomPath",
         }
     }
 }
@@ -1221,6 +1233,9 @@ pub struct FlattenContext<'a> {
     /// For fields inside an exclGroup: the parent exclGroup's current value
     /// Used to determine if a radio button should be rendered as "checked"
     pub parent_exclgroup_value: Option<String>,
+    /// For fields inside an exclGroup: the parent exclGroup's SOM path
+    /// Used for radio button group naming in the structured output
+    pub parent_exclgroup_som_path: Option<String>,
     /// Current SOM path - tracks the path as we descend into the tree
     /// Used for path-based lookups in computed_values
     pub current_path: String,
@@ -1243,6 +1258,7 @@ impl<'a> FlattenContext<'a> {
             id_to_field,
             inherited_presence: None,
             parent_exclgroup_value: None,
+            parent_exclgroup_som_path: None,
             current_path: String::new(),
             pending_occur: None,
             inherited_hints: Vec::new(),
@@ -1261,6 +1277,7 @@ impl<'a> FlattenContext<'a> {
             id_to_field,
             inherited_presence: None,
             parent_exclgroup_value: None,
+            parent_exclgroup_som_path: None,
             current_path: initial_path,
             pending_occur: None,
             inherited_hints: Vec::new(),
@@ -1278,6 +1295,7 @@ impl<'a> FlattenContext<'a> {
             id_to_field: &EMPTY_STR,
             inherited_presence: None,
             parent_exclgroup_value: None,
+            parent_exclgroup_som_path: None,
             current_path: String::new(),
             pending_occur: None,
             inherited_hints: Vec::new(),
@@ -1291,6 +1309,7 @@ impl<'a> FlattenContext<'a> {
             id_to_field: self.id_to_field,
             inherited_presence: self.inherited_presence,
             parent_exclgroup_value: self.parent_exclgroup_value.clone(),
+            parent_exclgroup_som_path: self.parent_exclgroup_som_path.clone(),
             current_path: self.current_path.clone(),
             pending_occur: self.pending_occur,
             inherited_hints: self.inherited_hints.clone(),
@@ -1321,6 +1340,14 @@ impl<'a> FlattenContext<'a> {
     pub fn with_exclgroup_value(&self, value: String) -> FlattenContext<'a> {
         let mut ctx = self.derive();
         ctx.parent_exclgroup_value = Some(value);
+        ctx
+    }
+
+    /// Create a child context with the parent exclGroup's SOM path
+    /// Used when recursing into exclGroup children to track the group's path
+    pub fn with_exclgroup_som_path(&self, som_path: String) -> FlattenContext<'a> {
+        let mut ctx = self.derive();
+        ctx.parent_exclgroup_som_path = Some(som_path);
         ctx
     }
 
@@ -2108,7 +2135,7 @@ impl Flattened {
                 let mut field_node = FlattenedNode::new_field_with_checked(
                     field_name.clone(),
                     field_value,
-                    field_name,
+                    field_name.clone(),
                     pos.x,
                     pos.y,
                     pos.width,
@@ -2117,6 +2144,13 @@ impl Flattened {
                     node.rotate,
                     is_checked,
                 );
+                // Add SomPath hint with full XFA path
+                let som_path = ctx.get_full_path(&field_name);
+                field_node.add_hint(Hint::SomPath(som_path));
+                // Add ExclGroupSomPath hint if inside an exclGroup
+                if let Some(ref exclgroup_path) = ctx.parent_exclgroup_som_path {
+                    field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));
+                }
                 // Add FieldBehavior hint with access level
                 field_node.add_hint(Hint::FieldBehavior {
                     access,
@@ -2694,7 +2728,7 @@ impl Flattened {
                         let mut field_node = FlattenedNode::new_field_with_checked(
                             field_name.clone(),
                             field_value,
-                            field_name,
+                            field_name.clone(),
                             content_pos.x,
                             content_pos.y,
                             content_pos.width,
@@ -2703,6 +2737,13 @@ impl Flattened {
                             node.rotate,
                             is_checked,
                         );
+                        // Add SomPath hint with full XFA path
+                        let som_path = child_ctx.get_full_path(&field_name);
+                        field_node.add_hint(Hint::SomPath(som_path));
+                        // Add ExclGroupSomPath hint if inside an exclGroup
+                        if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
+                            field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));
+                        }
                         // Add FieldBehavior hint with access level
                         field_node.add_hint(Hint::FieldBehavior {
                             access,
@@ -2902,7 +2943,7 @@ impl Flattened {
                                 let access = Self::extract_field_access(node);
 
                                 let mut field_node = FlattenedNode::new_field_with_checked(
-                                    field_name,
+                                    field_name.clone(),
                                     field_value.clone(),
                                     field_value,
                                     content_pos.x,
@@ -2913,6 +2954,13 @@ impl Flattened {
                                     node.rotate,
                                     is_checked,
                                 );
+                                // Add SomPath hint with full XFA path
+                                let som_path = child_ctx.get_full_path(&field_name);
+                                field_node.add_hint(Hint::SomPath(som_path));
+                                // Add ExclGroupSomPath hint if inside an exclGroup
+                                if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
+                                    field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));
+                                }
                                 // Add FieldBehavior hint with access level
                                 field_node.add_hint(Hint::FieldBehavior {
                                     access,
@@ -3061,12 +3109,17 @@ impl Flattened {
                             };
 
                             // Create a child context with the exclGroup value for radio button checked state
-                            let exclgroup_ctx =
+                            // Also set the exclGroup's SOM path so children can reference it
+                            let exclgroup_som_path = child_ctx.current_path.clone();
+                            let exclgroup_ctx = {
+                                let ctx_with_path =
+                                    child_ctx.with_exclgroup_som_path(exclgroup_som_path);
                                 if let Some(value) = exclgroup_value.filter(|v| !v.is_empty()) {
-                                    child_ctx.with_exclgroup_value(value)
+                                    ctx_with_path.with_exclgroup_value(value)
                                 } else {
-                                    child_ctx.clone()
-                                };
+                                    ctx_with_path
+                                }
+                            };
 
                             // Recurse into exclGroup children with the computed content position
                             // The exclGroup's layout applies to its children (the fields)

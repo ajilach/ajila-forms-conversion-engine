@@ -5,8 +5,8 @@
 
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, ParagraphNode, RepeatableNode, StructuredNode,
-    TableNode,
+    ImageNode, InlineNode, InlineText, InputValue, NameValue, ParagraphNode, RepeatableNode,
+    StructuredNode, TableNode,
 };
 
 /// Configuration for HTML generation
@@ -302,7 +302,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
                 "<input type=\"date\" id=\"{}\" name=\"{}\"{}",
                 name, name, placeholder
             );
-            if let Some(InputValue::Date(v)) = &f.value {
+            if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
             attrs.push_str(" class=\"form-input\">");
@@ -314,7 +314,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
                 "<input type=\"email\" id=\"{}\" name=\"{}\"{}",
                 name, name, placeholder
             );
-            if let Some(InputValue::Email(v)) = &f.value {
+            if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
             attrs.push_str(" class=\"form-input\">");
@@ -326,15 +326,15 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
                 "<input type=\"tel\" id=\"{}\" name=\"{}\"{}",
                 name, name, placeholder
             );
-            if let Some(InputValue::Tel(v)) = &f.value {
+            if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
             attrs.push_str(" class=\"form-input\">");
             attrs
         }
 
-        FieldType::Checkbox => {
-            let checked = matches!(&f.value, Some(InputValue::Checkbox(true)));
+        FieldType::Bool => {
+            let checked = matches!(&f.value, Some(InputValue::Bool(true)));
             let checked_attr = if checked { " checked" } else { "" };
             format!(
                 "<input type=\"checkbox\" id=\"{}\" name=\"{}\" class=\"form-checkbox\"{}>",
@@ -342,27 +342,31 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
             )
         }
 
-        FieldType::Radio { options, .. } => {
+        FieldType::Radio { options } => {
             let mut html = format!("<div class=\"radio-group\" data-field=\"{}\">\n", name);
             let selected = f.value.as_ref().and_then(|v| {
-                if let InputValue::Radio(s) = v {
+                if let InputValue::Text(s) = v {
                     Some(s.as_str())
                 } else {
                     None
                 }
             });
 
-            for (i, option) in options.iter().enumerate() {
+            for (i, opt) in options.iter().enumerate() {
                 let option_id = format!("{}_{}", name, i);
-                let checked = selected == Some(option.as_str());
+                let opt_value = match &opt.value {
+                    InputValue::Text(s) => s.as_str(),
+                    _ => &opt.name,
+                };
+                let checked = selected == Some(opt_value);
                 let checked_attr = if checked { " checked" } else { "" };
                 html.push_str(&format!(
                     "  <label class=\"radio-option\">\n    <input type=\"radio\" id=\"{}\" name=\"{}\" value=\"{}\" class=\"form-radio\"{}>\n    <span>{}</span>\n  </label>\n",
                     escape_attr(&option_id),
                     name,
-                    escape_attr(option),
+                    escape_attr(opt_value),
                     checked_attr,
-                    escape_html(option)
+                    escape_html(&opt.name)
                 ));
             }
             html.push_str("</div>");
@@ -377,24 +381,28 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
             html.push_str("  <option value=\"\">-- Select --</option>\n");
 
             let selected = f.value.as_ref().and_then(|v| {
-                if let InputValue::Select(s) = v {
+                if let InputValue::Text(s) = v {
                     Some(s.as_str())
                 } else {
                     None
                 }
             });
 
-            for option in options {
-                let selected_attr = if selected == Some(option.as_str()) {
+            for opt in options {
+                let opt_value = match &opt.value {
+                    InputValue::Text(s) => s.as_str(),
+                    _ => &opt.name,
+                };
+                let selected_attr = if selected == Some(opt_value) {
                     " selected"
                 } else {
                     ""
                 };
                 html.push_str(&format!(
                     "  <option value=\"{}\"{}>{}</option>\n",
-                    escape_attr(option),
+                    escape_attr(opt_value),
                     selected_attr,
-                    escape_html(option)
+                    escape_html(&opt.name)
                 ));
             }
             html.push_str("</select>");
@@ -499,6 +507,13 @@ fn generate_grid_layout(
 fn generate_conditional(c: &ConditionalNode, ctx: &mut GeneratorContext, indent: usize) -> String {
     let ind = "  ".repeat(indent);
 
+    // Skip "default" conditionals (where field_name is "unknown")
+    // These represent the initial/default form state before any selections
+    // Their content typically duplicates content in other specific conditionals
+    if c.condition.field_name.as_str() == "unknown" {
+        return String::new();
+    }
+
     let condition_attr = encode_condition(&c.condition);
     let condition_id = ctx.next_id("conditional");
 
@@ -517,12 +532,7 @@ fn encode_condition(cond: &FieldCondition) -> String {
     let value_str = match &cond.value {
         InputValue::Text(s) => format!("text:{}", s),
         InputValue::Number(n) => format!("number:{}", n),
-        InputValue::Date(s) => format!("date:{}", s),
-        InputValue::Email(s) => format!("email:{}", s),
-        InputValue::Tel(s) => format!("tel:{}", s),
-        InputValue::Checkbox(b) => format!("checkbox:{}", b),
-        InputValue::Radio(s) => format!("radio:{}", s),
-        InputValue::Select(s) => format!("select:{}", s),
+        InputValue::Bool(b) => format!("bool:{}", b),
     };
     escape_attr(&format!("{}={}", cond.field_name, value_str))
 }
@@ -959,11 +969,14 @@ fn generate_scripts(form_id: &str) -> String {
   }}
 
   function getFieldValue(fieldName) {{
+    // Escape special CSS selector characters in field name
+    const escapedName = CSS.escape(fieldName);
+    
     // Try to find the field by name
-    const field = form.querySelector(`[name="${{fieldName}}"]`);
+    const field = form.querySelector(`[name="${{escapedName}}"]`);
     if (!field) {{
       // Try radio buttons
-      const radios = form.querySelectorAll(`[name="${{fieldName}}"]`);
+      const radios = form.querySelectorAll(`[name="${{escapedName}}"]`);
       if (radios.length > 0) {{
         const checked = Array.from(radios).find(r => r.checked);
         return checked ? {{ type: 'radio', value: checked.value }} : null;
@@ -976,7 +989,7 @@ fn generate_scripts(form_id: &str) -> String {
     }}
 
     if (field.type === 'radio') {{
-      const radios = form.querySelectorAll(`[name="${{fieldName}}"]`);
+      const radios = form.querySelectorAll(`[name="${{escapedName}}"]`);
       const checked = Array.from(radios).find(r => r.checked);
       return checked ? {{ type: 'radio', value: checked.value }} : null;
     }}
@@ -1095,10 +1108,18 @@ mod tests {
             name: "choice".to_string(),
             label: Some(InlineText::plain("Choose one")),
             input_type: FieldType::Radio {
-                options: vec!["Option A".to_string(), "Option B".to_string()],
-                option_names: None,
+                options: vec![
+                    NameValue {
+                        name: "Option A".to_string(),
+                        value: InputValue::Text("Option A".to_string()),
+                    },
+                    NameValue {
+                        name: "Option B".to_string(),
+                        value: InputValue::Text("Option B".to_string()),
+                    },
+                ],
             },
-            value: Some(InputValue::Radio("Option A".to_string())),
+            value: Some(InputValue::Text("Option A".to_string())),
             placeholder: None,
         };
 
@@ -1145,14 +1166,16 @@ mod tests {
 
     #[test]
     fn test_generate_conditional() {
+        use crate::xfa::scripting::SomPath;
+
         let content = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Conditional content"),
         });
 
         let conditional = ConditionalNode {
             condition: FieldCondition {
-                field_name: "toggle".to_string(),
-                value: InputValue::Checkbox(true),
+                field_name: SomPath::new("toggle"),
+                value: InputValue::Bool(true),
             },
             content: Box::new(content),
         };

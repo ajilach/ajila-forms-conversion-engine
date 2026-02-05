@@ -18,6 +18,7 @@ use std::path::Path;
 use crate::RenderMode;
 use crate::document::modules::{GlobalContext, GlobalFontStats};
 use crate::flattened::Flattened;
+use crate::structured::Selection;
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
@@ -69,6 +70,8 @@ pub struct ExhaustiveConfig<'a> {
     pub render_modes: Vec<RenderMode>,
     /// Whether to output structured JSON for each state
     pub structured: bool,
+    /// Whether to merge all states into a single structured output with conditionals
+    pub merge: bool,
     /// Whether to generate HTML output
     pub html: bool,
     /// Whether to suppress verbose output
@@ -85,8 +88,8 @@ pub struct ExhaustiveResult {
 struct CollectedState {
     /// The flattened data for this state
     flattened: Flattened,
-    /// The selections that led to this state
-    selections: Vec<SomPath>,
+    /// The selections that led to this state (with group path info)
+    selections: Vec<Selection>,
     /// State suffix for file naming
     state_suffix: String,
 }
@@ -165,8 +168,63 @@ pub fn run_exhaustive(
     let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
     let mut images_rendered = 0;
 
+    // If merging is enabled, collect all structured outputs for later merging
+    let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =
+        Vec::new();
+
     for state in &collected_states {
-        images_rendered += process_state_with_context(state, &global_ctx, config)?;
+        let (rendered, structured_nodes) = process_state_with_context(state, &global_ctx, config)?;
+        images_rendered += rendered;
+
+        if config.merge && config.structured {
+            if let Some(nodes) = structured_nodes {
+                structured_outputs.push((state.selections.clone(), nodes));
+            }
+        }
+    }
+
+    // If merging is enabled, merge all structured outputs and write the merged JSON
+    if config.merge && config.structured && !structured_outputs.is_empty() {
+        if !config.quiet {
+            println!(
+                "\n  Merging {} structured outputs...",
+                structured_outputs.len()
+            );
+        }
+
+        let merge_inputs: Vec<crate::structured::MergeInput> = structured_outputs
+            .into_iter()
+            .map(|(selections, nodes)| crate::structured::MergeInput::new(selections, nodes))
+            .collect();
+
+        let merger = crate::structured::RecursiveMerger::new(merge_inputs);
+        let merged = merger.merge();
+
+        // Write merged JSON
+        let json = serde_json::to_string_pretty(&merged)
+            .map_err(|e| format!("Failed to serialize merged structured form: {}", e))?;
+
+        let json_path = std::path::PathBuf::from(format!("{}_merged.json", config.doc_name));
+        std::fs::write(&json_path, json)
+            .map_err(|e| format!("Failed to write merged JSON file: {}", e))?;
+
+        if !config.quiet {
+            println!("    ✓ Merged output: {}", json_path.display());
+        }
+
+        // Generate merged HTML if requested
+        if config.html {
+            let html_config = crate::html::HtmlConfig::default();
+            let html = crate::html::generate_html(&merged, &html_config);
+
+            let html_path = std::path::PathBuf::from(format!("{}_merged.html", config.doc_name));
+            std::fs::write(&html_path, html)
+                .map_err(|e| format!("Failed to write merged HTML file: {}", e))?;
+
+            if !config.quiet {
+                println!("    ✓ Merged HTML: {}", html_path.display());
+            }
+        }
     }
 
     if !config.quiet {
@@ -185,13 +243,17 @@ pub fn run_exhaustive(
 /// This does NOT run the analysis pipeline yet.
 fn collect_all_states(
     form: &mut XfaForm,
-    current_selections: Vec<SomPath>,
+    current_selections: Vec<Selection>,
     rendered_states: &mut HashSet<Vec<SomPath>>,
     collected_states: &mut Vec<CollectedState>,
     config: &ExhaustiveConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Get the canonical state representation
-    let state = get_current_state(&current_selections);
+    // Get the canonical state representation (using field paths for deduplication)
+    let field_paths: Vec<SomPath> = current_selections
+        .iter()
+        .map(|s| s.field_path.clone())
+        .collect();
+    let state = get_current_state(&field_paths);
 
     // Skip if we've already collected this state
     if rendered_states.contains(&state) {
@@ -207,7 +269,7 @@ fn collect_all_states(
     } else {
         current_selections
             .iter()
-            .map(|path| path.name().to_string())
+            .map(|sel| sel.field_path.name().to_string())
             .collect::<Vec<_>>()
             .join("_")
     };
@@ -228,15 +290,18 @@ fn collect_all_states(
     // Recursively explore other states
     for field in &visible_fields {
         // Skip if already selected
-        if current_selections.iter().any(|p| p == &field.path) {
+        if current_selections
+            .iter()
+            .any(|s| s.field_path == field.path)
+        {
             continue;
         }
 
         // For radio buttons, skip if a sibling from the same group is selected
         if field.is_radio() {
             if let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
-                let group_already_has_selection = current_selections.iter().any(|sel_path| {
-                    form.find_excl_group_for_field(sel_path.as_str())
+                let group_already_has_selection = current_selections.iter().any(|sel| {
+                    form.find_excl_group_for_field(sel.field_path.as_str())
                         .map(|g| g == excl_group)
                         .unwrap_or(false)
                 });
@@ -254,8 +319,8 @@ fn collect_all_states(
 
         // Apply all current selections
         let mut new_selections = current_selections.clone();
-        for sel_path in &current_selections {
-            let _ = new_form.select_radio_button(sel_path.as_str());
+        for sel in &current_selections {
+            let _ = new_form.select_radio_button(sel.field_path.as_str());
             new_form.refresh()?;
         }
 
@@ -268,7 +333,14 @@ fn collect_all_states(
             }
         }
 
-        new_selections.push(field.path.clone());
+        // Create the selection with group path info
+        // For radio buttons, look up the exclGroup path from the form
+        let group_path = if field.is_radio() {
+            new_form.find_excl_group_for_field(field.path.as_str())
+        } else {
+            None
+        };
+        new_selections.push(Selection::new(field.path.clone(), group_path));
         new_form.refresh()?;
 
         // Recursively collect from this new state
@@ -286,11 +358,12 @@ fn collect_all_states(
 
 /// Pass 2: Process a collected state using the global context.
 /// Runs analysis pipeline with global statistics and generates outputs.
+/// Returns (images_rendered, optional_structured_nodes).
 fn process_state_with_context(
     state: &CollectedState,
     global_ctx: &GlobalContext,
     config: &ExhaustiveConfig,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<(usize, Option<Vec<crate::structured::StructuredNode>>), Box<dyn std::error::Error>> {
     let mut images_rendered = 0;
 
     // Create Document and run analysis pipeline with global context
@@ -333,18 +406,27 @@ fn process_state_with_context(
     }
 
     // Output structured JSON if requested
-    if config.structured {
-        let structured_nodes = crate::structured::convert(&doc);
+    let structured_nodes = if config.structured {
+        let nodes = crate::structured::convert(&doc);
 
-        let json = serde_json::to_string_pretty(&structured_nodes)
-            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
+        // If not merging, write individual JSON files
+        if !config.merge {
+            let json = serde_json::to_string_pretty(&nodes)
+                .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
 
-        let json_path =
-            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-        outputs.push(json_path.display().to_string());
-    }
+            let json_path = std::path::PathBuf::from(format!(
+                "{}_{}.json",
+                config.doc_name, state.state_suffix
+            ));
+            std::fs::write(&json_path, json)
+                .map_err(|e| format!("Failed to write JSON file: {}", e))?;
+            outputs.push(json_path.display().to_string());
+        }
+
+        Some(nodes)
+    } else {
+        None
+    };
 
     if !config.quiet {
         println!(
@@ -353,12 +435,12 @@ fn process_state_with_context(
             state
                 .selections
                 .iter()
-                .map(|p| p.as_str())
+                .map(|sel| sel.field_path.as_str())
                 .collect::<Vec<_>>()
         );
     }
 
-    Ok(images_rendered)
+    Ok((images_rendered, structured_nodes))
 }
 
 /// Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections).

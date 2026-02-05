@@ -102,6 +102,11 @@ struct Args {
     #[arg(long)]
     exhaustive: bool,
 
+    /// Merge exhaustive states into a single structured output with conditionals
+    /// (only applies when --exhaustive and --structured are both enabled)
+    #[arg(long)]
+    merge: bool,
+
     /// Scale factor for rendering (default: 1.5)
     #[arg(short, long, default_value = "1.5")]
     scale: f32,
@@ -439,6 +444,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             locale,
             render_modes: args.render_modes.clone(),
             structured: args.structured,
+            merge: args.merge,
             html: args.html,
             quiet,
         };
@@ -4052,6 +4058,180 @@ mod tests {
         );
 
         println!("\n✓ Field enumeration shows distinct fields per conditional state");
+    }
+
+    #[test]
+    fn test_aaab_merged_has_expected_conditionals() {
+        // Test that merging AAAB exhaustive outputs produces the expected conditionals:
+        // - One for "Neuanlage..." (h2)
+        // - One for "Änderung" (h2)
+        // - One for "Löschung" (h2)
+        // - One or more inside "Löschung" for nested radio selections
+        // - Possibly one for the default state if different
+        use crate::RenderMode;
+        use crate::exhaustive::{ExhaustiveConfig, run_exhaustive};
+        use crate::structured::{ConditionalNode, InlineNode, StructuredNode};
+        use std::path::Path;
+
+        let config = ExhaustiveConfig {
+            pdf_path: Path::new("input/AAAB_019_DE.pdf"),
+            doc_name: "test_aaab_merged",
+            scale: 1.0,
+            locale: "DE",
+            render_modes: vec![],
+            structured: true,
+            merge: true,
+            quiet: true,
+            html: false,
+        };
+
+        // Clean up any existing test files
+        let _ = std::fs::remove_file("test_aaab_merged_merged.json");
+
+        // Create a fresh form
+        let xfa_data =
+            extract_xfa_from_pdf(config.pdf_path.to_str().unwrap()).expect("Failed to read PDF");
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
+        let mut form = XfaForm::new(nodes).expect("Failed to create form");
+
+        // Run exhaustive with merge
+        let result = run_exhaustive(&mut form, &config);
+        assert!(
+            result.is_ok(),
+            "Exhaustive run should succeed: {:?}",
+            result.err()
+        );
+
+        // Read the merged output
+        let merged_json = std::fs::read_to_string("test_aaab_merged_merged.json")
+            .expect("Should have created merged JSON");
+        let merged: Vec<serde_json::Value> =
+            serde_json::from_str(&merged_json).expect("Should parse merged JSON");
+
+        // Helper to count conditionals recursively
+        fn count_conditionals(nodes: &[serde_json::Value]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                if node.get("type").and_then(|t| t.as_str()) == Some("conditional") {
+                    count += 1;
+                    // Recurse into content
+                    if let Some(content) = node.get("content") {
+                        if let Some(children) = content.get("children").and_then(|c| c.as_array()) {
+                            count += count_conditionals(children);
+                        }
+                        // Single content
+                        count += count_conditionals(&[content.clone()]);
+                    }
+                } else if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+                    count += count_conditionals(children);
+                } else if let Some(elements) = node.get("elements").and_then(|e| e.as_array()) {
+                    let nodes: Vec<_> = elements
+                        .iter()
+                        .filter_map(|e| e.get("node"))
+                        .cloned()
+                        .collect();
+                    count += count_conditionals(&nodes);
+                } else if let Some(item) = node.get("item") {
+                    count += count_conditionals(&[item.clone()]);
+                }
+            }
+            count
+        }
+
+        // Helper to find conditionals with specific h2 heading text
+        fn has_h2_with_prefix(node: &serde_json::Value, prefix: &str) -> bool {
+            if node.get("type").and_then(|t| t.as_str()) == Some("heading") {
+                if node.get("level").and_then(|l| l.as_str()) == Some("h2") {
+                    if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
+                        for item in content {
+                            if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
+                                if text.starts_with(prefix) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+
+        fn find_conditional_with_h2<'a>(nodes: &'a [serde_json::Value], h2_prefix: &str) -> bool {
+            for node in nodes {
+                if node.get("type").and_then(|t| t.as_str()) == Some("conditional") {
+                    if let Some(content) = node.get("content") {
+                        // Check if content is the h2 directly
+                        if has_h2_with_prefix(content, h2_prefix) {
+                            return true;
+                        }
+                        // Check inside group children
+                        if let Some(children) = content.get("children").and_then(|c| c.as_array()) {
+                            if children
+                                .first()
+                                .map(|n| has_h2_with_prefix(n, h2_prefix))
+                                .unwrap_or(false)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+
+        let total_conditionals = count_conditionals(&merged);
+        println!(
+            "Total conditionals in merged output: {}",
+            total_conditionals
+        );
+
+        // Should have at least 4 conditionals:
+        // 1. Neuanlage (or default showing Neuanlage)
+        // 2. Änderung
+        // 3. Löschung
+        // 4. At least one inside Löschung for inner selections
+        assert!(
+            total_conditionals >= 4,
+            "Should have at least 4 conditionals, got {}",
+            total_conditionals
+        );
+
+        // Check for the three main h2 section conditionals
+        let has_neuanlage = find_conditional_with_h2(&merged, "Neuanlage");
+        let has_aenderung = find_conditional_with_h2(&merged, "Änderung");
+        let has_loeschung = find_conditional_with_h2(&merged, "Löschung");
+
+        println!("Found Neuanlage conditional: {}", has_neuanlage);
+        println!("Found Änderung conditional: {}", has_aenderung);
+        println!("Found Löschung conditional: {}", has_loeschung);
+
+        assert!(
+            has_neuanlage,
+            "Should have conditional for Neuanlage section"
+        );
+        assert!(
+            has_aenderung,
+            "Should have conditional for Änderung section"
+        );
+        assert!(
+            has_loeschung,
+            "Should have conditional for Löschung section"
+        );
+
+        // Clean up test files
+        let _ = std::fs::remove_file("test_aaab_merged_merged.json");
+        // Also clean up any individual state files that might have been created
+        for entry in std::fs::read_dir(".").unwrap() {
+            if let Ok(entry) = entry {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("test_aaab_merged") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+
+        println!("\n✓ AAAB merged output has expected conditional structure");
     }
 
     #[test]

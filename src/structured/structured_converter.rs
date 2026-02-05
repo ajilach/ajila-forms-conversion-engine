@@ -25,7 +25,7 @@ use crate::flattened::{
 };
 use crate::structured::{
     FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
-    ParagraphNode, RepeatableNode, StructuredNode,
+    NameValue, ParagraphNode, RepeatableNode, StructuredNode,
 };
 
 /// Check if a StructuredNode contains any fields (recursively).
@@ -356,6 +356,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let mut options = Vec::new();
         let mut field_names = Vec::new();
         let mut selected_value: Option<String> = None;
+        let mut excl_group_som_path: Option<String> = None;
 
         for &child_idx in &group.children {
             if let Some(child_group) = self.doc.get_group(child_idx) {
@@ -377,6 +378,15 @@ impl<'a, 'b> Converter<'a, 'b> {
                             if *is_checked == Some(true) {
                                 selected_value = options.last().cloned();
                             }
+                            // Extract ExclGroupSomPath from first field's hints
+                            if excl_group_som_path.is_none() {
+                                for hint in &node.hints {
+                                    if let Hint::ExclGroupSomPath(path) = hint {
+                                        excl_group_som_path = Some(path.clone());
+                                        break;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -387,16 +397,27 @@ impl<'a, 'b> Converter<'a, 'b> {
             return None;
         }
 
-        let name = field_names.join("_");
+        // Use the exclGroup's SOM path as the field name, panic if missing
+        let name = excl_group_som_path
+            .expect("Radio button field must have ExclGroupSomPath hint. Field names found: {:?}");
+
+        // Build NameValue options from field_names and options (labels)
+        let name_values: Vec<NameValue> = field_names
+            .into_iter()
+            .zip(options.into_iter())
+            .map(|(field_name, label)| NameValue {
+                name: label,
+                value: InputValue::Text(field_name),
+            })
+            .collect();
 
         Some(StructuredNode::Field(FieldNode {
             name,
             label: None, // Radio groups typically have options as labels
             input_type: FieldType::Radio {
-                options,
-                option_names: Some(field_names),
+                options: name_values,
             },
-            value: selected_value.map(InputValue::Radio),
+            value: selected_value.map(InputValue::Text),
             placeholder: None,
         }))
     }
@@ -426,14 +447,22 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         let field_node = first_field_node?;
 
+        // Build NameValue options from labels (using label as both name and value)
+        let name_values: Vec<NameValue> = options
+            .into_iter()
+            .map(|label| NameValue {
+                name: label.clone(),
+                value: InputValue::Text(label),
+            })
+            .collect();
+
         Some(StructuredNode::Field(FieldNode {
             name: self.get_field_name(field_node),
             label: None,
             input_type: FieldType::Radio {
-                options,
-                option_names: None,
+                options: name_values,
             },
-            value: selected_value.map(InputValue::Radio),
+            value: selected_value.map(InputValue::Text),
             placeholder: None,
         }))
     }
@@ -461,7 +490,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let value = if value_parts.is_empty() {
             None
         } else {
-            Some(InputValue::Date(value_parts.join(".")))
+            Some(InputValue::Text(value_parts.join(".")))
         };
 
         Some(StructuredNode::Field(FieldNode {
@@ -507,11 +536,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                         max_length: self.get_max_length(node),
                         min_length: None,
                     },
-                    WidgetKind::Checkbox => FieldType::Checkbox,
-                    WidgetKind::Radio => FieldType::Radio {
-                        options: vec![],
-                        option_names: None,
-                    },
+                    WidgetKind::Checkbox => FieldType::Bool,
+                    WidgetKind::Radio => FieldType::Radio { options: vec![] },
                     WidgetKind::Dropdown => {
                         // TODO: extract options from somewhere
                         FieldType::Select { options: vec![] }
@@ -560,12 +586,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
 
         Some(match field_type {
-            FieldType::Checkbox => {
-                InputValue::Checkbox(value == "on" || value == "1" || value == "true")
-            }
-            FieldType::Radio { .. } => InputValue::Radio(value.to_string()),
-            FieldType::Select { .. } => InputValue::Select(value.to_string()),
-            FieldType::Date => InputValue::Date(value.to_string()),
+            FieldType::Bool => InputValue::Bool(value == "on" || value == "1" || value == "true"),
+            FieldType::Radio { .. } => InputValue::Text(value.to_string()),
+            FieldType::Select { .. } => InputValue::Text(value.to_string()),
+            FieldType::Date => InputValue::Text(value.to_string()),
             FieldType::Number { .. } => {
                 // Try to parse as decimal, fallback to text
                 if let Ok(num) = value.parse() {
@@ -574,8 +598,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                     InputValue::Text(value.to_string())
                 }
             }
-            FieldType::Email => InputValue::Email(value.to_string()),
-            FieldType::Tel => InputValue::Tel(value.to_string()),
+            FieldType::Email => InputValue::Text(value.to_string()),
+            FieldType::Tel => InputValue::Text(value.to_string()),
             FieldType::Text { .. } => InputValue::Text(value.to_string()),
         })
     }

@@ -9,13 +9,15 @@
 //! - Descendant: `$data..fieldName` (search all descendants)
 //! - Indexed: `Detail[0]`, `Item[*]`
 
+use serde::Serialize;
+
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
 
 /// A wrapper for SOM (Scripting Object Model) path expressions.
 ///
 /// SOM paths uniquely identify nodes in the XFA tree hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SomPath(String);
 
 impl SomPath {

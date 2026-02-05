@@ -239,7 +239,7 @@
   </style>
 </head>
 <body>
-  <form id="AAAI_019_DE" class="generated-form">
+  <form id="generated-form" class="generated-form">
     <h1>Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service</h1>
     <h2>Kunde</h2>
     <div class="form-field">
@@ -384,7 +384,7 @@
 (function() {
   'use strict';
 
-  const form = document.getElementById('AAAI_019_DE');
+  const form = document.getElementById('generated-form');
   if (!form) return;
 
   // =====================
@@ -543,14 +543,11 @@
   }
 
   function getFieldValue(fieldName) {
-    // Escape special CSS selector characters in field name
-    const escapedName = CSS.escape(fieldName);
-    
     // Try to find the field by name
-    const field = form.querySelector(`[name="${escapedName}"]`);
+    const field = form.querySelector(`[name="${fieldName}"]`);
     if (!field) {
       // Try radio buttons
-      const radios = form.querySelectorAll(`[name="${escapedName}"]`);
+      const radios = form.querySelectorAll(`[name="${fieldName}"]`);
       if (radios.length > 0) {
         const checked = Array.from(radios).find(r => r.checked);
         return checked ? { type: 'radio', value: checked.value } : null;
@@ -563,7 +560,7 @@
     }
 
     if (field.type === 'radio') {
-      const radios = form.querySelectorAll(`[name="${escapedName}"]`);
+      const radios = form.querySelectorAll(`[name="${fieldName}"]`);
       const checked = Array.from(radios).find(r => r.checked);
       return checked ? { type: 'radio', value: checked.value } : null;
     }

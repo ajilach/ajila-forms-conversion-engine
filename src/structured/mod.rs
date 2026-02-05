@@ -1,9 +1,13 @@
+mod merger;
 mod structured_converter;
 
+pub use merger::{MergeInput, RecursiveMerger, Selection};
 pub use structured_converter::convert;
 
 use rust_decimal::Decimal;
 use serde::Serialize;
+
+use crate::xfa::scripting::SomPath;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -86,7 +90,7 @@ pub struct ConditionalNode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
-    pub field_name: String,
+    pub field_name: SomPath,
     pub value: InputValue,
 }
 
@@ -95,12 +99,7 @@ pub struct FieldCondition {
 pub enum InputValue {
     Text(String),
     Number(Decimal),
-    Date(String),
-    Email(String),
-    Tel(String),
-    Checkbox(bool),
-    Radio(String),
-    Select(String),
+    Bool(bool),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,17 +118,20 @@ pub enum FieldType {
     Date,
     Email,
     Tel,
-    Checkbox,
+    Bool,
     Radio {
-        options: Vec<String>,
-        /// Internal field names corresponding to each option (e.g., ["RB_1", "RB_2", "RB_3"])
-        /// Used to map from internal names to option labels in conditionals
-        #[serde(skip_serializing_if = "Option::is_none")]
-        option_names: Option<Vec<String>>,
+        options: Vec<NameValue>,
     },
     Select {
-        options: Vec<String>,
+        options: Vec<NameValue>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameValue {
+    pub name: String,
+    pub value: InputValue,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -320,5 +322,188 @@ impl HeadingLevel {
             HeadingLevel::H5 => 5,
             HeadingLevel::H6 => 6,
         }
+    }
+}
+
+// ============================================================================
+// Structural Equality
+// ============================================================================
+//
+// Structural equality compares nodes by their type, field names, and text content,
+// ignoring field values. This is used for merging multiple form states.
+
+impl StructuredNode {
+    /// Check if two nodes are structurally equal.
+    ///
+    /// Structural equality compares:
+    /// - Node type (variant)
+    /// - Field names
+    /// - Text content (for text-bearing nodes like Paragraph, Heading)
+    /// - Heading level
+    /// - Child structure (recursively)
+    ///
+    /// It does NOT compare:
+    /// - Field values (InputValue)
+    /// - Image content
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
+                a.level.as_u8() == b.level.as_u8() && a.content.structural_eq(&b.content)
+            }
+            (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
+                a.content.structural_eq(&b.content)
+            }
+            (StructuredNode::Image(a), StructuredNode::Image(b)) => {
+                // Compare by alt text only (content is binary data)
+                a.alt_text == b.alt_text
+            }
+            (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_eq(b),
+            (StructuredNode::Field(a), StructuredNode::Field(b)) => a.structural_eq(b),
+            (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
+                a.min_occurrences == b.min_occurrences
+                    && a.max_occurrences == b.max_occurrences
+                    && a.item.structural_eq(&b.item)
+            }
+            (StructuredNode::Group(a), StructuredNode::Group(b)) => {
+                a.children.len() == b.children.len()
+                    && a.children
+                        .iter()
+                        .zip(b.children.iter())
+                        .all(|(ca, cb)| ca.structural_eq(cb))
+            }
+            (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
+                // Conditionals are structurally equal if their contents are
+                a.content.structural_eq(&b.content)
+            }
+            (StructuredNode::Empty, StructuredNode::Empty) => true,
+            (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
+                a.columns == b.columns
+                    && a.elements.len() == b.elements.len()
+                    && a.elements
+                        .iter()
+                        .zip(b.elements.iter())
+                        .all(|(ea, eb)| ea.span == eb.span && ea.node.structural_eq(&eb.node))
+            }
+            // Different variants are never structurally equal
+            _ => false,
+        }
+    }
+
+    /// Get a structural discriminant for this node type.
+    /// Used for quick inequality checks before deep comparison.
+    pub fn structural_discriminant(&self) -> u8 {
+        match self {
+            StructuredNode::Heading(_) => 0,
+            StructuredNode::Paragraph(_) => 1,
+            StructuredNode::Image(_) => 2,
+            StructuredNode::Table(_) => 3,
+            StructuredNode::Field(_) => 4,
+            StructuredNode::Repeatable(_) => 5,
+            StructuredNode::Group(_) => 6,
+            StructuredNode::Conditional(_) => 7,
+            StructuredNode::Empty => 8,
+            StructuredNode::GridLayout(_) => 9,
+        }
+    }
+}
+
+impl InlineText {
+    /// Check if two InlineText are structurally equal (compare text content)
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        // For text content, the actual text IS the structure
+        self.as_plain_text() == other.as_plain_text()
+    }
+}
+
+impl FieldNode {
+    /// Check if two fields are structurally equal.
+    /// Compares name, label, and input type structure, but NOT value.
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.label.as_ref().map(|l| l.as_plain_text())
+                == other.label.as_ref().map(|l| l.as_plain_text())
+            && self.input_type.structural_eq(&other.input_type)
+            && self.placeholder == other.placeholder
+    }
+}
+
+impl FieldType {
+    /// Check if two field types are structurally equal.
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                FieldType::Text {
+                    regex: r1,
+                    max_length: max1,
+                    min_length: min1,
+                },
+                FieldType::Text {
+                    regex: r2,
+                    max_length: max2,
+                    min_length: min2,
+                },
+            ) => r1 == r2 && max1 == max2 && min1 == min2,
+            (
+                FieldType::Number {
+                    min: min1,
+                    max: max1,
+                    step: step1,
+                },
+                FieldType::Number {
+                    min: min2,
+                    max: max2,
+                    step: step2,
+                },
+            ) => min1 == min2 && max1 == max2 && step1 == step2,
+            (FieldType::Date, FieldType::Date) => true,
+            (FieldType::Email, FieldType::Email) => true,
+            (FieldType::Tel, FieldType::Tel) => true,
+            (FieldType::Bool, FieldType::Bool) => true,
+            (
+                FieldType::Radio { options: opts1 },
+                FieldType::Radio { options: opts2 },
+            ) => opts1 == opts2,
+            (
+                FieldType::Select { options: opts1 },
+                FieldType::Select { options: opts2 },
+            ) => opts1 == opts2,
+            _ => false,
+        }
+    }
+}
+
+impl TableNode {
+    /// Check if two tables are structurally equal.
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        // Compare header structure
+        let header_eq = match (&self.header, &other.header) {
+            (None, None) => true,
+            (Some(h1), Some(h2)) => {
+                h1.cells.len() == h2.cells.len()
+                    && h1
+                        .cells
+                        .iter()
+                        .zip(h2.cells.iter())
+                        .all(|(c1, c2)| c1.structural_eq(c2))
+            }
+            _ => false,
+        };
+
+        // Compare row structure
+        let rows_eq = self.rows.len() == other.rows.len()
+            && self.rows.iter().zip(other.rows.iter()).all(|(r1, r2)| {
+                r1.cells.len() == r2.cells.len()
+                    && r1
+                        .cells
+                        .iter()
+                        .zip(r2.cells.iter())
+                        .all(|(c1, c2)| c1.structural_eq(c2))
+            });
+
+        // Compare caption
+        let caption_eq = self.caption.as_ref().map(|c| c.as_plain_text())
+            == other.caption.as_ref().map(|c| c.as_plain_text());
+
+        header_eq && rows_eq && caption_eq
     }
 }
