@@ -64,6 +64,7 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
+mod date_field_detector;
 mod field_grouper;
 mod grid_template;
 mod heading_detector;
@@ -76,6 +77,7 @@ mod radio_button_grouper;
 mod repeatable_detector;
 mod text_block;
 
+pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
@@ -144,36 +146,16 @@ pub trait AnalysisModule {
 
 /// Run the full analysis pipeline on a document.
 ///
-/// This runs all analysis modules in the correct order:
-/// 1. NoPrintDetector - claim elements with relevant="-print" (MUST run first)
-/// 2. MasterPageDetector - identify header/footer from master page content
-/// 3. TextBlockGrouper - merge adjacent text into TextBlocks
-/// 4. FieldGrouper - wrap fields in Field groups  
-/// 6. RadioButtonDetector - detect radio buttons
-/// 7. RadioButtonGrouper - group radio buttons on same line
-/// 8. HeadingDetector - identify headings (MUST run before LabelAttacher)
-/// 9. InlineFieldDetector - identify inline fields (text before/after but no label above/below)
-/// 10. LabelAttacher - pair labels with fields (only uses non-heading text)
-/// 11. RepeatableDetector - detect repeatable sections (MUST run last to collect outermost groups)
+/// This is a convenience wrapper that constructs a single-element `GlobalContext`
+/// from the document's source and delegates to `run_analysis_pipeline_with_context`.
 ///
-/// The order is important:
-/// - NoPrintDetector must run first to claim screen-only elements before other modules
-/// - MasterPageDetector must run early to tag master page content
-/// - HeadingDetector must run before LabelAttacher so headings aren't attached as labels
-/// - InlineFieldDetector must run after LabelAttacher to identify unlabeled fields with adjacent text
-/// - RepeatableDetector must run last so it can collect composite groups (LabeledField, etc.)
+/// For processing multiple form states with consistent global statistics,
+/// use `run_analysis_pipeline_with_context` directly with a `GlobalContext`
+/// containing all flattened states.
 pub fn run_analysis_pipeline(doc: &mut crate::document::Document) {
-    NoPrintDetector::new().process(doc);
-    MasterPageDetector::new().process(doc);
-    TextBlockGrouper::new().process(doc);
-    FieldGrouper::new().process(doc);
-    RadioButtonDetector::new().process(doc);
-    RadioButtonGrouper::new().process(doc);
-    HeadingDetector::new().process(doc);
-    InlineFieldDetector::new().process(doc);
-    LabelAttacher::new().process(doc);
-    GridTemplateDetector::new().process(doc);
-    RepeatableDetector::new().process(doc);
+    let single: &[&Flattened] = &[doc.source];
+    let ctx = GlobalContext::new(single);
+    run_analysis_pipeline_with_context(doc, &ctx);
 }
 
 /// Run the full analysis pipeline with global context from all form states.
@@ -187,11 +169,12 @@ pub fn run_analysis_pipeline_with_context(
 ) {
     NoPrintDetector::new().process_with_context(doc, ctx);
     MasterPageDetector::new().process_with_context(doc, ctx);
+    HeadingDetector::new().process_with_context(doc, ctx);
     TextBlockGrouper::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);
+    DateFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
-    HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
     GridTemplateDetector::new().process_with_context(doc, ctx);

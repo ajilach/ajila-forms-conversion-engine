@@ -448,9 +448,11 @@ impl<'a> Document<'a> {
         self.is_group_kind(group_idx, |k| matches!(k, GroupKind::TextBlock))
     }
 
-    /// Check if a group is a Field.
+    /// Check if a group is a Field or DateField.
     pub fn is_field(&self, group_idx: usize) -> bool {
-        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::Field))
+        self.is_group_kind(group_idx, |k| {
+            matches!(k, GroupKind::Field | GroupKind::DateField { .. })
+        })
     }
 
     /// Check if a group is a Heading.

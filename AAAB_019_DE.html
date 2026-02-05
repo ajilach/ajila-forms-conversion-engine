@@ -242,17 +242,17 @@
   <form id="AAAB_019_DE" class="generated-form">
     <h1>Retro-Erfassung für EAM FIM Endkunden – B2C</h1>
     <div class="form-field">
-      <div class="radio-group" data-field="RB_1_RB_2_RB_3">
+      <div class="radio-group" data-field="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage">
   <label class="radio-option">
-    <input type="radio" id="RB_1_RB_2_RB_3_0" name="RB_1_RB_2_RB_3" value="Neuanlage" class="form-radio">
+    <input type="radio" id="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage_0" name="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage" value="RB_1" class="form-radio">
     <span>Neuanlage</span>
   </label>
   <label class="radio-option">
-    <input type="radio" id="RB_1_RB_2_RB_3_1" name="RB_1_RB_2_RB_3" value="Änderung" class="form-radio">
+    <input type="radio" id="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage_1" name="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage" value="RB_2" class="form-radio">
     <span>Änderung</span>
   </label>
   <label class="radio-option">
-    <input type="radio" id="RB_1_RB_2_RB_3_2" name="RB_1_RB_2_RB_3" value="Löschung" class="form-radio">
+    <input type="radio" id="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage_2" name="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage" value="RB_3" class="form-radio">
     <span>Löschung</span>
   </label>
 </div>
@@ -284,28 +284,18 @@
     <h2>Neuanlage (möglich ab dem 01. des aktuellen Monats)</h2>
     <p>Bankverbindung</p>
     <p>0319 00</p>
+    <div class="form-field">
+      <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+      <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
+    </div>
+    <p>EUR</p>
+    <p>Währung</p>
+    <p>Retro Rückzahlungssatz für Fonds:</p>
     <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
       <div class="grid-item">
         <div class="form-field">
-          <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
-          <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
-        </div>
-      </div>
-      <div class="grid-item">
-        <div class="form-field">
-          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-        </div>
-      </div>
-    </div>
-    <p>.</p>
-    <p>EUR</p>
-    <p>Währung</p>
-    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-      <div class="grid-item">
-        <div class="form-field">
-          <label for="Year">0319 00</label>
-          <input type="text" id="Year" name="Year" class="form-input">
+          <label for="Month">0319 00</label>
+          <input type="text" id="Month" name="Month" class="form-input">
         </div>
       </div>
       <div class="grid-item">
@@ -314,33 +304,16 @@
           <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
         </div>
       </div>
-      <div class="grid-item">
-        <div class="form-field">
-          <label for="Month">.</label>
-          <input type="text" id="Month" name="Month" class="form-input">
-        </div>
-      </div>
     </div>
     <p>%</p>
     <p>Ab:1</p>
-    <p>01.</p>
-    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
-      <div class="grid-item">
-        <div class="form-field">
-          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-        </div>
-      </div>
-      <div class="grid-item">
-        <div class="form-field">
-          <label for="OBJ_Number_Depot">Retro Rückzahlungssatz für Fonds:</label>
-          <input type="text" id="OBJ_Number_Depot" name="OBJ_Number_Depot" class="form-input">
-        </div>
-      </div>
+    <div class="form-field">
+      <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+      <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
     </div>
-    <p>.</p>
     <p>EUR</p>
     <p>Währung</p>
+    <p>Retro Rückzahlungssatz für Fonds:</p>
     <div class="form-field">
       <label for="Fur_Fonds">Die Änderung gilt ab sofort für die noch nicht abgerechneten Quartale.</label>
       <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
@@ -353,32 +326,23 @@
     <div class="repeatable-container" id="repeatable_1" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
-          <div class="form-group">
-            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Fonds_Provider">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
-                  <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Month">.</label>
-                  <input type="text" id="Month" name="Month" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Year" name="Year" class="form-input">
-                </div>
+          <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+            <div class="grid-item">
+              <div class="form-field">
+                <label for="Fonds_Provider">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
+                <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
               </div>
             </div>
-            <p>01.</p>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+              </div>
+            </div>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="date" id="Month" name="Month" class="form-input">
+              </div>
+            </div>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -392,31 +356,22 @@
     <div class="repeatable-container" id="repeatable_2" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
-          <div class="form-group">
-            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="ISIN" name="ISIN" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Month">.</label>
-                  <input type="text" id="Month" name="Month" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Year" name="Year" class="form-input">
-                </div>
+          <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="ISIN" name="ISIN" class="form-input">
               </div>
             </div>
-            <p>01.</p>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+              </div>
+            </div>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="date" id="Month" name="Month" class="form-input">
+              </div>
+            </div>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -431,32 +386,23 @@
     <div class="repeatable-container" id="repeatable_3" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
-          <div class="form-group">
-            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Fonds_Provider_Direkt">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
-                  <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Month">.</label>
-                  <input type="text" id="Month" name="Month" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Year" name="Year" class="form-input">
-                </div>
+          <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+            <div class="grid-item">
+              <div class="form-field">
+                <label for="Fonds_Provider_Direkt">Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</label>
+                <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
               </div>
             </div>
-            <p>01.</p>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
+              </div>
+            </div>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="date" id="Month" name="Month" class="form-input">
+              </div>
+            </div>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -470,31 +416,22 @@
     <div class="repeatable-container" id="repeatable_4" data-min="1" data-max="4">
       <template class="repeatable-template">
         <div class="repeatable-item" data-index="{INDEX}">
-          <div class="form-group">
-            <div class="grid-layout" style="display: grid; grid-template-columns: repeat(4, auto); gap: 1rem;">
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="ISIN" name="ISIN" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Satz" name="Satz" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <label for="Month">.</label>
-                  <input type="text" id="Month" name="Month" class="form-input">
-                </div>
-              </div>
-              <div class="grid-item">
-                <div class="form-field">
-                  <input type="text" id="Year" name="Year" class="form-input">
-                </div>
+          <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="ISIN" name="ISIN" class="form-input">
               </div>
             </div>
-            <p>01.</p>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="text" id="Satz" name="Satz" class="form-input">
+              </div>
+            </div>
+            <div class="grid-item">
+              <div class="form-field">
+                <input type="date" id="Month" name="Month" class="form-input">
+              </div>
+            </div>
           </div>
           <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
         </div>
@@ -686,11 +623,14 @@
   }
 
   function getFieldValue(fieldName) {
+    // Escape special CSS selector characters in field name
+    const escapedName = CSS.escape(fieldName);
+    
     // Try to find the field by name
-    const field = form.querySelector(`[name="${fieldName}"]`);
+    const field = form.querySelector(`[name="${escapedName}"]`);
     if (!field) {
       // Try radio buttons
-      const radios = form.querySelectorAll(`[name="${fieldName}"]`);
+      const radios = form.querySelectorAll(`[name="${escapedName}"]`);
       if (radios.length > 0) {
         const checked = Array.from(radios).find(r => r.checked);
         return checked ? { type: 'radio', value: checked.value } : null;
@@ -703,7 +643,7 @@
     }
 
     if (field.type === 'radio') {
-      const radios = form.querySelectorAll(`[name="${fieldName}"]`);
+      const radios = form.querySelectorAll(`[name="${escapedName}"]`);
       const checked = Array.from(radios).find(r => r.checked);
       return checked ? { type: 'radio', value: checked.value } : null;
     }
