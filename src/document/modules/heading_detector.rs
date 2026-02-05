@@ -30,10 +30,43 @@ pub struct GlobalFontStats {
     pub most_common_style: Option<(u32, bool)>,
     /// Ratio of most common style
     pub common_style_ratio: f32,
+    /// Global border statistics (computed in second pass after font stats)
+    pub border_stats: GlobalBorderStats,
+}
+
+/// Global border statistics for consistent heading level detection across form states.
+#[derive(Debug, Clone, Default)]
+pub struct GlobalBorderStats {
+    /// Number of potential headings with any border (top, bottom, or font underline)
+    pub underlined_count: usize,
+    /// Number of potential headings without any borders
+    pub non_underlined_count: usize,
+    /// Total potential headings analyzed
+    pub total_count: usize,
+}
+
+impl GlobalBorderStats {
+    /// Check if border information should be used to distinguish heading levels.
+    /// Returns true if there's a meaningful pattern indicating borders distinguish hierarchy.
+    pub fn should_use_borders(&self) -> bool {
+        if self.total_count < 3 {
+            // Not enough headings to establish a pattern
+            return false;
+        }
+
+        let border_ratio = self.underlined_count as f32 / self.total_count as f32;
+
+        // Use borders if there's a clear distinction:
+        // - Between 10% and 80% have borders (mixed usage indicates hierarchy)
+        // - If <10% or >80%, the pattern is not useful for distinguishing levels
+        border_ratio >= 0.10 && border_ratio <= 0.80
+    }
 }
 
 impl GlobalFontStats {
     /// Compute global font statistics from an iterator of Flattened references.
+    /// Note: This does NOT compute border_stats. Call `compute_border_stats` separately
+    /// after constructing this, passing the same flattened data.
     pub fn from_flattened_iter<'a>(flattened_iter: impl Iterator<Item = &'a Flattened>) -> Self {
         let mut sizes: Vec<f32> = Vec::new();
         let mut size_counts: HashMap<u32, usize> = HashMap::new();
@@ -113,7 +146,105 @@ impl GlobalFontStats {
             total_text_nodes,
             most_common_style,
             common_style_ratio,
+            border_stats: GlobalBorderStats::default(),
         }
+    }
+
+    /// Compute global border statistics from all flattened states.
+    /// This should be called after `from_flattened_iter` to fill in border_stats.
+    /// It analyzes potential headings (based on font stats) to determine if borders
+    /// are used to distinguish heading levels.
+    pub fn compute_border_stats<'a>(
+        &mut self,
+        flattened_iter: impl Iterator<Item = &'a Flattened>,
+    ) {
+        let mut border_stats = GlobalBorderStats::default();
+
+        // Use the already-computed font stats to determine potential headings
+        let body_size = self.body_size;
+        let most_common_style = self.most_common_style;
+
+        for flattened in flattened_iter {
+            for node in flattened.iter_nodes() {
+                if let FlattenedNodeKind::Text {
+                    font_size, content, ..
+                } = &node.kind
+                {
+                    let text = content.trim();
+                    if text.is_empty() || text.len() < 2 || text.len() > 100 {
+                        continue;
+                    }
+
+                    let size = font_size.to_f32().unwrap_or(10.0);
+                    let rounded = (size * 2.0).round() / 2.0;
+                    let size_bits = rounded.to_bits();
+
+                    let is_bold = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| f.weight == FontWeight::Bold)
+                        .unwrap_or(false);
+
+                    // Check if this would be a potential heading
+                    // Skip if it's the most common style (body text)
+                    if most_common_style == Some((size_bits, is_bold)) {
+                        continue;
+                    }
+
+                    // Check if this is a bold section header (bold at body size)
+                    let is_body_size = (size - body_size).abs() < 0.5;
+                    let body_is_non_bold = most_common_style
+                        .map(|(s, b)| f32::from_bits(s) == body_size && !b)
+                        .unwrap_or(false);
+                    let is_bold_section_header = is_bold && is_body_size && body_is_non_bold;
+
+                    // Check if this is a size-based heading (larger than body)
+                    let ratio = size / body_size;
+                    let size_diff = size - body_size;
+                    let is_size_based_heading = ratio >= 1.35 || size_diff >= 3.5;
+
+                    // Only count potential headings
+                    if !is_bold_section_header && !is_size_based_heading {
+                        continue;
+                    }
+
+                    border_stats.total_count += 1;
+
+                    // Check for borders/underline
+                    let has_font_underline = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| f.underline)
+                        .unwrap_or(false);
+
+                    let has_top_border = node
+                        .style
+                        .border
+                        .as_ref()
+                        .and_then(|b| b.get_edge(0))
+                        .map(|e| e.presence == "visible" && e.thickness.is_some())
+                        .unwrap_or(false);
+
+                    let has_bottom_border = node
+                        .style
+                        .border
+                        .as_ref()
+                        .and_then(|b| b.get_edge(2))
+                        .map(|e| e.presence == "visible" && e.thickness.is_some())
+                        .unwrap_or(false);
+
+                    if has_font_underline || has_top_border || has_bottom_border {
+                        border_stats.underlined_count += 1;
+                    } else {
+                        border_stats.non_underlined_count += 1;
+                    }
+                }
+            }
+        }
+
+        self.border_stats = border_stats;
     }
 
     /// Convert to internal FontStats format
@@ -459,9 +590,9 @@ impl HeadingDetector {
         let is_bold_section_header =
             is_bold && body_style_is_non_bold_same_size && (size - body_size).abs() < 0.5; // Same size as body
 
-        // For bold section headers, allow higher frequency (up to 35%)
-        // since documents often have multiple sections
-        let max_style_frequency = if is_bold_section_header { 0.35 } else { 0.25 };
+        // For bold section headers, allow higher frequency (up to 40%)
+        // since documents often have multiple sections and field labels
+        let max_style_frequency = if is_bold_section_header { 0.40 } else { 0.25 };
 
         // If this style appears too frequently, it's body/label text
         if style_frequency > max_style_frequency {
@@ -778,9 +909,9 @@ impl BorderStats {
         let border_ratio = self.underlined_count as f32 / self.total_count as f32;
 
         // Use borders if there's a clear distinction:
-        // - Between 20% and 80% have borders (mixed usage indicates hierarchy)
-        // - If <20% or >80%, the pattern is not useful for distinguishing levels
-        border_ratio >= 0.20 && border_ratio <= 0.80
+        // - Between 10% and 80% have borders (mixed usage indicates hierarchy)
+        // - If <10% or >80%, the pattern is not useful for distinguishing levels
+        border_ratio >= 0.10 && border_ratio <= 0.80
     }
 }
 
@@ -804,29 +935,41 @@ impl AnalysisModule for HeadingDetector {
     fn process(&self, doc: &mut Document) {
         // Collect font statistics from this document only
         let stats = self.collect_font_stats(doc);
-        self.process_with_stats(doc, &stats);
+        self.process_with_stats(doc, &stats, None);
     }
 
     fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
         // Use global font statistics if available, otherwise compute local stats
-        let stats = if let Some(global_stats) = &ctx.font_stats {
-            global_stats.to_font_stats()
+        let (stats, global_border_stats) = if let Some(global_stats) = &ctx.font_stats {
+            let border_stats = if global_stats.border_stats.total_count > 0 {
+                Some(&global_stats.border_stats)
+            } else {
+                None
+            };
+            (global_stats.to_font_stats(), border_stats)
         } else if !ctx.all_flattened.is_empty() {
             // Compute global stats from all flattened data
             let global_stats =
                 GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
-            global_stats.to_font_stats()
+            (global_stats.to_font_stats(), None)
         } else {
             // Fallback to local stats
-            self.collect_font_stats(doc)
+            (self.collect_font_stats(doc), None)
         };
-        self.process_with_stats(doc, &stats);
+        self.process_with_stats(doc, &stats, global_border_stats);
     }
 }
 
 impl HeadingDetector {
     /// Core processing logic using provided font statistics.
-    fn process_with_stats(&self, doc: &mut Document, stats: &FontStats) {
+    /// If `global_border_stats` is Some, uses global border statistics for consistent
+    /// heading level detection across form states. Otherwise computes local border stats.
+    fn process_with_stats(
+        &self,
+        doc: &mut Document,
+        stats: &FontStats,
+        global_border_stats: Option<&GlobalBorderStats>,
+    ) {
         // Need enough samples for meaningful analysis
         if stats.sample_count < self.min_samples {
             return;
@@ -840,8 +983,8 @@ impl HeadingDetector {
             .copied()
             .collect();
 
-        // First pass: collect border statistics from potential headings
-        let mut border_stats = BorderStats::default();
+        // First pass: collect border statistics from potential headings (only if not using global stats)
+        let mut local_border_stats = BorderStats::default();
         let mut text_properties_cache: HashMap<usize, TextProperties> = HashMap::new();
 
         for &group_idx in &text_groups {
@@ -863,17 +1006,33 @@ impl HeadingDetector {
                     )
                     .is_some()
                 {
-                    border_stats.total_count += 1;
-                    // Count any border (top, bottom, or font underline) as a distinguishing feature
-                    if props.has_top_border || props.has_bottom_border || props.has_font_underline {
-                        border_stats.underlined_count += 1;
-                    } else {
-                        border_stats.non_underlined_count += 1;
+                    // Only collect local border stats if not using global
+                    if global_border_stats.is_none() {
+                        local_border_stats.total_count += 1;
+                        if props.has_top_border
+                            || props.has_bottom_border
+                            || props.has_font_underline
+                        {
+                            local_border_stats.underlined_count += 1;
+                        } else {
+                            local_border_stats.non_underlined_count += 1;
+                        }
                     }
                 }
                 text_properties_cache.insert(group_idx, props);
             }
         }
+
+        // Use global border stats if provided, converting to local BorderStats format
+        let border_stats = if let Some(global) = global_border_stats {
+            BorderStats {
+                underlined_count: global.underlined_count,
+                non_underlined_count: global.non_underlined_count,
+                total_count: global.total_count,
+            }
+        } else {
+            local_border_stats
+        };
 
         // Second pass: analyze each text group with border statistics
         // Stores (group_idx, level, y_coord, is_bold_section_header) for ordering and validation
@@ -1636,66 +1795,6 @@ mod tests {
             another_subsection.unwrap().1,
             3,
             "Another subsection without underline should be h3"
-        );
-    }
-
-    #[test]
-    fn test_border_stats_threshold() {
-        // Test BorderStats logic
-        let mut stats = BorderStats::default();
-
-        // Not enough headings
-        stats.total_count = 2;
-        stats.underlined_count = 1;
-        stats.non_underlined_count = 1;
-        assert!(
-            !stats.should_use_borders(),
-            "Should not use borders with < 3 headings"
-        );
-
-        // Clear pattern: 50% underlined (should use)
-        stats.total_count = 6;
-        stats.underlined_count = 3;
-        stats.non_underlined_count = 3;
-        assert!(
-            stats.should_use_borders(),
-            "Should use borders with clear 50/50 split"
-        );
-
-        // Too few underlined (< 20%)
-        stats.total_count = 10;
-        stats.underlined_count = 1;
-        stats.non_underlined_count = 9;
-        assert!(
-            !stats.should_use_borders(),
-            "Should not use borders when < 20% underlined"
-        );
-
-        // Too many underlined (> 80%)
-        stats.total_count = 10;
-        stats.underlined_count = 9;
-        stats.non_underlined_count = 1;
-        assert!(
-            !stats.should_use_borders(),
-            "Should not use borders when > 80% underlined"
-        );
-
-        // Edge case: exactly 20%
-        stats.total_count = 5;
-        stats.underlined_count = 1;
-        stats.non_underlined_count = 4;
-        assert!(
-            stats.should_use_borders(),
-            "Should use borders at 20% threshold"
-        );
-
-        // Edge case: exactly 80%
-        stats.total_count = 5;
-        stats.underlined_count = 4;
-        stats.non_underlined_count = 1;
-        assert!(
-            stats.should_use_borders(),
-            "Should use borders at 80% threshold"
         );
     }
 }

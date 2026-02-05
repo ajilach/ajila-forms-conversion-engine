@@ -277,15 +277,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.to_str())
         .unwrap_or("document");
 
-    // Detect locale from filename (e.g., "_DE", "_EN")
-    let locale = if doc_name.ends_with("_DE") {
-        "DE"
-    } else if doc_name.ends_with("_EN") {
-        "EN"
-    } else {
-        "EN" // default
-    };
-
     // =========================================================================
     // PIPELINE STAGE 1: Extract and parse XFA
     // =========================================================================
@@ -298,102 +289,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     vprintln!(quiet, "✓ XFA data extracted");
 
-    let mut nodes = XfaNode::parse(&xfa_data.unwrap())?;
+    let nodes = XfaNode::parse(&xfa_data.unwrap())?;
     vprintln!(quiet, "✓ XFA structure parsed");
 
     // =========================================================================
-    // PIPELINE STAGE 2: Execute scripts
+    // PIPELINE STAGE 2: Run exhaustive exploration
     // =========================================================================
-    let script_result = ScriptExecutor::execute(&nodes);
-    vprintln!(
+    // Exhaustive mode discovers all form states and generates all outputs
+    // (renders, structured JSON, HTML) for each state.
+    let mut form =
+        XfaForm::new(nodes).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
+
+    let config = exhaustive::ExhaustiveConfig {
+        doc_name,
+        scale: args.scale,
+        pdf_path: &args.document,
+        render_modes: args.render_modes.clone(),
+        structured: args.structured,
+        html: args.html,
         quiet,
-        "✓ Scripts executed ({} computed values)",
-        script_result.computed_values.len()
-    );
-
-    // Apply presence changes to the XFA tree
-    ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
-
-    // =========================================================================
-    // PIPELINE STAGE 3: Flatten XFA (pure transformation)
-    // =========================================================================
-    let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)?;
-    vprintln!(quiet, "✓ XFA flattened ({} nodes)", flattened.node_count());
-
-    // =========================================================================
-    // PIPELINE STAGE 4: Analysis (only if needed)
-    // Analysis is needed for: --render labelled, --structured, --html, or verbose output
-    // =========================================================================
-    let needs_analysis =
-        args.render_modes.contains(&RenderMode::Labelled) || args.structured || args.html || !quiet;
-
-    let doc = if needs_analysis {
-        let mut doc = Document::from_flattened(&flattened);
-        run_analysis_pipeline(&mut doc);
-        print_analysis_summary(&doc, quiet);
-        Some(doc)
-    } else {
-        None
     };
 
-    // =========================================================================
-    // PIPELINE STAGE 5: Output (composable flags)
-    // =========================================================================
-
-    // Handle --render (composable: can specify multiple modes)
-    for mode in &args.render_modes {
-        let suffix = match mode {
-            RenderMode::Plain => "plain",
-            RenderMode::Labelled => "labelled",
-            RenderMode::Annotated => "annotated",
-        };
-        let output_path = PathBuf::from(format!("{}_{}.png", doc_name, suffix));
-
-        vprintln!(quiet, "\nRendering {} document...", suffix);
-
-        match mode {
-            RenderMode::Plain => {
-                flattened
-                    .render_to_image_buffer_plain(args.scale)?
-                    .save(&output_path)
-                    .map_err(|e| format!("Failed to save image: {}", e))?;
-            }
-            RenderMode::Labelled => {
-                let doc = doc
-                    .as_ref()
-                    .expect("Document should be created for labelled rendering");
-                doc.render_to_image(&output_path, args.scale)?;
-            }
-            RenderMode::Annotated => {
-                flattened.render_to_image(&output_path, args.scale)?;
-            }
-        }
-
-        vprintln!(quiet, "✓ Document rendered to: {}", output_path.display());
-    }
-
-    // Run exhaustive exploration when --structured or --html is requested
-    // This explores all form states and produces merged output
-    if args.structured || args.html {
-        // Re-parse XFA nodes for XfaForm (it takes ownership)
-        let xfa_data_for_form = extract_xfa_from_pdf(&args.document)?.unwrap();
-        let nodes_for_form = XfaNode::parse(&xfa_data_for_form)?;
-        let mut form =
-            XfaForm::new(nodes_for_form).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
-
-        let config = exhaustive::ExhaustiveConfig {
-            doc_name,
-            scale: args.scale,
-            pdf_path: &args.document,
-            locale,
-            render_modes: args.render_modes.clone(),
-            structured: args.structured,
-            html: args.html,
-            quiet,
-        };
-
-        exhaustive::run_exhaustive(&mut form, &config)?;
-    }
+    exhaustive::run_exhaustive(&mut form, &config)?;
 
     Ok(())
 }
@@ -581,6 +498,223 @@ mod tests {
 
         assert!(flattened.node_count() > 0, "Should have flattened nodes");
         println!("\n✓ AAAB flattening test passed!");
+    }
+
+    #[test]
+    fn test_debug_fim_company_font() {
+        // Debug test to check font weight for FIM Company
+        use crate::flattened::FlattenedNodeKind;
+        use crate::xfa::FontWeight;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        println!("\n=== Font weights for key text elements ===");
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text { content, font_size, font_name, .. } = &node.kind {
+                let text = content.trim();
+                // Check key headings
+                if text.contains("FIM Company")
+                    || text == "Endkunde"
+                    || text.contains("Neuanlage")
+                    || text.contains("Änderung")
+                    || text.contains("Löschung")
+                    || text.contains("Sonderkondition")
+                    || text.contains("Unterschrift")
+                    || text == "CA/BD"
+                    || text.contains("Retro-Erfassung")
+                {
+                    let is_bold = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| f.weight == FontWeight::Bold)
+                        .unwrap_or(false);
+                    let weight = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| format!("{:?}", f.weight))
+                        .unwrap_or("no font".to_string());
+                    let style_typeface = node
+                        .style
+                        .font
+                        .as_ref()
+                        .map(|f| f.typeface.clone())
+                        .unwrap_or("unknown".to_string());
+                    println!(
+                        "  '{}' | kind.font_name: {} | style.typeface: {} | size: {} | weight: {} | is_bold: {}",
+                        text, font_name, style_typeface, font_size, weight, is_bold
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_aaab_fim_company_has_correct_font() {
+        // FIM Company should have the same font as other section headers:
+        // - Typeface: Frutiger 45 Light
+        // - Size: 8pt
+        // - Weight: Bold
+        use crate::flattened::FlattenedNodeKind;
+        use crate::xfa::FontWeight;
+        use rust_decimal::prelude::ToPrimitive;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the FIM Company text node
+        let fim_company_node = flattened.iter_nodes().find(|node| {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                content.trim() == "FIM Company"
+            } else {
+                false
+            }
+        });
+
+        assert!(fim_company_node.is_some(), "Should find 'FIM Company' text node");
+        let node = fim_company_node.unwrap();
+
+        if let FlattenedNodeKind::Text { font_size, font_name, .. } = &node.kind {
+            let font = node.style.font.as_ref().expect("FIM Company should have font info");
+            
+            // Debug output
+            println!("FIM Company font properties:");
+            println!("  kind.font_name: {}", font_name);
+            println!("  kind.font_size: {}", font_size);
+            println!("  style.typeface: {}", font.typeface);
+            println!("  style.size: {}", font.size);
+            println!("  style.weight: {:?}", font.weight);
+            
+            // Check typeface - should be Frutiger 45 Light, not Myriad Pro
+            assert!(
+                font.typeface.contains("Frutiger"),
+                "FIM Company should use Frutiger font, but got: {}",
+                font.typeface
+            );
+
+            // Check size - should be 8pt, not 10pt
+            let size = font_size.to_f32().unwrap_or(0.0);
+            assert!(
+                (size - 8.0).abs() < 0.1,
+                "FIM Company should be 8pt, but got: {}pt",
+                size
+            );
+
+            // Check weight - should be bold
+            assert_eq!(
+                font.weight,
+                FontWeight::Bold,
+                "FIM Company should be bold"
+            );
+        }
+    }
+
+    #[test]
+    fn test_aaab_disclaimer_text_not_bold() {
+        // The disclaimer text should NOT be bold - it's body text, not a heading
+        use crate::flattened::FlattenedNodeKind;
+        use crate::xfa::FontWeight;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the disclaimer text node
+        let disclaimer_text = "Bitte senden Sie das Formular bis zum drittletzten Werktag des Monats";
+        let disclaimer_node = flattened.iter_nodes().find(|node| {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                content.contains(disclaimer_text)
+            } else {
+                false
+            }
+        });
+
+        assert!(disclaimer_node.is_some(), "Should find disclaimer text node containing '{}'", disclaimer_text);
+        let node = disclaimer_node.unwrap();
+
+        if let FlattenedNodeKind::Text { content, font_size, font_name, .. } = &node.kind {
+            let font = node.style.font.as_ref().expect("Disclaimer should have font info");
+            
+            println!("Disclaimer text: '{}'", content.chars().take(60).collect::<String>());
+            println!("  kind.font_name: {}", font_name);
+            println!("  kind.font_size: {}", font_size);
+            println!("  style.typeface: {}", font.typeface);
+            println!("  style.size: {}", font.size);
+            println!("  style.weight: {:?}", font.weight);
+            
+            // Check weight - should NOT be bold (it's body text, not a heading)
+            assert_ne!(
+                font.weight,
+                FontWeight::Bold,
+                "Disclaimer text should NOT be bold - it's body text, not a heading. Got weight: {:?}",
+                font.weight
+            );
+        }
+    }
+
+    #[test]
+    fn test_debug_aaab_fim_company_xfa_structure() {
+        // Debug test to understand why FIM Company has the wrong font
+        use crate::xfa::XfaNodeKind;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        // Find DES_Name_Company and print all its children details
+        fn find_and_print_draw(nodes: &[XfaNode], target_name: &str, depth: usize) {
+            for node in nodes {
+                let node_name = node.name.as_deref().unwrap_or("");
+                
+                if node_name == target_name && matches!(node.kind, XfaNodeKind::Draw) {
+                    println!("\n=== Found {} ===", target_name);
+                    println!("Font element: {:?}", node.font);
+                    println!("Attributes: {:?}", node.attributes);
+                    
+                    // Print all children recursively
+                    fn print_children(children: &[XfaNode], indent: usize) {
+                        let prefix = "  ".repeat(indent);
+                        for child in children {
+                            match &child.kind {
+                                XfaNodeKind::Element { tag_name, text_content } => {
+                                    let text_preview = text_content.as_ref()
+                                        .map(|t| format!(": \"{}\"", t.chars().take(50).collect::<String>()))
+                                        .unwrap_or_default();
+                                    let attrs = if child.attributes.is_empty() { 
+                                        String::new() 
+                                    } else { 
+                                        format!(" attrs={:?}", child.attributes) 
+                                    };
+                                    println!("{}<{}>{}{}", prefix, tag_name, attrs, text_preview);
+                                }
+                                XfaNodeKind::Value => println!("{}<value>", prefix),
+                                _ => println!("{}{:?}", prefix, child.kind),
+                            }
+                            print_children(&child.children, indent + 1);
+                        }
+                    }
+                    println!("Children:");
+                    print_children(&node.children, 1);
+                    return;
+                }
+                
+                find_and_print_draw(&node.children, target_name, depth + 1);
+            }
+        }
+
+        find_and_print_draw(&nodes, "DES_Name_Company", 0);
+        find_and_print_draw(&nodes, "DES_Endkunde", 0);
     }
 
     #[test]
@@ -1056,8 +1190,8 @@ mod tests {
         // Per XFA: weight="bold" (but HTML overrides to normal for rich text)
         assert_eq!(
             xfa_font.weight,
-            FontWeight::Bold,
-            "XFA font weight should be Bold"
+            FontWeight::Normal,
+            "XFA font weight should be Normal"
         );
         println!("  ✓ XFA Weight: {:?}", xfa_font.weight);
 
@@ -4020,7 +4154,6 @@ mod tests {
             pdf_path: Path::new("input/AAAB_019_DE.pdf"),
             doc_name: "test_aaab_merged",
             scale: 1.0,
-            locale: "DE",
             render_modes: vec![],
             structured: true,
             quiet: true,
@@ -4174,6 +4307,139 @@ mod tests {
         }
 
         println!("\n✓ AAAB merged output has expected conditional structure");
+    }
+
+    #[test]
+    fn test_aaab_merged_signature_section_not_conditional() {
+        // Test that the "Unterschrift(en)" h2 heading and signature fields are NOT inside
+        // a conditional in the merged output - they should be extracted as common suffix
+        // since they appear in all form states.
+        use crate::exhaustive::{ExhaustiveConfig, run_exhaustive};
+        use std::path::Path;
+
+        let config = ExhaustiveConfig {
+            pdf_path: Path::new("input/AAAB_019_DE.pdf"),
+            doc_name: "test_aaab_signature",
+            scale: 1.0,
+            render_modes: vec![],
+            structured: true,
+            quiet: true,
+            html: false,
+        };
+
+        // Clean up any existing test files
+        let _ = std::fs::remove_file("test_aaab_signature_merged.json");
+
+        // Create a fresh form
+        let xfa_data =
+            extract_xfa_from_pdf(config.pdf_path.to_str().unwrap()).expect("Failed to read PDF");
+        let mut form =
+            XfaForm::new(XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA"))
+                .expect("Failed to create form");
+
+        // Run exhaustive with merge
+        let result = run_exhaustive(&mut form, &config);
+        assert!(
+            result.is_ok(),
+            "Exhaustive run should succeed: {:?}",
+            result.err()
+        );
+
+        // Read the merged output
+        let merged_json = std::fs::read_to_string("test_aaab_signature_merged.json")
+            .expect("Should have created merged JSON");
+        let merged: Vec<serde_json::Value> =
+            serde_json::from_str(&merged_json).expect("Should parse merged JSON");
+
+        // Check that signature fields appear at top level (not inside conditionals)
+        // These should be extracted as common suffix since they're identical in all states
+        fn find_at_root_level(
+            nodes: &[serde_json::Value],
+            predicate: impl Fn(&serde_json::Value) -> bool,
+        ) -> bool {
+            for node in nodes {
+                if predicate(node) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        fn is_signature_date_field(node: &serde_json::Value) -> bool {
+            node.get("type").and_then(|t| t.as_str()) == Some("field")
+                && node.get("name").and_then(|n| n.as_str()) == Some("Global_SignatureDate")
+        }
+
+        fn is_fullname_field(node: &serde_json::Value) -> bool {
+            node.get("type").and_then(|t| t.as_str()) == Some("field")
+                && node.get("name").and_then(|n| n.as_str()) == Some("FullName")
+        }
+
+        fn is_unterschrift_heading(node: &serde_json::Value) -> bool {
+            if node.get("type").and_then(|t| t.as_str()) != Some("heading") {
+                return false;
+            }
+            if node.get("level").and_then(|l| l.as_str()) != Some("h2") {
+                return false;
+            }
+            if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
+                return content.iter().any(|c| {
+                    c.get("content")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.contains("Unterschrift"))
+                        .unwrap_or(false)
+                });
+            }
+            false
+        }
+
+        // The signature fields should be at the root level, not inside any conditional
+        let has_unterschrift_heading_at_root = find_at_root_level(&merged, is_unterschrift_heading);
+        let has_signature_date_at_root = find_at_root_level(&merged, is_signature_date_field);
+        let has_fullname_at_root = find_at_root_level(&merged, is_fullname_field);
+
+        println!(
+            "Unterschrift(en) h2 at root level: {}",
+            has_unterschrift_heading_at_root
+        );
+        println!(
+            "Global_SignatureDate at root level: {}",
+            has_signature_date_at_root
+        );
+        println!("FullName field at root level: {}", has_fullname_at_root);
+
+        assert!(
+            has_unterschrift_heading_at_root,
+            "Unterschrift(en) h2 heading should be at root level, not inside conditionals - \
+             it is common to all form states"
+        );
+
+        assert!(
+            has_signature_date_at_root,
+            "Global_SignatureDate field should be at root level, not inside conditionals - \
+             it is common to all form states"
+        );
+
+        assert!(
+            has_fullname_at_root,
+            "FullName field should be at root level, not inside conditionals - \
+             it is common to all form states"
+        );
+
+        // Clean up test files
+        let _ = std::fs::remove_file("test_aaab_signature_merged.json");
+        for entry in std::fs::read_dir(".").unwrap() {
+            if let Ok(entry) = entry {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("test_aaab_signature") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+
+        println!(
+            "\n✓ AAAB merged output has signature section extracted as common suffix (not conditional)"
+        );
     }
 
     #[test]
@@ -5049,5 +5315,212 @@ mod tests {
         }
 
         println!("\n✓ Button_Add and Button_Minus correctly filtered from structured output");
+    }
+
+    #[test]
+    fn test_aaab_heading_structure() {
+        // Test that the AAAB document has the expected heading structure:
+        // - h1: Retro-Erfassung für EAM FIM Endkunden – B2C
+        // - h2: Endkunde
+        // - h3: FIM Company
+        // - h2: Neuanlage (möglich ab dem 01. des aktuellen Monats)
+        // - h3: Sonderkondition
+        // - h3: Direktvereinbarung2
+        // - h2: Änderung
+        // - h3: Sonderkondition
+        // - h3: Direktvereinbarung2
+        // - h2: Löschung
+        // - h2: Unterschrift(en)
+        // - h3: CA/BD
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::FlattenedNodeKind;
+        use crate::xfa::FontWeight;
+        use std::collections::HashMap;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Collect all headings with their levels and text
+        let mut heading_info: Vec<(u8, String, f32)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
+                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                        .unwrap_or(0.0);
+                    heading_info.push((level, text, y_coord));
+                }
+            }
+        }
+
+        // Sort by y-coordinate for document order
+        heading_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+        println!("\n=== AAAB Heading Structure ===");
+        for (level, text, y) in &heading_info {
+            println!("H{} (y={}): {}", level, y, text);
+        }
+
+        // Expected heading structure in order
+        // Note: This is testing the default form state.
+        // "Änderung" and "Löschung" only appear when those repeat button options are selected.
+        let expected_headings: Vec<(u8, &str)> = vec![
+            (1, "Retro-Erfassung für EAM FIM Endkunden – B2C"),
+            (2, "Endkunde"),
+            (3, "FIM Company"),
+            (2, "Neuanlage (möglich ab dem 01. des aktuellen Monats)"),
+            (3, "Sonderkondition"),
+            (3, "Direktvereinbarung"),
+            (2, "Unterschrift(en)"),
+            (3, "CA/BD"),
+        ];
+
+        // Verify each expected heading exists with the correct level
+        for (expected_level, expected_text) in &expected_headings {
+            let found = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            });
+
+            assert!(
+                found.is_some(),
+                "Expected to find H{} heading containing '{}', but it was not found.\n\
+                Found headings:\n{}",
+                expected_level,
+                expected_text,
+                heading_info
+                    .iter()
+                    .map(|(l, t, _)| format!("  H{}: {}", l, t))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+
+        // Verify the order matches (headings appear in expected sequence)
+        let mut last_y = f32::NEG_INFINITY;
+        for (expected_level, expected_text) in &expected_headings {
+            if let Some((_, _, y)) = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            }) {
+                assert!(
+                    *y >= last_y,
+                    "Heading '{}' (y={}) should appear after previous heading (y={})",
+                    expected_text,
+                    y,
+                    last_y
+                );
+                last_y = *y;
+            }
+        }
+
+        println!("\n✓ AAAB heading structure test passed!");
+        println!("✓ All {} expected headings found with correct levels", expected_headings.len());
+    }
+
+    #[test]
+    fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
+        // Read the structured output
+        let contents =
+            std::fs::read_to_string("AAAB_019_DE_structured.json").expect("Failed to read file");
+        let structured: Vec<serde_json::Value> =
+            serde_json::from_str(&contents).expect("Failed to parse JSON");
+
+        // Find the Direktvereinbarung2 heading
+        let mut found_direktvereinbarung2 = false;
+        let mut found_standalone_isin_field = false;
+        let mut found_repeatable_isin_field = false;
+        let mut isin_heading_count = 0;
+
+        for (i, node) in structured.iter().enumerate() {
+            // Look for Direktvereinbarung2 heading
+            if let Some(node_type) = node.get("type").and_then(|t| t.as_str()) {
+                if node_type == "heading" {
+                    if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
+                        for item in content {
+                            if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
+                                if text.contains("Direktvereinbarung2") {
+                                    found_direktvereinbarung2 = true;
+                                    println!("Found Direktvereinbarung2 heading at index {}", i);
+                                }
+                                if found_direktvereinbarung2 && text == "ISIN" {
+                                    isin_heading_count += 1;
+                                    println!("Found ISIN heading at index {}", i);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // After finding Direktvereinbarung2, check for fields
+                if found_direktvereinbarung2 {
+                    // Look for standalone ISIN field (not in a grid/repeatable)
+                    if node_type == "field" {
+                        if let Some(name) = node.get("name").and_then(|n| n.as_str()) {
+                            if name == "ISIN" || name.contains("ISIN") {
+                                found_standalone_isin_field = true;
+                                println!("Found standalone ISIN field at index {}: name={}", i, name);
+                            }
+                        }
+                        // Also check field label
+                        if let Some(label) = node.get("label").and_then(|l| l.as_array()) {
+                            for item in label {
+                                if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
+                                    if text == "ISIN" {
+                                        println!("Found field with ISIN label at index {}", i);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Look for repeatable with ISIN field
+                    if node_type == "repeatable" {
+                        let repeatable_str = serde_json::to_string_pretty(&node).unwrap();
+                        if repeatable_str.contains("\"ISIN\"") {
+                            found_repeatable_isin_field = true;
+                            println!("Found repeatable with ISIN at index {}", i);
+                        }
+                    }
+                }
+            }
+        }
+
+        println!("\nSummary:");
+        println!("  Found Direktvereinbarung2: {}", found_direktvereinbarung2);
+        println!("  ISIN heading count: {}", isin_heading_count);
+        println!("  Found standalone ISIN field: {}", found_standalone_isin_field);
+        println!("  Found repeatable with ISIN: {}", found_repeatable_isin_field);
+
+        // The issue: we should NOT have standalone h2 headings for column headers before a repeatable
+        // These should be absorbed as labels in the grid
+        assert!(
+            isin_heading_count == 0,
+            "Found {} ISIN headings after Direktvereinbarung2, but column headers should be absorbed into grid labels, not separate headings",
+            isin_heading_count
+        );
+
+        // We should only have one ISIN field in the repeatable grid
+        assert!(
+            !found_standalone_isin_field,
+            "Found standalone ISIN field, but there should only be ISIN fields within the repeatable grid"
+        );
+
+        assert!(
+            found_repeatable_isin_field,
+            "Did not find ISIN in repeatable section"
+        );
     }
 }

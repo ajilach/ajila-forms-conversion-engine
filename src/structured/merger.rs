@@ -206,60 +206,76 @@ impl RecursiveMerger {
             })
             .collect();
 
-        // Find the common prefix and point of divergence
-        let (common_prefix, divergent_groups) = Self::extract_common_prefix(merged_groups);
+        // Find the common prefix, suffix, and point of divergence
+        let (common_prefix, common_suffix, divergent_groups) =
+            Self::extract_common_prefix_and_suffix(merged_groups);
 
         // Add common prefix to result
         result.extend(common_prefix);
 
-        // Create conditionals for each divergent group
-        for (selection, remaining_nodes) in divergent_groups {
-            if remaining_nodes.is_empty() {
-                continue;
+        // Check if all groups have empty middle (prefix + suffix consumed everything)
+        let all_empty_middle = divergent_groups.iter().all(|(_, nodes)| nodes.is_empty());
+
+        // Create conditionals for each divergent group (only if there's actual divergent content)
+        if !all_empty_middle {
+            for (selection, remaining_nodes) in divergent_groups {
+                if remaining_nodes.is_empty() {
+                    continue;
+                }
+
+                let condition = if let Some(sel) = selection {
+                    // Use group_path (if present) for field_name, field_path.name() for value
+                    FieldCondition {
+                        field_name: sel.condition_path().clone(),
+                        value: InputValue::Text(sel.value_name().to_string()),
+                    }
+                } else {
+                    FieldCondition {
+                        field_name: SomPath::new("unknown"),
+                        value: InputValue::Text("default".to_string()),
+                    }
+                };
+
+                let content = if remaining_nodes.len() == 1 {
+                    remaining_nodes.into_iter().next().unwrap()
+                } else {
+                    StructuredNode::Group(GroupNode {
+                        children: remaining_nodes,
+                    })
+                };
+
+                result.push(StructuredNode::Conditional(ConditionalNode {
+                    condition,
+                    content: Box::new(content),
+                }));
             }
-
-            let condition = if let Some(sel) = selection {
-                // Use group_path (if present) for field_name, field_path.name() for value
-                FieldCondition {
-                    field_name: sel.condition_path().clone(),
-                    value: InputValue::Text(sel.value_name().to_string()),
-                }
-            } else {
-                FieldCondition {
-                    field_name: SomPath::new("unknown"),
-                    value: InputValue::Text("default".to_string()),
-                }
-            };
-
-            let content = if remaining_nodes.len() == 1 {
-                remaining_nodes.into_iter().next().unwrap()
-            } else {
-                StructuredNode::Group(GroupNode {
-                    children: remaining_nodes,
-                })
-            };
-
-            result.push(StructuredNode::Conditional(ConditionalNode {
-                condition,
-                content: Box::new(content),
-            }));
         }
+
+        // Add common suffix to result (appears after all conditionals)
+        result.extend(common_suffix);
 
         result
     }
 
-    /// Extract the common structural prefix from all groups.
-    /// Returns (common_prefix, remaining_content_per_group)
-    fn extract_common_prefix(
+    /// Extract common structural prefix AND suffix from all groups.
+    /// Returns (common_prefix, common_suffix, middle_content_per_group)
+    ///
+    /// This extracts content that is structurally identical across ALL groups:
+    /// - Prefix: matching nodes from the beginning
+    /// - Suffix: matching nodes from the end (after prefix removal)
+    /// - Middle: the divergent content unique to each group
+    fn extract_common_prefix_and_suffix(
         mut groups: Vec<(Option<Selection>, Vec<StructuredNode>)>,
     ) -> (
-        Vec<StructuredNode>,
-        Vec<(Option<Selection>, Vec<StructuredNode>)>,
+        Vec<StructuredNode>,                           // common prefix
+        Vec<StructuredNode>,                           // common suffix
+        Vec<(Option<Selection>, Vec<StructuredNode>)>, // middle (divergent) per group
     ) {
         if groups.is_empty() {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         }
 
+        // --- Extract prefix (from the beginning) ---
         let mut common_prefix = Vec::new();
         let min_len = groups
             .iter()
@@ -267,20 +283,20 @@ impl RecursiveMerger {
             .min()
             .unwrap_or(0);
 
-        let mut idx = 0;
-        while idx < min_len {
+        let mut prefix_idx = 0;
+        while prefix_idx < min_len {
             // Check if all groups have structurally equivalent nodes at this position
-            let first_node = &groups[0].1[idx];
+            let first_node = &groups[0].1[prefix_idx];
             let all_equal = groups.iter().skip(1).all(|(_, nodes)| {
                 nodes
-                    .get(idx)
+                    .get(prefix_idx)
                     .map(|n| first_node.structural_eq(n))
                     .unwrap_or(false)
             });
 
             if all_equal {
                 common_prefix.push(first_node.clone());
-                idx += 1;
+                prefix_idx += 1;
             } else {
                 break;
             }
@@ -288,10 +304,53 @@ impl RecursiveMerger {
 
         // Remove the common prefix from all groups
         for (_, nodes) in &mut groups {
-            *nodes = nodes[idx..].to_vec();
+            *nodes = nodes[prefix_idx..].to_vec();
         }
 
-        (common_prefix, groups)
+        // --- Extract suffix (from the end) ---
+        let mut common_suffix = Vec::new();
+        let min_len_after_prefix = groups
+            .iter()
+            .map(|(_, nodes)| nodes.len())
+            .min()
+            .unwrap_or(0);
+
+        let mut suffix_count = 0;
+        while suffix_count < min_len_after_prefix {
+            // Get node from end of first group
+            let first_nodes = &groups[0].1;
+            let first_node = &first_nodes[first_nodes.len() - 1 - suffix_count];
+
+            // Check if all groups have structurally equivalent nodes at this position from end
+            let all_equal = groups.iter().skip(1).all(|(_, nodes)| {
+                if nodes.len() <= suffix_count {
+                    return false;
+                }
+                let idx = nodes.len() - 1 - suffix_count;
+                nodes
+                    .get(idx)
+                    .map(|n| first_node.structural_eq(n))
+                    .unwrap_or(false)
+            });
+
+            if all_equal {
+                common_suffix.push(first_node.clone());
+                suffix_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        // Reverse suffix since we collected from end to start
+        common_suffix.reverse();
+
+        // Remove the common suffix from all groups
+        for (_, nodes) in &mut groups {
+            let new_len = nodes.len().saturating_sub(suffix_count);
+            nodes.truncate(new_len);
+        }
+
+        (common_prefix, common_suffix, groups)
     }
 
     /// Merge node lists structurally (when all inputs have the same selection).

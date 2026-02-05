@@ -2090,9 +2090,38 @@ impl Flattened {
                 // Extract text content, or use empty string if none (scripts may fill it later)
                 // Use context to resolve xfa:embed references
                 let text_content = ctx.extract_text(&node.children).unwrap_or_default();
-                let font_size = Self::extract_font_size(node);
-                let font_name = Self::extract_font_name(node);
-                let style = Self::extract_style(node);
+                
+                // Extract font info from XFA <font> element first
+                let xfa_font_size = Self::extract_font_size(node);
+                let xfa_font_name = Self::extract_font_name(node);
+                
+                // Check if HTML content has CSS font overrides
+                // Per XFA spec, CSS styles in exData content can override the <font> element
+                let (css_font_family, css_font_size, css_is_bold) = Self::extract_font_from_html_content(&node.children);
+                
+                // Use CSS font if available, otherwise fall back to XFA font
+                let font_size = css_font_size.unwrap_or(xfa_font_size);
+                let font_name = css_font_family.clone().unwrap_or(xfa_font_name);
+                
+                // Extract style
+                let mut style = Self::extract_style(node);
+                
+                // Only apply CSS overrides if at least one CSS property was found
+                // This ensures consistency: either all CSS properties are considered, or none
+                if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
+                    if let Some(ref mut font) = style.font {
+                        // Apply CSS overrides if present
+                        if let Some(size) = css_font_size {
+                            font.size = size;
+                        }
+                        if let Some(ref family) = css_font_family {
+                            font.typeface = family.clone();
+                        }
+                        if let Some(is_bold) = css_is_bold {
+                            font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
+                        }
+                    }
+                }
 
                 // Get default h_align from XFA para element
                 let default_h_align = node
@@ -2785,9 +2814,35 @@ impl Flattened {
                         // Use context to resolve xfa:embed references
                         let text_content =
                             child_ctx.extract_text(&node.children).unwrap_or_default();
-                        let font_size = Self::extract_font_size(node);
-                        let font_name = Self::extract_font_name(node);
-                        let style = Self::extract_style(node);
+                        let mut font_size = Self::extract_font_size(node);
+                        let mut font_name = Self::extract_font_name(node);
+                        let mut style = Self::extract_style(node);
+                        
+                        // For HTML content (exData with contentType="text/html"), extract CSS font properties
+                        // which may override the XFA <font> element values
+                        let (css_font_family, css_font_size, css_is_bold) = Self::extract_font_from_html_content(&node.children);
+                        if let Some(ref name) = css_font_family {
+                            font_name = name.clone();
+                        }
+                        if let Some(size) = css_font_size {
+                            font_size = size;
+                        }
+                        
+                        // Only apply CSS overrides if at least one CSS property was found
+                        if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
+                            if let Some(ref mut font) = style.font {
+                                // Apply CSS overrides if present
+                                if let Some(size) = css_font_size {
+                                    font.size = size;
+                                }
+                                if let Some(ref family) = css_font_family {
+                                    font.typeface = family.clone();
+                                }
+                                if let Some(is_bold) = css_is_bold {
+                                    font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
+                                }
+                            }
+                        }
 
                         // Get default h_align from XFA para element
                         let default_h_align = node
@@ -3003,9 +3058,35 @@ impl Flattened {
                                 // Use context to resolve xfa:embed references
                                 let text_content =
                                     child_ctx.extract_text(&node.children).unwrap_or_default();
-                                let font_size = Self::extract_font_size(node);
-                                let font_name = Self::extract_font_name(node);
-                                let style = Self::extract_style(node);
+                                let mut font_size = Self::extract_font_size(node);
+                                let mut font_name = Self::extract_font_name(node);
+                                let mut style = Self::extract_style(node);
+                                
+                                // For HTML content (exData with contentType="text/html"), extract CSS font properties
+                                // which may override the XFA <font> element values
+                                let (css_font_family, css_font_size, css_is_bold) = Self::extract_font_from_html_content(&node.children);
+                                if let Some(ref name) = css_font_family {
+                                    font_name = name.clone();
+                                }
+                                if let Some(size) = css_font_size {
+                                    font_size = size;
+                                }
+                                
+                                // Only apply CSS overrides if at least one CSS property was found
+                                if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
+                                    if let Some(ref mut font) = style.font {
+                                        // Apply CSS overrides if present
+                                        if let Some(size) = css_font_size {
+                                            font.size = size;
+                                        }
+                                        if let Some(ref family) = css_font_family {
+                                            font.typeface = family.clone();
+                                        }
+                                        if let Some(is_bold) = css_is_bold {
+                                            font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
+                                        }
+                                    }
+                                }
 
                                 // Get default h_align from XFA para element
                                 let default_h_align = node
@@ -5607,6 +5688,151 @@ impl Flattened {
         } else {
             None
         }
+    }
+
+    /// Parse font-family from CSS style string.
+    /// Handles quoted and unquoted font names like:
+    /// - font-family:'Frutiger 45 Light'
+    /// - font-family: "Arial"
+    /// - font-family: Helvetica
+    fn parse_css_font_family(style: &str) -> Option<String> {
+        let search = "font-family:";
+        if let Some(pos) = style.find(search) {
+            let rest = &style[pos + search.len()..];
+            let value_str = rest.split(';').next()?.trim();
+
+            // Handle quoted font names
+            if value_str.starts_with('\'') || value_str.starts_with('"') {
+                let quote = value_str.chars().next()?;
+                let end_quote = value_str[1..].find(quote)?;
+                Some(value_str[1..end_quote + 1].to_string())
+            } else {
+                // Unquoted font name - take until comma or end
+                Some(value_str.split(',').next()?.trim().to_string())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Parse font-weight from CSS style string.
+    /// Returns true if bold, false if normal/not specified.
+    fn parse_css_font_weight(style: &str) -> Option<bool> {
+        let search = "font-weight:";
+        if let Some(pos) = style.find(search) {
+            let rest = &style[pos + search.len()..];
+            let value_str = rest.split(';').next()?.trim().to_lowercase();
+            
+            // Check for bold values
+            if value_str == "bold" || value_str == "700" || value_str == "800" || value_str == "900" {
+                Some(true)
+            } else if value_str == "normal" || value_str == "400" || value_str == "300" || value_str == "200" || value_str == "100" {
+                Some(false)
+            } else {
+                // Unknown value, return None to not override
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Extract font information (font-family, font-size, font-weight-is-bold) from HTML exData content.
+    /// Returns (font_family, font_size_pt, is_bold) if found in the first <p> element's style.
+    /// Per XFA spec, the HTML content inside exData can have CSS styles that should
+    /// override the <font> element's properties.
+    fn extract_font_from_html_content(children: &[XfaNode]) -> (Option<String>, Option<Num>, Option<bool>) {
+        // Navigate to value -> exData -> body -> p and extract style
+        for child in children {
+            if matches!(child.kind, XfaNodeKind::Value) {
+                for value_child in &child.children {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
+                        if tag_name == "exData" {
+                            // Find body element
+                            for ex_child in &value_child.children {
+                                if let XfaNodeKind::Element {
+                                    tag_name: body_tag, ..
+                                } = &ex_child.kind
+                                {
+                                    if body_tag == "body" {
+                                        // Find first <p> element with style
+                                        for body_child in &ex_child.children {
+                                            if let XfaNodeKind::Element {
+                                                tag_name: p_tag, ..
+                                            } = &body_child.kind
+                                            {
+                                                if p_tag == "p" {
+                                                    if let Some(style) =
+                                                        body_child.attributes.get("style")
+                                                    {
+                                                        let font_family =
+                                                            Self::parse_css_font_family(style);
+                                                        let font_size =
+                                                            Self::parse_css_dimension(style, "font-size")
+                                                                .map(|s| num(s as f64));
+                                                        let is_bold =
+                                                            Self::parse_css_font_weight(style);
+                                                        return (font_family, font_size, is_bold);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Also check Element with tag_name "value"
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "value" {
+                    for value_child in &child.children {
+                        if let XfaNodeKind::Element {
+                            tag_name: inner_tag,
+                            ..
+                        } = &value_child.kind
+                        {
+                            if inner_tag == "exData" {
+                                for ex_child in &value_child.children {
+                                    if let XfaNodeKind::Element {
+                                        tag_name: body_tag, ..
+                                    } = &ex_child.kind
+                                    {
+                                        if body_tag == "body" {
+                                            for body_child in &ex_child.children {
+                                                if let XfaNodeKind::Element {
+                                                    tag_name: p_tag, ..
+                                                } = &body_child.kind
+                                                {
+                                                    if p_tag == "p" {
+                                                        if let Some(style) =
+                                                            body_child.attributes.get("style")
+                                                        {
+                                                            let font_family =
+                                                                Self::parse_css_font_family(style);
+                                                            let font_size =
+                                                                Self::parse_css_dimension(
+                                                                    style, "font-size",
+                                                                )
+                                                                .map(|s| num(s as f64));
+                                                            let is_bold =
+                                                                Self::parse_css_font_weight(style);
+                                                            return (font_family, font_size, is_bold);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (None, None, None)
     }
 
     /// Parse CSS text-align property from style string

@@ -33,6 +33,9 @@
 //! RadioButtonGrouper          ─── groups radio buttons on same line
 //!     │
 //!     ▼
+//! FieldTableDetector          ─── detects field tables with bold headers
+//!     │
+//!     ▼
 //! HeadingDetector             ─── identifies headings (must run BEFORE LabelAttacher)
 //!     │
 //!     ▼
@@ -66,6 +69,7 @@
 
 mod date_field_detector;
 mod field_grouper;
+mod field_table_detector;
 mod grid_template;
 mod heading_detector;
 mod inline_field_detector;
@@ -79,8 +83,9 @@ mod text_block;
 
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
+pub use field_table_detector::FieldTableDetector;
 pub use grid_template::GridTemplateDetector;
-pub use heading_detector::{GlobalFontStats, HeadingDetector};
+pub use heading_detector::{GlobalBorderStats, GlobalFontStats, HeadingDetector};
 pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
 pub use master_page_detector::MasterPageDetector;
@@ -124,8 +129,12 @@ impl<'a> GlobalContext<'a> {
     }
 
     /// Compute global font statistics from all flattened states.
+    /// This includes border statistics for consistent heading level detection.
     pub fn compute_font_stats(&self) -> GlobalFontStats {
-        GlobalFontStats::from_flattened_iter(self.all_flattened.iter().copied())
+        let mut stats = GlobalFontStats::from_flattened_iter(self.all_flattened.iter().copied());
+        // Second pass to compute border statistics (requires font stats to be available first)
+        stats.compute_border_stats(self.all_flattened.iter().copied());
+        stats
     }
 }
 
@@ -169,12 +178,13 @@ pub fn run_analysis_pipeline_with_context(
 ) {
     NoPrintDetector::new().process_with_context(doc, ctx);
     MasterPageDetector::new().process_with_context(doc, ctx);
-    HeadingDetector::new().process_with_context(doc, ctx);
     TextBlockGrouper::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);
     DateFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
+    FieldTableDetector::new().process_with_context(doc, ctx);
+    HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
     GridTemplateDetector::new().process_with_context(doc, ctx);

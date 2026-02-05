@@ -64,8 +64,6 @@ pub struct ExhaustiveConfig<'a> {
     pub scale: f32,
     /// Path to the source PDF file
     pub pdf_path: &'a Path,
-    /// Locale identifier (e.g., "DE", "EN")
-    pub locale: &'a str,
     /// Render modes to use (can be multiple: plain, labelled, annotated)
     pub render_modes: Vec<RenderMode>,
     /// Whether to output structured JSON for each state
@@ -145,7 +143,10 @@ pub fn run_exhaustive(
     }
 
     let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
-    let global_font_stats = GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
+    let mut global_font_stats =
+        GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
+    // Second pass: compute border statistics for consistent heading level detection
+    global_font_stats.compute_border_stats(flattened_refs.iter().copied());
 
     if !config.quiet {
         println!(
@@ -154,6 +155,14 @@ pub fn run_exhaustive(
             global_font_stats.sample_count,
             collected_states.len()
         );
+        if global_font_stats.border_stats.total_count > 0 {
+            println!(
+                "    Border stats: {}/{} headings have borders (should_use_borders: {})",
+                global_font_stats.border_stats.underlined_count,
+                global_font_stats.border_stats.total_count,
+                global_font_stats.border_stats.should_use_borders()
+            );
+        }
     }
 
     // ========================================================================
