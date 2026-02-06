@@ -1,0 +1,16 @@
+{
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+    },
+    "rust-analyzer.check.command": "clippy",
+    "chat.tools.terminal.autoApprove": {
+        "cat": true,
+        "jq": true,
+        "grep": true,
+        "head": true,
+        "tail": true,
+        "wc": true,
+    },
+    "liveServer.settings.port": 5501,
+}

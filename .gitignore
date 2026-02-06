@@ -1,5 +1,6 @@
 /target
 .DS_Store
 
-*.png
-*.json
+/*.png
+/*.json
+/*.html
