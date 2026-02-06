@@ -104,37 +104,12 @@ use crate::flattened::Flattened;
 pub struct GlobalContext<'a> {
     /// All flattened form states collected during exhaustive exploration
     pub all_flattened: &'a [&'a Flattened],
-    /// Pre-computed global font statistics (computed once, used by HeadingDetector)
-    pub font_stats: Option<GlobalFontStats>,
 }
 
 impl<'a> GlobalContext<'a> {
     /// Create a new global context from a slice of flattened references.
     pub fn new(all_flattened: &'a [&'a Flattened]) -> Self {
-        Self {
-            all_flattened,
-            font_stats: None,
-        }
-    }
-
-    /// Create a global context with pre-computed font statistics.
-    pub fn with_font_stats(
-        all_flattened: &'a [&'a Flattened],
-        font_stats: GlobalFontStats,
-    ) -> Self {
-        Self {
-            all_flattened,
-            font_stats: Some(font_stats),
-        }
-    }
-
-    /// Compute global font statistics from all flattened states.
-    /// This includes border statistics for consistent heading level detection.
-    pub fn compute_font_stats(&self) -> GlobalFontStats {
-        let mut stats = GlobalFontStats::from_flattened_iter(self.all_flattened.iter().copied());
-        // Second pass to compute border statistics (requires font stats to be available first)
-        stats.compute_border_stats(self.all_flattened.iter().copied());
-        stats
+        Self { all_flattened }
     }
 }
 

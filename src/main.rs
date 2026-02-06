@@ -5637,73 +5637,66 @@ mod tests {
     #[test]
     fn test_aaab_loeschung_radio_buttons_are_grouped() {
         // Test that the 4 radio buttons in the "Löschung" section are grouped together
-        // in the merged JSON output as a single radio field with 4 options:
+        // as a single radio field with 4 options:
         // - Löschung Retro Rückvergütung
         // - Änderung Zahlungsempfänger ab: 01. .
         // - Löschung Sonderkondition
         // - Löschung Direktvereinbarung
-        
-        // Read the merged JSON output
-        let contents = std::fs::read_to_string("AAAB_019_DE_merged.json")
-            .expect("Failed to read merged JSON file. Run with --structured first.");
-        
-        let structured: Vec<serde_json::Value> =
-            serde_json::from_str(&contents).expect("Failed to parse JSON");
+        use crate::exhaustive::run_exhaustive_to_merged;
+        use crate::structured::{StructuredNode, FieldNode, FieldType};
 
-        // Find the radio field with name containing "RB_Group_Retro"
-        fn find_radio_field(nodes: &[serde_json::Value], target_name: &str) -> Option<serde_json::Value> {
+        // Get merged structured nodes directly without file I/O
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        // Helper to find a field by name pattern recursively (returns cloned field)
+        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
             for node in nodes {
-                // Check if this is the field we're looking for
-                if node.get("type").and_then(|t| t.as_str()) == Some("field") {
-                    if let Some(name) = node.get("name").and_then(|n| n.as_str()) {
-                        if name.contains(target_name) {
-                            return Some(node.clone());
+                match node {
+                    StructuredNode::Field(field) => {
+                        if field.name.contains(target_name) {
+                            return Some(field.clone());
                         }
                     }
-                }
-                
-                // Recursively search in children, content, etc.
-                if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
-                    if let Some(found) = find_radio_field(children, target_name) {
-                        return Some(found);
-                    }
-                }
-                if let Some(content) = node.get("content") {
-                    if let Some(content_obj) = content.as_object() {
-                        if let Some(children) = content_obj.get("children").and_then(|c| c.as_array()) {
-                            if let Some(found) = find_radio_field(children, target_name) {
-                                return Some(found);
-                            }
+                    StructuredNode::Group(group) => {
+                        if let Some(found) = find_radio_field(&group.children, target_name) {
+                            return Some(found);
                         }
                     }
+                    StructuredNode::Conditional(cond) => {
+                        if let Some(found) = find_radio_field(&[(*cond.content).clone()], target_name) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        if let Some(found) = find_radio_field(&[(*rep.item).clone()], target_name) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_radio_field(&nodes, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
                 }
             }
             None
         }
 
         let radio_field = find_radio_field(&structured, "RB_Group_Retro")
-            .expect("Expected to find radio field 'RB_Group_Retro' in merged JSON");
-
-        println!("\n=== Found RB_Group_Retro field ===");
-        println!("{}", serde_json::to_string_pretty(&radio_field).unwrap());
+            .expect("Expected to find radio field 'RB_Group_Retro' in structured output");
 
         // Verify it's a radio type
-        let input_type = radio_field.get("inputType").expect("Field should have inputType");
-        assert_eq!(
-            input_type.get("type").and_then(|t| t.as_str()),
-            Some("radio"),
-            "Field should be of type 'radio'"
-        );
-
-        // Get the options
-        let options = input_type.get("options")
-            .and_then(|o| o.as_array())
-            .expect("Radio field should have options array");
+        let options = match &radio_field.input_type {
+            FieldType::Radio { options } => options,
+            other => panic!("Field should be of type 'radio', got {:?}", other),
+        };
 
         println!("\nOptions found: {}", options.len());
         for (i, opt) in options.iter().enumerate() {
-            let name = opt.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-            println!("  Option {}: {}", i + 1, name);
+            println!("  Option {}: {}", i + 1, opt.name);
         }
 
         // Verify we have 4 options
@@ -5720,12 +5713,12 @@ mod tests {
             "Löschung Direktvereinbarung",
         ];
 
-        let option_names: Vec<String> = options.iter()
-            .filter_map(|o| o.get("name").and_then(|n| n.as_str()).map(String::from))
+        let option_names: Vec<&str> = options.iter()
+            .map(|o| o.name.as_str())
             .collect();
 
         for expected in &expected_labels {
-            let found = option_names.iter().any(|name| name.contains(expected));
+            let found = option_names.iter().any(|name: &&str| name.contains(expected));
             assert!(
                 found,
                 "Expected to find radio option containing '{}'\nFound options: {:?}",

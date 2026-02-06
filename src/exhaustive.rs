@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use crate::RenderMode;
-use crate::document::modules::{GlobalContext, GlobalFontStats};
+use crate::document::modules::GlobalContext;
 use crate::flattened::Flattened;
 use crate::structured::Selection;
 use crate::xfa::scripting::{SomPath, XfaForm};
@@ -136,43 +136,14 @@ pub fn run_exhaustive(
     }
 
     // ========================================================================
-    // Compute global font statistics from all collected flattened data
-    // ========================================================================
-    if !config.quiet {
-        println!("\n  Computing global font statistics...");
-    }
-
-    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
-    let mut global_font_stats =
-        GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
-    // Second pass: compute border statistics for consistent heading level detection
-    global_font_stats.compute_border_stats(flattened_refs.iter().copied());
-
-    if !config.quiet {
-        println!(
-            "    Body size: {:.1}pt, {} text samples from {} states",
-            global_font_stats.body_size,
-            global_font_stats.sample_count,
-            collected_states.len()
-        );
-        if global_font_stats.border_stats.total_count > 0 {
-            println!(
-                "    Border stats: {}/{} headings have borders (should_use_borders: {})",
-                global_font_stats.border_stats.underlined_count,
-                global_font_stats.border_stats.total_count,
-                global_font_stats.border_stats.should_use_borders()
-            );
-        }
-    }
-
-    // ========================================================================
     // Pass 2: Run analysis pipeline with global context and generate outputs
     // ========================================================================
     if !config.quiet {
         println!("\n  Pass 2: Analyzing and generating outputs...");
     }
 
-    let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
+    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
+    let global_ctx = GlobalContext::new(&flattened_refs);
     let mut images_rendered = 0;
 
     // Collect all structured outputs for merging
@@ -287,17 +258,10 @@ pub fn run_exhaustive_to_merged(
     )?;
 
     // ========================================================================
-    // Compute global font statistics from all collected flattened data
-    // ========================================================================
-    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
-    let mut global_font_stats =
-        GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
-    global_font_stats.compute_border_stats(flattened_refs.iter().copied());
-
-    // ========================================================================
     // Pass 2: Run analysis pipeline with global context
     // ========================================================================
-    let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
+    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
+    let global_ctx = GlobalContext::new(&flattened_refs);
 
     // Collect all structured outputs for merging
     let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =

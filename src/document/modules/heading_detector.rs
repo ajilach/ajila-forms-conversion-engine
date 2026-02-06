@@ -939,24 +939,22 @@ impl AnalysisModule for HeadingDetector {
     }
 
     fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
-        // Use global font statistics if available, otherwise compute local stats
-        let (stats, global_border_stats) = if let Some(global_stats) = &ctx.font_stats {
+        // Compute global stats from all flattened data in the context
+        let (stats, global_border_stats) = if !ctx.all_flattened.is_empty() {
+            let mut global_stats =
+                GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
+            global_stats.compute_border_stats(ctx.all_flattened.iter().copied());
             let border_stats = if global_stats.border_stats.total_count > 0 {
-                Some(&global_stats.border_stats)
+                Some(global_stats.border_stats.clone())
             } else {
                 None
             };
             (global_stats.to_font_stats(), border_stats)
-        } else if !ctx.all_flattened.is_empty() {
-            // Compute global stats from all flattened data
-            let global_stats =
-                GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
-            (global_stats.to_font_stats(), None)
         } else {
             // Fallback to local stats
             (self.collect_font_stats(doc), None)
         };
-        self.process_with_stats(doc, &stats, global_border_stats);
+        self.process_with_stats(doc, &stats, global_border_stats.as_ref());
     }
 }
 
