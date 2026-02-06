@@ -17,11 +17,25 @@ pub enum StructuredNode {
     Image(ImageNode),
     Table(TableNode),
     Field(FieldNode),
+    //UnorderedList(UnorderedListNode),
+    //OrderedList(OrderedListNode),
     Repeatable(RepeatableNode),
     Group(GroupNode),
     Conditional(ConditionalNode),
     Empty,
     GridLayout(GridLayout),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnorderedListNode {
+    pub items: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderedListNode {
+    pub items: Vec<InlineNode>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -459,14 +473,12 @@ impl FieldType {
             (FieldType::Email, FieldType::Email) => true,
             (FieldType::Tel, FieldType::Tel) => true,
             (FieldType::Bool, FieldType::Bool) => true,
-            (
-                FieldType::Radio { options: opts1 },
-                FieldType::Radio { options: opts2 },
-            ) => opts1 == opts2,
-            (
-                FieldType::Select { options: opts1 },
-                FieldType::Select { options: opts2 },
-            ) => opts1 == opts2,
+            (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 }) => {
+                opts1 == opts2
+            }
+            (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
+                opts1 == opts2
+            }
             _ => false,
         }
     }

@@ -4,6 +4,7 @@
 
 - When a bug was identified, always add a test to confirm the issue. Then fix the bug, and finally run the same test again to confirm that the issue is gone. Keep the test to ensure that the bug will not happen anymore
 - After implementing a feature, always run all tests to ensure that the feature din't introduce a bug
+- Before assuming that a test failure was preexisting, confirm it by stashing the changes and running the tests again in the original code.
 
 ## Project-specific
 
