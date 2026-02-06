@@ -325,7 +325,7 @@ impl HeadingDetector {
     pub fn new() -> Self {
         HeadingDetector {
             min_size_ratio: 1.35, // 35% larger than body size (or 3.5pt absolute difference)
-            max_heading_length: 150,
+            max_heading_length: 200,
             boost_bold: true,
             min_samples: 5,
         }
@@ -1331,7 +1331,7 @@ mod tests {
 
     #[test]
     fn test_long_text_not_heading() {
-        let long_text = "This is a very long paragraph that should not be detected as a heading even though it might have a larger font size because headings are typically short and concise not rambling on like this.";
+        let long_text = "This is a very long paragraph that should not be detected as a heading even though it might have a larger font size because headings are typically short and concise not rambling on like this text which goes on and on.";
 
         let flattened = Flattened::from_nodes(
             Page {
@@ -1339,7 +1339,7 @@ mod tests {
                 height: num(842.0),
             },
             vec![
-                // Large font but too long to be heading
+                // Large font but too long to be heading (>200 chars)
                 make_text_node(long_text, 18.0, 10.0, 10.0),
                 // Body text
                 make_text_node("Body paragraph one.", 10.0, 10.0, 50.0),
@@ -1358,7 +1358,7 @@ mod tests {
         for &idx in &headings {
             let text = doc.get_text_content(idx);
             assert!(
-                text.len() <= 150,
+                text.len() <= 200,
                 "Long text should not be heading: {}",
                 text
             );

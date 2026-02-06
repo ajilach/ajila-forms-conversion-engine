@@ -178,6 +178,14 @@ impl<'a, 'b> Converter<'a, 'b> {
             // DateField → FieldNode with Date type
             GroupKind::DateField { num_fields: _ } => self.convert_date_field(group_idx),
 
+            // InlineDateField → FieldNode with Date type + optional suffix paragraph
+            GroupKind::InlineDateField {
+                label_text,
+                suffix_text,
+                generated_name,
+                ..
+            } => self.convert_inline_date_field(label_text, suffix_text, generated_name),
+
             // Field → FieldNode (wrapped single field, unlabeled)
             GroupKind::Field => self.convert_field_group(group_idx, None),
 
@@ -500,6 +508,37 @@ impl<'a, 'b> Converter<'a, 'b> {
             value,
             placeholder: None,
         }))
+    }
+
+    /// Convert an InlineDateField to a FieldNode with Date type.
+    /// If suffix_text is present, wraps the field and suffix paragraph in a GroupNode.
+    fn convert_inline_date_field(
+        &self,
+        label_text: &str,
+        suffix_text: &Option<String>,
+        generated_name: &str,
+    ) -> Option<StructuredNode> {
+        let field_node = StructuredNode::Field(FieldNode {
+            name: generated_name.to_string(),
+            label: Some(InlineText::plain(label_text.to_string())),
+            input_type: FieldType::Date,
+            value: None,
+            placeholder: None,
+        });
+
+        // If there's suffix text, emit it as a trailing paragraph
+        if let Some(suffix) = suffix_text {
+            if !suffix.is_empty() {
+                let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain(suffix.clone()),
+                });
+                return Some(StructuredNode::Group(GroupNode {
+                    children: vec![field_node, suffix_paragraph],
+                }));
+            }
+        }
+
+        Some(field_node)
     }
 
     /// Build a FieldNode from a FlattenedNode.

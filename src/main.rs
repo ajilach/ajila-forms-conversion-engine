@@ -5726,4 +5726,454 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_aaei_heading_structure() {
+        // Test that the AAEI document has the expected heading structure:
+        // - h1: Investmentvermögen: Erklärung zur Inanspruchnahme des
+        //       Doppelbesteuerungsabkommens zwischen der Bundesrepublik
+        //       Deutschland und den Vereinigten Staaten von Amerika
+        // - h2: Kunde
+        // - h3: Vertretungsberechtigte(r)
+        // - h2: Erklärung
+        // - h2: Unterschrift(en)
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::{Document, GroupKind};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Collect all headings with their levels and text
+        let mut heading_info: Vec<(u8, String, f32)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
+                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                        .unwrap_or(0.0);
+                    heading_info.push((level, text, y_coord));
+                }
+            }
+        }
+
+        // Sort by y-coordinate for document order
+        heading_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+        println!("\n=== AAEI Heading Structure ===");
+        for (level, text, y) in &heading_info {
+            println!("H{} (y={}): {}", level, y, text);
+        }
+
+        // Currently detected headings (these must pass):
+        // - h1: Investmentvermögen... (main title)
+        // - h2: Kunde
+        // - h3: Vertretungsberechtigte(r)
+        // - h2: Erklärung
+        // - h2: Unterschrift(en)
+        let currently_detected: Vec<(u8, &str)> = vec![
+            (1, "Investmentvermögen"),            // h1 - main title
+            (2, "Kunde"),                         // h2
+            (3, "Vertretungsberechtigte(r)"),     // h3
+            (2, "Erklärung"),                     // h2
+            (2, "Unterschrift(en)"),              // h2
+        ];
+
+        // Verify currently detected headings
+        for (expected_level, expected_text) in &currently_detected {
+            let found = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            });
+
+            assert!(
+                found.is_some(),
+                "Expected to find H{} heading containing '{}', but it was not found.\n\
+                Found headings:\n{}",
+                expected_level,
+                expected_text,
+                heading_info
+                    .iter()
+                    .map(|(l, t, _)| format!("  H{}: {}", l, t))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+
+        // Verify the order matches (headings appear in expected sequence)
+        let mut last_y = f32::NEG_INFINITY;
+        for (expected_level, expected_text) in &currently_detected {
+            if let Some((_, _, y)) = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            }) {
+                assert!(
+                    *y >= last_y,
+                    "Heading '{}' (y={}) should appear after previous heading (y={})",
+                    expected_text,
+                    y,
+                    last_y
+                );
+                last_y = *y;
+            }
+        }
+
+        println!("\n✓ AAEI heading structure test passed!");
+        println!("✓ {} headings verified", currently_detected.len());
+    }
+
+    #[test]
+    fn test_debug_aaei_investmentvermogen_title() {
+        // Test that the "Investmentvermögen..." title is now detected as H1
+        // after increasing max_heading_length from 150 to 200 characters.
+        //
+        // The title is 189 characters:
+        // "Investmentvermögen: Erklärung zur Inanspruchnahme des Doppelbesteuerungsabkommens 
+        //  zwischen der Bundesrepublik Deutschland und den Vereinigten Staaten von Amerika 
+        //  Anhang zum Formular W-8BEN"
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::FlattenedNodeKind;
+        use crate::xfa::FontWeight;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Verify the title exists and get its properties
+        let mut title_char_count = 0;
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text { content, source_name, .. } = &node.kind {
+                if source_name.as_deref() == Some("T_FormTitle") {
+                    title_char_count = content.chars().count();
+                    println!("Title char count: {}", title_char_count);
+                    println!("Content preview: '{}'", content.chars().take(80).collect::<String>());
+                }
+            }
+        }
+
+        assert!(title_char_count > 0, "Should find T_FormTitle");
+        assert!(title_char_count <= 200, "Title should be within new 200 char limit");
+
+        // Now run heading detection and verify H1 is detected
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Find the H1 heading containing "Investmentvermögen"
+        let h1_title = headings.iter().find_map(|&idx| {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level: 1 } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    if text.contains("Investmentvermögen") {
+                        return Some(text);
+                    }
+                }
+            }
+            None
+        });
+
+        assert!(
+            h1_title.is_some(),
+            "After increasing max_heading_length to 200, the title should be detected as H1"
+        );
+
+        println!("\n✓ H1 title is now correctly detected: '{}'", 
+            h1_title.unwrap().chars().take(60).collect::<String>());
+    }
+
+    #[test]
+    fn test_aaei_has_repeatable_with_nachname_vorname() {
+        // Test that the AAEI document has a repeatable section containing
+        // fields with "Nachname" and "Vorname(n)" labels
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Convert to structured form
+        let structured_nodes = crate::structured::convert(&doc);
+
+        // Helper to extract label text from a FieldNode
+        fn get_field_label(field: &FieldNode) -> String {
+            field
+                .label
+                .as_ref()
+                .map(|label| {
+                    label
+                        .0
+                        .iter()
+                        .map(|node| match node {
+                            InlineNode::Text(s) => s.clone(),
+                            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                                fn extract(n: &InlineNode) -> String {
+                                    match n {
+                                        InlineNode::Text(s) => s.clone(),
+                                        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                                            extract(inner)
+                                        }
+                                        InlineNode::Link(link) => link
+                                            .content
+                                            .0
+                                            .iter()
+                                            .map(|n| extract(n))
+                                            .collect::<Vec<_>>()
+                                            .join(""),
+                                    }
+                                }
+                                extract(inner)
+                            }
+                            InlineNode::Link(link) => link
+                                .content
+                                .0
+                                .iter()
+                                .map(|n| match n {
+                                    InlineNode::Text(s) => s.clone(),
+                                    _ => String::new(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(""),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        }
+
+        // Search for repeatables containing Nachname/Vorname fields
+        fn find_repeatable_with_fields(
+            nodes: &[StructuredNode],
+            target_labels: &[&str],
+        ) -> Option<Vec<String>> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(rep) => {
+                        // Collect all field labels in this repeatable
+                        let mut found_labels: Vec<String> = Vec::new();
+                        collect_field_labels_from_node(&rep.item, &mut found_labels);
+                        
+                        // Check if all target labels are present
+                        let all_found = target_labels.iter().all(|target| {
+                            found_labels.iter().any(|label| label.contains(target))
+                        });
+                        
+                        if all_found {
+                            return Some(found_labels);
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        if let Some(result) = find_repeatable_with_fields(&group.children, target_labels) {
+                            return Some(result);
+                        }
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        if let Some(result) = find_repeatable_with_fields(&[(*cond.content).clone()], target_labels) {
+                            return Some(result);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        fn collect_field_labels_from_node(node: &StructuredNode, labels: &mut Vec<String>) {
+            match node {
+                StructuredNode::Field(field) => {
+                    let label = get_field_label(field);
+                    if !label.is_empty() {
+                        labels.push(label);
+                    }
+                }
+                StructuredNode::Group(group) => {
+                    for child in &group.children {
+                        collect_field_labels_from_node(child, labels);
+                    }
+                }
+                StructuredNode::GridLayout(grid) => {
+                    for element in &grid.elements {
+                        collect_field_labels_from_node(&element.node, labels);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let target_labels = ["Nachname", "Vorname(n)"];
+        let found = find_repeatable_with_fields(&structured_nodes, &target_labels);
+
+        assert!(
+            found.is_some(),
+            "Expected to find a repeatable section containing fields with labels 'Nachname' and 'Vorname(n)'"
+        );
+
+        let labels = found.unwrap();
+        println!("\n=== Repeatable section field labels ===");
+        for label in &labels {
+            println!("  - '{}'", label);
+        }
+
+        println!("\n✓ AAEI has repeatable with Nachname/Vorname fields");
+    }
+
+    #[test]
+    fn test_aaei_has_expected_field_labels() {
+        // Test that the AAEI document has fields with specific labels:
+        // - Firma
+        // - Ort
+        // - Datum
+        // - Name des/der Zeichnungsberechtigten
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Convert to structured form
+        let structured_nodes = crate::structured::convert(&doc);
+
+        // Helper to extract label text from a FieldNode
+        fn get_field_label(field: &FieldNode) -> String {
+            field
+                .label
+                .as_ref()
+                .map(|label| {
+                    label
+                        .0
+                        .iter()
+                        .map(|node| match node {
+                            InlineNode::Text(s) => s.clone(),
+                            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                                fn extract(n: &InlineNode) -> String {
+                                    match n {
+                                        InlineNode::Text(s) => s.clone(),
+                                        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                                            extract(inner)
+                                        }
+                                        InlineNode::Link(link) => link
+                                            .content
+                                            .0
+                                            .iter()
+                                            .map(|n| extract(n))
+                                            .collect::<Vec<_>>()
+                                            .join(""),
+                                    }
+                                }
+                                extract(inner)
+                            }
+                            InlineNode::Link(link) => link
+                                .content
+                                .0
+                                .iter()
+                                .map(|n| match n {
+                                    InlineNode::Text(s) => s.clone(),
+                                    _ => String::new(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(""),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        }
+
+        // Collect all field labels from structured output
+        fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        let label = get_field_label(field);
+                        if !label.is_empty() {
+                            labels.push(label);
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_field_labels(&group.children, labels);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_field_labels(&[(*rep.item).clone()], labels);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        collect_field_labels(&[(*cond.content).clone()], labels);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        for element in &grid.elements {
+                            collect_field_labels(&[element.node.clone()], labels);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut field_labels: Vec<String> = Vec::new();
+        collect_field_labels(&structured_nodes, &mut field_labels);
+
+        println!("\n=== Field labels found in AAEI structured output ===");
+        for label in &field_labels {
+            println!("  - '{}'", label);
+        }
+
+        // Expected labels from the AAEI form
+        let expected_labels = [
+            "Firma",
+            "Ort",
+            "Datum",
+            "Name des/der Zeichnungsberechtigten",
+        ];
+
+        // Check each expected label is present
+        for expected in expected_labels {
+            let found = field_labels.iter().any(|label| label.contains(expected));
+            assert!(
+                found,
+                "Expected to find field with label containing '{}', but it was not found.\nFound labels: {:?}",
+                expected, field_labels
+            );
+        }
+
+        println!("\n✓ All expected AAEI field labels found in structured output");
+    }
 }
