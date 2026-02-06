@@ -5386,9 +5386,22 @@ mod tests {
             })
         }
 
-        // Helper to check if a field has ISIN name
+        // Helper to check if a field has ISIN in name OR label
         fn is_isin_field(field: &FieldNode) -> bool {
             field.name == "ISIN" || field.name.contains("ISIN")
+        }
+
+        // Helper to check if a field has ISIN as its label
+        fn has_isin_label(field: &FieldNode) -> bool {
+            field.label.as_ref().map_or(false, |label_nodes| {
+                label_nodes.0.iter().any(|inline| {
+                    if let InlineNode::Text(t) = inline {
+                        t.trim() == "ISIN"
+                    } else {
+                        false
+                    }
+                })
+            })
         }
 
         fn contains_isin_field(node: &StructuredNode) -> bool {
@@ -5437,10 +5450,12 @@ mod tests {
                         }
                     }
                     StructuredNode::Field(field) if *after_direktvereinbarung2 => {
-                        if is_isin_field(field) {
+                        // Check for standalone field with ISIN label (but not ISIN name)
+                        // This catches fields like Global_SignaturePlace that incorrectly have ISIN as their label
+                        if has_isin_label(field) && !is_isin_field(field) {
                             *found_standalone_isin_field = true;
                             println!(
-                                "Found standalone ISIN field at index {}: name={}",
+                                "Found standalone field with ISIN label at index {}: name={}",
                                 i, field.name
                             );
                         }
@@ -5508,10 +5523,11 @@ mod tests {
             isin_heading_count
         );
 
-        // We should only have one ISIN field in the repeatable grid
+        // We should NOT have a standalone field with ISIN label outside the repeatable
+        // The ISIN label should only appear on fields inside the repeatable grid
         assert!(
             !found_standalone_isin_field,
-            "Found standalone ISIN field, but there should only be ISIN fields within the repeatable grid"
+            "Found standalone field with ISIN label (likely Global_SignaturePlace), but ISIN should only be a label inside the repeatable grid"
         );
 
         assert!(
