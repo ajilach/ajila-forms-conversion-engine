@@ -4145,84 +4145,50 @@ mod tests {
         // - One for "Löschung" (h2)
         // - One or more inside "Löschung" for nested radio selections
         // - Possibly one for the default state if different
-        use crate::RenderMode;
-        use crate::exhaustive::{ExhaustiveConfig, run_exhaustive};
-        use crate::structured::{ConditionalNode, InlineNode, StructuredNode};
-        use std::path::Path;
-
-        let config = ExhaustiveConfig {
-            pdf_path: Path::new("input/AAAB_019_DE.pdf"),
-            doc_name: "test_aaab_merged",
-            scale: 1.0,
-            render_modes: vec![],
-            structured: true,
-            quiet: true,
-            html: false,
+        use crate::exhaustive::run_exhaustive_to_merged;
+        use crate::structured::{
+            ConditionalNode, GroupNode, HeadingLevel, HeadingNode, InlineNode, RepeatableNode,
+            StructuredNode, GridLayout,
         };
 
-        // Clean up any existing test files
-        let _ = std::fs::remove_file("test_aaab_merged_merged.json");
+        // Get merged structured nodes directly without file I/O
+        let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
 
-        // Create a fresh form
-        let xfa_data =
-            extract_xfa_from_pdf(config.pdf_path.to_str().unwrap()).expect("Failed to read PDF");
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
-        let mut form = XfaForm::new(nodes).expect("Failed to create form");
-
-        // Run exhaustive with merge
-        let result = run_exhaustive(&mut form, &config);
-        assert!(
-            result.is_ok(),
-            "Exhaustive run should succeed: {:?}",
-            result.err()
-        );
-
-        // Read the merged output
-        let merged_json = std::fs::read_to_string("test_aaab_merged_merged.json")
-            .expect("Should have created merged JSON");
-        let merged: Vec<serde_json::Value> =
-            serde_json::from_str(&merged_json).expect("Should parse merged JSON");
-
-        // Helper to count conditionals recursively
-        fn count_conditionals(nodes: &[serde_json::Value]) -> usize {
+        // Helper to count conditionals recursively on StructuredNode
+        fn count_conditionals(nodes: &[StructuredNode]) -> usize {
             let mut count = 0;
             for node in nodes {
-                if node.get("type").and_then(|t| t.as_str()) == Some("conditional") {
-                    count += 1;
-                    // Recurse into content
-                    if let Some(content) = node.get("content") {
-                        if let Some(children) = content.get("children").and_then(|c| c.as_array()) {
-                            count += count_conditionals(children);
-                        }
-                        // Single content
-                        count += count_conditionals(&[content.clone()]);
+                match node {
+                    StructuredNode::Conditional(cond) => {
+                        count += 1;
+                        // Recurse into content
+                        count += count_conditionals(&[(*cond.content).clone()]);
                     }
-                } else if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
-                    count += count_conditionals(children);
-                } else if let Some(elements) = node.get("elements").and_then(|e| e.as_array()) {
-                    let nodes: Vec<_> = elements
-                        .iter()
-                        .filter_map(|e| e.get("node"))
-                        .cloned()
-                        .collect();
-                    count += count_conditionals(&nodes);
-                } else if let Some(item) = node.get("item") {
-                    count += count_conditionals(&[item.clone()]);
+                    StructuredNode::Group(group) => {
+                        count += count_conditionals(&group.children);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        count += count_conditionals(&[(*rep.item).clone()]);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        count += count_conditionals(&nodes);
+                    }
+                    _ => {}
                 }
             }
             count
         }
 
-        // Helper to find conditionals with specific h2 heading text
-        fn has_h2_with_prefix(node: &serde_json::Value, prefix: &str) -> bool {
-            if node.get("type").and_then(|t| t.as_str()) == Some("heading") {
-                if node.get("level").and_then(|l| l.as_str()) == Some("h2") {
-                    if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
-                        for item in content {
-                            if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
-                                if text.starts_with(prefix) {
-                                    return true;
-                                }
+        // Helper to check if a StructuredNode is an h2 heading with text starting with prefix
+        fn is_h2_with_prefix(node: &StructuredNode, prefix: &str) -> bool {
+            if let StructuredNode::Heading(heading) = node {
+                if matches!(heading.level, HeadingLevel::H2) {
+                    for inline in &heading.content.0 {
+                        if let InlineNode::Text(text) = inline {
+                            if text.starts_with(prefix) {
+                                return true;
                             }
                         }
                     }
@@ -4231,23 +4197,22 @@ mod tests {
             false
         }
 
-        fn find_conditional_with_h2<'a>(nodes: &'a [serde_json::Value], h2_prefix: &str) -> bool {
+        fn find_conditional_with_h2(nodes: &[StructuredNode], h2_prefix: &str) -> bool {
             for node in nodes {
-                if node.get("type").and_then(|t| t.as_str()) == Some("conditional") {
-                    if let Some(content) = node.get("content") {
-                        // Check if content is the h2 directly
-                        if has_h2_with_prefix(content, h2_prefix) {
+                if let StructuredNode::Conditional(cond) = node {
+                    // Check if content is the h2 directly
+                    if is_h2_with_prefix(&cond.content, h2_prefix) {
+                        return true;
+                    }
+                    // Check inside group children
+                    if let StructuredNode::Group(group) = &*cond.content {
+                        if group
+                            .children
+                            .first()
+                            .map(|n| is_h2_with_prefix(n, h2_prefix))
+                            .unwrap_or(false)
+                        {
                             return true;
-                        }
-                        // Check inside group children
-                        if let Some(children) = content.get("children").and_then(|c| c.as_array()) {
-                            if children
-                                .first()
-                                .map(|n| has_h2_with_prefix(n, h2_prefix))
-                                .unwrap_or(false)
-                            {
-                                return true;
-                            }
                         }
                     }
                 }
@@ -4294,18 +4259,6 @@ mod tests {
             "Should have conditional for Löschung section"
         );
 
-        // Clean up test files
-        let _ = std::fs::remove_file("test_aaab_merged_merged.json");
-        // Also clean up any individual state files that might have been created
-        for entry in std::fs::read_dir(".").unwrap() {
-            if let Ok(entry) = entry {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("test_aaab_merged") {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
-        }
-
         println!("\n✓ AAAB merged output has expected conditional structure");
     }
 
@@ -4314,89 +4267,73 @@ mod tests {
         // Test that the "Unterschrift(en)" h2 heading and signature fields are NOT inside
         // a conditional in the merged output - they should be extracted as common suffix
         // since they appear in all form states.
-        use crate::exhaustive::{ExhaustiveConfig, run_exhaustive};
-        use std::path::Path;
+        use crate::exhaustive::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, HeadingLevel, HeadingNode, InlineNode, StructuredNode};
 
-        let config = ExhaustiveConfig {
-            pdf_path: Path::new("input/AAAB_019_DE.pdf"),
-            doc_name: "test_aaab_signature",
-            scale: 1.0,
-            render_modes: vec![],
-            structured: true,
-            quiet: true,
-            html: false,
-        };
-
-        // Clean up any existing test files
-        let _ = std::fs::remove_file("test_aaab_signature_merged.json");
-
-        // Create a fresh form
-        let xfa_data =
-            extract_xfa_from_pdf(config.pdf_path.to_str().unwrap()).expect("Failed to read PDF");
-        let mut form =
-            XfaForm::new(XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA"))
-                .expect("Failed to create form");
-
-        // Run exhaustive with merge
-        let result = run_exhaustive(&mut form, &config);
-        assert!(
-            result.is_ok(),
-            "Exhaustive run should succeed: {:?}",
-            result.err()
-        );
-
-        // Read the merged output
-        let merged_json = std::fs::read_to_string("test_aaab_signature_merged.json")
-            .expect("Should have created merged JSON");
-        let merged: Vec<serde_json::Value> =
-            serde_json::from_str(&merged_json).expect("Should parse merged JSON");
+        // Get merged structured nodes directly without file I/O
+        let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
 
         // Check that signature fields appear at top level (not inside conditionals)
         // These should be extracted as common suffix since they're identical in all states
-        fn find_at_root_level(
-            nodes: &[serde_json::Value],
-            predicate: impl Fn(&serde_json::Value) -> bool,
+        // Note: Fields may be wrapped in GridLayout, so we check both root level and
+        // inside GridLayout elements at root level
+        fn find_at_root_or_grid(
+            nodes: &[StructuredNode],
+            predicate: impl Fn(&StructuredNode) -> bool + Copy,
         ) -> bool {
             for node in nodes {
                 if predicate(node) {
                     return true;
                 }
+                // Also check inside GridLayout at root level
+                if let StructuredNode::GridLayout(grid) = node {
+                    if grid.elements.iter().any(|e| predicate(&e.node)) {
+                        return true;
+                    }
+                }
             }
             false
         }
 
-        fn is_signature_date_field(node: &serde_json::Value) -> bool {
-            node.get("type").and_then(|t| t.as_str()) == Some("field")
-                && node.get("name").and_then(|n| n.as_str()) == Some("Global_SignatureDate")
+        fn is_signature_date_field(node: &StructuredNode) -> bool {
+            if let StructuredNode::Field(field) = node {
+                field.name == "Global_SignatureDate"
+            } else {
+                false
+            }
         }
 
-        fn is_fullname_field(node: &serde_json::Value) -> bool {
-            node.get("type").and_then(|t| t.as_str()) == Some("field")
-                && node.get("name").and_then(|n| n.as_str()) == Some("FullName")
+        fn is_fullname_field(node: &StructuredNode) -> bool {
+            if let StructuredNode::Field(field) = node {
+                field.name == "FullName"
+            } else {
+                false
+            }
         }
 
-        fn is_unterschrift_heading(node: &serde_json::Value) -> bool {
-            if node.get("type").and_then(|t| t.as_str()) != Some("heading") {
-                return false;
-            }
-            if node.get("level").and_then(|l| l.as_str()) != Some("h2") {
-                return false;
-            }
-            if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
-                return content.iter().any(|c| {
-                    c.get("content")
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.contains("Unterschrift"))
-                        .unwrap_or(false)
+        fn is_unterschrift_heading(node: &StructuredNode) -> bool {
+            if let StructuredNode::Heading(heading) = node {
+                if !matches!(heading.level, HeadingLevel::H2) {
+                    return false;
+                }
+                return heading.content.0.iter().any(|inline| {
+                    if let InlineNode::Text(text) = inline {
+                        text.contains("Unterschrift")
+                    } else {
+                        false
+                    }
                 });
             }
             false
         }
 
-        // The signature fields should be at the root level, not inside any conditional
-        let has_unterschrift_heading_at_root = find_at_root_level(&merged, is_unterschrift_heading);
-        let has_signature_date_at_root = find_at_root_level(&merged, is_signature_date_field);
-        let has_fullname_at_root = find_at_root_level(&merged, is_fullname_field);
+        // The signature fields should be at the root level (or in GridLayout at root level), 
+        // not inside any conditional
+        let has_unterschrift_heading_at_root =
+            find_at_root_or_grid(&merged, is_unterschrift_heading);
+        let has_signature_date_at_root = find_at_root_or_grid(&merged, is_signature_date_field);
+        let has_fullname_at_root = find_at_root_or_grid(&merged, is_fullname_field);
 
         println!(
             "Unterschrift(en) h2 at root level: {}",
@@ -4425,17 +4362,6 @@ mod tests {
             "FullName field should be at root level, not inside conditionals - \
              it is common to all form states"
         );
-
-        // Clean up test files
-        let _ = std::fs::remove_file("test_aaab_signature_merged.json");
-        for entry in std::fs::read_dir(".").unwrap() {
-            if let Ok(entry) = entry {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("test_aaab_signature") {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
-        }
 
         println!(
             "\n✓ AAAB merged output has signature section extracted as common suffix (not conditional)"
@@ -5432,77 +5358,147 @@ mod tests {
 
     #[test]
     fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
-        // Read the structured output
-        let contents =
-            std::fs::read_to_string("AAAB_019_DE_structured.json").expect("Failed to read file");
-        let structured: Vec<serde_json::Value> =
-            serde_json::from_str(&contents).expect("Failed to parse JSON");
+        // Test using structured nodes directly instead of reading from file
+        use crate::exhaustive::run_exhaustive_to_merged;
+        use crate::structured::{
+            ConditionalNode, FieldNode, GridLayout, GroupNode, HeadingLevel, HeadingNode,
+            InlineNode, RepeatableNode, StructuredNode,
+        };
 
-        // Find the Direktvereinbarung2 heading
+        // Get merged structured nodes directly
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        // Counters for what we find
         let mut found_direktvereinbarung2 = false;
         let mut found_standalone_isin_field = false;
         let mut found_repeatable_isin_field = false;
         let mut isin_heading_count = 0;
 
-        for (i, node) in structured.iter().enumerate() {
-            // Look for Direktvereinbarung2 heading
-            if let Some(node_type) = node.get("type").and_then(|t| t.as_str()) {
-                if node_type == "heading" {
-                    if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
-                        for item in content {
-                            if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
-                                if text.contains("Direktvereinbarung2") {
-                                    found_direktvereinbarung2 = true;
-                                    println!("Found Direktvereinbarung2 heading at index {}", i);
-                                }
-                                if found_direktvereinbarung2 && text == "ISIN" {
-                                    isin_heading_count += 1;
-                                    println!("Found ISIN heading at index {}", i);
-                                }
-                            }
-                        }
-                    }
+        // Helper to check if a heading contains specific text
+        fn heading_contains(heading: &HeadingNode, text: &str) -> bool {
+            heading.content.0.iter().any(|inline| {
+                if let InlineNode::Text(t) = inline {
+                    t.contains(text)
+                } else {
+                    false
                 }
+            })
+        }
 
-                // After finding Direktvereinbarung2, check for fields
-                if found_direktvereinbarung2 {
-                    // Look for standalone ISIN field (not in a grid/repeatable)
-                    if node_type == "field" {
-                        if let Some(name) = node.get("name").and_then(|n| n.as_str()) {
-                            if name == "ISIN" || name.contains("ISIN") {
-                                found_standalone_isin_field = true;
-                                println!("Found standalone ISIN field at index {}: name={}", i, name);
-                            }
+        // Helper to check if a field has ISIN name
+        fn is_isin_field(field: &FieldNode) -> bool {
+            field.name == "ISIN" || field.name.contains("ISIN")
+        }
+
+        fn contains_isin_field(node: &StructuredNode) -> bool {
+            match node {
+                StructuredNode::Field(field) => is_isin_field(field),
+                StructuredNode::Group(group) => group.children.iter().any(contains_isin_field),
+                StructuredNode::GridLayout(grid) => {
+                    grid.elements.iter().any(|e| contains_isin_field(&e.node))
+                }
+                StructuredNode::Repeatable(rep) => contains_isin_field(&rep.item),
+                StructuredNode::Conditional(cond) => contains_isin_field(&cond.content),
+                _ => false,
+            }
+        }
+
+        // Recursive search through the entire tree
+        fn search_tree(
+            nodes: &[StructuredNode],
+            after_direktvereinbarung2: &mut bool,
+            found_direktvereinbarung2: &mut bool,
+            found_standalone_isin_field: &mut bool,
+            found_repeatable_isin_field: &mut bool,
+            isin_heading_count: &mut usize,
+        ) {
+            for (i, node) in nodes.iter().enumerate() {
+                match node {
+                    StructuredNode::Heading(heading) => {
+                        if heading_contains(heading, "Direktvereinbarung2") {
+                            *found_direktvereinbarung2 = true;
+                            *after_direktvereinbarung2 = true;
+                            println!("Found Direktvereinbarung2 heading at index {}", i);
                         }
-                        // Also check field label
-                        if let Some(label) = node.get("label").and_then(|l| l.as_array()) {
-                            for item in label {
-                                if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
-                                    if text == "ISIN" {
-                                        println!("Found field with ISIN label at index {}", i);
-                                    }
+                        if *after_direktvereinbarung2 && heading_contains(heading, "ISIN") {
+                            // Check if it's an exact "ISIN" heading (column header)
+                            let is_exact_isin = heading.content.0.iter().any(|inline| {
+                                if let InlineNode::Text(t) = inline {
+                                    t.trim() == "ISIN"
+                                } else {
+                                    false
                                 }
+                            });
+                            if is_exact_isin {
+                                *isin_heading_count += 1;
+                                println!("Found ISIN heading at index {}", i);
                             }
                         }
                     }
-
-                    // Look for repeatable with ISIN field
-                    if node_type == "repeatable" {
-                        let repeatable_str = serde_json::to_string_pretty(&node).unwrap();
-                        if repeatable_str.contains("\"ISIN\"") {
-                            found_repeatable_isin_field = true;
+                    StructuredNode::Field(field) if *after_direktvereinbarung2 => {
+                        if is_isin_field(field) {
+                            *found_standalone_isin_field = true;
+                            println!(
+                                "Found standalone ISIN field at index {}: name={}",
+                                i, field.name
+                            );
+                        }
+                    }
+                    StructuredNode::Repeatable(repeatable) if *after_direktvereinbarung2 => {
+                        if contains_isin_field(&repeatable.item) {
+                            *found_repeatable_isin_field = true;
                             println!("Found repeatable with ISIN at index {}", i);
                         }
                     }
+                    StructuredNode::Conditional(cond) => {
+                        // Search inside conditional content
+                        search_tree(
+                            std::slice::from_ref(cond.content.as_ref()),
+                            after_direktvereinbarung2,
+                            found_direktvereinbarung2,
+                            found_standalone_isin_field,
+                            found_repeatable_isin_field,
+                            isin_heading_count,
+                        );
+                    }
+                    StructuredNode::Group(group) => {
+                        // Search inside group children
+                        search_tree(
+                            &group.children,
+                            after_direktvereinbarung2,
+                            found_direktvereinbarung2,
+                            found_standalone_isin_field,
+                            found_repeatable_isin_field,
+                            isin_heading_count,
+                        );
+                    }
+                    _ => {}
                 }
             }
         }
 
+        let mut after_direktvereinbarung2 = false;
+        search_tree(
+            &structured,
+            &mut after_direktvereinbarung2,
+            &mut found_direktvereinbarung2,
+            &mut found_standalone_isin_field,
+            &mut found_repeatable_isin_field,
+            &mut isin_heading_count,
+        );
+
         println!("\nSummary:");
         println!("  Found Direktvereinbarung2: {}", found_direktvereinbarung2);
         println!("  ISIN heading count: {}", isin_heading_count);
-        println!("  Found standalone ISIN field: {}", found_standalone_isin_field);
-        println!("  Found repeatable with ISIN: {}", found_repeatable_isin_field);
+        println!(
+            "  Found standalone ISIN field: {}",
+            found_standalone_isin_field
+        );
+        println!(
+            "  Found repeatable with ISIN: {}",
+            found_repeatable_isin_field
+        );
 
         // The issue: we should NOT have standalone h2 headings for column headers before a repeatable
         // These should be absorbed as labels in the grid
@@ -5521,6 +5517,120 @@ mod tests {
         assert!(
             found_repeatable_isin_field,
             "Did not find ISIN in repeatable section"
+        );
+    }
+
+    #[test]
+    fn test_aaab_direktvereinbarung2_column_headers_absorbed() {
+        // The column headers (Fondsprovider, Satz in %, Ab, ISIN) above repeatable sections
+        // should be absorbed as column labels, not appear as standalone h2 headings.
+        use crate::exhaustive::run_exhaustive_to_merged;
+        use crate::structured::{HeadingNode, InlineNode, StructuredNode};
+
+        // Get merged structured nodes directly
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        // Find the Direktvereinbarung2 heading and count column header headings
+        let mut found_direktvereinbarung2 = false;
+        let mut column_header_headings: Vec<(usize, String)> = Vec::new();
+        let column_headers = ["Fondsprovider", "Satz in %", "Ab", "ISIN"];
+
+        // Helper to extract heading text
+        fn get_heading_text(heading: &HeadingNode) -> String {
+            heading
+                .content
+                .0
+                .iter()
+                .filter_map(|inline| {
+                    if let InlineNode::Text(t) = inline {
+                        Some(t.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        }
+
+        // Recursive search through the tree
+        fn search_tree(
+            nodes: &[StructuredNode],
+            found_direktvereinbarung2: &mut bool,
+            column_header_headings: &mut Vec<(usize, String)>,
+            column_headers: &[&str],
+            finished: &mut bool,
+        ) {
+            if *finished {
+                return;
+            }
+
+            for (i, node) in nodes.iter().enumerate() {
+                if *finished {
+                    break;
+                }
+
+                match node {
+                    StructuredNode::Heading(heading) => {
+                        let text = get_heading_text(heading);
+
+                        if text.contains("Direktvereinbarung2") {
+                            *found_direktvereinbarung2 = true;
+                        }
+
+                        // After Direktvereinbarung2, check for column headers appearing as headings
+                        if *found_direktvereinbarung2 && column_headers.iter().any(|&h| text == h) {
+                            column_header_headings.push((i, text.clone()));
+                        }
+
+                        // Stop when we reach "Unterschrift" (end of section)
+                        if text.contains("Unterschrift") {
+                            *finished = true;
+                            break;
+                        }
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        search_tree(
+                            std::slice::from_ref(cond.content.as_ref()),
+                            found_direktvereinbarung2,
+                            column_header_headings,
+                            column_headers,
+                            finished,
+                        );
+                    }
+                    StructuredNode::Group(group) => {
+                        search_tree(
+                            &group.children,
+                            found_direktvereinbarung2,
+                            column_header_headings,
+                            column_headers,
+                            finished,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut finished = false;
+        search_tree(
+            &structured,
+            &mut found_direktvereinbarung2,
+            &mut column_header_headings,
+            &column_headers,
+            &mut finished,
+        );
+
+        println!("\nColumn headers appearing as headings after Direktvereinbarung2:");
+        for (idx, header) in &column_header_headings {
+            println!("  Index {}: \"{}\"", idx, header);
+        }
+
+        assert!(
+            column_header_headings.is_empty(),
+            "Found {} column headers appearing as standalone headings: {:?}\nThese should be absorbed as column labels in the repeatable grid, not separate headings.",
+            column_header_headings.len(),
+            column_header_headings.iter().map(|(_, h)| h.as_str()).collect::<Vec<_>>()
         );
     }
 }

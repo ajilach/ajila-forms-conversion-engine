@@ -281,11 +281,34 @@
       <label for="Intermed">Intermed Code</label>
       <input type="text" id="Intermed" name="Intermed" class="form-input">
     </div>
-    <div class="conditional" id="conditional_1" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_2" hidden>
+    <div class="conditional" id="conditional_1" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_1" hidden>
       <div class="form-group">
-        <h2>Änderung</h2>
+        <h2>Neuanlage (möglich ab dem 01. des aktuellen Monats)</h2>
         <h3>Bankverbindung</h3>
         <p>0319 00</p>
+        <div class="form-field">
+          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
+        </div>
+        <p>EUR</p>
+        <p>Währung</p>
+        <p>Retro Rückzahlungssatz für Fonds:</p>
+        <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+          <div class="grid-item">
+            <div class="form-field">
+              <label for="Fur_Fonds">0319 00</label>
+              <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
+            </div>
+          </div>
+          <div class="grid-item">
+            <div class="form-field">
+              <input type="date" id="Month" name="Month" class="form-input">
+            </div>
+          </div>
+        </div>
+        <p>%</p>
+        <p>Ab:1</p>
+        <h3>Bankverbindung</h3>
         <div class="form-field">
           <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
           <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
@@ -389,10 +412,6 @@
           <button type="button" class="add-item-btn">+ Add Item</button>
         </div>
         <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-        <div class="form-field">
-          <label for="Global_SignaturePlace">ISIN</label>
-          <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-        </div>
         <div class="repeatable-container" id="repeatable_5" data-min="1" data-max="4">
           <template class="repeatable-template">
             <div class="repeatable-item" data-index="{INDEX}">
@@ -424,173 +443,7 @@
         </div>
       </div>
     </div>
-    <div class="conditional" id="conditional_6" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_1" hidden>
-      <div class="form-group">
-        <h2>Neuanlage (möglich ab dem 01. des aktuellen Monats)</h2>
-        <h3>Bankverbindung</h3>
-        <p>0319 00</p>
-        <div class="form-field">
-          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-        </div>
-        <p>EUR</p>
-        <p>Währung</p>
-        <p>Retro Rückzahlungssatz für Fonds:</p>
-        <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
-          <div class="grid-item">
-            <div class="form-field">
-              <label for="Fur_Fonds">0319 00</label>
-              <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
-            </div>
-          </div>
-          <div class="grid-item">
-            <div class="form-field">
-              <input type="date" id="Month" name="Month" class="form-input">
-            </div>
-          </div>
-        </div>
-        <p>%</p>
-        <p>Ab:1</p>
-        <h3>Bankverbindung</h3>
-        <div class="form-field">
-          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
-          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
-        </div>
-        <p>EUR</p>
-        <p>Währung</p>
-        <p>Retro Rückzahlungssatz für Fonds:</p>
-        <div class="form-field">
-          <label for="Fur_Fonds">Die Änderung gilt ab sofort für die noch nicht abgerechneten Quartale.</label>
-          <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
-        </div>
-        <p>%</p>
-        <h3>Sonderkondition</h3>
-        <div class="repeatable-container" id="repeatable_7" data-min="1" data-max="4">
-          <template class="repeatable-template">
-            <div class="repeatable-item" data-index="{INDEX}">
-              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Fonds_Provider">Fondsprovider</label>
-                    <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Satz_Percent">Satz in %</label>
-                    <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Month">Ab</label>
-                    <input type="text" id="Month" name="Month" class="form-input">
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-            </div>
-          </template>
-          <div class="repeatable-items"></div>
-          <button type="button" class="add-item-btn">+ Add Item</button>
-        </div>
-        <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-        <div class="repeatable-container" id="repeatable_8" data-min="1" data-max="4">
-          <template class="repeatable-template">
-            <div class="repeatable-item" data-index="{INDEX}">
-              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="ISIN">ISIN</label>
-                    <input type="text" id="ISIN" name="ISIN" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Satz_Percent">Satz in %</label>
-                    <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Month">Ab</label>
-                    <input type="text" id="Month" name="Month" class="form-input">
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-            </div>
-          </template>
-          <div class="repeatable-items"></div>
-          <button type="button" class="add-item-btn">+ Add Item</button>
-        </div>
-        <h3>Direktvereinbarung2</h3>
-        <div class="repeatable-container" id="repeatable_9" data-min="1" data-max="4">
-          <template class="repeatable-template">
-            <div class="repeatable-item" data-index="{INDEX}">
-              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Fonds_Provider_Direkt">Fondsprovider</label>
-                    <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Satz_Percent_Direkt">Satz in %</label>
-                    <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Month">Ab</label>
-                    <input type="text" id="Month" name="Month" class="form-input">
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-            </div>
-          </template>
-          <div class="repeatable-items"></div>
-          <button type="button" class="add-item-btn">+ Add Item</button>
-        </div>
-        <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-        <div class="form-field">
-          <label for="Global_SignaturePlace">ISIN</label>
-          <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-        </div>
-        <div class="repeatable-container" id="repeatable_10" data-min="1" data-max="4">
-          <template class="repeatable-template">
-            <div class="repeatable-item" data-index="{INDEX}">
-              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="ISIN">ISIN</label>
-                    <input type="text" id="ISIN" name="ISIN" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Satz">Satz in %</label>
-                    <input type="text" id="Satz" name="Satz" class="form-input">
-                  </div>
-                </div>
-                <div class="grid-item">
-                  <div class="form-field">
-                    <label for="Month">Ab</label>
-                    <input type="text" id="Month" name="Month" class="form-input">
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-            </div>
-          </template>
-          <div class="repeatable-items"></div>
-          <button type="button" class="add-item-btn">+ Add Item</button>
-        </div>
-      </div>
-    </div>
-    <div class="conditional" id="conditional_11" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_3" hidden>
+    <div class="conditional" id="conditional_6" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_3" hidden>
       <div class="form-group">
         <h2>Löschung</h2>
         <div class="form-field">
@@ -635,321 +488,318 @@
         </div>
         <div class="form-field">
           <label for="RB_4">Löschung Direktvereinbarung5</label>
-          <input type="text" id="RB_4" name="RB_4" value="1" class="form-input">
+          <input type="text" id="RB_4" name="RB_4" class="form-input">
         </div>
-        <div class="conditional" id="conditional_12" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_4" hidden>
-          <div class="form-group">
-            <div class="form-field">
-              <label for="Global_SignaturePlace">Fondsprovider</label>
-              <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
+        <div class="repeatable-container" id="repeatable_7" data-min="1" data-max="4">
+          <template class="repeatable-template">
+            <div class="repeatable-item" data-index="{INDEX}">
+              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="FondsProvider">Fondsprovider</label>
+                    <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Satz">Satz in %</label>
+                    <input type="text" id="Satz" name="Satz" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Date_AB">Ab</label>
+                    <input type="text" id="Date_AB" name="Date_AB" class="form-input">
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
             </div>
-            <div class="repeatable-container" id="repeatable_13" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="FondsProvider">Fondsprovider</label>
-                        <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz">Satz in %</label>
-                        <input type="text" id="Satz" name="Satz" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date_AB">Ab</label>
-                        <input type="text" id="Date_AB" name="Date_AB" class="form-input">
-                      </div>
+          </template>
+          <div class="repeatable-items"></div>
+          <button type="button" class="add-item-btn">+ Add Item</button>
+        </div>
+        <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
+        <div class="conditional" id="conditional_8" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_1" hidden>
+          <div class="repeatable-container" id="repeatable_9" data-min="1" data-max="4">
+            <template class="repeatable-template">
+              <div class="repeatable-item" data-index="{INDEX}">
+                <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="ISIN">ISIN</label>
+                      <input type="text" id="ISIN" name="ISIN" class="form-input">
                     </div>
                   </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Satz_Percent">Satz in %</label>
+                      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                    </div>
+                  </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Date">Ab</label>
+                      <input type="text" id="Date" name="Date" class="form-input">
+                    </div>
+                  </div>
                 </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-            <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
+                <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+              </div>
+            </template>
+            <div class="repeatable-items"></div>
+            <button type="button" class="add-item-btn">+ Add Item</button>
+          </div>
+        </div>
+        <div class="conditional" id="conditional_10" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_3" hidden>
+          <div class="repeatable-container" id="repeatable_11" data-min="1" data-max="4">
+            <template class="repeatable-template">
+              <div class="repeatable-item" data-index="{INDEX}">
+                <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="ISIN">ISIN</label>
+                      <input type="text" id="ISIN" name="ISIN" class="form-input">
+                    </div>
+                  </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Satz_Percent">Satz in %</label>
+                      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                    </div>
+                  </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Date">Ab</label>
+                      <input type="text" id="Date" name="Date" class="form-input">
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+              </div>
+            </template>
+            <div class="repeatable-items"></div>
+            <button type="button" class="add-item-btn">+ Add Item</button>
+          </div>
+        </div>
+        <div class="conditional" id="conditional_12" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_2" hidden>
+          <div class="repeatable-container" id="repeatable_13" data-min="1" data-max="4">
+            <template class="repeatable-template">
+              <div class="repeatable-item" data-index="{INDEX}">
+                <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="ISIN">ISIN</label>
+                      <input type="text" id="ISIN" name="ISIN" class="form-input">
+                    </div>
+                  </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Satz_Percent">Satz in %</label>
+                      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                    </div>
+                  </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Date">Ab</label>
+                      <input type="text" id="Date" name="Date" class="form-input">
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+              </div>
+            </template>
+            <div class="repeatable-items"></div>
+            <button type="button" class="add-item-btn">+ Add Item</button>
           </div>
         </div>
         <div class="conditional" id="conditional_14" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.CB_Daily_Statement=text:CB_Daily_Statement" hidden>
-          <div class="form-group">
-            <div class="repeatable-container" id="repeatable_15" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="FondsProvider">Fondsprovider</label>
-                        <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz">Satz in %</label>
-                        <input type="text" id="Satz" name="Satz" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date_AB">Ab</label>
-                        <input type="text" id="Date_AB" name="Date_AB" class="form-input">
-                      </div>
+          <div class="repeatable-container" id="repeatable_15" data-min="1" data-max="4">
+            <template class="repeatable-template">
+              <div class="repeatable-item" data-index="{INDEX}">
+                <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="ISIN">ISIN</label>
+                      <input type="text" id="ISIN" name="ISIN" class="form-input">
                     </div>
                   </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-                </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-            <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-            <div class="form-field">
-              <label for="Global_SignaturePlace">ISIN</label>
-              <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-            </div>
-            <div class="repeatable-container" id="repeatable_16" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="ISIN">ISIN</label>
-                        <input type="text" id="ISIN" name="ISIN" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz_Percent">Satz in %</label>
-                        <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date">Ab</label>
-                        <input type="text" id="Date" name="Date" class="form-input">
-                      </div>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Satz_Percent">Satz in %</label>
+                      <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
                     </div>
                   </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+                  <div class="grid-item">
+                    <div class="form-field">
+                      <label for="Date">Ab</label>
+                      <input type="text" id="Date" name="Date" class="form-input">
+                    </div>
+                  </div>
                 </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
+                <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+              </div>
+            </template>
+            <div class="repeatable-items"></div>
+            <button type="button" class="add-item-btn">+ Add Item</button>
           </div>
         </div>
-        <div class="conditional" id="conditional_17" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_1" hidden>
-          <div class="form-group">
-            <div class="repeatable-container" id="repeatable_18" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="FondsProvider">Fondsprovider</label>
-                        <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz">Satz in %</label>
-                        <input type="text" id="Satz" name="Satz" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date_AB">Ab</label>
-                        <input type="text" id="Date_AB" name="Date_AB" class="form-input">
-                      </div>
-                    </div>
-                  </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-                </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-            <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-            <div class="form-field">
-              <label for="Global_SignaturePlace">ISIN</label>
-              <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-            </div>
-            <div class="repeatable-container" id="repeatable_19" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="ISIN">ISIN</label>
-                        <input type="text" id="ISIN" name="ISIN" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz_Percent">Satz in %</label>
-                        <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date">Ab</label>
-                        <input type="text" id="Date" name="Date" class="form-input">
-                      </div>
-                    </div>
-                  </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-                </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-          </div>
+      </div>
+    </div>
+    <div class="conditional" id="conditional_16" data-condition="UBSForms.Page.FormTitle.STP_RB_Horizontal.RB_Group_Neuanlage=text:RB_2" hidden>
+      <div class="form-group">
+        <h2>Änderung</h2>
+        <h3>Bankverbindung</h3>
+        <p>0319 00</p>
+        <div class="form-field">
+          <label for="BC_AccountNumber">Interne Konto-Nr. und dreistellige interne Konto-Nr.</label>
+          <input type="text" id="BC_AccountNumber" name="BC_AccountNumber" class="form-input">
         </div>
-        <div class="conditional" id="conditional_20" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_2" hidden>
-          <div class="form-group">
-            <div class="repeatable-container" id="repeatable_21" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="FondsProvider">Fondsprovider</label>
-                        <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz">Satz in %</label>
-                        <input type="text" id="Satz" name="Satz" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date_AB">Ab</label>
-                        <input type="text" id="Date_AB" name="Date_AB" class="form-input">
-                      </div>
-                    </div>
-                  </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-                </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-            <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-            <div class="form-field">
-              <label for="Global_SignaturePlace">ISIN</label>
-              <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-            </div>
-            <div class="repeatable-container" id="repeatable_22" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="ISIN">ISIN</label>
-                        <input type="text" id="ISIN" name="ISIN" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz_Percent">Satz in %</label>
-                        <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date">Ab</label>
-                        <input type="text" id="Date" name="Date" class="form-input">
-                      </div>
-                    </div>
-                  </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
-                </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-          </div>
+        <p>EUR</p>
+        <p>Währung</p>
+        <p>Retro Rückzahlungssatz für Fonds:</p>
+        <div class="form-field">
+          <label for="Fur_Fonds">Die Änderung gilt ab sofort für die noch nicht abgerechneten Quartale.</label>
+          <input type="text" id="Fur_Fonds" name="Fur_Fonds" class="form-input">
         </div>
-        <div class="conditional" id="conditional_23" data-condition="UBSForms.Page.Löschung.Retro_Second.STP_Retro_RB.RB_Group_Retro=text:RB_3" hidden>
-          <div class="form-group">
-            <div class="repeatable-container" id="repeatable_24" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="FondsProvider">Fondsprovider</label>
-                        <input type="text" id="FondsProvider" name="FondsProvider" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz">Satz in %</label>
-                        <input type="text" id="Satz" name="Satz" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date_AB">Ab</label>
-                        <input type="text" id="Date_AB" name="Date_AB" class="form-input">
-                      </div>
-                    </div>
+        <p>%</p>
+        <h3>Sonderkondition</h3>
+        <div class="repeatable-container" id="repeatable_17" data-min="1" data-max="4">
+          <template class="repeatable-template">
+            <div class="repeatable-item" data-index="{INDEX}">
+              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Fonds_Provider">Fondsprovider</label>
+                    <input type="text" id="Fonds_Provider" name="Fonds_Provider" class="form-input">
                   </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
                 </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
-            </div>
-            <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
-            <div class="form-field">
-              <label for="Global_SignaturePlace">ISIN</label>
-              <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
-            </div>
-            <div class="repeatable-container" id="repeatable_25" data-min="1" data-max="4">
-              <template class="repeatable-template">
-                <div class="repeatable-item" data-index="{INDEX}">
-                  <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="ISIN">ISIN</label>
-                        <input type="text" id="ISIN" name="ISIN" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Satz_Percent">Satz in %</label>
-                        <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
-                      </div>
-                    </div>
-                    <div class="grid-item">
-                      <div class="form-field">
-                        <label for="Date">Ab</label>
-                        <input type="text" id="Date" name="Date" class="form-input">
-                      </div>
-                    </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Satz_Percent">Satz in %</label>
+                    <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
                   </div>
-                  <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
                 </div>
-              </template>
-              <div class="repeatable-items"></div>
-              <button type="button" class="add-item-btn">+ Add Item</button>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Month">Ab</label>
+                    <input type="text" id="Month" name="Month" class="form-input">
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
             </div>
-          </div>
+          </template>
+          <div class="repeatable-items"></div>
+          <button type="button" class="add-item-btn">+ Add Item</button>
+        </div>
+        <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
+        <div class="repeatable-container" id="repeatable_18" data-min="1" data-max="4">
+          <template class="repeatable-template">
+            <div class="repeatable-item" data-index="{INDEX}">
+              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="ISIN">ISIN</label>
+                    <input type="text" id="ISIN" name="ISIN" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Satz_Percent">Satz in %</label>
+                    <input type="text" id="Satz_Percent" name="Satz_Percent" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Month">Ab</label>
+                    <input type="text" id="Month" name="Month" class="form-input">
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+            </div>
+          </template>
+          <div class="repeatable-items"></div>
+          <button type="button" class="add-item-btn">+ Add Item</button>
+        </div>
+        <h3>Direktvereinbarung2</h3>
+        <div class="repeatable-container" id="repeatable_19" data-min="1" data-max="4">
+          <template class="repeatable-template">
+            <div class="repeatable-item" data-index="{INDEX}">
+              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Fonds_Provider_Direkt">Fondsprovider</label>
+                    <input type="text" id="Fonds_Provider_Direkt" name="Fonds_Provider_Direkt" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Satz_Percent_Direkt">Satz in %</label>
+                    <input type="text" id="Satz_Percent_Direkt" name="Satz_Percent_Direkt" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Month">Ab</label>
+                    <input type="text" id="Month" name="Month" class="form-input">
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+            </div>
+          </template>
+          <div class="repeatable-items"></div>
+          <button type="button" class="add-item-btn">+ Add Item</button>
+        </div>
+        <p>Hinweis: Angabe Fondsprovider gemäß der Fondsproviderliste für B2C erforderlich</p>
+        <div class="repeatable-container" id="repeatable_20" data-min="1" data-max="4">
+          <template class="repeatable-template">
+            <div class="repeatable-item" data-index="{INDEX}">
+              <div class="grid-layout" style="display: grid; grid-template-columns: repeat(3, auto); gap: 1rem;">
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="ISIN">ISIN</label>
+                    <input type="text" id="ISIN" name="ISIN" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Satz">Satz in %</label>
+                    <input type="text" id="Satz" name="Satz" class="form-input">
+                  </div>
+                </div>
+                <div class="grid-item">
+                  <div class="form-field">
+                    <label for="Month">Ab</label>
+                    <input type="text" id="Month" name="Month" class="form-input">
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="remove-item-btn" aria-label="Remove item">×</button>
+            </div>
+          </template>
+          <div class="repeatable-items"></div>
+          <button type="button" class="add-item-btn">+ Add Item</button>
         </div>
       </div>
     </div>
     <h2>Unterschrift(en) </h2>
     <h3>CA/BD</h3>
-    <div class="form-field">
-      <label for="Global_SignatureDate">Datum</label>
-      <input type="text" id="Global_SignatureDate" name="Global_SignatureDate" class="form-input">
+    <div class="grid-layout" style="display: grid; grid-template-columns: repeat(2, auto); gap: 1rem;">
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Global_SignaturePlace">Ort</label>
+          <input type="text" id="Global_SignaturePlace" name="Global_SignaturePlace" class="form-input">
+        </div>
+      </div>
+      <div class="grid-item">
+        <div class="form-field">
+          <label for="Global_SignatureDate">Datum</label>
+          <input type="text" id="Global_SignatureDate" name="Global_SignatureDate" class="form-input">
+        </div>
+      </div>
     </div>
     <div class="form-field">
       <label for="FullName">Vorname, Nachname</label>

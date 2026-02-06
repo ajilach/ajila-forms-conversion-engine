@@ -246,6 +246,85 @@ pub fn run_exhaustive(
     })
 }
 
+/// Run exhaustive form state exploration and return merged structured nodes directly.
+///
+/// This is a test helper function that performs exhaustive exploration and returns
+/// the merged StructuredNode tree without writing to files.
+pub fn run_exhaustive_to_merged(
+    pdf_path: &str,
+) -> Result<Vec<crate::structured::StructuredNode>, Box<dyn std::error::Error>> {
+    use crate::xfa::XfaNode;
+
+    // Extract and parse XFA from PDF
+    let xfa_data = crate::extract_xfa_from_pdf(pdf_path)?
+        .ok_or_else(|| format!("No XFA data in PDF: {}", pdf_path))?;
+    let nodes = XfaNode::parse(&xfa_data)?;
+    let mut form = XfaForm::new(nodes)?;
+
+    // ========================================================================
+    // Pass 1: Collect all form states and their flattened data
+    // ========================================================================
+    let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
+    let mut collected_states: Vec<CollectedState> = Vec::new();
+
+    // Use a dummy config for state collection
+    let config = ExhaustiveConfig {
+        pdf_path: Path::new(pdf_path),
+        doc_name: "_test",
+        scale: 1.0,
+        render_modes: vec![],
+        structured: true,
+        quiet: true,
+        html: false,
+    };
+
+    collect_all_states(
+        &mut form,
+        Vec::new(),
+        &mut rendered_states,
+        &mut collected_states,
+        &config,
+    )?;
+
+    // ========================================================================
+    // Compute global font statistics from all collected flattened data
+    // ========================================================================
+    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
+    let mut global_font_stats =
+        GlobalFontStats::from_flattened_iter(flattened_refs.iter().copied());
+    global_font_stats.compute_border_stats(flattened_refs.iter().copied());
+
+    // ========================================================================
+    // Pass 2: Run analysis pipeline with global context
+    // ========================================================================
+    let global_ctx = GlobalContext::with_font_stats(&flattened_refs, global_font_stats);
+
+    // Collect all structured outputs for merging
+    let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =
+        Vec::new();
+
+    for state in &collected_states {
+        let (_, structured_nodes) = process_state_with_context(state, &global_ctx, &config)?;
+
+        if let Some(nodes) = structured_nodes {
+            structured_outputs.push((state.selections.clone(), nodes));
+        }
+    }
+
+    // Merge all structured outputs
+    if structured_outputs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let merge_inputs: Vec<crate::structured::MergeInput> = structured_outputs
+        .into_iter()
+        .map(|(selections, nodes)| crate::structured::MergeInput::new(selections, nodes))
+        .collect();
+
+    let merger = crate::structured::RecursiveMerger::new(merge_inputs);
+    Ok(merger.merge())
+}
+
 /// Pass 1: Recursively collect all form states and their flattened data.
 /// This does NOT run the analysis pipeline yet.
 fn collect_all_states(
