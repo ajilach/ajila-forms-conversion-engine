@@ -139,21 +139,25 @@ impl GridTemplateDetector {
     /// Find all potential grid groups among unclaimed groups.
     fn find_grid_candidates(&self, doc: &Document) -> Vec<GridCandidate> {
         // Get all unclaimed groups that could be grid elements (fields, labeled fields, etc.)
-        let unclaimed = doc.root_groups_matching(|doc, idx| {
-            // Include any group with bounds, but skip headers/footers/headings/grids
-            if let Some(group) = doc.get_group(idx) {
-                // Accept fields and labeled fields as grid candidates
-                matches!(
-                    group.kind,
-                    GroupKind::Field
-                        | GroupKind::LabeledField { .. }
-                        | GroupKind::RadioButton { .. }
-                        | GroupKind::DateField { .. }
-                )
-            } else {
-                false
-            }
-        });
+        let all_roots = doc.roots();
+        let unclaimed: Vec<usize> = all_roots
+            .into_iter()
+            .filter(|&idx| {
+                // Include any group with bounds, but skip headers/footers/headings/grids
+                if let Some(group) = doc.get_group(idx) {
+                    // Accept fields and labeled fields as grid candidates
+                    matches!(
+                        group.kind,
+                        GroupKind::Field
+                            | GroupKind::LabeledField { .. }
+                            | GroupKind::RadioButton { .. }
+                            | GroupKind::DateField { .. }
+                    )
+                } else {
+                    false
+                }
+            })
+            .collect();
 
         // Skip if we don't have enough groups
         if unclaimed.len() < self.min_rows * self.min_columns {

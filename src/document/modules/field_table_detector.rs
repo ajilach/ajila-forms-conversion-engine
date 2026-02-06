@@ -1,47 +1,44 @@
 //! Field table detector module.
 //!
-//! Detects tables of fields with column headers and converts them into
-//! GridLayout groups containing LabeledField children where headers become labels.
+//! Detects rows of fields that have bold header text aligned above them.
+//! When all fields in a row have matching bold headers, the detector
+//! creates a GridLayout containing LabeledFields.
 //!
-//! The detector works in two modes:
-//!
-//! ## Mode 1: Bold Header Tables (standalone fields)
-//! 1. Finding unclaimed Field groups
-//! 2. Finding unclaimed bold TextBlock groups (potential headers)
-//! 3. Clustering by x-coordinate to detect columns
-//! 4. Validating that each column has exactly one bold header above the fields
-//! 5. Creating LabeledField groups pairing each field with its column header
-//! 6. Wrapping each row of LabeledFields in a GridLayout
-//!
-//! ## Mode 2: Repeatable Section Tables (after RepeatableDetector)
-//! 1. Finding RepeatableSection groups that contain fields
-//! 2. Finding TextBlock groups immediately above the repeatable (within vertical threshold)
-//! 3. Matching headers to fields by x-coordinate alignment
-//! 4. Claiming the headers and creating LabeledFields inside the repeatable's GridLayout
+//! This module:
+//! 1. Finds rows of unclaimed Field groups that are horizontally aligned
+//! 2. Searches for bold TextBlock headers positioned directly ABOVE the row
+//! 3. Requires ALL fields to have a matching header (no partial matches)
+//! 4. Creates LabeledFields pairing each header with its field
+//! 5. Wraps each row in a GridLayout with dynamic column count
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::FlattenedNodeKind;
+use crate::flattened::Bounds;
 use crate::xfa::FontWeight;
 use rust_decimal::Decimal;
-use std::collections::HashSet;
-use std::str::FromStr;
+use rust_decimal::prelude::*;
 
-/// Detects field tables with bold headers and creates GridLayout rows with LabeledFields.
+type Num = Decimal;
+
+/// Detects field tables: rows of fields with bold headers aligned above.
 ///
-/// Field tables are characterized by:
-/// 1. Multiple fields aligned in columns (same x-coordinate)
-/// 2. Bold text headers above each column
-/// 3. At least 2 columns and 2 rows (1 header row + 1 data row)
+/// A field table is detected when:
+/// 1. Multiple fields are aligned on the same horizontal line (a row)
+/// 2. Bold text blocks exist directly above the row
+/// 3. Each field has exactly one header that overlaps horizontally
+/// 4. ALL fields in the row have matching headers
+///
+/// Output: Each row becomes a GridLayout containing LabeledFields
+/// (header as label, field as field).
 pub struct FieldTableDetector {
-    /// Tolerance for considering two x-coordinates as aligned (in points)
-    pub alignment_tolerance: Decimal,
-    /// Tolerance for considering elements on the same row (in points)
-    pub row_tolerance: Decimal,
-    /// Minimum number of data rows required (excluding header)
-    pub min_data_rows: usize,
-    /// Minimum number of columns required
-    pub min_columns: usize,
+    /// Tolerance for considering y-coordinates as the same row (in points)
+    pub row_tolerance: Num,
+    /// Maximum vertical gap between header bottom and field top (in points)
+    pub header_gap_threshold: Num,
+    /// Tolerance for horizontal overlap detection (in points)
+    pub horizontal_tolerance: Num,
+    /// Minimum number of fields required to form a table row
+    pub min_fields_per_row: usize,
 }
 
 impl Default for FieldTableDetector {
@@ -53,38 +50,41 @@ impl Default for FieldTableDetector {
 impl FieldTableDetector {
     pub fn new() -> Self {
         FieldTableDetector {
-            alignment_tolerance: Decimal::from_str("5.0").unwrap(),
-            row_tolerance: Decimal::from_str("3.0").unwrap(),
-            min_data_rows: 1, // 1 data row + 1 header row = 2 total rows
-            min_columns: 2,
+            row_tolerance: Decimal::from_str("5.0").unwrap(),
+            header_gap_threshold: Decimal::from_str("30.0").unwrap(),
+            horizontal_tolerance: Decimal::from_str("5.0").unwrap(),
+            min_fields_per_row: 2,
         }
     }
 
-    /// Configure the alignment tolerance for column detection.
-    pub fn with_alignment_tolerance(mut self, tolerance: Decimal) -> Self {
-        self.alignment_tolerance = tolerance;
-        self
-    }
-
-    /// Configure the row tolerance for same-row detection.
-    pub fn with_row_tolerance(mut self, tolerance: Decimal) -> Self {
+    /// Configure the row tolerance.
+    pub fn with_row_tolerance(mut self, tolerance: Num) -> Self {
         self.row_tolerance = tolerance;
         self
     }
 
-    /// Check if all text nodes in a group are bold.
-    fn is_all_bold(&self, doc: &Document, group_idx: usize) -> bool {
+    /// Configure the header gap threshold.
+    pub fn with_header_gap_threshold(mut self, threshold: Num) -> Self {
+        self.header_gap_threshold = threshold;
+        self
+    }
+
+    /// Configure the horizontal tolerance.
+    pub fn with_horizontal_tolerance(mut self, tolerance: Num) -> Self {
+        self.horizontal_tolerance = tolerance;
+        self
+    }
+
+    /// Configure minimum fields per row.
+    pub fn with_min_fields_per_row(mut self, min: usize) -> Self {
+        self.min_fields_per_row = min;
+        self
+    }
+
+    /// Check if a group contains bold text.
+    fn is_bold_text(&self, doc: &Document, group_idx: usize) -> bool {
         let nodes = doc.collect_nodes(group_idx);
-        let text_nodes: Vec<_> = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, FlattenedNodeKind::Text { .. }))
-            .collect();
-
-        if text_nodes.is_empty() {
-            return false;
-        }
-
-        text_nodes.iter().all(|node| {
+        nodes.iter().any(|node| {
             node.style
                 .font
                 .as_ref()
@@ -93,367 +93,188 @@ impl FieldTableDetector {
         })
     }
 
-    /// Group indices by y-coordinate into rows.
-    fn cluster_by_y(&self, doc: &Document, indices: &[usize]) -> Vec<(Decimal, Vec<usize>)> {
-        let mut rows: Vec<(Decimal, Vec<usize>)> = Vec::new();
+    /// Check if a group is inside a repeatable section (has Occurrence hint).
+    /// Fields inside repeatable sections should not be claimed by FieldTableDetector.
+    fn is_inside_repeatable(&self, doc: &Document, group_idx: usize) -> bool {
+        let nodes = doc.collect_nodes(group_idx);
+        nodes.iter().any(|node| {
+            node.hints
+                .iter()
+                .any(|hint| matches!(hint, crate::flattened::Hint::Occurrence { .. }))
+        })
+    }
 
-        for &idx in indices {
-            let Some(bounds) = doc.get_bounds(idx) else {
-                continue;
-            };
+    /// Find all unclaimed Field groups (not yet part of LabeledField, etc.)
+    /// Excludes fields that are inside repeatable sections.
+    fn find_unclaimed_fields(&self, doc: &Document) -> Vec<usize> {
+        let roots = doc.roots();
+        roots
+            .into_iter()
+            .filter(|&idx| {
+                matches!(
+                    doc.get_group(idx).map(|g| &g.kind),
+                    Some(GroupKind::Field) | Some(GroupKind::DateField { .. })
+                ) && !self.is_inside_repeatable(doc, idx)
+            })
+            .collect()
+    }
 
-            let y = bounds.y;
-            let mut found = false;
+    /// Find all unclaimed TextBlock groups that could be headers.
+    fn find_candidate_headers(&self, doc: &Document) -> Vec<usize> {
+        let roots = doc.roots();
+        roots
+            .into_iter()
+            .filter(|&idx| {
+                doc.is_text_block(idx) && !doc.is_heading(idx) && self.is_bold_text(doc, idx)
+            })
+            .collect()
+    }
 
-            for (row_y, row_indices) in &mut rows {
-                if (y - *row_y).abs() <= self.row_tolerance {
-                    row_indices.push(idx);
-                    found = true;
+    /// Group fields into rows based on y-coordinate alignment.
+    fn group_fields_into_rows(
+        &self,
+        doc: &Document,
+        fields: &[usize],
+    ) -> Vec<Vec<(usize, Bounds)>> {
+        // Collect fields with their bounds
+        let mut bounded_fields: Vec<(usize, Bounds)> = fields
+            .iter()
+            .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
+            .collect();
+
+        if bounded_fields.is_empty() {
+            return Vec::new();
+        }
+
+        // Sort by y-coordinate (top to bottom)
+        bounded_fields.sort_by(|a, b| a.1.y.cmp(&b.1.y));
+
+        // Group into rows
+        let mut rows: Vec<Vec<(usize, Bounds)>> = Vec::new();
+
+        for (idx, bounds) in bounded_fields {
+            // Try to find an existing row with similar y-coordinate
+            let mut found_row = false;
+            for row in &mut rows {
+                let row_y = row[0].1.y;
+                if (bounds.y - row_y).abs() <= self.row_tolerance {
+                    row.push((idx, bounds));
+                    found_row = true;
                     break;
                 }
             }
 
-            if !found {
-                rows.push((y, vec![idx]));
+            if !found_row {
+                rows.push(vec![(idx, bounds)]);
             }
         }
 
-        // Sort rows by y-coordinate (top to bottom)
-        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        // Sort each row by x-coordinate (left to right)
+        for row in &mut rows {
+            row.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+        }
+
         rows
     }
 
-    /// Find field tables and create GridLayout groups with LabeledField children.
-    fn detect_field_tables(&self, doc: &mut Document) {
-        // Get unclaimed Field and DateField groups (both are valid table cell types)
-        let fields = doc.root_fields();
+    /// Try to match all fields in a row with headers above.
+    /// Returns None if any field does not have a matching header.
+    /// Returns Some(vec of (header_idx, field_idx) pairs) if all match.
+    fn match_row_with_headers(
+        &self,
+        doc: &Document,
+        row: &[(usize, Bounds)],
+        candidate_headers: &[(usize, Bounds)],
+    ) -> Option<Vec<(usize, usize)>> {
+        let mut matches: Vec<(usize, usize)> = Vec::new();
+        let mut used_headers: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
-        // Get unclaimed bold TextBlock groups (potential headers)
-        let bold_text_blocks = doc.root_groups_matching(|doc, idx| {
-            doc.is_text_block(idx) && self.is_all_bold(doc, idx)
-        });
+        for (field_idx, field_bounds) in row {
+            // Find a header for this field that has not been used yet
+            let mut best_match: Option<(usize, Num)> = None;
 
-        if fields.is_empty() || bold_text_blocks.is_empty() {
-            return;
-        }
-
-        // NEW APPROACH: First find header rows (groups of bold text on the same y-coordinate)
-        let header_rows = self.cluster_by_y(doc, &bold_text_blocks);
-
-        // Filter to header rows with at least min_columns headers
-        let valid_header_rows: Vec<_> = header_rows
-            .into_iter()
-            .filter(|(_, headers)| headers.len() >= self.min_columns)
-            .collect();
-
-        if valid_header_rows.is_empty() {
-            return;
-        }
-
-        // Sort header rows by y-coordinate (top to bottom)
-        let mut sorted_header_rows = valid_header_rows;
-        sorted_header_rows.sort_by(|a, b| a.0.cmp(&b.0));
-
-        // Track which headers and fields have been used
-        let mut used_headers: HashSet<usize> = HashSet::new();
-        let mut used_fields: HashSet<usize> = HashSet::new();
-
-        // For each header row, try to form a table
-        for (i, (header_y, header_indices)) in sorted_header_rows.iter().enumerate() {
-            // Skip if any header in this row is already used
-            if header_indices.iter().any(|&h| used_headers.contains(&h)) {
-                continue;
-            }
-
-            // Determine the y-boundary for this table's fields
-            // Fields must be below header_y but above the next header row (if any)
-            let max_field_y = if i + 1 < sorted_header_rows.len() {
-                sorted_header_rows[i + 1].0
-            } else {
-                Decimal::MAX
-            };
-
-            // Sort headers by x-coordinate (left to right)
-            let mut sorted_headers: Vec<(Decimal, usize)> = header_indices
-                .iter()
-                .filter_map(|&h| doc.get_bounds(h).map(|b| (b.x, h)))
-                .collect();
-            sorted_headers.sort_by(|a, b| a.0.cmp(&b.0));
-
-            if sorted_headers.len() < self.min_columns {
-                continue;
-            }
-
-            // Find fields that are below this header row and above the next header row
-            let table_fields: Vec<usize> = fields
-                .iter()
-                .filter(|&&f| {
-                    if used_fields.contains(&f) {
-                        return false;
-                    }
-                    if let Some(fb) = doc.get_bounds(f) {
-                        fb.y > *header_y && fb.y < max_field_y
-                    } else {
-                        false
-                    }
-                })
-                .copied()
-                .collect();
-
-            if table_fields.is_empty() {
-                continue;
-            }
-
-            // For each header, find fields that align with it (within tolerance)
-            let mut column_fields: Vec<(usize, Vec<usize>)> = Vec::new(); // (header_idx, field_indices)
-
-            for (header_x, header_idx) in &sorted_headers {
-                let aligned_fields: Vec<usize> = table_fields
-                    .iter()
-                    .filter(|&&f| {
-                        if let Some(fb) = doc.get_bounds(f) {
-                            (fb.x - *header_x).abs() <= self.alignment_tolerance
-                        } else {
-                            false
-                        }
-                    })
-                    .copied()
-                    .collect();
-
-                column_fields.push((*header_idx, aligned_fields));
-            }
-
-            // Check that we have at least min_columns with fields
-            let columns_with_fields: Vec<_> = column_fields
-                .iter()
-                .filter(|(_, fields)| !fields.is_empty())
-                .collect();
-
-            if columns_with_fields.len() < self.min_columns {
-                continue;
-            }
-
-            // Build the table: cluster fields by y to form rows
-            let all_table_field_indices: Vec<usize> = column_fields
-                .iter()
-                .flat_map(|(_, f)| f.iter().copied())
-                .collect();
-
-            let field_rows = self.cluster_by_y(doc, &all_table_field_indices);
-
-            if field_rows.len() < self.min_data_rows {
-                continue;
-            }
-
-            // Mark headers as used
-            for (_, header_idx) in &sorted_headers {
-                used_headers.insert(*header_idx);
-            }
-
-            let num_columns = sorted_headers.len();
-
-            // For each row of fields, create LabeledFields and wrap in GridLayout
-            for (_row_y, row_field_indices) in field_rows {
-                // Sort fields in this row by x-coordinate
-                let mut row_fields: Vec<(Decimal, usize)> = row_field_indices
-                    .iter()
-                    .filter_map(|&idx| doc.get_bounds(idx).map(|b| (b.x, idx)))
-                    .collect();
-                row_fields.sort_by(|a, b| a.0.cmp(&b.0));
-
-                // Match each field to its column header
-                let mut labeled_field_indices: Vec<usize> = Vec::new();
-
-                for (field_x, field_idx) in row_fields {
-                    // Skip if already used
-                    if used_fields.contains(&field_idx) {
-                        continue;
-                    }
-
-                    // Find the column this field belongs to
-                    let mut matched_header: Option<usize> = None;
-
-                    for (header_x, header_idx) in &sorted_headers {
-                        if (field_x - *header_x).abs() <= self.alignment_tolerance {
-                            matched_header = Some(*header_idx);
-                            break;
-                        }
-                    }
-
-                    if let Some(header_idx) = matched_header {
-                        // Create LabeledField with header as label
-                        let labeled_idx =
-                            doc.create_labeled_field(header_idx, field_idx, self.name());
-                        labeled_field_indices.push(labeled_idx);
-                        used_fields.insert(field_idx);
-                    }
-                }
-
-                // Skip if we didn't get enough labeled fields for a valid row
-                if labeled_field_indices.len() < self.min_columns {
+            for &(header_idx, ref header_bounds) in candidate_headers {
+                if used_headers.contains(&header_idx) {
                     continue;
                 }
 
-                // Create GridLayout for this row
-                let spans = vec![1; labeled_field_indices.len()];
-                doc.merge(
-                    labeled_field_indices,
-                    GroupKind::GridLayout {
-                        columns: num_columns,
-                        spans,
-                    },
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
-            }
-        }
-    }
+                let gap = header_bounds.vertical_gap_to(field_bounds);
+                let Some(gap) = gap else {
+                    continue;
+                };
 
-    /// Find repeatable sections with fields and attach column headers as labels.
-    ///
-    /// This method handles the case where:
-    /// 1. RepeatableDetector has already created RepeatableSection groups
-    /// 2. There are TextBlocks above the repeatable that serve as column headers
-    /// 3. The fields inside the repeatable should be labeled with those headers
-    ///
-    /// The result is a NEW RepeatableSection containing LabeledFields in a GridLayout,
-    /// which claims both the headers and the original repeatable.
-    fn detect_repeatable_column_headers(&self, doc: &mut Document) {
-        // Maximum vertical distance to look for headers above a repeatable
-        let max_header_distance = Decimal::from_str("30.0").unwrap();
+                if gap > self.header_gap_threshold {
+                    continue;
+                }
 
-        // Find all RepeatableSection groups
-        let all_roots = doc.roots();
-        let repeatables: Vec<(usize, u32, Option<u32>)> = all_roots
-            .iter()
-            .filter_map(|&idx| {
-                doc.get_group(idx).and_then(|g| {
-                    if let GroupKind::RepeatableSection { min_occurrences, max_occurrences } = g.kind {
-                        Some((idx, min_occurrences, max_occurrences))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
+                if !header_bounds.overlaps_horizontally(field_bounds, self.horizontal_tolerance) {
+                    continue;
+                }
 
-        // Find all unclaimed TextBlock groups (potential headers)
-        let text_blocks: Vec<usize> = all_roots
-            .iter()
-            .filter(|&&idx| {
-                doc.get_group(idx)
-                    .map(|g| matches!(g.kind, GroupKind::TextBlock))
-                    .unwrap_or(false)
-            })
-            .copied()
-            .collect();
-
-        if repeatables.is_empty() || text_blocks.is_empty() {
-            return;
-        }
-
-        // Track which text blocks have been used as headers
-        let mut used_headers: HashSet<usize> = HashSet::new();
-
-        for (repeatable_idx, min_occurrences, max_occurrences) in repeatables {
-            let Some(repeatable_bounds) = doc.get_bounds(repeatable_idx) else {
-                continue;
-            };
-
-            // Find fields within this repeatable
-            let fields_in_repeatable: Vec<usize> = self.find_fields_in_group(doc, repeatable_idx);
-            if fields_in_repeatable.is_empty() {
-                continue;
-            }
-
-            // Find text blocks that are above the repeatable (within max_header_distance)
-            let mut potential_headers: Vec<(Decimal, usize)> = text_blocks
-                .iter()
-                .filter_map(|&tb_idx| {
-                    if used_headers.contains(&tb_idx) {
-                        return None;
-                    }
-                    let Some(tb_bounds) = doc.get_bounds(tb_idx) else {
-                        return None;
-                    };
-                    // Header must be above the repeatable
-                    let vertical_gap = repeatable_bounds.y - tb_bounds.bottom();
-                    if vertical_gap < Decimal::ZERO || vertical_gap > max_header_distance {
-                        return None;
-                    }
-                    Some((tb_bounds.x, tb_idx))
-                })
-                .collect();
-
-            if potential_headers.is_empty() {
-                continue;
-            }
-
-            // Sort headers by x-coordinate
-            potential_headers.sort_by(|a, b| a.0.cmp(&b.0));
-
-            // Cluster headers by y-coordinate (should be on same row)
-            let header_rows = self.cluster_by_y(doc, &potential_headers.iter().map(|(_, idx)| *idx).collect::<Vec<_>>());
-            
-            // Find the header row closest to the repeatable (largest y that's still above)
-            let Some((_, header_row)) = header_rows.iter().rev().find(|(row_y, headers)| {
-                // Check that this row is above the repeatable and has enough columns
-                *row_y < repeatable_bounds.y && headers.len() >= 2
-            }) else {
-                continue;
-            };
-
-            // Sort this header row by x
-            let mut sorted_headers: Vec<(Decimal, usize)> = header_row
-                .iter()
-                .filter_map(|&h| doc.get_bounds(h).map(|b| (b.x, h)))
-                .collect();
-            sorted_headers.sort_by(|a, b| a.0.cmp(&b.0));
-
-            // Sort fields by x-coordinate
-            let mut sorted_fields: Vec<(Decimal, usize)> = fields_in_repeatable
-                .iter()
-                .filter_map(|&f| doc.get_bounds(f).map(|b| (b.x, f)))
-                .collect();
-            sorted_fields.sort_by(|a, b| a.0.cmp(&b.0));
-
-            // Match headers to fields by x-alignment
-            // We need at least 2 matching pairs
-            let mut matches: Vec<(usize, usize)> = Vec::new(); // (header_idx, field_idx)
-            
-            for (field_x, field_idx) in &sorted_fields {
-                // Find the closest header
-                let best_match = sorted_headers
-                    .iter()
-                    .filter(|(hx, _)| (*field_x - *hx).abs() <= self.alignment_tolerance)
-                    .min_by_key(|(hx, _)| (*field_x - *hx).abs());
-                
-                if let Some((_, header_idx)) = best_match {
-                    matches.push((*header_idx, *field_idx));
+                if best_match.map_or(true, |(_, best_gap)| gap < best_gap) {
+                    best_match = Some((header_idx, gap));
                 }
             }
 
-            if matches.len() < 2 {
+            let Some((header_idx, _)) = best_match else {
+                // This field has no matching header - fail the entire row
+                return None;
+            };
+
+            used_headers.insert(header_idx);
+            matches.push((header_idx, *field_idx));
+        }
+
+        Some(matches)
+    }
+
+    /// Process the document to detect field tables.
+    fn detect_field_tables(&self, doc: &mut Document) {
+        // Step 1: Find unclaimed fields
+        let unclaimed_fields = self.find_unclaimed_fields(doc);
+        if unclaimed_fields.len() < self.min_fields_per_row {
+            return;
+        }
+
+        // Step 2: Find candidate headers (bold text blocks)
+        let candidate_headers: Vec<(usize, Bounds)> = self
+            .find_candidate_headers(doc)
+            .into_iter()
+            .filter_map(|idx| doc.get_bounds(idx).map(|b| (idx, b)))
+            .collect();
+
+        if candidate_headers.is_empty() {
+            return;
+        }
+
+        // Step 3: Group fields into rows
+        let rows = self.group_fields_into_rows(doc, &unclaimed_fields);
+
+        // Step 4: For each row, try to match with headers
+        for row in rows {
+            if row.len() < self.min_fields_per_row {
                 continue;
             }
 
-            // Mark the matched headers as used
-            for (header_idx, _) in &matches {
-                used_headers.insert(*header_idx);
-            }
+            // Try to match all fields in this row with headers
+            let Some(matches) = self.match_row_with_headers(doc, &row, &candidate_headers) else {
+                // Not all fields have headers - skip this row
+                continue;
+            };
 
-            // Create LabeledFields for each matched pair
+            // Step 5: Create LabeledFields for each header-field pair
             let mut labeled_field_indices: Vec<usize> = Vec::new();
+
             for (header_idx, field_idx) in &matches {
-                let labeled_idx = doc.create_labeled_field(*header_idx, *field_idx, self.name());
-                labeled_field_indices.push(labeled_idx);
+                let labeled_field = doc.create_labeled_field(*header_idx, *field_idx, self.name());
+                labeled_field_indices.push(labeled_field);
             }
 
-            // Create a GridLayout containing the LabeledFields
+            // Step 6: Create GridLayout containing the LabeledFields
             let num_columns = labeled_field_indices.len();
             let spans = vec![1; num_columns];
-            let grid_idx = doc.merge(
+
+            doc.merge(
                 labeled_field_indices,
                 GroupKind::GridLayout {
                     columns: num_columns,
@@ -463,46 +284,6 @@ impl FieldTableDetector {
                     module: self.name().to_string(),
                 },
             );
-
-            // Create a new RepeatableSection containing only the GridLayout
-            // The original repeatable's fields are already claimed by the LabeledFields
-            // We also claim the original repeatable_idx so it doesn't appear separately
-            doc.merge(
-                vec![grid_idx, repeatable_idx],
-                GroupKind::RepeatableSection {
-                    min_occurrences,
-                    max_occurrences,
-                },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
-            );
-        }
-    }
-
-    /// Find all Field/DateField groups within a given group (recursively).
-    fn find_fields_in_group(&self, doc: &Document, group_idx: usize) -> Vec<usize> {
-        let mut fields = Vec::new();
-        self.collect_fields_recursive(doc, group_idx, &mut fields);
-        fields
-    }
-
-    fn collect_fields_recursive(&self, doc: &Document, group_idx: usize, fields: &mut Vec<usize>) {
-        let Some(group) = doc.get_group(group_idx) else {
-            return;
-        };
-
-        match &group.kind {
-            GroupKind::Field | GroupKind::DateField { .. } => {
-                fields.push(group_idx);
-            }
-            _ => {
-                // Recurse into children
-                let children: Vec<usize> = group.children.clone();
-                for child_idx in children {
-                    self.collect_fields_recursive(doc, child_idx, fields);
-                }
-            }
         }
     }
 }
@@ -513,10 +294,6 @@ impl AnalysisModule for FieldTableDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        // First, detect column headers above repeatable sections
-        // (RepeatableDetector has already run)
-        self.detect_repeatable_column_headers(doc);
-        // Then detect standalone field tables with bold headers
         self.detect_field_tables(doc);
     }
 }
@@ -524,347 +301,26 @@ impl AnalysisModule for FieldTableDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::Document;
-    use crate::document::modules::{FieldGrouper, TextBlockGrouper};
-    use crate::flattened::{Flattened, FlattenedNode, Page};
-    use crate::xfa::{Font, FontPosture, KerningMode, num};
 
-    fn make_field_node(name: &str, x: f64, y: f64, width: f64, height: f64) -> FlattenedNode {
-        FlattenedNode::new_field(
-            name.to_string(),
-            String::new(),
-            name.to_string(),
-            num(x),
-            num(y),
-            num(width),
-            num(height),
-        )
-    }
-
-    fn make_bold_text_node(content: &str, x: f64, y: f64) -> FlattenedNode {
-        let mut node = FlattenedNode::new_text(
-            content.to_string(),
-            num(10.0),
-            "Helvetica".to_string(),
-            num(x),
-            num(y),
-            num(50.0),
-            num(12.0),
-        );
-        node.style.font = Some(Font {
-            typeface: "Helvetica".to_string(),
-            size: num(10.0),
-            weight: FontWeight::Bold,
-            posture: FontPosture::Normal,
-            underline: false,
-            line_through: false,
-            color: None,
-            baseline_shift: None,
-            letter_spacing: None,
-            generic_family: None,
-            kerning_mode: KerningMode::None,
-            font_horizontal_scale: None,
-            font_vertical_scale: None,
-        });
-        node
+    #[test]
+    fn test_default_configuration() {
+        let detector = FieldTableDetector::new();
+        assert_eq!(detector.min_fields_per_row, 2);
+        assert_eq!(detector.row_tolerance, Decimal::from_str("5.0").unwrap());
     }
 
     #[test]
-    fn test_field_table_two_columns_two_rows() {
-        // Create a simple 2x2 table:
-        // [Header1] [Header2]
-        // [Field1]  [Field2]
-        // [Field3]  [Field4]
+    fn test_builder_configuration() {
+        let detector = FieldTableDetector::new()
+            .with_min_fields_per_row(3)
+            .with_row_tolerance(Decimal::from_str("10.0").unwrap())
+            .with_header_gap_threshold(Decimal::from_str("50.0").unwrap());
 
-        let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
-            vec![
-                // Headers (y=50)
-                make_bold_text_node("Column A", 10.0, 50.0),
-                make_bold_text_node("Column B", 150.0, 50.0),
-                // Row 1 (y=80)
-                make_field_node("field_a1", 10.0, 80.0, 100.0, 20.0),
-                make_field_node("field_b1", 150.0, 80.0, 100.0, 20.0),
-                // Row 2 (y=110)
-                make_field_node("field_a2", 10.0, 110.0, 100.0, 20.0),
-                make_field_node("field_b2", 150.0, 110.0, 100.0, 20.0),
-            ],
-        );
-
-        let mut doc = Document::from_flattened(&flattened);
-        TextBlockGrouper::new().process(&mut doc);
-        FieldGrouper::new().process(&mut doc);
-        FieldTableDetector::new().process(&mut doc);
-
-        // Should have created 2 GridLayout groups (one per data row)
-        let grid_layouts: Vec<_> = doc
-            .groups
-            .iter()
-            .enumerate()
-            .filter(|(_, g)| matches!(g.kind, GroupKind::GridLayout { .. }))
-            .collect();
-
+        assert_eq!(detector.min_fields_per_row, 3);
+        assert_eq!(detector.row_tolerance, Decimal::from_str("10.0").unwrap());
         assert_eq!(
-            grid_layouts.len(),
-            2,
-            "Expected 2 GridLayout rows, found {}",
-            grid_layouts.len()
+            detector.header_gap_threshold,
+            Decimal::from_str("50.0").unwrap()
         );
-
-        // Each GridLayout should have 2 children (LabeledFields)
-        for (_, grid) in &grid_layouts {
-            assert_eq!(
-                grid.children.len(),
-                2,
-                "Each GridLayout row should have 2 LabeledFields"
-            );
-
-            if let GroupKind::GridLayout { columns, spans } = &grid.kind {
-                assert_eq!(*columns, 2, "Grid should have 2 columns");
-                assert_eq!(spans, &vec![1, 1], "Each element should have span 1");
-            }
-        }
-
-        // Check that LabeledFields were created
-        let labeled_fields: Vec<_> = doc
-            .groups
-            .iter()
-            .filter(|g| matches!(g.kind, GroupKind::LabeledField { .. }))
-            .collect();
-
-        assert_eq!(
-            labeled_fields.len(),
-            4,
-            "Expected 4 LabeledFields (2 cols × 2 rows)"
-        );
-    }
-
-    #[test]
-    fn test_no_table_without_bold_headers() {
-        // Fields without bold headers should not be detected as a table
-        let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
-            vec![
-                // Non-bold text (regular weight)
-                FlattenedNode::new_text(
-                    "Column A".to_string(),
-                    num(10.0),
-                    "Helvetica".to_string(),
-                    num(10.0),
-                    num(50.0),
-                    num(50.0),
-                    num(12.0),
-                ),
-                FlattenedNode::new_text(
-                    "Column B".to_string(),
-                    num(10.0),
-                    "Helvetica".to_string(),
-                    num(150.0),
-                    num(50.0),
-                    num(50.0),
-                    num(12.0),
-                ),
-                // Fields
-                make_field_node("field_a1", 10.0, 80.0, 100.0, 20.0),
-                make_field_node("field_b1", 150.0, 80.0, 100.0, 20.0),
-            ],
-        );
-
-        let mut doc = Document::from_flattened(&flattened);
-        TextBlockGrouper::new().process(&mut doc);
-        FieldGrouper::new().process(&mut doc);
-        FieldTableDetector::new().process(&mut doc);
-
-        // Should NOT have created any GridLayout groups
-        let grid_layouts: Vec<_> = doc
-            .groups
-            .iter()
-            .filter(|g| matches!(g.kind, GroupKind::GridLayout { .. }))
-            .collect();
-
-        assert_eq!(
-            grid_layouts.len(),
-            0,
-            "Should not detect table without bold headers"
-        );
-    }
-
-    #[test]
-    fn test_aaab_has_at_least_4_field_tables() {
-        use crate::document::modules::run_analysis_pipeline;
-        use crate::extract_xfa_from_pdf;
-        use crate::flattened::Flattened;
-        use crate::xfa::XfaNode;
-        use crate::xfa::script_executor::ScriptExecutor;
-
-        // Load AAAB PDF
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        assert!(xfa_data.is_some(), "PDF should contain XFA data");
-
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
-
-        // Execute scripts to populate dynamic content
-        let script_result = ScriptExecutor::execute(&nodes);
-        ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
-
-        // Flatten the XFA with computed values
-        let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)
-            .expect("Failed to flatten XFA");
-
-        // Create document and run full pipeline
-        let mut doc = Document::from_flattened(&flattened);
-        run_analysis_pipeline(&mut doc);
-
-        // Count GridLayout groups that contain LabeledFields (field tables)
-        let field_table_rows: Vec<_> = doc
-            .groups
-            .iter()
-            .enumerate()
-            .filter(|(_, g)| {
-                if let GroupKind::GridLayout { .. } = &g.kind {
-                    // Check if children are LabeledFields
-                    g.children.iter().any(|&child_idx| {
-                        doc.get_group(child_idx)
-                            .map(|child| matches!(child.kind, GroupKind::LabeledField { .. }))
-                            .unwrap_or(false)
-                    })
-                } else {
-                    false
-                }
-            })
-            .collect();
-
-        println!(
-            "Found {} field table rows (GridLayout with LabeledFields) in AAAB",
-            field_table_rows.len()
-        );
-
-        // Print labels for each field table row
-        for (idx, group) in &field_table_rows {
-            print!("  Row {}: ", idx);
-            for &child_idx in &group.children {
-                if let Some(child) = doc.get_group(child_idx) {
-                    if let GroupKind::LabeledField { label, .. } = child.kind {
-                        let label_idx = child.children[label];
-                        let label_text = doc.get_text_content(label_idx);
-                        print!("[{}] ", label_text.chars().take(20).collect::<String>());
-                    }
-                }
-            }
-            println!();
-        }
-
-        // We expect at least 4 field table rows
-        assert!(
-            field_table_rows.len() >= 4,
-            "AAAB should have at least 4 field table rows, found {}",
-            field_table_rows.len()
-        );
-    }
-
-    #[test]
-    fn test_nachname_vorname_not_detected_as_table() {
-        use crate::document::modules::{
-            DateFieldDetector, FieldGrouper, MasterPageDetector, NoPrintDetector,
-            RadioButtonDetector, RadioButtonGrouper, TextBlockGrouper,
-        };
-        use crate::extract_xfa_from_pdf;
-        use crate::flattened::Flattened;
-        use crate::xfa::XfaNode;
-        use crate::xfa::script_executor::ScriptExecutor;
-
-        // Load AAAB PDF
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
-        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
-        let script_result = ScriptExecutor::execute(&nodes);
-        ScriptExecutor::apply_presence_changes(&mut nodes, &script_result.presence_changes);
-        let flattened = Flattened::from_xfa(&nodes, &script_result.computed_values)
-            .expect("Failed to flatten XFA");
-
-        let mut doc = Document::from_flattened(&flattened);
-
-        // Run modules up to and including FieldTableDetector (but not GridTemplateDetector)
-        NoPrintDetector::new().process(&mut doc);
-        MasterPageDetector::new().process(&mut doc);
-        TextBlockGrouper::new().process(&mut doc);
-        FieldGrouper::new().process(&mut doc);
-        DateFieldDetector::new().process(&mut doc);
-        RadioButtonDetector::new().process(&mut doc);
-        RadioButtonGrouper::new().process(&mut doc);
-        FieldTableDetector::new().process(&mut doc);
-
-        // Find all GridLayout rows with LabeledField children created by FieldTableDetector
-        let field_table_rows: Vec<_> = doc
-            .groups
-            .iter()
-            .enumerate()
-            .filter(|(_, g)| {
-                // Only check GridLayouts created by FieldTableDetector
-                if let GroupKind::GridLayout { .. } = &g.kind {
-                    if let GroupSource::Inferred { module } = &g.source {
-                        if module == "FieldTableDetector" {
-                            return g.children.iter().any(|&child_idx| {
-                                doc.get_group(child_idx)
-                                    .map(|child| {
-                                        matches!(child.kind, GroupKind::LabeledField { .. })
-                                    })
-                                    .unwrap_or(false)
-                            });
-                        }
-                    }
-                }
-                false
-            })
-            .collect();
-
-        // Check that none of the field table rows have "Nachname" or "Vorname" as labels
-        // These are regular form labels, not bold table headers
-        for (idx, group) in &field_table_rows {
-            for &child_idx in &group.children {
-                if let Some(child) = doc.get_group(child_idx) {
-                    if let GroupKind::LabeledField { label, .. } = child.kind {
-                        let label_idx = child.children[label];
-                        let label_text = doc.get_text_content(label_idx).to_lowercase();
-                        assert!(
-                            !label_text.contains("nachname") && !label_text.contains("vorname"),
-                            "FieldTableDetector should not create table row {} with 'Nachname' or 'Vorname' as labels - these are not bold headers. Found: {}",
-                            idx,
-                            label_text
-                        );
-                    }
-                }
-            }
-        }
-
-        // Also verify we DO detect the expected tables (Fondsprovider, ISIN, Satz, Ab)
-        let mut found_fondsprovider = false;
-        let mut found_isin = false;
-        for (_, group) in &field_table_rows {
-            for &child_idx in &group.children {
-                if let Some(child) = doc.get_group(child_idx) {
-                    if let GroupKind::LabeledField { label, .. } = child.kind {
-                        let label_idx = child.children[label];
-                        let label_text = doc.get_text_content(label_idx).to_lowercase();
-                        if label_text.contains("fondsprovider") {
-                            found_fondsprovider = true;
-                        }
-                        if label_text.contains("isin") {
-                            found_isin = true;
-                        }
-                    }
-                }
-            }
-        }
-        assert!(
-            found_fondsprovider,
-            "Should detect tables with 'Fondsprovider' header"
-        );
-        assert!(found_isin, "Should detect tables with 'ISIN' header");
     }
 }

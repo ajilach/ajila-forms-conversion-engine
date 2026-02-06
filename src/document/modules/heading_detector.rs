@@ -974,7 +974,12 @@ impl HeadingDetector {
         }
 
         // Find all unclaimed text groups (roots that are text)
-        let text_groups = doc.root_groups_matching(|doc, idx| self.is_text_group(doc, idx));
+        let roots = doc.roots();
+        let text_groups: Vec<usize> = roots
+            .iter()
+            .filter(|&&idx| self.is_text_group(doc, idx))
+            .copied()
+            .collect();
 
         // First pass: collect border statistics from potential headings (only if not using global stats)
         let mut local_border_stats = BorderStats::default();

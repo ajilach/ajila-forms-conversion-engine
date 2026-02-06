@@ -81,7 +81,19 @@ impl RadioButtonDetector {
 
     /// Check if text is to the right of the field and on the same line.
     fn is_label_on_right(&self, field_bounds: &Bounds, text_bounds: &Bounds) -> Option<Decimal> {
-        text_bounds.is_right_of_within(field_bounds, self.max_label_distance, self.line_tolerance)
+        // Text must be to the right of field
+        let gap = field_bounds.horizontal_gap_to(text_bounds)?;
+
+        if gap > self.max_label_distance {
+            return None;
+        }
+
+        // Check vertical alignment (same line)
+        if !field_bounds.is_on_same_line(text_bounds, self.line_tolerance) {
+            return None;
+        }
+
+        Some(gap)
     }
 
     /// Find the best label on the right of a field.
@@ -117,9 +129,21 @@ impl AnalysisModule for RadioButtonDetector {
     }
 
     fn process(&self, doc: &mut Document) {
+        // Get all root groups
+        let roots = doc.roots();
+
         // Find Field groups and TextBlock groups
-        let field_groups = doc.root_fields();
-        let text_groups = doc.root_text_blocks();
+        let field_groups: Vec<usize> = roots
+            .iter()
+            .filter(|&&idx| doc.is_field(idx))
+            .copied()
+            .collect();
+
+        let text_groups: Vec<usize> = roots
+            .iter()
+            .filter(|&&idx| doc.is_text_block(idx))
+            .copied()
+            .collect();
 
         if field_groups.is_empty() || text_groups.is_empty() {
             return;
