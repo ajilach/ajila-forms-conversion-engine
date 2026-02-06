@@ -736,6 +736,50 @@ impl<'a> Document<'a> {
             Flattened::draw_transparent_rect(img, x - i, y - i, w + 2 * i, h + 2 * i, color);
         }
     }
+
+    /// Get all root Field groups (Field or DateField kinds).
+    ///
+    /// This is a convenience method that eliminates the repeated pattern:
+    /// `doc.roots().iter().filter(|&&idx| doc.is_field(idx)).copied().collect()`
+    pub fn root_fields(&self) -> Vec<usize> {
+        self.roots()
+            .into_iter()
+            .filter(|&idx| self.is_field(idx))
+            .collect()
+    }
+
+    /// Get all root TextBlock groups.
+    ///
+    /// This is a convenience method that eliminates the repeated pattern:
+    /// `doc.roots().iter().filter(|&&idx| doc.is_text_block(idx)).copied().collect()`
+    pub fn root_text_blocks(&self) -> Vec<usize> {
+        self.roots()
+            .into_iter()
+            .filter(|&idx| self.is_text_block(idx))
+            .collect()
+    }
+
+    /// Get all root groups matching a predicate.
+    ///
+    /// This is a convenience method that eliminates the repeated pattern:
+    /// `doc.roots().iter().filter(|&&idx| predicate(doc, idx)).copied().collect()`
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Get all root text blocks that are not headings
+    /// let text_groups = doc.root_groups_matching(|doc, idx| {
+    ///     doc.is_text_block(idx) && !doc.is_heading(idx)
+    /// });
+    /// ```
+    pub fn root_groups_matching<F>(&self, predicate: F) -> Vec<usize>
+    where
+        F: Fn(&Self, usize) -> bool,
+    {
+        self.roots()
+            .into_iter()
+            .filter(|&idx| predicate(self, idx))
+            .collect()
+    }
 }
 
 impl Group {
