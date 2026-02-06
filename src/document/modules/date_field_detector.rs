@@ -131,17 +131,13 @@ impl DateFieldDetector {
             return false;
         };
 
-        // Must be on same line
-        if !left_bounds.is_on_same_line(&right_bounds, self.line_tolerance) {
-            return false;
-        }
-
-        // Right must be to the right of left
-        let Some(gap) = left_bounds.horizontal_gap_to(&right_bounds) else {
-            return false;
-        };
-
-        gap <= self.horizontal_threshold
+        left_bounds
+            .is_left_of_within(
+                &right_bounds,
+                self.horizontal_threshold,
+                self.line_tolerance,
+            )
+            .is_some()
     }
 
     /// Collect all root groups sorted by x position for a given line.
@@ -393,14 +389,9 @@ impl AnalysisModule for DateFieldDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        let roots = doc.roots();
-
         // Filter to only Fields and TextBlocks (candidates for date patterns)
-        let candidates: Vec<usize> = roots
-            .iter()
-            .filter(|&&idx| doc.is_field(idx) || doc.is_text_block(idx))
-            .copied()
-            .collect();
+        let candidates =
+            doc.root_groups_matching(|doc, idx| doc.is_field(idx) || doc.is_text_block(idx));
 
         if candidates.is_empty() {
             return;

@@ -1145,6 +1145,110 @@ impl Bounds {
     }
 
     // ========================================================================
+    // Position checks with thresholds (for label/field detection)
+    // ========================================================================
+
+    /// Check if this bounds is above `other` within a vertical threshold,
+    /// with horizontal overlap (for label-above-field detection).
+    ///
+    /// Returns the vertical gap if conditions are met, None otherwise.
+    ///
+    /// Conditions:
+    /// - This bounds is above `other` (this.bottom <= other.top)
+    /// - Vertical gap is within `vertical_threshold`
+    /// - Bounds overlap horizontally (within `horizontal_tolerance`)
+    pub fn is_above_within(
+        &self,
+        other: &Bounds,
+        vertical_threshold: Num,
+        horizontal_tolerance: Num,
+    ) -> Option<Num> {
+        let gap = self.vertical_gap_to(other)?;
+        if gap > vertical_threshold {
+            return None;
+        }
+        if !self.overlaps_horizontally(other, horizontal_tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if this bounds is below `other` within a vertical threshold,
+    /// with horizontal overlap (for label-below-field detection).
+    ///
+    /// Returns the vertical gap if conditions are met, None otherwise.
+    ///
+    /// Conditions:
+    /// - This bounds is below `other` (this.top >= other.bottom)
+    /// - Vertical gap is within `vertical_threshold`
+    /// - Bounds overlap horizontally (within `horizontal_tolerance`)
+    pub fn is_below_within(
+        &self,
+        other: &Bounds,
+        vertical_threshold: Num,
+        horizontal_tolerance: Num,
+    ) -> Option<Num> {
+        let gap = other.vertical_gap_to(self)?;
+        if gap > vertical_threshold {
+            return None;
+        }
+        if !self.overlaps_horizontally(other, horizontal_tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if this bounds is to the left of `other` within a horizontal threshold,
+    /// on the same line (for label-left-of-field detection).
+    ///
+    /// Returns the horizontal gap if conditions are met, None otherwise.
+    ///
+    /// Conditions:
+    /// - This bounds is to the left of `other` (this.right <= other.left)
+    /// - Horizontal gap is within `horizontal_threshold`
+    /// - Bounds are on the same line (within `line_tolerance`)
+    pub fn is_left_of_within(
+        &self,
+        other: &Bounds,
+        horizontal_threshold: Num,
+        line_tolerance: Num,
+    ) -> Option<Num> {
+        let gap = self.horizontal_gap_to(other)?;
+        if gap > horizontal_threshold {
+            return None;
+        }
+        if !self.is_on_same_line(other, line_tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if this bounds is to the right of `other` within a horizontal threshold,
+    /// on the same line (for label-right-of-field detection).
+    ///
+    /// Returns the horizontal gap if conditions are met, None otherwise.
+    ///
+    /// Conditions:
+    /// - This bounds is to the right of `other` (this.left >= other.right)
+    /// - Horizontal gap is within `horizontal_threshold`
+    /// - Bounds are on the same line (within `line_tolerance`)
+    pub fn is_right_of_within(
+        &self,
+        other: &Bounds,
+        horizontal_threshold: Num,
+        line_tolerance: Num,
+    ) -> Option<Num> {
+        let gap = other.horizontal_gap_to(self)?;
+        if gap > horizontal_threshold {
+            return None;
+        }
+        if !self.is_on_same_line(other, line_tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    // ========================================================================
     // Bounding box operations
     // ========================================================================
 

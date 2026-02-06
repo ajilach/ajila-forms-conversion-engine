@@ -65,53 +65,17 @@ impl LabelAttacher {
 
     /// Check if text is above the field and return the gap distance.
     fn check_above(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be above field
-        let gap = text_bounds.vertical_gap_to(field_bounds)?;
-
-        if gap > self.vertical_threshold {
-            return None;
-        }
-
-        // Text should overlap horizontally with field
-        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_above_within(field_bounds, self.vertical_threshold, self.line_tolerance)
     }
 
     /// Check if text is below the field and return the gap distance.
     fn check_below(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be below field
-        let gap = field_bounds.vertical_gap_to(text_bounds)?;
-
-        if gap > self.vertical_threshold {
-            return None;
-        }
-
-        // Text should overlap horizontally with field
-        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_below_within(field_bounds, self.vertical_threshold, self.line_tolerance)
     }
 
     /// Check if text is to the left of the field and return the gap distance.
     fn check_left(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be to the left of field
-        let gap = text_bounds.horizontal_gap_to(field_bounds)?;
-
-        if gap > self.horizontal_threshold {
-            return None;
-        }
-
-        // Check vertical alignment (same line)
-        if !text_bounds.is_on_same_line(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_left_of_within(field_bounds, self.horizontal_threshold, self.line_tolerance)
     }
 
     /// Analyze all text-field relationships and determine the dominant label position.
@@ -222,27 +186,16 @@ impl AnalysisModule for LabelAttacher {
     }
 
     fn process(&self, doc: &mut Document) {
-        // Get all root groups
-        let roots = doc.roots();
-
         // Find TextBlock groups that are NOT headings (headings shouldn't be used as labels)
         // Only plain text blocks should be used as field labels
         // Also filter out text blocks that have no actual text content
-        let text_groups: Vec<usize> = roots
-            .iter()
-            .filter(|&&idx| {
-                doc.is_text_block(idx)
-                    && !doc.is_heading(idx)
-                    && !doc.get_text_content(idx).trim().is_empty()
-            })
-            .copied()
-            .collect();
+        let text_groups = doc.root_groups_matching(|doc, idx| {
+            doc.is_text_block(idx)
+                && !doc.is_heading(idx)
+                && !doc.get_text_content(idx).trim().is_empty()
+        });
 
-        let field_groups: Vec<usize> = roots
-            .iter()
-            .filter(|&&idx| doc.is_field(idx))
-            .copied()
-            .collect();
+        let field_groups = doc.root_fields();
 
         if text_groups.is_empty() || field_groups.is_empty() {
             return;
