@@ -63,6 +63,16 @@ pub fn convert(doc: &Document) -> Vec<StructuredNode> {
         .collect()
 }
 
+/// Convert a Document to a DocumentEnvelope with context.
+/// This wraps the structured nodes with the context metadata.
+pub fn convert_with_context(
+    doc: &Document,
+    context: crate::context::Context,
+) -> crate::structured::DocumentEnvelope {
+    let content = convert(doc);
+    crate::structured::DocumentEnvelope { context, content }
+}
+
 /// Compare two bounds in reading order: top to bottom, then left to right.
 /// Elements on the same vertical line (within a threshold) are sorted left to right.
 fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cmp::Ordering {

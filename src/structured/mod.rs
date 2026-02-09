@@ -2,11 +2,12 @@ mod merger;
 mod structured_converter;
 
 pub use merger::{MergeInput, RecursiveMerger, Selection};
-pub use structured_converter::convert;
+pub use structured_converter::{convert, convert_with_context};
 
 use rust_decimal::Decimal;
 use serde::Serialize;
 
+use crate::context::Context;
 use crate::xfa::scripting::SomPath;
 
 #[derive(Debug, Clone, Serialize)]
@@ -518,4 +519,18 @@ impl TableNode {
 
         header_eq && rows_eq && caption_eq
     }
+}
+
+/// Document envelope containing the structured content and context metadata.
+///
+/// This is the top-level structure that wraps the document's structured nodes
+/// along with the processing context that was enriched throughout the pipeline.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentEnvelope {
+    /// Context metadata enriched throughout processing
+    pub context: Context,
+    
+    /// The structured document content
+    pub content: Vec<StructuredNode>,
 }

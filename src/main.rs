@@ -1,3 +1,4 @@
+mod context;
 mod document;
 mod exhaustive;
 mod flattened;
@@ -6,6 +7,7 @@ mod structured;
 mod xfa;
 
 use clap::{Parser, ValueEnum};
+use context::Context;
 use document::Document;
 use document::modules::{
     AnalysisModule, FieldGrouper, HeadingDetector, LabelAttacher, RadioButtonDetector,
@@ -18,9 +20,30 @@ use pdf::object::*;
 use pdf::primitive::Primitive;
 use rust_decimal::prelude::ToPrimitive;
 use std::path::{Path, PathBuf};
-use xfa::script_executor::ScriptExecutor;
 use xfa::scripting::XfaForm;
 use xfa::{XfaNode, XfaNodeKind};
+
+/// Extract language from XFA form by looking at Footer_Line_txtlanguage field
+fn extract_language_from_xfa(form: &XfaForm) -> String {
+    // Try to resolve the Footer_Line_txtlanguage field
+    if let Some(node) = form.resolve("Footer_Line_txtlanguage") {
+        if let Some(value) = node.raw_value() {
+            let lang = value.to_uppercase();
+            // Map common language codes
+            return match lang.as_str() {
+                "DE" => "de",
+                "EN" => "en",
+                "FR" => "fr",
+                "IT" => "it",
+                "ES" => "es",
+                _ => "de", // default to German
+            }.to_string();
+        }
+    }
+    
+    // Default to German if field not found
+    "de".to_string()
+}
 
 /// Render mode for output images
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -101,6 +124,11 @@ struct Args {
     /// Scale factor for rendering (default: 1.5)
     #[arg(short, long, default_value = "1.5")]
     scale: f32,
+
+    /// Enable specific analysis modules (can be specified multiple times)
+    /// Example: --module ubs --module custom
+    #[arg(long = "module")]
+    modules: Vec<String>,
 
     /// Export the structured form as JSON
     #[arg(long)]
@@ -293,12 +321,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     vprintln!(quiet, "✓ XFA structure parsed");
 
     // =========================================================================
-    // PIPELINE STAGE 2: Run exhaustive exploration
+    // PIPELINE STAGE 2: Create XFA Form and extract language
+    // =========================================================================
+    let mut form =
+        XfaForm::new(nodes).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
+    
+    // Extract language from Footer_Line_txtlanguage field
+    let language = extract_language_from_xfa(&form);
+    vprintln!(quiet, "✓ Detected language: {}", language);
+
+    // Create context with detected language
+    let mut context = Context::new(language);
+    
+    // Store enabled modules in context
+    if !args.modules.is_empty() {
+        vprintln!(quiet, "✓ Enabled modules: {:?}", args.modules);
+        let modules_json = serde_json::to_value(&args.modules)
+            .unwrap_or(serde_json::Value::Array(vec![]));
+        context.set_module_data("enabled_modules", context::ModuleData::Json(modules_json));
+    }
+
+    // =========================================================================
+    // PIPELINE STAGE 3: Run exhaustive exploration
     // =========================================================================
     // Exhaustive mode discovers all form states and generates all outputs
     // (renders, structured JSON, HTML) for each state.
-    let mut form =
-        XfaForm::new(nodes).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
 
     let config = exhaustive::ExhaustiveConfig {
         doc_name,
@@ -308,6 +355,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         structured: args.structured,
         html: args.html,
         quiet,
+        context,
     };
 
     exhaustive::run_exhaustive(&mut form, &config)?;
@@ -317,6 +365,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::xfa::script_executor::ScriptExecutor;
+
     use super::*;
     use rust_decimal::prelude::*;
     use std::collections::HashMap;

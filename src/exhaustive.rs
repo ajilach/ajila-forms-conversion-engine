@@ -72,6 +72,8 @@ pub struct ExhaustiveConfig<'a> {
     pub html: bool,
     /// Whether to suppress verbose output
     pub quiet: bool,
+    /// Context to pass through the pipeline
+    pub context: crate::context::Context,
 }
 
 /// Result of exhaustive exploration
@@ -178,8 +180,14 @@ pub fn run_exhaustive(
         let merger = crate::structured::RecursiveMerger::new(merge_inputs);
         let merged = merger.merge();
 
+        // Create envelope with merged content and context
+        let merged_envelope = crate::structured::DocumentEnvelope {
+            context: config.context.clone(),
+            content: merged,
+        };
+
         // Write merged JSON
-        let json = serde_json::to_string_pretty(&merged)
+        let json = serde_json::to_string_pretty(&merged_envelope)
             .map_err(|e| format!("Failed to serialize merged structured form: {}", e))?;
 
         let json_path = std::path::PathBuf::from(format!("{}_merged.json", config.doc_name));
@@ -193,7 +201,7 @@ pub fn run_exhaustive(
         // Generate merged HTML if requested
         if config.html {
             let html_config = crate::html::HtmlConfig::default();
-            let html = crate::html::generate_html(&merged, &html_config);
+            let html = crate::html::generate_html(&merged_envelope.content, &html_config);
 
             let html_path = std::path::PathBuf::from(format!("{}_merged.html", config.doc_name));
             std::fs::write(&html_path, html)
@@ -247,6 +255,7 @@ pub fn run_exhaustive_to_merged(
         structured: true,
         quiet: true,
         html: false,
+        context: crate::context::Context::new("en".to_string()),
     };
 
     collect_all_states(
@@ -457,10 +466,12 @@ fn process_state_with_context(
 
     // Output structured JSON if requested - always write intermediate per-state files
     let structured_nodes = if config.structured {
-        let nodes = crate::structured::convert(&doc);
+        // Clone context for this state (modules may enrich it during processing)
+        let state_context = config.context.clone();
+        let envelope = crate::structured::convert_with_context(&doc, state_context);
 
-        // Write individual JSON files for each state (intermediate representations)
-        let json = serde_json::to_string_pretty(&nodes)
+        // Write individual JSON files for each state with envelope (intermediate representations)
+        let json = serde_json::to_string_pretty(&envelope)
             .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
 
         let json_path =
@@ -469,7 +480,8 @@ fn process_state_with_context(
             .map_err(|e| format!("Failed to write JSON file: {}", e))?;
         outputs.push(json_path.display().to_string());
 
-        Some(nodes)
+        // Return just the nodes for merging (context merging is handled separately)
+        Some(envelope.content)
     } else {
         None
     };
