@@ -1,5 +1,6 @@
 use crate::xfa::font_manager::get_font_manager;
 use crate::xfa::scripting::{Presence, SomPath};
+use crate::xfa::text_metrics::TextMeasurer;
 use crate::xfa::{Border, Font, HAlign, Num, Para, StrokeStyle, VAlign, XfaNode, XfaNodeKind, num};
 use ab_glyph::{Font as AbGlyphFont, FontRef, PxScale, ScaleFont};
 use image::{ImageBuffer, Rgba, RgbaImage};
@@ -2146,12 +2147,15 @@ impl Flattened {
                     node.name.clone(),
                     rich_text,
                 );
-                let mut draw_kind = FlattenedKind::Node(draw_node);
+                // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
+                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node);
                 // Add NoPrint hint if relevant="-print" or inherited from parent
                 if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
-                    draw_kind.add_hint(Hint::NoPrint);
+                    for kind in &mut draw_kinds {
+                        kind.add_hint(Hint::NoPrint);
+                    }
                 }
-                flattened_children.push(draw_kind);
+                flattened_children.extend(draw_kinds);
             }
             XfaNodeKind::Field => {
                 let field_name = node.name.clone().unwrap_or_else(|| "unnamed".to_string());
@@ -2869,12 +2873,15 @@ impl Flattened {
                             node.name.clone(),
                             rich_text,
                         );
-                        let mut draw_kind = FlattenedKind::Node(draw_node);
+                        // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
+                        let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node);
                         // Add NoPrint hint if relevant="-print" or inherited from parent
                         if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
-                            draw_kind.add_hint(Hint::NoPrint);
+                            for kind in &mut draw_kinds {
+                                kind.add_hint(Hint::NoPrint);
+                            }
                         }
-                        flattened_children.push(draw_kind);
+                        flattened_children.extend(draw_kinds);
                     }
 
                     // Don't recurse into draw children for positioning
@@ -3114,14 +3121,17 @@ impl Flattened {
                                     node.name.clone(),
                                     rich_text,
                                 );
-                                let mut draw_kind = FlattenedKind::Node(draw_node);
+                                // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
+                                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node);
                                 // Add NoPrint hint if relevant="-print" or inherited from parent
                                 if Self::is_no_print(node)
                                     || child_ctx.has_inherited_hint(&Hint::NoPrint)
                                 {
-                                    draw_kind.add_hint(Hint::NoPrint);
+                                    for kind in &mut draw_kinds {
+                                        kind.add_hint(Hint::NoPrint);
+                                    }
                                 }
-                                flattened_children.push(draw_kind);
+                                flattened_children.extend(draw_kinds);
                             }
 
                             // Don't recurse into draw children for positioning
@@ -6132,6 +6142,198 @@ impl Flattened {
             }
         }
         width
+    }
+
+    // ========================================================================
+    // Multi-Paragraph Draw Node Splitting
+    // ========================================================================
+
+    /// Split a Draw FlattenedNode that contains multi-paragraph RichText into
+    /// separate FlattenedKind entries — one per paragraph.
+    ///
+    /// Per XFA spec (section on "Line Height" and "Paragraph Spacing"):
+    /// - Each paragraph's height is computed from text wrapping within the draw width,
+    ///   using AXTE line metrics (ascent, descent, line gap = 20% of font size).
+    /// - spaceAbove/spaceBelow on RichParagraph add inter-paragraph spacing.
+    /// - Empty paragraphs (is_empty=true) are preserved as spacing nodes.
+    ///
+    /// For single-paragraph or no-RichText nodes, returns the original node unchanged.
+    pub fn split_draw_into_paragraph_nodes(node: FlattenedNode) -> Vec<FlattenedKind> {
+        // Extract rich text; if absent or single paragraph, return unchanged
+        let rich_text = match node.rich_text() {
+            Some(rt) if rt.paragraphs.len() > 1 => rt.clone(),
+            _ => return vec![FlattenedKind::Node(node)],
+        };
+
+        // Get font info from the node for text measurement
+        let (base_font_size, base_font_name) = match &node.kind {
+            FlattenedNodeKind::Text {
+                font_size,
+                font_name,
+                ..
+            } => (*font_size, font_name.clone()),
+            _ => return vec![FlattenedKind::Node(node)],
+        };
+
+        let source_name = match &node.kind {
+            FlattenedNodeKind::Text { source_name, .. } => source_name.clone(),
+            _ => None,
+        };
+
+        // Build an XFA Font for text measurement
+        let mut xfa_font = node
+            .style
+            .font
+            .clone()
+            .unwrap_or_else(|| Font {
+                typeface: base_font_name.clone(),
+                size: base_font_size,
+                ..Font::default()
+            });
+        xfa_font.typeface = base_font_name.clone();
+        xfa_font.size = base_font_size;
+
+        // Use TextMeasurer to compute per-paragraph heights
+        let mut measurer = TextMeasurer::new();
+        let max_width = node.width;
+
+        // Get the default para from the node's style for line_height override
+        let default_para = node.style.para.clone();
+
+        // Measure each paragraph's height
+        let mut paragraph_heights: Vec<Num> = Vec::with_capacity(rich_text.paragraphs.len());
+
+        for para in &rich_text.paragraphs {
+            if para.is_empty {
+                // Empty paragraph: height is one line (derived spacing) per AXTE,
+                // plus any spaceAbove/spaceBelow from the paragraph itself.
+                let line_height = default_para
+                    .as_ref()
+                    .and_then(|p| p.line_height)
+                    .unwrap_or_else(|| {
+                        // Use AXTE derived spacing: TH + LG
+                        // For the base font: ascent + descent + 20% of font_size
+                        if let Ok(metrics) = measurer.get_metrics_for_style(&xfa_font) {
+                            metrics.derived_line_spacing()
+                        } else {
+                            // Fallback: font_size * 1.2
+                            base_font_size * num(1.2)
+                        }
+                    });
+                let space_above = para.space_above.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
+                let space_below = para.space_below.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
+                paragraph_heights.push(line_height + space_above + space_below);
+                continue;
+            }
+
+            // Collect plain text for this paragraph
+            let plain_text: String = para
+                .runs
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<Vec<_>>()
+                .join("");
+
+            if plain_text.trim().is_empty() {
+                // Paragraph with only whitespace runs — treat like empty
+                let metrics_result = measurer.get_metrics_for_style(&xfa_font);
+                let line_height = if let Ok(metrics) = metrics_result {
+                    metrics.derived_line_spacing()
+                } else {
+                    base_font_size * num(1.2)
+                };
+                paragraph_heights.push(line_height);
+                continue;
+            }
+
+            // Build a Para for this specific paragraph (merge RichParagraph props with defaults)
+            let para_props = Some(Para {
+                h_align: para.h_align,
+                v_align: default_para
+                    .as_ref()
+                    .map(|p| p.v_align)
+                    .unwrap_or(VAlign::Top),
+                line_height: default_para.as_ref().and_then(|p| p.line_height),
+                space_above: para.space_above.map(|s| num(s as f64)).or_else(|| {
+                    default_para.as_ref().and_then(|p| p.space_above)
+                }),
+                space_below: para.space_below.map(|s| num(s as f64)).or_else(|| {
+                    default_para.as_ref().and_then(|p| p.space_below)
+                }),
+                text_indent: para.text_indent.map(|s| num(s as f64)).or_else(|| {
+                    default_para.as_ref().and_then(|p| p.text_indent)
+                }),
+                margin_left: default_para.as_ref().and_then(|p| p.margin_left),
+                margin_right: default_para.as_ref().and_then(|p| p.margin_right),
+            });
+
+            // Measure the paragraph text block
+            match measurer.measure_text_block(&plain_text, &Some(xfa_font.clone()), &para_props, max_width) {
+                Ok(block_metrics) => {
+                    paragraph_heights.push(block_metrics.total_height);
+                }
+                Err(_) => {
+                    // Fallback: estimate with line count * line height
+                    let estimated_chars_per_line = max_width / (base_font_size * num(0.5));
+                    let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
+                        let text_len = num(plain_text.len() as f64);
+                        (text_len / estimated_chars_per_line).ceil()
+                    } else {
+                        Decimal::ONE
+                    };
+                    let line_height = base_font_size * num(1.2);
+                    paragraph_heights.push(estimated_lines * line_height);
+                }
+            }
+        }
+
+        // Now create one FlattenedNode per paragraph, distributing y-positions
+        let mut result = Vec::with_capacity(rich_text.paragraphs.len());
+        let mut current_y = node.y;
+
+        for (i, para) in rich_text.paragraphs.iter().enumerate() {
+            let para_height = paragraph_heights[i];
+
+            // Build the plain text for this paragraph
+            let para_text: String = para
+                .runs
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<Vec<_>>()
+                .join("");
+
+            // Create a single-paragraph RichText for this node
+            let single_rich_text = RichText {
+                paragraphs: vec![para.clone()],
+            };
+
+            let para_node = FlattenedNode::new_text_with_rich_text(
+                para_text,
+                base_font_size,
+                base_font_name.clone(),
+                node.x,
+                current_y,
+                node.width,
+                para_height,
+                node.style.clone(),
+                node.rotate,
+                source_name.clone(),
+                Some(single_rich_text),
+            );
+
+            // Copy over non-RichContent hints from the original node
+            let mut para_kind = FlattenedKind::Node(para_node);
+            for hint in &node.hints {
+                if hint.discriminant() != "RichContent" {
+                    para_kind.add_hint(hint.clone());
+                }
+            }
+
+            result.push(para_kind);
+            current_y += para_height;
+        }
+
+        result
     }
 
     // ========================================================================

@@ -1268,29 +1268,45 @@ mod tests {
 
         // ----------------------------------------------------------------
         // Test 3: Verify paragraphs with text-indent are properly marked
+        // After paragraph splitting, T_Left is split into multiple nodes.
+        // We check across ALL T_Left-named nodes for text-indent.
         // ----------------------------------------------------------------
-        if let FlattenedNodeKind::Text { .. } = &t_left.kind {
-            let rt = t_left.rich_text().unwrap();
+        {
+            let mut indented_paras_count = 0;
+            let mut first_indent_value: Option<f32> = None;
 
-            // Some paragraphs should have text-indent (e.g., text-indent:25.512pt)
-            let indented_paras: Vec<_> = rt
-                .paragraphs
-                .iter()
-                .filter(|p| p.text_indent.is_some() && p.text_indent.unwrap() > 0.0)
-                .collect();
+            for node in flattened.iter_nodes() {
+                let is_t_left = if let FlattenedNodeKind::Text { source_name, .. } = &node.kind {
+                    source_name.as_ref().map(|s| s == "T_Left").unwrap_or(false)
+                } else {
+                    false
+                };
+                if !is_t_left {
+                    continue;
+                }
+                if let Some(rt) = node.rich_text() {
+                    for p in &rt.paragraphs {
+                        if p.text_indent.is_some() && p.text_indent.unwrap() > 0.0 {
+                            indented_paras_count += 1;
+                            if first_indent_value.is_none() {
+                                first_indent_value = p.text_indent;
+                            }
+                        }
+                    }
+                }
+            }
 
             assert!(
-                !indented_paras.is_empty(),
-                "Some paragraphs should have text-indent"
+                indented_paras_count > 0,
+                "Some paragraphs across T_Left nodes should have text-indent"
             );
             println!(
-                "  ✓ Found {} paragraphs with text-indent",
-                indented_paras.len()
+                "  ✓ Found {} paragraphs with text-indent across T_Left nodes",
+                indented_paras_count
             );
 
-            // Check the indent value is approximately 25.512pt (converted to pixels in style)
-            if let Some(indent) = indented_paras[0].text_indent {
-                // The indent should be around 25.5 pt (stored as-is in points)
+            // Check the indent value is approximately 25.512pt
+            if let Some(indent) = first_indent_value {
                 assert!(
                     indent > 20.0 && indent < 30.0,
                     "Text indent should be around 25pt, got {}",
@@ -6538,5 +6554,93 @@ mod tests {
         );
 
         println!("\n✓ AAAA has the expected 2 radio button groups with correct options");
+    }
+
+    #[test]
+    fn test_aaai_multi_paragraph_split_at_flattening() {
+        // Test that the AAAI document's long multi-paragraph German legal text
+        // is split into separate FlattenedNode objects — one per paragraph — during flattening.
+        //
+        // Previously, the entire text block was a single FlattenedNode. Now, with the
+        // paragraph-splitting logic in split_draw_into_paragraph_nodes, each <p> from
+        // the HTML exData should produce its own FlattenedNode.
+        use crate::flattened::FlattenedNodeKind;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // These are distinct paragraph starts from the German legal text.
+        // Each should appear in a separate FlattenedNode after splitting.
+        let expected_paragraph_starts = [
+            "Der Kunde beauftragt hiermit",
+            "Gleichzeitig erkennt der Kunde",
+            "Die Bearbeitung der seitens",
+            "UBS ist berechtigt",
+            "Der Widerruf eines",
+            "Die Kommunikation zwischen",
+            "Sofern für die Erbringung",
+            "Die Gebühren richten sich",
+            "Diese Vereinbarung kann jederzeit",
+            "Diese Vereinbarung unterliegt",
+        ];
+
+        // Collect all text nodes
+        let text_nodes: Vec<&str> = flattened
+            .iter_nodes()
+            .filter_map(|node| {
+                if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Each expected paragraph start should be found in a *separate* text node
+        let mut found_nodes = Vec::new();
+        for expected_start in &expected_paragraph_starts {
+            let matching_node = text_nodes.iter().find(|text| text.contains(expected_start));
+            assert!(
+                matching_node.is_some(),
+                "Expected to find a FlattenedNode containing paragraph starting with: '{}'\nAvailable text nodes (first 80 chars):\n{}",
+                expected_start,
+                text_nodes
+                    .iter()
+                    .map(|t| {
+                        let preview: String = t.chars().take(80).collect();
+                        format!("  - '{}'", preview)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            found_nodes.push(*matching_node.unwrap());
+        }
+
+        // Verify that no single text node contains two different expected paragraph starts.
+        // This confirms the paragraphs are truly separate nodes, not one big combined node.
+        for text in &text_nodes {
+            let matches: Vec<_> = expected_paragraph_starts
+                .iter()
+                .filter(|start| text.contains(*start))
+                .collect();
+            assert!(
+                matches.len() <= 1,
+                "A single FlattenedNode should not contain multiple paragraphs.\n\
+                 Found {} paragraph starts in one node:\n  {:?}\n\
+                 Node text (first 200 chars): '{}'",
+                matches.len(),
+                matches,
+                text.chars().take(200).collect::<String>()
+            );
+        }
+
+        println!(
+            "\n✓ AAAI multi-paragraph text correctly split into {} separate FlattenedNodes",
+            found_nodes.len()
+        );
     }
 }
