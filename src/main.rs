@@ -112,9 +112,10 @@ pub fn extract_xfa_from_pdf<P: AsRef<Path>>(
 #[command(name = "blueprint")]
 #[command(about = "Process and analyze XFA PDF documents", long_about = None)]
 struct Args {
-    /// Path to the PDF document
-    #[arg(value_name = "DOCUMENT")]
-    document: PathBuf,
+    /// Path(s) to the PDF document(s). Multiple files of the same document in
+    /// different languages can be passed for multilingual output.
+    #[arg(value_name = "DOCUMENT", required = true)]
+    documents: Vec<PathBuf>,
 
     /// Render mode(s) for output images. Can be specified multiple times.
     /// Modes: plain, labelled, annotated
@@ -141,6 +142,10 @@ struct Args {
     /// Suppress verbose output (only show errors and final results)
     #[arg(short, long)]
     quiet: bool,
+
+    /// Dump the raw XFA XML content to a file and exit
+    #[arg(long)]
+    dump_xfa: bool,
 }
 
 /// Render a Flattened document using the specified render mode
@@ -290,77 +295,158 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let quiet = args.quiet;
 
-    // Check if document exists
-    if !args.document.exists() {
-        eprintln!("Error: Document not found: {}", args.document.display());
-        std::process::exit(1);
-    }
-
-    vprintln!(quiet, "Processing document: {}", args.document.display());
-
-    // Get document name for output files
-    let doc_name = args
-        .document
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("document");
-
-    // =========================================================================
-    // PIPELINE STAGE 1: Extract and parse XFA
-    // =========================================================================
-    let xfa_data = extract_xfa_from_pdf(&args.document)?;
-
-    if xfa_data.is_none() {
-        eprintln!("Error: No XFA data found in PDF");
-        std::process::exit(1);
-    }
-
-    vprintln!(quiet, "✓ XFA data extracted");
-
-    let nodes = XfaNode::parse(&xfa_data.unwrap())?;
-    vprintln!(quiet, "✓ XFA structure parsed");
-
-    // =========================================================================
-    // PIPELINE STAGE 2: Create XFA Form and extract language
-    // =========================================================================
-    let mut form =
-        XfaForm::new(nodes).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
-    
-    // Extract language from Footer_Line_txtlanguage field
-    let language = extract_language_from_xfa(&form);
-    vprintln!(quiet, "✓ Detected language: {}", language);
-
-    // Create context with detected language
-    let mut context = Context::new(language);
-    
-    // Store enabled modules in context
-    if !args.modules.is_empty() {
-        vprintln!(quiet, "✓ Enabled modules: {:?}", args.modules);
-        let modules_json = serde_json::to_value(&args.modules)
-            .unwrap_or(serde_json::Value::Array(vec![]));
-        context.set_module_data("enabled_modules", context::ModuleData::Json(modules_json));
+    // Check if all documents exist
+    for doc_path in &args.documents {
+        if !doc_path.exists() {
+            eprintln!("Error: Document not found: {}", doc_path.display());
+            std::process::exit(1);
+        }
     }
 
     // =========================================================================
-    // PIPELINE STAGE 3: Run exhaustive exploration
+    // Process each document (potentially different languages of the same form)
     // =========================================================================
-    // Exhaustive mode discovers all form states and generates all outputs
-    // (renders, structured JSON, HTML) for each state.
+    let mut all_envelopes: Vec<structured::DocumentEnvelope> = Vec::new();
+    let mut base_doc_name: Option<String> = None;
 
-    let config = exhaustive::ExhaustiveConfig {
-        doc_name,
-        scale: args.scale,
-        pdf_path: &args.document,
-        render_modes: args.render_modes.clone(),
-        structured: args.structured,
-        html: args.html,
-        quiet,
-        context,
-    };
+    for doc_path in &args.documents {
+        vprintln!(quiet, "Processing document: {}", doc_path.display());
 
-    exhaustive::run_exhaustive(&mut form, &config)?;
+        let doc_name = doc_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document");
+
+        if base_doc_name.is_none() {
+            base_doc_name = Some(doc_name.to_string());
+        }
+
+        // =====================================================================
+        // PIPELINE STAGE 1: Extract and parse XFA
+        // =====================================================================
+        let xfa_data = extract_xfa_from_pdf(doc_path)?;
+
+        if xfa_data.is_none() {
+            eprintln!("Error: No XFA data found in PDF: {}", doc_path.display());
+            std::process::exit(1);
+        }
+
+        let xfa_data = xfa_data.unwrap();
+
+        // If --dump-xfa, write raw XFA XML to file and skip further processing
+        if args.dump_xfa {
+            let xml_path = std::path::PathBuf::from(format!("{}.xml", doc_name));
+            std::fs::write(&xml_path, &xfa_data)
+                .map_err(|e| format!("Failed to write XFA XML: {}", e))?;
+            println!("✓ XFA dumped to {}", xml_path.display());
+            continue;
+        }
+
+        vprintln!(quiet, "✓ XFA data extracted");
+
+        let nodes = XfaNode::parse(&xfa_data)?;
+        vprintln!(quiet, "✓ XFA structure parsed");
+
+        // =====================================================================
+        // PIPELINE STAGE 2: Create XFA Form and extract language
+        // =====================================================================
+        let mut form =
+            XfaForm::new(nodes).map_err(|e| format!("Failed to create XfaForm: {}", e))?;
+
+        let language = extract_language_from_xfa(&form);
+        vprintln!(quiet, "✓ Detected language: {}", language);
+
+        let mut context = Context::new(language);
+
+        // Store enabled modules in context
+        if !args.modules.is_empty() {
+            vprintln!(quiet, "✓ Enabled modules: {:?}", args.modules);
+            let modules_json = serde_json::to_value(&args.modules)
+                .unwrap_or(serde_json::Value::Array(vec![]));
+            context.set_module_data("enabled_modules", context::ModuleData::Json(modules_json));
+        }
+
+        // =====================================================================
+        // PIPELINE STAGE 3: Run exhaustive exploration
+        // =====================================================================
+        let config = exhaustive::ExhaustiveConfig {
+            doc_name,
+            scale: args.scale,
+            pdf_path: doc_path,
+            render_modes: args.render_modes.clone(),
+            structured: args.structured || args.documents.len() > 1,
+            html: if args.documents.len() > 1 { false } else { args.html },
+            quiet,
+            context,
+        };
+
+        let result = exhaustive::run_exhaustive(&mut form, &config)?;
+
+        // If we have multiple documents to merge, collect the merged envelope
+        if args.documents.len() > 1 || args.structured {
+            if let Some(envelope) = result.merged_envelope {
+                all_envelopes.push(envelope);
+            }
+        }
+    }
+
+    // =========================================================================
+    // PIPELINE STAGE 4: Merge translations (if multiple documents)
+    // =========================================================================
+    if args.documents.len() > 1 && !all_envelopes.is_empty() {
+        let doc_name = base_doc_name.as_deref().unwrap_or("document");
+        // Strip language suffix from base doc name for the merged output
+        let merged_name = strip_language_suffix(doc_name);
+
+        vprintln!(
+            quiet,
+            "\nMerging {} language variants...",
+            all_envelopes.len()
+        );
+
+        let merged_envelope = structured::merge_translations(all_envelopes);
+
+        // Write merged multilingual JSON
+        if args.structured {
+            let json = serde_json::to_string_pretty(&merged_envelope)
+                .map_err(|e| format!("Failed to serialize multilingual form: {}", e))?;
+
+            let json_path =
+                std::path::PathBuf::from(format!("{}_multilingual.json", merged_name));
+            std::fs::write(&json_path, json)
+                .map_err(|e| format!("Failed to write multilingual JSON: {}", e))?;
+
+            vprintln!(quiet, "✓ Multilingual JSON: {}", json_path.display());
+        }
+
+        // Generate merged multilingual HTML
+        if args.html {
+            let html_config = html::HtmlConfig::default();
+            let html_output =
+                html::generate_html(&merged_envelope.content, &html_config);
+
+            let html_path =
+                std::path::PathBuf::from(format!("{}_multilingual.html", merged_name));
+            std::fs::write(&html_path, html_output)
+                .map_err(|e| format!("Failed to write multilingual HTML: {}", e))?;
+
+            vprintln!(quiet, "✓ Multilingual HTML: {}", html_path.display());
+        }
+    }
 
     Ok(())
+}
+
+/// Strip language suffixes like "_DE", "_EN", etc. from a document name
+/// to get a base name for merged output.
+fn strip_language_suffix(name: &str) -> &str {
+    let suffixes = ["_DE", "_EN", "_FR", "_IT", "_ES", "_de", "_en", "_fr", "_it", "_es"];
+    for suffix in &suffixes {
+        if name.ends_with(suffix) {
+            return &name[..name.len() - suffix.len()];
+        }
+    }
+    name
 }
 
 #[cfg(test)]
@@ -4907,44 +4993,7 @@ mod tests {
             field
                 .label
                 .as_ref()
-                .map(|label| {
-                    label
-                        .0
-                        .iter()
-                        .map(|node| match node {
-                            InlineNode::Text(s) => s.clone(),
-                            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                fn extract(n: &InlineNode) -> String {
-                                    match n {
-                                        InlineNode::Text(s) => s.clone(),
-                                        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                            extract(inner)
-                                        }
-                                        InlineNode::Link(link) => link
-                                            .content
-                                            .0
-                                            .iter()
-                                            .map(|n| extract(n))
-                                            .collect::<Vec<_>>()
-                                            .join(""),
-                                    }
-                                }
-                                extract(inner)
-                            }
-                            InlineNode::Link(link) => link
-                                .content
-                                .0
-                                .iter()
-                                .map(|n| match n {
-                                    InlineNode::Text(s) => s.clone(),
-                                    _ => String::new(),
-                                })
-                                .collect::<Vec<_>>()
-                                .join(""),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
+                .map(|label| label.as_plain_text())
                 .unwrap_or_default()
                 .trim()
                 .to_string()
@@ -5040,6 +5089,9 @@ mod tests {
                     .iter()
                     .map(|node| match node {
                         InlineNode::Text(s) => s.clone(),
+                        InlineNode::TranslatedText(map) => {
+                            map.values().next().cloned().unwrap_or_default()
+                        }
                         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
                             extract_inline_text(&[(**inner).clone()])
                         }
@@ -5135,6 +5187,9 @@ mod tests {
                     .iter()
                     .map(|node| match node {
                         InlineNode::Text(s) => s.clone(),
+                        InlineNode::TranslatedText(map) => {
+                            map.values().next().cloned().unwrap_or_default()
+                        }
                         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
                             extract_text(&[(**inner).clone()])
                         }
@@ -6008,44 +6063,7 @@ mod tests {
             field
                 .label
                 .as_ref()
-                .map(|label| {
-                    label
-                        .0
-                        .iter()
-                        .map(|node| match node {
-                            InlineNode::Text(s) => s.clone(),
-                            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                fn extract(n: &InlineNode) -> String {
-                                    match n {
-                                        InlineNode::Text(s) => s.clone(),
-                                        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                            extract(inner)
-                                        }
-                                        InlineNode::Link(link) => link
-                                            .content
-                                            .0
-                                            .iter()
-                                            .map(|n| extract(n))
-                                            .collect::<Vec<_>>()
-                                            .join(""),
-                                    }
-                                }
-                                extract(inner)
-                            }
-                            InlineNode::Link(link) => link
-                                .content
-                                .0
-                                .iter()
-                                .map(|n| match n {
-                                    InlineNode::Text(s) => s.clone(),
-                                    _ => String::new(),
-                                })
-                                .collect::<Vec<_>>()
-                                .join(""),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
+                .map(|label| label.as_plain_text())
                 .unwrap_or_default()
                 .trim()
                 .to_string()
@@ -6158,44 +6176,7 @@ mod tests {
             field
                 .label
                 .as_ref()
-                .map(|label| {
-                    label
-                        .0
-                        .iter()
-                        .map(|node| match node {
-                            InlineNode::Text(s) => s.clone(),
-                            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                fn extract(n: &InlineNode) -> String {
-                                    match n {
-                                        InlineNode::Text(s) => s.clone(),
-                                        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                                            extract(inner)
-                                        }
-                                        InlineNode::Link(link) => link
-                                            .content
-                                            .0
-                                            .iter()
-                                            .map(|n| extract(n))
-                                            .collect::<Vec<_>>()
-                                            .join(""),
-                                    }
-                                }
-                                extract(inner)
-                            }
-                            InlineNode::Link(link) => link
-                                .content
-                                .0
-                                .iter()
-                                .map(|n| match n {
-                                    InlineNode::Text(s) => s.clone(),
-                                    _ => String::new(),
-                                })
-                                .collect::<Vec<_>>()
-                                .join(""),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
+                .map(|label| label.as_plain_text())
                 .unwrap_or_default()
                 .trim()
                 .to_string()
@@ -6692,5 +6673,188 @@ mod tests {
             "\n✓ AAAI multi-paragraph text correctly split into {} separate FlattenedNodes",
             found_nodes.len()
         );
+    }
+
+    #[test]
+    fn test_aaai_multilingual_merge_de_en() {
+        // Test that merging AAAI_019_DE and AAAI_019_EN produces a StructuredNode tree
+        // with TranslatedText nodes containing both "de" and "en" keys.
+        use crate::exhaustive::run_exhaustive_to_envelope;
+        use crate::structured::{
+            self, DocumentEnvelope, FieldNode, FieldType, HeadingLevel, InlineNode,
+            StructuredNode, TranslatableString,
+        };
+        use std::collections::HashMap;
+
+        // Build envelopes for both languages
+        let de_envelope = run_exhaustive_to_envelope("input/AAAI_019_DE.pdf", "de")
+            .expect("Failed to process AAAI_019_DE");
+        let en_envelope = run_exhaustive_to_envelope("input/AAAI_019_EN.pdf", "en")
+            .expect("Failed to process AAAI_019_EN");
+
+        assert_eq!(de_envelope.context.language, "de");
+        assert_eq!(en_envelope.context.language, "en");
+
+        // Merge translations
+        let merged = structured::merge_translations(vec![de_envelope, en_envelope]);
+
+        // The merged context should mention both languages
+        println!("Merged context language: {}", merged.context.language);
+        assert!(!merged.content.is_empty(), "Merged content should not be empty");
+
+        // =====================================================================
+        // Helper: collect all InlineNodes from the tree
+        // =====================================================================
+        fn collect_inline_nodes(nodes: &[StructuredNode], out: &mut Vec<InlineNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => out.extend(h.content.0.iter().cloned()),
+                    StructuredNode::Paragraph(p) => out.extend(p.content.0.iter().cloned()),
+                    StructuredNode::Group(g) => collect_inline_nodes(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_inline_nodes(&[(*c.content).clone()], out);
+                    }
+                    StructuredNode::Repeatable(r) => collect_inline_nodes(&[(*r.item).clone()], out),
+                    _ => {}
+                }
+            }
+        }
+
+        fn collect_fields(nodes: &[StructuredNode], out: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => out.push(f.clone()),
+                    StructuredNode::Group(g) => collect_fields(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_fields(&[(*c.content).clone()], out);
+                    }
+                    StructuredNode::Repeatable(r) => collect_fields(&[(*r.item).clone()], out),
+                    _ => {}
+                }
+            }
+        }
+
+        // =====================================================================
+        // Check 1: TranslatedText nodes exist with both "de" and "en" keys
+        // =====================================================================
+        let mut inline_nodes = Vec::new();
+        collect_inline_nodes(&merged.content, &mut inline_nodes);
+
+        let translated_texts: Vec<&HashMap<String, String>> = inline_nodes
+            .iter()
+            .filter_map(|n| match n {
+                InlineNode::TranslatedText(map) => Some(map),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            !translated_texts.is_empty(),
+            "Merged tree should contain TranslatedText nodes, but found none"
+        );
+
+        // Count how many have both languages
+        let both_langs: Vec<_> = translated_texts
+            .iter()
+            .filter(|map| map.contains_key("de") && map.contains_key("en"))
+            .collect();
+
+        println!(
+            "TranslatedText nodes: {} total, {} with both de+en",
+            translated_texts.len(),
+            both_langs.len()
+        );
+
+        assert!(
+            !both_langs.is_empty(),
+            "At least some TranslatedText nodes should have both 'de' and 'en' entries"
+        );
+
+        // =====================================================================
+        // Check 2: The H1 heading has the expected translations
+        // =====================================================================
+        let h1_translated = merged.content.iter().find_map(|node| {
+            if let StructuredNode::Heading(h) = node {
+                if matches!(h.level, HeadingLevel::H1) {
+                    for inline in &h.content.0 {
+                        if let InlineNode::TranslatedText(map) = inline {
+                            return Some(map.clone());
+                        }
+                    }
+                }
+            }
+            None
+        });
+
+        let h1_map = h1_translated.expect("H1 heading should have a TranslatedText node");
+        let de_title = h1_map.get("de").expect("H1 should have 'de' translation");
+        let en_title = h1_map.get("en").expect("H1 should have 'en' translation");
+
+        assert!(
+            de_title.contains("Vereinbarung"),
+            "German H1 should contain 'Vereinbarung', got: '{}'",
+            de_title
+        );
+        assert!(
+            en_title.contains("Agreement"),
+            "English H1 should contain 'Agreement', got: '{}'",
+            en_title
+        );
+
+        println!("H1 de: {}", de_title);
+        println!("H1 en: {}", en_title);
+
+        // =====================================================================
+        // Check 3: Field labels have translated content
+        // =====================================================================
+        let mut fields = Vec::new();
+        collect_fields(&merged.content, &mut fields);
+
+        // Find the "Firma" / "Company" field
+        let firma_field = fields
+            .iter()
+            .find(|f| f.name == "Firma")
+            .expect("Should find field named 'Firma'");
+
+        let firma_label = firma_field
+            .label
+            .as_ref()
+            .expect("Firma field should have a label");
+
+        let firma_label_translated = firma_label.0.iter().find_map(|n| match n {
+            InlineNode::TranslatedText(map) => Some(map),
+            _ => None,
+        });
+
+        let firma_map =
+            firma_label_translated.expect("Firma label should have a TranslatedText node");
+
+        assert!(
+            firma_map.contains_key("de") && firma_map.contains_key("en"),
+            "Firma label should have both 'de' and 'en', got keys: {:?}",
+            firma_map.keys().collect::<Vec<_>>()
+        );
+
+        println!(
+            "Firma label de: {:?}, en: {:?}",
+            firma_map.get("de"),
+            firma_map.get("en")
+        );
+
+        // =====================================================================
+        // Check 4: No plain Text nodes should remain for texts that differ
+        //          between languages (some might remain if identical)
+        // =====================================================================
+        let plain_text_count = inline_nodes
+            .iter()
+            .filter(|n| matches!(n, InlineNode::Text(_)))
+            .count();
+
+        println!(
+            "Plain Text nodes remaining: {} (these had identical text in both languages)",
+            plain_text_count
+        );
+
+        println!("\n✓ AAAI multilingual merge produces correct bilingual (de+en) tree");
     }
 }

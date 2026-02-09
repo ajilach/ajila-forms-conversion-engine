@@ -95,6 +95,13 @@ impl<'a> XfaNodeRef<'a> {
             return Some(raw.clone());
         }
 
+        // Try text_content for <text> variable elements
+        if let XfaNodeKind::Element { text_content: Some(content), .. } = &self.xfa_node.kind {
+            if !content.is_empty() {
+                return Some(content.clone());
+            }
+        }
+
         Self::extract_value_from_xfa_node(self.xfa_node)
     }
 

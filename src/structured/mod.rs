@@ -1,8 +1,10 @@
 mod merger;
 mod structured_converter;
+mod translation_merger;
 
 pub use merger::{MergeInput, RecursiveMerger, Selection};
 pub use structured_converter::{convert, convert_with_context};
+pub use translation_merger::merge_translations;
 
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -145,8 +147,81 @@ pub enum FieldType {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NameValue {
-    pub name: String,
+    pub name: TranslatableString,
     pub value: InputValue,
+}
+
+/// A string that can have translations
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TranslatableString {
+    Plain(String),
+    Translated(std::collections::HashMap<String, String>),
+}
+
+impl TranslatableString {
+    /// Get the string in the specified language, or the first available
+    pub fn get(&self, lang: &str) -> Option<&str> {
+        match self {
+            TranslatableString::Plain(s) => Some(s),
+            TranslatableString::Translated(map) => map
+                .get(lang)
+                .map(|s| s.as_str())
+                .or_else(|| map.values().next().map(|s| s.as_str())),
+        }
+    }
+
+    /// Get the string in the specified language, or the first available, or empty string
+    pub fn get_or_default(&self, lang: &str) -> &str {
+        self.get(lang).unwrap_or("")
+    }
+
+    /// Returns the plain string if Plain, or the first available translation.
+    /// Useful in tests that work with single-language documents.
+    pub fn as_str(&self) -> &str {
+        match self {
+            TranslatableString::Plain(s) => s.as_str(),
+            TranslatableString::Translated(map) => {
+                map.values().next().map(|s| s.as_str()).unwrap_or("")
+            }
+        }
+    }
+
+    /// Check if any contained string contains the given substring.
+    pub fn contains(&self, needle: &str) -> bool {
+        match self {
+            TranslatableString::Plain(s) => s.contains(needle),
+            TranslatableString::Translated(map) => map.values().any(|s| s.contains(needle)),
+        }
+    }
+}
+
+impl std::fmt::Display for TranslatableString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TranslatableString::Plain(s) => write!(f, "{}", s),
+            TranslatableString::Translated(map) => {
+                // Display first available value
+                if let Some(s) = map.values().next() {
+                    write!(f, "{}", s)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+impl From<String> for TranslatableString {
+    fn from(s: String) -> Self {
+        TranslatableString::Plain(s)
+    }
+}
+
+impl From<&str> for TranslatableString {
+    fn from(s: &str) -> Self {
+        TranslatableString::Plain(s.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -156,7 +231,7 @@ pub struct FieldNode {
     pub label: Option<InlineText>,
     pub input_type: FieldType,
     pub value: Option<InputValue>,
-    pub placeholder: Option<String>,
+    pub placeholder: Option<TranslatableString>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -263,6 +338,12 @@ impl InlineText {
         fn collect_text(node: &InlineNode, out: &mut String) {
             match node {
                 InlineNode::Text(s) => out.push_str(s),
+                InlineNode::TranslatedText(translations) => {
+                    // For plain text, use the first available translation
+                    if let Some(text) = translations.values().next() {
+                        out.push_str(text);
+                    }
+                }
                 InlineNode::Link(link) => {
                     for child in &link.content.0 {
                         collect_text(child, out);
@@ -291,6 +372,7 @@ impl Default for InlineText {
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
 pub enum InlineNode {
     Text(String),
+    TranslatedText(std::collections::HashMap<String, String>),
     Link(LinkNode),
     Strong(Box<InlineNode>),
     Emphasis(Box<InlineNode>),
@@ -404,6 +486,64 @@ impl StructuredNode {
         }
     }
 
+    /// Check if two nodes are structurally equal, ignoring all text content.
+    ///
+    /// This is used for translation merging, where the same document in different
+    /// languages has identical structure but different text. It compares:
+    /// - Node type (variant)
+    /// - Heading level
+    /// - Field names and input type structure (but NOT labels, placeholders, text)
+    /// - Children count and structure (recursively)
+    ///
+    /// It does NOT compare:
+    /// - Any text content (Paragraph, Heading, InlineText, captions)
+    /// - Field labels and placeholders (may be translated)
+    /// - Radio/Select option names (may be translated)
+    /// - Field values
+    /// - Image content
+    pub fn structural_eq_ignore_text(&self, other: &Self) -> bool {
+        match (self, other) {
+            (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
+                a.level.as_u8() == b.level.as_u8()
+                // Text content is ignored for translation matching
+            }
+            (StructuredNode::Paragraph(_), StructuredNode::Paragraph(_)) => {
+                // All paragraphs match structurally (text differs by language)
+                true
+            }
+            (StructuredNode::Image(a), StructuredNode::Image(b)) => a.alt_text == b.alt_text,
+            (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_eq_ignore_text(b),
+            (StructuredNode::Field(a), StructuredNode::Field(b)) => {
+                // Compare only field name and input type structure
+                a.name == b.name && a.input_type.structural_eq(&b.input_type)
+            }
+            (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
+                a.min_occurrences == b.min_occurrences
+                    && a.max_occurrences == b.max_occurrences
+                    && a.item.structural_eq_ignore_text(&b.item)
+            }
+            (StructuredNode::Group(a), StructuredNode::Group(b)) => {
+                a.children.len() == b.children.len()
+                    && a.children
+                        .iter()
+                        .zip(b.children.iter())
+                        .all(|(ca, cb)| ca.structural_eq_ignore_text(cb))
+            }
+            (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
+                a.content.structural_eq_ignore_text(&b.content)
+            }
+            (StructuredNode::Empty, StructuredNode::Empty) => true,
+            (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
+                a.columns == b.columns
+                    && a.elements.len() == b.elements.len()
+                    && a.elements.iter().zip(b.elements.iter()).all(|(ea, eb)| {
+                        ea.span == eb.span && ea.node.structural_eq_ignore_text(&eb.node)
+                    })
+            }
+            _ => false,
+        }
+    }
+
     /// Get a structural discriminant for this node type.
     /// Used for quick inequality checks before deep comparison.
     pub fn structural_discriminant(&self) -> u8 {
@@ -432,18 +572,17 @@ impl InlineText {
 
 impl FieldNode {
     /// Check if two fields are structurally equal.
-    /// Compares name, label, and input type structure, but NOT value.
+    /// Compares name and input type structure, but NOT label text or value.
+    /// Labels may differ across languages, so we ignore them.
     pub fn structural_eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.label.as_ref().map(|l| l.as_plain_text())
-                == other.label.as_ref().map(|l| l.as_plain_text())
-            && self.input_type.structural_eq(&other.input_type)
-            && self.placeholder == other.placeholder
+        self.name == other.name && self.input_type.structural_eq(&other.input_type)
+        // Note: placeholder comparison removed as they may be translated
     }
 }
 
 impl FieldType {
     /// Check if two field types are structurally equal.
+    /// For Radio/Select options, we compare by value only (names may be translated).
     pub fn structural_eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
@@ -475,10 +614,20 @@ impl FieldType {
             (FieldType::Tel, FieldType::Tel) => true,
             (FieldType::Bool, FieldType::Bool) => true,
             (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 }) => {
-                opts1 == opts2
+                // Compare only by values (names may differ due to translation)
+                opts1.len() == opts2.len()
+                    && opts1
+                        .iter()
+                        .zip(opts2.iter())
+                        .all(|(o1, o2)| o1.value == o2.value)
             }
             (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
-                opts1 == opts2
+                // Compare only by values (names may differ due to translation)
+                opts1.len() == opts2.len()
+                    && opts1
+                        .iter()
+                        .zip(opts2.iter())
+                        .all(|(o1, o2)| o1.value == o2.value)
             }
             _ => false,
         }
@@ -519,6 +668,38 @@ impl TableNode {
 
         header_eq && rows_eq && caption_eq
     }
+
+    /// Check if two tables are structurally equal, ignoring text content.
+    /// Used for translation merging.
+    pub fn structural_eq_ignore_text(&self, other: &Self) -> bool {
+        // Compare header structure (ignoring text)
+        let header_eq = match (&self.header, &other.header) {
+            (None, None) => true,
+            (Some(h1), Some(h2)) => {
+                h1.cells.len() == h2.cells.len()
+                    && h1
+                        .cells
+                        .iter()
+                        .zip(h2.cells.iter())
+                        .all(|(c1, c2)| c1.structural_eq_ignore_text(c2))
+            }
+            _ => false,
+        };
+
+        // Compare row structure (ignoring text)
+        let rows_eq = self.rows.len() == other.rows.len()
+            && self.rows.iter().zip(other.rows.iter()).all(|(r1, r2)| {
+                r1.cells.len() == r2.cells.len()
+                    && r1
+                        .cells
+                        .iter()
+                        .zip(r2.cells.iter())
+                        .all(|(c1, c2)| c1.structural_eq_ignore_text(c2))
+            });
+
+        // Caption text is ignored for translation matching
+        header_eq && rows_eq
+    }
 }
 
 /// Document envelope containing the structured content and context metadata.
@@ -530,7 +711,7 @@ impl TableNode {
 pub struct DocumentEnvelope {
     /// Context metadata enriched throughout processing
     pub context: Context,
-    
+
     /// The structured document content
     pub content: Vec<StructuredNode>,
 }

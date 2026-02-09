@@ -34,8 +34,11 @@ impl Default for HtmlConfig {
 pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
     let mut html = String::new();
 
+    // Detect available languages from the content
+    let languages = collect_languages(nodes);
+
     // HTML document header
-    html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    html.push_str("<!DOCTYPE html>\n<html>\n<head>\n");
     html.push_str("  <meta charset=\"UTF-8\">\n");
     html.push_str("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
     html.push_str("  <title>Generated Form</title>\n");
@@ -44,7 +47,39 @@ pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
         html.push_str(&generate_styles());
     }
 
-    html.push_str("</head>\n<body>\n");
+    // If multilingual, set body class to first language by default
+    if languages.len() > 1 {
+        html.push_str(&format!(
+            "</head>\n<body class=\"lang-{}\">\n",
+            escape_attr(&languages[0])
+        ));
+    } else {
+        html.push_str("</head>\n<body>\n");
+    }
+
+    // Language selector (only if multilingual)
+    if languages.len() > 1 {
+        html.push_str("  <div class=\"language-selector\">\n");
+        html.push_str("    <label for=\"language-select\">Language: </label>\n");
+        html.push_str("    <select id=\"language-select\">\n");
+        for lang in &languages {
+            let label = match lang.as_str() {
+                "de" => "Deutsch",
+                "en" => "English",
+                "fr" => "Français",
+                "it" => "Italiano",
+                "es" => "Español",
+                other => other,
+            };
+            html.push_str(&format!(
+                "      <option value=\"{}\">{}</option>\n",
+                escape_attr(lang),
+                escape_html(label)
+            ));
+        }
+        html.push_str("    </select>\n");
+        html.push_str("  </div>\n");
+    }
 
     // Form container
     html.push_str(&format!(
@@ -205,7 +240,10 @@ fn generate_table(t: &TableNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
 fn generate_node_inline(node: &StructuredNode, ctx: &mut GeneratorContext) -> String {
     match node {
         StructuredNode::Paragraph(p) => generate_inline_text(&p.content),
-        StructuredNode::Field(f) => generate_field_input(f, ctx),
+        StructuredNode::Field(f) => {
+            let field_id = ctx.next_id(&f.name);
+            generate_field_input(f, ctx, &field_id)
+        }
         StructuredNode::Group(g) => {
             let mut html = String::new();
             for child in &g.children {
@@ -220,6 +258,9 @@ fn generate_node_inline(node: &StructuredNode, ctx: &mut GeneratorContext) -> St
 fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> String {
     let mut html = format!("{}<div class=\"form-field\">\n", ind);
 
+    // Generate a unique ID for this field instance
+    let field_id = ctx.next_id(&f.name);
+
     // Generate label if present
     if let Some(label) = &f.label {
         let label_text = generate_inline_text(label);
@@ -227,7 +268,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
             html.push_str(&format!(
                 "{}  <label for=\"{}\">{}</label>\n",
                 ind,
-                escape_attr(&f.name),
+                escape_attr(&field_id),
                 label_text
             ));
         }
@@ -235,19 +276,40 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
 
     // Generate the input element
     html.push_str(&format!("{}  ", ind));
-    html.push_str(&generate_field_input(f, ctx));
+    html.push_str(&generate_field_input(f, ctx, &field_id));
     html.push('\n');
 
     html.push_str(&format!("{}</div>\n", ind));
     html
 }
 
-fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
+fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &str) -> String {
+    let id = escape_attr(field_id);
     let name = escape_attr(&f.name);
     let placeholder = f
         .placeholder
         .as_ref()
-        .map(|p| format!(" placeholder=\"{}\"", escape_attr(p)))
+        .and_then(|p| match p {
+            crate::structured::TranslatableString::Plain(s) => {
+                Some(format!(" placeholder=\"{}\"", escape_attr(s)))
+            }
+            crate::structured::TranslatableString::Translated(map) => {
+                // For translated placeholders, generate data attributes for each language
+                let mut attrs = String::new();
+                for (lang, text) in map {
+                    attrs.push_str(&format!(
+                        " data-placeholder-{}=\"{}\"",
+                        escape_attr(lang),
+                        escape_attr(text)
+                    ));
+                }
+                // Use first language as default placeholder
+                if let Some((_, text)) = map.iter().next() {
+                    attrs.push_str(&format!(" placeholder=\"{}\"", escape_attr(text)));
+                }
+                Some(attrs)
+            }
+        })
         .unwrap_or_default();
 
     match &f.input_type {
@@ -258,7 +320,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         } => {
             let mut attrs = format!(
                 "<input type=\"text\" id=\"{}\" name=\"{}\"{}",
-                name, name, placeholder
+                id, name, placeholder
             );
             if let Some(pattern) = regex {
                 attrs.push_str(&format!(" pattern=\"{}\"", escape_attr(pattern)));
@@ -279,7 +341,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         FieldType::Number { min, max, step } => {
             let mut attrs = format!(
                 "<input type=\"number\" id=\"{}\" name=\"{}\"{}",
-                name, name, placeholder
+                id, name, placeholder
             );
             if let Some(m) = min {
                 attrs.push_str(&format!(" min=\"{}\"", m));
@@ -300,7 +362,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         FieldType::Date => {
             let mut attrs = format!(
                 "<input type=\"date\" id=\"{}\" name=\"{}\"{}",
-                name, name, placeholder
+                id, name, placeholder
             );
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
@@ -312,7 +374,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         FieldType::Email => {
             let mut attrs = format!(
                 "<input type=\"email\" id=\"{}\" name=\"{}\"{}",
-                name, name, placeholder
+                id, name, placeholder
             );
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
@@ -324,7 +386,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         FieldType::Tel => {
             let mut attrs = format!(
                 "<input type=\"tel\" id=\"{}\" name=\"{}\"{}",
-                name, name, placeholder
+                id, name, placeholder
             );
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
@@ -338,7 +400,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
             let checked_attr = if checked { " checked" } else { "" };
             format!(
                 "<input type=\"checkbox\" id=\"{}\" name=\"{}\" class=\"form-checkbox\"{}>",
-                name, name, checked_attr
+                id, name, checked_attr
             )
         }
 
@@ -353,20 +415,43 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
             });
 
             for (i, opt) in options.iter().enumerate() {
-                let option_id = format!("{}_{}", name, i);
+                let option_id = format!("{}_{}", id, i);
                 let opt_value = match &opt.value {
                     InputValue::Text(s) => s.as_str(),
-                    _ => &opt.name,
+                    _ => match &opt.name {
+                        crate::structured::TranslatableString::Plain(s) => s.as_str(),
+                        crate::structured::TranslatableString::Translated(map) => {
+                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                        }
+                    },
                 };
                 let checked = selected == Some(opt_value);
                 let checked_attr = if checked { " checked" } else { "" };
+
+                // Generate option label with translation support
+                let label_html = match &opt.name {
+                    crate::structured::TranslatableString::Plain(s) => escape_html(s),
+                    crate::structured::TranslatableString::Translated(map) => {
+                        let mut spans = String::new();
+                        for (lang, text) in map {
+                            spans.push_str(&format!(
+                                "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
+                                escape_attr(lang),
+                                escape_attr(lang),
+                                escape_html(text)
+                            ));
+                        }
+                        spans
+                    }
+                };
+
                 html.push_str(&format!(
                     "  <label class=\"radio-option\">\n    <input type=\"radio\" id=\"{}\" name=\"{}\" value=\"{}\" class=\"form-radio\"{}>\n    <span>{}</span>\n  </label>\n",
                     escape_attr(&option_id),
                     name,
                     escape_attr(opt_value),
                     checked_attr,
-                    escape_html(&opt.name)
+                    label_html
                 ));
             }
             html.push_str("</div>");
@@ -376,7 +461,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
         FieldType::Select { options } => {
             let mut html = format!(
                 "<select id=\"{}\" name=\"{}\" class=\"form-select\">\n",
-                name, name
+                id, name
             );
             html.push_str("  <option value=\"\">-- Select --</option>\n");
 
@@ -391,18 +476,56 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext) -> String {
             for opt in options {
                 let opt_value = match &opt.value {
                     InputValue::Text(s) => s.as_str(),
-                    _ => &opt.name,
+                    _ => match &opt.name {
+                        crate::structured::TranslatableString::Plain(s) => s.as_str(),
+                        crate::structured::TranslatableString::Translated(map) => {
+                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                        }
+                    },
                 };
                 let selected_attr = if selected == Some(opt_value) {
                     " selected"
                 } else {
                     ""
                 };
+
+                // Generate option text with translation support
+                let option_text = match &opt.name {
+                    crate::structured::TranslatableString::Plain(s) => escape_html(s),
+                    crate::structured::TranslatableString::Translated(map) => {
+                        // For select options, use first language as display text
+                        // and add data-text-* attributes on the <option> element
+                        let first_lang = map.iter().next();
+                        if let Some((_lang, text)) = first_lang {
+                            escape_html(text)
+                        } else {
+                            String::new()
+                        }
+                    }
+                };
+
+                // Build data-text attributes for translation switching
+                let data_attrs = match &opt.name {
+                    crate::structured::TranslatableString::Plain(_) => String::new(),
+                    crate::structured::TranslatableString::Translated(map) => {
+                        let mut attrs = String::new();
+                        for (l, t) in map {
+                            attrs.push_str(&format!(
+                                " data-text-{}=\"{}\"",
+                                escape_attr(l),
+                                escape_attr(t)
+                            ));
+                        }
+                        attrs
+                    }
+                };
+
                 html.push_str(&format!(
-                    "  <option value=\"{}\"{}>{}</option>\n",
+                    "  <option value=\"{}\"{}{}>{}</option>\n",
                     escape_attr(opt_value),
                     selected_attr,
-                    escape_html(&opt.name)
+                    data_attrs,
+                    option_text
                 ));
             }
             html.push_str("</select>");
@@ -548,6 +671,19 @@ fn generate_inline_text(text: &InlineText) -> String {
 fn generate_inline_node(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(s) => escape_html(s),
+        InlineNode::TranslatedText(translations) => {
+            // Emit all languages with lang-tagged spans
+            let mut html = String::new();
+            for (lang, text) in translations {
+                html.push_str(&format!(
+                    "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
+                    escape_attr(lang),
+                    escape_attr(lang),
+                    escape_html(text)
+                ));
+            }
+            html
+        }
         InlineNode::Link(link) => {
             format!(
                 "<a href=\"{}\">{}</a>",
@@ -597,6 +733,49 @@ fn generate_styles() -> String {
       padding: 2rem;
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* Language support - by default show all languages */
+    span[lang] {
+      display: inline;
+    }
+
+    /* When a specific language is selected, hide others */
+    body.lang-de span[lang]:not(.lang-de),
+    body.lang-en span[lang]:not(.lang-en),
+    body.lang-fr span[lang]:not(.lang-fr),
+    body.lang-it span[lang]:not(.lang-it),
+    body.lang-es span[lang]:not(.lang-es) {
+      display: none;
+    }
+
+    /* Language selector */
+    .language-selector {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #f0f4f8;
+      padding: 0.75rem 2rem;
+      border-bottom: 1px solid #d1d5db;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.875rem;
+    }
+
+    .language-selector label {
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .language-selector select {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: white;
+      font-size: 0.875rem;
+      cursor: pointer;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -1046,6 +1225,38 @@ fn generate_scripts(form_id: &str) -> String {
   initRepeatables();
   initConditionals();
 
+  // =====================
+  // LANGUAGE SWITCHING
+  // =====================
+
+  const langSelect = document.getElementById('language-select');
+  if (langSelect) {{
+    function switchLanguage(lang) {{
+      // Update body class
+      document.body.className = document.body.className
+        .replace(/\blang-\w+\b/g, '')
+        .trim();
+      document.body.classList.add('lang-' + lang);
+
+      // Update placeholders with data-placeholder-<lang> attributes
+      form.querySelectorAll('[data-placeholder-' + lang + ']').forEach(function(el) {{
+        el.placeholder = el.getAttribute('data-placeholder-' + lang);
+      }});
+
+      // Update select option text with data-text-<lang> attributes
+      form.querySelectorAll('option[data-text-' + lang + ']').forEach(function(el) {{
+        el.textContent = el.getAttribute('data-text-' + lang);
+      }});
+    }}
+
+    langSelect.addEventListener('change', function() {{
+      switchLanguage(this.value);
+    }});
+
+    // Apply initial language
+    switchLanguage(langSelect.value);
+  }}
+
 }})();
   </script>
 "#,
@@ -1056,6 +1267,75 @@ fn generate_scripts(form_id: &str) -> String {
 // =====================
 // UTILITY FUNCTIONS
 // =====================
+
+/// Collect all language codes used in TranslatedText/TranslatableString nodes.
+/// Returns a sorted, deduplicated list of language codes.
+fn collect_languages(nodes: &[StructuredNode]) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut langs = BTreeSet::new();
+
+    fn walk(nodes: &[StructuredNode], langs: &mut BTreeSet<String>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => walk_inline(&h.content.0, langs),
+                StructuredNode::Paragraph(p) => walk_inline(&p.content.0, langs),
+                StructuredNode::Field(f) => {
+                    if let Some(label) = &f.label {
+                        walk_inline(&label.0, langs);
+                    }
+                    if let Some(crate::structured::TranslatableString::Translated(map)) =
+                        &f.placeholder
+                    {
+                        langs.extend(map.keys().cloned());
+                    }
+                    match &f.input_type {
+                        crate::structured::FieldType::Radio { options }
+                        | crate::structured::FieldType::Select { options } => {
+                            for opt in options {
+                                if let crate::structured::TranslatableString::Translated(map) =
+                                    &opt.name
+                                {
+                                    langs.extend(map.keys().cloned());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                StructuredNode::Group(g) => walk(&g.children, langs),
+                StructuredNode::Conditional(c) => walk(&[(*c.content).clone()], langs),
+                StructuredNode::Repeatable(r) => walk(&[(*r.item).clone()], langs),
+                StructuredNode::Table(t) => {
+                    for row in &t.rows {
+                        walk(&row.cells, langs);
+                    }
+                    if let Some(header) = &t.header {
+                        walk(&header.cells, langs);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn walk_inline(nodes: &[InlineNode], langs: &mut BTreeSet<String>) {
+        for node in nodes {
+            match node {
+                InlineNode::TranslatedText(map) => {
+                    langs.extend(map.keys().cloned());
+                }
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                    walk_inline(&[(**inner).clone()], langs);
+                }
+                InlineNode::Link(link) => walk_inline(&link.content.0, langs),
+                _ => {}
+            }
+        }
+    }
+
+    walk(nodes, &mut langs);
+    langs.into_iter().collect()
+}
 
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -1089,7 +1369,9 @@ mod tests {
                 min_length: None,
             },
             value: None,
-            placeholder: Some("Enter text".to_string()),
+            placeholder: Some(crate::structured::TranslatableString::Plain(
+                "Enter text".to_string(),
+            )),
         };
 
         let node = StructuredNode::Field(field);
@@ -1110,11 +1392,11 @@ mod tests {
             input_type: FieldType::Radio {
                 options: vec![
                     NameValue {
-                        name: "Option A".to_string(),
+                        name: crate::structured::TranslatableString::Plain("Option A".to_string()),
                         value: InputValue::Text("Option A".to_string()),
                     },
                     NameValue {
-                        name: "Option B".to_string(),
+                        name: crate::structured::TranslatableString::Plain("Option B".to_string()),
                         value: InputValue::Text("Option B".to_string()),
                     },
                 ],
@@ -1188,5 +1470,79 @@ mod tests {
         assert!(html.contains("data-condition"));
         assert!(html.contains("hidden"));
         assert!(html.contains("Conditional content"));
+    }
+
+    #[test]
+    fn test_duplicate_field_names_get_unique_ids() {
+        // Two fields with the same name should get unique IDs
+        let make_field = || FieldNode {
+            name: "FullName".to_string(),
+            label: Some(InlineText::plain("Full Name")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        };
+
+        let nodes = vec![
+            StructuredNode::Field(make_field()),
+            StructuredNode::Field(make_field()),
+        ];
+        let html = generate_html(&nodes, &HtmlConfig::default());
+
+        // Extract all id="..." values
+        let ids: Vec<&str> = html
+            .match_indices("id=\"")
+            .map(|(start, _)| {
+                let rest = &html[start + 4..];
+                &rest[..rest.find('"').unwrap()]
+            })
+            .collect();
+
+        // Check there are no duplicates
+        let mut seen = std::collections::HashSet::new();
+        for id in &ids {
+            assert!(seen.insert(*id), "Duplicate id found: {}", id);
+        }
+
+        // The two FullName fields should have distinct IDs
+        let fullname_ids: Vec<&&str> = ids.iter().filter(|id| id.starts_with("FullName")).collect();
+        assert_eq!(
+            fullname_ids.len(),
+            2,
+            "Expected 2 FullName IDs, got {:?}",
+            fullname_ids
+        );
+        assert_ne!(
+            fullname_ids[0], fullname_ids[1],
+            "FullName IDs should differ"
+        );
+
+        // label for= should match the corresponding input id=
+        assert!(
+            html.contains("for=\"FullName_1\""),
+            "label for= should use unique ID"
+        );
+        assert!(
+            html.contains("id=\"FullName_1\""),
+            "input id= should use unique ID"
+        );
+        assert!(
+            html.contains("for=\"FullName_2\""),
+            "second label for= should use unique ID"
+        );
+        assert!(
+            html.contains("id=\"FullName_2\""),
+            "second input id= should use unique ID"
+        );
+
+        // name= should stay as the original field name (not suffixed)
+        assert!(
+            html.contains("name=\"FullName\""),
+            "name= should use the original field name"
+        );
     }
 }

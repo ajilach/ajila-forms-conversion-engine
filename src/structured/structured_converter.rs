@@ -25,7 +25,7 @@ use crate::flattened::{
 };
 use crate::structured::{
     FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
-    NameValue, ParagraphNode, RepeatableNode, StructuredNode,
+    NameValue, ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
 };
 
 /// Check if a StructuredNode contains any fields (recursively).
@@ -424,7 +424,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             .into_iter()
             .zip(options.into_iter())
             .map(|(field_name, label)| NameValue {
-                name: label,
+                name: TranslatableString::Plain(label),
                 value: InputValue::Text(field_name),
             })
             .collect();
@@ -469,7 +469,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let name_values: Vec<NameValue> = options
             .into_iter()
             .map(|label| NameValue {
-                name: label.clone(),
+                name: TranslatableString::Plain(label.clone()),
                 value: InputValue::Text(label),
             })
             .collect();
@@ -569,7 +569,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             label,
             input_type: field_type,
             value: input_value,
-            placeholder: self.get_placeholder(node),
+            placeholder: self.get_placeholder(node).map(TranslatableString::Plain),
         }))
     }
 

@@ -80,6 +80,8 @@ pub struct ExhaustiveConfig<'a> {
 pub struct ExhaustiveResult {
     /// Total number of unique states rendered
     pub states_rendered: usize,
+    /// The merged DocumentEnvelope (if structured output was enabled)
+    pub merged_envelope: Option<crate::structured::DocumentEnvelope>,
 }
 
 /// Collected state data from the first pass
@@ -164,6 +166,8 @@ pub fn run_exhaustive(
     }
 
     // Merge all structured outputs and write the merged JSON
+    let mut result_envelope: Option<crate::structured::DocumentEnvelope> = None;
+
     if config.structured && !structured_outputs.is_empty() {
         if !config.quiet {
             println!(
@@ -211,6 +215,8 @@ pub fn run_exhaustive(
                 println!("    ✓ Merged HTML: {}", html_path.display());
             }
         }
+
+        result_envelope = Some(merged_envelope);
     }
 
     if !config.quiet {
@@ -222,6 +228,7 @@ pub fn run_exhaustive(
 
     Ok(ExhaustiveResult {
         states_rendered: collected_states.len(),
+        merged_envelope: result_envelope,
     })
 }
 
@@ -296,6 +303,21 @@ pub fn run_exhaustive_to_merged(
 
     let merger = crate::structured::RecursiveMerger::new(merge_inputs);
     Ok(merger.merge())
+}
+
+/// Run exhaustive form state exploration and return a DocumentEnvelope.
+///
+/// This is a test helper that performs exhaustive exploration, merges states,
+/// and wraps the result in a DocumentEnvelope with the detected language.
+pub fn run_exhaustive_to_envelope(
+    pdf_path: &str,
+    language: &str,
+) -> Result<crate::structured::DocumentEnvelope, Box<dyn std::error::Error>> {
+    let nodes = run_exhaustive_to_merged(pdf_path)?;
+    Ok(crate::structured::DocumentEnvelope {
+        context: crate::context::Context::new(language.to_string()),
+        content: nodes,
+    })
 }
 
 /// Pass 1: Recursively collect all form states and their flattened data.
