@@ -8,7 +8,7 @@ use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::{Flattened, FlattenedNodeKind};
 use crate::xfa::FontWeight;
 use rust_decimal::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Global font statistics collected from multiple flattened form states.
 ///
@@ -30,37 +30,17 @@ pub struct GlobalFontStats {
     pub most_common_style: Option<(u32, bool)>,
     /// Ratio of most common style
     pub common_style_ratio: f32,
-    /// Global border statistics (computed in second pass after font stats)
-    pub border_stats: GlobalBorderStats,
+    /// Global heading style buckets sorted by priority: size desc, bold first, has_line first.
+    /// Each entry is (size_bits, is_bold, has_line).
+    pub heading_buckets: Vec<(u32, bool, bool)>,
 }
 
-/// Global border statistics for consistent heading level detection across form states.
+/// Kept for backward compatibility. No longer used for heading level detection.
 #[derive(Debug, Clone, Default)]
 pub struct GlobalBorderStats {
-    /// Number of potential headings with any border (top, bottom, or font underline)
     pub underlined_count: usize,
-    /// Number of potential headings without any borders
     pub non_underlined_count: usize,
-    /// Total potential headings analyzed
     pub total_count: usize,
-}
-
-impl GlobalBorderStats {
-    /// Check if border information should be used to distinguish heading levels.
-    /// Returns true if there's a meaningful pattern indicating borders distinguish hierarchy.
-    pub fn should_use_borders(&self) -> bool {
-        if self.total_count < 3 {
-            // Not enough headings to establish a pattern
-            return false;
-        }
-
-        let border_ratio = self.underlined_count as f32 / self.total_count as f32;
-
-        // Use borders if there's a clear distinction:
-        // - Between 10% and 80% have borders (mixed usage indicates hierarchy)
-        // - If <10% or >80%, the pattern is not useful for distinguishing levels
-        border_ratio >= 0.10 && border_ratio <= 0.80
-    }
 }
 
 impl GlobalFontStats {
@@ -146,23 +126,20 @@ impl GlobalFontStats {
             total_text_nodes,
             most_common_style,
             common_style_ratio,
-            border_stats: GlobalBorderStats::default(),
+            heading_buckets: Vec::new(),
         }
     }
 
-    /// Compute global border statistics from all flattened states.
-    /// This should be called after `from_flattened_iter` to fill in border_stats.
-    /// It analyzes potential headings (based on font stats) to determine if borders
-    /// are used to distinguish heading levels.
-    pub fn compute_border_stats<'a>(
+    /// Compute global heading style buckets from all flattened states.
+    /// This should be called after `from_flattened_iter` to fill in heading_buckets.
+    /// Analyzes potential headings and groups them into style buckets sorted by priority.
+    pub fn compute_heading_buckets<'a>(
         &mut self,
         flattened_iter: impl Iterator<Item = &'a Flattened>,
     ) {
-        let mut border_stats = GlobalBorderStats::default();
-
-        // Use the already-computed font stats to determine potential headings
         let body_size = self.body_size;
         let most_common_style = self.most_common_style;
+        let mut bucket_set: HashSet<(u32, bool, bool)> = HashSet::new();
 
         for flattened in flattened_iter {
             for node in flattened.iter_nodes() {
@@ -171,7 +148,7 @@ impl GlobalFontStats {
                 } = &node.kind
                 {
                     let text = content.trim();
-                    if text.is_empty() || text.len() < 2 || text.len() > 100 {
+                    if text.is_empty() || text.len() < 2 || text.len() > 200 {
                         continue;
                     }
 
@@ -186,8 +163,7 @@ impl GlobalFontStats {
                         .map(|f| f.weight == FontWeight::Bold)
                         .unwrap_or(false);
 
-                    // Check if this would be a potential heading
-                    // Skip if it's the most common style (body text)
+                    // Skip body text style
                     if most_common_style == Some((size_bits, is_bold)) {
                         continue;
                     }
@@ -204,14 +180,11 @@ impl GlobalFontStats {
                     let size_diff = size - body_size;
                     let is_size_based_heading = ratio >= 1.35 || size_diff >= 3.5;
 
-                    // Only count potential headings
                     if !is_bold_section_header && !is_size_based_heading {
                         continue;
                     }
 
-                    border_stats.total_count += 1;
-
-                    // Check for borders/underline
+                    // Determine has_line (underline, overline, or visible top/bottom border)
                     let has_font_underline = node
                         .style
                         .font
@@ -235,16 +208,33 @@ impl GlobalFontStats {
                         .map(|e| e.presence == "visible" && e.thickness.is_some())
                         .unwrap_or(false);
 
-                    if has_font_underline || has_top_border || has_bottom_border {
-                        border_stats.underlined_count += 1;
-                    } else {
-                        border_stats.non_underlined_count += 1;
-                    }
+                    let has_line = has_font_underline || has_top_border || has_bottom_border;
+                    bucket_set.insert((size_bits, is_bold, has_line));
                 }
             }
         }
 
-        self.border_stats = border_stats;
+        // Sort buckets by priority: size desc, bold first, has_line first
+        let mut buckets: Vec<_> = bucket_set.into_iter().collect();
+        buckets.sort_by(|a, b| {
+            let a_size = f32::from_bits(a.0);
+            let b_size = f32::from_bits(b.0);
+            b_size
+                .partial_cmp(&a_size)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.1.cmp(&a.1)) // bold first
+                .then(b.2.cmp(&a.2)) // has_line first
+        });
+
+        self.heading_buckets = buckets;
+    }
+
+    /// Backward-compatible alias for compute_heading_buckets.
+    pub fn compute_border_stats<'a>(
+        &mut self,
+        flattened_iter: impl Iterator<Item = &'a Flattened>,
+    ) {
+        self.compute_heading_buckets(flattened_iter);
     }
 
     /// Convert to internal FontStats format
@@ -515,21 +505,18 @@ impl HeadingDetector {
         }
     }
 
-    /// Determine heading level based on font size and stats.
-    /// Returns (level, is_bold_section_header) where is_bold_section_header indicates
-    /// if this is a bold text at body size (used for filtering later).
-    fn determine_heading_level(
+    /// Check if a text group is a heading candidate based on font properties.
+    /// Returns (HeadingStyleBucket, is_bold_section_header) if it qualifies.
+    fn is_heading_candidate(
         &self,
-        size: f32,
-        is_bold: bool,
-        text_len: usize,
-        text_content: &str,
+        props: &TextProperties,
         stats: &FontStats,
-        has_top_border: bool,
-        has_bottom_border: bool,
-        has_font_underline: bool,
-        border_stats: &BorderStats,
-    ) -> Option<(u8, bool)> {
+    ) -> Option<(HeadingStyleBucket, bool)> {
+        let size = props.avg_font_size;
+        let is_bold = props.is_bold;
+        let text_len = props.text_length;
+        let text_content = &props.text_content;
+
         // Text too long for a heading
         if text_len > self.max_heading_length {
             return None;
@@ -567,7 +554,7 @@ impl HeadingDetector {
             .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
             .unwrap_or(0.0);
 
-        // CRITICAL: Headings (h1-h4) must be DISTINCT from normal text.
+        // CRITICAL: Headings must be DISTINCT from normal text.
         // Text that matches the most common style is NEVER a heading
         let is_body_style = stats
             .most_common_style
@@ -584,14 +571,11 @@ impl HeadingDetector {
             .map(|common| common.size == rounded_size && !common.is_bold)
             .unwrap_or(false);
 
-        // Bold text at body size is a valid heading if:
-        // 1. Body text is non-bold at the same size
-        // 2. The bold variant is not too frequent (section headers vs field labels)
+        // Bold text at body size is a valid heading if body text is non-bold at the same size
         let is_bold_section_header =
-            is_bold && body_style_is_non_bold_same_size && (size - body_size).abs() < 0.5; // Same size as body
+            is_bold && body_style_is_non_bold_same_size && (size - body_size).abs() < 0.5;
 
         // For bold section headers, allow higher frequency (up to 40%)
-        // since documents often have multiple sections and field labels
         let max_style_frequency = if is_bold_section_header { 0.40 } else { 0.25 };
 
         // If this style appears too frequently, it's body/label text
@@ -600,10 +584,7 @@ impl HeadingDetector {
         }
 
         // For non-bold text or bold text larger than body, require size distinction
-        // Bold section headers (same size as non-bold body) skip this check
         if !is_bold_section_header {
-            // Headings must be NOTICEABLY larger than body text
-            // Require at least 35% larger OR at least 3.5pt larger (whichever is smaller)
             let size_diff = size - body_size;
             let min_ratio = 1.35f32;
             let min_diff = 3.5f32;
@@ -615,66 +596,22 @@ impl HeadingDetector {
                 return None;
             }
 
-            // Additional frequency check for common sizes:
-            // If a size is used for >30% of text AND we're just barely above threshold,
-            // it's likely a field input size or secondary body size, not a heading
+            // Additional frequency check for common sizes
             if size_frequency > 0.30 && ratio < 1.5 && size_diff < 5.0 {
                 return None;
             }
         }
 
-        // Determine level based on size ratio and boldness
-        let max_ratio = stats.max / body_size;
-        let size_diff = size - body_size;
-        let min_ratio = 1.35f32;
+        // Compute the style bucket
+        let has_line = props.has_top_border || props.has_bottom_border || props.has_font_underline;
 
-        // For bold section headers at body size, assign level based on document structure
-        // and border information if available
-        if is_bold_section_header {
-            // Bold at body size is typically H2 or H3 (after a larger H1 title)
-            // Never H1 - H1 should be reserved for larger text (true document titles)
-
-            // Use border statistics to distinguish between H2 and H3
-            // Any visible border (top or bottom) or underline marks higher-level headings
-            let has_any_border = has_top_border || has_bottom_border || has_font_underline;
-            let level = if border_stats.should_use_borders() {
-                if has_any_border {
-                    2 // H2 for section headers with borders/underlines
-                } else {
-                    3 // H3 for section headers without borders
-                }
-            } else {
-                2 // Default to H2 when no border distinction is available
-            };
-
-            return Some((level, true)); // Flag as bold_section_header
-        }
-
-        let normalized = if max_ratio > min_ratio {
-            (ratio - min_ratio) / (max_ratio - min_ratio)
-        } else {
-            // All headings are near the threshold - use a simpler scale
-            ((ratio - min_ratio) / 0.5).clamp(0.0, 1.0)
+        let bucket = HeadingStyleBucket {
+            size: rounded_size,
+            is_bold,
+            has_line,
         };
 
-        // Base level from size
-        let base_level = match normalized {
-            n if n >= 0.8 => 1,
-            n if n >= 0.6 => 2,
-            n if n >= 0.4 => 3,
-            n if n >= 0.2 => 4,
-            n if n >= 0.1 => 5,
-            _ => 6,
-        };
-
-        // Boost for bold (move up one level, min 1)
-        let level = if self.boost_bold && is_bold && base_level > 1 {
-            base_level - 1
-        } else {
-            base_level
-        };
-
-        Some((level as u8, false)) // Not a bold section header (it's a true size-based heading)
+        Some((bucket, is_bold_section_header))
     }
 
     /// Get font properties from a group.
@@ -886,33 +823,16 @@ struct TextProperties {
     has_font_underline: bool,
 }
 
-/// Border statistics for distinguishing heading levels.
-#[derive(Debug, Clone, Default)]
-struct BorderStats {
-    /// Number of potential headings with any border (top, bottom, or font underline)
-    underlined_count: usize,
-    /// Number of potential headings without any borders
-    non_underlined_count: usize,
-    /// Total potential headings analyzed
-    total_count: usize,
-}
-
-impl BorderStats {
-    /// Check if border information should be used to distinguish heading levels.
-    /// Returns true if there's a meaningful pattern indicating borders distinguish hierarchy.
-    fn should_use_borders(&self) -> bool {
-        if self.total_count < 3 {
-            // Not enough headings to establish a pattern
-            return false;
-        }
-
-        let border_ratio = self.underlined_count as f32 / self.total_count as f32;
-
-        // Use borders if there's a clear distinction:
-        // - Between 10% and 80% have borders (mixed usage indicates hierarchy)
-        // - If <10% or >80%, the pattern is not useful for distinguishing levels
-        border_ratio >= 0.10 && border_ratio <= 0.80
-    }
+/// A unique combination of font properties that defines a heading style level.
+/// Buckets are sorted by priority: font size desc > bold first > has_line first.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct HeadingStyleBucket {
+    /// Font size rounded to 0.5pt
+    size: OrderedFloat,
+    /// Whether the text is bold
+    is_bold: bool,
+    /// Whether the text has underline, overline, or visible top/bottom border
+    has_line: bool,
 }
 
 /// Wrapper for f32 that implements Hash and Eq.
@@ -940,33 +860,43 @@ impl AnalysisModule for HeadingDetector {
 
     fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
         // Compute global stats from all flattened data in the context
-        let (stats, global_border_stats) = if !ctx.all_flattened.is_empty() {
+        let (stats, global_buckets) = if !ctx.all_flattened.is_empty() {
             let mut global_stats =
                 GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
-            global_stats.compute_border_stats(ctx.all_flattened.iter().copied());
-            let border_stats = if global_stats.border_stats.total_count > 0 {
-                Some(global_stats.border_stats.clone())
+            global_stats.compute_heading_buckets(ctx.all_flattened.iter().copied());
+            let buckets = if !global_stats.heading_buckets.is_empty() {
+                Some(
+                    global_stats
+                        .heading_buckets
+                        .iter()
+                        .map(|(size_bits, is_bold, has_line)| HeadingStyleBucket {
+                            size: OrderedFloat(f32::from_bits(*size_bits)),
+                            is_bold: *is_bold,
+                            has_line: *has_line,
+                        })
+                        .collect::<Vec<_>>(),
+                )
             } else {
                 None
             };
-            (global_stats.to_font_stats(), border_stats)
+            (global_stats.to_font_stats(), buckets)
         } else {
             // Fallback to local stats
             (self.collect_font_stats(doc), None)
         };
-        self.process_with_stats(doc, &stats, global_border_stats.as_ref());
+        self.process_with_stats(doc, &stats, global_buckets.as_deref());
     }
 }
 
 impl HeadingDetector {
     /// Core processing logic using provided font statistics.
-    /// If `global_border_stats` is Some, uses global border statistics for consistent
-    /// heading level detection across form states. Otherwise computes local border stats.
+    /// If `global_heading_buckets` is Some, uses global bucket ranking for consistent
+    /// heading level detection across form states. Otherwise computes local bucket ranking.
     fn process_with_stats(
         &self,
         doc: &mut Document,
         stats: &FontStats,
-        global_border_stats: Option<&GlobalBorderStats>,
+        global_heading_buckets: Option<&[HeadingStyleBucket]>,
     ) {
         // Need enough samples for meaningful analysis
         if stats.sample_count < self.min_samples {
@@ -981,83 +911,59 @@ impl HeadingDetector {
             .copied()
             .collect();
 
-        // First pass: collect border statistics from potential headings (only if not using global stats)
-        let mut local_border_stats = BorderStats::default();
-        let mut text_properties_cache: HashMap<usize, TextProperties> = HashMap::new();
+        // Collect heading candidates with their style buckets
+        let mut candidates: Vec<(usize, HeadingStyleBucket, f32, bool)> = Vec::new();
 
         for &group_idx in &text_groups {
             if let Some(props) = self.get_text_properties(doc, group_idx) {
-                // Check if this would be considered a heading based on font properties only
-                // (we pass empty border stats for this initial check)
-                let empty_border_stats = BorderStats::default();
-                if self
-                    .determine_heading_level(
-                        props.avg_font_size,
-                        props.is_bold,
-                        props.text_length,
-                        &props.text_content,
-                        &stats,
-                        props.has_top_border,
-                        props.has_bottom_border,
-                        props.has_font_underline,
-                        &empty_border_stats,
-                    )
-                    .is_some()
+                if let Some((bucket, is_bold_section_header)) =
+                    self.is_heading_candidate(&props, stats)
                 {
-                    // Only collect local border stats if not using global
-                    if global_border_stats.is_none() {
-                        local_border_stats.total_count += 1;
-                        if props.has_top_border
-                            || props.has_bottom_border
-                            || props.has_font_underline
-                        {
-                            local_border_stats.underlined_count += 1;
-                        } else {
-                            local_border_stats.non_underlined_count += 1;
-                        }
-                    }
-                }
-                text_properties_cache.insert(group_idx, props);
-            }
-        }
-
-        // Use global border stats if provided, converting to local BorderStats format
-        let border_stats = if let Some(global) = global_border_stats {
-            BorderStats {
-                underlined_count: global.underlined_count,
-                non_underlined_count: global.non_underlined_count,
-                total_count: global.total_count,
-            }
-        } else {
-            local_border_stats
-        };
-
-        // Second pass: analyze each text group with border statistics
-        // Stores (group_idx, level, y_coord, is_bold_section_header) for ordering and validation
-        let mut headings: Vec<(usize, u8, f32, bool)> = Vec::new();
-
-        for group_idx in text_groups {
-            if let Some(props) = text_properties_cache.get(&group_idx) {
-                if let Some((level, is_bold_section_header)) = self.determine_heading_level(
-                    props.avg_font_size,
-                    props.is_bold,
-                    props.text_length,
-                    &props.text_content,
-                    &stats,
-                    props.has_top_border,
-                    props.has_bottom_border,
-                    props.has_font_underline,
-                    &border_stats,
-                ) {
-                    // Store y-coordinate for ordering
                     let y_coord = doc
                         .compute_group_bounds(group_idx)
                         .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
                         .unwrap_or(0.0);
-                    headings.push((group_idx, level, y_coord, is_bold_section_header));
+                    candidates.push((group_idx, bucket, y_coord, is_bold_section_header));
                 }
             }
         }
+
+        // Determine unique style buckets and sort by priority:
+        // 1. Font size descending (largest first)
+        // 2. Bold first (if same size)
+        // 3. Has line (underline/overline/border) first (if same size and weight)
+        let sorted_buckets: Vec<HeadingStyleBucket> = if let Some(global) = global_heading_buckets {
+            global.to_vec()
+        } else {
+            let bucket_set: HashSet<HeadingStyleBucket> =
+                candidates.iter().map(|(_, b, _, _)| b.clone()).collect();
+            let mut buckets: Vec<_> = bucket_set.into_iter().collect();
+            buckets.sort_by(|a, b| {
+                b.size
+                    .0
+                    .partial_cmp(&a.size.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(b.is_bold.cmp(&a.is_bold))
+                    .then(b.has_line.cmp(&a.has_line))
+            });
+            buckets
+        };
+
+        // Map each bucket to a heading level (position in sorted list + 1, capped at 6)
+        let bucket_to_level: HashMap<&HeadingStyleBucket, u8> = sorted_buckets
+            .iter()
+            .enumerate()
+            .map(|(i, bucket)| (bucket, (i as u8 + 1).min(6)))
+            .collect();
+
+        // Build heading list with assigned levels
+        let mut headings: Vec<(usize, u8, f32, bool)> = candidates
+            .iter()
+            .map(|(group_idx, bucket, y_coord, is_bold_section_header)| {
+                let level = bucket_to_level.get(bucket).copied().unwrap_or(6);
+                (*group_idx, level, *y_coord, *is_bold_section_header)
+            })
+            .collect();
 
         // Sort headings by y-coordinate (top to bottom)
         headings.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
@@ -1071,26 +977,19 @@ impl HeadingDetector {
 
         let filtered_headings: Vec<(usize, u8, f32, bool)> =
             if let Some(first_true_idx) = first_true_heading_idx {
-                // Keep the first true heading and everything after it.
-                // Bold section headers before the first true heading are filtered out.
                 headings
                     .into_iter()
                     .enumerate()
                     .filter(|(idx, (_, _, _, is_bold_section_header))| {
-                        // Keep if: it's at or after the first true heading, OR it's not a bold section header
                         *idx >= first_true_idx || !*is_bold_section_header
                     })
                     .map(|(_, h)| h)
                     .collect()
             } else {
-                // No true heading found - keep all bold section headers as-is
                 headings
             };
 
-        // Validate and fix heading levels according to document order rules:
-        // - Headings must be ordered from top to bottom (h1, h2, h3)
-        // - Same level can repeat (h1, h2, h2, h3, h2 is valid)
-        // - Cannot skip levels (h1, h3 is NOT valid - must be h1, h2)
+        // Normalize heading levels
         let headings = Self::normalize_heading_levels(filtered_headings);
 
         // Create Heading groups

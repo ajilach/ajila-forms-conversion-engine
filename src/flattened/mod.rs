@@ -2132,7 +2132,12 @@ impl Flattened {
                     .unwrap_or(HAlign::Left);
 
                 // Extract rich text if this is HTML content (exData with contentType="text/html")
-                let rich_text = Self::extract_rich_text_from_node(&node.children, default_h_align);
+                let rich_text = Self::extract_rich_text_from_node(
+                    &node.children,
+                    default_h_align,
+                    Some(ctx.computed_values),
+                    Some(ctx.id_to_field),
+                );
 
                 let draw_node = FlattenedNode::new_text_with_rich_text(
                     text_content,
@@ -2443,6 +2448,8 @@ impl Flattened {
     fn extract_rich_text_from_node(
         children: &[XfaNode],
         default_h_align: HAlign,
+        computed_values: Option<&HashMap<SomPath, String>>,
+        id_to_field: Option<&HashMap<String, String>>,
     ) -> Option<RichText> {
         for child in children {
             // Check for XfaNodeKind::Value
@@ -2478,6 +2485,8 @@ impl Flattened {
                                     return Some(Self::parse_rich_text_from_html(
                                         &value_child.children,
                                         default_h_align,
+                                        computed_values,
+                                        id_to_field,
                                     ));
                                 }
                             }
@@ -2516,6 +2525,8 @@ impl Flattened {
                                     return Some(Self::parse_rich_text_from_html(
                                         &value_child.children,
                                         default_h_align,
+                                        computed_values,
+                                        id_to_field,
                                     ));
                                 }
                             }
@@ -2858,7 +2869,12 @@ impl Flattened {
                         // Extract rich text if this is HTML content (exData with contentType="text/html")
                         // This preserves paragraph structure, text-indent, and xfa-spacerun spacing
                         let rich_text =
-                            Self::extract_rich_text_from_node(&node.children, default_h_align);
+                            Self::extract_rich_text_from_node(
+                                &node.children,
+                                default_h_align,
+                                Some(ctx.computed_values),
+                                Some(ctx.id_to_field),
+                            );
 
                         let draw_node = FlattenedNode::new_text_with_rich_text(
                             text_content,
@@ -3106,6 +3122,8 @@ impl Flattened {
                                 let rich_text = Self::extract_rich_text_from_node(
                                     &node.children,
                                     default_h_align,
+                                    Some(ctx.computed_values),
+                                    Some(ctx.id_to_field),
                                 );
 
                                 let draw_node = FlattenedNode::new_text_with_rich_text(
@@ -5265,7 +5283,12 @@ impl Flattened {
     /// - Paragraph separators (U+2029)
     ///
     /// The `default_h_align` is used when CSS doesn't specify text-align (inherited from XFA para element)
-    pub fn parse_rich_text_from_html(children: &[XfaNode], default_h_align: HAlign) -> RichText {
+    pub fn parse_rich_text_from_html(
+        children: &[XfaNode],
+        default_h_align: HAlign,
+        computed_values: Option<&std::collections::HashMap<SomPath, String>>,
+        id_to_field: Option<&std::collections::HashMap<String, String>>,
+    ) -> RichText {
         let mut paragraphs = Vec::new();
         Self::parse_html_nodes_to_rich_text(
             children,
@@ -5274,6 +5297,8 @@ impl Flattened {
             false,
             false,
             default_h_align,
+            computed_values,
+            id_to_field,
         );
 
         // If no paragraphs were created but we have content, create a single paragraph
@@ -5295,6 +5320,8 @@ impl Flattened {
         bold: bool,
         italic: bool,
         default_h_align: HAlign,
+        computed_values: Option<&std::collections::HashMap<SomPath, String>>,
+        id_to_field: Option<&std::collections::HashMap<String, String>>,
     ) {
         for child in children {
             match &child.kind {
@@ -5356,6 +5383,8 @@ impl Flattened {
                                 bold,
                                 italic,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
                         }
                         "p" => {
@@ -5405,6 +5434,8 @@ impl Flattened {
                                 bold || para_bold,
                                 italic,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
 
                             // Check if paragraph ended up empty (only whitespace spans)
@@ -5416,6 +5447,32 @@ impl Flattened {
                             }
                         }
                         "span" => {
+                            // Check for xfa:embed attribute (embedded references)
+                            if let Some(embed_ref) = child.attributes.get("xfa:embed") {
+                                if let (Some(cv), Some(itf)) = (computed_values, id_to_field) {
+                                    if let Some(resolved_text) =
+                                        Self::resolve_embed_reference(embed_ref, cv, itf)
+                                    {
+                                        if !resolved_text.trim().is_empty() {
+                                            if paragraphs.is_empty() {
+                                                paragraphs.push(RichParagraph {
+                                                    h_align: default_h_align,
+                                                    ..RichParagraph::default()
+                                                });
+                                            }
+                                            paragraphs.last_mut().unwrap().runs.push(RichRun {
+                                                text: resolved_text,
+                                                preserve_spaces: false,
+                                                bold,
+                                                italic,
+                                                underline: false,
+                                            });
+                                        }
+                                        continue; // Don't recurse into embed spans
+                                    }
+                                }
+                            }
+
                             // Check for xfa-spacerun:yes style
                             let new_preserve = if let Some(style) = child.attributes.get("style") {
                                 style.contains("xfa-spacerun:yes")
@@ -5477,6 +5534,8 @@ impl Flattened {
                                 bold,
                                 italic,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
                         }
                         "b" | "strong" => {
@@ -5498,6 +5557,8 @@ impl Flattened {
                                 true,
                                 italic,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
                         }
                         "i" | "em" => {
@@ -5519,6 +5580,8 @@ impl Flattened {
                                 bold,
                                 true,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
                         }
                         "br" => {
@@ -5548,6 +5611,8 @@ impl Flattened {
                                 bold,
                                 italic,
                                 default_h_align,
+                                computed_values,
+                                id_to_field,
                             );
                         }
                     }
@@ -5561,6 +5626,8 @@ impl Flattened {
                         bold,
                         italic,
                         default_h_align,
+                        computed_values,
+                        id_to_field,
                     );
                 }
             }
@@ -6574,6 +6641,8 @@ impl Flattened {
                 return Some(Self::parse_rich_text_from_html(
                     &[child.clone()],
                     default_h_align,
+                    None,
+                    None,
                 ));
             }
             // Recurse into children
