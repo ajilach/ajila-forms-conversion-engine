@@ -12,6 +12,9 @@ on:
           - minor
           - major
 
+permissions:
+  contents: write
+
 jobs:
   bump-version:
     runs-on: ubuntu-latest
@@ -21,6 +24,19 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Check if tests passed
+        run: |
+          # Get the latest workflow run status for rust.yml on current commit
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "Checking test status for commit: $COMMIT_SHA"
+          
+          # Use GitHub CLI to check if rust.yml passed
+          gh run list --workflow=rust.yml --commit=$COMMIT_SHA --json conclusion --limit 1 | \
+            jq -e '.[0].conclusion == "success"' || \
+            (echo "ERROR: Tests have not passed for this commit. Run tests first." && exit 1)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup SSH for private git dependencies
         uses: webfactory/ssh-agent@v0.9.0
