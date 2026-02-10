@@ -13,10 +13,7 @@
 //! This ensures consistent heading detection and other statistics-based
 //! analysis across all form states.
 use std::collections::HashSet;
-use std::path::Path;
 
-use crate::RenderMode;
-use crate::document::modules::GlobalContext;
 use crate::flattened::Flattened;
 use crate::structured::Selection;
 use crate::xfa::scripting::{SomPath, XfaForm};
@@ -56,279 +53,63 @@ fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
     sorted
 }
 
-/// Configuration for exhaustive rendering
-pub struct ExhaustiveConfig<'a> {
-    /// Name of the document (used for output filenames)
-    pub doc_name: &'a str,
-    /// Scale factor for rendering
-    pub scale: f32,
-    /// Path to the source PDF file
-    pub pdf_path: &'a Path,
-    /// Render modes to use (can be multiple: plain, labelled, annotated)
-    pub render_modes: Vec<RenderMode>,
-    /// Whether to output structured JSON for each state
-    pub structured: bool,
-    /// Whether to generate HTML output
-    pub html: bool,
-    /// Whether to suppress verbose output
-    pub quiet: bool,
-    /// Context to pass through the pipeline
-    pub context: crate::context::Context,
-}
+// ============================================================================
+// Public data types used by both the library facade and the CLI
+// ============================================================================
 
-/// Result of exhaustive exploration
-pub struct ExhaustiveResult {
-    /// Total number of unique states rendered
-    pub states_rendered: usize,
-    /// The merged DocumentEnvelope (if structured output was enabled)
-    pub merged_envelope: Option<crate::structured::DocumentEnvelope>,
-}
-
-/// Collected state data from the first pass
-struct CollectedState {
+/// Collected state data from the first pass (public for use by lib.rs facade).
+pub struct CollectedState {
     /// The flattened data for this state
-    flattened: Flattened,
+    pub flattened: Flattened,
     /// The selections that led to this state (with group path info)
-    selections: Vec<Selection>,
-    /// State suffix for file naming
-    state_suffix: String,
+    pub selections: Vec<Selection>,
+    /// State suffix / human-readable label for this state
+    pub label: String,
 }
 
-/// Run exhaustive form state exploration.
+// ============================================================================
+// Pure library API — no I/O, no printing
+// ============================================================================
+
+/// Collect all reachable form states from the given XFA form.
 ///
-/// This function recursively explores all possible form states by:
-/// 1. Starting from the default state
-/// 2. Finding all visible radio buttons and checkboxes
-/// 3. For each unselected control, creating a new state with it selected
-/// 4. Recursively exploring from each new state
+/// This is the library-facing entry point. It performs **Pass 1** of the
+/// two-pass architecture: recursively explores radio button / checkbox
+/// combinations, producing a `Vec<CollectedState>` with one entry per
+/// unique state.
 ///
-/// Each unique state is rendered to a PNG file.
-pub fn run_exhaustive(
+/// `xfa_bytes` must be the raw XFA XML bytes so that the explorer can
+/// cheaply recreate a fresh `XfaForm` for each branch.
+pub fn collect_states(
     form: &mut XfaForm,
-    config: &ExhaustiveConfig,
-) -> Result<ExhaustiveResult, Box<dyn std::error::Error>> {
-    if !config.quiet {
-        println!("\nExhaustive mode: recursively discovering all form states...");
-        if !config.render_modes.is_empty() {
-            println!("  Render modes: {:?}", config.render_modes);
-        }
-        if config.structured {
-            println!("  Structured JSON: enabled");
-        }
-    }
-
-    // ========================================================================
-    // Pass 1: Collect all form states and their flattened data
-    // ========================================================================
-    if !config.quiet {
-        println!("\n  Pass 1: Collecting all form states...");
-    }
-
+    xfa_bytes: &[u8],
+) -> Result<Vec<CollectedState>, crate::Error> {
     let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
     let mut collected_states: Vec<CollectedState> = Vec::new();
 
-    collect_all_states(
+    // OPTIMIZATION: Parse XFA once and cache for cloning (much faster than re-parsing)
+    let base_nodes = XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?;
+
+    collect_all_states_cached(
         form,
         Vec::new(),
         &mut rendered_states,
         &mut collected_states,
-        config,
+        &base_nodes,
     )?;
 
-    if !config.quiet {
-        println!("    Found {} unique states", collected_states.len());
-    }
-
-    // ========================================================================
-    // Pass 2: Run analysis pipeline with global context and generate outputs
-    // ========================================================================
-    if !config.quiet {
-        println!("\n  Pass 2: Analyzing and generating outputs...");
-    }
-
-    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
-    let global_ctx = GlobalContext::new(&flattened_refs);
-    let mut images_rendered = 0;
-
-    // Collect all structured outputs for merging
-    let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =
-        Vec::new();
-
-    for state in &collected_states {
-        let (rendered, structured_nodes) = process_state_with_context(state, &global_ctx, config)?;
-        images_rendered += rendered;
-
-        if config.structured {
-            if let Some(nodes) = structured_nodes {
-                structured_outputs.push((state.selections.clone(), nodes));
-            }
-        }
-    }
-
-    // Merge all structured outputs and write the merged JSON
-    let mut result_envelope: Option<crate::structured::DocumentEnvelope> = None;
-
-    if config.structured && !structured_outputs.is_empty() {
-        if !config.quiet {
-            println!(
-                "\n  Merging {} structured outputs...",
-                structured_outputs.len()
-            );
-        }
-
-        let merge_inputs: Vec<crate::structured::MergeInput> = structured_outputs
-            .into_iter()
-            .map(|(selections, nodes)| crate::structured::MergeInput::new(selections, nodes))
-            .collect();
-
-        let merger = crate::structured::RecursiveMerger::new(merge_inputs);
-        let merged = merger.merge();
-
-        // Create envelope with merged content and context
-        let merged_envelope = crate::structured::DocumentEnvelope {
-            context: config.context.clone(),
-            content: merged,
-        };
-
-        // Write merged JSON
-        let json = serde_json::to_string_pretty(&merged_envelope)
-            .map_err(|e| format!("Failed to serialize merged structured form: {}", e))?;
-
-        let json_path = std::path::PathBuf::from(format!("{}_merged.json", config.doc_name));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write merged JSON file: {}", e))?;
-
-        if !config.quiet {
-            println!("    ✓ Merged output: {}", json_path.display());
-        }
-
-        // Generate merged HTML if requested
-        if config.html {
-            let html_config = crate::html::HtmlConfig::default();
-            let html = crate::html::generate_html(&merged_envelope.content, &html_config);
-
-            let html_path = std::path::PathBuf::from(format!("{}_merged.html", config.doc_name));
-            std::fs::write(&html_path, html)
-                .map_err(|e| format!("Failed to write merged HTML file: {}", e))?;
-
-            if !config.quiet {
-                println!("    ✓ Merged HTML: {}", html_path.display());
-            }
-        }
-
-        result_envelope = Some(merged_envelope);
-    }
-
-    if !config.quiet {
-        println!(
-            "\n✓ Exhaustive rendering complete ({} unique states)",
-            collected_states.len()
-        );
-    }
-
-    Ok(ExhaustiveResult {
-        states_rendered: collected_states.len(),
-        merged_envelope: result_envelope,
-    })
+    Ok(collected_states)
 }
 
-/// Run exhaustive form state exploration and return merged structured nodes directly.
-///
-/// This is a test helper function that performs exhaustive exploration and returns
-/// the merged StructuredNode tree without writing to files.
-pub fn run_exhaustive_to_merged(
-    pdf_path: &str,
-) -> Result<Vec<crate::structured::StructuredNode>, Box<dyn std::error::Error>> {
-    use crate::xfa::XfaNode;
-
-    // Extract and parse XFA from PDF
-    let xfa_data = crate::extract_xfa_from_pdf(pdf_path)?
-        .ok_or_else(|| format!("No XFA data in PDF: {}", pdf_path))?;
-    let nodes = XfaNode::parse(&xfa_data)?;
-    let mut form = XfaForm::new(nodes)?;
-
-    // ========================================================================
-    // Pass 1: Collect all form states and their flattened data
-    // ========================================================================
-    let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
-    let mut collected_states: Vec<CollectedState> = Vec::new();
-
-    // Use a dummy config for state collection
-    let config = ExhaustiveConfig {
-        pdf_path: Path::new(pdf_path),
-        doc_name: "_test",
-        scale: 1.0,
-        render_modes: vec![],
-        structured: true,
-        quiet: true,
-        html: false,
-        context: crate::context::Context::new("en".to_string()),
-    };
-
-    collect_all_states(
-        &mut form,
-        Vec::new(),
-        &mut rendered_states,
-        &mut collected_states,
-        &config,
-    )?;
-
-    // ========================================================================
-    // Pass 2: Run analysis pipeline with global context
-    // ========================================================================
-    let flattened_refs: Vec<&Flattened> = collected_states.iter().map(|s| &s.flattened).collect();
-    let global_ctx = GlobalContext::new(&flattened_refs);
-
-    // Collect all structured outputs for merging
-    let mut structured_outputs: Vec<(Vec<Selection>, Vec<crate::structured::StructuredNode>)> =
-        Vec::new();
-
-    for state in &collected_states {
-        let (_, structured_nodes) = process_state_with_context(state, &global_ctx, &config)?;
-
-        if let Some(nodes) = structured_nodes {
-            structured_outputs.push((state.selections.clone(), nodes));
-        }
-    }
-
-    // Merge all structured outputs
-    if structured_outputs.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let merge_inputs: Vec<crate::structured::MergeInput> = structured_outputs
-        .into_iter()
-        .map(|(selections, nodes)| crate::structured::MergeInput::new(selections, nodes))
-        .collect();
-
-    let merger = crate::structured::RecursiveMerger::new(merge_inputs);
-    Ok(merger.merge())
-}
-
-/// Run exhaustive form state exploration and return a DocumentEnvelope.
-///
-/// This is a test helper that performs exhaustive exploration, merges states,
-/// and wraps the result in a DocumentEnvelope with the detected language.
-pub fn run_exhaustive_to_envelope(
-    pdf_path: &str,
-    language: &str,
-) -> Result<crate::structured::DocumentEnvelope, Box<dyn std::error::Error>> {
-    let nodes = run_exhaustive_to_merged(pdf_path)?;
-    Ok(crate::structured::DocumentEnvelope {
-        context: crate::context::Context::new(language.to_string()),
-        content: nodes,
-    })
-}
-
-/// Pass 1: Recursively collect all form states and their flattened data.
-/// This does NOT run the analysis pipeline yet.
-fn collect_all_states(
+/// Pass 1 implementation: recursively collect all form states using cached
+/// parsed nodes (no XML re-parsing needed).
+fn collect_all_states_cached(
     form: &mut XfaForm,
     current_selections: Vec<Selection>,
     rendered_states: &mut HashSet<Vec<SomPath>>,
     collected_states: &mut Vec<CollectedState>,
-    config: &ExhaustiveConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+    base_nodes: &[XfaNode],
+) -> Result<(), crate::Error> {
     // Get the canonical state representation (using field paths for deduplication)
     let field_paths: Vec<SomPath> = current_selections
         .iter()
@@ -344,8 +125,8 @@ fn collect_all_states(
     // Mark this state as collected
     rendered_states.insert(state.clone());
 
-    // Generate a filename suffix based on selections
-    let state_suffix = if current_selections.is_empty() {
+    // Generate a human-readable label based on selections
+    let label = if current_selections.is_empty() {
         "default".to_string()
     } else {
         current_selections
@@ -362,7 +143,7 @@ fn collect_all_states(
     collected_states.push(CollectedState {
         flattened,
         selections: current_selections.clone(),
-        state_suffix,
+        label,
     });
 
     // Get visible selectable fields in this state
@@ -392,17 +173,16 @@ fn collect_all_states(
             }
         }
 
-        // Create a fresh form from the PDF
-        let xfa_data_reset = crate::extract_xfa_from_pdf(config.pdf_path)?.unwrap();
-        let nodes_reset = XfaNode::parse(&xfa_data_reset)?;
-        let mut new_form =
-            XfaForm::new(nodes_reset).map_err(|e| format!("Failed to recreate XfaForm: {}", e))?;
+        // OPTIMIZATION: Clone nodes instead of re-parsing XML (10-100x faster)
+        let nodes_reset = base_nodes.to_vec();
+        let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
 
-        // Apply all current selections
+        // OPTIMIZATION: Apply all selections in batch, then refresh once
         let mut new_selections = current_selections.clone();
+
+        // Apply all current selections without refreshing
         for sel in &current_selections {
             let _ = new_form.select_radio_button(sel.field_path.as_str());
-            new_form.refresh()?;
         }
 
         // Select the new field
@@ -415,113 +195,32 @@ fn collect_all_states(
         }
 
         // Create the selection with group path info
-        // For radio buttons, look up the exclGroup path from the form
         let group_path = if field.is_radio() {
             new_form.find_excl_group_for_field(field.path.as_str())
         } else {
             None
         };
         new_selections.push(Selection::new(field.path.clone(), group_path));
-        new_form.refresh()?;
+
+        // OPTIMIZATION: Single refresh at the end instead of after each selection
+        new_form.refresh().map_err(crate::Error::FormCreation)?;
 
         // Recursively collect from this new state
-        collect_all_states(
+        collect_all_states_cached(
             &mut new_form,
             new_selections,
             rendered_states,
             collected_states,
-            config,
+            base_nodes,
         )?;
     }
 
     Ok(())
 }
 
-/// Pass 2: Process a collected state using the global context.
-/// Runs analysis pipeline with global statistics and generates outputs.
-/// Returns (images_rendered, optional_structured_nodes).
-fn process_state_with_context(
-    state: &CollectedState,
-    global_ctx: &GlobalContext,
-    config: &ExhaustiveConfig,
-) -> Result<(usize, Option<Vec<crate::structured::StructuredNode>>), Box<dyn std::error::Error>> {
-    let mut images_rendered = 0;
-
-    // Create Document and run analysis pipeline with global context
-    let mut doc = crate::document::Document::from_flattened(&state.flattened);
-    crate::document::modules::run_analysis_pipeline_with_context(&mut doc, global_ctx);
-
-    let mut outputs = Vec::new();
-
-    // Render PNGs for each requested render mode
-    for mode in &config.render_modes {
-        let suffix = match mode {
-            RenderMode::Plain => "plain",
-            RenderMode::Labelled => "labelled",
-            RenderMode::Annotated => "annotated",
-        };
-        let output_path = std::path::PathBuf::from(format!(
-            "{}_{}.{}.png",
-            config.doc_name, state.state_suffix, suffix
-        ));
-
-        match mode {
-            RenderMode::Plain => {
-                state
-                    .flattened
-                    .render_to_image_buffer_plain(config.scale)?
-                    .save(&output_path)
-                    .map_err(|e| format!("Failed to save image: {}", e))?;
-            }
-            RenderMode::Labelled => {
-                doc.render_to_image(&output_path, config.scale)?;
-            }
-            RenderMode::Annotated => {
-                state
-                    .flattened
-                    .render_to_image(&output_path, config.scale)?;
-            }
-        }
-        outputs.push(output_path.display().to_string());
-        images_rendered += 1;
-    }
-
-    // Output structured JSON if requested - always write intermediate per-state files
-    let structured_nodes = if config.structured {
-        // Clone context for this state (modules may enrich it during processing)
-        let state_context = config.context.clone();
-        let envelope = crate::structured::convert_with_context(&doc, state_context);
-
-        // Write individual JSON files for each state with envelope (intermediate representations)
-        let json = serde_json::to_string_pretty(&envelope)
-            .map_err(|e| format!("Failed to serialize structured form: {}", e))?;
-
-        let json_path =
-            std::path::PathBuf::from(format!("{}_{}.json", config.doc_name, state.state_suffix));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
-        outputs.push(json_path.display().to_string());
-
-        // Return just the nodes for merging (context merging is handled separately)
-        Some(envelope.content)
-    } else {
-        None
-    };
-
-    if !config.quiet {
-        println!(
-            "    ✓ Generated: {} (selections: {:?})",
-            outputs.join(", "),
-            state
-                .selections
-                .iter()
-                .map(|sel| sel.field_path.as_str())
-                .collect::<Vec<_>>()
-        );
-    }
-
-    Ok((images_rendered, structured_nodes))
-}
+// ============================================================================
+// Shared helpers
+// ============================================================================
 
 /// Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections).
 /// Returns SelectableField entries where the SomPath uniquely identifies each field.

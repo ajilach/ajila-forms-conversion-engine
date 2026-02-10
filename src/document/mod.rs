@@ -560,6 +560,20 @@ impl<'a> Document<'a> {
         output_path: P,
         scale: f32,
     ) -> Result<(), String> {
+        let img = self.render_to_image_buffer(scale)?;
+        img.save(output_path.as_ref())
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+        Ok(())
+    }
+
+    /// Render the document with blue group-level analysis overlays to an
+    /// in-memory image buffer.
+    ///
+    /// This renders the underlying Flattened content first, then draws group
+    /// overlays on top with blue borders and type annotations.
+    ///
+    /// Only non-Leaf groups are drawn (composite groups like TextBlock, LabeledField, etc.)
+    pub fn render_to_image_buffer(&self, scale: f32) -> Result<RgbaImage, String> {
         // First render the base Flattened content
         let mut img = self.source.render_to_image_buffer(scale)?;
 
@@ -633,11 +647,7 @@ impl<'a> Document<'a> {
             }
         }
 
-        // Save the image
-        img.save(output_path.as_ref())
-            .map_err(|e| format!("Failed to save image: {}", e))?;
-
-        Ok(())
+        Ok(img)
     }
 
     /// Compute the bounding box for a group from its children.

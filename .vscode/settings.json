@@ -13,6 +13,9 @@
         "wc": true,
         "git stash": true,
         "git stash pop": true,
+        "cargo": true,
+        "true": true,
+        "false": true,
     },
     "liveServer.settings.port": 5501,
 }

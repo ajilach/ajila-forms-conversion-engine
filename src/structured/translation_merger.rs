@@ -21,25 +21,96 @@ use crate::structured::{
     RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
 };
 
+/// Threshold for minimum structural similarity (0.0 to 1.0).
+/// Documents must have at least this much structural overlap to be considered
+/// translations of the same form.
+const MIN_STRUCTURAL_SIMILARITY: f64 = 0.5;
+
+/// Error type for translation merging failures.
+#[derive(Debug, Clone)]
+pub enum MergeError {
+    /// Documents are too structurally different to be translations of the same form.
+    InsufficientStructuralSimilarity { similarity: f64, threshold: f64 },
+    /// Multiple documents have the same language code.
+    DuplicateLanguage { language: String },
+}
+
+impl std::fmt::Display for MergeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MergeError::InsufficientStructuralSimilarity {
+                similarity,
+                threshold,
+            } => {
+                write!(
+                    f,
+                    "Documents are too different to be translations (similarity: {:.1}%, required: {:.1}%)",
+                    similarity * 100.0,
+                    threshold * 100.0
+                )
+            }
+            MergeError::DuplicateLanguage { language } => {
+                write!(
+                    f,
+                    "Cannot merge documents with duplicate language code: '{}'",
+                    language
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for MergeError {}
+
 /// Merge multiple `DocumentEnvelope`s from different languages into one multilingual envelope.
 ///
 /// Each envelope is expected to come from the same document in a different language.
 /// The context from the first envelope is used as the base, with language set to
 /// a comma-separated list of all languages.
-pub fn merge_translations(envelopes: Vec<DocumentEnvelope>) -> DocumentEnvelope {
+///
+/// Returns an error if the documents are too structurally different to be translations.
+pub fn merge_translations(
+    envelopes: Vec<DocumentEnvelope>,
+) -> Result<DocumentEnvelope, MergeError> {
     if envelopes.is_empty() {
-        return DocumentEnvelope {
+        return Ok(DocumentEnvelope {
             context: Context::new("und".to_string()),
             content: Vec::new(),
-        };
+        });
     }
 
     if envelopes.len() == 1 {
-        return envelopes.into_iter().next().unwrap();
+        return Ok(envelopes.into_iter().next().unwrap());
     }
 
-    // Collect all languages
-    let languages: Vec<String> = envelopes.iter().map(|e| e.context.language.clone()).collect();
+    // Collect all languages and check for duplicates
+    let languages: Vec<String> = envelopes
+        .iter()
+        .map(|e| e.context.language.clone())
+        .collect();
+
+    let mut seen_languages = std::collections::HashSet::new();
+    for lang in &languages {
+        if !seen_languages.insert(lang.clone()) {
+            return Err(MergeError::DuplicateLanguage {
+                language: lang.clone(),
+            });
+        }
+    }
+
+    // Validate structural similarity between all pairs
+    for i in 0..envelopes.len() {
+        for j in (i + 1)..envelopes.len() {
+            let similarity =
+                calculate_structural_similarity(&envelopes[i].content, &envelopes[j].content);
+            if similarity < MIN_STRUCTURAL_SIMILARITY {
+                return Err(MergeError::InsufficientStructuralSimilarity {
+                    similarity,
+                    threshold: MIN_STRUCTURAL_SIMILARITY,
+                });
+            }
+        }
+    }
 
     // Start with the first envelope as the base
     let mut iter = envelopes.into_iter();
@@ -55,12 +126,31 @@ pub fn merge_translations(envelopes: Vec<DocumentEnvelope>) -> DocumentEnvelope 
     }
 
     // Create merged context
-    let mut context = Context::new(languages.join(","));
+    let context = Context::new(languages.join(","));
 
-    DocumentEnvelope {
+    Ok(DocumentEnvelope {
         context,
         content: merged_content,
+    })
+}
+
+/// Calculate structural similarity between two node lists.
+///
+/// Returns a value between 0.0 (completely different) and 1.0 (identical structure).
+/// Uses the LCS length as a percentage of the average list length.
+fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
     }
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+
+    let dp = lcs_table(a, b);
+    let lcs_length = dp[a.len()][b.len()] as f64;
+    let avg_length = (a.len() + b.len()) as f64 / 2.0;
+
+    lcs_length / avg_length
 }
 
 // ============================================================================
@@ -219,19 +309,13 @@ fn merge_node(
             })
         }
         (StructuredNode::Group(a), StructuredNode::Group(b)) => {
-            let children =
-                merge_node_lists(&a.children, base_lang, &b.children, other_lang);
+            let children = merge_node_lists(&a.children, base_lang, &b.children, other_lang);
             StructuredNode::Group(GroupNode { children })
         }
         (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
             StructuredNode::Conditional(ConditionalNode {
                 condition: a.condition.clone(),
-                content: Box::new(merge_node(
-                    &a.content,
-                    base_lang,
-                    &b.content,
-                    other_lang,
-                )),
+                content: Box::new(merge_node(&a.content, base_lang, &b.content, other_lang)),
             })
         }
         (StructuredNode::Empty, StructuredNode::Empty) => StructuredNode::Empty,
@@ -368,10 +452,12 @@ fn merge_inline_node(
             InlineNode::Emphasis(Box::new(merge_inline_node(a, base_lang, b, other_lang)))
         }
         // Link + Link → merge content
-        (InlineNode::Link(a), InlineNode::Link(b)) => InlineNode::Link(crate::structured::LinkNode {
-            href: a.href.clone(),
-            content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
-        }),
+        (InlineNode::Link(a), InlineNode::Link(b)) => {
+            InlineNode::Link(crate::structured::LinkNode {
+                href: a.href.clone(),
+                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+            })
+        }
         // Mismatched variants: shouldn't happen after variant check, but fallback
         _ => base.clone(),
     }
@@ -398,7 +484,8 @@ fn merge_field(
     };
 
     // Merge placeholder
-    let placeholder = merge_translatable_string(&base.placeholder, base_lang, &other.placeholder, other_lang);
+    let placeholder =
+        merge_translatable_string(&base.placeholder, base_lang, &other.placeholder, other_lang);
 
     // Merge input type (for Radio/Select option names)
     let input_type = merge_field_type(&base.input_type, base_lang, &other.input_type, other_lang);
@@ -479,7 +566,8 @@ fn merge_name_values(
     base.iter()
         .zip(other.iter())
         .map(|(a, b)| {
-            let merged_name = merge_translatable_string_values(&a.name, base_lang, &b.name, other_lang);
+            let merged_name =
+                merge_translatable_string_values(&a.name, base_lang, &b.name, other_lang);
             NameValue {
                 name: merged_name,
                 value: a.value.clone(),
@@ -580,7 +668,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![envelope]);
+        let result = merge_translations(vec![envelope]).unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.context.language, "de");
     }
@@ -612,7 +700,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]);
+        let result = merge_translations(vec![de, en]).unwrap();
         assert_eq!(result.content.len(), 2);
         assert_eq!(result.context.language, "de,en");
 
@@ -688,7 +776,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]);
+        let result = merge_translations(vec![de, en]).unwrap();
         // Should have 3 nodes: merged paragraph, DE-only paragraph, merged field
         assert_eq!(result.content.len(), 3);
 
@@ -721,7 +809,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en, fr]);
+        let result = merge_translations(vec![de, en, fr]).unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.context.language, "de,en,fr");
 
@@ -783,7 +871,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]);
+        let result = merge_translations(vec![de, en]).unwrap();
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Field(f) = &result.content[0] {
@@ -822,7 +910,284 @@ mod tests {
 
     #[test]
     fn test_merge_empty() {
-        let result = merge_translations(vec![]);
+        let result = merge_translations(vec![]).unwrap();
         assert!(result.content.is_empty());
+    }
+
+    #[test]
+    fn test_reject_completely_different_documents() {
+        // Create two completely different documents
+        let doc1 = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Formular A"),
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field1".to_string(),
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        let doc2 = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Completely different"),
+                }),
+                StructuredNode::Table(TableNode {
+                    header: None,
+                    rows: vec![],
+                    caption: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "different_field".to_string(),
+                    label: None,
+                    input_type: FieldType::Bool,
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+
+        // Should fail with InsufficientStructuralSimilarity
+        let result = merge_translations(vec![doc1, doc2]);
+        assert!(result.is_err());
+        if let Err(MergeError::InsufficientStructuralSimilarity {
+            similarity,
+            threshold,
+        }) = result
+        {
+            assert!(similarity < threshold);
+            assert_eq!(threshold, MIN_STRUCTURAL_SIMILARITY);
+        } else {
+            panic!("Expected InsufficientStructuralSimilarity error");
+        }
+    }
+
+    #[test]
+    fn test_reject_partially_different_documents() {
+        // Create documents with some overlap but not enough
+        let doc1 = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Title"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Text 1"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Text 2"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Text 3"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Text 4"),
+                }),
+            ],
+        );
+        let doc2 = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Title"),
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field1".to_string(),
+                    label: None,
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field2".to_string(),
+                    label: None,
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field3".to_string(),
+                    label: None,
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field4".to_string(),
+                    label: None,
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+
+        // Should fail - only 1 out of 5 nodes match (20%)
+        let result = merge_translations(vec![doc1, doc2]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_accept_similar_documents() {
+        // Create documents with good structural overlap
+        let doc1 = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Formular"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Beschreibung"),
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "name".to_string(),
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "email".to_string(),
+                    label: Some(InlineText::plain("E-Mail")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        let doc2 = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Form"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Description"),
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "name".to_string(),
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "email".to_string(),
+                    label: Some(InlineText::plain("Email")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+
+        // Should succeed - 100% match
+        let result = merge_translations(vec![doc1, doc2]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_reject_duplicate_languages() {
+        // Create two documents with the same language code
+        let doc1 = make_envelope(
+            "en",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("First document"),
+            })],
+        );
+        let doc2 = make_envelope(
+            "en",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Second document"),
+            })],
+        );
+
+        // Should fail with DuplicateLanguage error
+        let result = merge_translations(vec![doc1, doc2]);
+        assert!(result.is_err());
+        if let Err(MergeError::DuplicateLanguage { language }) = result {
+            assert_eq!(language, "en");
+        } else {
+            panic!("Expected DuplicateLanguage error");
+        }
+    }
+
+    #[test]
+    fn test_reject_duplicate_languages_among_three() {
+        // Create three documents where two have the same language
+        let doc1 = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("German"),
+            })],
+        );
+        let doc2 = make_envelope(
+            "en",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("English"),
+            })],
+        );
+        let doc3 = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Another German"),
+            })],
+        );
+
+        // Should fail with DuplicateLanguage error
+        let result = merge_translations(vec![doc1, doc2, doc3]);
+        assert!(result.is_err());
+        if let Err(MergeError::DuplicateLanguage { language }) = result {
+            assert_eq!(language, "de");
+        } else {
+            panic!("Expected DuplicateLanguage error");
+        }
     }
 }
