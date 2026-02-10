@@ -519,11 +519,6 @@ impl FontManager {
     /// font to an available one."
     ///
     /// Equates are checked first in font resolution (step 1 of XFA algorithm).
-    ///
-    /// # Example
-    /// ```
-    /// manager.register_equate(FontEquate::new("Frutiger", "Helvetica"));
-    /// ```
     pub fn register_equate(&mut self, equate: FontEquate) {
         self.equates.push(equate);
     }
@@ -538,15 +533,6 @@ impl FontManager {
     /// Unicode ranges in an unavailable font to an available font."
     ///
     /// This is used for per-codepoint font fallback (e.g., CJK characters).
-    ///
-    /// # Example
-    /// ```
-    /// manager.register_equate_range(FontEquateRange::new(
-    ///     "Arial",
-    ///     "Noto Sans CJK",
-    ///     vec![(0x4E00, 0x9FFF)], // CJK Unified Ideographs
-    /// ));
-    /// ```
     pub fn register_equate_range(&mut self, equate_range: FontEquateRange) {
         self.equate_ranges.push(equate_range);
     }
