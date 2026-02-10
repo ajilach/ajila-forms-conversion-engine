@@ -216,7 +216,7 @@ fn ProgressDisplay(
     rsx! {
         div { style: "margin-top: 30px; padding: 20px; background-color: #f5f5f5; border-radius: 8px;",
 
-            h2 { "Processing Progress" }
+            h2 { "Progress" }
 
             div { style: "margin-top: 20px;",
 

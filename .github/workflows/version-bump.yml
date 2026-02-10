@@ -32,10 +32,14 @@ jobs:
           COMMIT_SHA=$(git rev-parse HEAD)
           echo "Checking test status for commit: $COMMIT_SHA"
           
-          # Use GitHub CLI to check if rust.yml passed
-          gh run list --workflow=rust.yml --commit=$COMMIT_SHA --json conclusion --limit 1 | \
-            jq -e '.[0].conclusion == "success"' || \
-            (echo "ERROR: Tests have not passed for this commit. Run tests first." && exit 1)
+          # Use GitHub CLI to check if rust.yml passed (using workflow name "Test")
+          TEST_STATUS=$(gh run list --workflow="Test" --commit=$COMMIT_SHA --json conclusion --limit 1 | jq -r '.[0].conclusion // "none"')
+          echo "$TEST_STATUS"
+          
+          if [ "$TEST_STATUS" != "success" ]; then
+            echo "ERROR: Tests have not passed for this commit. Run tests first."
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
