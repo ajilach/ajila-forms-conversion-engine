@@ -30,6 +30,9 @@
 //! RadioButtonDetector         ─── detects radio buttons (square fields with labels)
 //!     │
 //!     ▼
+//! CheckboxDetector            ─── detects checkboxes (square fields with labels)
+//!     │
+//!     ▼
 //! RadioButtonGrouper          ─── groups radio buttons on same line
 //!     │
 //!     ▼
@@ -68,6 +71,7 @@
 //! ```
 
 mod date_field_detector;
+mod checkbox_detector;
 mod field_grouper;
 mod field_table_detector;
 mod grid_template;
@@ -82,6 +86,7 @@ mod radio_button_grouper;
 mod repeatable_detector;
 mod text_block;
 
+pub use checkbox_detector::CheckboxDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
@@ -160,6 +165,7 @@ pub fn run_analysis_pipeline_with_context(
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
     RadioButtonDetector::new().process_with_context(doc, ctx);
+    CheckboxDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
     FieldTableDetector::new().process_with_context(doc, ctx);
     HeadingDetector::new().process_with_context(doc, ctx);

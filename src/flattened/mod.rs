@@ -2323,6 +2323,66 @@ impl Flattened {
             .unwrap_or(FieldAccess::Open)
     }
 
+    /// Extract widget kind from a field's <ui> child element.
+    /// Per XFA spec, the <ui> element contains the widget type (textEdit, checkButton, etc.)
+    /// and the shape attribute distinguishes radio buttons (round) from checkboxes (square/default).
+    fn extract_widget_kind(node: &XfaNode) -> Option<WidgetKind> {
+        for child in &node.children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "ui" {
+                    // Look for widget type element inside <ui>
+                    for ui_child in &child.children {
+                        if let XfaNodeKind::Element {
+                            tag_name: ui_tag, ..
+                        } = &ui_child.kind
+                        {
+                            match ui_tag.as_str() {
+                                "textEdit" => {
+                                    // Check if multiLine attribute is set
+                                    let multiline = ui_child
+                                        .attributes
+                                        .get("multiLine")
+                                        .map(|s| s == "1")
+                                        .unwrap_or(false);
+                                    return Some(if multiline {
+                                        WidgetKind::TextArea
+                                    } else {
+                                        WidgetKind::Text
+                                    });
+                                }
+                                "checkButton" => {
+                                    // Check shape attribute: "round" = radio, default/square = checkbox
+                                    let shape = ui_child.attributes.get("shape");
+                                    return Some(if shape.map(|s| s.as_str()) == Some("round") {
+                                        WidgetKind::Radio
+                                    } else {
+                                        WidgetKind::Checkbox
+                                    });
+                                }
+                                "choiceList" => return Some(WidgetKind::Dropdown),
+                                "dateTimeEdit" => {
+                                    // Check picker attribute to determine date/time/datetime
+                                    let picker = ui_child.attributes.get("picker");
+                                    return Some(match picker.map(|s| s.as_str()) {
+                                        Some("date") => WidgetKind::Date,
+                                        Some("time") => WidgetKind::Time,
+                                        Some("dateTime") => WidgetKind::DateTime,
+                                        _ => WidgetKind::Date, // default to date
+                                    });
+                                }
+                                "numericEdit" => return Some(WidgetKind::Numeric),
+                                "passwordEdit" => return Some(WidgetKind::Password),
+                                _ => {}
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        None
+    }
+
     /// Check if a node has the relevant="-print" attribute.
     /// Per XFA spec, relevant="-print" means the element should not appear in print output.
     /// It's used for screen-only interactive elements like add/remove buttons.
@@ -2768,6 +2828,7 @@ impl Flattened {
                             &child_ctx.parent_exclgroup_value,
                         );
                         let access = Self::extract_field_access(node);
+                        let widget_kind = Self::extract_widget_kind(node);
 
                         let mut field_node = FlattenedNode::new_field_with_checked(
                             field_name.clone(),
@@ -2795,6 +2856,10 @@ impl Flattened {
                             max_length: None,
                             comb_cells: None,
                         });
+                        // Add WidgetType hint if extracted
+                        if let Some(kind) = widget_kind {
+                            field_node.add_hint(Hint::WidgetType(kind));
+                        }
                         // Add NoPrint hint if relevant="-print" or inherited from parent
                         if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
                             field_node.add_hint(Hint::NoPrint);
@@ -3019,6 +3084,7 @@ impl Flattened {
                                     &child_ctx.parent_exclgroup_value,
                                 );
                                 let access = Self::extract_field_access(node);
+                                let widget_kind = Self::extract_widget_kind(node);
 
                                 let mut field_node = FlattenedNode::new_field_with_checked(
                                     field_name.clone(),
@@ -3046,6 +3112,10 @@ impl Flattened {
                                     max_length: None,
                                     comb_cells: None,
                                 });
+                                // Add WidgetType hint if we could determine it
+                                if let Some(widget_kind) = widget_kind {
+                                    field_node.add_hint(Hint::WidgetType(widget_kind));
+                                }
                                 // Add NoPrint hint if relevant="-print" or inherited from parent
                                 if Self::is_no_print(node)
                                     || child_ctx.has_inherited_hint(&Hint::NoPrint)

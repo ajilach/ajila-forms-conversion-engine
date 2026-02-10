@@ -177,6 +177,15 @@ impl<'a, 'b> Converter<'a, 'b> {
                 self.convert_field_group(field_group, Some(label_text))
             }
 
+            // Checkbox → FieldNode (boolean field with label)
+            GroupKind::Checkbox { field, label } => {
+                let label_group = group.children.get(*label).copied()?;
+                let field_group = group.children.get(*field).copied()?;
+
+                let label_text = self.extract_inline_text(label_group);
+                self.convert_field_group(field_group, Some(label_text))
+            }
+
             // RadioButtonGroup → FieldNode with Radio type
             GroupKind::RadioButtonGroup => self.convert_radio_button_group(group_idx),
 

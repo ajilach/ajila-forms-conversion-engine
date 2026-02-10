@@ -108,6 +108,14 @@ pub enum GroupKind {
         label: usize,
     },
 
+    /// A checkbox (square field) with its label on the right
+    Checkbox {
+        /// Index into children vec for the field group
+        field: usize,
+        /// Index into children vec for the label group
+        label: usize,
+    },
+
     /// A group of radio buttons on the same line (children are RadioButton groups)
     RadioButtonGroup,
 
@@ -701,6 +709,7 @@ impl<'a> Document<'a> {
             GroupKind::TextBlock => "TextBlock".to_string(),
             GroupKind::LabeledField { .. } => "LabeledField".to_string(),
             GroupKind::RadioButton { .. } => "RadioButton".to_string(),
+            GroupKind::Checkbox { .. } => "Checkbox".to_string(),
             GroupKind::RadioButtonGroup => "RadioButtonGroup".to_string(),
             GroupKind::DateField { num_fields } => format!("DateField[{}]", num_fields),
             GroupKind::ExclGroup { selected_value } => {

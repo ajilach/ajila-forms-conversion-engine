@@ -130,6 +130,9 @@ fn print_analysis_summary(doc: &Document, quiet: bool) {
     let radio_buttons = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButton { .. }));
     println!("✓ Radio buttons detected: {}", radio_buttons.len());
 
+    let checkboxes = doc.find_groups(|k| matches!(k, document::GroupKind::Checkbox { .. }));
+    println!("✓ Checkboxes detected: {}", checkboxes.len());
+
     let radio_button_groups =
         doc.find_groups(|k| matches!(k, document::GroupKind::RadioButtonGroup));
     println!(
@@ -285,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // =====================================================================
         // PIPELINE STAGE 3: Run exhaustive exploration (no I/O inside lib)
         // =====================================================================
-        let need_structured = args.structured || args.documents.len() > 1;
+        let need_structured = args.structured || args.html || args.documents.len() > 1;
         let generate_html = if args.documents.len() > 1 {
             false
         } else {
@@ -297,8 +300,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !args.render_modes.is_empty() {
                 println!("  Render modes: {:?}", args.render_modes);
             }
-            if need_structured {
+            if args.structured {
                 println!("  Structured JSON: enabled");
+            }
+            if args.html {
+                println!("  HTML output: enabled");
             }
         }
 

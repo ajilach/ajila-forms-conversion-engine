@@ -8,6 +8,7 @@
 - In case you introduced a bug, try to identify the issue by comparing with the previous working state. Based on that analysis, fix the issue on the new code.
 - Instead of assuming something when the task is unclear, ask the user.
 - When making an architectural decision, always ask the user first with all possible options.
+- When asked to find the issue of a failing test, do not simplify the test itself without the users consent.
 
 ## Project-specific
 

@@ -261,23 +261,48 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
     // Generate a unique ID for this field instance
     let field_id = ctx.next_id(&f.name);
 
-    // Generate label if present
-    if let Some(label) = &f.label {
-        let label_text = generate_inline_text(label);
-        if !label_text.is_empty() {
-            html.push_str(&format!(
-                "{}  <label for=\"{}\">{}</label>\n",
-                ind,
-                escape_attr(&field_id),
-                label_text
-            ));
+    // For checkboxes, wrap input and label together (like radio buttons)
+    if matches!(f.input_type, FieldType::Bool) {
+        if let Some(label) = &f.label {
+            let label_text = generate_inline_text(label);
+            if !label_text.is_empty() {
+                html.push_str(&format!("{}  <label class=\"checkbox-option\">\n", ind));
+                html.push_str(&format!("{}    ", ind));
+                html.push_str(&generate_field_input(f, ctx, &field_id));
+                html.push_str(&format!("\n{}    <span>{}</span>\n", ind, label_text));
+                html.push_str(&format!("{}  </label>\n", ind));
+            } else {
+                // No label text, just render the input
+                html.push_str(&format!("{}  ", ind));
+                html.push_str(&generate_field_input(f, ctx, &field_id));
+                html.push('\n');
+            }
+        } else {
+            // No label at all, just render the input
+            html.push_str(&format!("{}  ", ind));
+            html.push_str(&generate_field_input(f, ctx, &field_id));
+            html.push('\n');
         }
-    }
+    } else {
+        // For non-checkbox fields, use the original approach
+        // Generate label if present
+        if let Some(label) = &f.label {
+            let label_text = generate_inline_text(label);
+            if !label_text.is_empty() {
+                html.push_str(&format!(
+                    "{}  <label for=\"{}\">{}</label>\n",
+                    ind,
+                    escape_attr(&field_id),
+                    label_text
+                ));
+            }
+        }
 
-    // Generate the input element
-    html.push_str(&format!("{}  ", ind));
-    html.push_str(&generate_field_input(f, ctx, &field_id));
-    html.push('\n');
+        // Generate the input element
+        html.push_str(&format!("{}  ", ind));
+        html.push_str(&generate_field_input(f, ctx, &field_id));
+        html.push('\n');
+    }
 
     html.push_str(&format!("{}</div>\n", ind));
     html
@@ -835,13 +860,15 @@ fn generate_styles() -> String {
       gap: 0.5rem;
     }
 
-    .radio-option {
+    .radio-option,
+    .checkbox-option {
       display: flex;
       align-items: center;
       cursor: pointer;
     }
 
-    .radio-option span {
+    .radio-option span,
+    .checkbox-option span {
       user-select: none;
     }
 

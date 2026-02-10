@@ -6137,6 +6137,91 @@
     }
 
     #[test]
+    fn test_aaaa_019_checkbox_detection() {
+        // Test that AAAA_019_DE.pdf has checkboxes properly detected.
+        // Expected checkboxes:
+        // - "wirtschaftlich Berechtigter" (CB_Beneficial_Owner)
+        // - "Bevollmächtigter" (CB_Attorney)
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::document::{Document, GroupKind};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Create Document and run full analysis pipeline
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Find all checkbox groups
+        let checkboxes = doc.find_groups(|k| matches!(k, GroupKind::Checkbox { .. }));
+
+        // Collect checkbox information (field name and label text)
+        let mut checkbox_info: Vec<(String, String)> = Vec::new();
+        for &idx in &checkboxes {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Checkbox { field, label } = group.kind {
+                    // Get label text
+                    let label_group = group.children.get(label).copied();
+                    let label_text = if let Some(label_idx) = label_group {
+                        doc.get_text_content(label_idx)
+                    } else {
+                        String::new()
+                    };
+
+                    // Get field name
+                    let field_group = group.children.get(field).copied();
+                    let field_name = if let Some(field_idx) = field_group {
+                        let nodes = doc.collect_nodes(field_idx);
+                        nodes.first().and_then(|n| {
+                            if let crate::flattened::FlattenedNodeKind::Field { name, .. } = &n.kind {
+                                Some(name.clone())
+                            } else {
+                                None
+                            }
+                        }).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    checkbox_info.push((field_name, label_text));
+                }
+            }
+        }
+
+        // Verify we have at least 2 checkboxes
+        assert!(
+            checkboxes.len() >= 2,
+            "Expected at least 2 checkboxes, found {}",
+            checkboxes.len()
+        );
+
+        // Verify "wirtschaftlich Berechtigter" checkbox exists
+        let has_beneficial_owner = checkbox_info.iter().any(|(field, label)| {
+            label.contains("wirtschaftlich") && label.contains("Berechtigter")
+                || field.contains("Beneficial_Owner")
+        });
+        assert!(
+            has_beneficial_owner,
+            "Expected to find checkbox with label 'wirtschaftlich Berechtigter'"
+        );
+
+        // Verify "Bevollmächtigter" checkbox exists
+        let has_attorney = checkbox_info.iter().any(|(field, label)| {
+            label.contains("Bevollmächtigter") || label.contains("Bevollm")
+                || field.contains("Attorney")
+        });
+        assert!(
+            has_attorney,
+            "Expected to find checkbox with label 'Bevollmächtigter'"
+        );
+    }
+
+    #[test]
     fn test_aaai_multi_paragraph_split_at_flattening() {
         // Test that the AAAI document's long multi-paragraph German legal text
         // is split into separate FlattenedNode objects — one per paragraph — during flattening.

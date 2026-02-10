@@ -1,25 +1,27 @@
-//! Radio button detector module.
+//! Checkbox detector module.
 //!
-//! Detects radio buttons based on their characteristics:
+//! Detects checkboxes based on their characteristics:
 //! - Square fields (width == height)
 //! - Labeled on the right side
-//! - Typically small (checkbox/radio button size)
+//! - Typically small (checkbox size)
+//! - Has WidgetType hint indicating Checkbox
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint, WidgetKind};
+use crate::flattened::{Bounds, FlattenedNodeKind, Hint, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
-/// Detects radio buttons by identifying square fields with labels on the right.
+/// Detects checkboxes by identifying square fields with labels on the right.
 ///
-/// Radio buttons are characterized by:
+/// Checkboxes are characterized by:
 /// 1. Being Field groups (not text)
 /// 2. Having equal width and height (square)
 /// 3. Having a text label positioned to the right
-/// 4. Being relatively small (typical checkbox/radio size)
-pub struct RadioButtonDetector {
-    /// Maximum size for a radio button (width/height in points)
+/// 4. Being relatively small (typical checkbox size)
+/// 5. Having a WidgetType(Checkbox) hint (from XFA ui/checkButton with square shape)
+pub struct CheckboxDetector {
+    /// Maximum size for a checkbox (width/height in points)
     pub max_size: Decimal,
     /// Tolerance for width/height equality (as ratio)
     pub square_tolerance: Decimal,
@@ -29,15 +31,15 @@ pub struct RadioButtonDetector {
     pub line_tolerance: Decimal,
 }
 
-impl Default for RadioButtonDetector {
+impl Default for CheckboxDetector {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RadioButtonDetector {
+impl CheckboxDetector {
     pub fn new() -> Self {
-        RadioButtonDetector {
+        CheckboxDetector {
             max_size: Decimal::from_str("25.0").unwrap(), // 25 points max
             square_tolerance: Decimal::from_str("0.1").unwrap(), // 10% tolerance
             max_label_distance: Decimal::from_str("150.0").unwrap(),
@@ -45,7 +47,7 @@ impl RadioButtonDetector {
         }
     }
 
-    /// Configure the maximum size for radio buttons.
+    /// Configure the maximum size for checkboxes.
     pub fn with_max_size(mut self, size: Decimal) -> Self {
         self.max_size = size;
         self
@@ -74,39 +76,9 @@ impl RadioButtonDetector {
         diff <= self.square_tolerance
     }
 
-    /// Check if a field is small enough to be a radio button.
-    fn is_radio_size(&self, width: Decimal, height: Decimal) -> bool {
+    /// Check if a field is small enough to be a checkbox.
+    fn is_checkbox_size(&self, width: Decimal, height: Decimal) -> bool {
         width <= self.max_size && height <= self.max_size
-    }
-
-    /// Check if a field has a Radio widget type hint (and NOT Checkbox).
-    /// If no widget hint is present, assume it could be a radio button (legacy behavior).
-    /// But explicitly reject fields with Checkbox widget hint.
-    fn is_radio_field(&self, doc: &Document, field_idx: usize) -> bool {
-        let node_indices = doc.collect_node_indices(field_idx);
-        
-        for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx) {
-                // Check for explicit widget type
-                for hint in &node.hints {
-                    match hint {
-                        Hint::WidgetType(WidgetKind::Checkbox) => {
-                            // Explicitly a checkbox - not a radio button
-                            return false;
-                        }
-                        Hint::WidgetType(WidgetKind::Radio) => {
-                            // Explicitly a radio button
-                            return true;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        
-        // No explicit widget type found - could be radio (legacy behavior)
-        // But we'll be conservative and return true to maintain backward compatibility
-        true
     }
 
     /// Check if text is to the right of the field and on the same line.
@@ -151,11 +123,31 @@ impl RadioButtonDetector {
 
         best.map(|(idx, _)| idx)
     }
+
+    /// Check if a field has a Checkbox widget type hint.
+    fn is_checkbox_field(&self, doc: &Document, field_idx: usize) -> bool {
+        // Get the leaf node indices from this group
+        let node_indices = doc.collect_node_indices(field_idx);
+
+        // Check if any node has a Checkbox widget type hint
+        for &node_idx in &node_indices {
+            if let Some(node) = doc.get_node(node_idx) {
+                if node
+                    .hints
+                    .iter()
+                    .any(|hint| matches!(hint, Hint::WidgetType(WidgetKind::Checkbox)))
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
-impl AnalysisModule for RadioButtonDetector {
+impl AnalysisModule for CheckboxDetector {
     fn name(&self) -> &'static str {
-        "RadioButtonDetector"
+        "CheckboxDetector"
     }
 
     fn process(&self, doc: &mut Document) {
@@ -179,25 +171,25 @@ impl AnalysisModule for RadioButtonDetector {
             return;
         }
 
-        // Identify radio buttons and create RadioButton groups
-        let mut radio_buttons: Vec<(usize, usize)> = Vec::new(); // (field_idx, label_idx)
+        // Identify checkboxes and create Checkbox groups
+        let mut checkboxes: Vec<(usize, usize)> = Vec::new(); // (field_idx, label_idx)
         let mut used_labels: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
         for field_idx in field_groups {
-            // Check if this field looks like a radio button
+            // Check if this field looks like a checkbox
             let Some(bounds) = doc.get_bounds(field_idx) else {
                 continue;
             };
 
             // Must be square and small
             if !self.is_square(bounds.width, bounds.height)
-                || !self.is_radio_size(bounds.width, bounds.height)
+                || !self.is_checkbox_size(bounds.width, bounds.height)
             {
                 continue;
             }
 
-            // Must be a radio button (not a checkbox) based on widget type hint
-            if !self.is_radio_field(doc, field_idx) {
+            // Must have Checkbox widget type hint
+            if !self.is_checkbox_field(doc, field_idx) {
                 continue;
             }
 
@@ -209,16 +201,16 @@ impl AnalysisModule for RadioButtonDetector {
                 .collect();
 
             if let Some(label_idx) = self.find_label_on_right(doc, field_idx, &available_labels) {
-                radio_buttons.push((field_idx, label_idx));
+                checkboxes.push((field_idx, label_idx));
                 used_labels.insert(label_idx);
             }
         }
 
-        // Create RadioButton groups
-        for (field_idx, label_idx) in radio_buttons {
+        // Create Checkbox groups
+        for (field_idx, label_idx) in checkboxes {
             doc.merge(
                 vec![field_idx, label_idx],
-                GroupKind::RadioButton { field: 0, label: 1 },
+                GroupKind::Checkbox { field: 0, label: 1 },
                 GroupSource::Inferred {
                     module: self.name().to_string(),
                 },
@@ -231,12 +223,12 @@ impl AnalysisModule for RadioButtonDetector {
 mod tests {
     use super::*;
     use crate::document::{Document, GroupKind};
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
+    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Hint, Page, WidgetKind};
     use crate::xfa::num;
 
     #[test]
     fn test_is_square() {
-        let detector = RadioButtonDetector::new();
+        let detector = CheckboxDetector::new();
 
         // Perfect square
         assert!(detector.is_square(num(10.0), num(10.0)));
@@ -251,33 +243,36 @@ mod tests {
     }
 
     #[test]
-    fn test_radio_button_detection() {
+    fn test_checkbox_detection() {
         // Create a flattened document with a square field and label on right
+        let mut checkbox_node = FlattenedNode::new_field(
+            "checkbox1".to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(100.0),
+            num(100.0),
+            num(10.0),
+            num(10.0),
+        );
+        checkbox_node.add_hint(Hint::WidgetType(WidgetKind::Checkbox));
+
         let flattened = Flattened::from_nodes(
             Page {
                 width: num(595.0),
                 height: num(842.0),
             },
             vec![
-                // Small square field at (50, 100)
-                FlattenedNode::new_field(
-                    "radio1".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    num(50.0),
-                    num(100.0),
-                    num(12.0),
-                    num(12.0),
-                ),
+                // Small square field at (100, 100) with Checkbox widget hint
+                checkbox_node,
                 // Text label to the right
                 FlattenedNode::new_text(
-                    "Option A".to_string(),
-                    num(10.0),
-                    "Helvetica".to_string(),
-                    num(65.0),
-                    num(100.0),
-                    num(50.0),
+                    "Accept terms".to_string(),
                     num(12.0),
+                    "Arial".to_string(),
+                    num(115.0),
+                    num(100.0),
+                    num(80.0),
+                    num(10.0),
                 ),
             ],
         );
@@ -289,55 +284,20 @@ mod tests {
         FieldGrouper::new().process(&mut doc);
         TextBlockGrouper::new().process(&mut doc);
 
-        // Now detect radio buttons
-        RadioButtonDetector::new().process(&mut doc);
+        // Now detect checkboxes
+        CheckboxDetector::new().process(&mut doc);
 
-        // Should have created a RadioButton group
-        let radio_buttons = doc.find_groups(|k| matches!(k, GroupKind::RadioButton { .. }));
-        assert_eq!(radio_buttons.len(), 1);
-    }
+        // Should have created a Checkbox group
+        let checkboxes = doc.find_groups(|k| matches!(k, GroupKind::Checkbox { .. }));
+        assert_eq!(checkboxes.len(), 1, "Should detect one checkbox");
 
-    #[test]
-    fn test_non_square_field_not_detected() {
-        // Create a non-square field
-        let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
-            vec![
-                // Rectangular field
-                FlattenedNode::new_field(
-                    "text_field".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    num(50.0),
-                    num(100.0),
-                    num(100.0),
-                    num(12.0),
-                ),
-                // Text label to the right
-                FlattenedNode::new_text(
-                    "Name:".to_string(),
-                    num(10.0),
-                    "Helvetica".to_string(),
-                    num(155.0),
-                    num(100.0),
-                    num(30.0),
-                    num(12.0),
-                ),
-            ],
-        );
-
-        let mut doc = Document::from_flattened(&flattened);
-
-        use crate::document::modules::{FieldGrouper, TextBlockGrouper};
-        FieldGrouper::new().process(&mut doc);
-        TextBlockGrouper::new().process(&mut doc);
-        RadioButtonDetector::new().process(&mut doc);
-
-        // Should NOT have created a RadioButton group (field is not square)
-        let radio_buttons = doc.find_groups(|k| matches!(k, GroupKind::RadioButton { .. }));
-        assert_eq!(radio_buttons.len(), 0);
+        // Verify structure
+        let checkbox_group = doc.get_group(checkboxes[0]).unwrap();
+        if let GroupKind::Checkbox { field, label } = checkbox_group.kind {
+            assert_eq!(field, 0);
+            assert_eq!(label, 1);
+        } else {
+            panic!("Expected Checkbox kind");
+        }
     }
 }
