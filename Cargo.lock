@@ -491,6 +491,7 @@ dependencies = [
 [[package]]
 name = "blueprint"
 version = "0.1.0"
+source = "git+ssh://git@github.com/ajilach/blueprint.git#7d7577b2c862f3dbd5ab9c50d675da2417f14ed7"
 dependencies = [
  "ab_glyph",
  "base64",
