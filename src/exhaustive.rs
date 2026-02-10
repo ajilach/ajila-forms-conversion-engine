@@ -13,6 +13,8 @@
 //! This ensures consistent heading detection and other statistics-based
 //! analysis across all form states.
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use crate::flattened::Flattened;
 use crate::structured::Selection;
@@ -58,6 +60,7 @@ fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
 // ============================================================================
 
 /// Collected state data from the first pass (public for use by lib.rs facade).
+#[derive(Clone)]
 pub struct CollectedState {
     /// The flattened data for this state
     pub flattened: Flattened,
@@ -84,21 +87,27 @@ pub fn collect_states(
     form: &mut XfaForm,
     xfa_bytes: &[u8],
 ) -> Result<Vec<CollectedState>, crate::Error> {
-    let mut rendered_states: HashSet<Vec<SomPath>> = HashSet::new();
-    let mut collected_states: Vec<CollectedState> = Vec::new();
+    // Use Arc<Mutex<>> for thread-safe access to shared state
+    let rendered_states = Arc::new(Mutex::new(HashSet::<Vec<SomPath>>::new()));
+    let collected_states = Arc::new(Mutex::new(Vec::<CollectedState>::new()));
 
     // OPTIMIZATION: Parse XFA once and cache for cloning (much faster than re-parsing)
-    let base_nodes = XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?;
+    let base_nodes = Arc::new(XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?);
 
     collect_all_states_cached(
         form,
         Vec::new(),
-        &mut rendered_states,
-        &mut collected_states,
-        &base_nodes,
+        rendered_states.clone(),
+        collected_states.clone(),
+        base_nodes.clone(),
     )?;
 
-    Ok(collected_states)
+    // Extract the final collected states
+    let states = Arc::try_unwrap(collected_states)
+        .map(|mutex| mutex.into_inner().unwrap())
+        .unwrap_or_else(|arc| arc.lock().unwrap().clone());
+
+    Ok(states)
 }
 
 /// Pass 1 implementation: recursively collect all form states using cached
@@ -106,9 +115,9 @@ pub fn collect_states(
 fn collect_all_states_cached(
     form: &mut XfaForm,
     current_selections: Vec<Selection>,
-    rendered_states: &mut HashSet<Vec<SomPath>>,
-    collected_states: &mut Vec<CollectedState>,
-    base_nodes: &[XfaNode],
+    rendered_states: Arc<Mutex<HashSet<Vec<SomPath>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    base_nodes: Arc<Vec<XfaNode>>,
 ) -> Result<(), crate::Error> {
     // Get the canonical state representation (using field paths for deduplication)
     let field_paths: Vec<SomPath> = current_selections
@@ -117,13 +126,15 @@ fn collect_all_states_cached(
         .collect();
     let state = get_current_state(&field_paths);
 
-    // Skip if we've already collected this state
-    if rendered_states.contains(&state) {
-        return Ok(());
+    // Skip if we've already collected this state (thread-safe check)
+    {
+        let mut states = rendered_states.lock().unwrap();
+        if states.contains(&state) {
+            return Ok(());
+        }
+        // Mark this state as collected
+        states.insert(state.clone());
     }
-
-    // Mark this state as collected
-    rendered_states.insert(state.clone());
 
     // Generate a human-readable label based on selections
     let label = if current_selections.is_empty() {
@@ -139,8 +150,8 @@ fn collect_all_states_cached(
     // Get flattened data for this state (but don't analyze yet)
     let flattened = form.flattened().clone();
 
-    // Store the collected state
-    collected_states.push(CollectedState {
+    // Store the collected state (thread-safe)
+    collected_states.lock().unwrap().push(CollectedState {
         flattened,
         selections: current_selections.clone(),
         label,
@@ -149,8 +160,10 @@ fn collect_all_states_cached(
     // Get visible selectable fields in this state
     let visible_fields = get_visible_selectable_fields(form);
 
-    // Recursively explore other states
-    for field in &visible_fields {
+    // Spawn threads for parallel exploration
+    let mut handles = Vec::new();
+
+    for field in visible_fields {
         // Skip if already selected
         if current_selections
             .iter()
@@ -173,46 +186,63 @@ fn collect_all_states_cached(
             }
         }
 
-        // OPTIMIZATION: Clone nodes instead of re-parsing XML (10-100x faster)
-        let nodes_reset = base_nodes.to_vec();
-        let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+        // Clone the data needed for the thread
+        let base_nodes = base_nodes.clone();
+        let rendered_states = rendered_states.clone();
+        let collected_states = collected_states.clone();
+        let current_selections = current_selections.clone();
 
-        // OPTIMIZATION: Apply all selections in batch, then refresh once
-        let mut new_selections = current_selections.clone();
+        // Spawn a thread to explore this branch
+        // Each thread owns its own XfaForm, so no Send/Sync issues with boa
+        let handle = thread::spawn(move || -> Result<(), crate::Error> {
+            // OPTIMIZATION: Clone nodes instead of re-parsing XML (10-100x faster)
+            let nodes_reset = base_nodes.as_ref().clone();
+            let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
 
-        // Apply all current selections without refreshing
-        for sel in &current_selections {
-            let _ = new_form.select_radio_button(sel.field_path.as_str());
-        }
+            // OPTIMIZATION: Apply all selections in batch, then refresh once
+            let mut new_selections = current_selections.clone();
 
-        // Select the new field
-        if field.is_radio() {
-            let _ = new_form.select_radio_button(field.path.as_str());
-        } else {
-            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
-                node.set_raw_value("1");
+            // Apply all current selections without refreshing
+            for sel in &current_selections {
+                let _ = new_form.select_radio_button(sel.field_path.as_str());
             }
-        }
 
-        // Create the selection with group path info
-        let group_path = if field.is_radio() {
-            new_form.find_excl_group_for_field(field.path.as_str())
-        } else {
-            None
-        };
-        new_selections.push(Selection::new(field.path.clone(), group_path));
+            // Select the new field
+            if field.is_radio() {
+                let _ = new_form.select_radio_button(field.path.as_str());
+            } else {
+                if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
+                    node.set_raw_value("1");
+                }
+            }
 
-        // OPTIMIZATION: Single refresh at the end instead of after each selection
-        new_form.refresh().map_err(crate::Error::FormCreation)?;
+            // Create the selection with group path info
+            let group_path = if field.is_radio() {
+                new_form.find_excl_group_for_field(field.path.as_str())
+            } else {
+                None
+            };
+            new_selections.push(Selection::new(field.path.clone(), group_path));
 
-        // Recursively collect from this new state
-        collect_all_states_cached(
-            &mut new_form,
-            new_selections,
-            rendered_states,
-            collected_states,
-            base_nodes,
-        )?;
+            // OPTIMIZATION: Single refresh at the end instead of after each selection
+            new_form.refresh().map_err(crate::Error::FormCreation)?;
+
+            // Recursively collect from this new state (in this thread)
+            collect_all_states_cached(
+                &mut new_form,
+                new_selections,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap()?;
     }
 
     Ok(())
