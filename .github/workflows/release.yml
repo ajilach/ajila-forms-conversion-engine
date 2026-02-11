@@ -131,9 +131,9 @@ jobs:
         run: |
           mkdir -p release-artifacts
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/dx/blueprint-ui/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            cp target/dx/blueprint-app/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
           else
-            cp target/dx/blueprint-ui/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            cp target/dx/blueprint-app/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
             chmod +x release-artifacts/${{ matrix.asset_name }}
           fi
         shell: bash
