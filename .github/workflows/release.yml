@@ -154,7 +154,7 @@ jobs:
             cd ..
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             # Linux builds create a standalone binary
-            cp target/dx/blueprint-app/release/linux/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            cp target/dx/blueprint-app/release/linux/app release-artifacts/${{ matrix.asset_name }}
             chmod +x release-artifacts/${{ matrix.asset_name }}
           elif [ "${{ matrix.os }}" == "windows-latest" ]; then
             # Windows builds create an executable
