@@ -62,19 +62,19 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: blueprint
+            artifact_name: blueprint-app
             asset_name: blueprint-macos-aarch64
           - os: macos-13
             target: x86_64-apple-darwin
-            artifact_name: blueprint
+            artifact_name: blueprint-app
             asset_name: blueprint-macos-x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: blueprint
+            artifact_name: blueprint-app
             asset_name: blueprint-linux-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: blueprint.exe
+            artifact_name: blueprint-app.exe
             asset_name: blueprint-windows-x86_64.exe
 
     steps:
@@ -131,9 +131,9 @@ jobs:
         run: |
           mkdir -p release-artifacts
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/dx/blueprint-app/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            cp target/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
           else
-            cp target/dx/blueprint-app/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            cp target/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
             chmod +x release-artifacts/${{ matrix.asset_name }}
           fi
         shell: bash
