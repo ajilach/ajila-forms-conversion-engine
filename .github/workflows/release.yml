@@ -143,16 +143,27 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p release-artifacts
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
-          else
-            cp target/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+          if [[ "${{ matrix.os }}" == macos* ]]; then
+            # macOS builds create a .app bundle
+            cp -r target/dx/blueprint-app/release/macos/BlueprintApp.app release-artifacts/
+            cd release-artifacts
+            # Create a zip of the .app bundle
+            zip -r ${{ matrix.asset_name }}.zip BlueprintApp.app
+            # Also create a tar.gz
+            tar -czf ${{ matrix.asset_name }}.tar.gz BlueprintApp.app
+            cd ..
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            # Linux builds create a standalone binary
+            cp target/dx/blueprint-app/release/linux/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
             chmod +x release-artifacts/${{ matrix.asset_name }}
+          elif [ "${{ matrix.os }}" == "windows-latest" ]; then
+            # Windows builds create an executable
+            cp target/dx/blueprint-app/release/windows/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
           fi
         shell: bash
 
-      - name: Create tar.gz (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Create tar.gz (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           cd release-artifacts
           tar -czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.asset_name }}
