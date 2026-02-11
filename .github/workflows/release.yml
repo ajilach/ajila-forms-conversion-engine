@@ -166,16 +166,13 @@ jobs:
             tar -czf ${{ matrix.asset_name }}.tar.gz app
             cd ..
           elif [ "${{ matrix.os }}" == "windows-latest" ]; then
-            # Windows builds create an executable
-            cp target/dx/blueprint-app/release/windows/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+            # Windows builds create an app directory
+            cp -r target/dx/blueprint-app/release/windows/app release-artifacts/
+            cd release-artifacts
+            7z a ${{ matrix.asset_name }}.zip app
+            cd ..
           fi
         shell: bash
-
-      - name: Create zip (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          cd release-artifacts
-          7z a ${{ matrix.asset_name }}.zip ${{ matrix.asset_name }}
 
       - name: Upload Release Asset (Unix)
         if: matrix.os != 'windows-latest'
