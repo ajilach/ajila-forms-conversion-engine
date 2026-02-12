@@ -1388,11 +1388,7 @@ impl XfaNode {
                         } = &item_child.kind
                         {
                             if t2 == "text" || t2 == "integer" || t2 == "float" {
-                                values.push(
-                                    text_content
-                                        .clone()
-                                        .unwrap_or_default(),
-                                );
+                                values.push(text_content.clone().unwrap_or_default());
                             }
                         }
                         if let XfaNodeKind::Text { content } = &item_child.kind {
