@@ -11,6 +11,7 @@
     fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> {
         let script_result = ScriptExecutor::execute(nodes);
         ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
+        Flattened::merge_form_items_into_template(nodes);
         Flattened::from_xfa(nodes, &script_result.computed_values)
     }
 
@@ -6490,4 +6491,49 @@
         );
 
         println!("\n✓ AAAI multilingual merge produces correct bilingual (de+en) tree");
+    }
+
+    #[test]
+    fn test_aaoe_dropdown_has_legal_entity_and_individual_options() {
+        // Test that the AAOE document has a dropdown field with
+        // "Legal entity" and "Individual" as options, carried via Hint::Dropdown.
+        use crate::flattened::Hint;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the CL_ClientType dropdown and verify its options
+        let mut found_options: Option<Vec<(String, String)>> = None;
+
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+                if name == "CL_ClientType" {
+                    for hint in &node.hints {
+                        if let Hint::Dropdown { options, .. } = hint {
+                            found_options = Some(options.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        let options = found_options.expect("CL_ClientType should have a Hint::Dropdown");
+        let display_values: Vec<&str> = options.iter().map(|(d, _)| d.as_str()).collect();
+        assert!(
+            display_values.contains(&"Individual"),
+            "Expected 'Individual' in dropdown options, got: {:?}",
+            display_values
+        );
+        assert!(
+            display_values.contains(&"Legal entity"),
+            "Expected 'Legal entity' in dropdown options, got: {:?}",
+            display_values
+        );
     }

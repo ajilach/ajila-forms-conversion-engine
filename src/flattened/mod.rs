@@ -408,6 +408,18 @@ pub enum Hint {
     /// When a field is inside an exclGroup, this stores the exclGroup's full SOM path.
     /// Used by the radio button grouper to name the group correctly.
     ExclGroupSomPath(String),
+
+    /// Dropdown options extracted from XFA <items> elements.
+    /// Each pair is (display_value, save_value) per XFA spec.
+    /// When only one <items> element exists, display and save values are the same.
+    Dropdown {
+        /// Pairs of (display text, save value)
+        options: Vec<(String, String)>,
+        /// Whether the user can type a custom value (choiceList textEntry="1")
+        text_entry: bool,
+        /// Whether multiple selections are allowed (choiceList open="multiSelect")
+        multi_select: bool,
+    },
 }
 
 /// Region classification for master page (page background) content.
@@ -442,6 +454,7 @@ impl Hint {
             Hint::NoPrint => "NoPrint",
             Hint::SomPath(_) => "SomPath",
             Hint::ExclGroupSomPath(_) => "ExclGroupSomPath",
+            Hint::Dropdown { .. } => "Dropdown",
         }
     }
 }
@@ -1507,6 +1520,161 @@ impl Flattened {
         self.iter_nodes().collect()
     }
 
+    /// Merge `<items>` from the Form DOM packet into Template DOM fields.
+    ///
+    /// Per XFA 3.3 spec, the Form DOM is the result of merging data with the
+    /// template. When a PDF is saved interactively, the Form DOM is serialized
+    /// as the `<form>` packet inside `<xdp:xdp>`. This packet preserves runtime
+    /// state, including `<items>` that were populated by scripts (e.g. `addItem()`).
+    ///
+    /// This method finds Form DOM fields that have non-empty `<items>` and copies
+    /// them into the corresponding Template DOM fields (matched by SOM-like path).
+    /// Only template fields whose `<items>` are empty (0 children) are updated.
+    pub fn merge_form_items_into_template(xfa_nodes: &mut [XfaNode]) {
+        // Step 1: Find the "form" element and collect items from its fields
+        let mut form_items: HashMap<String, Vec<XfaNode>> = HashMap::new();
+        for node in xfa_nodes.iter() {
+            Self::find_form_element_and_collect_items(node, &mut form_items);
+        }
+
+        if form_items.is_empty() {
+            return;
+        }
+
+        // Step 2: Walk the template and inject items into fields with empty items
+        for node in xfa_nodes.iter_mut() {
+            Self::inject_items_into_template(node, &form_items, &mut String::new());
+        }
+    }
+
+    /// Recursively find the `<form>` element and collect items from all its fields.
+    /// Builds a map from SOM-like path (e.g. "UBSForms.Page.ClientType.CL_ClientType")
+    /// to the list of `<items>` XfaNode children.
+    fn find_form_element_and_collect_items(
+        node: &XfaNode,
+        items_map: &mut HashMap<String, Vec<XfaNode>>,
+    ) {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+            if tag_name == "form" {
+                // Found the form packet — walk its children to collect items
+                for child in &node.children {
+                    Self::collect_form_field_items(child, &mut String::new(), items_map);
+                }
+                return;
+            }
+        }
+        // Keep searching for the form element
+        for child in &node.children {
+            Self::find_form_element_and_collect_items(child, items_map);
+        }
+    }
+
+    /// Walk inside the form packet collecting field items.
+    /// Tracks the SOM path using subform/field names.
+    fn collect_form_field_items(
+        node: &XfaNode,
+        path: &mut String,
+        items_map: &mut HashMap<String, Vec<XfaNode>>,
+    ) {
+        let segment = match &node.kind {
+            XfaNodeKind::Subform => node.name.as_deref(),
+            XfaNodeKind::Field => node.name.as_deref(),
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        if matches!(node.kind, XfaNodeKind::Field) {
+            // Collect all <items> children that have content
+            let items_nodes: Vec<XfaNode> = node
+                .children
+                .iter()
+                .filter(|c| {
+                    matches!(&c.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "items")
+                        && !c.children.is_empty()
+                })
+                .cloned()
+                .collect();
+
+            if !items_nodes.is_empty() {
+                items_map.insert(path.clone(), items_nodes);
+            }
+        }
+
+        // Recurse into children (subforms contain more fields)
+        for child in &node.children {
+            Self::collect_form_field_items(child, path, items_map);
+        }
+
+        path.truncate(prev_len);
+    }
+
+    /// Walk the template and inject form items into fields with empty items.
+    fn inject_items_into_template(
+        node: &mut XfaNode,
+        form_items: &HashMap<String, Vec<XfaNode>>,
+        path: &mut String,
+    ) {
+        // Only process template subtree
+        let is_template = matches!(node.kind, XfaNodeKind::Template);
+        let segment = match &node.kind {
+            XfaNodeKind::Subform => node.name.as_deref(),
+            XfaNodeKind::Field => node.name.as_deref(),
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        if matches!(node.kind, XfaNodeKind::Field) {
+            if let Some(form_items_nodes) = form_items.get(path.as_str()) {
+                // Check if this field's existing <items> are all empty
+                let all_items_empty = node.children.iter().all(|c| {
+                    if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
+                        if tag_name == "items" {
+                            return c.children.is_empty();
+                        }
+                    }
+                    true // non-items children don't count
+                });
+
+                if all_items_empty {
+                    // Remove existing empty <items> elements
+                    node.children.retain(|c| {
+                        if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
+                            tag_name != "items"
+                        } else {
+                            true
+                        }
+                    });
+
+                    // Insert items from form DOM
+                    for items_node in form_items_nodes {
+                        node.children.push(items_node.clone());
+                    }
+                }
+            }
+        }
+
+        // Recurse
+        for child in &mut node.children {
+            Self::inject_items_into_template(child, form_items, path);
+        }
+
+        path.truncate(prev_len);
+    }
+
     /// Create a flattened representation from XFA nodes with computed absolute positions.
     ///
     /// This implements the XFA Layout process per the spec (section 3, "Template DOM, Form DOM, and Layout DOM"):
@@ -2359,7 +2527,9 @@ impl Flattened {
                                         WidgetKind::Checkbox
                                     });
                                 }
-                                "choiceList" => return Some(WidgetKind::Dropdown),
+                                "choiceList" => {
+                                    return Some(WidgetKind::Dropdown);
+                                }
                                 "dateTimeEdit" => {
                                     // Check picker attribute to determine date/time/datetime
                                     let picker = ui_child.attributes.get("picker");
@@ -2381,6 +2551,118 @@ impl Flattened {
             }
         }
         None
+    }
+
+    /// Extract dropdown options from a field node's <items> children and <choiceList> attributes.
+    /// Per XFA spec, a field can have one or two <items> elements:
+    /// - One <items>: display value = save value
+    /// - Two <items>: the one with save="1" contains save values, the other display values
+    /// The <choiceList> element inside <ui> provides textEntry and open attributes.
+    fn extract_dropdown_hint(node: &XfaNode) -> Option<Hint> {
+        let mut display_items: Vec<String> = Vec::new();
+        let mut save_items: Vec<String> = Vec::new();
+        let mut text_entry = false;
+        let mut multi_select = false;
+
+        for child in &node.children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                match tag_name.as_str() {
+                    "items" => {
+                        let is_save = child
+                            .attributes
+                            .get("save")
+                            .map(|s| s == "1")
+                            .unwrap_or(false);
+                        let items = Self::extract_items_values(child);
+
+                        if is_save {
+                            save_items = items;
+                        } else if display_items.is_empty() {
+                            display_items = items;
+                        } else if save_items.is_empty() {
+                            save_items = items;
+                        }
+                    }
+                    "ui" => {
+                        // Look for <choiceList> inside <ui> to get textEntry and open attributes
+                        for ui_child in &child.children {
+                            if let XfaNodeKind::Element {
+                                tag_name: ui_tag, ..
+                            } = &ui_child.kind
+                            {
+                                if ui_tag == "choiceList" {
+                                    text_entry = ui_child
+                                        .attributes
+                                        .get("textEntry")
+                                        .map(|s| s == "1")
+                                        .unwrap_or(false);
+                                    multi_select = ui_child
+                                        .attributes
+                                        .get("open")
+                                        .map(|s| s == "multiSelect")
+                                        .unwrap_or(false);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Per XFA spec: with a single <items>, values serve as both display and save.
+        // If only save items were found, use them as display items too.
+        if display_items.is_empty() && !save_items.is_empty() {
+            display_items = save_items.clone();
+        }
+
+        if display_items.is_empty() {
+            return None;
+        }
+
+        if save_items.is_empty() {
+            save_items = display_items.clone();
+        }
+
+        let options: Vec<(String, String)> = display_items
+            .into_iter()
+            .zip(save_items.into_iter())
+            .collect();
+
+        Some(Hint::Dropdown {
+            options,
+            text_entry,
+            multi_select,
+        })
+    }
+
+    /// Extract values from an <items> element's children.
+    /// Handles <text>, <integer>, <decimal>, <float>, <boolean>, <date>, <dateTime>, <time> children.
+    fn extract_items_values(items_node: &XfaNode) -> Vec<String> {
+        let mut values = Vec::new();
+        for child in &items_node.children {
+            match &child.kind {
+                XfaNodeKind::Element {
+                    tag_name,
+                    text_content,
+                } => match tag_name.as_str() {
+                    "text" | "integer" | "decimal" | "float" | "boolean" | "date" | "dateTime"
+                    | "time" => {
+                        if let Some(content) = text_content {
+                            values.push(content.clone());
+                        } else {
+                            values.push(String::new());
+                        }
+                    }
+                    _ => {}
+                },
+                XfaNodeKind::Text { content } => {
+                    values.push(content.clone());
+                }
+                _ => {}
+            }
+        }
+        values
     }
 
     /// Check if a node has the relevant="-print" attribute.
@@ -2858,6 +3140,12 @@ impl Flattened {
                         });
                         // Add WidgetType hint if extracted
                         if let Some(kind) = widget_kind {
+                            // Add Dropdown hint with options if this is a dropdown
+                            if kind == WidgetKind::Dropdown {
+                                if let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
+                                    field_node.add_hint(dropdown_hint);
+                                }
+                            }
                             field_node.add_hint(Hint::WidgetType(kind));
                         }
                         // Add NoPrint hint if relevant="-print" or inherited from parent
@@ -3195,6 +3483,12 @@ impl Flattened {
                                 });
                                 // Add WidgetType hint if we could determine it
                                 if let Some(widget_kind) = widget_kind {
+                                    // Add Dropdown hint with options if this is a dropdown
+                                    if widget_kind == WidgetKind::Dropdown {
+                                        if let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
+                                            field_node.add_hint(dropdown_hint);
+                                        }
+                                    }
                                     field_node.add_hint(Hint::WidgetType(widget_kind));
                                 }
                                 // Add NoPrint hint if relevant="-print" or inherited from parent

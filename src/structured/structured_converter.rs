@@ -597,8 +597,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                     WidgetKind::Checkbox => FieldType::Bool,
                     WidgetKind::Radio => FieldType::Radio { options: vec![] },
                     WidgetKind::Dropdown => {
-                        // TODO: extract options from somewhere
-                        FieldType::Select { options: vec![] }
+                        let options = self.get_dropdown_options(node);
+                        FieldType::Select { options }
                     }
                     WidgetKind::Date | WidgetKind::DateTime => FieldType::Date,
                     WidgetKind::Time => FieldType::Text {
@@ -682,6 +682,22 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
         }
         None
+    }
+
+    /// Extract dropdown options from a Hint::Dropdown, mapping to NameValue pairs.
+    fn get_dropdown_options(&self, node: &FlattenedNode) -> Vec<NameValue> {
+        for hint in &node.hints {
+            if let Hint::Dropdown { options, .. } = hint {
+                return options
+                    .iter()
+                    .map(|(display, save)| NameValue {
+                        name: TranslatableString::Plain(display.clone()),
+                        value: InputValue::Text(save.clone()),
+                    })
+                    .collect();
+            }
+        }
+        vec![]
     }
 
     fn get_max_length(&self, node: &FlattenedNode) -> Option<usize> {

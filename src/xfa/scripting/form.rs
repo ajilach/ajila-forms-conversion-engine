@@ -493,6 +493,10 @@ impl XfaForm {
             &script_result.presence_changes,
         );
 
+        // Merge items from Form DOM packet into Template DOM fields.
+        // The Form DOM preserves runtime state (e.g. script-populated dropdown items).
+        Flattened::merge_form_items_into_template(&mut nodes);
+
         let init_values = script_result.computed_values;
 
         // Flatten with the init-time computed values
