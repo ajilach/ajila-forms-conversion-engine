@@ -182,7 +182,7 @@ impl FieldTableDetector {
     /// Returns Some(vec of (header_idx, field_idx) pairs) if all match.
     fn match_row_with_headers(
         &self,
-        doc: &Document,
+        _doc: &Document,
         row: &[(usize, Bounds)],
         candidate_headers: &[(usize, Bounds)],
     ) -> Option<Vec<(usize, usize)>> {
@@ -211,7 +211,7 @@ impl FieldTableDetector {
                     continue;
                 }
 
-                if best_match.map_or(true, |(_, best_gap)| gap < best_gap) {
+                if best_match.is_none_or(|(_, best_gap)| gap < best_gap) {
                     best_match = Some((header_idx, gap));
                 }
             }

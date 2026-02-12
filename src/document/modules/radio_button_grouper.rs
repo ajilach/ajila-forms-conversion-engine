@@ -388,7 +388,7 @@ mod tests {
     use super::*;
     use crate::document::modules::{FieldGrouper, RadioButtonDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
+    use crate::flattened::{Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 
     #[test]

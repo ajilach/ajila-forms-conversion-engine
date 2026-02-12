@@ -61,9 +61,6 @@ pub struct XfaScriptEngine {
     field_objects_by_name: HashMap<String, Vec<SomPath>>,
     /// Maps child field names to their unique IDs in the current context
     child_name_to_id: HashMap<String, String>,
-
-    /// Tracks which presence values have been explicitly changed by scripts
-    presence_changes: HashMap<SomPath, String>,
     /// Tracks the INITIAL presence value from the XFA tree for each field object
     initial_presence: HashMap<SomPath, String>,
 }
@@ -83,7 +80,6 @@ impl XfaScriptEngine {
             field_objects: HashMap::new(),
             field_objects_by_name: HashMap::new(),
             child_name_to_id: HashMap::new(),
-            presence_changes: HashMap::new(),
             initial_presence: HashMap::new(),
         };
 
@@ -104,7 +100,6 @@ impl XfaScriptEngine {
             field_objects: HashMap::new(),
             field_objects_by_name: HashMap::new(),
             child_name_to_id: HashMap::new(),
-            presence_changes: HashMap::new(),
             initial_presence: HashMap::new(),
         };
 
@@ -127,35 +122,32 @@ impl XfaScriptEngine {
             let obj = obj.clone();
             if let Ok(raw_value) =
                 obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                && !raw_value.is_undefined()
+                && !raw_value.is_null()
+                && let Ok(value_str) = raw_value.to_string(&mut self.context)
             {
-                if !raw_value.is_undefined() && !raw_value.is_null() {
-                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
-                        let value = value_str.to_std_string_escaped();
-                        if !value.is_empty() {
-                            return Some(value);
-                        }
-                    }
+                let value = value_str.to_std_string_escaped();
+                if !value.is_empty() {
+                    return Some(value);
                 }
             }
         }
         // Fallback: try by field name
         let name = path.name().to_string();
-        if let Some(paths) = self.field_objects_by_name.get(&name) {
-            if let Some(first_path) = paths.first().cloned() {
-                if let Some(obj) = self.field_objects.get(&first_path) {
-                    let obj = obj.clone();
-                    if let Ok(raw_value) =
-                        obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
-                    {
-                        if !raw_value.is_undefined() && !raw_value.is_null() {
-                            if let Ok(value_str) = raw_value.to_string(&mut self.context) {
-                                let value = value_str.to_std_string_escaped();
-                                if !value.is_empty() {
-                                    return Some(value);
-                                }
-                            }
-                        }
-                    }
+        if let Some(paths) = self.field_objects_by_name.get(&name)
+            && let Some(first_path) = paths.first().cloned()
+            && let Some(obj) = self.field_objects.get(&first_path)
+        {
+            let obj = obj.clone();
+            if let Ok(raw_value) =
+                obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                && !raw_value.is_undefined()
+                && !raw_value.is_null()
+                && let Ok(value_str) = raw_value.to_string(&mut self.context)
+            {
+                let value = value_str.to_std_string_escaped();
+                if !value.is_empty() {
+                    return Some(value);
                 }
             }
         }
@@ -175,17 +167,16 @@ impl XfaScriptEngine {
         for (path, obj) in paths {
             if let Ok(raw_value) =
                 obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                && !raw_value.is_undefined()
+                && !raw_value.is_null()
+                && let Ok(value_str) = raw_value.to_string(&mut self.context)
             {
-                if !raw_value.is_undefined() && !raw_value.is_null() {
-                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
-                        let value = value_str.to_std_string_escaped();
-                        // Store under full SOM path (empty strings are valid per XFA spec,
-                        // e.g. cleared dropdowns, deselected exclGroups)
-                        map.insert(path.clone(), value.clone());
-                        // Also store under short name for backward compat lookups
-                        map.insert(SomPath::new(path.name()), value);
-                    }
-                }
+                let value = value_str.to_std_string_escaped();
+                // Store under full SOM path (empty strings are valid per XFA spec,
+                // e.g. cleared dropdowns, deselected exclGroups)
+                map.insert(path.clone(), value.clone());
+                // Also store under short name for backward compat lookups
+                map.insert(SomPath::new(path.name()), value);
             }
         }
         map
@@ -362,22 +353,20 @@ impl XfaScriptEngine {
         let expr_str = expr.to_std_string_escaped();
 
         // If the expression is a full path (contains dots), try direct lookup first
-        if expr_str.contains('.') {
-            if let Ok(registry) = context.global_object().get(
+        if expr_str.contains('.')
+            && let Ok(registry) = context.global_object().get(
                 PropertyKey::from(js_string!("_xfa_fields_by_path_")),
                 context,
-            ) {
-                if let Some(registry_obj) = registry.as_object() {
-                    if let Ok(field_obj) = registry_obj.get(
-                        PropertyKey::from(JsString::from(expr_str.as_str())),
-                        context,
-                    ) {
-                        if !field_obj.is_undefined() && !field_obj.is_null() {
-                            return Ok(field_obj);
-                        }
-                    }
-                }
-            }
+            )
+            && let Some(registry_obj) = registry.as_object()
+            && let Ok(field_obj) = registry_obj.get(
+                PropertyKey::from(JsString::from(expr_str.as_str())),
+                context,
+            )
+            && !field_obj.is_undefined()
+            && !field_obj.is_null()
+        {
+            return Ok(field_obj);
         }
 
         // Extract the field name from the expression (last component)
@@ -399,58 +388,50 @@ impl XfaScriptEngine {
         if let Ok(paths_by_name) = context.global_object().get(
             PropertyKey::from(js_string!("_xfa_paths_by_name_")),
             context,
-        ) {
-            if let Some(paths_obj) = paths_by_name.as_object() {
-                if let Ok(paths_array) =
-                    paths_obj.get(PropertyKey::from(JsString::from(field_name)), context)
+        ) && let Some(paths_obj) = paths_by_name.as_object()
+            && let Ok(paths_array) =
+                paths_obj.get(PropertyKey::from(JsString::from(field_name)), context)
+            && !paths_array.is_undefined()
+            && !paths_array.is_null()
+            && paths_array.as_object().is_some()
+        {
+            let paths_arr_obj = paths_array.as_object().unwrap();
+
+            // Get the array length
+            let length = paths_arr_obj
+                .get(PropertyKey::from(js_string!("length")), context)
+                .ok()
+                .and_then(|v| v.to_number(context).ok())
+                .unwrap_or(0.0) as usize;
+
+            // Collect all paths
+            let mut all_paths: Vec<String> = Vec::with_capacity(length);
+            for i in 0..length {
+                if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(i), context)
+                    && let Ok(path_str) = path_val.to_string(context)
                 {
-                    if !paths_array.is_undefined()
-                        && !paths_array.is_null()
-                        && paths_array.as_object().is_some()
-                    {
-                        let paths_arr_obj = paths_array.as_object().unwrap();
-
-                        // Get the array length
-                        let length = paths_arr_obj
-                            .get(PropertyKey::from(js_string!("length")), context)
-                            .ok()
-                            .and_then(|v| v.to_number(context).ok())
-                            .unwrap_or(0.0) as usize;
-
-                        // Collect all paths
-                        let mut all_paths: Vec<String> = Vec::with_capacity(length);
-                        for i in 0..length {
-                            if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(i), context) {
-                                if let Ok(path_str) = path_val.to_string(context) {
-                                    all_paths.push(path_str.to_std_string_escaped());
-                                }
-                            }
-                        }
-
-                        // Find the best matching path based on context
-                        let best_path =
-                            Self::find_best_path_for_context(&all_paths, &current_context);
-
-                        // Look up the field object by the best path
-                        if !best_path.is_empty() {
-                            if let Ok(registry) = context.global_object().get(
-                                PropertyKey::from(js_string!("_xfa_fields_by_path_")),
-                                context,
-                            ) {
-                                if let Some(registry_obj) = registry.as_object() {
-                                    if let Ok(field_obj) = registry_obj.get(
-                                        PropertyKey::from(JsString::from(best_path.as_str())),
-                                        context,
-                                    ) {
-                                        if !field_obj.is_undefined() && !field_obj.is_null() {
-                                            return Ok(field_obj);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    all_paths.push(path_str.to_std_string_escaped());
                 }
+            }
+
+            // Find the best matching path based on context
+            let best_path = Self::find_best_path_for_context(&all_paths, &current_context);
+
+            // Look up the field object by the best path
+            if !best_path.is_empty()
+                && let Ok(registry) = context.global_object().get(
+                    PropertyKey::from(js_string!("_xfa_fields_by_path_")),
+                    context,
+                )
+                && let Some(registry_obj) = registry.as_object()
+                && let Ok(field_obj) = registry_obj.get(
+                    PropertyKey::from(JsString::from(best_path.as_str())),
+                    context,
+                )
+                && !field_obj.is_undefined()
+                && !field_obj.is_null()
+            {
+                return Ok(field_obj);
             }
         }
 
@@ -458,32 +439,26 @@ impl XfaScriptEngine {
         if let Ok(registry) = context
             .global_object()
             .get(PropertyKey::from(js_string!("_xfa_fields_")), context)
+            && let Some(registry_obj) = registry.as_object()
+            && let Ok(field_obj) =
+                registry_obj.get(PropertyKey::from(JsString::from(field_name)), context)
+            && !field_obj.is_undefined()
+            && !field_obj.is_null()
         {
-            if let Some(registry_obj) = registry.as_object() {
-                if let Ok(field_obj) =
-                    registry_obj.get(PropertyKey::from(JsString::from(field_name)), context)
-                {
-                    if !field_obj.is_undefined() && !field_obj.is_null() {
-                        return Ok(field_obj);
-                    }
-                }
-            }
+            return Ok(field_obj);
         }
 
         // Also try looking up as a global (for backward compatibility)
         if let Ok(global_field) = context
             .global_object()
             .get(PropertyKey::from(JsString::from(field_name)), context)
+            && !global_field.is_undefined()
+            && !global_field.is_null()
+            && let Some(obj) = global_field.as_object()
+            && let Ok(raw) = obj.get(PropertyKey::from(js_string!("rawValue")), context)
+            && !raw.is_undefined()
         {
-            if !global_field.is_undefined() && !global_field.is_null() {
-                if let Some(obj) = global_field.as_object() {
-                    if let Ok(raw) = obj.get(PropertyKey::from(js_string!("rawValue")), context) {
-                        if !raw.is_undefined() {
-                            return Ok(global_field);
-                        }
-                    }
-                }
-            }
+            return Ok(global_field);
         }
 
         // Return null if not found
@@ -575,16 +550,13 @@ impl XfaScriptEngine {
             }
             if let Ok(datasets) =
                 xfa_obj.get(PropertyKey::from(js_string!("datasets")), &mut self.context)
+                && let Some(ds_obj) = datasets.as_object()
+                && let Ok(data) =
+                    ds_obj.get(PropertyKey::from(js_string!("data")), &mut self.context)
             {
-                if let Some(ds_obj) = datasets.as_object() {
-                    if let Ok(data) =
-                        ds_obj.get(PropertyKey::from(js_string!("data")), &mut self.context)
-                    {
-                        self.context
-                            .register_global_property(js_string!("$data"), data, Attribute::all())
-                            .ok();
-                    }
-                }
+                self.context
+                    .register_global_property(js_string!("$data"), data, Attribute::all())
+                    .ok();
             }
             if let Ok(template) =
                 xfa_obj.get(PropertyKey::from(js_string!("template")), &mut self.context)
@@ -669,75 +641,72 @@ impl XfaScriptEngine {
         if let Ok(registry) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_fields_")),
             &mut self.context,
-        ) {
-            if let Some(registry_obj) = registry.as_object() {
-                registry_obj
-                    .set(
-                        PropertyKey::from(JsString::from(name)),
-                        field_obj.clone(),
-                        false,
-                        &mut self.context,
-                    )
-                    .ok();
-            }
+        ) && let Some(registry_obj) = registry.as_object()
+        {
+            registry_obj
+                .set(
+                    PropertyKey::from(JsString::from(name)),
+                    field_obj.clone(),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
         }
 
         // Register in _xfa_fields_by_path_ for full-path lookups
         if let Ok(registry) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_fields_by_path_")),
             &mut self.context,
-        ) {
-            if let Some(registry_obj) = registry.as_object() {
-                registry_obj
-                    .set(
-                        PropertyKey::from(JsString::from(path)),
-                        field_obj.clone(),
-                        false,
-                        &mut self.context,
-                    )
-                    .ok();
-            }
+        ) && let Some(registry_obj) = registry.as_object()
+        {
+            registry_obj
+                .set(
+                    PropertyKey::from(JsString::from(path)),
+                    field_obj.clone(),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
         }
 
         // Register in _xfa_paths_by_name_ to map name -> array of full paths
         if let Ok(paths_by_name) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_paths_by_name_")),
             &mut self.context,
-        ) {
-            if let Some(paths_obj) = paths_by_name.as_object() {
-                // Get or create the array for this name
-                let paths_array = if let Ok(existing) =
-                    paths_obj.get(PropertyKey::from(JsString::from(name)), &mut self.context)
-                {
-                    if !existing.is_undefined() && !existing.is_null() {
-                        if let Some(arr) = existing.as_object() {
-                            arr.clone()
-                        } else {
-                            self.create_new_paths_array(paths_obj, name)
-                        }
+        ) && let Some(paths_obj) = paths_by_name.as_object()
+        {
+            // Get or create the array for this name
+            let paths_array = if let Ok(existing) =
+                paths_obj.get(PropertyKey::from(JsString::from(name)), &mut self.context)
+            {
+                if !existing.is_undefined() && !existing.is_null() {
+                    if let Some(arr) = existing.as_object() {
+                        arr.clone()
                     } else {
                         self.create_new_paths_array(paths_obj, name)
                     }
                 } else {
                     self.create_new_paths_array(paths_obj, name)
-                };
+                }
+            } else {
+                self.create_new_paths_array(paths_obj, name)
+            };
 
-                // Add this path to the array
-                let length = paths_array
-                    .get(PropertyKey::from(js_string!("length")), &mut self.context)
-                    .ok()
-                    .and_then(|v| v.to_number(&mut self.context).ok())
-                    .unwrap_or(0.0) as u32;
+            // Add this path to the array
+            let length = paths_array
+                .get(PropertyKey::from(js_string!("length")), &mut self.context)
+                .ok()
+                .and_then(|v| v.to_number(&mut self.context).ok())
+                .unwrap_or(0.0) as u32;
 
-                paths_array
-                    .set(
-                        PropertyKey::from(length),
-                        JsValue::from(js_string!(path)),
-                        false,
-                        &mut self.context,
-                    )
-                    .ok();
-            }
+            paths_array
+                .set(
+                    PropertyKey::from(length),
+                    JsValue::from(js_string!(path)),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
         }
 
         // Register on $form
@@ -747,18 +716,16 @@ impl XfaScriptEngine {
             .get(PropertyKey::from(js_string!("xfa")), &mut self.context)
             .unwrap_or(JsValue::undefined());
 
-        if let Some(xfa_obj) = xfa.as_object() {
-            if let Ok(form) = xfa_obj.get(PropertyKey::from(js_string!("form")), &mut self.context)
-            {
-                if let Some(form_obj) = form.as_object() {
-                    self.register_path_on_object(&form_obj, path, field_obj.clone());
+        if let Some(xfa_obj) = xfa.as_object()
+            && let Ok(form) = xfa_obj.get(PropertyKey::from(js_string!("form")), &mut self.context)
+            && let Some(form_obj) = form.as_object()
+        {
+            self.register_path_on_object(form_obj, path, field_obj.clone());
 
-                    // Also register without root subform prefix
-                    if let Some(dot_pos) = path.find('.') {
-                        let stripped_path = &path[dot_pos + 1..];
-                        self.register_path_on_object(&form_obj, stripped_path, field_obj.clone());
-                    }
-                }
+            // Also register without root subform prefix
+            if let Some(dot_pos) = path.find('.') {
+                let stripped_path = &path[dot_pos + 1..];
+                self.register_path_on_object(form_obj, stripped_path, field_obj.clone());
             }
         }
 
@@ -1268,27 +1235,22 @@ impl XfaScriptEngine {
         if let Ok(this_val) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_this_")),
             &mut self.context,
-        ) {
-            if let Some(this_obj) = this_val.as_object() {
-                if let Ok(child_val) = this_obj.get(
-                    PropertyKey::from(JsString::from(child_name)),
-                    &mut self.context,
-                ) {
-                    if let Some(child_obj) = child_val.as_object() {
-                        if let Ok(raw_value) = child_obj
-                            .get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
-                        {
-                            if !raw_value.is_undefined() && !raw_value.is_null() {
-                                let value = raw_value
-                                    .to_string(&mut self.context)
-                                    .ok()
-                                    .map(|s| s.to_std_string_escaped())?;
-                                return Some((child_id, value));
-                            }
-                        }
-                    }
-                }
-            }
+        ) && let Some(this_obj) = this_val.as_object()
+            && let Ok(child_val) = this_obj.get(
+                PropertyKey::from(JsString::from(child_name)),
+                &mut self.context,
+            )
+            && let Some(child_obj) = child_val.as_object()
+            && let Ok(raw_value) =
+                child_obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+            && !raw_value.is_undefined()
+            && !raw_value.is_null()
+        {
+            let value = raw_value
+                .to_string(&mut self.context)
+                .ok()
+                .map(|s| s.to_std_string_escaped())?;
+            return Some((child_id, value));
         }
 
         // Fallback: check form state
@@ -1302,17 +1264,16 @@ impl XfaScriptEngine {
     /// Get the value of a field from the SOM hierarchy by its full path.
     pub fn get_som_field_value(&mut self, path: &str) -> Option<String> {
         let som_path = SomPath::new(path);
-        if let Some(field_obj) = self.field_objects.get(&som_path) {
-            if let Ok(raw_value) =
+        if let Some(field_obj) = self.field_objects.get(&som_path)
+            && let Ok(raw_value) =
                 field_obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
-            {
-                if !raw_value.is_undefined() && !raw_value.is_null() {
-                    return raw_value
-                        .to_string(&mut self.context)
-                        .ok()
-                        .map(|s| s.to_std_string_escaped());
-                }
-            }
+            && !raw_value.is_undefined()
+            && !raw_value.is_null()
+        {
+            return raw_value
+                .to_string(&mut self.context)
+                .ok()
+                .map(|s| s.to_std_string_escaped());
         }
         None
     }
@@ -1324,22 +1285,21 @@ impl XfaScriptEngine {
         for (path, obj) in &self.field_objects {
             if let Ok(raw_value) =
                 obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                && !raw_value.is_undefined()
+                && !raw_value.is_null()
+                && let Ok(value_str) = raw_value.to_string(&mut self.context)
             {
-                if !raw_value.is_undefined() && !raw_value.is_null() {
-                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
-                        let value = value_str.to_std_string_escaped();
-                        // Empty strings are valid per XFA spec (cleared fields,
-                        // deselected exclGroups).  However, when multiple fields
-                        // share the same short name (e.g. RB_1 in two different
-                        // exclGroups), a derived-empty value must not overwrite
-                        // a non-empty value already stored for that name.
-                        let field_name = path.name();
-                        if value.is_empty() {
-                            values.entry(field_name.to_string()).or_insert(value);
-                        } else {
-                            values.insert(field_name.to_string(), value);
-                        }
-                    }
+                let value = value_str.to_std_string_escaped();
+                // Empty strings are valid per XFA spec (cleared fields,
+                // deselected exclGroups).  However, when multiple fields
+                // share the same short name (e.g. RB_1 in two different
+                // exclGroups), a derived-empty value must not overwrite
+                // a non-empty value already stored for that name.
+                let field_name = path.name();
+                if value.is_empty() {
+                    values.entry(field_name.to_string()).or_insert(value);
+                } else {
+                    values.insert(field_name.to_string(), value);
                 }
             }
         }
@@ -1354,22 +1314,21 @@ impl XfaScriptEngine {
         for (path, obj) in &self.field_objects {
             if let Ok(presence) =
                 obj.get(PropertyKey::from(js_string!("presence")), &mut self.context)
+                && !presence.is_undefined()
+                && !presence.is_null()
+                && let Ok(presence_str) = presence.to_string(&mut self.context)
             {
-                if !presence.is_undefined() && !presence.is_null() {
-                    if let Ok(presence_str) = presence.to_string(&mut self.context) {
-                        let presence_value = presence_str.to_std_string_escaped();
+                let presence_value = presence_str.to_std_string_escaped();
 
-                        if !presence_value.is_empty() {
-                            let initial = self
-                                .initial_presence
-                                .get(path)
-                                .map(|s| s.as_str())
-                                .unwrap_or("visible");
+                if !presence_value.is_empty() {
+                    let initial = self
+                        .initial_presence
+                        .get(path)
+                        .map(|s| s.as_str())
+                        .unwrap_or("visible");
 
-                            if presence_value.to_lowercase() != initial.to_lowercase() {
-                                changes.insert(path.to_string(), presence_value);
-                            }
-                        }
+                    if presence_value.to_lowercase() != initial.to_lowercase() {
+                        changes.insert(path.to_string(), presence_value);
                     }
                 }
             }
@@ -1434,31 +1393,25 @@ impl XfaScriptEngine {
                 if let Ok(this_val) = self.context.global_object().get(
                     PropertyKey::from(js_string!("_xfa_this_")),
                     &mut self.context,
-                ) {
-                    if let Some(this_obj) = this_val.as_object() {
-                        if let Ok(raw_value) = this_obj
-                            .get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
-                        {
-                            if !raw_value.is_undefined() && !raw_value.is_null() {
-                                let value_str = raw_value
-                                    .to_string(&mut self.context)
-                                    .map(|s| s.to_std_string_escaped())
-                                    .unwrap_or_default();
+                ) && let Some(this_obj) = this_val.as_object()
+                    && let Ok(raw_value) =
+                        this_obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                    && !raw_value.is_undefined()
+                    && !raw_value.is_null()
+                {
+                    let value_str = raw_value
+                        .to_string(&mut self.context)
+                        .map(|s| s.to_std_string_escaped())
+                        .unwrap_or_default();
 
-                                let changed = initial_raw_value.as_ref() != Some(&value_str);
+                    let changed = initial_raw_value.as_ref() != Some(&value_str);
 
-                                if changed {
-                                    if let Some(ref path) = self.current_field_path {
-                                        let mut state = self.form_state.write().unwrap();
-                                        state.set_value(
-                                            path.clone(),
-                                            XfaValue::String(value_str.clone()),
-                                        );
-                                    }
-                                    return Ok(Some(value_str));
-                                }
-                            }
+                    if changed {
+                        if let Some(ref path) = self.current_field_path {
+                            let mut state = self.form_state.write().unwrap();
+                            state.set_value(path.clone(), XfaValue::String(value_str.clone()));
                         }
+                        return Ok(Some(value_str));
                     }
                 }
 
@@ -1643,19 +1596,17 @@ impl XfaScriptEngine {
         // Per XFA 3.3 §4 p.196: the field determines ON/OFF by comparing
         // the parent exclGroup's value to its own key value at read-time.
         // The child's rawValue getter uses _exclGroupParent to derive state.
-        if is_exclgroup_child {
-            if let Some(parent) = parent_path {
-                let parent_som = SomPath::new(parent);
-                if let Some(parent_obj) = self.field_objects.get(&parent_som) {
-                    node_obj
-                        .set(
-                            PropertyKey::from(js_string!("_exclGroupParent")),
-                            JsValue::from(parent_obj.clone()),
-                            false,
-                            &mut self.context,
-                        )
-                        .ok();
-                }
+        if is_exclgroup_child && let Some(parent) = parent_path {
+            let parent_som = SomPath::new(parent);
+            if let Some(parent_obj) = self.field_objects.get(&parent_som) {
+                node_obj
+                    .set(
+                        PropertyKey::from(js_string!("_exclGroupParent")),
+                        JsValue::from(parent_obj.clone()),
+                        false,
+                        &mut self.context,
+                    )
+                    .ok();
             }
         }
 
@@ -1690,17 +1641,16 @@ impl XfaScriptEngine {
         if let Ok(registry) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_fields_")),
             &mut self.context,
-        ) {
-            if let Some(registry_obj) = registry.as_object() {
-                registry_obj
-                    .set(
-                        PropertyKey::from(JsString::from(name)),
-                        node_obj.clone(),
-                        false,
-                        &mut self.context,
-                    )
-                    .ok();
-            }
+        ) && let Some(registry_obj) = registry.as_object()
+        {
+            registry_obj
+                .set(
+                    PropertyKey::from(JsString::from(name)),
+                    node_obj.clone(),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
         }
 
         // For floating fields (registered without parent), also add as property on all existing subforms
@@ -1709,17 +1659,16 @@ impl XfaScriptEngine {
                 if let Ok(som) = subform_obj.get(
                     PropertyKey::from(js_string!("somExpression")),
                     &mut self.context,
-                ) {
-                    if !som.is_undefined() {
-                        subform_obj
-                            .set(
-                                PropertyKey::from(JsString::from(name)),
-                                node_obj.clone(),
-                                false,
-                                &mut self.context,
-                            )
-                            .ok();
-                    }
+                ) && !som.is_undefined()
+                {
+                    subform_obj
+                        .set(
+                            PropertyKey::from(JsString::from(name)),
+                            node_obj.clone(),
+                            false,
+                            &mut self.context,
+                        )
+                        .ok();
                 }
             }
         }
@@ -1730,24 +1679,21 @@ impl XfaScriptEngine {
         if let Ok(this_val) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_this_")),
             &mut self.context,
-        ) {
-            if let Some(this_obj) = this_val.as_object() {
-                if let Ok(presence) =
-                    this_obj.get(PropertyKey::from(js_string!("presence")), &mut self.context)
-                {
-                    if !presence.is_undefined() && !presence.is_null() {
-                        let presence_str = presence
-                            .to_string(&mut self.context)
-                            .ok()
-                            .map(|s| s.to_std_string_escaped())?;
-                        if matches!(
-                            presence_str.as_str(),
-                            "visible" | "invisible" | "hidden" | "inactive"
-                        ) {
-                            return Some(Presence::from_str(&presence_str));
-                        }
-                    }
-                }
+        ) && let Some(this_obj) = this_val.as_object()
+            && let Ok(presence) =
+                this_obj.get(PropertyKey::from(js_string!("presence")), &mut self.context)
+            && !presence.is_undefined()
+            && !presence.is_null()
+        {
+            let presence_str = presence
+                .to_string(&mut self.context)
+                .ok()
+                .map(|s| s.to_std_string_escaped())?;
+            if matches!(
+                presence_str.as_str(),
+                "visible" | "invisible" | "hidden" | "inactive"
+            ) {
+                return presence_str.parse().ok();
             }
         }
         None
@@ -1764,31 +1710,26 @@ impl XfaScriptEngine {
         if let Ok(this_val) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_this_")),
             &mut self.context,
-        ) {
-            if let Some(this_obj) = this_val.as_object() {
-                if let Ok(child_val) = this_obj.get(
-                    PropertyKey::from(JsString::from(child_name)),
-                    &mut self.context,
-                ) {
-                    if let Some(child_obj) = child_val.as_object() {
-                        if let Ok(presence) = child_obj
-                            .get(PropertyKey::from(js_string!("presence")), &mut self.context)
-                        {
-                            if !presence.is_undefined() && !presence.is_null() {
-                                let presence_str = presence
-                                    .to_string(&mut self.context)
-                                    .ok()
-                                    .map(|s| s.to_std_string_escaped())?;
-                                if matches!(
-                                    presence_str.as_str(),
-                                    "visible" | "invisible" | "hidden" | "inactive"
-                                ) {
-                                    return Some((child_id, Presence::from_str(&presence_str)));
-                                }
-                            }
-                        }
-                    }
-                }
+        ) && let Some(this_obj) = this_val.as_object()
+            && let Ok(child_val) = this_obj.get(
+                PropertyKey::from(JsString::from(child_name)),
+                &mut self.context,
+            )
+            && let Some(child_obj) = child_val.as_object()
+            && let Ok(presence) =
+                child_obj.get(PropertyKey::from(js_string!("presence")), &mut self.context)
+            && !presence.is_undefined()
+            && !presence.is_null()
+        {
+            let presence_str = presence
+                .to_string(&mut self.context)
+                .ok()
+                .map(|s| s.to_std_string_escaped())?;
+            if matches!(
+                presence_str.as_str(),
+                "visible" | "invisible" | "hidden" | "inactive"
+            ) {
+                return presence_str.parse().ok().map(|p| (child_id, p));
             }
         }
         None

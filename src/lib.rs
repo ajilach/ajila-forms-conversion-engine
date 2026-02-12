@@ -1,3 +1,6 @@
+#![allow(clippy::large_enum_variant)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::collapsible_if)]
 //! Blueprint - XFA PDF document analysis library.
 //!
 //! This library provides a high-level API for processing XFA PDF documents.
@@ -104,7 +107,6 @@ pub use image::RgbaImage;
 use pdf::file::FileOptions;
 use pdf::object::*;
 use pdf::primitive::Primitive;
-use std::collections::HashSet;
 use std::path::Path;
 
 // ============================================================================
@@ -200,43 +202,40 @@ pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, E
 
     let catalog = pdf.get_root();
 
-    if let Some(forms_dict) = &catalog.forms {
-        if let Some(xfa_obj) = &forms_dict.xfa {
-            match xfa_obj {
-                Primitive::Stream(pdf_stream) => {
-                    let stream: Stream<()> =
-                        Stream::from_stream(pdf_stream.clone(), &pdf.resolver())
-                            .map_err(|e| Error::PdfParse(e.to_string()))?;
-                    let data = stream
-                        .data(&pdf.resolver())
-                        .map_err(|e| Error::PdfParse(e.to_string()))?;
-                    return Ok(Some(data.to_vec()));
-                }
-                Primitive::Array(arr) => {
-                    let mut xfa_data = Vec::new();
-                    let resolver = pdf.resolver();
-
-                    for i in (1..arr.len()).step_by(2) {
-                        if let Primitive::Reference(stream_ref) = &arr[i]
-                            && let Ok(Primitive::Stream(ref pdf_stream)) =
-                                resolver.resolve(*stream_ref)
-                        {
-                            let stream: Stream<()> =
-                                Stream::from_stream(pdf_stream.clone(), &resolver)
-                                    .map_err(|e| Error::PdfParse(e.to_string()))?;
-                            let data = stream
-                                .data(&resolver)
-                                .map_err(|e| Error::PdfParse(e.to_string()))?;
-                            xfa_data.extend_from_slice(&data);
-                        }
-                    }
-
-                    if !xfa_data.is_empty() {
-                        return Ok(Some(xfa_data));
-                    }
-                }
-                _ => {}
+    if let Some(forms_dict) = &catalog.forms
+        && let Some(xfa_obj) = &forms_dict.xfa
+    {
+        match xfa_obj {
+            Primitive::Stream(pdf_stream) => {
+                let stream: Stream<()> = Stream::from_stream(pdf_stream.clone(), &pdf.resolver())
+                    .map_err(|e| Error::PdfParse(e.to_string()))?;
+                let data = stream
+                    .data(&pdf.resolver())
+                    .map_err(|e| Error::PdfParse(e.to_string()))?;
+                return Ok(Some(data.to_vec()));
             }
+            Primitive::Array(arr) => {
+                let mut xfa_data = Vec::new();
+                let resolver = pdf.resolver();
+
+                for i in (1..arr.len()).step_by(2) {
+                    if let Primitive::Reference(stream_ref) = &arr[i]
+                        && let Ok(Primitive::Stream(ref pdf_stream)) = resolver.resolve(*stream_ref)
+                    {
+                        let stream: Stream<()> = Stream::from_stream(pdf_stream.clone(), &resolver)
+                            .map_err(|e| Error::PdfParse(e.to_string()))?;
+                        let data = stream
+                            .data(&resolver)
+                            .map_err(|e| Error::PdfParse(e.to_string()))?;
+                        xfa_data.extend_from_slice(&data);
+                    }
+                }
+
+                if !xfa_data.is_empty() {
+                    return Ok(Some(xfa_data));
+                }
+            }
+            _ => {}
         }
     }
 
@@ -245,19 +244,19 @@ pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, E
 
 /// Extract language from an XFA form by inspecting the `Footer_Line_txtlanguage` field.
 pub fn extract_language(form: &XfaForm) -> String {
-    if let Some(node) = form.resolve("Footer_Line_txtlanguage") {
-        if let Some(value) = node.raw_value() {
-            let lang = value.to_uppercase();
-            return match lang.as_str() {
-                "DE" => "de",
-                "EN" => "en",
-                "FR" => "fr",
-                "IT" => "it",
-                "ES" => "es",
-                _ => "de",
-            }
-            .to_string();
+    if let Some(node) = form.resolve("Footer_Line_txtlanguage")
+        && let Some(value) = node.raw_value()
+    {
+        let lang = value.to_uppercase();
+        return match lang.as_str() {
+            "DE" => "de",
+            "EN" => "en",
+            "FR" => "fr",
+            "IT" => "it",
+            "ES" => "es",
+            _ => "de",
         }
+        .to_string();
     }
     "de".to_string()
 }

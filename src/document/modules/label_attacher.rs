@@ -143,21 +143,18 @@ impl LabelAttacher {
                     continue;
                 };
 
-                if let Some(gap) = self.check_above(&text_bounds, &field_bounds) {
-                    if best_above.map_or(true, |b| gap < b) {
+                if let Some(gap) = self.check_above(&text_bounds, &field_bounds)
+                    && best_above.is_none_or(|b| gap < b) {
                         best_above = Some(gap);
                     }
-                }
-                if let Some(gap) = self.check_below(&text_bounds, &field_bounds) {
-                    if best_below.map_or(true, |b| gap < b) {
+                if let Some(gap) = self.check_below(&text_bounds, &field_bounds)
+                    && best_below.is_none_or(|b| gap < b) {
                         best_below = Some(gap);
                     }
-                }
-                if let Some(gap) = self.check_left(&text_bounds, &field_bounds) {
-                    if best_left.map_or(true, |b| gap < b) {
+                if let Some(gap) = self.check_left(&text_bounds, &field_bounds)
+                    && best_left.is_none_or(|b| gap < b) {
                         best_left = Some(gap);
                     }
-                }
             }
 
             // Vote for the direction with the smallest gap (closest text)

@@ -293,18 +293,21 @@ pub enum FieldAccess {
     ReadOnly,
 }
 
-impl FieldAccess {
-    /// Parse from XFA access attribute value.
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for FieldAccess {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "open" => FieldAccess::Open,
             "nonInteractive" => FieldAccess::NonInteractive,
             "protected" => FieldAccess::Protected,
             "readOnly" => FieldAccess::ReadOnly,
             _ => FieldAccess::Open, // Default per XFA spec
-        }
+        })
     }
+}
 
+impl FieldAccess {
     /// Returns true if this access level allows user interaction/input.
     pub fn is_interactive(&self) -> bool {
         matches!(self, FieldAccess::Open)
@@ -1422,11 +1425,13 @@ impl<'a> FlattenContext<'a> {
     }
 }
 
-impl Layout {
+impl std::str::FromStr for Layout {
+    type Err = std::convert::Infallible;
+
     /// Parse layout attribute string to Layout enum
     /// Per XFA spec: if subform has no layout attribute, it defaults to "position"
-    pub fn from_str(s: &str) -> Self {
-        match s {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "tb" => Layout::TopToBottom,
             "lr-tb" => Layout::LeftToRightTopToBottom,
             "rl-tb" => Layout::RightToLeftTopToBottom,
@@ -1438,17 +1443,16 @@ impl Layout {
             // Per XFA spec section 8 (page 280): "If a subform element does not have
             // a layout attribute it defaults to positioned layout."
             _ => Layout::Position,
-        }
+        })
     }
+}
 
+impl Layout {
     /// Returns true if this layout mode is a flowing layout (ignores x/y coordinates)
     /// Per XFA spec: "In flowing layout the contained object's x and y properties,
     /// as well as its anchor point, are ignored."
     pub fn is_flowing(&self) -> bool {
-        match self {
-            Layout::Position => false,
-            _ => true,
-        }
+        !matches!(self, Layout::Position)
     }
 }
 
@@ -1459,6 +1463,7 @@ impl Layout {
 /// Content area bounds for master page region classification.
 /// Used to determine whether page background elements are in header, footer, or background regions.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ContentAreaBounds {
     x: Num,
     y: Num,
@@ -1488,6 +1493,7 @@ impl ContentAreaBounds {
     }
 }
 
+#[allow(dead_code)]
 impl Flattened {
     /// Create a new Flattened instance with the given page and children.
     pub fn new(page: Page, children: Vec<FlattenedKind>) -> Self {
@@ -1554,15 +1560,14 @@ impl Flattened {
         node: &XfaNode,
         items_map: &mut HashMap<String, Vec<XfaNode>>,
     ) {
-        if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
-            if tag_name == "form" {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+            && tag_name == "form" {
                 // Found the form packet — walk its children to collect items
                 for child in &node.children {
                     Self::collect_form_field_items(child, &mut String::new(), items_map);
                 }
                 return;
             }
-        }
         // Keep searching for the form element
         for child in &node.children {
             Self::find_form_element_and_collect_items(child, items_map);
@@ -1622,7 +1627,7 @@ impl Flattened {
         path: &mut String,
     ) {
         // Only process template subtree
-        let is_template = matches!(node.kind, XfaNodeKind::Template);
+        let _is_template = matches!(node.kind, XfaNodeKind::Template);
         let segment = match &node.kind {
             XfaNodeKind::Subform => node.name.as_deref(),
             XfaNodeKind::Field => node.name.as_deref(),
@@ -1637,15 +1642,14 @@ impl Flattened {
             path.push_str(name);
         }
 
-        if matches!(node.kind, XfaNodeKind::Field) {
-            if let Some(form_items_nodes) = form_items.get(path.as_str()) {
+        if matches!(node.kind, XfaNodeKind::Field)
+            && let Some(form_items_nodes) = form_items.get(path.as_str()) {
                 // Check if this field's existing <items> are all empty
                 let all_items_empty = node.children.iter().all(|c| {
-                    if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
-                        if tag_name == "items" {
+                    if let XfaNodeKind::Element { tag_name, .. } = &c.kind
+                        && tag_name == "items" {
                             return c.children.is_empty();
                         }
-                    }
                     true // non-items children don't count
                 });
 
@@ -1665,7 +1669,6 @@ impl Flattened {
                     }
                 }
             }
-        }
 
         // Recurse
         for child in &mut node.children {
@@ -1773,15 +1776,14 @@ impl Flattened {
         for child in &page_area.children {
             if matches!(child.kind, XfaNodeKind::ContentArea) {
                 content_areas.push(ContentAreaBounds::from_node(child, page_width, page_height));
-            } else if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "contentArea" {
+            } else if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "contentArea" {
                     content_areas.push(ContentAreaBounds::from_node(
                         child,
                         page_width,
                         page_height,
                     ));
                 }
-            }
         }
 
         content_areas
@@ -1987,7 +1989,7 @@ impl Flattened {
             let layout = root_subform
                 .layout
                 .as_ref()
-                .map(|l| Layout::from_str(l))
+                .and_then(|l| l.parse().ok())
                 .unwrap_or(Layout::Position);
 
             Self::flatten_nodes(
@@ -2018,24 +2020,21 @@ impl Flattened {
                 match child {
                     FlattenedKind::Node(node) => match &mut node.kind {
                         FlattenedNodeKind::Field { name, value, .. } => {
-                            if value.is_empty() {
-                                if let Some(computed) = computed_values.get(name.as_str()) {
+                            if value.is_empty()
+                                && let Some(computed) = computed_values.get(name.as_str()) {
                                     *value = computed.clone();
                                 }
-                            }
                         }
                         FlattenedNodeKind::Text {
                             content,
                             source_name,
                             ..
                         } => {
-                            if let Some(name) = source_name {
-                                if content.is_empty() {
-                                    if let Some(computed) = computed_values.get(name.as_str()) {
+                            if let Some(name) = source_name
+                                && content.is_empty()
+                                    && let Some(computed) = computed_values.get(name.as_str()) {
                                         *content = computed.clone();
                                     }
-                                }
-                            }
                         }
                     },
                     FlattenedKind::Group { children, .. } => {
@@ -2277,8 +2276,8 @@ impl Flattened {
                 
                 // Only apply CSS overrides if at least one CSS property was found
                 // This ensures consistency: either all CSS properties are considered, or none
-                if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
-                    if let Some(ref mut font) = style.font {
+                if (css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some())
+                    && let Some(ref mut font) = style.font {
                         // Apply CSS overrides if present
                         if let Some(size) = css_font_size {
                             font.size = size;
@@ -2290,7 +2289,6 @@ impl Flattened {
                             font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
                         }
                     }
-                }
 
                 // Get default h_align from XFA para element
                 let default_h_align = node
@@ -2487,7 +2485,7 @@ impl Flattened {
     fn extract_field_access(node: &XfaNode) -> FieldAccess {
         node.attributes
             .get("access")
-            .map(|s| FieldAccess::from_str(s))
+            .and_then(|s| s.parse().ok())
             .unwrap_or(FieldAccess::Open)
     }
 
@@ -2496,8 +2494,8 @@ impl Flattened {
     /// and the shape attribute distinguishes radio buttons (round) from checkboxes (square/default).
     fn extract_widget_kind(node: &XfaNode) -> Option<WidgetKind> {
         for child in &node.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "ui" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "ui" {
                     // Look for widget type element inside <ui>
                     for ui_child in &child.children {
                         if let XfaNodeKind::Element {
@@ -2548,7 +2546,6 @@ impl Flattened {
                     }
                     break;
                 }
-            }
         }
         None
     }
@@ -2557,6 +2554,7 @@ impl Flattened {
     /// Per XFA spec, a field can have one or two <items> elements:
     /// - One <items>: display value = save value
     /// - Two <items>: the one with save="1" contains save values, the other display values
+    ///
     /// The <choiceList> element inside <ui> provides textEntry and open attributes.
     fn extract_dropdown_hint(node: &XfaNode) -> Option<Hint> {
         let mut display_items: Vec<String> = Vec::new();
@@ -2589,8 +2587,7 @@ impl Flattened {
                             if let XfaNodeKind::Element {
                                 tag_name: ui_tag, ..
                             } = &ui_child.kind
-                            {
-                                if ui_tag == "choiceList" {
+                                && ui_tag == "choiceList" {
                                     text_entry = ui_child
                                         .attributes
                                         .get("textEntry")
@@ -2602,7 +2599,6 @@ impl Flattened {
                                         .map(|s| s == "multiSelect")
                                         .unwrap_or(false);
                                 }
-                            }
                         }
                     }
                     _ => {}
@@ -2626,7 +2622,7 @@ impl Flattened {
 
         let options: Vec<(String, String)> = display_items
             .into_iter()
-            .zip(save_items.into_iter())
+            .zip(save_items)
             .collect();
 
         Some(Hint::Dropdown {
@@ -2682,8 +2678,8 @@ impl Flattened {
     /// - initial: starting occurrences during empty merge (default = min)
     fn extract_occur_constraints(node: &XfaNode) -> Option<OccurConstraints> {
         for child in &node.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "occur" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "occur" {
                     // Parse attributes with defaults per XFA spec
                     let min = child
                         .attributes
@@ -2708,7 +2704,6 @@ impl Flattened {
 
                     return Some(OccurConstraints { min, max, initial });
                 }
-            }
         }
         None
     }
@@ -3141,11 +3136,10 @@ impl Flattened {
                         // Add WidgetType hint if extracted
                         if let Some(kind) = widget_kind {
                             // Add Dropdown hint with options if this is a dropdown
-                            if kind == WidgetKind::Dropdown {
-                                if let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
+                            if kind == WidgetKind::Dropdown
+                                && let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
                                     field_node.add_hint(dropdown_hint);
                                 }
-                            }
                             field_node.add_hint(Hint::WidgetType(kind));
                         }
                         // Add NoPrint hint if relevant="-print" or inherited from parent
@@ -3197,8 +3191,8 @@ impl Flattened {
                         }
                         
                         // Only apply CSS overrides if at least one CSS property was found
-                        if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
-                            if let Some(ref mut font) = style.font {
+                        if (css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some())
+                            && let Some(ref mut font) = style.font {
                                 // Apply CSS overrides if present
                                 if let Some(size) = css_font_size {
                                     font.size = size;
@@ -3210,7 +3204,6 @@ impl Flattened {
                                     font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
                                 }
                             }
-                        }
 
                         // Get default h_align from XFA para element
                         let default_h_align = node
@@ -3484,11 +3477,10 @@ impl Flattened {
                                 // Add WidgetType hint if we could determine it
                                 if let Some(widget_kind) = widget_kind {
                                     // Add Dropdown hint with options if this is a dropdown
-                                    if widget_kind == WidgetKind::Dropdown {
-                                        if let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
+                                    if widget_kind == WidgetKind::Dropdown
+                                        && let Some(dropdown_hint) = Self::extract_dropdown_hint(node) {
                                             field_node.add_hint(dropdown_hint);
                                         }
-                                    }
                                     field_node.add_hint(Hint::WidgetType(widget_kind));
                                 }
                                 // Add NoPrint hint if relevant="-print" or inherited from parent
@@ -3541,8 +3533,8 @@ impl Flattened {
                                 }
                                 
                                 // Only apply CSS overrides if at least one CSS property was found
-                                if css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some() {
-                                    if let Some(ref mut font) = style.font {
+                                if (css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some())
+                                    && let Some(ref mut font) = style.font {
                                         // Apply CSS overrides if present
                                         if let Some(size) = css_font_size {
                                             font.size = size;
@@ -3554,7 +3546,6 @@ impl Flattened {
                                             font.weight = if is_bold { crate::xfa::FontWeight::Bold } else { crate::xfa::FontWeight::Normal };
                                         }
                                     }
-                                }
 
                                 // Get default h_align from XFA para element
                                 let default_h_align = node
@@ -3858,7 +3849,7 @@ impl Flattened {
         let layout = node
             .layout
             .as_ref()
-            .map(|l| Layout::from_str(l))
+            .and_then(|l| l.parse().ok())
             .unwrap_or(Layout::Position);
 
         // Get anchor type for positioning (default is topLeft)
@@ -4166,19 +4157,19 @@ impl Flattened {
         let pts_per_mm = Decimal::from_str("2.834645669291339").unwrap();
         let pts_per_cm = Decimal::from_str("28.34645669291339").unwrap();
 
-        if s.ends_with("pt") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        if let Some(val) = s.strip_suffix("pt") {
+            Decimal::from_str(val.trim())
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("in") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("in") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_inch)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("mm") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("mm") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_mm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("cm") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("cm") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_cm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else {
@@ -4636,8 +4627,8 @@ impl Flattened {
                     Self::fill_rect(&mut img, x, y, w, h, light_blue_fill);
 
                     // If this is a radio button or checkbox, draw the checked indicator
-                    if let Some(checked) = is_checked {
-                        if *checked {
+                    if let Some(checked) = is_checked
+                        && *checked {
                             // Draw a filled circle (radio button) indicator
                             // Use black for the check mark
                             let indicator_color = Rgba([0u8, 0u8, 0u8, 255u8]);
@@ -4656,7 +4647,6 @@ impl Flattened {
                                 indicator_color,
                             );
                         }
-                    }
 
                     // Only draw field VALUE (not name) in black if present
                     if !value.is_empty() {
@@ -5812,9 +5802,9 @@ impl Flattened {
                         }
                         "span" => {
                             // Check for xfa:embed attribute (embedded references)
-                            if let Some(embed_ref) = child.attributes.get("xfa:embed") {
-                                if let (Some(cv), Some(itf)) = (computed_values, id_to_field) {
-                                    if let Some(resolved_text) =
+                            if let Some(embed_ref) = child.attributes.get("xfa:embed")
+                                && let (Some(cv), Some(itf)) = (computed_values, id_to_field)
+                                    && let Some(resolved_text) =
                                         Self::resolve_embed_reference(embed_ref, cv, itf)
                                     {
                                         if !resolved_text.trim().is_empty() {
@@ -5834,8 +5824,6 @@ impl Flattened {
                                         }
                                         continue; // Don't recurse into embed spans
                                     }
-                                }
-                            }
 
                             // Check for xfa-spacerun:yes style
                             let new_preserve = if let Some(style) = child.attributes.get("style") {
@@ -6101,24 +6089,21 @@ impl Flattened {
             let value_str = rest.split(';').next()?.trim();
 
             // Parse the dimension with unit
-            if value_str.ends_with("pt") {
-                value_str[..value_str.len() - 2].trim().parse().ok()
-            } else if value_str.ends_with("in") {
-                value_str[..value_str.len() - 2]
-                    .trim()
+            if let Some(val) = value_str.strip_suffix("pt") {
+                val.trim().parse().ok()
+            } else if let Some(val) = value_str.strip_suffix("in") {
+                val.trim()
                     .parse::<f32>()
                     .ok()
                     .map(|v| v * 72.0)
-            } else if value_str.ends_with("mm") {
-                value_str[..value_str.len() - 2]
-                    .trim()
+            } else if let Some(val) = value_str.strip_suffix("mm") {
+                val.trim()
                     .parse::<f32>()
                     .ok()
                     .map(|v| v * 2.834_645_7)
-            } else if value_str.ends_with("px") {
+            } else if let Some(val) = value_str.strip_suffix("px") {
                 // Approximate px to pt (1px ≈ 0.75pt at 96dpi)
-                value_str[..value_str.len() - 2]
-                    .trim()
+                val.trim()
                     .parse::<f32>()
                     .ok()
                     .map(|v| v * 0.75)
@@ -6187,23 +6172,21 @@ impl Flattened {
         for child in children {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for value_child in &child.children {
-                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
-                        if tag_name == "exData" {
+                    if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind
+                        && tag_name == "exData" {
                             // Find body element
                             for ex_child in &value_child.children {
                                 if let XfaNodeKind::Element {
                                     tag_name: body_tag, ..
                                 } = &ex_child.kind
-                                {
-                                    if body_tag == "body" {
+                                    && body_tag == "body" {
                                         // Find first <p> element with style
                                         for body_child in &ex_child.children {
                                             if let XfaNodeKind::Element {
                                                 tag_name: p_tag, ..
                                             } = &body_child.kind
-                                            {
-                                                if p_tag == "p" {
-                                                    if let Some(style) =
+                                                && p_tag == "p"
+                                                    && let Some(style) =
                                                         body_child.attributes.get("style")
                                                     {
                                                         let font_family =
@@ -6215,39 +6198,32 @@ impl Flattened {
                                                             Self::parse_css_font_weight(style);
                                                         return (font_family, font_size, is_bold);
                                                     }
-                                                }
-                                            }
                                         }
                                     }
-                                }
                             }
                         }
-                    }
                 }
             }
             // Also check Element with tag_name "value"
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "value" {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "value" {
                     for value_child in &child.children {
                         if let XfaNodeKind::Element {
                             tag_name: inner_tag,
                             ..
                         } = &value_child.kind
-                        {
-                            if inner_tag == "exData" {
+                            && inner_tag == "exData" {
                                 for ex_child in &value_child.children {
                                     if let XfaNodeKind::Element {
                                         tag_name: body_tag, ..
                                     } = &ex_child.kind
-                                    {
-                                        if body_tag == "body" {
+                                        && body_tag == "body" {
                                             for body_child in &ex_child.children {
                                                 if let XfaNodeKind::Element {
                                                     tag_name: p_tag, ..
                                                 } = &body_child.kind
-                                                {
-                                                    if p_tag == "p" {
-                                                        if let Some(style) =
+                                                    && p_tag == "p"
+                                                        && let Some(style) =
                                                             body_child.attributes.get("style")
                                                         {
                                                             let font_family =
@@ -6261,17 +6237,12 @@ impl Flattened {
                                                                 Self::parse_css_font_weight(style);
                                                             return (font_family, font_size, is_bold);
                                                         }
-                                                    }
-                                                }
                                             }
                                         }
-                                    }
                                 }
                             }
-                        }
                     }
                 }
-            }
         }
         (None, None, None)
     }
@@ -6310,10 +6281,12 @@ impl Flattened {
 
     /// Layout rich text into rendered lines with proper word wrapping.
     /// This handles:
+    /// 
     /// - Per-paragraph text-indent (first line only)
     /// - Preserved spaces (xfa-spacerun)
     /// - Proper word breaking (don't break on NBSP)
     /// - Justify preparation (marking first/last lines)
+    /// 
     /// Per XFA spec: letterSpacing affects interword and interletter spacings
     pub fn layout_rich_text(
         rich_text: &RichText,
@@ -6773,10 +6746,12 @@ impl Flattened {
 
     /// Render text with proper glyph-by-glyph positioning.
     /// This handles:
+    /// 
     /// - Justify alignment (distributes extra space between words)
     /// - Text-indent on first line of paragraphs
     /// - Preserved spaces (xfa-spacerun)
     /// - Bold/italic variants for styled text
+    /// 
     /// Per XFA spec: letterSpacing affects spacing between grapheme clusters
     pub fn render_text_glyph_by_glyph(
         img: &mut RgbaImage,
@@ -7003,7 +6978,7 @@ impl Flattened {
                 && tag_name == "body"
             {
                 return Some(Self::parse_rich_text_from_html(
-                    &[child.clone()],
+                    std::slice::from_ref(child),
                     default_h_align,
                     None,
                     None,

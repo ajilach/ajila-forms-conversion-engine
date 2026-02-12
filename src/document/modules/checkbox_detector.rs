@@ -8,7 +8,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, FlattenedNodeKind, Hint, WidgetKind};
+use crate::flattened::{Bounds, Hint, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -131,14 +131,13 @@ impl CheckboxDetector {
 
         // Check if any node has a Checkbox widget type hint
         for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx) {
-                if node
+            if let Some(node) = doc.get_node(node_idx)
+                && node
                     .hints
                     .iter()
                     .any(|hint| matches!(hint, Hint::WidgetType(WidgetKind::Checkbox)))
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
         false
@@ -223,7 +222,7 @@ impl AnalysisModule for CheckboxDetector {
 mod tests {
     use super::*;
     use crate::document::{Document, GroupKind};
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Hint, Page, WidgetKind};
+    use crate::flattened::{Flattened, FlattenedNode, Hint, Page, WidgetKind};
     use crate::xfa::num;
 
     #[test]

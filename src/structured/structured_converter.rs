@@ -386,8 +386,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         let mut excl_group_som_path: Option<String> = None;
 
         for &child_idx in &group.children {
-            if let Some(child_group) = self.doc.get_group(child_idx) {
-                if let GroupKind::RadioButton { field: _, label } = &child_group.kind {
+            if let Some(child_group) = self.doc.get_group(child_idx)
+                && let GroupKind::RadioButton { field: _, label } = &child_group.kind {
                     // Get label text
                     if let Some(&label_group_idx) = child_group.children.get(*label) {
                         let label_text = self.doc.get_text_content(label_group_idx);
@@ -417,7 +417,6 @@ impl<'a, 'b> Converter<'a, 'b> {
                         }
                     }
                 }
-            }
         }
 
         if field_names.is_empty() {
@@ -431,7 +430,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Build NameValue options from field_names and options (labels)
         let name_values: Vec<NameValue> = field_names
             .into_iter()
-            .zip(options.into_iter())
+            .zip(options)
             .map(|(field_name, label)| NameValue {
                 name: TranslatableString::Plain(label),
                 value: InputValue::Text(field_name),
@@ -505,11 +504,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         let value_parts: Vec<String> = nodes
             .iter()
             .filter_map(|n| {
-                if let FlattenedNodeKind::Field { value, .. } = &n.kind {
-                    if !value.is_empty() {
+                if let FlattenedNodeKind::Field { value, .. } = &n.kind
+                    && !value.is_empty() {
                         return Some(value.clone());
                     }
-                }
                 None
             })
             .collect();
@@ -546,8 +544,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         });
 
         // If there's suffix text, emit it as a trailing paragraph
-        if let Some(suffix) = suffix_text {
-            if !suffix.is_empty() {
+        if let Some(suffix) = suffix_text
+            && !suffix.is_empty() {
                 let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain(suffix.clone()),
                 });
@@ -555,7 +553,6 @@ impl<'a, 'b> Converter<'a, 'b> {
                     children: vec![field_node, suffix_paragraph],
                 }));
             }
-        }
 
         Some(field_node)
     }
@@ -780,11 +777,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
 
         // Plain text fallback
-        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
-            if !content.is_empty() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind
+            && !content.is_empty() {
                 result.push(InlineNode::Text(content.clone()));
             }
-        }
     }
 
     /// Convert RichText to multiple ParagraphNodes (one per RichParagraph).
@@ -847,7 +843,5 @@ impl<'a, 'b> Converter<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // TODO: Add tests when we have test fixtures
 }

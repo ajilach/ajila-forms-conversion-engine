@@ -133,13 +133,11 @@ pub fn parse_events_from_node(children: &[XfaNode]) -> Vec<XfaScript> {
     let mut scripts = Vec::new();
 
     for child in children {
-        if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-            if tag_name == "event" {
-                if let Some(script) = parse_event_element(child) {
+        if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+            && tag_name == "event"
+                && let Some(script) = parse_event_element(child) {
                     scripts.push(script);
                 }
-            }
-        }
     }
 
     scripts
@@ -165,8 +163,7 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
             tag_name,
             text_content,
         } = &child.kind
-        {
-            if tag_name == "script" {
+            && tag_name == "script" {
                 let content_type = child
                     .attributes
                     .get("contentType")
@@ -192,7 +189,6 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
                     });
                 }
             }
-        }
     }
 
     None
@@ -205,22 +201,18 @@ pub fn parse_variables_from_node(
     let mut variables = std::collections::HashMap::new();
 
     for child in children {
-        if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-            if tag_name == "variables" {
+        if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+            && tag_name == "variables" {
                 for var_child in &child.children {
                     if let XfaNodeKind::Element {
                         tag_name: var_tag, ..
                     } = &var_child.kind
-                    {
-                        if var_tag == "script" {
-                            if let Some(name) = var_child.attributes.get("name") {
+                        && var_tag == "script"
+                            && let Some(name) = var_child.attributes.get("name") {
                                 variables.insert(name.clone(), std::collections::HashMap::new());
                             }
-                        }
-                    }
                 }
             }
-        }
     }
 
     variables

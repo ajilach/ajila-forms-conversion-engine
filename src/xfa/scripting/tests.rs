@@ -378,12 +378,12 @@ fn test_xfa_value_as_string() {
 
 #[test]
 fn test_presence_from_str() {
-    assert_eq!(Presence::from_str("visible"), Presence::Visible);
-    assert_eq!(Presence::from_str("hidden"), Presence::Hidden);
-    assert_eq!(Presence::from_str("invisible"), Presence::Invisible);
-    assert_eq!(Presence::from_str("inactive"), Presence::Inactive);
+    assert_eq!("visible".parse::<Presence>().unwrap(), Presence::Visible);
+    assert_eq!("hidden".parse::<Presence>().unwrap(), Presence::Hidden);
+    assert_eq!("invisible".parse::<Presence>().unwrap(), Presence::Invisible);
+    assert_eq!("inactive".parse::<Presence>().unwrap(), Presence::Inactive);
     // Unknown values default to Visible
-    assert_eq!(Presence::from_str("unknown"), Presence::Visible);
+    assert_eq!("unknown".parse::<Presence>().unwrap(), Presence::Visible);
 }
 
 #[test]

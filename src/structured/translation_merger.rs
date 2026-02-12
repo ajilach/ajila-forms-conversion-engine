@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use crate::context::Context;
 use crate::structured::{
     ConditionalNode, DocumentEnvelope, FieldNode, FieldType, GridLayout, GridLayoutElement,
-    GroupNode, HeadingNode, ImageNode, InlineNode, InlineText, NameValue, ParagraphNode,
+    GroupNode, HeadingNode, InlineNode, InlineText, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
 };
 

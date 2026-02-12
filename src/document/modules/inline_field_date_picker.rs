@@ -17,6 +17,11 @@ use crate::flattened::FlattenedNodeKind;
 use regex_lite::Regex;
 use std::sync::LazyLock;
 
+/// Represents a date field transformation to be applied.
+/// Contains the original group index, label, optional suffix text,
+/// generated field name, and associated field indices.
+type DateFieldTransform = (usize, String, Option<String>, String, Vec<usize>);
+
 /// Regex patterns for inline date detection.
 ///
 /// Pattern 1: `\d{1,2}\.\s*\.\s*\d*` matches "01..1", "01. .1", "1..2024", etc.
@@ -134,7 +139,7 @@ impl AnalysisModule for InlineFieldDatePicker {
         });
 
         // Track groups to transform: (original_idx, label, suffix, generated_name, field_indices)
-        let mut transforms: Vec<(usize, String, Option<String>, String, Vec<usize>)> = Vec::new();
+        let mut transforms: Vec<DateFieldTransform> = Vec::new();
 
         // Check text blocks for inline date patterns
         for &text_idx in &text_blocks {
@@ -198,7 +203,7 @@ impl AnalysisModule for InlineFieldDatePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::modules::{FieldGrouper, TextBlockGrouper};
+    use crate::document::modules::TextBlockGrouper;
     use crate::flattened::{Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 
@@ -438,7 +443,7 @@ mod tests {
         let flattened = form.flattened();
 
         // Create document and run full pipeline
-        let mut doc = Document::from_flattened(&flattened);
+        let mut doc = Document::from_flattened(flattened);
         run_analysis_pipeline(&mut doc);
 
         // Find all InlineDateField groups

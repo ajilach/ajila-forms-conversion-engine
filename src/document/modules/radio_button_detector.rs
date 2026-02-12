@@ -84,7 +84,7 @@ impl RadioButtonDetector {
     /// But explicitly reject fields with Checkbox widget hint.
     fn is_radio_field(&self, doc: &Document, field_idx: usize) -> bool {
         let node_indices = doc.collect_node_indices(field_idx);
-        
+
         for &node_idx in &node_indices {
             if let Some(node) = doc.get_node(node_idx) {
                 // Check for explicit widget type
@@ -103,7 +103,7 @@ impl RadioButtonDetector {
                 }
             }
         }
-        
+
         // No explicit widget type found - could be radio (legacy behavior)
         // But we'll be conservative and return true to maintain backward compatibility
         true
@@ -231,7 +231,7 @@ impl AnalysisModule for RadioButtonDetector {
 mod tests {
     use super::*;
     use crate::document::{Document, GroupKind};
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Page};
+    use crate::flattened::{Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 
     #[test]

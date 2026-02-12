@@ -13,7 +13,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint};
+use crate::flattened::Bounds;
 use rust_decimal::Decimal;
 use std::collections::HashSet;
 
@@ -416,7 +416,7 @@ impl AnalysisModule for RepeatableDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind, Hint, Page};
+    use crate::flattened::{Flattened, FlattenedNode, Hint, Page};
     use crate::xfa::num;
 
     fn create_test_node_with_occurrence(

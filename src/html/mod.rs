@@ -5,8 +5,8 @@
 
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, NameValue, ParagraphNode, RepeatableNode,
-    StructuredNode, TableNode,
+    ImageNode, InlineNode, InlineText, InputValue, ParagraphNode, RepeatableNode, StructuredNode,
+    TableNode,
 };
 
 /// Configuration for HTML generation
@@ -314,9 +314,9 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
     let placeholder = f
         .placeholder
         .as_ref()
-        .and_then(|p| match p {
+        .map(|p| match p {
             crate::structured::TranslatableString::Plain(s) => {
-                Some(format!(" placeholder=\"{}\"", escape_attr(s)))
+                format!(" placeholder=\"{}\"", escape_attr(s))
             }
             crate::structured::TranslatableString::Translated(map) => {
                 // For translated placeholders, generate data attributes for each language
@@ -332,7 +332,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                 if let Some((_, text)) = map.iter().next() {
                     attrs.push_str(&format!(" placeholder=\"{}\"", escape_attr(text)));
                 }
-                Some(attrs)
+                attrs
             }
         })
         .unwrap_or_default();
@@ -1384,6 +1384,7 @@ fn base64_encode(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::structured::NameValue;
 
     #[test]
     fn test_generate_simple_field() {

@@ -404,9 +404,9 @@ fn explore_radio(
 
                 // Mark all fields in this radio group as processed
                 for (idx, f) in global_field_order.iter().enumerate() {
-                    if f.is_radio() {
-                        if let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str()) {
-                            if Some(&fg)
+                    if f.is_radio()
+                        && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
+                            && Some(&fg)
                                 == new_state
                                     .selections
                                     .last()
@@ -419,8 +419,6 @@ fn explore_radio(
                                 };
                                 new_state.next_field_index = idx + 1;
                             }
-                        }
-                    }
                 }
 
                 new_form.refresh().map_err(crate::Error::FormCreation)?;
@@ -609,8 +607,8 @@ fn can_select_field(
     }
 
     // For radio buttons, check if a sibling from the same group is selected
-    if field.is_radio() {
-        if let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
+    if field.is_radio()
+        && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
             let group_already_has_selection = current_selections.iter().any(|sel| {
                 form.find_excl_group_for_field(sel.field_path.as_str())
                     .map(|g| g == excl_group)
@@ -620,7 +618,6 @@ fn can_select_field(
                 return false;
             }
         }
-    }
 
     true
 }
@@ -659,8 +656,8 @@ fn search_selectable_fields(
             if !name.is_empty() {
                 // Look for <ui> child and check for checkButton or choiceList
                 let field_kind = node.children.iter().find_map(|c| {
-                    if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind {
-                        if t == "ui" {
+                    if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind
+                        && t == "ui" {
                             return c.children.iter().find_map(|ui_c| {
                                 if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
                                     match t2.as_str() {
@@ -684,7 +681,6 @@ fn search_selectable_fields(
                                 }
                             });
                         }
-                    }
                     None
                 });
 

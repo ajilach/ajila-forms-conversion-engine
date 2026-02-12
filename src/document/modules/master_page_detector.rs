@@ -31,15 +31,14 @@ impl MasterPageDetector {
     /// Get the MasterPage hint region from a leaf group's node.
     fn get_master_page_region(&self, doc: &Document, group_idx: usize) -> Option<MasterPageRegion> {
         let group = doc.groups.get(group_idx)?;
-        if let GroupKind::Leaf { node_index } = &group.kind {
-            if let Some(node) = doc.get_node(*node_index) {
+        if let GroupKind::Leaf { node_index } = &group.kind
+            && let Some(node) = doc.get_node(*node_index) {
                 for hint in &node.hints {
                     if let Hint::MasterPage { region } = hint {
                         return Some(*region);
                     }
                 }
             }
-        }
         None
     }
 
@@ -49,13 +48,11 @@ impl MasterPageDetector {
 
         for (idx, group) in doc.groups.iter().enumerate() {
             // Only process leaf groups
-            if let GroupKind::Leaf { .. } = &group.kind {
-                if let Some(region) = self.get_master_page_region(doc, idx) {
-                    if region == target_region {
+            if let GroupKind::Leaf { .. } = &group.kind
+                && let Some(region) = self.get_master_page_region(doc, idx)
+                    && region == target_region {
                         groups.push(idx);
                     }
-                }
-            }
         }
 
         groups

@@ -21,10 +21,21 @@
 
 use crate::xfa::scripting::{
     EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScriptEngine,
-    parse_events_from_node,
+    XfaScript, parse_events_from_node,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
+
+/// A pair of child name and child ID.
+type ChildNameIdPair = (String, String);
+
+/// Represents an event with its associated metadata:
+/// - name: The node name
+/// - full_path: The full SOM path
+/// - children: List of child (name, id) pairs
+/// - script: The XFA script to execute
+/// - presence: The node's presence value
+type EventWithChildren = (String, String, Vec<ChildNameIdPair>, XfaScript, Presence);
 
 /// Result of script execution containing computed values and presence changes.
 #[derive(Debug, Clone, Default)]
@@ -174,11 +185,10 @@ impl ScriptExecutor {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
 
                 let result = engine.execute_script(script);
-                if let Err(ref e) = result {
-                    if std::env::var("XFA_DEBUG").is_ok() {
+                if let Err(ref e) = result
+                    && std::env::var("XFA_DEBUG").is_ok() {
                         eprintln!("[INIT ERR] field={field_name} path={full_path}: {e}");
                     }
-                }
                 let _ = result;
 
                 // Collect presence values set on the current field
@@ -225,7 +235,7 @@ impl ScriptExecutor {
                 }
                 let som_pres = engine.get_all_som_presence_changes();
                 for (som_path, pres_str) in &som_pres {
-                    let presence = Presence::from_str(pres_str);
+                    let presence = pres_str.parse().unwrap_or_default();
                     // SOM paths from the engine are already full paths
                     init_dynamic_presence.insert(som_path.clone(), presence);
                 }
@@ -241,7 +251,7 @@ impl ScriptExecutor {
         let mut dynamic_presence_overrides: HashMap<String, Presence> = HashMap::new();
         let som_presence_changes = engine.get_all_som_presence_changes();
         for (som_path, presence_str) in &som_presence_changes {
-            let presence = Presence::from_str(presence_str);
+            let presence = presence_str.parse().unwrap_or_default();
             // Use full SOM path as key to avoid leaf-name collisions
             dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
@@ -287,7 +297,7 @@ impl ScriptExecutor {
         // Also collect SOM-level presence changes from Phase 2 for cross-phase suppression.
         let som_presence_changes_2 = engine.get_all_som_presence_changes();
         for (som_path, presence_str) in &som_presence_changes_2 {
-            let presence = Presence::from_str(presence_str);
+            let presence = presence_str.parse().unwrap_or_default();
             // Use full SOM path as key to avoid leaf-name collisions
             dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
@@ -387,11 +397,10 @@ impl ScriptExecutor {
     ) {
         for (name, id, presence) in changes {
             // Try to find by ID first (more specific)
-            if let Some(id_val) = id {
-                if Self::apply_presence_by_id(nodes, id_val, *presence) {
+            if let Some(id_val) = id
+                && Self::apply_presence_by_id(nodes, id_val, *presence) {
                     continue;
                 }
-            }
             // Fall back to finding by name
             Self::apply_presence_by_name(nodes, name, *presence);
         }
@@ -509,7 +518,7 @@ impl ScriptExecutor {
     /// Build a lookup keyed by full SOM path from presence_changes.
     /// Uses `all_events` to resolve leaf names → full paths.
     fn build_full_path_presence_map(
-        all_events: &[(String, String, Vec<(String, String)>, crate::xfa::scripting::XfaScript, Presence)],
+        all_events: &[EventWithChildren],
         changes: &[(String, Option<String>, Presence)],
     ) -> HashMap<String, Presence> {
         // Build a leaf→full_path lookup from all_events.
@@ -551,14 +560,8 @@ impl ScriptExecutor {
     /// Find all events with child IDs and full SOM paths
     fn find_all_events_with_child_ids(
         nodes: &[XfaNode],
-        events: &mut Vec<(
-            String,
-            String,
-            Vec<(String, String)>,
-            crate::xfa::scripting::XfaScript,
-            Presence,
-        )>,
-        parent_child_map: &HashMap<String, Vec<(String, String)>>,
+        events: &mut Vec<EventWithChildren>,
+        parent_child_map: &HashMap<String, Vec<ChildNameIdPair>>,
         subform_counters: &mut HashMap<String, usize>,
         parent_path: Option<&str>,
     ) {
@@ -853,32 +856,29 @@ impl ScriptExecutor {
         text_vars: &mut Vec<(String, String)>,
     ) {
         for node in nodes {
-            if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
-                if tag_name == "variables" {
+            if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+                && tag_name == "variables" {
                     for child in &node.children {
                         if let XfaNodeKind::Element {
                             tag_name: child_tag,
                             text_content,
                             ..
                         } = &child.kind
-                        {
-                            if let Some(name) =
+                            && let Some(name) =
                                 child.name.as_ref().or_else(|| child.attributes.get("name"))
                             {
                                 if child_tag == "script" {
                                     // Handle <script> - may have content directly or in children
-                                    if let Some(content) = text_content {
-                                        if !content.is_empty() {
+                                    if let Some(content) = text_content
+                                        && !content.is_empty() {
                                             scripts.push((name.clone(), content.clone()));
                                         }
-                                    }
                                     // Also check for content in child nodes
                                     for script_child in &child.children {
-                                        if let XfaNodeKind::Text { content } = &script_child.kind {
-                                            if !content.is_empty() {
+                                        if let XfaNodeKind::Text { content } = &script_child.kind
+                                            && !content.is_empty() {
                                                 scripts.push((name.clone(), content.clone()));
                                             }
-                                        }
                                     }
                                 } else if child_tag == "text" {
                                     // Handle <text> variables - these are simple string values
@@ -886,10 +886,8 @@ impl ScriptExecutor {
                                     text_vars.push((name.clone(), value));
                                 }
                             }
-                        }
                     }
                 }
-            }
 
             Self::collect_variable_items(&node.children, scripts, text_vars);
         }

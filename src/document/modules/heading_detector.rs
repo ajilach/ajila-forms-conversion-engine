@@ -93,7 +93,7 @@ impl GlobalFontStats {
         sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let len = sizes.len();
-        let median = if len % 2 == 0 {
+        let median = if len.is_multiple_of(2) {
             (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
         } else {
             sizes[len / 2]
@@ -340,19 +340,18 @@ impl HeadingDetector {
             if sentence_enders.contains(&c) {
                 // Check if this is likely an abbreviation, decimal number, or ordinal/date
                 // Skip if followed by a digit (e.g., "1.5")
-                if let Some(&next) = chars.get(char_idx + 1) {
-                    if next.is_ascii_digit() {
-                        continue;
-                    }
+                if let Some(&next) = chars.get(char_idx + 1)
+                    && next.is_ascii_digit()
+                {
+                    continue;
                 }
 
                 // Skip if preceded by a digit (e.g., "01." as in dates/ordinals)
-                if char_idx > 0 {
-                    if let Some(&prev) = chars.get(char_idx - 1) {
-                        if prev.is_ascii_digit() {
-                            continue;
-                        }
-                    }
+                if char_idx > 0
+                    && let Some(&prev) = chars.get(char_idx - 1)
+                    && prev.is_ascii_digit()
+                {
+                    continue;
                 }
 
                 end_positions.push(char_idx);
@@ -382,10 +381,10 @@ impl HeadingDetector {
             // If there's more than just whitespace after a sentence ender, it's multiple sentences
             if !remaining.is_empty() && remaining.len() > 1 {
                 // Check if the next non-whitespace character is uppercase (new sentence) or not
-                if let Some(first_char) = remaining.chars().next() {
-                    if first_char.is_uppercase() {
-                        return false;
-                    }
+                if let Some(first_char) = remaining.chars().next()
+                    && first_char.is_uppercase()
+                {
+                    return false;
                 }
             }
         }
@@ -656,16 +655,18 @@ impl HeadingDetector {
                 // Check for visible borders (top and bottom edges)
                 if let Some(border) = &node.style.border {
                     // Check top edge (index 0)
-                    if let Some(top_edge) = border.get_edge(0) {
-                        if top_edge.presence == "visible" && top_edge.thickness.is_some() {
-                            top_border_count += 1;
-                        }
+                    if let Some(top_edge) = border.get_edge(0)
+                        && top_edge.presence == "visible"
+                        && top_edge.thickness.is_some()
+                    {
+                        top_border_count += 1;
                     }
                     // Check bottom edge (index 2)
-                    if let Some(bottom_edge) = border.get_edge(2) {
-                        if bottom_edge.presence == "visible" && bottom_edge.thickness.is_some() {
-                            bottom_border_count += 1;
-                        }
+                    if let Some(bottom_edge) = border.get_edge(2)
+                        && bottom_edge.presence == "visible"
+                        && bottom_edge.thickness.is_some()
+                    {
+                        bottom_border_count += 1;
                     }
                 }
             }
@@ -753,10 +754,10 @@ impl HeadingDetector {
                     *level = 1;
                 } else if min_original_level == 1 && *level > 1 {
                     // First heading is not the true H1, start from its level
-                    *level = (*level).max(2).min(6);
+                    *level = (*level).clamp(2, 6);
                 } else {
                     // No true H1 in document, start from detected level
-                    *level = (*level).max(1).min(6);
+                    *level = (*level).clamp(1, 6);
                 }
                 current_level = *level;
                 max_level_seen = current_level;
@@ -792,6 +793,7 @@ struct FontStyleKey {
 
 /// Font statistics collected from the document.
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 struct FontStats {
     median: f32,
     p75: f32,
@@ -915,16 +917,15 @@ impl HeadingDetector {
         let mut candidates: Vec<(usize, HeadingStyleBucket, f32, bool)> = Vec::new();
 
         for &group_idx in &text_groups {
-            if let Some(props) = self.get_text_properties(doc, group_idx) {
-                if let Some((bucket, is_bold_section_header)) =
+            if let Some(props) = self.get_text_properties(doc, group_idx)
+                && let Some((bucket, is_bold_section_header)) =
                     self.is_heading_candidate(&props, stats)
-                {
-                    let y_coord = doc
-                        .compute_group_bounds(group_idx)
-                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
-                        .unwrap_or(0.0);
-                    candidates.push((group_idx, bucket, y_coord, is_bold_section_header));
-                }
+            {
+                let y_coord = doc
+                    .compute_group_bounds(group_idx)
+                    .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                    .unwrap_or(0.0);
+                candidates.push((group_idx, bucket, y_coord, is_bold_section_header));
             }
         }
 

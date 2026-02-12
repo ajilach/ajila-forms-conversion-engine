@@ -235,10 +235,10 @@ impl SomResolver {
         let expr = som_expression.trim();
 
         // Handle shortcuts
-        let expr = if expr.starts_with("$form.") {
-            &expr[6..] // Strip "$form."
-        } else if expr.starts_with("$data.") {
-            &expr[6..] // Strip "$data."
+        let expr = if let Some(stripped) = expr.strip_prefix("$form.") {
+            stripped
+        } else if let Some(stripped) = expr.strip_prefix("$data.") {
+            stripped
         } else if expr == "$" {
             // $ = current context
             return context_path.cloned().into_iter().collect();
@@ -264,7 +264,7 @@ impl SomResolver {
 
         // Simple path lookup - try direct path first
         let path = SomPath::new(expr);
-        if self.nodes.get(&path).is_some() {
+        if self.nodes.contains_key(&path) {
             return vec![path];
         }
 
@@ -448,10 +448,10 @@ pub fn walk_som_path_mut<'a>(nodes: &'a mut [XfaNode], som_path: &str) -> Option
                     return Some(node);
                 }
                 return walk(&mut node.children, parts, idx + 1);
-            } else if node.name.is_none() {
-                if let Some(result) = walk(&mut node.children, parts, idx) {
-                    return Some(result);
-                }
+            } else if node.name.is_none()
+                && let Some(result) = walk(&mut node.children, parts, idx)
+            {
+                return Some(result);
             }
         }
 

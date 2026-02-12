@@ -13,7 +13,7 @@ use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Detects grid layouts by identifying elements aligned in rows and columns.
 ///
@@ -63,7 +63,7 @@ impl GridTemplateDetector {
     }
 
     /// Group coordinates that are within tolerance of each other.
-    fn cluster_coordinates(&self, coords: &[Decimal]) -> Vec<Vec<usize>> {
+    pub fn cluster_coordinates(&self, coords: &[Decimal]) -> Vec<Vec<usize>> {
         let mut clusters: Vec<Vec<usize>> = Vec::new();
         let mut sorted_indices: Vec<usize> = (0..coords.len()).collect();
         sorted_indices.sort_by(|&a, &b| coords[a].cmp(&coords[b]));

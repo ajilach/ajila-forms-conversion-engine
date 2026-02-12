@@ -1,7 +1,7 @@
 
     use crate::xfa::script_executor::ScriptExecutor;
 
-    use crate::{document, flattened, structured, xfa, Blueprint, Context, Document, DocumentEnvelope, Flattened, FlattenedNodeKind, HtmlConfig, MergeInput, RecursiveMerger, Selection, SelectionKind, StructuredNode, XfaNode, extract_xfa_from_pdf};
+    use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
     use rust_decimal::prelude::*;
     use std::collections::HashMap;
 
@@ -359,7 +359,7 @@
         let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
         // Find DES_Name_Company and print all its children details
-        fn find_and_print_draw(nodes: &[XfaNode], target_name: &str, depth: usize) {
+        fn find_and_print_draw(nodes: &[XfaNode], target_name: &str, _depth: usize) {
             for node in nodes {
                 let node_name = node.name.as_deref().unwrap_or("");
                 
@@ -395,7 +395,7 @@
                     return;
                 }
                 
-                find_and_print_draw(&node.children, target_name, depth + 1);
+                find_and_print_draw(&node.children, target_name, _depth + 1);
             }
         }
 
@@ -1420,7 +1420,7 @@
         // Find draw elements and print their content
         fn find_draws(nodes: &[xfa::XfaNode], path: &str) {
             for node in nodes {
-                let node_name = node.name.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let node_name = node.name.as_deref().unwrap_or("");
 
                 match &node.kind {
                     xfa::XfaNodeKind::Draw => {
@@ -1533,7 +1533,7 @@
         let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
         // Debug: find elements containing "UBS"
-        fn find_all_nodes_containing_text<'a>(nodes: &'a [XfaNode], text: &str, path: &str) {
+        fn find_all_nodes_containing_text(nodes: &[XfaNode], text: &str, path: &str) {
             for node in nodes {
                 let name = node.name.as_deref().unwrap_or("?");
                 let new_path = format!("{}/{}", path, name);
@@ -1859,7 +1859,7 @@
 
         // We should find some JavaScript scripts
         assert!(
-            all_events.len() > 0,
+            !all_events.is_empty(),
             "Should find event scripts in AAAB document"
         );
 
@@ -1925,7 +1925,7 @@
     }
 
     #[test]
-    fn test_aaab_ffFirstName_s_gets_vorname() {
+    fn test_aaab_ff_firstname_gets_vorname() {
         use crate::xfa::scripting::{
             EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
         };
@@ -2557,7 +2557,7 @@
 
         // Should have found some labeled fields
         assert!(
-            labeled_fields.len() > 0,
+            !labeled_fields.is_empty(),
             "Should have found at least one labeled field"
         );
 
@@ -2776,7 +2776,7 @@
             println!("Debug children: {:?}", debug_children);
 
             // Execute the script
-            let result = engine.execute_script(&script);
+            let result = engine.execute_script(script);
 
             // The script sets this.ffDesSignature.rawValue
             // We need to check that the child field was set
@@ -3849,8 +3849,7 @@
         // - Possibly one for the default state if different
         use crate::run_exhaustive_to_merged;
         use crate::structured::{
-            ConditionalNode, GroupNode, HeadingLevel, HeadingNode, InlineNode, RepeatableNode,
-            StructuredNode, GridLayout,
+            HeadingLevel, InlineNode, StructuredNode,
         };
 
         // Get merged structured nodes directly without file I/O
@@ -3970,7 +3969,7 @@
         // a conditional in the merged output - they should be extracted as common suffix
         // since they appear in all form states.
         use crate::run_exhaustive_to_merged;
-        use crate::structured::{FieldNode, HeadingLevel, HeadingNode, InlineNode, StructuredNode};
+        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
 
         // Get merged structured nodes directly without file I/O
         let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
@@ -4188,7 +4187,7 @@
             .filter(|(_, g)| matches!(g.kind, GroupKind::RepeatableSection { .. }))
             .collect();
 
-        for (rep_idx, rep_group) in &repeatable_sections {
+        for (rep_idx, _rep_group) in &repeatable_sections {
             // Check if kunde_idx is in the children (directly or transitively)
             fn is_descendant(doc: &Document, parent_idx: usize, target_idx: usize) -> bool {
                 if let Some(group) = doc.get_group(parent_idx) {
@@ -4470,7 +4469,7 @@
         // Test that the structured output for AAAI contains fields with the expected labels
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+        use crate::structured::{FieldNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4568,7 +4567,7 @@
                     StructuredNode::GridLayout(grid) => {
                         // Collect labels from grid elements
                         for element in &grid.elements {
-                            collect_field_labels(&[element.node.clone()], labels);
+                            collect_field_labels(std::slice::from_ref(&element.node), labels);
                         }
                     }
                     _ => {}
@@ -4713,7 +4712,7 @@
         // was accidentally broken (modules removed from run_analysis_pipeline).
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{HeadingLevel, HeadingNode, InlineNode, StructuredNode};
+        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4854,7 +4853,7 @@
         // repeatable sections. They should be filtered out by NoPrintDetector.
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{FieldNode, StructuredNode};
+        use crate::structured::StructuredNode;
 
         let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -4931,9 +4930,6 @@
         // - h3: CA/BD
         use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
         use crate::document::{Document, GroupKind};
-        use crate::flattened::FlattenedNodeKind;
-        use crate::xfa::FontWeight;
-        use std::collections::HashMap;
 
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -5032,8 +5028,7 @@
         // Test using structured nodes directly instead of reading from file
         use crate::run_exhaustive_to_merged;
         use crate::structured::{
-            ConditionalNode, FieldNode, GridLayout, GroupNode, HeadingLevel, HeadingNode,
-            InlineNode, RepeatableNode, StructuredNode,
+            FieldNode, HeadingNode, InlineNode, StructuredNode,
         };
 
         // Get merged structured nodes directly
@@ -5064,7 +5059,7 @@
 
         // Helper to check if a field has ISIN as its label
         fn has_isin_label(field: &FieldNode) -> bool {
-            field.label.as_ref().map_or(false, |label_nodes| {
+            field.label.as_ref().is_some_and(|label_nodes| {
                 label_nodes.0.iter().any(|inline| {
                     if let InlineNode::Text(t) = inline {
                         t.trim() == "ISIN"
@@ -5530,8 +5525,6 @@
         //  Anhang zum Formular W-8BEN"
         use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
         use crate::document::{Document, GroupKind};
-        use crate::flattened::FlattenedNodeKind;
-        use crate::xfa::FontWeight;
 
         let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -5591,7 +5584,7 @@
         // fields with "Nachname" and "Vorname(n)" labels
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+        use crate::structured::{FieldNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -5704,7 +5697,7 @@
         // - Name des/der Zeichnungsberechtigten
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+        use crate::structured::{FieldNode, StructuredNode};
 
         let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -5753,7 +5746,7 @@
                     }
                     StructuredNode::GridLayout(grid) => {
                         for element in &grid.elements {
-                            collect_field_labels(&[element.node.clone()], labels);
+                            collect_field_labels(std::slice::from_ref(&element.node), labels);
                         }
                     }
                     _ => {}
@@ -5914,7 +5907,7 @@
         // containing fields like "AccountNumber"
         use crate::document::Document;
         use crate::document::modules::run_analysis_pipeline;
-        use crate::structured::{FieldNode, InlineNode, StructuredNode};
+        use crate::structured::StructuredNode;
 
         let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -6316,8 +6309,7 @@
         // with TranslatedText nodes containing both "de" and "en" keys.
         use crate::run_exhaustive_to_envelope;
         use crate::structured::{
-            self, DocumentEnvelope, FieldNode, FieldType, HeadingLevel, InlineNode,
-            StructuredNode, TranslatableString,
+            self, FieldNode, HeadingLevel, InlineNode, StructuredNode,
         };
         use std::collections::HashMap;
 

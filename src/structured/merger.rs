@@ -15,6 +15,17 @@ use std::collections::HashMap;
 use crate::structured::{ConditionalNode, FieldCondition, GroupNode, InputValue, StructuredNode};
 use crate::xfa::scripting::SomPath;
 
+/// Represents a group with divergent content, paired with its selection condition.
+type DivergentGroup = (Option<Selection>, Vec<StructuredNode>);
+
+/// Result of extracting common prefix and suffix from groups.
+/// Contains the common prefix, common suffix, and divergent middle content per group.
+type CommonPrefixSuffixResult = (
+    Vec<StructuredNode>, // common prefix
+    Vec<StructuredNode>, // common suffix
+    Vec<DivergentGroup>, // middle (divergent) per group
+);
+
 /// The kind of selection that was made (determines replay behavior and condition generation).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SelectionKind {
@@ -189,7 +200,7 @@ impl RecursiveMerger {
             let key = input
                 .selections
                 .get(depth)
-                .map(|s| format!("{}={}", s.field_path.to_string(), s.value));
+                .map(|s| format!("{}={}", s.field_path, s.value));
             groups.entry(key).or_default().push(input.clone());
         }
 
@@ -299,12 +310,8 @@ impl RecursiveMerger {
     /// - Suffix: matching nodes from the end (after prefix removal)
     /// - Middle: the divergent content unique to each group
     fn extract_common_prefix_and_suffix(
-        mut groups: Vec<(Option<Selection>, Vec<StructuredNode>)>,
-    ) -> (
-        Vec<StructuredNode>,                           // common prefix
-        Vec<StructuredNode>,                           // common suffix
-        Vec<(Option<Selection>, Vec<StructuredNode>)>, // middle (divergent) per group
-    ) {
+        mut groups: Vec<DivergentGroup>,
+    ) -> CommonPrefixSuffixResult {
         if groups.is_empty() {
             return (Vec::new(), Vec::new(), Vec::new());
         }
@@ -412,7 +419,7 @@ impl RecursiveMerger {
         current_idx: usize,
     ) -> StructuredNode {
         match node {
-            StructuredNode::Group(g) => {
+            StructuredNode::Group(_g) => {
                 // Create sub-inputs for children using the group at current_idx
                 let child_inputs: Vec<MergeInput> = inputs
                     .iter()
@@ -759,7 +766,7 @@ mod tests {
         // All have the same first selection (RB_3), so should merge
         // Then diverge on the inner selection → nested conditionals
         // Result: [shared_para, cond(inner_RB_1), cond(inner_RB_2), cond(no_inner)]
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
     }
 
     #[test]

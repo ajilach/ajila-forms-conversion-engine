@@ -652,15 +652,14 @@ impl TextMeasurer {
 
             for (i, &ch) in chars.iter().enumerate() {
                 // Add kerning from previous character if enabled
-                if let Some(prev) = prev_char {
-                    if kerning_mode == KerningMode::Pair {
+                if let Some(prev) = prev_char
+                    && kerning_mode == KerningMode::Pair {
                         let prev_glyph = font.glyph_id(prev);
                         let curr_glyph = font.glyph_id(ch);
                         if prev_glyph.0 != 0 && curr_glyph.0 != 0 {
                             width += font.as_scaled(scale).kern(prev_glyph, curr_glyph);
                         }
                     }
-                }
 
                 // Add character width
                 let glyph_id = font.glyph_id(ch);

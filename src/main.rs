@@ -479,8 +479,8 @@ fn strip_language_suffix(name: &str) -> &str {
         "_DE", "_EN", "_FR", "_IT", "_ES", "_de", "_en", "_fr", "_it", "_es",
     ];
     for suffix in &suffixes {
-        if name.ends_with(suffix) {
-            return &name[..name.len() - suffix.len()];
+        if let Some(stripped) = name.strip_suffix(suffix) {
+            return stripped;
         }
     }
     name

@@ -389,18 +389,22 @@ pub enum HAlign {
     Radix, // Align on decimal point
 }
 
-impl HAlign {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for HAlign {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "center" => HAlign::Center,
             "right" => HAlign::Right,
             "justify" => HAlign::Justify,
             "justifyAll" => HAlign::JustifyAll,
             "radix" => HAlign::Radix,
             _ => HAlign::Left,
-        }
+        })
     }
 }
+
+impl HAlign {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum VAlign {
@@ -410,15 +414,19 @@ pub enum VAlign {
     Bottom,
 }
 
-impl VAlign {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for VAlign {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "middle" => VAlign::Middle,
             "bottom" => VAlign::Bottom,
             _ => VAlign::Top,
-        }
+        })
     }
 }
+
+impl VAlign {}
 
 /// Node presence values per XFA spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -430,16 +438,20 @@ pub enum Presence {
     Inactive,
 }
 
-impl Presence {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for Presence {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "invisible" => Presence::Invisible,
             "hidden" => Presence::Hidden,
             "inactive" => Presence::Inactive,
             _ => Presence::Visible,
-        }
+        })
     }
+}
 
+impl Presence {
     /// Returns the XFA string representation of this presence value
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -586,7 +598,7 @@ impl XfaNode {
         let name = attributes.get("name").cloned();
         let presence = attributes
             .get("presence")
-            .map(|s| Presence::from_str(s))
+            .and_then(|s| s.parse().ok())
             .unwrap_or(Presence::Visible);
 
         XfaNode {
@@ -880,12 +892,12 @@ impl XfaNode {
             h_align: node
                 .attributes
                 .get("hAlign")
-                .map(|s| HAlign::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             v_align: node
                 .attributes
                 .get("vAlign")
-                .map(|s| VAlign::from_str(s))
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             line_height: node
                 .attributes
@@ -942,19 +954,19 @@ impl XfaNode {
         let pts_per_mm = Decimal::from_str("2.834645669291339").unwrap(); // 72 / 25.4 with high precision
         let pts_per_cm = Decimal::from_str("28.34645669291339").unwrap(); // 72 / 2.54 with high precision
 
-        if s.ends_with("pt") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        if let Some(val) = s.strip_suffix("pt") {
+            Decimal::from_str(val.trim())
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("in") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("in") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_inch)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("mm") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("mm") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_mm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if s.ends_with("cm") {
-            Decimal::from_str(s[..s.len() - 2].trim())
+        } else if let Some(val) = s.strip_suffix("cm") {
+            Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_cm)
                 .map_err(|e| format!("Failed to parse dimension: {}", e))
         } else {
@@ -1377,28 +1389,27 @@ impl XfaNode {
     /// Used for exclGroup parent→child propagation per §4 pp.195-197.
     pub fn extract_item_values(&self) -> (Option<String>, Option<String>) {
         for child in &self.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                if tag_name == "items" {
-                    let mut values = Vec::new();
-                    for item_child in &child.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: t2,
-                            text_content,
-                            ..
-                        } = &item_child.kind
-                        {
-                            if t2 == "text" || t2 == "integer" || t2 == "float" {
-                                values.push(text_content.clone().unwrap_or_default());
-                            }
-                        }
-                        if let XfaNodeKind::Text { content } = &item_child.kind {
-                            values.push(content.clone());
-                        }
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "items"
+            {
+                let mut values = Vec::new();
+                for item_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: t2,
+                        text_content,
+                        ..
+                    } = &item_child.kind
+                        && (t2 == "text" || t2 == "integer" || t2 == "float")
+                    {
+                        values.push(text_content.clone().unwrap_or_default());
                     }
-                    let on_value = values.first().cloned();
-                    let off_value = values.get(1).cloned();
-                    return (on_value, off_value);
+                    if let XfaNodeKind::Text { content } = &item_child.kind {
+                        values.push(content.clone());
+                    }
                 }
+                let on_value = values.first().cloned();
+                let off_value = values.get(1).cloned();
+                return (on_value, off_value);
             }
         }
         (None, None)

@@ -182,15 +182,15 @@ impl FontEquate {
         if variant.family != self.from {
             return false;
         }
-        if let Some(w) = self.from_weight {
-            if variant.weight != w {
-                return false;
-            }
+        if let Some(w) = self.from_weight
+            && variant.weight != w
+        {
+            return false;
         }
-        if let Some(p) = self.from_posture {
-            if variant.posture != p {
-                return false;
-            }
+        if let Some(p) = self.from_posture
+            && variant.posture != p
+        {
+            return false;
         }
         true
     }
@@ -270,29 +270,29 @@ fn normalize_typeface(typeface: &str) -> (String, Option<FontWeight>) {
     let typeface_lower = typeface.to_lowercase();
 
     // Frutiger-style numeric weights: 45=Light, 46=LightItalic, 55=Roman, 56=Italic, 65=Bold, etc.
-    if let Ok(re) = Regex::new(r"^(.+?)\s*(\d{2})\s*(.*)$") {
-        if let Some(caps) = re.captures(&typeface_lower) {
-            let base = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
-            let num: u32 = caps
-                .get(2)
-                .and_then(|m| m.as_str().parse().ok())
-                .unwrap_or(0);
+    if let Ok(re) = Regex::new(r"^(.+?)\s*(\d{2})\s*(.*)$")
+        && let Some(caps) = re.captures(&typeface_lower)
+    {
+        let base = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+        let num: u32 = caps
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
 
-            // Map Frutiger-style numbers to weights
-            let weight_from_num = match num {
-                35 | 36 => Some(FontWeight::Thin),
-                45 | 46 => Some(FontWeight::Light),
-                55 | 56 => Some(FontWeight::Normal),
-                65 | 66 => Some(FontWeight::Bold),
-                75 | 76 => Some(FontWeight::ExtraBold),
-                85 | 86 => Some(FontWeight::Black),
-                95 | 96 => Some(FontWeight::Black),
-                _ => None,
-            };
+        // Map Frutiger-style numbers to weights
+        let weight_from_num = match num {
+            35 | 36 => Some(FontWeight::Thin),
+            45 | 46 => Some(FontWeight::Light),
+            55 | 56 => Some(FontWeight::Normal),
+            65 | 66 => Some(FontWeight::Bold),
+            75 | 76 => Some(FontWeight::ExtraBold),
+            85 | 86 => Some(FontWeight::Black),
+            95 | 96 => Some(FontWeight::Black),
+            _ => None,
+        };
 
-            if weight_from_num.is_some() && !base.is_empty() {
-                return (base.to_string(), weight_from_num);
-            }
+        if weight_from_num.is_some() && !base.is_empty() {
+            return (base.to_string(), weight_from_num);
         }
     }
 
@@ -378,6 +378,7 @@ impl FontVariant {
 
 /// Font file information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct FontFile {
     path: PathBuf,
     family: String,
@@ -717,20 +718,19 @@ impl FontManager {
         for face_index in 0..face_count {
             if let Some((family, weight, posture)) =
                 Self::read_font_metadata(&font_data, face_index)
+                && !family.is_empty()
             {
-                if !family.is_empty() {
-                    let variant = FontVariant::new(&family, weight, posture);
-                    let font_file = FontFile {
-                        path: path.clone(),
-                        family: family.clone(),
-                        weight,
-                        posture,
-                    };
+                let variant = FontVariant::new(&family, weight, posture);
+                let font_file = FontFile {
+                    path: path.clone(),
+                    family: family.clone(),
+                    weight,
+                    posture,
+                };
 
-                    // Only insert if we don't already have this variant
-                    self.font_files.entry(variant).or_insert(font_file);
-                    registered_any = true;
-                }
+                // Only insert if we don't already have this variant
+                self.font_files.entry(variant).or_insert(font_file);
+                registered_any = true;
             }
         }
 
@@ -1146,10 +1146,10 @@ impl FontManager {
         // Better to use the right typeface with wrong weight than a different typeface
         let normal_variant =
             FontVariant::new(&variant.family, FontWeight::Normal, FontPosture::Normal);
-        if *variant != normal_variant {
-            if let Some(font_file) = self.font_files.get(&normal_variant) {
-                return self.load_font_file(&font_file.path.clone(), variant.clone());
-            }
+        if *variant != normal_variant
+            && let Some(font_file) = self.font_files.get(&normal_variant)
+        {
+            return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
 
         // Also try any other available weight of the same family
@@ -1159,10 +1159,10 @@ impl FontManager {
             .filter(|v| v.family == variant.family)
             .cloned()
             .collect();
-        if let Some(any_variant) = family_variants.first() {
-            if let Some(font_file) = self.font_files.get(any_variant) {
-                return self.load_font_file(&font_file.path.clone(), variant.clone());
-            }
+        if let Some(any_variant) = family_variants.first()
+            && let Some(font_file) = self.font_files.get(any_variant)
+        {
+            return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
 
         // 4b. Try fuzzy matching - find fonts whose family name starts with or contains the requested family
@@ -1176,10 +1176,10 @@ impl FontManager {
             })
             .cloned()
             .collect();
-        if let Some(fuzzy_variant) = fuzzy_matches.first() {
-            if let Some(font_file) = self.font_files.get(&fuzzy_variant) {
-                return self.load_font_file(&font_file.path.clone(), variant.clone());
-            }
+        if let Some(fuzzy_variant) = fuzzy_matches.first()
+            && let Some(font_file) = self.font_files.get(fuzzy_variant)
+        {
+            return self.load_font_file(&font_file.path.clone(), variant.clone());
         }
 
         // 5. Try aliases - first pass: preserve weight and posture
