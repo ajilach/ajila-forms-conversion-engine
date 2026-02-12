@@ -460,7 +460,7 @@ impl ScriptExecutor {
 
                 let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
 
                 if (is_subform || is_exclgroup) && !node_name.is_empty() {
                     let key = if !node_id.is_empty() {
@@ -574,7 +574,7 @@ impl ScriptExecutor {
 
             let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                 || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-            let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+            let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
 
             // Build the full SOM path for this node
             let full_path = if !name.is_empty() {
@@ -653,7 +653,7 @@ impl ScriptExecutor {
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
                 let is_field = matches!(node.kind, XfaNodeKind::Field)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                let is_exclgroup = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
                 let is_draw = matches!(node.kind, XfaNodeKind::Draw)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
 
@@ -725,7 +725,7 @@ impl ScriptExecutor {
                 let is_proto = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "proto");
                 let is_field = matches!(child.kind, XfaNodeKind::Field)
                     || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                let is_exclgroup = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_exclgroup = matches!(child.kind, XfaNodeKind::ExclGroup);
                 let is_draw = matches!(child.kind, XfaNodeKind::Draw)
                     || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
 

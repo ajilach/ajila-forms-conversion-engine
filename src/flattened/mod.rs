@@ -2202,7 +2202,7 @@ impl Flattened {
                 }
                 flattened_children.push(FlattenedKind::Node(field_node));
             }
-            XfaNodeKind::Subform | XfaNodeKind::Element { .. } => {
+            XfaNodeKind::Subform | XfaNodeKind::ExclGroup | XfaNodeKind::Element { .. } => {
                 // Check if this subform has an <occur> element (repeatable section)
                 if let Some(occur) = Self::extract_occur_constraints(node) {
                     if occur.is_repeatable() && occur.has_initial_instances() {
@@ -2293,7 +2293,7 @@ impl Flattened {
                 // Recurse into all container-like nodes to find pageArea
                 let should_recurse = matches!(
                     node.kind,
-                    XfaNodeKind::Template | XfaNodeKind::PageSet | XfaNodeKind::Subform
+                    XfaNodeKind::Template | XfaNodeKind::PageSet | XfaNodeKind::Subform | XfaNodeKind::ExclGroup
                 ) || matches!(&node.kind, XfaNodeKind::Element { .. });
 
                 if should_recurse && let Some(result) = search_recursive(&node.children) {
@@ -2967,6 +2967,87 @@ impl Flattened {
 
                     // Don't recurse into draw children for positioning
                 }
+                XfaNodeKind::ExclGroup => {
+                    // Per XFA spec (section 17 "The exclGroup element"):
+                    // exclGroup is a container element with x, y, w, h, layout, and other positioning attributes.
+                    // It should be treated like a subform for layout purposes - compute its position
+                    // and use that as the parent position for its children (the radio button fields).
+                    let (outer_pos, content_pos, layout, consumed_height) =
+                        Self::compute_position_for_node_with_children(
+                            node,
+                            parent_position,
+                            parent_layout,
+                            &mut current_x,
+                            &mut current_y,
+                            &mut max_height_in_row,
+                            flattened_children,
+                            &child_ctx,
+                        )?;
+
+                    // For positioned layout, track the max extent (relative to parent_position)
+                    if parent_layout == Layout::Position {
+                        let node_bottom =
+                            (outer_pos.y - parent_position.y) + outer_pos.height;
+                        max_extent_y = max_extent_y.max(node_bottom);
+                    }
+
+                    // Per XFA spec (section 4 "Exclusion Groups"):
+                    // The exclGroup has a rawValue that determines which child field is "on".
+                    // Get the exclGroup's current value to pass to children.
+                    // IMPORTANT: Use full SOM path for lookup to handle duplicate names correctly
+                    let exclgroup_value = if node.name.is_some() {
+                        // child_ctx already has this exclGroup's name in its path
+                        // (added by with_path_segment above), so use it directly
+                        let full_path = &child_ctx.current_path;
+                        // Look up computed_values by FULL PATH (primary lookup)
+                        ctx.computed_values
+                            .get(full_path.as_str())
+                            .cloned()
+                            // Then check the node's value child
+                            .or_else(|| Self::extract_field_value(&node.children).into())
+                            // Then check rawValue attribute
+                            .or_else(|| node.attributes.get("rawValue").cloned())
+                    } else {
+                        None
+                    };
+
+                    // Create a child context with the exclGroup value for radio button checked state
+                    // Also set the exclGroup's SOM path so children can reference it
+                    let exclgroup_som_path = child_ctx.current_path.clone();
+                    let exclgroup_ctx = {
+                        let ctx_with_path =
+                            child_ctx.with_exclgroup_som_path(exclgroup_som_path);
+                        if let Some(value) = exclgroup_value.filter(|v| !v.is_empty()) {
+                            ctx_with_path.with_exclgroup_value(value)
+                        } else {
+                            ctx_with_path
+                        }
+                    };
+
+                    // Recurse into exclGroup children with the computed content position
+                    // The exclGroup's layout applies to its children (the fields)
+                    let children_height = Self::flatten_nodes(
+                        &node.children,
+                        content_pos,
+                        layout,
+                        flattened_children,
+                        &exclgroup_ctx,
+                    )?;
+
+                    // For tb layout, update current_y based on actual content height if no explicit height
+                    if parent_layout == Layout::TopToBottom && node.h.is_none() {
+                        let actual_height = children_height
+                            + node.margin_top.unwrap_or(Decimal::ZERO)
+                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                        let min_h = node.min_h.unwrap_or(Decimal::ZERO);
+                        let effective_height =
+                            actual_height.max(min_h).max(consumed_height);
+
+                        if effective_height > consumed_height {
+                            current_y = outer_pos.y + effective_height;
+                        }
+                    }
+                }
                 XfaNodeKind::Element { tag_name, .. } => {
                     // Handle generic elements that might be containers
                     match tag_name.as_str() {
@@ -3242,87 +3323,6 @@ impl Flattened {
                                 flattened_children,
                                 &child_ctx,
                             )?;
-                        }
-                        "exclGroup" => {
-                            // Per XFA spec (section 17 "The exclGroup element"):
-                            // exclGroup is a container element with x, y, w, h, layout, and other positioning attributes.
-                            // It should be treated like a subform for layout purposes - compute its position
-                            // and use that as the parent position for its children (the radio button fields).
-                            let (outer_pos, content_pos, layout, consumed_height) =
-                                Self::compute_position_for_node_with_children(
-                                    node,
-                                    parent_position,
-                                    parent_layout,
-                                    &mut current_x,
-                                    &mut current_y,
-                                    &mut max_height_in_row,
-                                    flattened_children,
-                                    &child_ctx,
-                                )?;
-
-                            // For positioned layout, track the max extent (relative to parent_position)
-                            if parent_layout == Layout::Position {
-                                let node_bottom =
-                                    (outer_pos.y - parent_position.y) + outer_pos.height;
-                                max_extent_y = max_extent_y.max(node_bottom);
-                            }
-
-                            // Per XFA spec (section 4 "Exclusion Groups"):
-                            // The exclGroup has a rawValue that determines which child field is "on".
-                            // Get the exclGroup's current value to pass to children.
-                            // IMPORTANT: Use full SOM path for lookup to handle duplicate names correctly
-                            let exclgroup_value = if node.name.is_some() {
-                                // child_ctx already has this exclGroup's name in its path
-                                // (added by with_path_segment above), so use it directly
-                                let full_path = &child_ctx.current_path;
-                                // Look up computed_values by FULL PATH (primary lookup)
-                                ctx.computed_values
-                                    .get(full_path.as_str())
-                                    .cloned()
-                                    // Then check the node's value child
-                                    .or_else(|| Self::extract_field_value(&node.children).into())
-                                    // Then check rawValue attribute
-                                    .or_else(|| node.attributes.get("rawValue").cloned())
-                            } else {
-                                None
-                            };
-
-                            // Create a child context with the exclGroup value for radio button checked state
-                            // Also set the exclGroup's SOM path so children can reference it
-                            let exclgroup_som_path = child_ctx.current_path.clone();
-                            let exclgroup_ctx = {
-                                let ctx_with_path =
-                                    child_ctx.with_exclgroup_som_path(exclgroup_som_path);
-                                if let Some(value) = exclgroup_value.filter(|v| !v.is_empty()) {
-                                    ctx_with_path.with_exclgroup_value(value)
-                                } else {
-                                    ctx_with_path
-                                }
-                            };
-
-                            // Recurse into exclGroup children with the computed content position
-                            // The exclGroup's layout applies to its children (the fields)
-                            let children_height = Self::flatten_nodes(
-                                &node.children,
-                                content_pos,
-                                layout,
-                                flattened_children,
-                                &exclgroup_ctx,
-                            )?;
-
-                            // For tb layout, update current_y based on actual content height if no explicit height
-                            if parent_layout == Layout::TopToBottom && node.h.is_none() {
-                                let actual_height = children_height
-                                    + node.margin_top.unwrap_or(Decimal::ZERO)
-                                    + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                                let min_h = node.min_h.unwrap_or(Decimal::ZERO);
-                                let effective_height =
-                                    actual_height.max(min_h).max(consumed_height);
-
-                                if effective_height > consumed_height {
-                                    current_y = outer_pos.y + effective_height;
-                                }
-                            }
                         }
                         // Skip data-only elements - these are Form DOM data, not layout
                         _ if tag_name.starts_with("xfa:")

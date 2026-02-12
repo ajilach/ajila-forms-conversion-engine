@@ -806,7 +806,7 @@ impl XfaForm {
 
             for node in nodes {
                 let node_name = node.name.as_deref();
-                let is_excl_group = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
 
                 let node_path = if let Some(name) = node_name {
                     if current_path.is_empty() {
@@ -862,7 +862,7 @@ impl XfaForm {
             current_excl_group: Option<&str>,
         ) -> Option<String> {
             for node in nodes {
-                let is_excl_group = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
 
                 let excl_group_for_children = if is_excl_group {
                     node.name.as_deref()
@@ -1012,7 +1012,7 @@ impl XfaForm {
                         || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
                     let is_subform = matches!(node.kind, XfaNodeKind::Subform)
                         || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                    let is_excl_group = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                    let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
 
                     if is_field && !name.is_empty() {
                         if let Some(p) = parent {
@@ -1369,7 +1369,7 @@ impl XfaForm {
                     None => path.to_string(),
                 };
 
-                let is_excl_group = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
 
                 let is_draw = matches!(node.kind, XfaNodeKind::Draw)
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");

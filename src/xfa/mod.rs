@@ -540,6 +540,9 @@ pub enum XfaNodeKind {
     /// Bind element
     Bind,
 
+    /// Exclusion group container (radio button group)
+    ExclGroup,
+
     /// Generic/unknown element
     Element {
         tag_name: String,
@@ -999,6 +1002,7 @@ impl XfaNode {
                         "draw" => XfaNodeKind::Draw,
                         "value" => XfaNodeKind::Value,
                         "bind" => XfaNodeKind::Bind,
+                        "exclGroup" => XfaNodeKind::ExclGroup,
                         _ => XfaNodeKind::Element {
                             tag_name: tag_name.clone(),
                             text_content: None,
@@ -1099,6 +1103,7 @@ impl XfaNode {
                         "draw" => XfaNodeKind::Draw,
                         "value" => XfaNodeKind::Value,
                         "bind" => XfaNodeKind::Bind,
+                        "exclGroup" => XfaNodeKind::ExclGroup,
                         _ => XfaNodeKind::Element {
                             tag_name: tag_name.clone(),
                             text_content: None,
@@ -1163,6 +1168,7 @@ impl XfaNode {
                         "draw" => XfaNodeKind::Draw,
                         "value" => XfaNodeKind::Value,
                         "bind" => XfaNodeKind::Bind,
+                        "exclGroup" => XfaNodeKind::ExclGroup,
                         _ => XfaNodeKind::Element {
                             tag_name: tag_name.clone(),
                             text_content: None,
@@ -1272,6 +1278,7 @@ impl XfaNode {
                 XfaNodeKind::Value => "Value",
                 XfaNodeKind::Text { .. } => "Text",
                 XfaNodeKind::Bind => "Bind",
+                XfaNodeKind::ExclGroup => "ExclGroup",
                 XfaNodeKind::Element { tag_name, .. } => tag_name,
             };
 
