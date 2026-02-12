@@ -9,7 +9,7 @@
 //! - Chapter 11: Scripting
 
 use super::dependency::DependencyTracker;
-use super::events::{EventActivity, EventRef, RunAt, ScriptContentType, XfaScript};
+use super::events::{ScriptContentType, XfaScript};
 use super::js_helpers;
 use super::som::{SomPath, SomResolver};
 use super::state::{FormState, Presence, SharedFormState, XfaValue};
@@ -61,8 +61,7 @@ pub struct XfaScriptEngine {
     field_objects_by_name: HashMap<String, Vec<SomPath>>,
     /// Maps child field names to their unique IDs in the current context
     child_name_to_id: HashMap<String, String>,
-    /// Maps radio button paths to their parent exclGroup paths
-    exclgroup_child_to_parent: HashMap<SomPath, SomPath>,
+
     /// Tracks which presence values have been explicitly changed by scripts
     presence_changes: HashMap<SomPath, String>,
     /// Tracks the INITIAL presence value from the XFA tree for each field object
@@ -84,7 +83,6 @@ impl XfaScriptEngine {
             field_objects: HashMap::new(),
             field_objects_by_name: HashMap::new(),
             child_name_to_id: HashMap::new(),
-            exclgroup_child_to_parent: HashMap::new(),
             presence_changes: HashMap::new(),
             initial_presence: HashMap::new(),
         };
@@ -106,7 +104,6 @@ impl XfaScriptEngine {
             field_objects: HashMap::new(),
             field_objects_by_name: HashMap::new(),
             child_name_to_id: HashMap::new(),
-            exclgroup_child_to_parent: HashMap::new(),
             presence_changes: HashMap::new(),
             initial_presence: HashMap::new(),
         };
@@ -120,6 +117,79 @@ impl XfaScriptEngine {
         self.setup_shortcuts();
         self.setup_field_registry();
         self.setup_som_fallback();
+    }
+
+    /// Get the rawValue of a specific field by its SOM path.
+    /// Falls back to looking up by the short field name if the exact path isn't found.
+    pub fn get_field_value(&mut self, path: &SomPath) -> Option<String> {
+        // Try exact path first
+        if let Some(obj) = self.field_objects.get(path) {
+            let obj = obj.clone();
+            if let Ok(raw_value) =
+                obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+            {
+                if !raw_value.is_undefined() && !raw_value.is_null() {
+                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
+                        let value = value_str.to_std_string_escaped();
+                        if !value.is_empty() {
+                            return Some(value);
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: try by field name
+        let name = path.name().to_string();
+        if let Some(paths) = self.field_objects_by_name.get(&name) {
+            if let Some(first_path) = paths.first().cloned() {
+                if let Some(obj) = self.field_objects.get(&first_path) {
+                    let obj = obj.clone();
+                    if let Ok(raw_value) =
+                        obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                    {
+                        if !raw_value.is_undefined() && !raw_value.is_null() {
+                            if let Ok(value_str) = raw_value.to_string(&mut self.context) {
+                                let value = value_str.to_std_string_escaped();
+                                if !value.is_empty() {
+                                    return Some(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get all field values as a HashMap keyed by both full SOM path and short name.
+    /// This produces the same dual-keyed map that `computed_values` previously maintained,
+    /// suitable for passing to `Flattened::from_xfa`.
+    pub fn get_all_field_values_for_flattening(&mut self) -> HashMap<SomPath, String> {
+        let mut map = HashMap::new();
+        let paths: Vec<(SomPath, JsObject)> = self
+            .field_objects
+            .iter()
+            .map(|(p, o)| (p.clone(), o.clone()))
+            .collect();
+        for (path, obj) in paths {
+            if let Ok(raw_value) =
+                obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+            {
+                if !raw_value.is_undefined() && !raw_value.is_null() {
+                    if let Ok(value_str) = raw_value.to_string(&mut self.context) {
+                        let value = value_str.to_std_string_escaped();
+                        if !value.is_empty() {
+                            // Store under full SOM path
+                            map.insert(path.clone(), value.clone());
+                            // Also store under short name for backward compat lookups
+                            map.insert(SomPath::new(path.name()), value);
+                        }
+                    }
+                }
+            }
+        }
+        map
     }
 
     /// Create a global field registry that resolveNode can access
@@ -694,7 +764,7 @@ impl XfaScriptEngine {
         }
 
         // Register first component as global
-        if let Some(first_dot) = path.find('.') {
+        if path.contains('.') {
             let global_obj = self.context.global_object();
 
             if let Some(dot_pos) = path.find('.') {
@@ -770,14 +840,44 @@ impl XfaScriptEngine {
             )
             .build();
 
+        // Set _rawValue as the internal backing property
         field
             .set(
-                PropertyKey::from(js_string!("rawValue")),
+                PropertyKey::from(js_string!("_rawValue")),
                 JsValue::from(js_string!(initial_value)),
                 false,
                 &mut self.context,
             )
             .ok();
+
+        // Define rawValue with getter/setter for automatic exclGroup propagation.
+        // When rawValue is set on an exclGroup child, the setter copies the value
+        // to the parent exclGroup's _rawValue, avoiding the need for batch sync.
+        self.context
+            .global_object()
+            .set(
+                PropertyKey::from(js_string!("_xfa_tmp_")),
+                JsValue::from(field.clone()),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        let _ = self.context.eval(Source::from_bytes(
+            r#"Object.defineProperty(_xfa_tmp_, 'rawValue', {
+                get: function() {
+                    var v = this._rawValue;
+                    return (v !== undefined && v !== null) ? v : '';
+                },
+                set: function(v) {
+                    this._rawValue = v;
+                    if (this._exclGroupParent) {
+                        this._exclGroupParent._rawValue = v;
+                    }
+                },
+                configurable: true,
+                enumerable: true
+            });"#,
+        ));
 
         field
             .set(
@@ -1056,7 +1156,14 @@ impl XfaScriptEngine {
             )
             .ok();
 
-        let this_obj = self.create_field_object(name, path, value);
+        // Reuse the already-registered field object so that properties like
+        // _exclGroupParent (set during register_xfa_node) are preserved.
+        let som_path = SomPath::new(path);
+        let this_obj = if let Some(existing) = self.field_objects.get(&som_path) {
+            existing.clone()
+        } else {
+            self.create_field_object(name, path, value)
+        };
         self.context
             .register_global_property(js_string!("_xfa_this_"), this_obj, Attribute::all())
             .ok();
@@ -1080,7 +1187,14 @@ impl XfaScriptEngine {
             )
             .ok();
 
-        let this_obj = self.create_field_object(name, path, value);
+        let this_obj = {
+            let som_path = SomPath::new(path);
+            if let Some(existing) = self.field_objects.get(&som_path) {
+                existing.clone()
+            } else {
+                self.create_field_object(name, path, value)
+            }
+        };
 
         // Track which child names map to which IDs
         self.child_name_to_id.clear();
@@ -1183,41 +1297,6 @@ impl XfaScriptEngine {
         None
     }
 
-    /// Sync exclusion group values based on their children's rawValues.
-    fn sync_exclgroup_values(&mut self) {
-        let child_to_parent: Vec<(SomPath, SomPath)> = self
-            .exclgroup_child_to_parent
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        for (child_path, parent_path) in child_to_parent {
-            if let Some(child_obj) = self.field_objects.get(&child_path) {
-                if let Ok(raw_value) =
-                    child_obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
-                {
-                    if !raw_value.is_undefined() && !raw_value.is_null() {
-                        if let Ok(value_str) = raw_value.to_string(&mut self.context) {
-                            let value = value_str.to_std_string_escaped();
-                            if !value.is_empty() && value != "0" {
-                                if let Some(parent_obj) = self.field_objects.get(&parent_path) {
-                                    parent_obj
-                                        .set(
-                                            PropertyKey::from(js_string!("rawValue")),
-                                            JsValue::from(js_string!(value.as_str())),
-                                            false,
-                                            &mut self.context,
-                                        )
-                                        .ok();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Get all field values from the SOM hierarchy that have been modified.
     pub fn get_all_som_field_values(&mut self) -> HashMap<String, String> {
         let mut values = HashMap::new();
@@ -1272,6 +1351,13 @@ impl XfaScriptEngine {
         changes
     }
 
+    /// Update the initial presence for a field so subsequent change detection
+    /// correctly recognizes reverts back to the "current" baseline.
+    pub fn update_initial_presence(&mut self, path: &SomPath, presence: &str) {
+        self.initial_presence
+            .insert(path.clone(), presence.to_string());
+    }
+
     pub fn execute_script(&mut self, script: &XfaScript) -> Result<Option<String>, String> {
         match script.content_type {
             ScriptContentType::JavaScript => self.execute_javascript(&script.source),
@@ -1318,8 +1404,6 @@ impl XfaScriptEngine {
 
         match self.context.eval(Source::from_bytes(&wrapped_source)) {
             Ok(result) => {
-                self.sync_exclgroup_values();
-
                 if let Ok(this_val) = self.context.global_object().get(
                     PropertyKey::from(js_string!("_xfa_this_")),
                     &mut self.context,
@@ -1366,12 +1450,6 @@ impl XfaScriptEngine {
         }
     }
 
-    pub fn get_field_value(&self, path: &str) -> Option<String> {
-        let state = self.form_state.read().ok()?;
-        let som_path = SomPath::new(path);
-        state.get_value(&som_path).map(|v| v.as_string())
-    }
-
     pub fn form_state(&self) -> &SharedFormState {
         &self.form_state
     }
@@ -1387,6 +1465,10 @@ impl XfaScriptEngine {
     }
 
     /// Register an XFA node (subform or field) in the SOM hierarchy.
+    ///
+    /// `is_parent_exclgroup` should be `true` when this node's parent is an
+    /// `<exclGroup>` element.  The caller determines this from the XFA tree
+    /// structure so that we don't need naming-convention heuristics.
     pub fn register_xfa_node(
         &mut self,
         name: &str,
@@ -1394,23 +1476,9 @@ impl XfaScriptEngine {
         parent_path: Option<&str>,
         is_field: bool,
         value: &str,
+        is_parent_exclgroup: bool,
     ) {
-        // Track exclGroup parent-child relationships for value propagation
-        if let Some(parent) = parent_path {
-            // Use configurable patterns instead of hardcoded ones
-            let is_exclgroup_child = self.is_likely_exclgroup_child(name, parent);
-            if is_exclgroup_child {
-                self.exclgroup_child_to_parent
-                    .insert(SomPath::new(path), SomPath::new(parent));
-
-                let js_register = format!(
-                    "_xfa_register_exclgroup_('{}', '{}');",
-                    path.replace('\'', "\\'"),
-                    parent.replace('\'', "\\'")
-                );
-                let _ = self.context.eval(Source::from_bytes(&js_register));
-            }
-        }
+        let is_exclgroup_child = is_parent_exclgroup;
 
         // Create the JavaScript object for this node
         let node_obj = if is_field {
@@ -1450,15 +1518,80 @@ impl XfaScriptEngine {
                 )
                 .ok();
 
+            // All containers can have rawValue per XFA spec (exclGroups need it
+            // for child→parent value propagation).
+            subform_obj
+                .set(
+                    PropertyKey::from(js_string!("_rawValue")),
+                    JsValue::from(js_string!(value)),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            self.context
+                .global_object()
+                .set(
+                    PropertyKey::from(js_string!("_xfa_tmp_")),
+                    JsValue::from(subform_obj.clone()),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            let _ = self.context.eval(Source::from_bytes(
+                r#"Object.defineProperty(_xfa_tmp_, 'rawValue', {
+                    get: function() {
+                        var v = this._rawValue;
+                        return (v !== undefined && v !== null) ? v : '';
+                    },
+                    set: function(v) {
+                        this._rawValue = v;
+                        if (this._exclGroupParent) {
+                            this._exclGroupParent._rawValue = v;
+                        }
+                    },
+                    configurable: true,
+                    enumerable: true
+                });"#,
+            ));
+
             subform_obj
         };
 
         let som_path = SomPath::new(path);
         let parent_som_path = parent_path.map(SomPath::new);
 
+        // Skip re-registration if this path is already registered (e.g., duplicate
+        // pageArea children in pageSet). Re-registering would create a new JS object
+        // that loses child properties set up on the first registration.
+        if self.field_objects.contains_key(&som_path) {
+            return;
+        }
+
         // Store in field_objects for later lookup
+        if std::env::var("XFA_DEBUG").is_ok() {
+            eprintln!("[REG] path={path} name={name} is_field={is_field} parent={parent_path:?}");
+        }
         self.field_objects
             .insert(som_path.clone(), node_obj.clone());
+
+        // Link child to parent exclGroup for automatic rawValue propagation.
+        // The rawValue setter on the child checks _exclGroupParent and copies
+        // the value to the parent's _rawValue when it's set.
+        if is_exclgroup_child {
+            if let Some(parent) = parent_path {
+                let parent_som = SomPath::new(parent);
+                if let Some(parent_obj) = self.field_objects.get(&parent_som) {
+                    node_obj
+                        .set(
+                            PropertyKey::from(js_string!("_exclGroupParent")),
+                            JsValue::from(parent_obj.clone()),
+                            false,
+                            &mut self.context,
+                        )
+                        .ok();
+                }
+            }
+        }
 
         // Register in SOM resolver
         self.som_resolver.register_node(
@@ -1524,23 +1657,6 @@ impl XfaScriptEngine {
                 }
             }
         }
-    }
-
-    /// Check if a node is likely a child of an exclGroup based on naming patterns.
-    ///
-    /// This uses heuristics rather than hardcoded patterns to detect radio button
-    /// relationships. Override this method or configure patterns for different forms.
-    fn is_likely_exclgroup_child(&self, child_name: &str, parent_path: &str) -> bool {
-        // Common pattern: parent path contains "Group" and child starts with "RB_"
-        let parent_looks_like_group = parent_path.contains("Group")
-            || parent_path.contains("group")
-            || parent_path.ends_with("_G");
-
-        let child_looks_like_radio = child_name.starts_with("RB_")
-            || child_name.starts_with("rb_")
-            || child_name.starts_with("Radio");
-
-        parent_looks_like_group && child_looks_like_radio
     }
 
     /// Get the current presence value set on `this` by a script.

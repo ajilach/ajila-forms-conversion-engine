@@ -86,7 +86,7 @@ pub use engine::XfaScriptEngine;
 pub use form::{EventResult, NodeBounds, XfaForm, XfaNodeRef, XfaNodeRefMut};
 
 // JS Helpers (for advanced usage)
-pub use js_helpers::{XFA_EXCLGROUP_HELPER, XFA_RESOLVE_PATH_HELPER, get_all_helpers};
+pub use js_helpers::{XFA_RESOLVE_PATH_HELPER, get_all_helpers};
 
 #[cfg(test)]
 mod tests;

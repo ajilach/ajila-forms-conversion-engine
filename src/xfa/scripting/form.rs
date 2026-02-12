@@ -9,7 +9,7 @@ use super::events::{
     EventActivity, EventRef, RunAt, ScriptContentType, XfaScript, parse_events_from_node,
 };
 use super::registry::{RegisteredScript, ScriptRegistry, ScriptType};
-use super::som::{SomPath, SomResolver, walk_som_path_mut};
+use super::som::{SomPath, SomResolver};
 use super::state::Presence;
 
 use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
@@ -388,8 +388,8 @@ pub struct XfaNodeRefMut<'a> {
     xfa_node: &'a mut XfaNode,
     /// The SOM path used to resolve this node
     som_path: SomPath,
-    /// Reference to the form's computed values cache
-    computed_values: &'a mut HashMap<SomPath, String>,
+    /// Reference to the persistent script engine (source of truth for field values)
+    script_engine: &'a mut XfaScriptEngine,
 }
 
 impl<'a> XfaNodeRefMut<'a> {
@@ -404,33 +404,24 @@ impl<'a> XfaNodeRefMut<'a> {
     }
 
     /// Get the raw value of this node
-    pub fn raw_value(&self) -> Option<String> {
-        if let Some(value) = self.computed_values.get(&self.som_path) {
-            return Some(value.clone());
+    pub fn raw_value(&mut self) -> Option<String> {
+        // Read from the engine (single source of truth)
+        if let Some(value) = self.script_engine.get_field_value(&self.som_path) {
+            return Some(value);
         }
-        if let Some(name) = &self.xfa_node.name {
-            let name_path = SomPath::new(name);
-            if let Some(value) = self.computed_values.get(&name_path) {
-                return Some(value.clone());
-            }
-        }
-
+        // Fallback to node attributes
         if let Some(raw) = self.xfa_node.attributes.get("rawValue") {
             return Some(raw.clone());
         }
-
         XfaNodeRef::extract_value_from_xfa_node(self.xfa_node)
     }
 
     /// Set the raw value of this node
     pub fn set_raw_value(&mut self, value: &str) {
-        self.computed_values
-            .insert(self.som_path.clone(), value.to_string());
-        if let Some(name) = &self.xfa_node.name {
-            self.computed_values
-                .insert(SomPath::new(name), value.to_string());
-        }
-
+        // Write to the engine (single source of truth)
+        self.script_engine
+            .update_field_value(&self.som_path, value);
+        // Also update the XFA node
         Self::set_node_value(self.xfa_node, value);
     }
 
@@ -474,15 +465,13 @@ pub struct XfaForm {
     som_resolver: SomResolver,
     /// Cached mapping of field names to their flattened node indices
     field_index_cache: HashMap<String, usize>,
-    /// Cached computed values from scripts
-    computed_values: HashMap<SomPath, String>,
     /// Registry of all scripts in the form, categorized by type
     script_registry: ScriptRegistry,
     /// Dependency tracker for cascading calculations
     dependency_tracker: DependencyTracker,
     /// Dirty flag - set when changes require refresh
     dirty: bool,
-    /// Persistent script engine
+    /// Persistent script engine — single source of truth for field values
     script_engine: XfaScriptEngine,
 }
 
@@ -501,28 +490,28 @@ impl XfaForm {
             &script_result.presence_changes,
         );
 
-        let computed_values = script_result.computed_values;
+        let init_values = script_result.computed_values;
 
-        // Flatten with the computed values
-        let flattened = Flattened::from_xfa(&nodes, &computed_values)?;
+        // Flatten with the init-time computed values
+        let flattened = Flattened::from_xfa(&nodes, &init_values)?;
 
         let som_resolver = SomResolver::from_nodes(&nodes);
         let field_index_cache = Self::build_field_index_cache(&flattened);
 
-        // Create persistent script engine
+        // Create persistent script engine — disable auto exclGroup sync since
+        // interactive events use select_radio_button for explicit propagation
         let mut script_engine = XfaScriptEngine::new();
 
         // Initialize engine with form context - variables like Footer_Line_txtlanguage
         // and Footer_Line_txtformid are extracted from XFA <variables><text> elements
         Self::extract_and_register_translations(&nodes, &mut script_engine);
-        Self::build_som_hierarchy_with_values(&nodes, &computed_values, &mut script_engine);
+        Self::build_som_hierarchy_with_values(&nodes, &init_values, &mut script_engine);
 
         Ok(XfaForm {
             nodes,
             flattened,
             som_resolver,
             field_index_cache,
-            computed_values,
             script_registry,
             dependency_tracker,
             dirty: false,
@@ -561,7 +550,7 @@ impl XfaForm {
         Some(XfaNodeRefMut {
             xfa_node,
             som_path: resolved_path,
-            computed_values: &mut self.computed_values,
+            script_engine: &mut self.script_engine,
         })
     }
 
@@ -586,12 +575,12 @@ impl XfaForm {
             return Ok(EventResult::default());
         }
 
-        self.sync_computed_values_to_engine();
+        // Snapshot field values before script execution for change detection
+        let pre_values = self.script_engine.get_all_som_field_values();
 
         let current_value = self
-            .computed_values
-            .get(&resolved_path)
-            .cloned()
+            .script_engine
+            .get_field_value(&resolved_path)
             .unwrap_or_default();
 
         self.script_engine
@@ -603,9 +592,9 @@ impl XfaForm {
             if let Ok(Some(value)) = result {
                 if !value.is_empty() {
                     changed_fields.push(resolved_path.clone());
-                    self.computed_values
-                        .insert(resolved_path.clone(), value.clone());
-                    self.computed_values.insert(SomPath::new(&node_name), value);
+                    // Update engine with the script return value
+                    self.script_engine
+                        .update_field_value(&resolved_path, &value);
                 }
             }
         }
@@ -619,18 +608,23 @@ impl XfaForm {
             };
 
         let som_presence_changes = self.script_engine.get_all_som_presence_changes();
-        for (som_path, presence_str) in som_presence_changes {
-            let presence = Presence::from_str(&presence_str);
-            Self::apply_presence_by_path(&mut self.nodes, &som_path, presence);
+        for (som_path, presence_str) in &som_presence_changes {
+            let presence = Presence::from_str(presence_str);
+            Self::apply_presence_by_path(&mut self.nodes, som_path, presence);
             presence_changed = true;
         }
+        // Update initial_presence baseline so subsequent events detect reverts correctly
+        for (som_path, presence_str) in &som_presence_changes {
+            self.script_engine
+                .update_initial_presence(&SomPath::new(som_path), presence_str);
+        }
 
-        let som_values = self.script_engine.get_all_som_field_values();
-        for (field_path, value) in som_values {
-            let field_som_path = SomPath::new(&field_path);
-            if !value.is_empty() && self.computed_values.get(&field_som_path) != Some(&value) {
-                changed_fields.push(field_som_path.clone());
-                self.computed_values.insert(field_som_path, value);
+        // Detect side-effect value changes by comparing with pre-execution snapshot
+        let post_values = self.script_engine.get_all_som_field_values();
+        for (field_name, new_value) in &post_values {
+            let field_som_path = SomPath::new(field_name);
+            if pre_values.get(field_name) != Some(new_value) {
+                changed_fields.push(field_som_path);
             }
         }
 
@@ -674,7 +668,8 @@ impl XfaForm {
 
     /// Re-flatten the form to reflect any changes
     pub fn refresh(&mut self) -> Result<(), String> {
-        self.flattened = Flattened::reflatten(&self.nodes, &self.computed_values)?;
+        let values = self.script_engine.get_all_field_values_for_flattening();
+        self.flattened = Flattened::reflatten(&self.nodes, &values)?;
         self.som_resolver = SomResolver::from_nodes(&self.nodes);
         self.field_index_cache = Self::build_field_index_cache(&self.flattened);
         self.dirty = false;
@@ -711,8 +706,8 @@ impl XfaForm {
             .or_else(|| button_name.rsplit('_').next())
             .unwrap_or(button_name);
 
-        self.computed_values
-            .insert(resolved_path.clone(), "1".to_string());
+        // Update engine (source of truth) and XFA node
+        self.script_engine.update_field_value(&resolved_path, "1");
 
         if let Some(node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, &resolved_path) {
             node.attributes
@@ -722,18 +717,14 @@ impl XfaForm {
         let excl_group_path = self.find_parent_excl_group_by_path(&resolved_path);
 
         if let Some(ref excl_path) = excl_group_path {
-            self.computed_values
-                .insert(excl_path.clone(), button_value.to_string());
+            self.script_engine
+                .update_field_value(excl_path, button_value);
 
             if let Some(excl_node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, excl_path) {
                 excl_node
                     .attributes
                     .insert("rawValue".to_string(), button_value.to_string());
             }
-
-            self.script_engine
-                .update_field_value(excl_path, button_value);
-            self.script_engine.update_field_value(&resolved_path, "1");
 
             self.dirty = true;
 
@@ -754,8 +745,6 @@ impl XfaForm {
             return Ok(());
         }
 
-        self.sync_computed_values_to_engine();
-
         for dependent_path in dependents {
             let scripts = self
                 .script_registry
@@ -772,20 +761,11 @@ impl XfaForm {
                     self.script_engine.execute_script(&registered_script.script)
                 {
                     if !value.is_empty() {
-                        self.computed_values
-                            .insert(dependent_path.clone(), value.clone());
-                        self.computed_values
-                            .insert(SomPath::new(&registered_script.owner_name), value);
+                        // Update engine directly (source of truth)
+                        self.script_engine
+                            .update_field_value(&dependent_path, &value);
                     }
                 }
-            }
-        }
-
-        let som_values = self.script_engine.get_all_som_field_values();
-        for (field_path, value) in som_values {
-            let field_som_path = SomPath::new(&field_path);
-            if !value.is_empty() && self.computed_values.get(&field_som_path) != Some(&value) {
-                self.computed_values.insert(field_som_path, value);
             }
         }
 
@@ -978,8 +958,8 @@ impl XfaForm {
     }
 
     /// Get a computed value by field name or path
-    pub fn get_computed_value(&self, name: &str) -> Option<&String> {
-        self.computed_values.get(name)
+    pub fn get_computed_value(&mut self, name: &str) -> Option<String> {
+        self.script_engine.get_field_value(&SomPath::new(name))
     }
 
     /// Get the page dimensions
@@ -1235,12 +1215,6 @@ impl XfaForm {
         }
     }
 
-    fn sync_computed_values_to_engine(&mut self) {
-        for (path, value) in &self.computed_values {
-            self.script_engine.update_field_value(path, value);
-        }
-    }
-
     fn extract_and_register_translations(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
         fn collect_variable_items(
             nodes: &[XfaNode],
@@ -1384,6 +1358,7 @@ impl XfaForm {
             path: &str,
             computed_values: &HashMap<SomPath, String>,
             engine: &mut XfaScriptEngine,
+            parent_is_exclgroup: bool,
         ) {
             for node in nodes {
                 let node_path = match &node.name {
@@ -1394,23 +1369,43 @@ impl XfaForm {
 
                 let is_excl_group = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
 
-                if matches!(node.kind, XfaNodeKind::Field | XfaNodeKind::Subform) || is_excl_group {
+                let is_draw = matches!(node.kind, XfaNodeKind::Draw)
+                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
+
+                let is_field = matches!(node.kind, XfaNodeKind::Field);
+                let is_subform = matches!(node.kind, XfaNodeKind::Subform);
+
+                if is_field || is_subform || is_excl_group || is_draw {
                     if let Some(name) = &node.name {
                         let value = get_node_value(node, &node_path, computed_values);
                         let initial_presence = node.get_presence().as_str();
-                        engine.register_field_with_presence(
-                            &node_path,
-                            name,
-                            &value,
-                            initial_presence,
-                        );
+
+                        if parent_is_exclgroup {
+                            // Use register_xfa_node with structural exclGroup info
+                            // so _exclGroupParent linkage is set up correctly.
+                            engine.register_xfa_node(
+                                name,
+                                &node_path,
+                                if path.is_empty() { None } else { Some(path) },
+                                is_field,
+                                &value,
+                                true,
+                            );
+                        } else {
+                            engine.register_field_with_presence(
+                                &node_path,
+                                name,
+                                &value,
+                                initial_presence,
+                            );
+                        }
                     }
                 }
 
-                register_fields(&node.children, &node_path, computed_values, engine);
+                register_fields(&node.children, &node_path, computed_values, engine, is_excl_group);
             }
         }
 
-        register_fields(nodes, "", computed_values, engine);
+        register_fields(nodes, "", computed_values, engine, false);
     }
 }

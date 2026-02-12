@@ -31,59 +31,7 @@ function _xfa_resolve_path_(path) {
 }
 "#;
 
-/// Exclusion group value sync helper.
-///
-/// Per XFA spec, when a radio button's rawValue is set, the parent exclGroup should update.
-/// This stores known parent-child relationships that get synced.
-pub const XFA_EXCLGROUP_HELPER: &str = r#"
-var _xfa_exclgroup_map_ = {};
-
-// Register an exclGroup parent-child relationship
-function _xfa_register_exclgroup_(childPath, parentPath) {
-    _xfa_exclgroup_map_[childPath] = parentPath;
-}
-
-// Sync all exclGroup values based on their children
-function _xfa_sync_exclgroups_() {
-    for (var childPath in _xfa_exclgroup_map_) {
-        var parentPath = _xfa_exclgroup_map_[childPath];
-        try {
-            // Navigate to child object
-            var childParts = childPath.split('.');
-            var child = this;
-            for (var i = 0; i < childParts.length; i++) {
-                if (child && child[childParts[i]]) {
-                    child = child[childParts[i]];
-                } else {
-                    child = null;
-                    break;
-                }
-            }
-            
-            // Navigate to parent object
-            var parentParts = parentPath.split('.');
-            var parent = this;
-            for (var i = 0; i < parentParts.length; i++) {
-                if (parent && parent[parentParts[i]]) {
-                    parent = parent[parentParts[i]];
-                } else {
-                    parent = null;
-                    break;
-                }
-            }
-            
-            // If child has a value, set parent's value
-            if (child && parent && child.rawValue && child.rawValue !== '' && child.rawValue !== '0') {
-                parent.rawValue = child.rawValue;
-            }
-        } catch (e) {
-            // Ignore errors during sync
-        }
-    }
-}
-"#;
-
 /// Combined JavaScript helpers for XFA environment setup.
 pub fn get_all_helpers() -> String {
-    format!("{}\n{}", XFA_RESOLVE_PATH_HELPER, XFA_EXCLGROUP_HELPER)
+    XFA_RESOLVE_PATH_HELPER.to_string()
 }

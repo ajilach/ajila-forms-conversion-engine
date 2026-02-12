@@ -100,7 +100,13 @@ impl ScriptExecutor {
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
 
-                let _ = engine.execute_script(script);
+                let result = engine.execute_script(script);
+                if let Err(ref e) = result {
+                    if std::env::var("XFA_DEBUG").is_ok() {
+                        eprintln!("[INIT ERR] field={field_name} path={full_path}: {e}");
+                    }
+                }
+                let _ = result;
 
                 // Collect presence values set on the current field
                 if let Some(presence) = engine.get_current_field_presence() {
@@ -389,12 +395,13 @@ impl ScriptExecutor {
             nodes: &[XfaNode],
             parent_path: Option<&str>,
             engine: &mut XfaScriptEngine,
+            parent_is_exclgroup: bool,
         ) {
             for node in nodes {
                 let node_name = node.name.clone().unwrap_or_default();
 
                 if node_name.is_empty() {
-                    register_nodes_recursive(&node.children, parent_path, engine);
+                    register_nodes_recursive(&node.children, parent_path, engine, parent_is_exclgroup);
                     continue;
                 }
 
@@ -407,7 +414,7 @@ impl ScriptExecutor {
                     || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
 
                 if !is_subform && !is_field && !is_exclgroup && !is_draw {
-                    register_nodes_recursive(&node.children, parent_path, engine);
+                    register_nodes_recursive(&node.children, parent_path, engine, false);
                     continue;
                 }
 
@@ -418,10 +425,10 @@ impl ScriptExecutor {
 
                 let value = node.attributes.get("rawValue").cloned().unwrap_or_default();
 
-                engine.register_xfa_node(&node_name, &full_path, parent_path, is_field, &value);
+                engine.register_xfa_node(&node_name, &full_path, parent_path, is_field, &value, parent_is_exclgroup);
 
                 if is_subform || is_exclgroup {
-                    register_nodes_recursive(&node.children, Some(&full_path), engine);
+                    register_nodes_recursive(&node.children, Some(&full_path), engine, is_exclgroup);
                 }
             }
         }
@@ -431,12 +438,12 @@ impl ScriptExecutor {
             // Register the root subform first
             let root_name = root.name.clone().unwrap_or_default();
             if !root_name.is_empty() {
-                engine.register_xfa_node(&root_name, &root_name, None, false, "");
+                engine.register_xfa_node(&root_name, &root_name, None, false, "", false);
             }
 
-            // IMPORTANT: Register immediate children of root as TOP-LEVEL globals
-            // This matches XFA behavior where scripts can access "Page.FormTitle..."
-            // without needing "UBSForms.Page.FormTitle..."
+            // Register immediate children of root in the SOM hierarchy.
+            // Subforms like "Page" are registered as top-level globals so scripts
+            // can access "Page.FormTitle..." without needing "UBSForms.Page.FormTitle...".
             for child in &root.children {
                 let child_name = child.name.clone().unwrap_or_default();
                 if child_name.is_empty() {
@@ -449,17 +456,48 @@ impl ScriptExecutor {
                     || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
                 let is_variables = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "variables");
                 let is_proto = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "proto");
+                let is_field = matches!(child.kind, XfaNodeKind::Field)
+                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                let is_exclgroup = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup");
+                let is_draw = matches!(child.kind, XfaNodeKind::Draw)
+                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
 
-                // Skip pageSet, variables, proto elements
-                if is_page_set || is_variables || is_proto {
+                // Skip variables, proto elements
+                if is_variables || is_proto {
+                    continue;
+                }
+
+                // Register page chrome fields (headers, footers) under root so
+                // scripts can resolve them via the SOM hierarchy.
+                if is_page_set {
+                    register_nodes_recursive(&child.children, Some(&root_name), engine, false);
                     continue;
                 }
 
                 if is_subform {
                     // Register this child subform (e.g., "Page") as a global
-                    engine.register_xfa_node(&child_name, &child_name, None, false, "");
+                    engine.register_xfa_node(&child_name, &child_name, None, false, "", false);
                     // Recurse with child_name as parent
-                    register_nodes_recursive(&child.children, Some(&child_name), engine);
+                    register_nodes_recursive(&child.children, Some(&child_name), engine, false);
+                } else if is_field || is_exclgroup || is_draw {
+                    // Non-subform root children (fields, exclGroups, draws)
+                    let full_path = format!("{}.{}", root_name, child_name);
+                    let value = child
+                        .attributes
+                        .get("rawValue")
+                        .cloned()
+                        .unwrap_or_default();
+                    engine.register_xfa_node(
+                        &child_name,
+                        &full_path,
+                        Some(&root_name),
+                        is_field,
+                        &value,
+                        false,
+                    );
+                    if is_exclgroup {
+                        register_nodes_recursive(&child.children, Some(&full_path), engine, true);
+                    }
                 }
             }
         }
@@ -511,12 +549,7 @@ impl ScriptExecutor {
                         _obj.setupVariables = function() {{ setupVariables(); }};
                     }}
                     if (typeof change === 'function') {{
-                        _obj.change = function() {{ 
-                            if (typeof _xfa_sync_exclgroups_ === 'function') {{
-                                _xfa_sync_exclgroups_();
-                            }}
-                            change(); 
-                        }};
+                        _obj.change = function() {{ change(); }};
                     }}
                     if (typeof calculate === 'function') {{
                         _obj.calculate = function() {{ calculate(); }};

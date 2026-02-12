@@ -462,3 +462,176 @@ fn test_js_helpers_available() {
         "Should contain _xfa_resolve_path_ helper function"
     );
 }
+
+// =============================================================================
+// ExclGroup Tests (XFA 3.3 §2 p.33, §4 pp.195-197)
+// =============================================================================
+
+/// Helper: register a parent exclGroup and its child fields structurally.
+fn setup_exclgroup(
+    engine: &mut XfaScriptEngine,
+    group_path: &str,
+    group_name: &str,
+    children: &[(&str, &str)], // (child_name, child_value)
+) {
+    // Register parent exclGroup (is_field=false, is_parent_exclgroup=false)
+    engine.register_xfa_node(group_name, group_path, None, false, "", false);
+
+    // Register child fields (is_field=true, is_parent_exclgroup=true)
+    for (child_name, child_value) in children {
+        let child_path = format!("{}.{}", group_path, child_name);
+        engine.register_xfa_node(
+            child_name,
+            &child_path,
+            Some(group_path),
+            true,
+            child_value,
+            true, // parent IS an exclGroup
+        );
+    }
+}
+
+#[test]
+fn test_exclgroup_child_to_parent_propagation() {
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(&mut engine, "sex", "sex", &[("male", ""), ("female", "")]);
+
+    // Set a child's rawValue → should propagate to parent
+    engine.update_field_value("sex.male", "M");
+
+    let parent_val = engine.get_field_value(&SomPath::new("sex"));
+    assert_eq!(
+        parent_val,
+        Some("M".to_string()),
+        "Setting child rawValue should propagate to parent exclGroup"
+    );
+}
+
+#[test]
+fn test_exclgroup_propagates_zero_value() {
+    // Per XFA 3.3 spec, "0" is a legitimate key value for exclGroup children
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "rating",
+        "rating",
+        &[("none", ""), ("some", "")],
+    );
+
+    engine.update_field_value("rating.none", "0");
+
+    let parent_val = engine.get_field_value(&SomPath::new("rating"));
+    assert_eq!(
+        parent_val,
+        Some("0".to_string()),
+        "Value '0' must propagate to parent exclGroup (it's a valid key value)"
+    );
+}
+
+#[test]
+fn test_exclgroup_propagates_empty_value() {
+    // Per XFA 3.3 spec, clearing all selections sets exclGroup value to empty
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "choice",
+        "choice",
+        &[("optA", "A"), ("optB", "")],
+    );
+
+    // First set a value, then clear it
+    engine.update_field_value("choice.optA", "A");
+    let parent_val = engine.get_field_value(&SomPath::new("choice"));
+    assert_eq!(parent_val, Some("A".to_string()));
+
+    // Now clear the child — parent should also clear
+    engine.update_field_value("choice.optA", "");
+    let parent_val = engine.get_field_value(&SomPath::new("choice"));
+    // Parent should have received the empty value (deselect all)
+    assert!(
+        parent_val.is_none() || parent_val == Some("".to_string()),
+        "Empty value should propagate to parent exclGroup for deselect"
+    );
+}
+
+#[test]
+fn test_exclgroup_structural_detection_no_naming_convention() {
+    // Ensure exclGroup linkage works regardless of naming — no "Group"/"RB_"
+    // patterns needed. Uses names from the XFA 3.3 spec example (§4 p.196).
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "sex",
+        "sex",
+        &[("male", ""), ("female", "")],
+    );
+
+    engine.update_field_value("sex.male", "M");
+
+    let parent_val = engine.get_field_value(&SomPath::new("sex"));
+    assert_eq!(
+        parent_val,
+        Some("M".to_string()),
+        "ExclGroup detection must be structural, not name-based"
+    );
+
+    // Also verify the other child can update the parent
+    engine.update_field_value("sex.female", "F");
+    let parent_val = engine.get_field_value(&SomPath::new("sex"));
+    assert_eq!(
+        parent_val,
+        Some("F".to_string()),
+        "Setting a different child should update the parent exclGroup value"
+    );
+}
+
+#[test]
+fn test_exclgroup_non_child_does_not_propagate() {
+    // Fields NOT inside an exclGroup should NOT propagate to their parent
+    let mut engine = XfaScriptEngine::new();
+
+    // Register a regular subform with children (is_parent_exclgroup=false)
+    engine.register_xfa_node("form", "form", None, false, "", false);
+    engine.register_xfa_node("field1", "form.field1", Some("form"), true, "", false);
+
+    engine.update_field_value("form.field1", "hello");
+
+    // Parent should NOT have received the value
+    let parent_val = engine.get_field_value(&SomPath::new("form"));
+    assert!(
+        parent_val.is_none() || parent_val == Some("".to_string()),
+        "Non-exclGroup parent should not receive child values"
+    );
+}
+
+#[test]
+fn test_exclgroup_script_sets_child_rawvalue() {
+    // Simulate a script setting rawValue on a child via JavaScript
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "paymentMethod",
+        "paymentMethod",
+        &[("cash", ""), ("card", ""), ("transfer", "")],
+    );
+
+    // Simulate script: this.rawValue = "card_value"
+    engine.set_current_field("paymentMethod.card", "card", "");
+    let script = XfaScript {
+        source: r#"this.rawValue = "CARD";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script);
+
+    // The parent exclGroup should have received the value via the setter
+    let parent_val = engine.get_field_value(&SomPath::new("paymentMethod"));
+    assert_eq!(
+        parent_val,
+        Some("CARD".to_string()),
+        "Script setting child rawValue should propagate to parent exclGroup"
+    );
+}
