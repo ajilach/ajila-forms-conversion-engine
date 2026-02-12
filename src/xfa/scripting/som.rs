@@ -208,6 +208,11 @@ impl SomResolver {
         }
     }
 
+    /// Get the child paths registered under a parent path.
+    pub fn get_children(&self, path: &SomPath) -> Option<&Vec<SomPath>> {
+        self.children.get(path)
+    }
+
     /// Resolve a SOM expression to a single node path
     /// Per XFA 3.3 spec page 106-107
     pub fn resolve_node(

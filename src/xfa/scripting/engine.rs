@@ -1467,6 +1467,11 @@ impl XfaScriptEngine {
     /// `is_parent_exclgroup` should be `true` when this node's parent is an
     /// `<exclGroup>` element.  The caller determines this from the XFA tree
     /// structure so that we don't need naming-convention heuristics.
+    ///
+    /// `item_key` is the key value from `<items><text>…</text></items>` for
+    /// exclGroup children. When the parent exclGroup's rawValue is set, children
+    /// whose `_itemKey` matches the new value are turned ON (rawValue="1"),
+    /// others OFF (rawValue=""). Per XFA 3.3 §4 pp.195-197.
     pub fn register_xfa_node(
         &mut self,
         name: &str,
@@ -1475,12 +1480,27 @@ impl XfaScriptEngine {
         is_field: bool,
         value: &str,
         is_parent_exclgroup: bool,
+        item_key: Option<&str>,
     ) {
         let is_exclgroup_child = is_parent_exclgroup;
 
         // Create the JavaScript object for this node
         let node_obj = if is_field {
-            self.create_field_object(name, path, value)
+            let obj = self.create_field_object(name, path, value);
+            // Store the item key for exclGroup parent→child propagation.
+            // Per XFA 3.3 §4 pp.195-197: each child in an exclGroup has a key
+            // value from <items>. When the parent's rawValue is set, children
+            // compare their key to determine ON/OFF state.
+            if let Some(key) = item_key {
+                obj.set(
+                    PropertyKey::from(js_string!("_itemKey")),
+                    JsValue::from(js_string!(key)),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            }
+            obj
         } else {
             // For subforms, create an object that can have children
             let subform_obj = ObjectInitializer::new(&mut self.context)
@@ -1526,6 +1546,24 @@ impl XfaScriptEngine {
                     &mut self.context,
                 )
                 .ok();
+
+            // Initialize _exclGroupChildren as an empty array on all container
+            // objects. For exclGroups, children will be pushed onto this array
+            // during child registration; the rawValue setter iterates it to
+            // propagate parent→child state changes.
+            self.context
+                .global_object()
+                .set(
+                    PropertyKey::from(js_string!("_xfa_tmp_")),
+                    JsValue::from(subform_obj.clone()),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            let _ = self
+                .context
+                .eval(Source::from_bytes(r#"_xfa_tmp_._exclGroupChildren = [];"#));
+
             self.context
                 .global_object()
                 .set(
@@ -1543,6 +1581,14 @@ impl XfaScriptEngine {
                     },
                     set: function(v) {
                         this._rawValue = v;
+                        if (this._exclGroupChildren && this._exclGroupChildren.length > 0) {
+                            for (var i = 0; i < this._exclGroupChildren.length; i++) {
+                                var child = this._exclGroupChildren[i];
+                                if (child._itemKey !== undefined) {
+                                    child._rawValue = (child._itemKey === v) ? '1' : '';
+                                }
+                            }
+                        }
                         if (this._exclGroupParent) {
                             this._exclGroupParent._rawValue = v;
                         }
@@ -1575,6 +1621,8 @@ impl XfaScriptEngine {
         // Link child to parent exclGroup for automatic rawValue propagation.
         // The rawValue setter on the child checks _exclGroupParent and copies
         // the value to the parent's _rawValue when it's set.
+        // Also push the child onto the parent's _exclGroupChildren array so
+        // that parent→child propagation works (XFA 3.3 §4 pp.195-197).
         if is_exclgroup_child {
             if let Some(parent) = parent_path {
                 let parent_som = SomPath::new(parent);
@@ -1587,6 +1635,29 @@ impl XfaScriptEngine {
                             &mut self.context,
                         )
                         .ok();
+
+                    // Push this child onto parent's _exclGroupChildren array
+                    self.context
+                        .global_object()
+                        .set(
+                            PropertyKey::from(js_string!("_xfa_excl_parent_")),
+                            JsValue::from(parent_obj.clone()),
+                            false,
+                            &mut self.context,
+                        )
+                        .ok();
+                    self.context
+                        .global_object()
+                        .set(
+                            PropertyKey::from(js_string!("_xfa_excl_child_")),
+                            JsValue::from(node_obj.clone()),
+                            false,
+                            &mut self.context,
+                        )
+                        .ok();
+                    let _ = self.context.eval(Source::from_bytes(
+                        r#"_xfa_excl_parent_._exclGroupChildren.push(_xfa_excl_child_);"#,
+                    ));
                 }
             }
         }

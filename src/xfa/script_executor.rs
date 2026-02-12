@@ -387,6 +387,37 @@ impl ScriptExecutor {
 
     /// Build and register the XFA SOM hierarchy in the scripting engine.
     fn build_and_register_xfa_som_hierarchy(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
+
+        /// Extract the item key from `<items><text>...</text></items>` children
+        /// of an XFA field node. Used for exclGroup parent→child propagation
+        /// per XFA 3.3 §4 pp.195-197.
+        fn extract_item_key_from_node(node: &XfaNode) -> Option<String> {
+            for child in &node.children {
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                    if tag_name == "items" {
+                        for item_child in &child.children {
+                            if let XfaNodeKind::Element {
+                                tag_name: t2,
+                                text_content,
+                                ..
+                            } = &item_child.kind
+                            {
+                                if t2 == "text" {
+                                    if let Some(text) = text_content {
+                                        return Some(text.clone());
+                                    }
+                                }
+                            }
+                            if let XfaNodeKind::Text { content } = &item_child.kind {
+                                return Some(content.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+
         fn register_nodes_recursive(
             nodes: &[XfaNode],
             parent_path: Option<&str>,
@@ -426,6 +457,14 @@ impl ScriptExecutor {
 
                 let value = node.attributes.get("rawValue").cloned().unwrap_or_default();
 
+                // Extract item key from <items><text>...</text></items> for
+                // exclGroup children (XFA 3.3 §4 pp.195-197).
+                let item_key = if parent_is_exclgroup {
+                    extract_item_key_from_node(node)
+                } else {
+                    None
+                };
+
                 engine.register_xfa_node(
                     &node_name,
                     &full_path,
@@ -433,6 +472,7 @@ impl ScriptExecutor {
                     is_field,
                     &value,
                     parent_is_exclgroup,
+                    item_key.as_deref(),
                 );
 
                 if is_subform || is_exclgroup {
@@ -451,7 +491,7 @@ impl ScriptExecutor {
             // Register the root subform first
             let root_name = root.name.clone().unwrap_or_default();
             if !root_name.is_empty() {
-                engine.register_xfa_node(&root_name, &root_name, None, false, "", false);
+                engine.register_xfa_node(&root_name, &root_name, None, false, "", false, None);
             }
 
             // Register immediate children of root in the SOM hierarchy.
@@ -489,7 +529,7 @@ impl ScriptExecutor {
 
                 if is_subform {
                     // Register this child subform (e.g., "Page") as a global
-                    engine.register_xfa_node(&child_name, &child_name, None, false, "", false);
+                    engine.register_xfa_node(&child_name, &child_name, None, false, "", false, None);
                     // Recurse with child_name as parent
                     register_nodes_recursive(&child.children, Some(&child_name), engine, false);
                 } else if is_field || is_exclgroup || is_draw {
@@ -507,6 +547,7 @@ impl ScriptExecutor {
                         is_field,
                         &value,
                         false,
+                        None,
                     );
                     if is_exclgroup {
                         register_nodes_recursive(&child.children, Some(&full_path), engine, true);
