@@ -94,7 +94,7 @@ impl ScriptExecutor {
         );
 
         // Phase 1: Execute initialize events
-        for (field_name, full_path, child_fields, script) in &all_events {
+        for (field_name, full_path, child_fields, script, _presence) in &all_events {
             if script.content_type == ScriptContentType::JavaScript
                 && script.activity == EventActivity::Initialize
             {
@@ -136,12 +136,34 @@ impl ScriptExecutor {
             }
         }
 
+        // Build dynamic presence map from Phase 1 presence changes.
+        // Per XFA 3.3 §10 p.407 Rule 1, presence is inspected at the moment
+        // the event would be triggered.
+        // Also collect SOM-level presence changes (e.g. `fieldB.presence = "inactive"`)
+        // for cross-phase suppression only — these are NOT added to the output
+        // presence_changes since they were not previously tracked there.
+        let mut dynamic_presence_overrides: HashMap<String, Presence> = HashMap::new();
+        let som_presence_changes = engine.get_all_som_presence_changes();
+        for (som_path, presence_str) in &som_presence_changes {
+            let presence = Presence::from_str(presence_str);
+            let field_name = som_path.rsplit('.').next().unwrap_or(som_path);
+            dynamic_presence_overrides.insert(field_name.to_string(), presence);
+            engine.update_initial_presence(&SomPath::new(som_path), presence_str);
+        }
+        let mut presence_map_after_phase1 = Self::build_presence_map(&presence_changes);
+        presence_map_after_phase1.extend(dynamic_presence_overrides.clone());
+
         // Phase 2: Execute form-ready JavaScript events
-        for (field_name, full_path, child_fields, script) in &all_events {
+        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
             if script.content_type == ScriptContentType::JavaScript
                 && script.activity == EventActivity::Ready
                 && script.event_ref == EventRef::Form
                 && !field_name.is_empty()
+                && !Self::is_effectively_inactive(
+                    field_name,
+                    *static_presence,
+                    &presence_map_after_phase1,
+                )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
 
@@ -165,12 +187,29 @@ impl ScriptExecutor {
             }
         }
 
+        // Build dynamic presence map from Phase 1+2 presence changes.
+        // Also collect SOM-level presence changes from Phase 2 for cross-phase suppression.
+        let som_presence_changes_2 = engine.get_all_som_presence_changes();
+        for (som_path, presence_str) in &som_presence_changes_2 {
+            let presence = Presence::from_str(presence_str);
+            let field_name = som_path.rsplit('.').next().unwrap_or(som_path);
+            dynamic_presence_overrides.insert(field_name.to_string(), presence);
+            engine.update_initial_presence(&SomPath::new(som_path), presence_str);
+        }
+        let mut presence_map_after_phase2 = Self::build_presence_map(&presence_changes);
+        presence_map_after_phase2.extend(dynamic_presence_overrides);
+
         // Phase 3: Execute layout-ready JavaScript events
-        for (field_name, full_path, child_fields, script) in &all_events {
+        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
             if script.content_type == ScriptContentType::JavaScript
                 && script.activity == EventActivity::Ready
                 && script.event_ref == EventRef::Layout
                 && !field_name.is_empty()
+                && !Self::is_effectively_inactive(
+                    field_name,
+                    *static_presence,
+                    &presence_map_after_phase2,
+                )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
 
@@ -318,6 +357,37 @@ impl ScriptExecutor {
         parent_child_map
     }
 
+    /// Check if a node is effectively inactive, considering both static
+    /// presence and dynamic overrides set by earlier script phases.
+    /// Per XFA 3.3 §10 p.407 Rule 1.
+    fn is_effectively_inactive(
+        field_name: &str,
+        static_presence: Presence,
+        dynamic_overrides: &HashMap<String, Presence>,
+    ) -> bool {
+        if static_presence == Presence::Inactive {
+            return true;
+        }
+        if let Some(&p) = dynamic_overrides.get(field_name) {
+            return p == Presence::Inactive;
+        }
+        false
+    }
+
+    /// Build a lookup from presence_changes collected so far.
+    fn build_presence_map(
+        changes: &[(String, Option<String>, Presence)],
+    ) -> HashMap<String, Presence> {
+        let mut map = HashMap::new();
+        for (name, id, presence) in changes {
+            map.insert(name.clone(), *presence);
+            if let Some(id_val) = id {
+                map.insert(id_val.clone(), *presence);
+            }
+        }
+        map
+    }
+
     /// Find all events with child IDs and full SOM paths
     fn find_all_events_with_child_ids(
         nodes: &[XfaNode],
@@ -326,12 +396,19 @@ impl ScriptExecutor {
             String,
             Vec<(String, String)>,
             crate::xfa::scripting::XfaScript,
+            Presence,
         )>,
         parent_child_map: &HashMap<String, Vec<(String, String)>>,
         subform_counters: &mut HashMap<String, usize>,
         parent_path: Option<&str>,
     ) {
         for node in nodes {
+            // XFA 3.3 §10 p.407 Rule 1: When a container has presence=inactive,
+            // it does not generate any of its normal calculations, validations,
+            // or events. Skip this node and all its children.
+            if node.get_presence() == Presence::Inactive {
+                continue;
+            }
             let name = node.name.clone().unwrap_or_default();
             let node_id = node.attributes.get("id").cloned().unwrap_or_default();
 
@@ -365,7 +442,13 @@ impl ScriptExecutor {
             let node_events = parse_events_from_node(&node.children);
             for event in node_events {
                 // Include both the name (for display) and full_path (for SOM lookup)
-                events.push((name.clone(), full_path.clone(), children.clone(), event));
+                events.push((
+                    name.clone(),
+                    full_path.clone(),
+                    children.clone(),
+                    event,
+                    node.get_presence(),
+                ));
             }
 
             // Recurse with updated parent path
@@ -387,7 +470,6 @@ impl ScriptExecutor {
 
     /// Build and register the XFA SOM hierarchy in the scripting engine.
     fn build_and_register_xfa_som_hierarchy(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
-
         /// Extract the item key from `<items><text>...</text></items>` children
         /// of an XFA field node. Used for exclGroup parent→child propagation
         /// per XFA 3.3 §4 pp.195-197.
@@ -529,7 +611,15 @@ impl ScriptExecutor {
 
                 if is_subform {
                     // Register this child subform (e.g., "Page") as a global
-                    engine.register_xfa_node(&child_name, &child_name, None, false, "", false, None);
+                    engine.register_xfa_node(
+                        &child_name,
+                        &child_name,
+                        None,
+                        false,
+                        "",
+                        false,
+                        None,
+                    );
                     // Recurse with child_name as parent
                     register_nodes_recursive(&child.children, Some(&child_name), engine, false);
                 } else if is_field || is_exclgroup || is_draw {
@@ -669,5 +759,251 @@ impl ScriptExecutor {
 
             Self::collect_variable_items(&node.children, scripts, text_vars);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xfa::{XfaNode, XfaNodeKind};
+    use std::collections::HashMap;
+
+    /// Build a minimal field node with an initialize event script.
+    fn make_field_with_init_script(name: &str, script_source: &str, presence: &str) -> XfaNode {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), name.to_string());
+        if !presence.is_empty() {
+            attrs.insert("presence".to_string(), presence.to_string());
+        }
+
+        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
+
+        // Build <event activity="initialize"><script contentType="application/x-javascript">...</script></event>
+        let script_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "script".to_string(),
+                text_content: Some(script_source.to_string()),
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert(
+                    "contentType".to_string(),
+                    "application/x-javascript".to_string(),
+                );
+                a
+            },
+        );
+
+        let mut event_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "event".to_string(),
+                text_content: None,
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert("activity".to_string(), "initialize".to_string());
+                a
+            },
+        );
+        event_node.children.push(script_node);
+        field.children.push(event_node);
+        field
+    }
+
+    /// Build a field with a form-ready event script.
+    fn make_field_with_ready_script(name: &str, script_source: &str, presence: &str) -> XfaNode {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), name.to_string());
+        if !presence.is_empty() {
+            attrs.insert("presence".to_string(), presence.to_string());
+        }
+
+        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
+
+        let script_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "script".to_string(),
+                text_content: Some(script_source.to_string()),
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert(
+                    "contentType".to_string(),
+                    "application/x-javascript".to_string(),
+                );
+                a
+            },
+        );
+
+        let mut event_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "event".to_string(),
+                text_content: None,
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert("activity".to_string(), "ready".to_string());
+                a.insert("ref".to_string(), "$form".to_string());
+                a
+            },
+        );
+        event_node.children.push(script_node);
+        field.children.push(event_node);
+        field
+    }
+
+    /// Wrap fields in a minimal template > subform structure.
+    fn wrap_in_template(fields: Vec<XfaNode>) -> Vec<XfaNode> {
+        let mut subform = XfaNode::new(XfaNodeKind::Subform, {
+            let mut a = HashMap::new();
+            a.insert("name".to_string(), "Root".to_string());
+            a
+        });
+        subform.children = fields;
+
+        let mut template = XfaNode::new(XfaNodeKind::Template, HashMap::new());
+        template.children.push(subform);
+        vec![template]
+    }
+
+    // =========================================================================
+    // Test: inactive presence suppresses script execution (static)
+    // =========================================================================
+
+    #[test]
+    fn test_inactive_presence_suppresses_initialize_event() {
+        // An active field whose initialize script sets a value
+        let active_field =
+            make_field_with_init_script("activeField", r#"this.rawValue = "hello";"#, "");
+        // An inactive field whose initialize script would set a value
+        let inactive_field = make_field_with_init_script(
+            "inactiveField",
+            r#"this.rawValue = "should_not_appear";"#,
+            "inactive",
+        );
+
+        let nodes = wrap_in_template(vec![active_field, inactive_field]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        // Active field's script should have executed
+        let active_found = result.computed_values.values().any(|v| v == "hello");
+        assert!(
+            active_found,
+            "Active field's initialize script should have executed"
+        );
+
+        // Inactive field's script should NOT have executed
+        let inactive_found = result
+            .computed_values
+            .values()
+            .any(|v| v == "should_not_appear");
+        assert!(
+            !inactive_found,
+            "Inactive field's initialize script must NOT execute per XFA 3.3 §10 Rule 1"
+        );
+    }
+
+    #[test]
+    fn test_inactive_presence_suppresses_form_ready_event() {
+        // An active field with a form-ready script
+        let active_field =
+            make_field_with_ready_script("activeReady", r#"this.rawValue = "ready_value";"#, "");
+        // An inactive field with a form-ready script
+        let inactive_field = make_field_with_ready_script(
+            "inactiveReady",
+            r#"this.rawValue = "inactive_ready";"#,
+            "inactive",
+        );
+
+        let nodes = wrap_in_template(vec![active_field, inactive_field]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        let active_found = result.computed_values.values().any(|v| v == "ready_value");
+        assert!(
+            active_found,
+            "Active field's form-ready script should have executed"
+        );
+
+        let inactive_found = result
+            .computed_values
+            .values()
+            .any(|v| v == "inactive_ready");
+        assert!(
+            !inactive_found,
+            "Inactive field's form-ready script must NOT execute per XFA 3.3 §10 Rule 1"
+        );
+    }
+
+    // =========================================================================
+    // Test: dynamic presence change across phases
+    // =========================================================================
+
+    #[test]
+    fn test_dynamic_inactive_suppresses_later_phases() {
+        // fieldA's initialize script sets fieldB's presence to inactive
+        // using `fieldB.presence = "inactive"` via SOM global access.
+        // fieldB has a form-ready script that should be suppressed because
+        // fieldA's initialize script set it inactive before Phase 2 runs.
+        let field_a =
+            make_field_with_init_script("fieldA", r#"Root.fieldB.presence = "inactive";"#, "");
+        let field_b = make_field_with_ready_script(
+            "fieldB",
+            r#"this.rawValue = "should_be_suppressed";"#,
+            "",
+        );
+
+        // Wrap in a subform so fieldB is a sibling/child of the same parent
+        let mut subform = XfaNode::new(XfaNodeKind::Subform, {
+            let mut a = HashMap::new();
+            a.insert("name".to_string(), "Root".to_string());
+            a
+        });
+        subform.children = vec![field_a, field_b];
+
+        let mut template = XfaNode::new(XfaNodeKind::Template, HashMap::new());
+        template.children.push(subform);
+        let nodes = vec![template];
+
+        let result = ScriptExecutor::execute(&nodes);
+
+        // fieldB's form-ready script should NOT have executed
+        // because fieldA's initialize script set fieldB's presence to inactive
+        // via the SOM hierarchy, and our cross-phase presence tracking suppresses it.
+        let suppressed = result
+            .computed_values
+            .values()
+            .any(|v| v == "should_be_suppressed");
+        assert!(
+            !suppressed,
+            "fieldB's form-ready script must be suppressed after dynamic presence change to inactive"
+        );
+    }
+
+    // =========================================================================
+    // Test: children of inactive container are also suppressed
+    // =========================================================================
+
+    #[test]
+    fn test_inactive_container_suppresses_children() {
+        // An inactive subform containing a field with a script
+        let child_field =
+            make_field_with_init_script("childField", r#"this.rawValue = "child_value";"#, "");
+
+        let mut inactive_subform = XfaNode::new(XfaNodeKind::Subform, {
+            let mut a = HashMap::new();
+            a.insert("name".to_string(), "InactiveGroup".to_string());
+            a.insert("presence".to_string(), "inactive".to_string());
+            a
+        });
+        inactive_subform.children.push(child_field);
+
+        let nodes = wrap_in_template(vec![inactive_subform]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        let child_found = result.computed_values.values().any(|v| v == "child_value");
+        assert!(
+            !child_found,
+            "Children of inactive containers must NOT have events executed per XFA 3.3 §10 Rule 1"
+        );
     }
 }
