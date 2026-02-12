@@ -1359,4 +1359,45 @@ impl XfaNode {
         }
         None
     }
+
+    /// Extract the item values from `<items><text>...</text></items>` children.
+    ///
+    /// Per XFA 3.3 §17 pp.758-759, the items list can have up to three values:
+    ///   - First value: the "on" value (item key)
+    ///   - Second value: the "off" value (defaults to empty string if absent)
+    ///   - Third value: the "neutral" value (defaults to empty string if absent)
+    ///
+    /// Used for exclGroup parent→child propagation per §4 pp.195-197.
+    pub fn extract_item_values(&self) -> (Option<String>, Option<String>) {
+        for child in &self.children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "items" {
+                    let mut values = Vec::new();
+                    for item_child in &child.children {
+                        if let XfaNodeKind::Element {
+                            tag_name: t2,
+                            text_content,
+                            ..
+                        } = &item_child.kind
+                        {
+                            if t2 == "text" || t2 == "integer" || t2 == "float" {
+                                values.push(
+                                    text_content
+                                        .clone()
+                                        .unwrap_or_default(),
+                                );
+                            }
+                        }
+                        if let XfaNodeKind::Text { content } = &item_child.kind {
+                            values.push(content.clone());
+                        }
+                    }
+                    let on_value = values.first().cloned();
+                    let off_value = values.get(1).cloned();
+                    return (on_value, off_value);
+                }
+            }
+        }
+        (None, None)
+    }
 }

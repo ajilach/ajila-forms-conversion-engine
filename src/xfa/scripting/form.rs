@@ -1355,36 +1355,6 @@ impl XfaForm {
             String::new()
         }
 
-        /// Extract the item key from `<items><text>...</text></items>` children
-        /// of an XFA field node. Used for exclGroup parent→child propagation
-        /// per XFA 3.3 §4 pp.195-197.
-        fn extract_item_key_from_node(node: &XfaNode) -> Option<String> {
-            for child in &node.children {
-                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                    if tag_name == "items" {
-                        for item_child in &child.children {
-                            if let XfaNodeKind::Element {
-                                tag_name: t2,
-                                text_content,
-                                ..
-                            } = &item_child.kind
-                            {
-                                if t2 == "text" {
-                                    if let Some(text) = text_content {
-                                        return Some(text.clone());
-                                    }
-                                }
-                            }
-                            if let XfaNodeKind::Text { content } = &item_child.kind {
-                                return Some(content.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        }
-
         fn register_fields(
             nodes: &[XfaNode],
             path: &str,
@@ -1413,9 +1383,10 @@ impl XfaForm {
                         let initial_presence = node.get_presence().as_str();
 
                         if parent_is_exclgroup {
-                            // Extract item key from <items><text>...</text></items>
-                            // for exclGroup parent→child propagation (XFA 3.3 §4 pp.195-197).
-                            let item_key = extract_item_key_from_node(node);
+                            // Extract item values from <items> for exclGroup
+                            // parent→child propagation (XFA 3.3 §4 pp.195-197,
+                            // §17 pp.758-759).
+                            let (item_key, off_value) = node.extract_item_values();
 
                             // Use register_xfa_node with structural exclGroup info
                             // so _exclGroupParent linkage is set up correctly.
@@ -1427,6 +1398,7 @@ impl XfaForm {
                                 &value,
                                 true,
                                 item_key.as_deref(),
+                                off_value.as_deref(),
                             );
                         } else {
                             engine.register_field_with_presence(

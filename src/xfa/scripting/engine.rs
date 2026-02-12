@@ -876,9 +876,10 @@ impl XfaScriptEngine {
                     if (this._exclGroupParent && this._itemKey !== undefined) {
                         var pv = this._exclGroupParent._rawValue;
                         if (pv !== undefined && pv !== null) {
-                            return (String(pv) === String(this._itemKey)) ? '1' : '';
+                            // Per XFA 3.3 §17 p.714: activated member assumes its 'on' value.
+                            return (String(pv) === String(this._itemKey)) ? String(this._itemKey) : (this._offValue !== undefined ? this._offValue : '');
                         }
-                        return '';
+                        return (this._offValue !== undefined ? this._offValue : '');
                     }
                     var v = this._rawValue;
                     return (v !== undefined && v !== null) ? v : '';
@@ -1498,8 +1499,12 @@ impl XfaScriptEngine {
     ///
     /// `item_key` is the key value from `<items><text>…</text></items>` for
     /// exclGroup children. When the parent exclGroup's rawValue is set, children
-    /// whose `_itemKey` matches the new value are turned ON (rawValue="1"),
-    /// others OFF (rawValue=""). Per XFA 3.3 §4 pp.195-197.
+    /// whose `_itemKey` matches the new value are turned ON (rawValue=on-value),
+    /// others OFF (rawValue=off-value). Per XFA 3.3 §4 pp.195-197.
+    ///
+    /// `off_value` is the second value from `<items>`. Per XFA 3.3 §17 pp.758-759,
+    /// when a member is deactivated it assumes its off-value. Defaults to empty
+    /// string if not provided.
     pub fn register_xfa_node(
         &mut self,
         name: &str,
@@ -1509,6 +1514,7 @@ impl XfaScriptEngine {
         value: &str,
         is_parent_exclgroup: bool,
         item_key: Option<&str>,
+        off_value: Option<&str>,
     ) {
         let is_exclgroup_child = is_parent_exclgroup;
 
@@ -1523,6 +1529,18 @@ impl XfaScriptEngine {
                 obj.set(
                     PropertyKey::from(js_string!("_itemKey")),
                     JsValue::from(js_string!(key)),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            }
+            // Store the off-value for deactivation.
+            // Per XFA 3.3 §17 pp.758-759: when a member is deactivated it
+            // assumes its off-value (second item). Defaults to empty string.
+            if let Some(ov) = off_value {
+                obj.set(
+                    PropertyKey::from(js_string!("_offValue")),
+                    JsValue::from(js_string!(ov)),
                     false,
                     &mut self.context,
                 )

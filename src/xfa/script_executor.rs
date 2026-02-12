@@ -93,10 +93,83 @@ impl ScriptExecutor {
             None, // Start with no parent path
         );
 
-        // Phase 1: Execute initialize events
+        // Warn about FormCalc scripts that cannot be executed.
+        // Only JavaScript is supported; FormCalc scripts are silently skipped.
+        let formcalc_count = all_events
+            .iter()
+            .filter(|(_, _, _, script, _)| {
+                script.content_type == ScriptContentType::FormCalc
+            })
+            .count();
+        if formcalc_count > 0 {
+            eprintln!(
+                "Warning: {} FormCalc script(s) found but not executed \
+                 (only JavaScript is supported). Results may be incomplete.",
+                formcalc_count
+            );
+        }
+
+        // Phase 0: Execute calculate scripts (value calculations)
+        // Per XFA 3.3 §10 p.407: "All value calculations are done, then all
+        // property calculations, then all validations, and then all initialize
+        // events are fired. Calculations are repeated if the values on which
+        // they depend change."
         for (field_name, full_path, child_fields, script, _presence) in &all_events {
             if script.content_type == ScriptContentType::JavaScript
+                && script.activity == EventActivity::Calculate
+            {
+                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+
+                if let Ok(Some(value)) = engine.execute_script(script) {
+                    // Per XFA 3.3 §10 p.380: the calculate result replaces the
+                    // container's value.
+                    computed_values.insert(SomPath::new(field_name.clone()), value.clone());
+                    computed_values.insert(SomPath::new(full_path.clone()), value);
+                }
+
+                // Collect values set on fields during calculation
+                let calc_som_values = engine.get_all_som_field_values();
+                for (calc_field_name, calc_value) in calc_som_values {
+                    computed_values.insert(SomPath::new(calc_field_name), calc_value);
+                }
+            }
+        }
+
+        // Phase 0b: Execute validate scripts
+        // Per XFA 3.3 §10 p.407: validations run after calculations, before
+        // initialize events. Validate scripts are executed but their results
+        // are informational (validation state), not value-replacing.
+        // However, validate scripts may set rawValue as a side effect.
+        for (field_name, full_path, child_fields, script, _presence) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript
+                && script.activity == EventActivity::Validate
+            {
+                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                let _ = engine.execute_script(script);
+
+                // Collect any side-effect values set during validation
+                let validate_som_values = engine.get_all_som_field_values();
+                for (vf_name, vf_value) in validate_som_values {
+                    computed_values.insert(SomPath::new(vf_name), vf_value);
+                }
+            }
+        }
+
+        // Phase 1: Execute initialize events
+        // Per XFA 3.3 §10 p.407 Rule 1: "The property is inspected at the
+        // moment that the calculation, validation, or event would be triggered."
+        // We maintain a running presence map so that if an earlier init script
+        // sets a sibling's presence to inactive, subsequent init events for
+        // that sibling are suppressed within the same phase.
+        let mut init_dynamic_presence: HashMap<String, Presence> = HashMap::new();
+        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript
                 && script.activity == EventActivity::Initialize
+                && !Self::is_effectively_inactive(
+                    full_path,
+                    *static_presence,
+                    &init_dynamic_presence,
+                )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
 
@@ -133,6 +206,29 @@ impl ScriptExecutor {
                 for (init_field_name, init_value) in init_som_values {
                     computed_values.insert(SomPath::new(init_field_name), init_value);
                 }
+
+                // Update running presence map for intra-phase suppression.
+                // Per XFA 3.3 §10 Rule 1: presence is checked at the moment
+                // each event would fire, so changes from earlier init scripts
+                // must suppress later ones within the same phase.
+                // Use full SOM paths as keys to avoid collisions between
+                // fields with the same leaf name in different subforms.
+                if let Some(presence) = engine.get_current_field_presence() {
+                    init_dynamic_presence.insert(full_path.clone(), presence);
+                }
+                for (child_name, _child_id) in child_fields {
+                    if let Some((_id, presence)) = engine.get_child_field_presence(child_name) {
+                        // child_name is already a leaf; prefix with parent path
+                        let child_full = format!("{}.{}", full_path, child_name);
+                        init_dynamic_presence.insert(child_full, presence);
+                    }
+                }
+                let som_pres = engine.get_all_som_presence_changes();
+                for (som_path, pres_str) in &som_pres {
+                    let presence = Presence::from_str(pres_str);
+                    // SOM paths from the engine are already full paths
+                    init_dynamic_presence.insert(som_path.clone(), presence);
+                }
             }
         }
 
@@ -146,11 +242,11 @@ impl ScriptExecutor {
         let som_presence_changes = engine.get_all_som_presence_changes();
         for (som_path, presence_str) in &som_presence_changes {
             let presence = Presence::from_str(presence_str);
-            let field_name = som_path.rsplit('.').next().unwrap_or(som_path);
-            dynamic_presence_overrides.insert(field_name.to_string(), presence);
+            // Use full SOM path as key to avoid leaf-name collisions
+            dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
         }
-        let mut presence_map_after_phase1 = Self::build_presence_map(&presence_changes);
+        let mut presence_map_after_phase1 = Self::build_full_path_presence_map(&all_events, &presence_changes);
         presence_map_after_phase1.extend(dynamic_presence_overrides.clone());
 
         // Phase 2: Execute form-ready JavaScript events
@@ -160,7 +256,7 @@ impl ScriptExecutor {
                 && script.event_ref == EventRef::Form
                 && !field_name.is_empty()
                 && !Self::is_effectively_inactive(
-                    field_name,
+                    full_path,
                     *static_presence,
                     &presence_map_after_phase1,
                 )
@@ -192,11 +288,11 @@ impl ScriptExecutor {
         let som_presence_changes_2 = engine.get_all_som_presence_changes();
         for (som_path, presence_str) in &som_presence_changes_2 {
             let presence = Presence::from_str(presence_str);
-            let field_name = som_path.rsplit('.').next().unwrap_or(som_path);
-            dynamic_presence_overrides.insert(field_name.to_string(), presence);
+            // Use full SOM path as key to avoid leaf-name collisions
+            dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
         }
-        let mut presence_map_after_phase2 = Self::build_presence_map(&presence_changes);
+        let mut presence_map_after_phase2 = Self::build_full_path_presence_map(&all_events, &presence_changes);
         presence_map_after_phase2.extend(dynamic_presence_overrides);
 
         // Phase 3: Execute layout-ready JavaScript events
@@ -206,7 +302,7 @@ impl ScriptExecutor {
                 && script.event_ref == EventRef::Layout
                 && !field_name.is_empty()
                 && !Self::is_effectively_inactive(
-                    field_name,
+                    full_path,
                     *static_presence,
                     &presence_map_after_phase2,
                 )
@@ -233,7 +329,41 @@ impl ScriptExecutor {
             }
         }
 
-        // Phase 4: Collect all values from SOM hierarchy
+        // Phase 4: Execute docReady JavaScript events
+        // Per XFA 3.3 §10 p.408: docReady fires after all form-level events
+        // (initialize, form:ready, layout:ready) have completed.
+        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript
+                && script.activity == EventActivity::DocReady
+                && !field_name.is_empty()
+                && !Self::is_effectively_inactive(
+                    full_path,
+                    *static_presence,
+                    &presence_map_after_phase2,
+                )
+            {
+                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+
+                if let Ok(Some(value)) = engine.execute_script(script) {
+                    computed_values.insert(SomPath::new(field_name.clone()), value);
+                }
+
+                // Collect values set on child fields
+                for (child_name, child_id) in child_fields {
+                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
+                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+
+                        if !storage_key.is_empty() {
+                            computed_values
+                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
+                        }
+                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
+                    }
+                }
+            }
+        }
+
+        // Phase 5: Collect all values from SOM hierarchy
         // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
         let som_values = engine.get_all_som_field_values();
         for (field_name, value) in som_values {
@@ -361,29 +491,59 @@ impl ScriptExecutor {
     /// presence and dynamic overrides set by earlier script phases.
     /// Per XFA 3.3 §10 p.407 Rule 1.
     fn is_effectively_inactive(
-        field_name: &str,
+        full_path: &str,
         static_presence: Presence,
         dynamic_overrides: &HashMap<String, Presence>,
     ) -> bool {
         if static_presence == Presence::Inactive {
             return true;
         }
-        if let Some(&p) = dynamic_overrides.get(field_name) {
+        // Look up by full SOM path to avoid collisions between fields
+        // with the same leaf name in different subforms.
+        if let Some(&p) = dynamic_overrides.get(full_path) {
             return p == Presence::Inactive;
         }
         false
     }
 
-    /// Build a lookup from presence_changes collected so far.
-    fn build_presence_map(
+    /// Build a lookup keyed by full SOM path from presence_changes.
+    /// Uses `all_events` to resolve leaf names → full paths.
+    fn build_full_path_presence_map(
+        all_events: &[(String, String, Vec<(String, String)>, crate::xfa::scripting::XfaScript, Presence)],
         changes: &[(String, Option<String>, Presence)],
     ) -> HashMap<String, Presence> {
-        let mut map = HashMap::new();
-        for (name, id, presence) in changes {
-            map.insert(name.clone(), *presence);
-            if let Some(id_val) = id {
-                map.insert(id_val.clone(), *presence);
+        // Build a leaf→full_path lookup from all_events.
+        // Note: if multiple events share a leaf, the last full_path wins;
+        // that's fine because name collisions are the problem we're solving
+        // and full SOM paths are unique.
+        let mut leaf_to_full: HashMap<&str, &str> = HashMap::new();
+        for (name, full_path, children, _, _) in all_events {
+            if !name.is_empty() {
+                leaf_to_full.insert(name.as_str(), full_path.as_str());
             }
+            for (child_name, _) in children {
+                // Children paths are relative to the parent's full path
+                leaf_to_full.entry(child_name.as_str()).or_insert(full_path.as_str());
+            }
+        }
+
+        let mut map = HashMap::new();
+        for (name, _id, presence) in changes {
+            // If the name looks like a full path already (contains '.'), use it as-is.
+            // Otherwise resolve via the leaf→full mapping.
+            let key = if name.contains('.') {
+                name.clone()
+            } else if let Some(&full) = leaf_to_full.get(name.as_str()) {
+                // Build child full path: parent_full_path.child_name
+                if full.ends_with(name.as_str()) {
+                    full.to_string()
+                } else {
+                    format!("{}.{}", full, name)
+                }
+            } else {
+                name.clone()
+            };
+            map.insert(key, *presence);
         }
         map
     }
@@ -470,36 +630,6 @@ impl ScriptExecutor {
 
     /// Build and register the XFA SOM hierarchy in the scripting engine.
     fn build_and_register_xfa_som_hierarchy(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
-        /// Extract the item key from `<items><text>...</text></items>` children
-        /// of an XFA field node. Used for exclGroup parent→child propagation
-        /// per XFA 3.3 §4 pp.195-197.
-        fn extract_item_key_from_node(node: &XfaNode) -> Option<String> {
-            for child in &node.children {
-                if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
-                    if tag_name == "items" {
-                        for item_child in &child.children {
-                            if let XfaNodeKind::Element {
-                                tag_name: t2,
-                                text_content,
-                                ..
-                            } = &item_child.kind
-                            {
-                                if t2 == "text" {
-                                    if let Some(text) = text_content {
-                                        return Some(text.clone());
-                                    }
-                                }
-                            }
-                            if let XfaNodeKind::Text { content } = &item_child.kind {
-                                return Some(content.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        }
-
         fn register_nodes_recursive(
             nodes: &[XfaNode],
             parent_path: Option<&str>,
@@ -539,12 +669,12 @@ impl ScriptExecutor {
 
                 let value = node.attributes.get("rawValue").cloned().unwrap_or_default();
 
-                // Extract item key from <items><text>...</text></items> for
-                // exclGroup children (XFA 3.3 §4 pp.195-197).
-                let item_key = if parent_is_exclgroup {
-                    extract_item_key_from_node(node)
+                // Extract item values from <items> for exclGroup children
+                // (XFA 3.3 §4 pp.195-197, §17 pp.758-759).
+                let (item_key, off_value) = if parent_is_exclgroup {
+                    node.extract_item_values()
                 } else {
-                    None
+                    (None, None)
                 };
 
                 engine.register_xfa_node(
@@ -555,6 +685,7 @@ impl ScriptExecutor {
                     &value,
                     parent_is_exclgroup,
                     item_key.as_deref(),
+                    off_value.as_deref(),
                 );
 
                 if is_subform || is_exclgroup {
@@ -573,7 +704,8 @@ impl ScriptExecutor {
             // Register the root subform first
             let root_name = root.name.clone().unwrap_or_default();
             if !root_name.is_empty() {
-                engine.register_xfa_node(&root_name, &root_name, None, false, "", false, None);
+                engine
+                    .register_xfa_node(&root_name, &root_name, None, false, "", false, None, None);
             }
 
             // Register immediate children of root in the SOM hierarchy.
@@ -619,6 +751,7 @@ impl ScriptExecutor {
                         "",
                         false,
                         None,
+                        None,
                     );
                     // Recurse with child_name as parent
                     register_nodes_recursive(&child.children, Some(&child_name), engine, false);
@@ -637,6 +770,7 @@ impl ScriptExecutor {
                         is_field,
                         &value,
                         false,
+                        None,
                         None,
                     );
                     if is_exclgroup {
@@ -979,6 +1113,89 @@ mod tests {
         );
     }
 
+    /// Build a field with a calculate event script.
+    fn make_field_with_calculate_script(
+        name: &str,
+        script_source: &str,
+        presence: &str,
+    ) -> XfaNode {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), name.to_string());
+        if !presence.is_empty() {
+            attrs.insert("presence".to_string(), presence.to_string());
+        }
+
+        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
+
+        let script_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "script".to_string(),
+                text_content: Some(script_source.to_string()),
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert(
+                    "contentType".to_string(),
+                    "application/x-javascript".to_string(),
+                );
+                a
+            },
+        );
+
+        let mut event_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "event".to_string(),
+                text_content: None,
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert("activity".to_string(), "calculate".to_string());
+                a
+            },
+        );
+        event_node.children.push(script_node);
+        field.children.push(event_node);
+        field
+    }
+
+    /// Build a field with a validate event script.
+    fn make_field_with_validate_script(name: &str, script_source: &str) -> XfaNode {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), name.to_string());
+
+        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
+
+        let script_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "script".to_string(),
+                text_content: Some(script_source.to_string()),
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert(
+                    "contentType".to_string(),
+                    "application/x-javascript".to_string(),
+                );
+                a
+            },
+        );
+
+        let mut event_node = XfaNode::new(
+            XfaNodeKind::Element {
+                tag_name: "event".to_string(),
+                text_content: None,
+            },
+            {
+                let mut a = HashMap::new();
+                a.insert("activity".to_string(), "validate".to_string());
+                a
+            },
+        );
+        event_node.children.push(script_node);
+        field.children.push(event_node);
+        field
+    }
+
     // =========================================================================
     // Test: children of inactive container are also suppressed
     // =========================================================================
@@ -1004,6 +1221,138 @@ mod tests {
         assert!(
             !child_found,
             "Children of inactive containers must NOT have events executed per XFA 3.3 §10 Rule 1"
+        );
+    }
+
+    // =========================================================================
+    // Test: calculate events run before initialize events
+    // =========================================================================
+
+    #[test]
+    fn test_calculate_runs_before_initialize() {
+        // Per XFA 3.3 §10 p.407: "All value calculations are done, then all
+        // property calculations, then all validations, and then all initialize
+        // events are fired."
+        //
+        // fieldA has a calculate script that sets its value.
+        // fieldB has an initialize script that reads fieldA's value.
+        // If calculate runs before initialize, fieldB should see fieldA's
+        // calculated value.
+        let field_a =
+            make_field_with_calculate_script("fieldA", r#"this.rawValue = "calculated";"#, "");
+        let field_b =
+            make_field_with_init_script("fieldB", r#"this.rawValue = Root.fieldA.rawValue;"#, "");
+
+        let nodes = wrap_in_template(vec![field_a, field_b]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        let field_b_value = result.computed_values.get(&SomPath::new("fieldB")).cloned();
+        assert_eq!(
+            field_b_value,
+            Some("calculated".to_string()),
+            "Initialize script should see calculate results (calculate runs first per XFA spec)"
+        );
+    }
+
+    #[test]
+    fn test_calculate_result_replaces_field_value() {
+        // Per XFA 3.3 §10 p.380: "field: Replaces the value of the container
+        // object" — the calculate script return value becomes the field value.
+        let field = make_field_with_calculate_script("taxField", r#"this.rawValue = "42.50";"#, "");
+
+        let nodes = wrap_in_template(vec![field]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        let tax_value = result
+            .computed_values
+            .get(&SomPath::new("taxField"))
+            .cloned();
+        assert_eq!(
+            tax_value,
+            Some("42.50".to_string()),
+            "Calculate script result should replace field value"
+        );
+    }
+
+    // =========================================================================
+    // Test: validate scripts run after calculations, before initialize
+    // =========================================================================
+
+    #[test]
+    fn test_validate_runs_after_calculate_before_initialize() {
+        // Per XFA 3.3 §10 p.407: calculate → validate → initialize.
+        // Validate scripts can read calculated values. They don't replace
+        // field values, but they can set side-effect state.
+        // Here we verify that a validate script can read a value that
+        // was set by a calculate script, confirming correct ordering.
+        let field_a =
+            make_field_with_calculate_script("calcField", r#"this.rawValue = "100";"#, "");
+        // Validate script reads calcField's value and marks a validation
+        // result on a different field.
+        let field_b = make_field_with_validate_script(
+            "validField",
+            r#"
+                var v = Root.calcField.rawValue;
+                if (v === "100") {
+                    this.rawValue = "valid_" + v;
+                }
+            "#,
+        );
+
+        let nodes = wrap_in_template(vec![field_a, field_b]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        // calcField should have its calculated value
+        let calc_value = result
+            .computed_values
+            .get(&SomPath::new("calcField"))
+            .cloned();
+        assert_eq!(
+            calc_value,
+            Some("100".to_string()),
+            "Calculate script should have set calcField value"
+        );
+
+        // validField should have been set by the validate script that read calcField
+        let valid_value = result
+            .computed_values
+            .get(&SomPath::new("validField"))
+            .cloned();
+        assert_eq!(
+            valid_value,
+            Some("valid_100".to_string()),
+            "Validate script should see calculated values (validate runs after calculate)"
+        );
+    }
+
+    // =========================================================================
+    // Test: intra-phase presence suppression within initialize
+    // =========================================================================
+
+    #[test]
+    fn test_intra_phase_init_presence_suppression() {
+        // Per XFA 3.3 §10 Rule 1: "The property is inspected at the moment
+        // that the calculation, validation, or event would be triggered."
+        //
+        // fieldA's initialize script sets fieldB to inactive.
+        // fieldB's initialize script should NOT execute because fieldA's
+        // script already set it inactive, and presence is checked at the
+        // moment fieldB's event would fire (within the same init phase).
+        let field_a =
+            make_field_with_init_script("fieldA", r#"Root.fieldB.presence = "inactive";"#, "");
+        let field_b =
+            make_field_with_init_script("fieldB", r#"this.rawValue = "should_not_run";"#, "");
+
+        let nodes = wrap_in_template(vec![field_a, field_b]);
+        let result = ScriptExecutor::execute(&nodes);
+
+        let suppressed = result
+            .computed_values
+            .values()
+            .any(|v| v == "should_not_run");
+        assert!(
+            !suppressed,
+            "fieldB's init script must be suppressed by intra-phase presence change from fieldA"
         );
     }
 }

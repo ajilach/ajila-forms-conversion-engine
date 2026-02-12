@@ -474,11 +474,29 @@ fn setup_exclgroup(
     group_name: &str,
     children: &[(&str, &str, Option<&str>)], // (child_name, child_value, item_key)
 ) {
+    setup_exclgroup_with_off(
+        engine,
+        group_path,
+        group_name,
+        &children
+            .iter()
+            .map(|(n, v, k)| (*n, *v, *k, None))
+            .collect::<Vec<_>>(),
+    );
+}
+
+/// Helper variant with off-value support for each child.
+fn setup_exclgroup_with_off(
+    engine: &mut XfaScriptEngine,
+    group_path: &str,
+    group_name: &str,
+    children: &[(&str, &str, Option<&str>, Option<&str>)], // (child_name, child_value, item_key, off_value)
+) {
     // Register parent exclGroup (is_field=false, is_parent_exclgroup=false)
-    engine.register_xfa_node(group_name, group_path, None, false, "", false, None);
+    engine.register_xfa_node(group_name, group_path, None, false, "", false, None, None);
 
     // Register child fields (is_field=true, is_parent_exclgroup=true)
-    for (child_name, child_value, item_key) in children {
+    for (child_name, child_value, item_key, off_value) in children {
         let child_path = format!("{}.{}", group_path, child_name);
         engine.register_xfa_node(
             child_name,
@@ -488,6 +506,7 @@ fn setup_exclgroup(
             child_value,
             true, // parent IS an exclGroup
             *item_key,
+            *off_value,
         );
     }
 }
@@ -495,7 +514,12 @@ fn setup_exclgroup(
 #[test]
 fn test_exclgroup_child_to_parent_propagation() {
     let mut engine = XfaScriptEngine::new();
-    setup_exclgroup(&mut engine, "sex", "sex", &[("male", "", Some("M")), ("female", "", Some("F"))]);
+    setup_exclgroup(
+        &mut engine,
+        "sex",
+        "sex",
+        &[("male", "", Some("M")), ("female", "", Some("F"))],
+    );
 
     // Set a child's rawValue → should propagate to parent
     engine.update_field_value("sex.male", "M");
@@ -592,8 +616,17 @@ fn test_exclgroup_non_child_does_not_propagate() {
     let mut engine = XfaScriptEngine::new();
 
     // Register a regular subform with children (is_parent_exclgroup=false)
-    engine.register_xfa_node("form", "form", None, false, "", false, None);
-    engine.register_xfa_node("field1", "form.field1", Some("form"), true, "", false, None);
+    engine.register_xfa_node("form", "form", None, false, "", false, None, None);
+    engine.register_xfa_node(
+        "field1",
+        "form.field1",
+        Some("form"),
+        true,
+        "",
+        false,
+        None,
+        None,
+    );
 
     engine.update_field_value("form.field1", "hello");
 
@@ -613,7 +646,11 @@ fn test_exclgroup_script_sets_child_rawvalue() {
         &mut engine,
         "paymentMethod",
         "paymentMethod",
-        &[("cash", "", Some("CASH")), ("card", "", Some("CARD")), ("transfer", "", Some("TRANSFER"))],
+        &[
+            ("cash", "", Some("CASH")),
+            ("card", "", Some("CARD")),
+            ("transfer", "", Some("TRANSFER")),
+        ],
     );
 
     // Simulate script: this.rawValue = "card_value"
@@ -653,18 +690,22 @@ fn test_exclgroup_parent_to_child_propagation() {
         &mut engine,
         "sex",
         "sex",
-        &[("male", "", Some("M")), ("female", "", Some("F")), ("na", "", Some("NA"))],
+        &[
+            ("male", "", Some("M")),
+            ("female", "", Some("F")),
+            ("na", "", Some("NA")),
+        ],
     );
 
     // Set the parent exclGroup's rawValue to "M"
     engine.update_field_value("sex", "M");
 
-    // The child whose _itemKey matches "M" should be ON (rawValue="1")
+    // The child whose _itemKey matches "M" should be ON (rawValue=_itemKey per XFA 3.3 §17 p.714)
     let male_val = engine.get_field_value(&SomPath::new("sex.male"));
     assert_eq!(
         male_val,
-        Some("1".to_string()),
-        "Child with matching _itemKey should be turned ON (rawValue='1')"
+        Some("M".to_string()),
+        "Child with matching _itemKey should be turned ON (rawValue=_itemKey per XFA spec)"
     );
 
     // Other children should be OFF (rawValue="")
@@ -688,28 +729,76 @@ fn test_exclgroup_parent_to_child_deselects_previous() {
         &mut engine,
         "color",
         "color",
-        &[("red", "", Some("R")), ("green", "", Some("G")), ("blue", "", Some("B"))],
+        &[
+            ("red", "", Some("R")),
+            ("green", "", Some("G")),
+            ("blue", "", Some("B")),
+        ],
     );
 
     // Select red
     engine.update_field_value("color", "R");
     assert_eq!(
         engine.get_field_value(&SomPath::new("color.red")),
-        Some("1".to_string()),
-        "red should be ON"
+        Some("R".to_string()),
+        "red should be ON (rawValue=_itemKey per XFA spec)"
     );
 
     // Now select green → red should become OFF
     engine.update_field_value("color", "G");
     assert_eq!(
         engine.get_field_value(&SomPath::new("color.green")),
-        Some("1".to_string()),
-        "green should be ON"
+        Some("G".to_string()),
+        "green should be ON (rawValue=_itemKey per XFA spec)"
     );
     let red_val = engine.get_field_value(&SomPath::new("color.red"));
     assert!(
         red_val.is_none() || red_val == Some("".to_string()),
         "red should be OFF after selecting green"
+    );
+}
+
+#[test]
+fn test_exclgroup_off_value_used_when_deactivated() {
+    // Per XFA 3.3 §17 pp.758-759: when a member has two <items> values,
+    // the second is used as the off-value when the member is deactivated.
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup_with_off(
+        &mut engine,
+        "toggle",
+        "toggle",
+        &[
+            ("yes", "", Some("Y"), Some("N")),   // on=Y, off=N
+            ("maybe", "", Some("M"), Some("X")), // on=M, off=X
+        ],
+    );
+
+    // Activate "yes"
+    engine.update_field_value("toggle", "Y");
+    assert_eq!(
+        engine.get_field_value(&SomPath::new("toggle.yes")),
+        Some("Y".to_string()),
+        "Activated member should return its on-value"
+    );
+    // "maybe" is deactivated → should return off-value "X"
+    assert_eq!(
+        engine.get_field_value(&SomPath::new("toggle.maybe")),
+        Some("X".to_string()),
+        "Deactivated member with off-value should return off-value, not empty string"
+    );
+
+    // Now activate "maybe"
+    engine.update_field_value("toggle", "M");
+    assert_eq!(
+        engine.get_field_value(&SomPath::new("toggle.maybe")),
+        Some("M".to_string()),
+        "Activated member should return its on-value"
+    );
+    // "yes" is now deactivated → should return off-value "N"
+    assert_eq!(
+        engine.get_field_value(&SomPath::new("toggle.yes")),
+        Some("N".to_string()),
+        "Deactivated member with off-value should return off-value, not empty string"
     );
 }
 
@@ -736,12 +825,12 @@ fn test_exclgroup_parent_to_child_via_script() {
     };
     let _ = engine.execute_script(&script);
 
-    // The matching child should be ON
+    // The matching child should be ON (rawValue=_itemKey per XFA 3.3 §17 p.714)
     let inactive_val = engine.get_field_value(&SomPath::new("status.inactive"));
     assert_eq!(
         inactive_val,
-        Some("1".to_string()),
-        "Child matching parent's rawValue should be ON after script sets parent"
+        Some("I".to_string()),
+        "Child matching parent's rawValue should be ON (rawValue=_itemKey per XFA spec)"
     );
 
     // The non-matching child should be OFF
@@ -847,7 +936,11 @@ fn test_exclgroup_deselection_preserves_empty_values() {
         &mut engine,
         "myGroup",
         "myGroup",
-        &[("optA", "", Some("A")), ("optB", "", Some("B")), ("optC", "", Some("C"))],
+        &[
+            ("optA", "", Some("A")),
+            ("optB", "", Some("B")),
+            ("optC", "", Some("C")),
+        ],
     );
 
     // All children start with empty rawValue (deselected state)
