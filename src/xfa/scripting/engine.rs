@@ -849,9 +849,18 @@ impl XfaScriptEngine {
             )
             .ok();
 
-        // Define rawValue with getter/setter for automatic exclGroup propagation.
-        // When rawValue is set on an exclGroup child, the setter copies the value
-        // to the parent exclGroup's _rawValue, avoiding the need for batch sync.
+        // Define rawValue with getter/setter for exclGroup propagation.
+        //
+        // Per XFA 3.3 §4 p.196: "The field determines whether it is on or off
+        // by comparing the value of the variable to its own key value."
+        //
+        // Getter: If this field is an exclGroup child with an _itemKey, the
+        //   ON/OFF state is DERIVED at read-time by comparing the parent
+        //   exclGroup's value to this field's key.  This is spec-compliant
+        //   and avoids write-side propagation issues.
+        // Setter: When a value is written, propagate the field's _itemKey
+        //   (not the raw value) to the parent exclGroup, so the parent
+        //   always stores the selected child's key.
         self.context
             .global_object()
             .set(
@@ -864,13 +873,24 @@ impl XfaScriptEngine {
         let _ = self.context.eval(Source::from_bytes(
             r#"Object.defineProperty(_xfa_tmp_, 'rawValue', {
                 get: function() {
+                    if (this._exclGroupParent && this._itemKey !== undefined) {
+                        var pv = this._exclGroupParent._rawValue;
+                        if (pv !== undefined && pv !== null) {
+                            return (String(pv) === String(this._itemKey)) ? '1' : '';
+                        }
+                        return '';
+                    }
                     var v = this._rawValue;
                     return (v !== undefined && v !== null) ? v : '';
                 },
                 set: function(v) {
                     this._rawValue = v;
                     if (this._exclGroupParent) {
-                        this._exclGroupParent._rawValue = v;
+                        if (this._itemKey !== undefined) {
+                            this._exclGroupParent._rawValue = v ? this._itemKey : '';
+                        } else {
+                            this._exclGroupParent._rawValue = v;
+                        }
                     }
                 },
                 configurable: true,
@@ -1307,9 +1327,17 @@ impl XfaScriptEngine {
                 if !raw_value.is_undefined() && !raw_value.is_null() {
                     if let Ok(value_str) = raw_value.to_string(&mut self.context) {
                         let value = value_str.to_std_string_escaped();
-                        // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
+                        // Empty strings are valid per XFA spec (cleared fields,
+                        // deselected exclGroups).  However, when multiple fields
+                        // share the same short name (e.g. RB_1 in two different
+                        // exclGroups), a derived-empty value must not overwrite
+                        // a non-empty value already stored for that name.
                         let field_name = path.name();
-                        values.insert(field_name.to_string(), value);
+                        if value.is_empty() {
+                            values.entry(field_name.to_string()).or_insert(value);
+                        } else {
+                            values.insert(field_name.to_string(), value);
+                        }
                     }
                 }
             }
@@ -1547,23 +1575,6 @@ impl XfaScriptEngine {
                 )
                 .ok();
 
-            // Initialize _exclGroupChildren as an empty array on all container
-            // objects. For exclGroups, children will be pushed onto this array
-            // during child registration; the rawValue setter iterates it to
-            // propagate parent→child state changes.
-            self.context
-                .global_object()
-                .set(
-                    PropertyKey::from(js_string!("_xfa_tmp_")),
-                    JsValue::from(subform_obj.clone()),
-                    false,
-                    &mut self.context,
-                )
-                .ok();
-            let _ = self
-                .context
-                .eval(Source::from_bytes(r#"_xfa_tmp_._exclGroupChildren = [];"#));
-
             self.context
                 .global_object()
                 .set(
@@ -1581,14 +1592,6 @@ impl XfaScriptEngine {
                     },
                     set: function(v) {
                         this._rawValue = v;
-                        if (this._exclGroupChildren && this._exclGroupChildren.length > 0) {
-                            for (var i = 0; i < this._exclGroupChildren.length; i++) {
-                                var child = this._exclGroupChildren[i];
-                                if (child._itemKey !== undefined) {
-                                    child._rawValue = (child._itemKey === v) ? '1' : '';
-                                }
-                            }
-                        }
                         if (this._exclGroupParent) {
                             this._exclGroupParent._rawValue = v;
                         }
@@ -1618,11 +1621,10 @@ impl XfaScriptEngine {
         self.field_objects
             .insert(som_path.clone(), node_obj.clone());
 
-        // Link child to parent exclGroup for automatic rawValue propagation.
-        // The rawValue setter on the child checks _exclGroupParent and copies
-        // the value to the parent's _rawValue when it's set.
-        // Also push the child onto the parent's _exclGroupChildren array so
-        // that parent→child propagation works (XFA 3.3 §4 pp.195-197).
+        // Link child to parent exclGroup for rawValue derivation.
+        // Per XFA 3.3 §4 p.196: the field determines ON/OFF by comparing
+        // the parent exclGroup's value to its own key value at read-time.
+        // The child's rawValue getter uses _exclGroupParent to derive state.
         if is_exclgroup_child {
             if let Some(parent) = parent_path {
                 let parent_som = SomPath::new(parent);
@@ -1635,29 +1637,6 @@ impl XfaScriptEngine {
                             &mut self.context,
                         )
                         .ok();
-
-                    // Push this child onto parent's _exclGroupChildren array
-                    self.context
-                        .global_object()
-                        .set(
-                            PropertyKey::from(js_string!("_xfa_excl_parent_")),
-                            JsValue::from(parent_obj.clone()),
-                            false,
-                            &mut self.context,
-                        )
-                        .ok();
-                    self.context
-                        .global_object()
-                        .set(
-                            PropertyKey::from(js_string!("_xfa_excl_child_")),
-                            JsValue::from(node_obj.clone()),
-                            false,
-                            &mut self.context,
-                        )
-                        .ok();
-                    let _ = self.context.eval(Source::from_bytes(
-                        r#"_xfa_excl_parent_._exclGroupChildren.push(_xfa_excl_child_);"#,
-                    ));
                 }
             }
         }
