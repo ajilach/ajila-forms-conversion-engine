@@ -635,3 +635,121 @@ fn test_exclgroup_script_sets_child_rawvalue() {
         "Script setting child rawValue should propagate to parent exclGroup"
     );
 }
+
+// =============================================================================
+// Empty Value Preservation Tests (XFA spec compliance)
+// =============================================================================
+// Per XFA spec, empty strings are valid field states:
+// - A cleared dropdown has rawValue = ""
+// - A deselected exclGroup member has rawValue = ""
+// - A script that clears a field via this.rawValue = "" is a valid action
+// These must NOT be silently dropped.
+
+#[test]
+fn test_get_all_som_field_values_preserves_empty_strings() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("field1", "field1", "hello");
+    engine.register_field("field2", "field2", "");
+
+    let values = engine.get_all_som_field_values();
+    assert_eq!(
+        values.get("field1"),
+        Some(&"hello".to_string()),
+        "Non-empty field should be present"
+    );
+    assert_eq!(
+        values.get("field2"),
+        Some(&"".to_string()),
+        "Empty string field should be present, not dropped"
+    );
+}
+
+#[test]
+fn test_get_all_field_values_for_flattening_preserves_empty_strings() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("field1", "field1", "hello");
+    engine.register_field("field2", "field2", "");
+
+    let values = engine.get_all_field_values_for_flattening();
+    assert_eq!(
+        values.get(&SomPath::new("field1")),
+        Some(&"hello".to_string()),
+        "Non-empty field should be present in flattening values"
+    );
+    assert_eq!(
+        values.get(&SomPath::new("field2")),
+        Some(&"".to_string()),
+        "Empty string field should be present in flattening values, not dropped"
+    );
+}
+
+#[test]
+fn test_script_clearing_field_via_empty_rawvalue_is_detected() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("myField", "myField", "initial_value");
+
+    // Simulate a script that clears the field
+    engine.set_current_field("myField", "myField", "initial_value");
+    let script = XfaScript {
+        source: r#"this.rawValue = "";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script);
+
+    // The cleared value must appear as empty string, not be absent
+    let values = engine.get_all_som_field_values();
+    assert!(
+        values.contains_key("myField"),
+        "Cleared field must still be present in get_all_som_field_values"
+    );
+    assert_eq!(
+        values.get("myField"),
+        Some(&"".to_string()),
+        "Field cleared via rawValue = '' should have empty string value"
+    );
+
+    let flat_values = engine.get_all_field_values_for_flattening();
+    assert!(
+        flat_values.contains_key(&SomPath::new("myField")),
+        "Cleared field must still be present in get_all_field_values_for_flattening"
+    );
+    assert_eq!(
+        flat_values.get(&SomPath::new("myField")),
+        Some(&"".to_string()),
+        "Field cleared via rawValue = '' should have empty string in flattening values"
+    );
+}
+
+#[test]
+fn test_exclgroup_deselection_preserves_empty_values() {
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "myGroup",
+        "myGroup",
+        &[("optA", ""), ("optB", ""), ("optC", "")],
+    );
+
+    // All children start with empty rawValue (deselected state)
+    let values = engine.get_all_som_field_values();
+    // The deselected children should have empty string values, not be absent
+    assert_eq!(
+        values.get("optA"),
+        Some(&"".to_string()),
+        "Deselected exclGroup member should have empty string value"
+    );
+    assert_eq!(
+        values.get("optB"),
+        Some(&"".to_string()),
+        "Deselected exclGroup member should have empty string value"
+    );
+    assert_eq!(
+        values.get("optC"),
+        Some(&"".to_string()),
+        "Deselected exclGroup member should have empty string value"
+    );
+}

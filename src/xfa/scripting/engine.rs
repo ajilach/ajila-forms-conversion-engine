@@ -179,12 +179,11 @@ impl XfaScriptEngine {
                 if !raw_value.is_undefined() && !raw_value.is_null() {
                     if let Ok(value_str) = raw_value.to_string(&mut self.context) {
                         let value = value_str.to_std_string_escaped();
-                        if !value.is_empty() {
-                            // Store under full SOM path
-                            map.insert(path.clone(), value.clone());
-                            // Also store under short name for backward compat lookups
-                            map.insert(SomPath::new(path.name()), value);
-                        }
+                        // Store under full SOM path (empty strings are valid per XFA spec,
+                        // e.g. cleared dropdowns, deselected exclGroups)
+                        map.insert(path.clone(), value.clone());
+                        // Also store under short name for backward compat lookups
+                        map.insert(SomPath::new(path.name()), value);
                     }
                 }
             }
@@ -1308,10 +1307,9 @@ impl XfaScriptEngine {
                 if !raw_value.is_undefined() && !raw_value.is_null() {
                     if let Ok(value_str) = raw_value.to_string(&mut self.context) {
                         let value = value_str.to_std_string_escaped();
-                        if !value.is_empty() {
-                            let field_name = path.name();
-                            values.insert(field_name.to_string(), value);
-                        }
+                        // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
+                        let field_name = path.name();
+                        values.insert(field_name.to_string(), value);
                     }
                 }
             }

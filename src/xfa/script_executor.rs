@@ -128,11 +128,10 @@ impl ScriptExecutor {
                 }
 
                 // Collect values from initialize scripts
+                // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
                 let init_som_values = engine.get_all_som_field_values();
                 for (init_field_name, init_value) in init_som_values {
-                    if !init_value.is_empty() {
-                        computed_values.insert(SomPath::new(init_field_name), init_value);
-                    }
+                    computed_values.insert(SomPath::new(init_field_name), init_value);
                 }
             }
         }
@@ -151,17 +150,16 @@ impl ScriptExecutor {
                 }
 
                 // Collect values set on child fields
+                // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
                 for (child_name, child_id) in child_fields {
                     if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        if !child_value.is_empty() {
-                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
 
-                            if !storage_key.is_empty() {
-                                computed_values
-                                    .insert(SomPath::new(storage_key.clone()), child_value.clone());
-                            }
-                            computed_values.insert(SomPath::new(child_name.clone()), child_value);
+                        if !storage_key.is_empty() {
+                            computed_values
+                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
                         }
+                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
                     }
                 }
             }
@@ -181,30 +179,28 @@ impl ScriptExecutor {
                 }
 
                 // Collect values set on child fields
+                // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
                 for (child_name, child_id) in child_fields {
                     if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        if !child_value.is_empty() {
-                            let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
 
-                            if !storage_key.is_empty() {
-                                computed_values
-                                    .insert(SomPath::new(storage_key.clone()), child_value.clone());
-                            }
-                            computed_values.insert(SomPath::new(child_name.clone()), child_value);
+                        if !storage_key.is_empty() {
+                            computed_values
+                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
                         }
+                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
                     }
                 }
             }
         }
 
         // Phase 4: Collect all values from SOM hierarchy
+        // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
         let som_values = engine.get_all_som_field_values();
         for (field_name, value) in som_values {
-            if !value.is_empty() {
-                computed_values
-                    .entry(SomPath::new(field_name.clone()))
-                    .or_insert(value);
-            }
+            computed_values
+                .entry(SomPath::new(field_name.clone()))
+                .or_insert(value);
         }
 
         Ok(ScriptExecutionResult {
@@ -401,7 +397,12 @@ impl ScriptExecutor {
                 let node_name = node.name.clone().unwrap_or_default();
 
                 if node_name.is_empty() {
-                    register_nodes_recursive(&node.children, parent_path, engine, parent_is_exclgroup);
+                    register_nodes_recursive(
+                        &node.children,
+                        parent_path,
+                        engine,
+                        parent_is_exclgroup,
+                    );
                     continue;
                 }
 
@@ -425,10 +426,22 @@ impl ScriptExecutor {
 
                 let value = node.attributes.get("rawValue").cloned().unwrap_or_default();
 
-                engine.register_xfa_node(&node_name, &full_path, parent_path, is_field, &value, parent_is_exclgroup);
+                engine.register_xfa_node(
+                    &node_name,
+                    &full_path,
+                    parent_path,
+                    is_field,
+                    &value,
+                    parent_is_exclgroup,
+                );
 
                 if is_subform || is_exclgroup {
-                    register_nodes_recursive(&node.children, Some(&full_path), engine, is_exclgroup);
+                    register_nodes_recursive(
+                        &node.children,
+                        Some(&full_path),
+                        engine,
+                        is_exclgroup,
+                    );
                 }
             }
         }

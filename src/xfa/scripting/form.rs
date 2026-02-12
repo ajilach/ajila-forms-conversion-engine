@@ -96,7 +96,11 @@ impl<'a> XfaNodeRef<'a> {
         }
 
         // Try text_content for <text> variable elements
-        if let XfaNodeKind::Element { text_content: Some(content), .. } = &self.xfa_node.kind {
+        if let XfaNodeKind::Element {
+            text_content: Some(content),
+            ..
+        } = &self.xfa_node.kind
+        {
             if !content.is_empty() {
                 return Some(content.clone());
             }
@@ -419,8 +423,7 @@ impl<'a> XfaNodeRefMut<'a> {
     /// Set the raw value of this node
     pub fn set_raw_value(&mut self, value: &str) {
         // Write to the engine (single source of truth)
-        self.script_engine
-            .update_field_value(&self.som_path, value);
+        self.script_engine.update_field_value(&self.som_path, value);
         // Also update the XFA node
         Self::set_node_value(self.xfa_node, value);
     }
@@ -590,12 +593,11 @@ impl XfaForm {
         for script in &scripts {
             let result = self.script_engine.execute_script(script);
             if let Ok(Some(value)) = result {
-                if !value.is_empty() {
-                    changed_fields.push(resolved_path.clone());
-                    // Update engine with the script return value
-                    self.script_engine
-                        .update_field_value(&resolved_path, &value);
-                }
+                // Empty strings are valid per XFA spec (e.g. rawValue = "" clears a field)
+                changed_fields.push(resolved_path.clone());
+                // Update engine with the script return value
+                self.script_engine
+                    .update_field_value(&resolved_path, &value);
             }
         }
 
@@ -1402,7 +1404,13 @@ impl XfaForm {
                     }
                 }
 
-                register_fields(&node.children, &node_path, computed_values, engine, is_excl_group);
+                register_fields(
+                    &node.children,
+                    &node_path,
+                    computed_values,
+                    engine,
+                    is_excl_group,
+                );
             }
         }
 
