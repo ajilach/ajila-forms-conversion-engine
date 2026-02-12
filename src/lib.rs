@@ -87,8 +87,8 @@ pub use document::{Document, Group, GroupKind, GroupSource};
 // Structured output
 pub use structured::{
     DocumentEnvelope, FieldNode, FieldType, HeadingLevel, HeadingNode, InlineNode, InlineText,
-    MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, StructuredNode,
-    TranslatableString,
+    MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, SelectionKind,
+    StructuredNode, TranslatableString,
 };
 
 // HTML generation

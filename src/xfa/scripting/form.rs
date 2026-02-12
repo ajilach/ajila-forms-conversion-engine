@@ -290,6 +290,11 @@ impl<'a> XfaNodeRef<'a> {
             }
         }
 
+        // Per XFA spec: when only one <items> element exists, display = save
+        // regardless of which attribute was set.
+        if display_items.is_empty() {
+            display_items = save_items.clone();
+        }
         if save_items.is_empty() {
             save_items = display_items.clone();
         }

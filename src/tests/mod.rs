@@ -1,7 +1,7 @@
 
     use crate::xfa::script_executor::ScriptExecutor;
 
-    use crate::{document, flattened, structured, xfa, Blueprint, Context, Document, DocumentEnvelope, Flattened, FlattenedNodeKind, HtmlConfig, MergeInput, RecursiveMerger, Selection, StructuredNode, XfaNode, extract_xfa_from_pdf};
+    use crate::{document, flattened, structured, xfa, Blueprint, Context, Document, DocumentEnvelope, Flattened, FlattenedNodeKind, HtmlConfig, MergeInput, RecursiveMerger, Selection, SelectionKind, StructuredNode, XfaNode, extract_xfa_from_pdf};
     use rust_decimal::prelude::*;
     use std::collections::HashMap;
 
@@ -6535,5 +6535,51 @@
             display_values.contains(&"Legal entity"),
             "Expected 'Legal entity' in dropdown options, got: {:?}",
             display_values
+        );
+    }
+
+    #[test]
+    fn test_aaoe_exhaustive_produces_two_dropdown_states() {
+        // AAOE has a dropdown (CL_ClientType) with 2 options: "Individual" and "Legal entity".
+        // Exhaustive exploration should produce exactly 2 states, one per dropdown value.
+        let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to create Blueprint from AAOE PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        assert_eq!(
+            form_states.len(),
+            2,
+            "AAOE should produce exactly 2 exhaustive states (one per dropdown option), got {}",
+            form_states.len()
+        );
+
+        // Verify each state has exactly one selection that is a dropdown
+        let mut seen_values: Vec<String> = Vec::new();
+        for state in form_states.iter() {
+            let dropdown_selections: Vec<_> = state
+                .selections
+                .iter()
+                .filter(|s| s.kind == SelectionKind::Dropdown)
+                .collect();
+            assert_eq!(
+                dropdown_selections.len(),
+                1,
+                "Each AAOE state should have exactly 1 dropdown selection, got {}",
+                dropdown_selections.len()
+            );
+            seen_values.push(dropdown_selections[0].value.clone());
+        }
+
+        // Both dropdown options should be represented
+        seen_values.sort();
+        assert!(
+            seen_values.contains(&"Individual".to_string()),
+            "Expected a state with dropdown value 'Individual', got: {:?}",
+            seen_values
+        );
+        assert!(
+            seen_values.contains(&"Legal entity".to_string()),
+            "Expected a state with dropdown value 'Legal entity', got: {:?}",
+            seen_values
         );
     }

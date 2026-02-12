@@ -1,16 +1,20 @@
 //! Exhaustive form state exploration module.
 //!
 //! This module provides functionality to recursively discover and render
-//! all possible form states by clicking through radio buttons and checkboxes.
+//! all possible form states by clicking through radio buttons, checkboxes,
+//! and dropdowns.
 //!
 //! # Linear Field Exploration
 //!
 //! Fields are explored in a linear, globally-defined order. For each field:
 //! - Radio buttons: Explore each option in the group (one branch per option)
-//! - Checkboxes: Always select them
+//! - Checkboxes: Explore both checked and unchecked states
+//! - Dropdowns: Explore each option (one branch per option)
 //! - Hidden/unavailable fields: Automatically skip and continue
 //!
 //! Only "complete" states (all fields processed) are collected.
+//! The full cartesian product of all field values is explored, but only
+//! states where all visible fields have been processed are kept.
 //!
 //! # Two-Pass Architecture
 //!
@@ -26,40 +30,47 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::flattened::Flattened;
-use crate::structured::Selection;
+use crate::structured::{Selection, SelectionKind};
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
-/// A selectable field (radio button or checkbox) with its SOM path and shape.
+/// The kind of selectable field found in the XFA tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum SelectableFieldKind {
+    /// Radio button (checkButton with shape="round", inside an exclGroup)
+    Radio,
+    /// Checkbox (checkButton with shape="square")
+    Checkbox,
+    /// Dropdown (choiceList). Options are resolved dynamically from the live form
+    /// at exploration time, since they may come from merged data or scripts.
+    Dropdown,
+}
+
+/// A selectable field (radio button, checkbox, or dropdown) with its SOM path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SelectableField {
     /// The SOM path uniquely identifying this field
     path: SomPath,
-    /// The shape of the checkButton: "round" for radio buttons, "square" for checkboxes
-    shape: String,
+    /// The kind of selectable field
+    kind: SelectableFieldKind,
 }
 
 impl SelectableField {
-    fn new(path: SomPath, shape: String) -> Self {
-        Self { path, shape }
+    fn new(path: SomPath, kind: SelectableFieldKind) -> Self {
+        Self { path, kind }
     }
 
-    /// Returns true if this is a radio button (round shape)
+    /// Returns true if this is a radio button
     fn is_radio(&self) -> bool {
-        self.shape == "round"
-    }
-
-    /// Get the field name (last component of the SOM path)
-    fn name(&self) -> &str {
-        self.path.name()
+        matches!(self.kind, SelectableFieldKind::Radio)
     }
 }
 
 /// Action taken for a field during exploration
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum FieldAction {
-    /// Field was selected
-    Selected,
+    /// Field was selected with a specific value (e.g., "1"/"0" for checkbox, save value for dropdown)
+    Selected(String),
     /// Field was skipped (not visible or already selected in radio group)
     Skipped,
 }
@@ -98,6 +109,7 @@ impl ExplorationState {
 /// Get a canonical state representation by sorting the selections.
 /// This ensures that the same set of selections always produces the same state key,
 /// regardless of the order in which the selections were made.
+#[allow(dead_code)]
 fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
     let mut sorted = selections.to_vec();
     sorted.sort_by(|a, b| a.as_str().cmp(b.as_str()));
@@ -126,8 +138,8 @@ pub struct CollectedState {
 /// Collect all reachable form states from the given XFA form.
 ///
 /// This is the library-facing entry point. It performs **Pass 1** of the
-/// two-pass architecture: recursively explores radio button / checkbox
-/// combinations in a linear field order, producing a `Vec<CollectedState>`
+/// two-pass architecture: recursively explores radio button / checkbox /
+/// dropdown combinations in a linear field order, producing a `Vec<CollectedState>`
 /// with one entry per complete state.
 ///
 /// Fields are explored in a globally-defined static order. Each exploration
@@ -148,7 +160,7 @@ pub fn collect_states(
     let base_nodes = Arc::new(XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?);
 
     // Establish the global field ordering from the initial form state
-    let global_field_order = get_all_checkbutton_fields_ordered(form.xfa_nodes());
+    let global_field_order = get_all_selectable_fields_ordered(form.xfa_nodes());
 
     let initial_state = ExplorationState::new(global_field_order.len());
 
@@ -167,6 +179,27 @@ pub fn collect_states(
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
     Ok(states)
+}
+
+/// Apply a selection to a form (replay logic).
+/// Dispatches based on the selection kind to use the correct form mutation method.
+fn apply_selection(form: &mut XfaForm, sel: &Selection) {
+    match sel.kind {
+        SelectionKind::Radio => {
+            let _ = form.select_radio_button(sel.field_path.as_str());
+        }
+        SelectionKind::Checkbox => {
+            if let Some(mut node) = form.resolve_mut(sel.field_path.as_str()) {
+                let raw_value = if sel.value == "checked" { "1" } else { "0" };
+                node.set_raw_value(raw_value);
+            }
+        }
+        SelectionKind::Dropdown => {
+            if let Some(mut node) = form.resolve_mut(sel.field_path.as_str()) {
+                node.set_raw_value(&sel.value);
+            }
+        }
+    }
 }
 
 /// Pass 1 implementation: recursively collect all form states using linear field exploration.
@@ -205,7 +238,15 @@ fn collect_states_linear(
             exploration_state
                 .selections
                 .iter()
-                .map(|sel| sel.field_path.name().to_string())
+                .map(|sel| match sel.kind {
+                    SelectionKind::Radio => sel.field_path.name().to_string(),
+                    SelectionKind::Checkbox => {
+                        format!("{}_{}", sel.field_path.name(), sel.value)
+                    }
+                    SelectionKind::Dropdown => {
+                        format!("{}_{}", sel.field_path.name(), sel.value)
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("_")
         };
@@ -246,137 +287,300 @@ fn collect_states_linear(
         );
     }
 
-    // For radio buttons, explore each option in the group
-    if field.is_radio() {
-        if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
-            // Find all radio buttons in this group
-            let group_fields: Vec<SelectableField> = global_field_order
-                .iter()
-                .filter(|f| {
-                    f.is_radio()
-                        && form.find_excl_group_for_field(f.path.as_str()).as_ref()
-                            == Some(&excl_group_path)
-                })
-                .cloned()
-                .collect();
-
-            let mut handles = Vec::new();
-
-            // Try selecting each radio button in the group
-            for radio_field in group_fields {
-                let base_nodes = base_nodes.clone();
-                let rendered_states = rendered_states.clone();
-                let collected_states = collected_states.clone();
+    match &field.kind {
+        SelectableFieldKind::Radio => {
+            explore_radio(
+                form,
+                exploration_state,
+                field_index,
+                field,
+                global_field_order,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )?;
+        }
+        SelectableFieldKind::Checkbox => {
+            explore_checkbox(
+                exploration_state,
+                field_index,
+                field,
+                global_field_order,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )?;
+        }
+        SelectableFieldKind::Dropdown => {
+            // Resolve dropdown options from the live form (they may come from
+            // merged data or scripts, so they aren't available at discovery time)
+            let options = form
+                .resolve(field.path.as_str())
+                .map(|node| node.dropdown_options())
+                .unwrap_or_default();
+            if options.is_empty() {
+                // No options available — skip this dropdown
                 let mut new_state = exploration_state.clone();
-                let global_field_order = global_field_order.to_vec();
-
-                let handle = thread::spawn(move || -> Result<(), crate::Error> {
-                    let nodes_reset = base_nodes.as_ref().clone();
-                    let mut new_form =
-                        XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
-
-                    // Apply all current selections
-                    for sel in &new_state.selections {
-                        let _ = new_form.select_radio_button(sel.field_path.as_str());
-                    }
-
-                    // Select the radio button
-                    let _ = new_form.select_radio_button(radio_field.path.as_str());
-
-                    let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
-                    new_state
-                        .selections
-                        .push(Selection::new(radio_field.path.clone(), group_path));
-
-                    // Mark all fields in this radio group as processed
-                    for (idx, field) in global_field_order.iter().enumerate() {
-                        if field.is_radio() {
-                            if let Some(fg) =
-                                new_form.find_excl_group_for_field(field.path.as_str())
-                            {
-                                if Some(&fg)
-                                    == new_state
-                                        .selections
-                                        .last()
-                                        .and_then(|s| s.group_path.as_ref())
-                                {
-                                    new_state.field_actions[idx] = if field.path == radio_field.path
-                                    {
-                                        Some(FieldAction::Selected)
-                                    } else {
-                                        Some(FieldAction::Skipped)
-                                    };
-                                    new_state.next_field_index = idx + 1;
-                                }
-                            }
-                        }
-                    }
-
-                    new_form.refresh().map_err(crate::Error::FormCreation)?;
-
-                    collect_states_linear(
-                        &mut new_form,
-                        new_state,
-                        &global_field_order,
-                        rendered_states,
-                        collected_states,
-                        base_nodes,
-                    )
-                });
-
-                handles.push(handle);
+                new_state.field_actions[field_index] = Some(FieldAction::Skipped);
+                new_state.next_field_index = field_index + 1;
+                return collect_states_linear(
+                    form,
+                    new_state,
+                    global_field_order,
+                    rendered_states,
+                    collected_states,
+                    base_nodes,
+                );
             }
-
-            // Wait for all threads
-            for handle in handles {
-                handle.join().unwrap()?;
-            }
-
-            return Ok(());
+            explore_dropdown(
+                exploration_state,
+                field_index,
+                field,
+                &options,
+                global_field_order,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )?;
         }
     }
 
-    // For checkboxes, just select it and continue
-    let base_nodes = base_nodes.clone();
-    let rendered_states = rendered_states.clone();
-    let collected_states = collected_states.clone();
-    let mut new_state = exploration_state.clone();
-    let field = field.clone();
-    let global_field_order = global_field_order.to_vec();
+    Ok(())
+}
 
-    let handle = thread::spawn(move || -> Result<(), crate::Error> {
-        let nodes_reset = base_nodes.as_ref().clone();
-        let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+/// Explore all options of a radio button group.
+/// Spawns one thread per radio option in the exclGroup.
+fn explore_radio(
+    form: &mut XfaForm,
+    exploration_state: ExplorationState,
+    _field_index: usize,
+    field: &SelectableField,
+    global_field_order: &[SelectableField],
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    base_nodes: Arc<Vec<XfaNode>>,
+) -> Result<(), crate::Error> {
+    if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
+        // Find all radio buttons in this group
+        let group_fields: Vec<SelectableField> = global_field_order
+            .iter()
+            .filter(|f| {
+                f.is_radio()
+                    && form.find_excl_group_for_field(f.path.as_str()).as_ref()
+                        == Some(&excl_group_path)
+            })
+            .cloned()
+            .collect();
 
-        // Apply all current selections
-        for sel in &new_state.selections {
-            let _ = new_form.select_radio_button(sel.field_path.as_str());
+        let mut handles = Vec::new();
+
+        // Try selecting each radio button in the group
+        for radio_field in group_fields {
+            let base_nodes = base_nodes.clone();
+            let rendered_states = rendered_states.clone();
+            let collected_states = collected_states.clone();
+            let mut new_state = exploration_state.clone();
+            let global_field_order = global_field_order.to_vec();
+
+            let handle = thread::spawn(move || -> Result<(), crate::Error> {
+                let nodes_reset = base_nodes.as_ref().clone();
+                let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+
+                // Apply all current selections
+                for sel in &new_state.selections {
+                    apply_selection(&mut new_form, sel);
+                }
+
+                // Select the radio button
+                let _ = new_form.select_radio_button(radio_field.path.as_str());
+
+                let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
+                new_state.selections.push(Selection::new(
+                    radio_field.path.clone(),
+                    group_path,
+                    radio_field.path.name().to_string(),
+                    SelectionKind::Radio,
+                ));
+
+                // Mark all fields in this radio group as processed
+                for (idx, f) in global_field_order.iter().enumerate() {
+                    if f.is_radio() {
+                        if let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str()) {
+                            if Some(&fg)
+                                == new_state
+                                    .selections
+                                    .last()
+                                    .and_then(|s| s.group_path.as_ref())
+                            {
+                                new_state.field_actions[idx] = if f.path == radio_field.path {
+                                    Some(FieldAction::Selected(radio_field.path.name().to_string()))
+                                } else {
+                                    Some(FieldAction::Skipped)
+                                };
+                                new_state.next_field_index = idx + 1;
+                            }
+                        }
+                    }
+                }
+
+                new_form.refresh().map_err(crate::Error::FormCreation)?;
+
+                collect_states_linear(
+                    &mut new_form,
+                    new_state,
+                    &global_field_order,
+                    rendered_states,
+                    collected_states,
+                    base_nodes,
+                )
+            });
+
+            handles.push(handle);
         }
 
-        // Select the checkbox
-        if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
-            node.set_raw_value("1");
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap()?;
         }
+    }
 
-        new_state
-            .selections
-            .push(Selection::new(field.path.clone(), None));
-        new_state.field_actions[field_index] = Some(FieldAction::Selected);
-        new_state.next_field_index = field_index + 1;
+    Ok(())
+}
 
-        new_form.refresh().map_err(crate::Error::FormCreation)?;
+/// Explore both checked and unchecked states of a checkbox.
+/// Spawns two threads: one for checked (value="1"), one for unchecked (value="0").
+fn explore_checkbox(
+    exploration_state: ExplorationState,
+    field_index: usize,
+    field: &SelectableField,
+    global_field_order: &[SelectableField],
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    base_nodes: Arc<Vec<XfaNode>>,
+) -> Result<(), crate::Error> {
+    let checkbox_values = [("1", "checked"), ("0", "unchecked")];
+    let mut handles = Vec::new();
 
-        collect_states_linear(
-            &mut new_form,
-            new_state,
-            &global_field_order,
-            rendered_states,
-            collected_states,
-            base_nodes,
-        )
-    });
+    for (raw_value, label) in checkbox_values {
+        let base_nodes = base_nodes.clone();
+        let rendered_states = rendered_states.clone();
+        let collected_states = collected_states.clone();
+        let mut new_state = exploration_state.clone();
+        let field = field.clone();
+        let global_field_order = global_field_order.to_vec();
+        let raw_value = raw_value.to_string();
+        let label = label.to_string();
 
-    handle.join().unwrap()?;
+        let handle = thread::spawn(move || -> Result<(), crate::Error> {
+            let nodes_reset = base_nodes.as_ref().clone();
+            let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+
+            // Apply all current selections
+            for sel in &new_state.selections {
+                apply_selection(&mut new_form, sel);
+            }
+
+            // Set the checkbox value
+            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
+                node.set_raw_value(&raw_value);
+            }
+
+            new_state.selections.push(Selection::standalone(
+                field.path.clone(),
+                label.clone(),
+                SelectionKind::Checkbox,
+            ));
+            new_state.field_actions[field_index] = Some(FieldAction::Selected(label));
+            new_state.next_field_index = field_index + 1;
+
+            new_form.refresh().map_err(crate::Error::FormCreation)?;
+
+            collect_states_linear(
+                &mut new_form,
+                new_state,
+                &global_field_order,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all threads
+    for handle in handles {
+        handle.join().unwrap()?;
+    }
+
+    Ok(())
+}
+
+/// Explore all options of a dropdown field.
+/// Spawns one thread per dropdown option.
+fn explore_dropdown(
+    exploration_state: ExplorationState,
+    field_index: usize,
+    field: &SelectableField,
+    options: &[(String, String)],
+    global_field_order: &[SelectableField],
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    base_nodes: Arc<Vec<XfaNode>>,
+) -> Result<(), crate::Error> {
+    let mut handles = Vec::new();
+
+    for (display_value, save_value) in options {
+        let base_nodes = base_nodes.clone();
+        let rendered_states = rendered_states.clone();
+        let collected_states = collected_states.clone();
+        let mut new_state = exploration_state.clone();
+        let field = field.clone();
+        let global_field_order = global_field_order.to_vec();
+        let save_value = save_value.clone();
+        let display_value = display_value.clone();
+
+        let handle = thread::spawn(move || -> Result<(), crate::Error> {
+            let nodes_reset = base_nodes.as_ref().clone();
+            let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+
+            // Apply all current selections
+            for sel in &new_state.selections {
+                apply_selection(&mut new_form, sel);
+            }
+
+            // Set the dropdown value
+            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
+                node.set_raw_value(&save_value);
+            }
+
+            new_state.selections.push(Selection::standalone(
+                field.path.clone(),
+                display_value.clone(),
+                SelectionKind::Dropdown,
+            ));
+            new_state.field_actions[field_index] = Some(FieldAction::Selected(save_value));
+            new_state.next_field_index = field_index + 1;
+
+            new_form.refresh().map_err(crate::Error::FormCreation)?;
+
+            collect_states_linear(
+                &mut new_form,
+                new_state,
+                &global_field_order,
+                rendered_states,
+                collected_states,
+                base_nodes,
+            )
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all threads
+    for handle in handles {
+        handle.join().unwrap()?;
+    }
 
     Ok(())
 }
@@ -421,25 +625,22 @@ fn can_select_field(
     true
 }
 
-/// Get ALL checkButton/checkbox fields in globally-defined order.
+/// Get ALL selectable fields (radio buttons, checkboxes, dropdowns) in globally-defined order.
 /// This establishes the static ordering used throughout the exploration.
-fn get_all_checkbutton_fields_ordered(nodes: &[XfaNode]) -> Vec<SelectableField> {
+fn get_all_selectable_fields_ordered(nodes: &[XfaNode]) -> Vec<SelectableField> {
     let mut results = Vec::new();
-    search_checkbuttons(nodes, "", &mut results);
+    search_selectable_fields(nodes, "", &mut results);
     // Sort by SOM path to ensure consistent global ordering
     results.sort_by(|a, b| a.path.as_str().cmp(b.path.as_str()));
     results
 }
 
-/// Find ALL checkButton/checkbox fields in the XFA tree (including hidden sections).
-/// Returns SelectableField entries where the SomPath uniquely identifies each field.
-fn find_all_checkbutton_fields(nodes: &[XfaNode]) -> Vec<SelectableField> {
-    let mut results = Vec::new();
-    search_checkbuttons(nodes, "", &mut results);
-    results
-}
-
-fn search_checkbuttons(nodes: &[XfaNode], current_path: &str, results: &mut Vec<SelectableField>) {
+/// Search for all selectable fields in the XFA tree: checkButtons (radio/checkbox) and choiceLists (dropdown).
+fn search_selectable_fields(
+    nodes: &[XfaNode],
+    current_path: &str,
+    results: &mut Vec<SelectableField>,
+) {
     for node in nodes {
         // Build the SOM path for this node
         let node_path = if let Some(name) = &node.name {
@@ -454,53 +655,46 @@ fn search_checkbuttons(nodes: &[XfaNode], current_path: &str, results: &mut Vec<
 
         // Check if this is a Field node
         if matches!(&node.kind, XfaNodeKind::Field) {
-            // Check if this field has a checkButton UI element
-            let shape = node.children.iter().find_map(|c| {
-                if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind {
-                    if t == "ui" {
-                        return c.children.iter().find_map(|ui_c| {
-                            if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
-                                if t2 == "checkButton" {
-                                    return Some(
-                                        ui_c.attributes
-                                            .get("shape")
-                                            .cloned()
-                                            .unwrap_or_else(|| "square".to_string()),
-                                    );
+            let name = node.name.clone().unwrap_or_default();
+            if !name.is_empty() {
+                // Look for <ui> child and check for checkButton or choiceList
+                let field_kind = node.children.iter().find_map(|c| {
+                    if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind {
+                        if t == "ui" {
+                            return c.children.iter().find_map(|ui_c| {
+                                if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
+                                    match t2.as_str() {
+                                        "checkButton" => {
+                                            let shape = ui_c
+                                                .attributes
+                                                .get("shape")
+                                                .cloned()
+                                                .unwrap_or_else(|| "square".to_string());
+                                            if shape == "round" {
+                                                Some(SelectableFieldKind::Radio)
+                                            } else {
+                                                Some(SelectableFieldKind::Checkbox)
+                                            }
+                                        }
+                                        "choiceList" => Some(SelectableFieldKind::Dropdown),
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
                                 }
-                            }
-                            None
-                        });
+                            });
+                        }
                     }
-                }
-                None
-            });
+                    None
+                });
 
-            if let Some(shape) = shape {
-                let name = node.name.clone().unwrap_or_default();
-                if !name.is_empty() {
-                    // Convert shape to our standard format
-                    let shape_normalized = if shape == "round" { "round" } else { "square" };
-                    results.push(SelectableField::new(
-                        SomPath::new(node_path.clone()),
-                        shape_normalized.to_string(),
-                    ));
+                if let Some(kind) = field_kind {
+                    results.push(SelectableField::new(SomPath::new(node_path.clone()), kind));
                 }
             }
         }
+
         // Recurse into children
-        search_checkbuttons(&node.children, &node_path, results);
+        search_selectable_fields(&node.children, &node_path, results);
     }
-}
-
-/// Get the list of all VISIBLE radio buttons/checkboxes in a given form state.
-fn get_visible_selectable_fields(form: &XfaForm) -> Vec<SelectableField> {
-    // Get ALL checkButton fields with their SOM paths
-    let all_fields = find_all_checkbutton_fields(form.xfa_nodes());
-
-    // Filter to only those that are currently visible (checking XFA tree)
-    all_fields
-        .into_iter()
-        .filter(|field| form.is_path_visible(field.path.as_str()))
-        .collect()
 }

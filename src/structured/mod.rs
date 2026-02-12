@@ -2,7 +2,7 @@ mod merger;
 mod structured_converter;
 mod translation_merger;
 
-pub use merger::{MergeInput, RecursiveMerger, Selection};
+pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
 pub use translation_merger::{MergeError, merge_translations};
 

@@ -15,6 +15,17 @@ use std::collections::HashMap;
 use crate::structured::{ConditionalNode, FieldCondition, GroupNode, InputValue, StructuredNode};
 use crate::xfa::scripting::SomPath;
 
+/// The kind of selection that was made (determines replay behavior and condition generation).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SelectionKind {
+    /// A radio button was selected
+    Radio,
+    /// A checkbox was checked or unchecked
+    Checkbox,
+    /// A dropdown option was selected
+    Dropdown,
+}
+
 /// A field selection with both the specific field path and optional container/group path.
 /// For radio buttons in an exclGroup, the group_path is the exclGroup's SOM path.
 /// For standalone fields, group_path is None.
@@ -25,22 +36,35 @@ pub struct Selection {
     /// The SOM path of the containing group (e.g., exclGroup for radio buttons)
     /// If None, the field is standalone and field_path is used for conditionals
     pub group_path: Option<SomPath>,
+    /// The value that was set for this selection (e.g., radio name, "1"/"0" for checkbox, save value for dropdown)
+    pub value: String,
+    /// The kind of selection (radio, checkbox, or dropdown)
+    pub kind: SelectionKind,
 }
 
 impl Selection {
-    /// Create a new selection with both field and group paths
-    pub fn new(field_path: SomPath, group_path: Option<SomPath>) -> Self {
+    /// Create a new selection with field path, group path, value, and kind
+    pub fn new(
+        field_path: SomPath,
+        group_path: Option<SomPath>,
+        value: String,
+        kind: SelectionKind,
+    ) -> Self {
         Self {
             field_path,
             group_path,
+            value,
+            kind,
         }
     }
 
     /// Create a selection for a standalone field (no containing group)
-    pub fn standalone(field_path: SomPath) -> Self {
+    pub fn standalone(field_path: SomPath, value: String, kind: SelectionKind) -> Self {
         Self {
             field_path,
             group_path: None,
+            value,
+            kind,
         }
     }
 
@@ -50,9 +74,14 @@ impl Selection {
         self.group_path.as_ref().unwrap_or(&self.field_path)
     }
 
-    /// Get the value name (last component of field_path)
+    /// Get the value name for this selection.
+    /// For radio buttons, returns the last component of field_path (the button name).
+    /// For checkboxes and dropdowns, returns the stored value.
     pub fn value_name(&self) -> &str {
-        self.field_path.name()
+        match self.kind {
+            SelectionKind::Radio => self.field_path.name(),
+            SelectionKind::Checkbox | SelectionKind::Dropdown => &self.value,
+        }
     }
 }
 
@@ -155,11 +184,12 @@ impl RecursiveMerger {
         let mut groups: HashMap<Option<String>, Vec<MergeInput>> = HashMap::new();
 
         for input in inputs {
-            // Use field_path for grouping (determines unique states)
+            // Use field_path + value for grouping to distinguish different values
+            // of the same field (e.g., checkbox checked vs unchecked)
             let key = input
                 .selections
                 .get(depth)
-                .map(|s| s.field_path.to_string());
+                .map(|s| format!("{}={}", s.field_path.to_string(), s.value));
             groups.entry(key).or_default().push(input.clone());
         }
 
@@ -224,10 +254,14 @@ impl RecursiveMerger {
                 }
 
                 let condition = if let Some(sel) = selection {
-                    // Use group_path (if present) for field_name, field_path.name() for value
+                    // Use group_path (if present) for field_name, value for the condition
+                    let value = match sel.kind {
+                        SelectionKind::Checkbox => InputValue::Bool(sel.value == "checked"),
+                        _ => InputValue::Text(sel.value_name().to_string()),
+                    };
                     FieldCondition {
                         field_name: sel.condition_path().clone(),
-                        value: InputValue::Text(sel.value_name().to_string()),
+                        value,
                     }
                 } else {
                     FieldCondition {
@@ -545,11 +579,19 @@ mod tests {
         })];
 
         let input1 = MergeInput::new(
-            vec![Selection::standalone(SomPath::new("RB_1"))],
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
             nodes.clone(),
         );
         let input2 = MergeInput::new(
-            vec![Selection::standalone(SomPath::new("RB_2"))],
+            vec![Selection::standalone(
+                SomPath::new("RB_2"),
+                "RB_2".to_string(),
+                SelectionKind::Radio,
+            )],
             nodes.clone(),
         );
 
@@ -576,8 +618,22 @@ mod tests {
             content: InlineText::plain("Version B"),
         })];
 
-        let input1 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_1"))], nodes1);
-        let input2 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_1"))], nodes2);
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes1,
+        );
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes2,
+        );
 
         let merger = RecursiveMerger::new(vec![input1, input2]);
         let result = merger.merge();
@@ -608,8 +664,22 @@ mod tests {
             }),
         ];
 
-        let input1 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_1"))], nodes1);
-        let input2 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_2"))], nodes2);
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes1,
+        );
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_2"),
+                "RB_2".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes2,
+        );
 
         let merger = RecursiveMerger::new(vec![input1, input2]);
         let result = merger.merge();
@@ -645,20 +715,40 @@ mod tests {
         ];
 
         let input1 = MergeInput::new(
-            vec![Selection::standalone(SomPath::new("RB_3"))],
+            vec![Selection::standalone(
+                SomPath::new("RB_3"),
+                "RB_3".to_string(),
+                SelectionKind::Radio,
+            )],
             nodes_base,
         );
         let input2 = MergeInput::new(
             vec![
-                Selection::standalone(SomPath::new("RB_3")),
-                Selection::standalone(SomPath::new("inner.RB_1")),
+                Selection::standalone(
+                    SomPath::new("RB_3"),
+                    "RB_3".to_string(),
+                    SelectionKind::Radio,
+                ),
+                Selection::standalone(
+                    SomPath::new("inner.RB_1"),
+                    "RB_1".to_string(),
+                    SelectionKind::Radio,
+                ),
             ],
             nodes_inner1,
         );
         let input3 = MergeInput::new(
             vec![
-                Selection::standalone(SomPath::new("RB_3")),
-                Selection::standalone(SomPath::new("inner.RB_2")),
+                Selection::standalone(
+                    SomPath::new("RB_3"),
+                    "RB_3".to_string(),
+                    SelectionKind::Radio,
+                ),
+                Selection::standalone(
+                    SomPath::new("inner.RB_2"),
+                    "RB_2".to_string(),
+                    SelectionKind::Radio,
+                ),
             ],
             nodes_inner2,
         );
@@ -688,9 +778,30 @@ mod tests {
             content: InlineText::plain("Löschung"),
         })];
 
-        let input1 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_1"))], nodes1);
-        let input2 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_2"))], nodes2);
-        let input3 = MergeInput::new(vec![Selection::standalone(SomPath::new("RB_3"))], nodes3);
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes1,
+        );
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_2"),
+                "RB_2".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes2,
+        );
+        let input3 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_3"),
+                "RB_3".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes3,
+        );
 
         let merger = RecursiveMerger::new(vec![input1, input2, input3]);
         let result = merger.merge();
@@ -711,7 +822,11 @@ mod tests {
         })];
 
         let input = MergeInput::new(
-            vec![Selection::standalone(SomPath::new("RB_1"))],
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
             nodes.clone(),
         );
 
