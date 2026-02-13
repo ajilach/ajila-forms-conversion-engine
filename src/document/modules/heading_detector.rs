@@ -415,97 +415,41 @@ impl HeadingDetector {
     }
 
     /// Collect font size statistics from all text nodes.
+    ///
+    /// Delegates core computation to `GlobalFontStats::from_flattened_iter`,
+    /// then augments with percentile data only available from a single document.
     fn collect_font_stats(&self, doc: &Document) -> FontStats {
-        let mut sizes: Vec<f32> = Vec::new();
-        let mut size_counts: HashMap<OrderedFloat, usize> = HashMap::new();
-        // Track font style frequency: (size, is_bold) -> count
-        let mut style_counts: HashMap<FontStyleKey, usize> = HashMap::new();
-        let mut total_text_nodes = 0usize;
+        let global = GlobalFontStats::from_flattened_iter(std::iter::once(&doc.source as &Flattened));
+        let mut stats = global.to_font_stats();
 
+        // Compute percentiles from sorted sizes (GlobalFontStats doesn't track these)
+        let mut sizes: Vec<f32> = Vec::new();
         for node in doc.source.iter_nodes() {
             if let FlattenedNodeKind::Text {
                 font_size, content, ..
             } = &node.kind
             {
-                // Skip empty text
-                if content.trim().is_empty() {
-                    continue;
+                if !content.trim().is_empty() {
+                    sizes.push(font_size.to_f32().unwrap_or(10.0));
                 }
-
-                let size = font_size.to_f32().unwrap_or(10.0);
-                sizes.push(size);
-                total_text_nodes += 1;
-
-                // Round to 0.5pt for bucketing
-                let rounded = OrderedFloat((size * 2.0).round() / 2.0);
-                *size_counts.entry(rounded).or_insert(0) += 1;
-
-                // Track font style (size + bold) for frequency analysis
-                let is_bold = node
-                    .style
-                    .font
-                    .as_ref()
-                    .map(|f| f.weight == FontWeight::Bold)
-                    .unwrap_or(false);
-                let style_key = FontStyleKey {
-                    size: rounded,
-                    is_bold,
-                };
-                *style_counts.entry(style_key).or_insert(0) += 1;
             }
         }
 
-        if sizes.is_empty() {
-            return FontStats::default();
+        if !sizes.is_empty() {
+            sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let len = sizes.len();
+            stats.median = if len.is_multiple_of(2) {
+                (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
+            } else {
+                sizes[len / 2]
+            };
+            stats.p75 = sizes[(len * 75 / 100).min(len - 1)];
+            stats.p90 = sizes[(len * 90 / 100).min(len - 1)];
+            stats.max = *sizes.last().unwrap_or(&10.0);
+            stats.min = *sizes.first().unwrap_or(&10.0);
         }
 
-        sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        let len = sizes.len();
-        let median = if len.is_multiple_of(2) {
-            (sizes[len / 2 - 1] + sizes[len / 2]) / 2.0
-        } else {
-            sizes[len / 2]
-        };
-
-        let p75 = sizes[(len * 75 / 100).min(len - 1)];
-        let p90 = sizes[(len * 90 / 100).min(len - 1)];
-        let max = *sizes.last().unwrap_or(&10.0);
-        let min = *sizes.first().unwrap_or(&10.0);
-
-        // Find the most common font size (body text)
-        let body_size = size_counts
-            .iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(size, _)| size.0)
-            .unwrap_or(median);
-
-        // Find the most common font style (this is body text)
-        let most_common_style = style_counts
-            .iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(key, _)| *key);
-
-        // Calculate font ratio threshold: if a style is used more than X% of the time, it's likely body text
-        let common_style_ratio = most_common_style
-            .and_then(|style| style_counts.get(&style))
-            .map(|&count| count as f32 / total_text_nodes.max(1) as f32)
-            .unwrap_or(0.0);
-
-        FontStats {
-            median,
-            p75,
-            p90,
-            max,
-            min,
-            body_size,
-            sample_count: len,
-            size_distribution: size_counts,
-            style_distribution: style_counts,
-            total_text_nodes,
-            most_common_style,
-            common_style_ratio,
-        }
+        stats
     }
 
     /// Check if a text group is a heading candidate based on font properties.

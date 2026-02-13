@@ -1162,6 +1162,86 @@ impl Bounds {
     }
 
     // ========================================================================
+    // Spatial proximity checks (combined gap + alignment)
+    // ========================================================================
+
+    /// Check if `self` is above `other` within a vertical threshold,
+    /// aligned horizontally (overlapping within tolerance).
+    /// Returns the vertical gap if the check passes.
+    pub fn is_above_within(
+        &self,
+        other: &Bounds,
+        max_gap: Num,
+        tolerance: Num,
+    ) -> Option<Num> {
+        let gap = self.vertical_gap_to(other)?;
+        if gap > max_gap {
+            return None;
+        }
+        if !self.overlaps_horizontally(other, tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if `self` is below `other` within a vertical threshold,
+    /// aligned horizontally (overlapping within tolerance).
+    /// Returns the vertical gap if the check passes.
+    pub fn is_below_within(
+        &self,
+        other: &Bounds,
+        max_gap: Num,
+        tolerance: Num,
+    ) -> Option<Num> {
+        let gap = other.vertical_gap_to(self)?;
+        if gap > max_gap {
+            return None;
+        }
+        if !self.overlaps_horizontally(other, tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if `self` is to the left of `other` within a horizontal threshold,
+    /// on the same line (within tolerance).
+    /// Returns the horizontal gap if the check passes.
+    pub fn is_left_within(
+        &self,
+        other: &Bounds,
+        max_gap: Num,
+        tolerance: Num,
+    ) -> Option<Num> {
+        let gap = self.horizontal_gap_to(other)?;
+        if gap > max_gap {
+            return None;
+        }
+        if !self.is_on_same_line(other, tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    /// Check if `self` is to the right of `other` within a horizontal threshold,
+    /// on the same line (within tolerance).
+    /// Returns the horizontal gap if the check passes.
+    pub fn is_right_within(
+        &self,
+        other: &Bounds,
+        max_gap: Num,
+        tolerance: Num,
+    ) -> Option<Num> {
+        let gap = other.horizontal_gap_to(self)?;
+        if gap > max_gap {
+            return None;
+        }
+        if !self.is_on_same_line(other, tolerance) {
+            return None;
+        }
+        Some(gap)
+    }
+
+    // ========================================================================
     // Bounding box operations
     // ========================================================================
 

@@ -67,62 +67,30 @@ impl InlineFieldDetector {
 
     /// Check if text is directly to the left of the field on the same line.
     fn has_text_left(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> bool {
-        // Text must be to the left of field
-        let Some(gap) = text_bounds.horizontal_gap_to(field_bounds) else {
-            return false;
-        };
-
-        if gap > self.horizontal_threshold {
-            return false;
-        }
-
-        // Must be on the same line
-        text_bounds.is_on_same_line(field_bounds, self.line_tolerance)
+        text_bounds
+            .is_left_within(field_bounds, self.horizontal_threshold, self.line_tolerance)
+            .is_some()
     }
 
     /// Check if text is directly to the right of the field on the same line.
     fn has_text_right(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> bool {
-        // Text must be to the right of field
-        let Some(gap) = field_bounds.horizontal_gap_to(text_bounds) else {
-            return false;
-        };
-
-        if gap > self.horizontal_threshold {
-            return false;
-        }
-
-        // Must be on the same line
-        text_bounds.is_on_same_line(field_bounds, self.line_tolerance)
+        text_bounds
+            .is_right_within(field_bounds, self.horizontal_threshold, self.line_tolerance)
+            .is_some()
     }
 
     /// Check if text is aligned above the field (potential label position).
     fn has_text_above(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> bool {
-        // Text must be above field
-        let Some(gap) = text_bounds.vertical_gap_to(field_bounds) else {
-            return false;
-        };
-
-        if gap > self.vertical_threshold {
-            return false;
-        }
-
-        // Must overlap horizontally (aligned)
-        text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance)
+        text_bounds
+            .is_above_within(field_bounds, self.vertical_threshold, self.line_tolerance)
+            .is_some()
     }
 
     /// Check if text is aligned below the field (potential label position).
     fn has_text_below(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> bool {
-        // Text must be below field
-        let Some(gap) = field_bounds.vertical_gap_to(text_bounds) else {
-            return false;
-        };
-
-        if gap > self.vertical_threshold {
-            return false;
-        }
-
-        // Must overlap horizontally (aligned)
-        text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance)
+        text_bounds
+            .is_below_within(field_bounds, self.vertical_threshold, self.line_tolerance)
+            .is_some()
     }
 
     /// Check if a field is an inline field based on adjacent text.

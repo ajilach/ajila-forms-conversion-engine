@@ -344,6 +344,50 @@ fn collect_states_linear(
     Ok(())
 }
 
+/// Spawn an exploration branch in a new thread.
+///
+/// This is the shared helper used by `explore_radio`, `explore_checkbox`,
+/// and `explore_dropdown`. It:
+/// 1. Clones the base XFA nodes and creates a fresh form
+/// 2. Replays all accumulated selections
+/// 3. Calls the provided `setup` closure to apply the branch-specific mutation
+///    and update the exploration state
+/// 4. Refreshes the form and recurses via `collect_states_linear`
+///
+/// Returns the `JoinHandle` for the spawned thread.
+fn spawn_exploration(
+    base_nodes: Arc<Vec<XfaNode>>,
+    mut state: ExplorationState,
+    global_field_order: Vec<SelectableField>,
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    setup: impl FnOnce(&mut XfaForm, &mut ExplorationState) + Send + 'static,
+) -> thread::JoinHandle<Result<(), crate::Error>> {
+    thread::spawn(move || -> Result<(), crate::Error> {
+        let nodes_reset = base_nodes.as_ref().clone();
+        let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+
+        // Apply all current selections
+        for sel in &state.selections {
+            apply_selection(&mut new_form, sel);
+        }
+
+        // Apply branch-specific mutation
+        setup(&mut new_form, &mut state);
+
+        new_form.refresh().map_err(crate::Error::FormCreation)?;
+
+        collect_states_linear(
+            &mut new_form,
+            state,
+            &global_field_order,
+            rendered_states,
+            collected_states,
+            base_nodes,
+        )
+    })
+}
+
 /// Explore all options of a radio button group.
 /// Spawns one thread per radio option in the exclGroup.
 fn explore_radio(
@@ -372,62 +416,53 @@ fn explore_radio(
 
         // Try selecting each radio button in the group
         for radio_field in group_fields {
-            let base_nodes = base_nodes.clone();
-            let rendered_states = rendered_states.clone();
-            let collected_states = collected_states.clone();
-            let mut new_state = exploration_state.clone();
-            let global_field_order = global_field_order.to_vec();
+            let global_order_clone = global_field_order.to_vec();
+            let global_order_for_closure = global_order_clone.clone();
+            let new_state = exploration_state.clone();
 
-            let handle = thread::spawn(move || -> Result<(), crate::Error> {
-                let nodes_reset = base_nodes.as_ref().clone();
-                let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+            let handle = spawn_exploration(
+                base_nodes.clone(),
+                new_state,
+                global_order_clone,
+                rendered_states.clone(),
+                collected_states.clone(),
+                move |new_form, state| {
+                    // Select the radio button
+                    let _ = new_form.select_radio_button(radio_field.path.as_str());
 
-                // Apply all current selections
-                for sel in &new_state.selections {
-                    apply_selection(&mut new_form, sel);
-                }
+                    let group_path =
+                        new_form.find_excl_group_for_field(radio_field.path.as_str());
+                    state.selections.push(Selection::new(
+                        radio_field.path.clone(),
+                        group_path.clone(),
+                        radio_field.path.name().to_string(),
+                        SelectionKind::Radio,
+                    ));
 
-                // Select the radio button
-                let _ = new_form.select_radio_button(radio_field.path.as_str());
-
-                let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
-                new_state.selections.push(Selection::new(
-                    radio_field.path.clone(),
-                    group_path,
-                    radio_field.path.name().to_string(),
-                    SelectionKind::Radio,
-                ));
-
-                // Mark all fields in this radio group as processed
-                for (idx, f) in global_field_order.iter().enumerate() {
-                    if f.is_radio()
-                        && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
-                        && Some(&fg)
-                            == new_state
-                                .selections
-                                .last()
-                                .and_then(|s| s.group_path.as_ref())
-                    {
-                        new_state.field_actions[idx] = if f.path == radio_field.path {
-                            Some(FieldAction::Selected(radio_field.path.name().to_string()))
-                        } else {
-                            Some(FieldAction::Skipped)
-                        };
-                        new_state.next_field_index = idx + 1;
+                    // Mark all fields in this radio group as processed
+                    for (idx, f) in global_order_for_closure.iter().enumerate() {
+                        if f.is_radio()
+                            && let Some(fg) =
+                                new_form.find_excl_group_for_field(f.path.as_str())
+                            && Some(&fg)
+                                == state
+                                    .selections
+                                    .last()
+                                    .and_then(|s| s.group_path.as_ref())
+                        {
+                            state.field_actions[idx] =
+                                if f.path == radio_field.path {
+                                    Some(FieldAction::Selected(
+                                        radio_field.path.name().to_string(),
+                                    ))
+                                } else {
+                                    Some(FieldAction::Skipped)
+                                };
+                            state.next_field_index = idx + 1;
+                        }
                     }
-                }
-
-                new_form.refresh().map_err(crate::Error::FormCreation)?;
-
-                collect_states_linear(
-                    &mut new_form,
-                    new_state,
-                    &global_field_order,
-                    rendered_states,
-                    collected_states,
-                    base_nodes,
-                )
-            });
+                },
+            );
 
             handles.push(handle);
         }
@@ -456,46 +491,29 @@ fn explore_checkbox(
     let mut handles = Vec::new();
 
     for (raw_value, label) in checkbox_values {
-        let base_nodes = base_nodes.clone();
-        let rendered_states = rendered_states.clone();
-        let collected_states = collected_states.clone();
-        let mut new_state = exploration_state.clone();
         let field = field.clone();
-        let global_field_order = global_field_order.to_vec();
         let raw_value = raw_value.to_string();
         let label = label.to_string();
 
-        let handle = thread::spawn(move || -> Result<(), crate::Error> {
-            let nodes_reset = base_nodes.as_ref().clone();
-            let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+        let handle = spawn_exploration(
+            base_nodes.clone(),
+            exploration_state.clone(),
+            global_field_order.to_vec(),
+            rendered_states.clone(),
+            collected_states.clone(),
+            move |new_form, state| {
+                // Set the checkbox value and fire change event
+                let _ = new_form.set_value_as_user(field.path.as_str(), &raw_value);
 
-            // Apply all current selections
-            for sel in &new_state.selections {
-                apply_selection(&mut new_form, sel);
-            }
-
-            // Set the checkbox value and fire change event
-            let _ = new_form.set_value_as_user(field.path.as_str(), &raw_value);
-
-            new_state.selections.push(Selection::standalone(
-                field.path.clone(),
-                label.clone(),
-                SelectionKind::Checkbox,
-            ));
-            new_state.field_actions[field_index] = Some(FieldAction::Selected(label));
-            new_state.next_field_index = field_index + 1;
-
-            new_form.refresh().map_err(crate::Error::FormCreation)?;
-
-            collect_states_linear(
-                &mut new_form,
-                new_state,
-                &global_field_order,
-                rendered_states,
-                collected_states,
-                base_nodes,
-            )
-        });
+                state.selections.push(Selection::standalone(
+                    field.path.clone(),
+                    label.clone(),
+                    SelectionKind::Checkbox,
+                ));
+                state.field_actions[field_index] = Some(FieldAction::Selected(label));
+                state.next_field_index = field_index + 1;
+            },
+        );
 
         handles.push(handle);
     }
@@ -523,46 +541,29 @@ fn explore_dropdown(
     let mut handles = Vec::new();
 
     for (display_value, save_value) in options {
-        let base_nodes = base_nodes.clone();
-        let rendered_states = rendered_states.clone();
-        let collected_states = collected_states.clone();
-        let mut new_state = exploration_state.clone();
         let field = field.clone();
-        let global_field_order = global_field_order.to_vec();
         let save_value = save_value.clone();
         let display_value = display_value.clone();
 
-        let handle = thread::spawn(move || -> Result<(), crate::Error> {
-            let nodes_reset = base_nodes.as_ref().clone();
-            let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+        let handle = spawn_exploration(
+            base_nodes.clone(),
+            exploration_state.clone(),
+            global_field_order.to_vec(),
+            rendered_states.clone(),
+            collected_states.clone(),
+            move |new_form, state| {
+                // Set the dropdown value and fire change event
+                let _ = new_form.set_value_as_user(field.path.as_str(), &save_value);
 
-            // Apply all current selections
-            for sel in &new_state.selections {
-                apply_selection(&mut new_form, sel);
-            }
-
-            // Set the dropdown value and fire change event
-            let _ = new_form.set_value_as_user(field.path.as_str(), &save_value);
-
-            new_state.selections.push(Selection::standalone(
-                field.path.clone(),
-                display_value.clone(),
-                SelectionKind::Dropdown,
-            ));
-            new_state.field_actions[field_index] = Some(FieldAction::Selected(save_value));
-            new_state.next_field_index = field_index + 1;
-
-            new_form.refresh().map_err(crate::Error::FormCreation)?;
-
-            collect_states_linear(
-                &mut new_form,
-                new_state,
-                &global_field_order,
-                rendered_states,
-                collected_states,
-                base_nodes,
-            )
-        });
+                state.selections.push(Selection::standalone(
+                    field.path.clone(),
+                    display_value.clone(),
+                    SelectionKind::Dropdown,
+                ));
+                state.field_actions[field_index] = Some(FieldAction::Selected(save_value));
+                state.next_field_index = field_index + 1;
+            },
+        );
 
         handles.push(handle);
     }

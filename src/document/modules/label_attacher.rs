@@ -65,53 +65,17 @@ impl LabelAttacher {
 
     /// Check if text is above the field and return the gap distance.
     fn check_above(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be above field
-        let gap = text_bounds.vertical_gap_to(field_bounds)?;
-
-        if gap > self.vertical_threshold {
-            return None;
-        }
-
-        // Text should overlap horizontally with field
-        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_above_within(field_bounds, self.vertical_threshold, self.line_tolerance)
     }
 
     /// Check if text is below the field and return the gap distance.
     fn check_below(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be below field
-        let gap = field_bounds.vertical_gap_to(text_bounds)?;
-
-        if gap > self.vertical_threshold {
-            return None;
-        }
-
-        // Text should overlap horizontally with field
-        if !text_bounds.overlaps_horizontally(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_below_within(field_bounds, self.vertical_threshold, self.line_tolerance)
     }
 
     /// Check if text is to the left of the field and return the gap distance.
     fn check_left(&self, text_bounds: &Bounds, field_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be to the left of field
-        let gap = text_bounds.horizontal_gap_to(field_bounds)?;
-
-        if gap > self.horizontal_threshold {
-            return None;
-        }
-
-        // Check vertical alignment (same line)
-        if !text_bounds.is_on_same_line(field_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
+        text_bounds.is_left_within(field_bounds, self.horizontal_threshold, self.line_tolerance)
     }
 
     /// Analyze all text-field relationships and determine the dominant label position.
@@ -144,17 +108,20 @@ impl LabelAttacher {
                 };
 
                 if let Some(gap) = self.check_above(&text_bounds, &field_bounds)
-                    && best_above.is_none_or(|b| gap < b) {
-                        best_above = Some(gap);
-                    }
+                    && best_above.is_none_or(|b| gap < b)
+                {
+                    best_above = Some(gap);
+                }
                 if let Some(gap) = self.check_below(&text_bounds, &field_bounds)
-                    && best_below.is_none_or(|b| gap < b) {
-                        best_below = Some(gap);
-                    }
+                    && best_below.is_none_or(|b| gap < b)
+                {
+                    best_below = Some(gap);
+                }
                 if let Some(gap) = self.check_left(&text_bounds, &field_bounds)
-                    && best_left.is_none_or(|b| gap < b) {
-                        best_left = Some(gap);
-                    }
+                    && best_left.is_none_or(|b| gap < b)
+                {
+                    best_left = Some(gap);
+                }
             }
 
             // Vote for the direction with the smallest gap (closest text)
