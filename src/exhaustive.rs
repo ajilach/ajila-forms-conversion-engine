@@ -189,15 +189,11 @@ fn apply_selection(form: &mut XfaForm, sel: &Selection) {
             let _ = form.select_radio_button(sel.field_path.as_str());
         }
         SelectionKind::Checkbox => {
-            if let Some(mut node) = form.resolve_mut(sel.field_path.as_str()) {
-                let raw_value = if sel.value == "checked" { "1" } else { "0" };
-                node.set_raw_value(raw_value);
-            }
+            let raw_value = if sel.value == "checked" { "1" } else { "0" };
+            let _ = form.set_value_as_user(sel.field_path.as_str(), raw_value);
         }
         SelectionKind::Dropdown => {
-            if let Some(mut node) = form.resolve_mut(sel.field_path.as_str()) {
-                node.set_raw_value(&sel.value);
-            }
+            let _ = form.set_value_as_user(sel.field_path.as_str(), &sel.value);
         }
     }
 }
@@ -406,19 +402,19 @@ fn explore_radio(
                 for (idx, f) in global_field_order.iter().enumerate() {
                     if f.is_radio()
                         && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
-                            && Some(&fg)
-                                == new_state
-                                    .selections
-                                    .last()
-                                    .and_then(|s| s.group_path.as_ref())
-                            {
-                                new_state.field_actions[idx] = if f.path == radio_field.path {
-                                    Some(FieldAction::Selected(radio_field.path.name().to_string()))
-                                } else {
-                                    Some(FieldAction::Skipped)
-                                };
-                                new_state.next_field_index = idx + 1;
-                            }
+                        && Some(&fg)
+                            == new_state
+                                .selections
+                                .last()
+                                .and_then(|s| s.group_path.as_ref())
+                    {
+                        new_state.field_actions[idx] = if f.path == radio_field.path {
+                            Some(FieldAction::Selected(radio_field.path.name().to_string()))
+                        } else {
+                            Some(FieldAction::Skipped)
+                        };
+                        new_state.next_field_index = idx + 1;
+                    }
                 }
 
                 new_form.refresh().map_err(crate::Error::FormCreation)?;
@@ -478,10 +474,8 @@ fn explore_checkbox(
                 apply_selection(&mut new_form, sel);
             }
 
-            // Set the checkbox value
-            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
-                node.set_raw_value(&raw_value);
-            }
+            // Set the checkbox value and fire change event
+            let _ = new_form.set_value_as_user(field.path.as_str(), &raw_value);
 
             new_state.selections.push(Selection::standalone(
                 field.path.clone(),
@@ -547,10 +541,8 @@ fn explore_dropdown(
                 apply_selection(&mut new_form, sel);
             }
 
-            // Set the dropdown value
-            if let Some(mut node) = new_form.resolve_mut(field.path.as_str()) {
-                node.set_raw_value(&save_value);
-            }
+            // Set the dropdown value and fire change event
+            let _ = new_form.set_value_as_user(field.path.as_str(), &save_value);
 
             new_state.selections.push(Selection::standalone(
                 field.path.clone(),
@@ -608,16 +600,17 @@ fn can_select_field(
 
     // For radio buttons, check if a sibling from the same group is selected
     if field.is_radio()
-        && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str()) {
-            let group_already_has_selection = current_selections.iter().any(|sel| {
-                form.find_excl_group_for_field(sel.field_path.as_str())
-                    .map(|g| g == excl_group)
-                    .unwrap_or(false)
-            });
-            if group_already_has_selection {
-                return false;
-            }
+        && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str())
+    {
+        let group_already_has_selection = current_selections.iter().any(|sel| {
+            form.find_excl_group_for_field(sel.field_path.as_str())
+                .map(|g| g == excl_group)
+                .unwrap_or(false)
+        });
+        if group_already_has_selection {
+            return false;
         }
+    }
 
     true
 }
@@ -657,30 +650,31 @@ fn search_selectable_fields(
                 // Look for <ui> child and check for checkButton or choiceList
                 let field_kind = node.children.iter().find_map(|c| {
                     if let XfaNodeKind::Element { tag_name: t, .. } = &c.kind
-                        && t == "ui" {
-                            return c.children.iter().find_map(|ui_c| {
-                                if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
-                                    match t2.as_str() {
-                                        "checkButton" => {
-                                            let shape = ui_c
-                                                .attributes
-                                                .get("shape")
-                                                .cloned()
-                                                .unwrap_or_else(|| "square".to_string());
-                                            if shape == "round" {
-                                                Some(SelectableFieldKind::Radio)
-                                            } else {
-                                                Some(SelectableFieldKind::Checkbox)
-                                            }
+                        && t == "ui"
+                    {
+                        return c.children.iter().find_map(|ui_c| {
+                            if let XfaNodeKind::Element { tag_name: t2, .. } = &ui_c.kind {
+                                match t2.as_str() {
+                                    "checkButton" => {
+                                        let shape = ui_c
+                                            .attributes
+                                            .get("shape")
+                                            .cloned()
+                                            .unwrap_or_else(|| "square".to_string());
+                                        if shape == "round" {
+                                            Some(SelectableFieldKind::Radio)
+                                        } else {
+                                            Some(SelectableFieldKind::Checkbox)
                                         }
-                                        "choiceList" => Some(SelectableFieldKind::Dropdown),
-                                        _ => None,
                                     }
-                                } else {
-                                    None
+                                    "choiceList" => Some(SelectableFieldKind::Dropdown),
+                                    _ => None,
                                 }
-                            });
-                        }
+                            } else {
+                                None
+                            }
+                        });
+                    }
                     None
                 });
 

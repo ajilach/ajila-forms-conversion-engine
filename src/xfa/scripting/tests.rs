@@ -380,7 +380,10 @@ fn test_xfa_value_as_string() {
 fn test_presence_from_str() {
     assert_eq!("visible".parse::<Presence>().unwrap(), Presence::Visible);
     assert_eq!("hidden".parse::<Presence>().unwrap(), Presence::Hidden);
-    assert_eq!("invisible".parse::<Presence>().unwrap(), Presence::Invisible);
+    assert_eq!(
+        "invisible".parse::<Presence>().unwrap(),
+        Presence::Invisible
+    );
     assert_eq!("inactive".parse::<Presence>().unwrap(), Presence::Inactive);
     // Unknown values default to Visible
     assert_eq!("unknown".parse::<Presence>().unwrap(), Presence::Visible);
@@ -493,7 +496,9 @@ fn setup_exclgroup_with_off(
     children: &[(&str, &str, Option<&str>, Option<&str>)], // (child_name, child_value, item_key, off_value)
 ) {
     // Register parent exclGroup (is_field=false, is_parent_exclgroup=false)
-    engine.register_xfa_node(group_name, group_path, None, false, "", false, None, None);
+    engine.register_xfa_node(
+        group_name, group_path, None, false, "", false, None, None, "visible",
+    );
 
     // Register child fields (is_field=true, is_parent_exclgroup=true)
     for (child_name, child_value, item_key, off_value) in children {
@@ -507,6 +512,7 @@ fn setup_exclgroup_with_off(
             true, // parent IS an exclGroup
             *item_key,
             *off_value,
+            "visible",
         );
     }
 }
@@ -616,7 +622,9 @@ fn test_exclgroup_non_child_does_not_propagate() {
     let mut engine = XfaScriptEngine::new();
 
     // Register a regular subform with children (is_parent_exclgroup=false)
-    engine.register_xfa_node("form", "form", None, false, "", false, None, None);
+    engine.register_xfa_node(
+        "form", "form", None, false, "", false, None, None, "visible",
+    );
     engine.register_xfa_node(
         "field1",
         "form.field1",
@@ -626,6 +634,7 @@ fn test_exclgroup_non_child_does_not_propagate() {
         false,
         None,
         None,
+        "visible",
     );
 
     engine.update_field_value("form.field1", "hello");

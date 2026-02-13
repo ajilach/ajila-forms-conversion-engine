@@ -20,8 +20,8 @@
 //! ```
 
 use crate::xfa::scripting::{
-    EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScriptEngine,
-    XfaScript, parse_events_from_node,
+    EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScript, XfaScriptEngine,
+    parse_events_from_node,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
@@ -108,9 +108,7 @@ impl ScriptExecutor {
         // Only JavaScript is supported; FormCalc scripts are silently skipped.
         let formcalc_count = all_events
             .iter()
-            .filter(|(_, _, _, script, _)| {
-                script.content_type == ScriptContentType::FormCalc
-            })
+            .filter(|(_, _, _, script, _)| script.content_type == ScriptContentType::FormCalc)
             .count();
         if formcalc_count > 0 {
             eprintln!(
@@ -186,9 +184,10 @@ impl ScriptExecutor {
 
                 let result = engine.execute_script(script);
                 if let Err(ref e) = result
-                    && std::env::var("XFA_DEBUG").is_ok() {
-                        eprintln!("[INIT ERR] field={field_name} path={full_path}: {e}");
-                    }
+                    && std::env::var("XFA_DEBUG").is_ok()
+                {
+                    eprintln!("[INIT ERR] field={field_name} path={full_path}: {e}");
+                }
                 let _ = result;
 
                 // Collect presence values set on the current field
@@ -256,7 +255,8 @@ impl ScriptExecutor {
             dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
         }
-        let mut presence_map_after_phase1 = Self::build_full_path_presence_map(&all_events, &presence_changes);
+        let mut presence_map_after_phase1 =
+            Self::build_full_path_presence_map(&all_events, &presence_changes);
         presence_map_after_phase1.extend(dynamic_presence_overrides.clone());
 
         // Phase 2: Execute form-ready JavaScript events
@@ -302,7 +302,8 @@ impl ScriptExecutor {
             dynamic_presence_overrides.insert(som_path.clone(), presence);
             engine.update_initial_presence(&SomPath::new(som_path), presence_str);
         }
-        let mut presence_map_after_phase2 = Self::build_full_path_presence_map(&all_events, &presence_changes);
+        let mut presence_map_after_phase2 =
+            Self::build_full_path_presence_map(&all_events, &presence_changes);
         presence_map_after_phase2.extend(dynamic_presence_overrides);
 
         // Phase 3: Execute layout-ready JavaScript events
@@ -398,9 +399,10 @@ impl ScriptExecutor {
         for (name, id, presence) in changes {
             // Try to find by ID first (more specific)
             if let Some(id_val) = id
-                && Self::apply_presence_by_id(nodes, id_val, *presence) {
-                    continue;
-                }
+                && Self::apply_presence_by_id(nodes, id_val, *presence)
+            {
+                continue;
+            }
             // Fall back to finding by name
             Self::apply_presence_by_name(nodes, name, *presence);
         }
@@ -532,7 +534,9 @@ impl ScriptExecutor {
             }
             for (child_name, _) in children {
                 // Children paths are relative to the parent's full path
-                leaf_to_full.entry(child_name.as_str()).or_insert(full_path.as_str());
+                leaf_to_full
+                    .entry(child_name.as_str())
+                    .or_insert(full_path.as_str());
             }
         }
 
@@ -689,6 +693,7 @@ impl ScriptExecutor {
                     parent_is_exclgroup,
                     item_key.as_deref(),
                     off_value.as_deref(),
+                    node.presence.as_str(),
                 );
 
                 if is_subform || is_exclgroup {
@@ -707,8 +712,9 @@ impl ScriptExecutor {
             // Register the root subform first
             let root_name = root.name.clone().unwrap_or_default();
             if !root_name.is_empty() {
-                engine
-                    .register_xfa_node(&root_name, &root_name, None, false, "", false, None, None);
+                engine.register_xfa_node(
+                    &root_name, &root_name, None, false, "", false, None, None, "visible",
+                );
             }
 
             // Register immediate children of root in the SOM hierarchy.
@@ -755,6 +761,7 @@ impl ScriptExecutor {
                         false,
                         None,
                         None,
+                        child.presence.as_str(),
                     );
                     // Recurse with child_name as parent
                     register_nodes_recursive(&child.children, Some(&child_name), engine, false);
@@ -775,6 +782,7 @@ impl ScriptExecutor {
                         false,
                         None,
                         None,
+                        child.presence.as_str(),
                     );
                     if is_exclgroup {
                         register_nodes_recursive(&child.children, Some(&full_path), engine, true);
@@ -857,37 +865,40 @@ impl ScriptExecutor {
     ) {
         for node in nodes {
             if let XfaNodeKind::Element { tag_name, .. } = &node.kind
-                && tag_name == "variables" {
-                    for child in &node.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: child_tag,
-                            text_content,
-                            ..
-                        } = &child.kind
-                            && let Some(name) =
-                                child.name.as_ref().or_else(|| child.attributes.get("name"))
+                && tag_name == "variables"
+            {
+                for child in &node.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: child_tag,
+                        text_content,
+                        ..
+                    } = &child.kind
+                        && let Some(name) =
+                            child.name.as_ref().or_else(|| child.attributes.get("name"))
+                    {
+                        if child_tag == "script" {
+                            // Handle <script> - may have content directly or in children
+                            if let Some(content) = text_content
+                                && !content.is_empty()
                             {
-                                if child_tag == "script" {
-                                    // Handle <script> - may have content directly or in children
-                                    if let Some(content) = text_content
-                                        && !content.is_empty() {
-                                            scripts.push((name.clone(), content.clone()));
-                                        }
-                                    // Also check for content in child nodes
-                                    for script_child in &child.children {
-                                        if let XfaNodeKind::Text { content } = &script_child.kind
-                                            && !content.is_empty() {
-                                                scripts.push((name.clone(), content.clone()));
-                                            }
-                                    }
-                                } else if child_tag == "text" {
-                                    // Handle <text> variables - these are simple string values
-                                    let value = text_content.clone().unwrap_or_default();
-                                    text_vars.push((name.clone(), value));
+                                scripts.push((name.clone(), content.clone()));
+                            }
+                            // Also check for content in child nodes
+                            for script_child in &child.children {
+                                if let XfaNodeKind::Text { content } = &script_child.kind
+                                    && !content.is_empty()
+                                {
+                                    scripts.push((name.clone(), content.clone()));
                                 }
                             }
+                        } else if child_tag == "text" {
+                            // Handle <text> variables - these are simple string values
+                            let value = text_content.clone().unwrap_or_default();
+                            text_vars.push((name.clone(), value));
+                        }
                     }
                 }
+            }
 
             Self::collect_variable_items(&node.children, scripts, text_vars);
         }

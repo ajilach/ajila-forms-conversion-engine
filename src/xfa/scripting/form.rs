@@ -100,9 +100,10 @@ impl<'a> XfaNodeRef<'a> {
             text_content: Some(content),
             ..
         } = &self.xfa_node.kind
-            && !content.is_empty() {
-                return Some(content.clone());
-            }
+            && !content.is_empty()
+        {
+            return Some(content.clone());
+        }
 
         Self::extract_value_from_xfa_node(self.xfa_node)
     }
@@ -149,20 +150,22 @@ impl<'a> XfaNodeRef<'a> {
 
         for child in &self.xfa_node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "event" {
-                    for script_child in &child.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: script_tag,
-                            text_content,
-                            ..
-                        } = &script_child.kind
-                            && script_tag == "script"
-                                && let Some(content) = text_content
-                                    && content.contains("addItem") {
-                                        return true;
-                                    }
+                && tag_name == "event"
+            {
+                for script_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: script_tag,
+                        text_content,
+                        ..
+                    } = &script_child.kind
+                        && script_tag == "script"
+                        && let Some(content) = text_content
+                        && content.contains("addItem")
+                    {
+                        return true;
                     }
                 }
+            }
         }
         false
     }
@@ -171,16 +174,18 @@ impl<'a> XfaNodeRef<'a> {
     fn has_choice_list(&self) -> bool {
         for child in &self.xfa_node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui" {
-                    for ui_child in &child.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: ui_tag, ..
-                        } = &ui_child.kind
-                            && ui_tag == "choiceList" {
-                                return true;
-                            }
+                && tag_name == "ui"
+            {
+                for ui_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: ui_tag, ..
+                    } = &ui_child.kind
+                        && ui_tag == "choiceList"
+                    {
+                        return true;
                     }
                 }
+            }
         }
         false
     }
@@ -207,16 +212,18 @@ impl<'a> XfaNodeRef<'a> {
     fn has_button_ui(&self) -> bool {
         for child in &self.xfa_node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui" {
-                    for ui_child in &child.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: ui_tag, ..
-                        } = &ui_child.kind
-                            && ui_tag == "button" {
-                                return true;
-                            }
+                && tag_name == "ui"
+            {
+                for ui_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: ui_tag, ..
+                    } = &ui_child.kind
+                        && ui_tag == "button"
+                    {
+                        return true;
                     }
                 }
+            }
         }
         false
     }
@@ -234,16 +241,18 @@ impl<'a> XfaNodeRef<'a> {
     fn find_check_button(&self) -> Option<&XfaNode> {
         for child in &self.xfa_node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui" {
-                    for ui_child in &child.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: ui_tag, ..
-                        } = &ui_child.kind
-                            && ui_tag == "checkButton" {
-                                return Some(ui_child);
-                            }
+                && tag_name == "ui"
+            {
+                for ui_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: ui_tag, ..
+                    } = &ui_child.kind
+                        && ui_tag == "checkButton"
+                    {
+                        return Some(ui_child);
                     }
                 }
+            }
         }
         None
     }
@@ -255,22 +264,23 @@ impl<'a> XfaNodeRef<'a> {
 
         for child in &self.xfa_node.children {
             if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "items" {
-                    let is_save = child
-                        .attributes
-                        .get("save")
-                        .map(|s| s == "1")
-                        .unwrap_or(false);
-                    let items = Self::extract_items_values(child);
+                && tag_name == "items"
+            {
+                let is_save = child
+                    .attributes
+                    .get("save")
+                    .map(|s| s == "1")
+                    .unwrap_or(false);
+                let items = Self::extract_items_values(child);
 
-                    if is_save {
-                        save_items = items;
-                    } else if display_items.is_empty() {
-                        display_items = items;
-                    } else if save_items.is_empty() {
-                        save_items = items;
-                    }
+                if is_save {
+                    save_items = items;
+                } else if display_items.is_empty() {
+                    display_items = items;
+                } else if save_items.is_empty() {
+                    save_items = items;
                 }
+            }
         }
 
         // Per XFA spec: when only one <items> element exists, display = save
@@ -282,10 +292,7 @@ impl<'a> XfaNodeRef<'a> {
             save_items = display_items.clone();
         }
 
-        display_items
-            .into_iter()
-            .zip(save_items)
-            .collect()
+        display_items.into_iter().zip(save_items).collect()
     }
 
     /// Get just the display values for dropdown options
@@ -354,16 +361,18 @@ impl<'a> XfaNodeRef<'a> {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for text_child in &child.children {
                     if let XfaNodeKind::Text { content } = &text_child.kind
-                        && !content.is_empty() {
-                            return Some(content.clone());
-                        }
+                        && !content.is_empty()
+                    {
+                        return Some(content.clone());
+                    }
                     if let XfaNodeKind::Element {
                         text_content: Some(content),
                         ..
                     } = &text_child.kind
-                        && !content.is_empty() {
-                            return Some(content.clone());
-                        }
+                        && !content.is_empty()
+                    {
+                        return Some(content.clone());
+                    }
                 }
             }
         }
@@ -423,7 +432,7 @@ impl<'a> XfaNodeRefMut<'a> {
         &self.som_path
     }
 
-    fn set_node_value(node: &mut XfaNode, value: &str) {
+    pub(crate) fn set_node_value(node: &mut XfaNode, value: &str) {
         for child in &mut node.children {
             if matches!(child.kind, XfaNodeKind::Value) {
                 for text_child in &mut child.children {
@@ -679,8 +688,45 @@ impl XfaForm {
             self.cascade_calculations(excl_path)?;
             Ok(result)
         } else {
-            self.execute_event(field_path, EventActivity::Change)
+            let resolved_path = self
+                .som_resolver
+                .resolve_node(field_path, None)
+                .unwrap_or_else(|| SomPath::from(field_path));
+            let result = self.execute_event(field_path, EventActivity::Change)?;
+            self.cascade_calculations(&resolved_path)?;
+            Ok(result)
         }
+    }
+
+    /// Set a field value as if the user interacted with it.
+    ///
+    /// Unlike the low-level `set_raw_value` (which is a pure setter), this method
+    /// also fires the `change` event and cascades dependent calculations — matching
+    /// the XFA 3.3 spec requirement that change events fire when a user "makes a
+    /// selection from a choice list or drop-down menu, checks or unchecks a checkbox".
+    ///
+    /// Use this for any user-simulated interaction (exhaustive exploration, replay).
+    /// For programmatic / calculated value changes, use `set_raw_value` directly.
+    pub fn set_value_as_user(
+        &mut self,
+        field_path: &str,
+        value: &str,
+    ) -> Result<EventResult, String> {
+        let resolved_path = self
+            .som_resolver
+            .resolve_node(field_path, None)
+            .ok_or_else(|| format!("Could not resolve field: {}", field_path))?;
+
+        // Update engine (source of truth) and XFA node
+        self.script_engine.update_field_value(&resolved_path, value);
+        if let Some(node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, &resolved_path) {
+            XfaNodeRefMut::set_node_value(node, value);
+        }
+
+        self.dirty = true;
+
+        // Fire change event and cascade calculations
+        self.trigger_change_on_excl_group(&resolved_path)
     }
 
     /// Select a radio button in an exclusion group.
@@ -750,11 +796,12 @@ impl XfaForm {
 
                 if let Ok(Some(value)) =
                     self.script_engine.execute_script(&registered_script.script)
-                    && !value.is_empty() {
-                        // Update engine directly (source of truth)
-                        self.script_engine
-                            .update_field_value(&dependent_path, &value);
-                    }
+                    && !value.is_empty()
+                {
+                    // Update engine directly (source of truth)
+                    self.script_engine
+                        .update_field_value(&dependent_path, &value);
+                }
             }
         }
 
@@ -830,9 +877,10 @@ impl XfaForm {
                         idx,
                         excl_group_for_children,
                         current_path,
-                    ) {
-                        return Some(found);
-                    }
+                    )
+                {
+                    return Some(found);
+                }
             }
 
             None
@@ -1000,12 +1048,14 @@ impl XfaForm {
                         || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
                     let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
 
-                    if is_field && !name.is_empty()
-                        && let Some(p) = parent {
-                            map.entry(p.to_string())
-                                .or_default()
-                                .push((name.clone(), id.clone()));
-                        }
+                    if is_field
+                        && !name.is_empty()
+                        && let Some(p) = parent
+                    {
+                        map.entry(p.to_string())
+                            .or_default()
+                            .push((name.clone(), id.clone()));
+                    }
 
                     let next_parent = if (is_subform || is_excl_group) && !name.is_empty() {
                         Some(name.as_str())
@@ -1101,9 +1151,10 @@ impl XfaForm {
                     }
                     return walk_path(&node.children, parts, idx + 1);
                 } else if node.name.is_none()
-                    && let Some(found) = walk_path(&node.children, parts, idx) {
-                        return Some(found);
-                    }
+                    && let Some(found) = walk_path(&node.children, parts, idx)
+                {
+                    return Some(found);
+                }
             }
 
             None
@@ -1139,9 +1190,10 @@ impl XfaForm {
                     }
                     return walk_path(&mut node.children, parts, idx + 1);
                 } else if node.name.is_none()
-                    && let Some(found) = walk_path(&mut node.children, parts, idx) {
-                        return Some(found);
-                    }
+                    && let Some(found) = walk_path(&mut node.children, parts, idx)
+                {
+                    return Some(found);
+                }
             }
 
             None
@@ -1177,9 +1229,10 @@ impl XfaForm {
                         return true;
                     }
                 } else if node.name.is_none()
-                    && walk_and_apply(&mut node.children, parts, idx, presence) {
-                        return true;
-                    }
+                    && walk_and_apply(&mut node.children, parts, idx, presence)
+                {
+                    return true;
+                }
             }
 
             false
@@ -1207,40 +1260,43 @@ impl XfaForm {
         ) {
             for node in nodes {
                 if let XfaNodeKind::Element { tag_name, .. } = &node.kind
-                    && tag_name == "variables" {
-                        for child in &node.children {
-                            if let XfaNodeKind::Element {
-                                tag_name: child_tag,
-                                text_content,
-                                ..
-                            } = &child.kind
-                                && let Some(name) = &child.name {
-                                    if child_tag == "script" {
-                                        if let Some(content) = text_content
-                                            && !content.is_empty() {
-                                                scripts.push((name.clone(), content.clone()));
-                                            }
-                                        for script_child in child.children.iter() {
-                                            if let XfaNodeKind::Element {
-                                                text_content: Some(content),
-                                                ..
-                                            } = &script_child.kind
-                                            {
-                                                scripts.push((name.clone(), content.clone()));
-                                            }
-                                            if let XfaNodeKind::Text { content } =
-                                                &script_child.kind
-                                                && !content.is_empty() {
-                                                    scripts.push((name.clone(), content.clone()));
-                                                }
-                                        }
-                                    } else if child_tag == "text" {
-                                        let value = text_content.clone().unwrap_or_default();
-                                        text_vars.push((name.clone(), value));
+                    && tag_name == "variables"
+                {
+                    for child in &node.children {
+                        if let XfaNodeKind::Element {
+                            tag_name: child_tag,
+                            text_content,
+                            ..
+                        } = &child.kind
+                            && let Some(name) = &child.name
+                        {
+                            if child_tag == "script" {
+                                if let Some(content) = text_content
+                                    && !content.is_empty()
+                                {
+                                    scripts.push((name.clone(), content.clone()));
+                                }
+                                for script_child in child.children.iter() {
+                                    if let XfaNodeKind::Element {
+                                        text_content: Some(content),
+                                        ..
+                                    } = &script_child.kind
+                                    {
+                                        scripts.push((name.clone(), content.clone()));
+                                    }
+                                    if let XfaNodeKind::Text { content } = &script_child.kind
+                                        && !content.is_empty()
+                                    {
+                                        scripts.push((name.clone(), content.clone()));
                                     }
                                 }
+                            } else if child_tag == "text" {
+                                let value = text_content.clone().unwrap_or_default();
+                                text_vars.push((name.clone(), value));
+                            }
                         }
                     }
+                }
                 collect_variable_items(&node.children, scripts, text_vars);
             }
         }
@@ -1301,9 +1357,10 @@ impl XfaForm {
                 return value.clone();
             }
             if let Some(name) = &node.name
-                && let Some(value) = computed_values.get(name.as_str()) {
-                    return value.clone();
-                }
+                && let Some(value) = computed_values.get(name.as_str())
+            {
+                return value.clone();
+            }
             if let Some(raw) = node.attributes.get("rawValue") {
                 return raw.clone();
             }
@@ -1311,16 +1368,18 @@ impl XfaForm {
                 if matches!(child.kind, XfaNodeKind::Value) {
                     for text_child in &child.children {
                         if let XfaNodeKind::Text { content } = &text_child.kind
-                            && !content.is_empty() {
-                                return content.clone();
-                            }
+                            && !content.is_empty()
+                        {
+                            return content.clone();
+                        }
                         if let XfaNodeKind::Element {
                             text_content: Some(content),
                             ..
                         } = &text_child.kind
-                            && !content.is_empty() {
-                                return content.clone();
-                            }
+                            && !content.is_empty()
+                        {
+                            return content.clone();
+                        }
                     }
                 }
             }
@@ -1350,37 +1409,39 @@ impl XfaForm {
                 let is_subform = matches!(node.kind, XfaNodeKind::Subform);
 
                 if (is_field || is_subform || is_excl_group || is_draw)
-                    && let Some(name) = &node.name {
-                        let value = get_node_value(node, &node_path, computed_values);
-                        let initial_presence = node.get_presence().as_str();
+                    && let Some(name) = &node.name
+                {
+                    let value = get_node_value(node, &node_path, computed_values);
+                    let initial_presence = node.get_presence().as_str();
 
-                        if parent_is_exclgroup {
-                            // Extract item values from <items> for exclGroup
-                            // parent→child propagation (XFA 3.3 §4 pp.195-197,
-                            // §17 pp.758-759).
-                            let (item_key, off_value) = node.extract_item_values();
+                    if parent_is_exclgroup {
+                        // Extract item values from <items> for exclGroup
+                        // parent→child propagation (XFA 3.3 §4 pp.195-197,
+                        // §17 pp.758-759).
+                        let (item_key, off_value) = node.extract_item_values();
 
-                            // Use register_xfa_node with structural exclGroup info
-                            // so _exclGroupParent linkage is set up correctly.
-                            engine.register_xfa_node(
-                                name,
-                                &node_path,
-                                if path.is_empty() { None } else { Some(path) },
-                                is_field,
-                                &value,
-                                true,
-                                item_key.as_deref(),
-                                off_value.as_deref(),
-                            );
-                        } else {
-                            engine.register_field_with_presence(
-                                &node_path,
-                                name,
-                                &value,
-                                initial_presence,
-                            );
-                        }
+                        // Use register_xfa_node with structural exclGroup info
+                        // so _exclGroupParent linkage is set up correctly.
+                        engine.register_xfa_node(
+                            name,
+                            &node_path,
+                            if path.is_empty() { None } else { Some(path) },
+                            is_field,
+                            &value,
+                            true,
+                            item_key.as_deref(),
+                            off_value.as_deref(),
+                            initial_presence,
+                        );
+                    } else {
+                        engine.register_field_with_presence(
+                            &node_path,
+                            name,
+                            &value,
+                            initial_presence,
+                        );
                     }
+                }
 
                 register_fields(
                     &node.children,

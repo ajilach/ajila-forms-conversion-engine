@@ -884,6 +884,16 @@ impl XfaScriptEngine {
             )
             .ok();
 
+        // Store initial presence for change detection
+        field
+            .set(
+                PropertyKey::from(js_string!("_initialPresence")),
+                JsValue::from(js_string!(initial_presence)),
+                false,
+                &mut self.context,
+            )
+            .ok();
+
         field
     }
 
@@ -1468,12 +1478,13 @@ impl XfaScriptEngine {
         is_parent_exclgroup: bool,
         item_key: Option<&str>,
         off_value: Option<&str>,
+        initial_presence: &str,
     ) {
         let is_exclgroup_child = is_parent_exclgroup;
 
         // Create the JavaScript object for this node
         let node_obj = if is_field {
-            let obj = self.create_field_object(name, path, value);
+            let obj = self.create_field_object_with_presence(name, path, value, initial_presence);
             // Store the item key for exclGroup parent→child propagation.
             // Per XFA 3.3 §4 pp.195-197: each child in an exclGroup has a key
             // value from <items>. When the parent's rawValue is set, children
@@ -1515,8 +1526,13 @@ impl XfaScriptEngine {
                 )
                 .property(
                     js_string!("presence"),
-                    JsValue::from(js_string!("visible")),
+                    JsValue::from(js_string!(initial_presence)),
                     Attribute::all(),
+                )
+                .property(
+                    js_string!("_initialPresence"),
+                    JsValue::from(js_string!(initial_presence)),
+                    Attribute::READONLY,
                 )
                 .build();
 
@@ -1675,6 +1691,7 @@ impl XfaScriptEngine {
     }
 
     /// Get the current presence value set on `this` by a script.
+    /// Only returns a value if the presence was actually changed from its initial value.
     pub fn get_current_field_presence(&mut self) -> Option<Presence> {
         if let Ok(this_val) = self.context.global_object().get(
             PropertyKey::from(js_string!("_xfa_this_")),
@@ -1689,10 +1706,19 @@ impl XfaScriptEngine {
                 .to_string(&mut self.context)
                 .ok()
                 .map(|s| s.to_std_string_escaped())?;
-            if matches!(
-                presence_str.as_str(),
-                "visible" | "invisible" | "hidden" | "inactive"
-            ) {
+            // Check if presence was changed from initial value
+            let initial = this_obj
+                .get(PropertyKey::from(js_string!("_initialPresence")), &mut self.context)
+                .ok()
+                .and_then(|v| v.to_string(&mut self.context).ok())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_else(|| "visible".to_string());
+            if presence_str != initial
+                && matches!(
+                    presence_str.as_str(),
+                    "visible" | "invisible" | "hidden" | "inactive"
+                )
+            {
                 return presence_str.parse().ok();
             }
         }
@@ -1700,6 +1726,7 @@ impl XfaScriptEngine {
     }
 
     /// Get the presence value of a child field that was set via `this.childName.presence = ...`
+    /// Only returns a value if the presence was actually changed from its initial value.
     pub fn get_child_field_presence(&mut self, child_name: &str) -> Option<(String, Presence)> {
         let child_id = self
             .child_name_to_id
@@ -1725,10 +1752,19 @@ impl XfaScriptEngine {
                 .to_string(&mut self.context)
                 .ok()
                 .map(|s| s.to_std_string_escaped())?;
-            if matches!(
-                presence_str.as_str(),
-                "visible" | "invisible" | "hidden" | "inactive"
-            ) {
+            // Check if presence was changed from initial value
+            let initial = child_obj
+                .get(PropertyKey::from(js_string!("_initialPresence")), &mut self.context)
+                .ok()
+                .and_then(|v| v.to_string(&mut self.context).ok())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_else(|| "visible".to_string());
+            if presence_str != initial
+                && matches!(
+                    presence_str.as_str(),
+                    "visible" | "invisible" | "hidden" | "inactive"
+                )
+            {
                 return presence_str.parse().ok().map(|p| (child_id, p));
             }
         }
