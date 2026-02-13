@@ -480,19 +480,14 @@ impl StructuredNode {
         match (self, other) {
             (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
                 a.level.as_u8() == b.level.as_u8()
-                    && (mode == CompareMode::IgnoreText
-                        || a.content.structural_eq(&b.content))
+                    && (mode == CompareMode::IgnoreText || a.content.structural_eq(&b.content))
             }
             (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
                 // In IgnoreText mode all paragraphs match (text differs by language)
                 mode == CompareMode::IgnoreText || a.content.structural_eq(&b.content)
             }
-            (StructuredNode::Image(a), StructuredNode::Image(b)) => {
-                a.alt_text == b.alt_text
-            }
-            (StructuredNode::Table(a), StructuredNode::Table(b)) => {
-                a.structural_cmp(b, mode)
-            }
+            (StructuredNode::Image(a), StructuredNode::Image(b)) => a.alt_text == b.alt_text,
+            (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_cmp(b, mode),
             (StructuredNode::Field(a), StructuredNode::Field(b)) => a.structural_eq(b),
             (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
                 a.min_occurrences == b.min_occurrences
@@ -513,13 +508,9 @@ impl StructuredNode {
             (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
                 a.columns == b.columns
                     && a.elements.len() == b.elements.len()
-                    && a.elements
-                        .iter()
-                        .zip(b.elements.iter())
-                        .all(|(ea, eb)| {
-                            ea.span == eb.span
-                                && ea.node.structural_cmp(&eb.node, mode)
-                        })
+                    && a.elements.iter().zip(b.elements.iter()).all(|(ea, eb)| {
+                        ea.span == eb.span && ea.node.structural_cmp(&eb.node, mode)
+                    })
             }
             // Different variants are never structurally equal
             _ => false,
