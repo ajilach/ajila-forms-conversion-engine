@@ -1388,3 +1388,441 @@ fn test_event_all_properties_accessible() {
         );
     }
 }
+
+// =============================================================================
+// Gap 4: Calculation Convergence Tests
+// =============================================================================
+
+#[test]
+fn test_calc_convergence_forward_order() {
+    // A calculates "10", B calculates A.rawValue * 2.
+    // In forward order this converges in 1 iteration.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "");
+    engine.register_field("Form.B", "B", "");
+
+    // First calc: A = "10"
+    engine.set_current_field("Form.A", "A", "");
+    let script_a = XfaScript {
+        source: r#"this.rawValue = "10";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script_a);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), Some("10".to_string()));
+
+    // Second calc: B = A * 2
+    engine.set_current_field("Form.B", "B", "");
+    let script_b = XfaScript {
+        source: r#"this.rawValue = String(Number(A.rawValue) * 2);"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script_b);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("20".to_string()),
+        "B should see A's value and compute 20"
+    );
+}
+
+#[test]
+fn test_calc_convergence_reverse_order() {
+    // B calculates A.rawValue * 2, then A calculates "10".
+    // On first pass, B sees stale A (empty) → "0" or "NaN".
+    // The convergence loop in ScriptExecutor would re-run B after A is set.
+    // Here we simulate the two-pass convergence at the engine level.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "");
+    engine.register_field("Form.B", "B", "");
+
+    // Pass 1: B runs first (sees empty A)
+    engine.set_current_field("Form.B", "B", "");
+    let script_b = XfaScript {
+        source: r#"this.rawValue = String(Number(A.rawValue) * 2);"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script_b);
+
+    // Pass 1: A runs second
+    engine.set_current_field("Form.A", "A", "");
+    let script_a = XfaScript {
+        source: r#"this.rawValue = "10";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script_a);
+
+    // Pass 2: B runs again, now sees A = "10"
+    engine.set_current_field("Form.B", "B", "");
+    let result = engine.execute_script(&script_b);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("20".to_string()),
+        "B should see updated A and compute 20 on second pass"
+    );
+}
+
+#[test]
+fn test_calc_convergence_chain_three_fields() {
+    // Chain: C depends on B depends on A.
+    // Order: C, B, A (worst case — reverse).
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "");
+    engine.register_field("Form.B", "B", "");
+    engine.register_field("Form.C", "C", "");
+
+    let script_c = XfaScript {
+        source: r#"this.rawValue = String(Number(B.rawValue) + 1);"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let script_b = XfaScript {
+        source: r#"this.rawValue = String(Number(A.rawValue) + 1);"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let script_a = XfaScript {
+        source: r#"this.rawValue = "5";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+
+    // Simulate 3 passes:
+    // Pass 1: C=NaN+1=NaN, B=NaN+1=NaN, A=5
+    // Pass 2: C=NaN+1=NaN, B=5+1=6, A=5
+    // Pass 3: C=6+1=7, B=6, A=5 → converged
+
+    for _ in 0..3 {
+        engine.set_current_field("Form.C", "C", "");
+        let _ = engine.execute_script(&script_c);
+        engine.set_current_field("Form.B", "B", "");
+        let _ = engine.execute_script(&script_b);
+        engine.set_current_field("Form.A", "A", "");
+        let _ = engine.execute_script(&script_a);
+    }
+
+    // After convergence, verify values
+    let values = engine.get_all_som_field_values();
+    assert_eq!(values.get("A"), Some(&"5".to_string()), "A should be 5");
+    assert_eq!(values.get("B"), Some(&"6".to_string()), "B should be 6");
+    assert_eq!(values.get("C"), Some(&"7".to_string()), "C should be 7");
+}
+
+#[test]
+fn test_calc_already_convergent_single_pass() {
+    // Independent calculations should converge in 1 pass (no regression).
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.X", "X", "");
+    engine.register_field("Form.Y", "Y", "");
+
+    engine.set_current_field("Form.X", "X", "");
+    let script_x = XfaScript {
+        source: r#"this.rawValue = "hello";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script_x);
+
+    engine.set_current_field("Form.Y", "Y", "");
+    let script_y = XfaScript {
+        source: r#"this.rawValue = "world";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let _ = engine.execute_script(&script_y);
+
+    // Second pass produces same values → no change
+    engine.set_current_field("Form.X", "X", "hello");
+    let result_x = engine.execute_script(&script_x);
+    assert_eq!(
+        result_x.unwrap(),
+        None,
+        "No change on second pass means execute_script returns None"
+    );
+
+    engine.set_current_field("Form.Y", "Y", "world");
+    let result_y = engine.execute_script(&script_y);
+    assert_eq!(
+        result_y.unwrap(),
+        None,
+        "No change on second pass means execute_script returns None"
+    );
+}
+
+// =============================================================================
+// Gap 5: Hidden Fields Still Calculate Tests
+// =============================================================================
+
+#[test]
+fn test_hidden_field_calculates_value() {
+    // A hidden field's calculate script should still run.
+    // Per XFA 3.3 §2 p.68: "hidden: The container... may still perform
+    // calculations, validations, and event processing."
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.HiddenField", "HiddenField", "", "hidden");
+
+    engine.set_current_field("Form.HiddenField", "HiddenField", "");
+    let script = XfaScript {
+        source: r#"this.rawValue = "computed_while_hidden";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("computed_while_hidden".to_string()),
+        "Hidden field's calculate script should produce a value"
+    );
+}
+
+#[test]
+fn test_hidden_field_initializes() {
+    // A hidden field's initialize event should still fire.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.HiddenInit", "HiddenInit", "", "hidden");
+
+    engine.set_current_field("Form.HiddenInit", "HiddenInit", "");
+    let script = XfaScript {
+        source: r#"this.rawValue = "initialized_while_hidden";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("initialized_while_hidden".to_string()),
+        "Hidden field's initialize event should still fire"
+    );
+}
+
+#[test]
+fn test_inactive_field_presence_in_engine() {
+    // An inactive field is registered but the script executor (not the engine)
+    // is responsible for skipping it. The engine itself executes anything given.
+    // This test confirms the engine CAN run scripts on inactive fields —
+    // the suppression happens at the ScriptExecutor level.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.InactiveField", "InactiveField", "", "inactive");
+
+    engine.set_current_field("Form.InactiveField", "InactiveField", "");
+    let script = XfaScript {
+        source: r#"this.rawValue = "should_not_run_in_practice";"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    // Engine itself doesn't enforce presence — it always executes
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("should_not_run_in_practice".to_string()),
+        "Engine itself doesn't skip inactive fields — ScriptExecutor does"
+    );
+}
+
+// =============================================================================
+// Gap 7: Property Stub Objects Tests
+// =============================================================================
+
+#[test]
+fn test_border_property_accessible() {
+    // Scripts accessing this.border.edge.color.value should not error.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "original");
+    engine.set_current_field("Form.Field1", "Field1", "original");
+
+    let script = XfaScript {
+        source: r#"
+            var result = (typeof this.border !== 'undefined') &&
+                         (typeof this.border.edge !== 'undefined') &&
+                         (typeof this.border.edge.color !== 'undefined') &&
+                         (typeof this.border.edge.color.value !== 'undefined');
+            this.rawValue = String(result);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("true".to_string()),
+        "border.edge.color.value should be accessible"
+    );
+}
+
+#[test]
+fn test_border_color_settable() {
+    // Setting border.edge.color.value should not throw.
+    // Per XFA 3.3 §10 Example 10.13.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "ok");
+    engine.set_current_field("Form.Field1", "Field1", "ok");
+
+    let script = XfaScript {
+        source: r#"
+            this.border.edge.color.value = "255,0,0";
+            // rawValue should be unaffected
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    // rawValue should NOT have changed — property calcs don't affect rawValue
+    assert_eq!(
+        result.unwrap(),
+        None,
+        "Setting border color should not change rawValue"
+    );
+}
+
+#[test]
+fn test_font_property_accessible() {
+    // Scripts accessing this.font properties should not error.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+    engine.set_current_field("Form.Field1", "Field1", "");
+
+    let script = XfaScript {
+        source: r#"
+            var result = (typeof this.font !== 'undefined') &&
+                         (typeof this.font.typeface !== 'undefined') &&
+                         (typeof this.font.size !== 'undefined') &&
+                         (typeof this.font.fill !== 'undefined') &&
+                         (typeof this.font.fill.color !== 'undefined') &&
+                         (typeof this.font.fill.color.value !== 'undefined');
+            this.rawValue = String(result);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("true".to_string()),
+        "font and sub-properties should be accessible"
+    );
+}
+
+#[test]
+fn test_caption_and_assist_accessible() {
+    // Scripts accessing this.caption and this.assist should not error.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+    engine.set_current_field("Form.Field1", "Field1", "");
+
+    let script = XfaScript {
+        source: r#"
+            var result = (typeof this.caption !== 'undefined') &&
+                         (typeof this.caption.value !== 'undefined') &&
+                         (typeof this.assist !== 'undefined') &&
+                         (typeof this.assist.toolTip !== 'undefined');
+            this.rawValue = String(result);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("true".to_string()),
+        "caption.value and assist.toolTip should be accessible"
+    );
+}
+
+#[test]
+fn test_property_stubs_dont_affect_raw_value() {
+    // Modifying property objects should NOT affect the field's rawValue.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "original");
+    engine.set_current_field("Form.Field1", "Field1", "original");
+
+    let script = XfaScript {
+        source: r#"
+            this.border.edge.color.value = "255,0,0";
+            this.font.fill.color.value = "0,128,0";
+            this.caption.value = "New Caption";
+            this.assist.toolTip = "New Tooltip";
+            // rawValue should remain "original"
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        None,
+        "Property modifications should not change rawValue"
+    );
+
+    // Verify rawValue is still "original"
+    let values = engine.get_all_som_field_values();
+    assert_eq!(values.get("Field1"), Some(&"original".to_string()));
+}

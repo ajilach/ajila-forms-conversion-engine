@@ -118,30 +118,73 @@ impl ScriptExecutor {
             );
         }
 
-        // Phase 0: Execute calculate scripts (value calculations)
+        // Phase 0: Execute calculate scripts with convergence loop
         // Per XFA 3.3 §10 p.407: "All value calculations are done, then all
         // property calculations, then all validations, and then all initialize
         // events are fired. Calculations are repeated if the values on which
         // they depend change."
-        for (field_name, full_path, child_fields, script, _presence) in &all_events {
-            if script.content_type == ScriptContentType::JavaScript
-                && script.activity == EventActivity::Calculate
-            {
+        //
+        // Per XFA 3.3 §10 p.380: "In cascading calculations the processing
+        // application re-activates calculate objects as the values upon which
+        // they depend change."
+        //
+        // Per XFA 3.3 §10 p.380 on circular references: "It is recommended
+        // that the processing application provide some means of identifying
+        // and terminating the execution of seemingly infinite loops."
+        let max_calc_iterations: usize = std::env::var("XFA_MAX_CALC_ITERATIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25);
+
+        // Collect calculate events for the convergence loop
+        let calc_events: Vec<&EventWithChildren> = all_events
+            .iter()
+            .filter(|(_, _, _, script, _)| {
+                script.content_type == ScriptContentType::JavaScript
+                    && script.activity == EventActivity::Calculate
+            })
+            .collect();
+
+        for iteration in 0..max_calc_iterations {
+            let mut any_changed = false;
+
+            for (field_name, full_path, child_fields, script, _presence) in &calc_events {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
                 engine.update_event_context(&EventActivity::Calculate, full_path);
+
+                let old_value = computed_values.get(&SomPath::new(full_path.clone())).cloned();
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     // Per XFA 3.3 §10 p.380: the calculate result replaces the
                     // container's value.
+                    if old_value.as_ref() != Some(&value) {
+                        any_changed = true;
+                    }
                     computed_values.insert(SomPath::new(field_name.clone()), value.clone());
                     computed_values.insert(SomPath::new(full_path.clone()), value);
                 }
 
-                // Collect values set on fields during calculation
+                // Collect values set on fields during calculation (side effects)
                 let calc_som_values = engine.get_all_som_field_values();
                 for (calc_field_name, calc_value) in calc_som_values {
-                    computed_values.insert(SomPath::new(calc_field_name), calc_value);
+                    let key = SomPath::new(calc_field_name);
+                    if computed_values.get(&key) != Some(&calc_value) {
+                        any_changed = true;
+                    }
+                    computed_values.insert(key, calc_value);
                 }
+            }
+
+            if !any_changed {
+                break;
+            }
+
+            if iteration == max_calc_iterations - 1 {
+                eprintln!(
+                    "Warning: Calculation convergence not reached after {} iterations \
+                     (possible circular dependency). Results may be incorrect.",
+                    max_calc_iterations
+                );
             }
         }
 
