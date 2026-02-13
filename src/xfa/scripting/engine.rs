@@ -9,7 +9,7 @@
 //! - Chapter 11: Scripting
 
 use super::dependency::DependencyTracker;
-use super::events::{ScriptContentType, XfaScript};
+use super::events::{EventActivity, ScriptContentType, XfaScript};
 use super::js_helpers;
 use super::som::{SomPath, SomResolver};
 use super::state::{FormState, Presence, SharedFormState, XfaValue};
@@ -250,6 +250,9 @@ impl XfaScriptEngine {
 
         let host = self.create_host_object();
 
+        // Create event object with all XFA 3.3 spec §10 pp.398-404 properties.
+        // Writable: cancelAction, change, selStart, selEnd.
+        // Read-only: all others.
         let event = ObjectInitializer::new(&mut self.context)
             .property(
                 js_string!("name"),
@@ -261,6 +264,63 @@ impl XfaScriptEngine {
                 js_string!("cancelAction"),
                 JsValue::from(false),
                 Attribute::all(),
+            )
+            .property(
+                js_string!("change"),
+                JsValue::from(js_string!("")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("commitKey"),
+                JsValue::from(0),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("fullText"),
+                JsValue::from(js_string!("")),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("keyDown"),
+                JsValue::from(false),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("modifier"),
+                JsValue::from(false),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("newContentType"),
+                JsValue::from(js_string!("")),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("newText"),
+                JsValue::from(js_string!("")),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("prevContentType"),
+                JsValue::from(js_string!("")),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("prevText"),
+                JsValue::from(js_string!("")),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(
+                js_string!("reenter"),
+                JsValue::from(false),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
+            )
+            .property(js_string!("selEnd"), JsValue::from(0), Attribute::all())
+            .property(js_string!("selStart"), JsValue::from(0), Attribute::all())
+            .property(
+                js_string!("shift"),
+                JsValue::from(false),
+                Attribute::CONFIGURABLE | Attribute::ENUMERABLE,
             )
             .build();
 
@@ -324,12 +384,9 @@ impl XfaScriptEngine {
         )
         .ok();
 
-        // Add resolveNodes function
-        let resolve_nodes_fn = NativeFunction::from_fn_ptr(|_this, args, context| {
-            let _expr = args.get_or_undefined(0).to_string(context)?;
-            // Return empty array for now
-            Ok(JsValue::from(ObjectInitializer::new(context).build()))
-        });
+        // Add resolveNodes function (XFA 3.3 spec §3 pp.106-107)
+        // Returns a JsArray of all matching nodes for a SOM expression.
+        let resolve_nodes_fn = NativeFunction::from_fn_ptr(Self::resolve_nodes_impl);
         xfa.set(
             PropertyKey::from(js_string!("resolveNodes")),
             resolve_nodes_fn.to_js_function(self.context.realm()),
@@ -463,6 +520,196 @@ impl XfaScriptEngine {
 
         // Return null if not found
         Ok(JsValue::null())
+    }
+
+    /// Implementation of resolveNodes for the JavaScript environment.
+    /// Per XFA 3.3 §3 pp.106-107: returns a JsArray of all matching nodes
+    /// for a SOM expression, sorted in document order.
+    fn resolve_nodes_impl(
+        _this: &JsValue,
+        args: &[JsValue],
+        context: &mut Context,
+    ) -> boa_engine::JsResult<JsValue> {
+        let expr = args.get_or_undefined(0).to_string(context)?;
+        let expr_str = expr.to_std_string_escaped();
+
+        let result_array = boa_engine::object::builtins::JsArray::new(context);
+
+        // Extract the current context for context-aware resolution
+        let _current_context = context
+            .global_object()
+            .get(
+                PropertyKey::from(js_string!("_xfa_current_context_")),
+                context,
+            )
+            .ok()
+            .and_then(|v| v.to_string(context).ok())
+            .map(|s| s.to_std_string_escaped())
+            .unwrap_or_default();
+
+        // Get the field registry
+        let registry = context
+            .global_object()
+            .get(
+                PropertyKey::from(js_string!("_xfa_fields_by_path_")),
+                context,
+            )
+            .ok()
+            .and_then(|v| v.as_object().cloned());
+        let registry_obj = match registry {
+            Some(r) => r,
+            None => return Ok(JsValue::from(result_array)),
+        };
+
+        // Extract the field name (last component) from the expression
+        let field_name = expr_str.rsplit('.').next().unwrap_or(&expr_str);
+
+        // Handle indexed expressions: Name[*] or Name[n]
+        if let Some(bracket_pos) = field_name.find('[') {
+            let base_name = &field_name[..bracket_pos];
+            let index_part = &field_name[bracket_pos + 1..field_name.len() - 1];
+
+            // Get all paths for this name
+            if let Ok(paths_by_name) = context.global_object().get(
+                PropertyKey::from(js_string!("_xfa_paths_by_name_")),
+                context,
+            ) && let Some(paths_obj) = paths_by_name.as_object()
+                && let Ok(paths_array) =
+                    paths_obj.get(PropertyKey::from(JsString::from(base_name)), context)
+                && !paths_array.is_undefined()
+                && !paths_array.is_null()
+                && let Some(paths_arr_obj) = paths_array.as_object()
+            {
+                let length = paths_arr_obj
+                    .get(PropertyKey::from(js_string!("length")), context)
+                    .ok()
+                    .and_then(|v| v.to_number(context).ok())
+                    .unwrap_or(0.0) as usize;
+
+                if index_part == "*" {
+                    // Return all instances
+                    for i in 0..length {
+                        if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(i), context)
+                            && let Ok(path_str) = path_val.to_string(context)
+                        {
+                            let p = path_str.to_std_string_escaped();
+                            if let Ok(field_obj) = registry_obj
+                                .get(PropertyKey::from(JsString::from(p.as_str())), context)
+                                && !field_obj.is_undefined()
+                                && !field_obj.is_null()
+                            {
+                                result_array.push(field_obj, context).ok();
+                            }
+                        }
+                    }
+                } else if let Ok(idx) = index_part.parse::<usize>() {
+                    // Return specific index
+                    if idx < length {
+                        if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(idx), context)
+                            && let Ok(path_str) = path_val.to_string(context)
+                        {
+                            let p = path_str.to_std_string_escaped();
+                            if let Ok(field_obj) = registry_obj
+                                .get(PropertyKey::from(JsString::from(p.as_str())), context)
+                                && !field_obj.is_undefined()
+                                && !field_obj.is_null()
+                            {
+                                result_array.push(field_obj, context).ok();
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(JsValue::from(result_array));
+        }
+
+        // Handle descendant accessor (..)
+        if expr_str.contains("..") {
+            let parts: Vec<&str> = expr_str.split("..").collect();
+            if parts.len() == 2 {
+                let target_name = parts[1];
+                if let Ok(paths_by_name) = context.global_object().get(
+                    PropertyKey::from(js_string!("_xfa_paths_by_name_")),
+                    context,
+                ) && let Some(paths_obj) = paths_by_name.as_object()
+                    && let Ok(paths_array) =
+                        paths_obj.get(PropertyKey::from(JsString::from(target_name)), context)
+                    && !paths_array.is_undefined()
+                    && !paths_array.is_null()
+                    && let Some(paths_arr_obj) = paths_array.as_object()
+                {
+                    let length = paths_arr_obj
+                        .get(PropertyKey::from(js_string!("length")), context)
+                        .ok()
+                        .and_then(|v| v.to_number(context).ok())
+                        .unwrap_or(0.0) as usize;
+
+                    for i in 0..length {
+                        if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(i), context)
+                            && let Ok(path_str) = path_val.to_string(context)
+                        {
+                            let p = path_str.to_std_string_escaped();
+                            if let Ok(field_obj) = registry_obj
+                                .get(PropertyKey::from(JsString::from(p.as_str())), context)
+                                && !field_obj.is_undefined()
+                                && !field_obj.is_null()
+                            {
+                                result_array.push(field_obj, context).ok();
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(JsValue::from(result_array));
+        }
+
+        // For full path expressions: try direct lookup
+        if expr_str.contains('.') {
+            if let Ok(field_obj) = registry_obj.get(
+                PropertyKey::from(JsString::from(expr_str.as_str())),
+                context,
+            ) && !field_obj.is_undefined()
+                && !field_obj.is_null()
+            {
+                result_array.push(field_obj, context).ok();
+            }
+            return Ok(JsValue::from(result_array));
+        }
+
+        // Simple name: return all nodes with this name
+        if let Ok(paths_by_name) = context.global_object().get(
+            PropertyKey::from(js_string!("_xfa_paths_by_name_")),
+            context,
+        ) && let Some(paths_obj) = paths_by_name.as_object()
+            && let Ok(paths_array) =
+                paths_obj.get(PropertyKey::from(JsString::from(field_name)), context)
+            && !paths_array.is_undefined()
+            && !paths_array.is_null()
+            && let Some(paths_arr_obj) = paths_array.as_object()
+        {
+            let length = paths_arr_obj
+                .get(PropertyKey::from(js_string!("length")), context)
+                .ok()
+                .and_then(|v| v.to_number(context).ok())
+                .unwrap_or(0.0) as usize;
+
+            for i in 0..length {
+                if let Ok(path_val) = paths_arr_obj.get(PropertyKey::from(i), context)
+                    && let Ok(path_str) = path_val.to_string(context)
+                {
+                    let p = path_str.to_std_string_escaped();
+                    if let Ok(field_obj) =
+                        registry_obj.get(PropertyKey::from(JsString::from(p.as_str())), context)
+                        && !field_obj.is_undefined()
+                        && !field_obj.is_null()
+                    {
+                        result_array.push(field_obj, context).ok();
+                    }
+                }
+            }
+        }
+
+        Ok(JsValue::from(result_array))
     }
 
     /// Find the best matching path based on context
@@ -1166,6 +1413,135 @@ impl XfaScriptEngine {
             .ok();
     }
 
+    /// Update `$event` / `xfa.event` properties before executing a script.
+    ///
+    /// Per XFA 3.3 §10 pp.398–404: the `$event` object carries context about
+    /// the event being processed. Properties are set according to the event type.
+    pub fn update_event_context(&mut self, activity: &EventActivity, target_path: &str) {
+        let activity_name = match activity {
+            EventActivity::Ready => "ready",
+            EventActivity::Initialize => "initialize",
+            EventActivity::Enter => "enter",
+            EventActivity::Exit => "exit",
+            EventActivity::Change => "change",
+            EventActivity::Click => "click",
+            EventActivity::Calculate => "calculate",
+            EventActivity::Validate => "validate",
+            EventActivity::PreSubmit => "preSubmit",
+            EventActivity::PostSubmit => "postSubmit",
+            EventActivity::DocReady => "docReady",
+            EventActivity::IndexChange => "indexChange",
+            EventActivity::Other(s) => s.as_str(),
+        };
+
+        // Get the xfa.event object
+        let event_obj = self
+            .context
+            .global_object()
+            .get(PropertyKey::from(js_string!("xfa")), &mut self.context)
+            .ok()
+            .and_then(|xfa| xfa.as_object().cloned())
+            .and_then(|xfa_obj| {
+                xfa_obj
+                    .get(PropertyKey::from(js_string!("event")), &mut self.context)
+                    .ok()
+            })
+            .and_then(|e| e.as_object().cloned());
+
+        let Some(event) = event_obj else {
+            return;
+        };
+
+        // Set event name
+        event
+            .set(
+                PropertyKey::from(js_string!("name")),
+                JsValue::from(js_string!(activity_name)),
+                false,
+                &mut self.context,
+            )
+            .ok();
+
+        // Set target to the field/subform JS object.
+        let target_som = SomPath::new(target_path);
+        let target_val = self
+            .field_objects
+            .get(&target_som)
+            .map(|obj| JsValue::from(obj.clone()))
+            .unwrap_or(JsValue::null());
+        event
+            .set(
+                PropertyKey::from(js_string!("target")),
+                target_val,
+                false,
+                &mut self.context,
+            )
+            .ok();
+
+        // Reset mutable properties to defaults
+        event
+            .set(
+                PropertyKey::from(js_string!("cancelAction")),
+                JsValue::from(false),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        event
+            .set(
+                PropertyKey::from(js_string!("change")),
+                JsValue::from(js_string!("")),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        event
+            .set(
+                PropertyKey::from(js_string!("selStart")),
+                JsValue::from(0),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        event
+            .set(
+                PropertyKey::from(js_string!("selEnd")),
+                JsValue::from(0),
+                false,
+                &mut self.context,
+            )
+            .ok();
+
+        // Set event-type-specific properties.
+        // For change events, prevText/newText are set to the field's current value.
+        let is_change = matches!(activity, EventActivity::Change);
+        if is_change {
+            let current_value = self.get_field_value(&target_som).unwrap_or_default();
+            event
+                .define_property_or_throw(
+                    PropertyKey::from(js_string!("prevText")),
+                    boa_engine::property::PropertyDescriptor::builder()
+                        .value(JsValue::from(js_string!(current_value.as_str())))
+                        .configurable(true)
+                        .enumerable(true)
+                        .build(),
+                    &mut self.context,
+                )
+                .ok();
+            event
+                .define_property_or_throw(
+                    PropertyKey::from(js_string!("fullText")),
+                    boa_engine::property::PropertyDescriptor::builder()
+                        .value(JsValue::from(js_string!(current_value.as_str())))
+                        .configurable(true)
+                        .enumerable(true)
+                        .build(),
+                    &mut self.context,
+                )
+                .ok();
+        }
+    }
+
     /// Set up the current field context with child fields as properties of `this`.
     pub fn set_current_field_with_children(
         &mut self,
@@ -1288,7 +1664,13 @@ impl XfaScriptEngine {
         None
     }
 
-    /// Get all field values from the SOM hierarchy that have been modified.
+    /// Get all field values from the SOM hierarchy.
+    ///
+    /// Returns entries keyed by short field name for backward compatibility.
+    /// When multiple fields share the same short name (e.g. `RB_1` in two
+    /// different exclGroups), non-empty values take priority over empty ones
+    /// to avoid the non-deterministic HashMap iteration bug where two fields
+    /// would overwrite each other unpredictably.
     pub fn get_all_som_field_values(&mut self) -> HashMap<String, String> {
         let mut values = HashMap::new();
 
@@ -1300,17 +1682,46 @@ impl XfaScriptEngine {
                 && let Ok(value_str) = raw_value.to_string(&mut self.context)
             {
                 let value = value_str.to_std_string_escaped();
-                // Empty strings are valid per XFA spec (cleared fields,
-                // deselected exclGroups).  However, when multiple fields
-                // share the same short name (e.g. RB_1 in two different
-                // exclGroups), a derived-empty value must not overwrite
-                // a non-empty value already stored for that name.
+
+                // Store under short name. Non-empty values take priority over
+                // empty ones for the same short name, avoiding the dedup bug
+                // where HashMap iteration order determined which value survived.
                 let field_name = path.name();
                 if value.is_empty() {
                     values.entry(field_name.to_string()).or_insert(value);
                 } else {
-                    values.insert(field_name.to_string(), value);
+                    values
+                        .entry(field_name.to_string())
+                        .and_modify(|existing| {
+                            if existing.is_empty() {
+                                *existing = value.clone();
+                            }
+                        })
+                        .or_insert(value);
                 }
+            }
+        }
+
+        values
+    }
+
+    /// Get all field values keyed by FULL SOM path.
+    ///
+    /// Unlike `get_all_som_field_values()` which uses short names, this method
+    /// returns entries keyed by the complete SOM path, ensuring no collisions
+    /// between fields with the same leaf name in different subforms.
+    pub fn get_all_som_field_values_by_path(&mut self) -> HashMap<String, String> {
+        let mut values = HashMap::new();
+
+        for (path, obj) in &self.field_objects {
+            if let Ok(raw_value) =
+                obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
+                && !raw_value.is_undefined()
+                && !raw_value.is_null()
+                && let Ok(value_str) = raw_value.to_string(&mut self.context)
+            {
+                let value = value_str.to_std_string_escaped();
+                values.insert(path.to_string(), value);
             }
         }
 

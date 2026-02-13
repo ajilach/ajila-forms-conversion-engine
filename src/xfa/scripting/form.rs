@@ -587,6 +587,10 @@ impl XfaForm {
         self.script_engine
             .set_current_field(&resolved_path, &node_name, &current_value);
 
+        // Set up $event context before script execution (XFA 3.3 §10 pp.398-404)
+        self.script_engine
+            .update_event_context(&activity, &resolved_path);
+
         let mut changed_fields = Vec::new();
         for script in &scripts {
             let result = self.script_engine.execute_script(script);

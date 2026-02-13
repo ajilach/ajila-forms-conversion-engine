@@ -128,6 +128,7 @@ impl ScriptExecutor {
                 && script.activity == EventActivity::Calculate
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::Calculate, full_path);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     // Per XFA 3.3 §10 p.380: the calculate result replaces the
@@ -154,6 +155,7 @@ impl ScriptExecutor {
                 && script.activity == EventActivity::Validate
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::Validate, full_path);
                 let _ = engine.execute_script(script);
 
                 // Collect any side-effect values set during validation
@@ -181,6 +183,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::Initialize, full_path);
 
                 let result = engine.execute_script(script);
                 if let Err(ref e) = result
@@ -272,6 +275,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::Ready, full_path);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);
@@ -319,6 +323,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::Ready, full_path);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);
@@ -354,6 +359,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+                engine.update_event_context(&EventActivity::DocReady, full_path);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);

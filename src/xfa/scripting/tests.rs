@@ -971,3 +971,420 @@ fn test_exclgroup_deselection_preserves_empty_values() {
         "Deselected exclGroup member should have empty string value"
     );
 }
+
+// =============================================================================
+// resolveNodes() Tests (XFA 3.3 §3 pp.106-107)
+// =============================================================================
+
+#[test]
+fn test_resolve_nodes_all_instances() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Detail.Item", "Item", "val1");
+    engine.register_field("Detail.Item", "Item", "val2");
+    engine.register_field("Detail.Item", "Item", "val3");
+
+    // resolveNodes("Item[*]") should return all 3 instances
+    engine.set_current_field("Detail.Test", "Test", "");
+    let script = XfaScript {
+        source: r#"
+            var nodes = xfa.resolveNodes("Item[*]");
+            this.rawValue = String(nodes.length);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "3", "resolveNodes('Item[*]') should return 3 items");
+    }
+}
+
+#[test]
+fn test_resolve_nodes_specific_index() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Detail.Item", "Item", "first");
+    engine.register_field("Detail.Item", "Item", "second");
+
+    // resolveNodes("Item[0]") should return exactly 1 item
+    engine.set_current_field("Detail.Test", "Test", "");
+    let script = XfaScript {
+        source: r#"
+            var nodes = xfa.resolveNodes("Item[0]");
+            this.rawValue = String(nodes.length);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "1",
+            "resolveNodes('Item[0]') should return exactly 1 item"
+        );
+    }
+}
+
+#[test]
+fn test_resolve_nodes_nonexistent() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Detail.Item", "Item", "val1");
+
+    // resolveNodes for a nonexistent field should return empty array
+    engine.set_current_field("Detail.Test", "Test", "");
+    let script = XfaScript {
+        source: r#"
+            var nodes = xfa.resolveNodes("NonexistentField[*]");
+            this.rawValue = String(nodes.length);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "0",
+            "resolveNodes for non-existent field should return empty array"
+        );
+    }
+}
+
+#[test]
+fn test_resolve_nodes_descendant_accessor() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Section1.Amount", "Amount", "100");
+    engine.register_field("Form.Section2.Amount", "Amount", "200");
+
+    // resolveNodes("$data..Amount") should return both instances
+    engine.set_current_field("Form.Total", "Total", "");
+    let script = XfaScript {
+        source: r#"
+            var nodes = xfa.resolveNodes("$data..Amount");
+            this.rawValue = String(nodes.length);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "2",
+            "resolveNodes('$data..Amount') should return 2 descendant matches"
+        );
+    }
+}
+
+#[test]
+fn test_resolve_nodes_by_simple_name() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Page1.Field1", "Field1", "a");
+    engine.register_field("Page2.Field1", "Field1", "b");
+    engine.register_field("Page1.Field2", "Field2", "c");
+
+    // resolveNodes("Field1") should return 2 instances (both pages)
+    engine.set_current_field("Page1.Test", "Test", "");
+    let script = XfaScript {
+        source: r#"
+            var nodes = xfa.resolveNodes("Field1");
+            this.rawValue = String(nodes.length);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "2",
+            "resolveNodes('Field1') should return all 2 instances by name"
+        );
+    }
+}
+
+// =============================================================================
+// ExclGroup Dedup Fix Tests
+// =============================================================================
+
+#[test]
+fn test_exclgroup_dedup_full_path_keys() {
+    // Two exclGroups each with a child named "RB_1" — both selected.
+    // Full-path keys must preserve both values.
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "groupA",
+        "groupA",
+        &[("RB_1", "", Some("A")), ("RB_2", "", Some("B"))],
+    );
+    setup_exclgroup(
+        &mut engine,
+        "groupB",
+        "groupB",
+        &[("RB_1", "", Some("X")), ("RB_2", "", Some("Y"))],
+    );
+
+    // Select RB_1 in groupA (value "A") and RB_1 in groupB (value "X")
+    engine.update_field_value("groupA", "A");
+    engine.update_field_value("groupB", "X");
+
+    let values = engine.get_all_som_field_values_by_path();
+
+    // Full-path entries must both exist and be correct
+    assert_eq!(
+        values.get("groupA.RB_1"),
+        Some(&"A".to_string()),
+        "groupA.RB_1 should be 'A' via full-path key"
+    );
+    assert_eq!(
+        values.get("groupB.RB_1"),
+        Some(&"X".to_string()),
+        "groupB.RB_1 should be 'X' via full-path key"
+    );
+}
+
+#[test]
+fn test_exclgroup_dedup_selected_vs_deselected() {
+    // One RB_1 selected, one deselected — selected value retrievable by full path.
+    let mut engine = XfaScriptEngine::new();
+    setup_exclgroup(
+        &mut engine,
+        "groupA",
+        "groupA",
+        &[("RB_1", "", Some("A")), ("RB_2", "", Some("B"))],
+    );
+    setup_exclgroup(
+        &mut engine,
+        "groupB",
+        "groupB",
+        &[("RB_1", "", Some("X")), ("RB_2", "", Some("Y"))],
+    );
+
+    // Select RB_1 only in groupA
+    engine.update_field_value("groupA", "A");
+
+    let full_path_values = engine.get_all_som_field_values_by_path();
+
+    assert_eq!(
+        full_path_values.get("groupA.RB_1"),
+        Some(&"A".to_string()),
+        "Selected groupA.RB_1 should be 'A'"
+    );
+    assert_eq!(
+        full_path_values.get("groupB.RB_1"),
+        Some(&"".to_string()),
+        "Deselected groupB.RB_1 should be ''"
+    );
+
+    // The short-name entry for "RB_1" should be the non-empty one
+    let values = engine.get_all_som_field_values();
+    let short_name_value = values.get("RB_1");
+    assert_eq!(
+        short_name_value,
+        Some(&"A".to_string()),
+        "Short-name 'RB_1' should have the non-empty value"
+    );
+}
+
+// =============================================================================
+// $event Property Tests (XFA 3.3 §10 pp.398-404)
+// =============================================================================
+
+#[test]
+fn test_event_name_property() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "hello");
+
+    // Set up event context for a click event
+    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.set_current_field("Form.Field1", "Field1", "hello");
+
+    // $event.name should be "click"
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.name;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Click,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "click", "$event.name should be 'click'");
+    }
+}
+
+#[test]
+fn test_event_target_property() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.MyField", "MyField", "test");
+
+    engine.update_event_context(&EventActivity::Enter, "Form.MyField");
+    engine.set_current_field("Form.MyField", "MyField", "test");
+
+    // $event.target should be the field object with name "MyField"
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.target.name;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Enter,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "MyField", "$event.target.name should be 'MyField'");
+    }
+}
+
+#[test]
+fn test_event_cancel_action_writable() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+
+    engine.update_event_context(&EventActivity::Validate, "Form.Field1");
+    engine.set_current_field("Form.Field1", "Field1", "");
+
+    // cancelAction should be writable
+    let script = XfaScript {
+        source: r#"
+            xfa.event.cancelAction = true;
+            this.rawValue = String(xfa.event.cancelAction);
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Validate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "true", "cancelAction should be writable");
+    }
+}
+
+#[test]
+fn test_event_modifier_defaults_false() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+
+    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.set_current_field("Form.Field1", "Field1", "");
+
+    // modifier should default to false
+    let script = XfaScript {
+        source: r#"this.rawValue = String(xfa.event.modifier);"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Click,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "false", "$event.modifier should default to false");
+    }
+}
+
+#[test]
+fn test_event_change_property_for_change_event() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "original");
+
+    engine.update_event_context(&EventActivity::Change, "Form.Field1");
+    engine.set_current_field("Form.Field1", "Field1", "original");
+
+    // prevText should be set to current value for change events
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.prevText;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Change,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "original",
+            "prevText should contain the field's value before change"
+        );
+    }
+}
+
+#[test]
+fn test_event_all_properties_accessible() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+
+    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.set_current_field("Form.Field1", "Field1", "");
+
+    // Verify all expected properties are accessible (not undefined)
+    let script = XfaScript {
+        source: r#"
+            var e = xfa.event;
+            var props = [
+                typeof e.name !== 'undefined',
+                typeof e.target !== 'undefined',
+                typeof e.cancelAction !== 'undefined',
+                typeof e.change !== 'undefined',
+                typeof e.commitKey !== 'undefined',
+                typeof e.fullText !== 'undefined',
+                typeof e.keyDown !== 'undefined',
+                typeof e.modifier !== 'undefined',
+                typeof e.newContentType !== 'undefined',
+                typeof e.newText !== 'undefined',
+                typeof e.prevContentType !== 'undefined',
+                typeof e.prevText !== 'undefined',
+                typeof e.reenter !== 'undefined',
+                typeof e.selEnd !== 'undefined',
+                typeof e.selStart !== 'undefined',
+                typeof e.shift !== 'undefined'
+            ];
+            this.rawValue = String(props.every(function(p) { return p; }));
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Click,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "true",
+            "All $event properties should be accessible (not undefined)"
+        );
+    }
+}
