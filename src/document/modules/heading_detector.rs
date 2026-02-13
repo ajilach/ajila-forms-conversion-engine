@@ -163,9 +163,13 @@ impl GlobalFontStats {
                         .map(|f| f.weight == FontWeight::Bold)
                         .unwrap_or(false);
 
-                    // Skip body text style
-                    if most_common_style == Some((size_bits, is_bold)) {
-                        continue;
+                    // Skip body text style: only non-bold text at the most common size
+                    let body_is_non_bold = most_common_style.map(|(s, b)| !b).unwrap_or(false);
+                    if !is_bold && body_is_non_bold {
+                        let body_size_bits = most_common_style.map(|(s, _)| s);
+                        if body_size_bits == Some(size_bits) {
+                            continue;
+                        }
                     }
 
                     // Check if this is a bold section header (bold at body size)
@@ -554,13 +558,15 @@ impl HeadingDetector {
             .unwrap_or(0.0);
 
         // CRITICAL: Headings must be DISTINCT from normal text.
-        // Text that matches the most common style is NEVER a heading
-        let is_body_style = stats
-            .most_common_style
-            .map(|common| common == style_key)
-            .unwrap_or(false);
+        // Only non-bold text at the most common size is body text (never a heading).
+        // Bold text at any size can still be a heading.
+        let is_body_text = !is_bold
+            && stats
+                .most_common_style
+                .map(|common| common.size == rounded_size && !common.is_bold)
+                .unwrap_or(false);
 
-        if is_body_style {
+        if is_body_text {
             return None;
         }
 
