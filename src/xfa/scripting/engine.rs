@@ -1646,11 +1646,28 @@ impl XfaScriptEngine {
                     )
                     .ok();
             }
-        } else {
-            // Top-level subform - register as a global variable
-            self.context
-                .register_global_property(JsString::from(name), node_obj.clone(), Attribute::all())
-                .ok();
+        }
+
+        // Per XFA 3.3 §3 pp.110-114: unqualified references in scripts resolve
+        // by searching children, siblings, ancestors, etc. To support direct
+        // JavaScript property chain access (e.g. `Page.Section.Field`), all
+        // named containers must be accessible as globals. Only register if no
+        // global with this name exists yet (first-registered wins: the node
+        // closest to the root in document order, which matches XFA tree order).
+        if let Ok(existing) = self
+            .context
+            .global_object()
+            .get(PropertyKey::from(JsString::from(name)), &mut self.context)
+        {
+            if existing.is_undefined() || existing.is_null() {
+                self.context
+                    .register_global_property(
+                        JsString::from(name),
+                        node_obj.clone(),
+                        Attribute::all(),
+                    )
+                    .ok();
+            }
         }
 
         // Also register in the _xfa_fields_ registry for resolveNode() lookups
@@ -1708,7 +1725,10 @@ impl XfaScriptEngine {
                 .map(|s| s.to_std_string_escaped())?;
             // Check if presence was changed from initial value
             let initial = this_obj
-                .get(PropertyKey::from(js_string!("_initialPresence")), &mut self.context)
+                .get(
+                    PropertyKey::from(js_string!("_initialPresence")),
+                    &mut self.context,
+                )
                 .ok()
                 .and_then(|v| v.to_string(&mut self.context).ok())
                 .map(|s| s.to_std_string_escaped())
@@ -1754,7 +1774,10 @@ impl XfaScriptEngine {
                 .map(|s| s.to_std_string_escaped())?;
             // Check if presence was changed from initial value
             let initial = child_obj
-                .get(PropertyKey::from(js_string!("_initialPresence")), &mut self.context)
+                .get(
+                    PropertyKey::from(js_string!("_initialPresence")),
+                    &mut self.context,
+                )
                 .ok()
                 .and_then(|v| v.to_string(&mut self.context).ok())
                 .map(|s| s.to_std_string_escaped())

@@ -93,90 +93,16 @@ impl ScriptExecutor {
         // Build parent-child map for setting up `this.childField` access
         let parent_child_map = Self::build_parent_child_map_with_ids(xfa_nodes);
 
-        // Find all events recursively, starting from root.
-        // Mirror the path-stripping logic of build_and_register_xfa_som_hierarchy:
-        // the root subform name (e.g. "UBSForms_66816") is stripped and its
-        // immediate subform children (e.g. "Page") become top-level SOM paths.
-        // This ensures that event paths match the registered SOM hierarchy so
-        // that set_current_field_with_children can find the correct field objects.
+        // Find all events recursively, starting from root
         let mut subform_counters: HashMap<String, usize> = HashMap::new();
         let mut all_events = Vec::new();
-        if let Some(root) = Self::find_root_subform(xfa_nodes) {
-            // Collect events on the root subform itself (if any)
-            let root_name = root.name.clone().unwrap_or_default();
-            let root_events = parse_events_from_node(&root.children);
-            for event in root_events {
-                all_events.push((
-                    root_name.clone(),
-                    root_name.clone(),
-                    Vec::new(),
-                    event,
-                    root.get_presence(),
-                ));
-            }
-
-            // Traverse root's children, stripping the root subform prefix
-            for child in &root.children {
-                let child_name = child.name.clone().unwrap_or_default();
-                let is_subform = matches!(child.kind, XfaNodeKind::Subform)
-                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-
-                // XFA 3.3 §10 p.407 Rule 1: inactive containers suppress all
-                // events for themselves and their children.
-                if child.get_presence() == Presence::Inactive {
-                    continue;
-                }
-
-                if is_subform && !child_name.is_empty() {
-                    // Immediate subform children of the root become top-level
-                    // (e.g. "Page" instead of "UBSForms_66816.Page")
-                    let child_events = parse_events_from_node(&child.children);
-                    let key = {
-                        let count = subform_counters.entry(child_name.clone()).or_insert(0);
-                        let key = format!("{}[{}]", child_name, *count);
-                        *count += 1;
-                        key
-                    };
-                    let children = parent_child_map.get(&key).cloned().unwrap_or_default();
-                    for event in child_events {
-                        all_events.push((
-                            child_name.clone(),
-                            child_name.clone(),
-                            children.clone(),
-                            event,
-                            child.get_presence(),
-                        ));
-                    }
-                    Self::find_all_events_with_child_ids(
-                        &child.children,
-                        &mut all_events,
-                        &parent_child_map,
-                        &mut subform_counters,
-                        Some(&child_name),
-                    );
-                } else {
-                    // Non-subform children (fields, draws, exclGroups, pageSet, etc.)
-                    // keep the root subform name in their path (e.g. "Root.fieldA"),
-                    // matching build_and_register_xfa_som_hierarchy.
-                    Self::find_all_events_with_child_ids(
-                        std::slice::from_ref(child),
-                        &mut all_events,
-                        &parent_child_map,
-                        &mut subform_counters,
-                        Some(&root_name),
-                    );
-                }
-            }
-        } else {
-            // Fallback: no root subform found, traverse from top level
-            Self::find_all_events_with_child_ids(
-                xfa_nodes,
-                &mut all_events,
-                &parent_child_map,
-                &mut subform_counters,
-                None,
-            );
-        }
+        Self::find_all_events_with_child_ids(
+            xfa_nodes,
+            &mut all_events,
+            &parent_child_map,
+            &mut subform_counters,
+            None, // Start with no parent path
+        );
 
         // Warn about FormCalc scripts that cannot be executed.
         // Only JavaScript is supported; FormCalc scripts are silently skipped.
@@ -791,78 +717,12 @@ impl ScriptExecutor {
                 );
             }
 
-            // Register immediate children of root in the SOM hierarchy.
-            // Subforms like "Page" are registered as top-level globals so scripts
-            // can access "Page.FormTitle..." without needing "UBSForms.Page.FormTitle...".
-            for child in &root.children {
-                let child_name = child.name.clone().unwrap_or_default();
-                if child_name.is_empty() {
-                    continue;
-                }
-
-                let is_subform = matches!(child.kind, XfaNodeKind::Subform)
-                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                let is_page_set = matches!(child.kind, XfaNodeKind::PageSet)
-                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
-                let is_variables = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "variables");
-                let is_proto = matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "proto");
-                let is_field = matches!(child.kind, XfaNodeKind::Field)
-                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                let is_exclgroup = matches!(child.kind, XfaNodeKind::ExclGroup);
-                let is_draw = matches!(child.kind, XfaNodeKind::Draw)
-                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
-
-                // Skip variables, proto elements
-                if is_variables || is_proto {
-                    continue;
-                }
-
-                // Register page chrome fields (headers, footers) under root so
-                // scripts can resolve them via the SOM hierarchy.
-                if is_page_set {
-                    register_nodes_recursive(&child.children, Some(&root_name), engine, false);
-                    continue;
-                }
-
-                if is_subform {
-                    // Register this child subform (e.g., "Page") as a global
-                    engine.register_xfa_node(
-                        &child_name,
-                        &child_name,
-                        None,
-                        false,
-                        "",
-                        false,
-                        None,
-                        None,
-                        child.presence.as_str(),
-                    );
-                    // Recurse with child_name as parent
-                    register_nodes_recursive(&child.children, Some(&child_name), engine, false);
-                } else if is_field || is_exclgroup || is_draw {
-                    // Non-subform root children (fields, exclGroups, draws)
-                    let full_path = format!("{}.{}", root_name, child_name);
-                    let value = child
-                        .attributes
-                        .get("rawValue")
-                        .cloned()
-                        .unwrap_or_default();
-                    engine.register_xfa_node(
-                        &child_name,
-                        &full_path,
-                        Some(&root_name),
-                        is_field,
-                        &value,
-                        false,
-                        None,
-                        None,
-                        child.presence.as_str(),
-                    );
-                    if is_exclgroup {
-                        register_nodes_recursive(&child.children, Some(&full_path), engine, true);
-                    }
-                }
-            }
+            // Per XFA 3.3 §3: SOM paths include the root subform.
+            // All children of the root are registered under the root's name
+            // (e.g. "UBSForms_66816.Page", not just "Page").
+            // Unqualified name resolution uses the _xfa_fields_ registry
+            // and resolveNode scoping, not path stripping.
+            register_nodes_recursive(&root.children, Some(&root_name), engine, false);
         }
     }
 
