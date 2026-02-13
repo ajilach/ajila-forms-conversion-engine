@@ -1151,54 +1151,134 @@ impl XfaScriptEngine {
 
         // border.edge.color.value  /  border.fill.color.value
         let border_color = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("value"), JsValue::from(js_string!("0,0,0")), Attribute::all())
+            .property(
+                js_string!("value"),
+                JsValue::from(js_string!("0,0,0")),
+                Attribute::all(),
+            )
             .build();
         let border_fill_color = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("value"), JsValue::from(js_string!("255,255,255")), Attribute::all())
+            .property(
+                js_string!("value"),
+                JsValue::from(js_string!("255,255,255")),
+                Attribute::all(),
+            )
             .build();
         let border_fill = ObjectInitializer::new(&mut self.context)
             .property(js_string!("color"), border_fill_color, Attribute::all())
             .build();
         let border_edge = ObjectInitializer::new(&mut self.context)
             .property(js_string!("color"), border_color, Attribute::all())
-            .property(js_string!("presence"), JsValue::from(js_string!("visible")), Attribute::all())
-            .property(js_string!("thickness"), JsValue::from(js_string!("0.5pt")), Attribute::all())
+            .property(
+                js_string!("presence"),
+                JsValue::from(js_string!("visible")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("thickness"),
+                JsValue::from(js_string!("0.5pt")),
+                Attribute::all(),
+            )
             .build();
         let border_obj = ObjectInitializer::new(&mut self.context)
             .property(js_string!("edge"), border_edge, Attribute::all())
             .property(js_string!("fill"), border_fill, Attribute::all())
-            .property(js_string!("presence"), JsValue::from(js_string!("visible")), Attribute::all())
+            .property(
+                js_string!("presence"),
+                JsValue::from(js_string!("visible")),
+                Attribute::all(),
+            )
             .build();
-        field.set(PropertyKey::from(js_string!("border")), border_obj, false, &mut self.context).ok();
+        field
+            .set(
+                PropertyKey::from(js_string!("border")),
+                border_obj,
+                false,
+                &mut self.context,
+            )
+            .ok();
 
         // font.typeface / font.size / font.weight / font.fill.color.value
         let font_fill_color = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("value"), JsValue::from(js_string!("0,0,0")), Attribute::all())
+            .property(
+                js_string!("value"),
+                JsValue::from(js_string!("0,0,0")),
+                Attribute::all(),
+            )
             .build();
         let font_fill = ObjectInitializer::new(&mut self.context)
             .property(js_string!("color"), font_fill_color, Attribute::all())
             .build();
         let font_obj = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("typeface"), JsValue::from(js_string!("")), Attribute::all())
-            .property(js_string!("size"), JsValue::from(js_string!("10pt")), Attribute::all())
-            .property(js_string!("weight"), JsValue::from(js_string!("normal")), Attribute::all())
-            .property(js_string!("posture"), JsValue::from(js_string!("normal")), Attribute::all())
+            .property(
+                js_string!("typeface"),
+                JsValue::from(js_string!("")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("size"),
+                JsValue::from(js_string!("10pt")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("weight"),
+                JsValue::from(js_string!("normal")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("posture"),
+                JsValue::from(js_string!("normal")),
+                Attribute::all(),
+            )
             .property(js_string!("fill"), font_fill, Attribute::all())
             .build();
-        field.set(PropertyKey::from(js_string!("font")), font_obj, false, &mut self.context).ok();
+        field
+            .set(
+                PropertyKey::from(js_string!("font")),
+                font_obj,
+                false,
+                &mut self.context,
+            )
+            .ok();
 
         // caption.value
         let caption_obj = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("value"), JsValue::from(js_string!("")), Attribute::all())
-            .property(js_string!("presence"), JsValue::from(js_string!("visible")), Attribute::all())
+            .property(
+                js_string!("value"),
+                JsValue::from(js_string!("")),
+                Attribute::all(),
+            )
+            .property(
+                js_string!("presence"),
+                JsValue::from(js_string!("visible")),
+                Attribute::all(),
+            )
             .build();
-        field.set(PropertyKey::from(js_string!("caption")), caption_obj, false, &mut self.context).ok();
+        field
+            .set(
+                PropertyKey::from(js_string!("caption")),
+                caption_obj,
+                false,
+                &mut self.context,
+            )
+            .ok();
 
         // assist.toolTip
         let assist_obj = ObjectInitializer::new(&mut self.context)
-            .property(js_string!("toolTip"), JsValue::from(js_string!("")), Attribute::all())
+            .property(
+                js_string!("toolTip"),
+                JsValue::from(js_string!("")),
+                Attribute::all(),
+            )
             .build();
-        field.set(PropertyKey::from(js_string!("assist")), assist_obj, false, &mut self.context).ok();
+        field
+            .set(
+                PropertyKey::from(js_string!("assist")),
+                assist_obj,
+                false,
+                &mut self.context,
+            )
+            .ok();
 
         field
     }
