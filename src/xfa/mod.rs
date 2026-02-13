@@ -474,6 +474,31 @@ impl Presence {
     pub fn should_skip_layout(&self) -> bool {
         matches!(self, Presence::Hidden | Presence::Inactive)
     }
+
+    /// Returns true if this presence restricts behavior compared to visible.
+    /// Per XFA spec §2: invisible, hidden, and inactive all restrict phases of processing.
+    pub fn is_restricted(&self) -> bool {
+        !matches!(self, Presence::Visible)
+    }
+
+    /// Returns the more restrictive of two presence values.
+    /// Per XFA spec §2: inner containers inherit the outer container's restricted behavior.
+    /// Ordering (least to most restrictive): Visible < Invisible < Hidden < Inactive.
+    pub fn most_restrictive(self, other: Presence) -> Presence {
+        let rank = |p: &Presence| -> u8 {
+            match p {
+                Presence::Visible => 0,
+                Presence::Invisible => 1,
+                Presence::Hidden => 2,
+                Presence::Inactive => 3,
+            }
+        };
+        if rank(&self) >= rank(&other) {
+            self
+        } else {
+            other
+        }
+    }
 }
 
 /// Main XFA node structure containing layout information and node-specific data

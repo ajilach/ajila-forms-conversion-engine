@@ -3074,20 +3074,6 @@ impl Flattened {
                             current_y = outer_pos.y + effective_height;
                         }
                     }
-
-                    // For lr-tb layout, update max_height_in_row based on actual content height
-                    if matches!(parent_layout, Layout::LeftToRightTopToBottom | Layout::LeftToRight | Layout::RightToLeftTopToBottom | Layout::Row | Layout::RightToLeftRow)
-                        && node.h.is_none()
-                    {
-                        let actual_height = children_height
-                            + node.margin_top.unwrap_or(Decimal::ZERO)
-                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                        let min_h = node.min_h.unwrap_or(Decimal::ZERO);
-                        let effective_height = actual_height.max(min_h);
-                        if effective_height > max_height_in_row {
-                            max_height_in_row = effective_height;
-                        }
-                    }
                 }
                 XfaNodeKind::Field => {
                     let (outer_pos, content_pos, _layout, _) =
@@ -3342,20 +3328,6 @@ impl Flattened {
                             current_y = outer_pos.y + effective_height;
                         }
                     }
-
-                    // For lr-tb layout, update max_height_in_row based on actual content height
-                    if matches!(parent_layout, Layout::LeftToRightTopToBottom | Layout::LeftToRight | Layout::RightToLeftTopToBottom | Layout::Row | Layout::RightToLeftRow)
-                        && node.h.is_none()
-                    {
-                        let actual_height = children_height
-                            + node.margin_top.unwrap_or(Decimal::ZERO)
-                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                        let min_h = node.min_h.unwrap_or(Decimal::ZERO);
-                        let effective_height = actual_height.max(min_h);
-                        if effective_height > max_height_in_row {
-                            max_height_in_row = effective_height;
-                        }
-                    }
                 }
                 XfaNodeKind::Element { tag_name, .. } => {
                     // Handle generic elements that might be containers
@@ -3440,20 +3412,6 @@ impl Flattened {
 
                                 if effective_height > consumed_height {
                                     current_y = outer_pos.y + effective_height;
-                                }
-                            }
-
-                            // For lr-tb layout, update max_height_in_row based on actual content height
-                            if matches!(parent_layout, Layout::LeftToRightTopToBottom | Layout::LeftToRight | Layout::RightToLeftTopToBottom | Layout::Row | Layout::RightToLeftRow)
-                                && node.h.is_none()
-                            {
-                                let actual_height = children_height
-                                    + node.margin_top.unwrap_or(Decimal::ZERO)
-                                    + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                                let min_h = node.min_h.unwrap_or(Decimal::ZERO);
-                                let effective_height = actual_height.max(min_h);
-                                if effective_height > max_height_in_row {
-                                    max_height_in_row = effective_height;
                                 }
                             }
                         }
