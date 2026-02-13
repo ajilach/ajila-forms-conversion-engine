@@ -6419,6 +6419,58 @@
     }
 
     #[test]
+    fn test_aaoe_labels_computed_from_javascript() {
+        // The AAOE form has Draw elements (DES_FamilyName, DES_FirstName, etc.)
+        // whose text is computed at runtime by JavaScript initialize scripts.
+        // The scripts read the form language (IT) and resolve translated labels
+        // from the embedded translation objects (myIT.GV_FamilyName → "Cognome").
+        // This test verifies that the script executor correctly computes these
+        // labels and that they appear as non-empty text in the flattened output.
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Collect all text nodes by source_name for easy lookup
+        let mut text_by_source: HashMap<String, String> = HashMap::new();
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text { content, source_name: Some(sn), .. } = &node.kind {
+                if !content.is_empty() {
+                    text_by_source.insert(sn.clone(), content.clone());
+                }
+            }
+        }
+
+        // These labels must be computed from JavaScript and visible
+        let expected_labels = [
+            ("DES_FamilyName", "Cognome"),
+            ("DES_FirstName", "Nome/i"),
+            ("DES_Street", "Via"),
+            ("DES_StreetNumber", "N."),
+            ("DES_PostalCode", "CAP"),
+            ("DES_City", "Località"),
+            ("DES_Country", "Paese"),
+            ("DES_Nationality", "Nazionalità"),
+        ];
+
+        for (source_name, expected_text) in &expected_labels {
+            let actual = text_by_source.get(*source_name);
+            assert!(
+                actual.is_some(),
+                "Label {} should be visible with text {:?}, but has empty or missing content",
+                source_name, expected_text
+            );
+            assert_eq!(
+                actual.unwrap(), expected_text,
+                "Label {} should have text {:?}",
+                source_name, expected_text
+            );
+        }
+    }
+
+    #[test]
     fn test_aaoe_dropdown_has_legal_entity_and_individual_options() {
         // Test that the AAOE document has a dropdown field with
         // "Legal entity" and "Individual" as options, carried via Hint::Dropdown.

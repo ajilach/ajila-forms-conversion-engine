@@ -93,16 +93,90 @@ impl ScriptExecutor {
         // Build parent-child map for setting up `this.childField` access
         let parent_child_map = Self::build_parent_child_map_with_ids(xfa_nodes);
 
-        // Find all events recursively, starting from root
+        // Find all events recursively, starting from root.
+        // Mirror the path-stripping logic of build_and_register_xfa_som_hierarchy:
+        // the root subform name (e.g. "UBSForms_66816") is stripped and its
+        // immediate subform children (e.g. "Page") become top-level SOM paths.
+        // This ensures that event paths match the registered SOM hierarchy so
+        // that set_current_field_with_children can find the correct field objects.
         let mut subform_counters: HashMap<String, usize> = HashMap::new();
         let mut all_events = Vec::new();
-        Self::find_all_events_with_child_ids(
-            xfa_nodes,
-            &mut all_events,
-            &parent_child_map,
-            &mut subform_counters,
-            None, // Start with no parent path
-        );
+        if let Some(root) = Self::find_root_subform(xfa_nodes) {
+            // Collect events on the root subform itself (if any)
+            let root_name = root.name.clone().unwrap_or_default();
+            let root_events = parse_events_from_node(&root.children);
+            for event in root_events {
+                all_events.push((
+                    root_name.clone(),
+                    root_name.clone(),
+                    Vec::new(),
+                    event,
+                    root.get_presence(),
+                ));
+            }
+
+            // Traverse root's children, stripping the root subform prefix
+            for child in &root.children {
+                let child_name = child.name.clone().unwrap_or_default();
+                let is_subform = matches!(child.kind, XfaNodeKind::Subform)
+                    || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+
+                // XFA 3.3 §10 p.407 Rule 1: inactive containers suppress all
+                // events for themselves and their children.
+                if child.get_presence() == Presence::Inactive {
+                    continue;
+                }
+
+                if is_subform && !child_name.is_empty() {
+                    // Immediate subform children of the root become top-level
+                    // (e.g. "Page" instead of "UBSForms_66816.Page")
+                    let child_events = parse_events_from_node(&child.children);
+                    let key = {
+                        let count = subform_counters.entry(child_name.clone()).or_insert(0);
+                        let key = format!("{}[{}]", child_name, *count);
+                        *count += 1;
+                        key
+                    };
+                    let children = parent_child_map.get(&key).cloned().unwrap_or_default();
+                    for event in child_events {
+                        all_events.push((
+                            child_name.clone(),
+                            child_name.clone(),
+                            children.clone(),
+                            event,
+                            child.get_presence(),
+                        ));
+                    }
+                    Self::find_all_events_with_child_ids(
+                        &child.children,
+                        &mut all_events,
+                        &parent_child_map,
+                        &mut subform_counters,
+                        Some(&child_name),
+                    );
+                } else {
+                    // Non-subform children (fields, draws, exclGroups, pageSet, etc.)
+                    // keep the root subform name in their path (e.g. "Root.fieldA"),
+                    // matching build_and_register_xfa_som_hierarchy.
+                    Self::find_all_events_with_child_ids(
+                        std::slice::from_ref(child),
+                        &mut all_events,
+                        &parent_child_map,
+                        &mut subform_counters,
+                        Some(&root_name),
+                    );
+                }
+            }
+        } else {
+            // Fallback: no root subform found, traverse from top level
+            Self::find_all_events_with_child_ids(
+                xfa_nodes,
+                &mut all_events,
+                &parent_child_map,
+                &mut subform_counters,
+                None,
+            );
+        }
 
         // Warn about FormCalc scripts that cannot be executed.
         // Only JavaScript is supported; FormCalc scripts are silently skipped.
