@@ -429,28 +429,7 @@ impl Blueprint {
     pub fn merged_structured(&mut self) -> Result<DocumentEnvelope, Error> {
         let form_states = self.states()?;
         let context = self.context();
-
-        let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
-
-        for state in form_states.iter() {
-            let envelope = state.structured(context.clone());
-            structured_outputs.push((state.selections.clone(), envelope.content));
-        }
-
-        if structured_outputs.is_empty() {
-            return Ok(DocumentEnvelope {
-                context,
-                content: Vec::new(),
-            });
-        }
-
-        let merge_inputs: Vec<MergeInput> = structured_outputs
-            .into_iter()
-            .map(|(selections, nodes)| MergeInput::new(selections, nodes))
-            .collect();
-
-        let merger = RecursiveMerger::new(merge_inputs);
-        let merged = merger.merge();
+        let merged = merge_form_states(&form_states, context.clone());
 
         Ok(DocumentEnvelope {
             context,
@@ -561,6 +540,35 @@ impl<'a> ExactSizeIterator for FormStatesIter<'a> {
 }
 
 // ============================================================================
+// Shared merge helper
+// ============================================================================
+
+/// Collect structured output from every form state and merge into a single tree.
+///
+/// This is the shared implementation behind [`Blueprint::merged_structured()`]
+/// and [`run_exhaustive_to_merged()`].
+fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<StructuredNode> {
+    let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
+
+    for state in form_states.iter() {
+        let envelope = state.structured(context.clone());
+        structured_outputs.push((state.selections.clone(), envelope.content));
+    }
+
+    if structured_outputs.is_empty() {
+        return Vec::new();
+    }
+
+    let merge_inputs: Vec<MergeInput> = structured_outputs
+        .into_iter()
+        .map(|(selections, nodes)| MergeInput::new(selections, nodes))
+        .collect();
+
+    let merger = RecursiveMerger::new(merge_inputs);
+    merger.merge()
+}
+
+// ============================================================================
 // Convenience free functions
 // ============================================================================
 
@@ -585,26 +593,8 @@ pub fn to_html(content: &[StructuredNode], config: &HtmlConfig) -> String {
 pub fn run_exhaustive_to_merged(pdf_path: &str) -> Result<Vec<StructuredNode>, Error> {
     let mut bp = Blueprint::from_pdf(pdf_path)?;
     let form_states = bp.states()?;
-
-    let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
-
-    for state in form_states.iter() {
-        let context = Context::new("en".to_string());
-        let envelope = state.structured(context);
-        structured_outputs.push((state.selections.clone(), envelope.content));
-    }
-
-    if structured_outputs.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let merge_inputs: Vec<MergeInput> = structured_outputs
-        .into_iter()
-        .map(|(selections, nodes)| MergeInput::new(selections, nodes))
-        .collect();
-
-    let merger = RecursiveMerger::new(merge_inputs);
-    Ok(merger.merge())
+    let context = Context::new("en".to_string());
+    Ok(merge_form_states(&form_states, context))
 }
 
 /// Run exhaustive exploration on a PDF file and return a `DocumentEnvelope`.
