@@ -64,8 +64,8 @@ pub mod state;
 
 // Events
 pub use events::{
-    EventActivity, EventRef, RunAt, ScriptContentType, XfaScript, parse_events_from_node,
-    parse_variables_from_node,
+    EventActivity, EventRef, ListenScope, RunAt, ScriptContentType, XfaScript,
+    parse_events_from_node, parse_variables_from_node,
 };
 
 // SOM

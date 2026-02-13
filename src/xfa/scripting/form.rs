@@ -6,7 +6,8 @@
 use super::dependency::DependencyTracker;
 use super::engine::XfaScriptEngine;
 use super::events::{
-    EventActivity, EventRef, RunAt, ScriptContentType, XfaScript, parse_events_from_node,
+    EventActivity, EventRef, ListenScope, RunAt, ScriptContentType, XfaScript,
+    parse_events_from_node,
 };
 use super::registry::{RegisteredScript, ScriptRegistry, ScriptType};
 use super::som::{SomPath, SomResolver};
@@ -630,6 +631,41 @@ impl XfaForm {
             if pre_values.get(field_name) != Some(new_value) {
                 changed_fields.push(field_som_path);
             }
+        }
+
+        // Event propagation: walk up to ancestor containers, firing any
+        // handlers with listen="refAndDescendents" that match this activity.
+        // Per XFA 3.3 §10 p.387: "events can now propagate upward to
+        // enclosing containers."
+        let mut ancestor = resolved_path.parent();
+        while let Some(ancestor_path) = ancestor {
+            let propagating_scripts =
+                self.find_propagating_scripts(&ancestor_path, &activity);
+            if !propagating_scripts.is_empty() {
+                let ancestor_name = ancestor_path.name().to_string();
+                let ancestor_value = self
+                    .script_engine
+                    .get_field_value(&ancestor_path)
+                    .unwrap_or_default();
+                self.script_engine.set_current_field(
+                    &ancestor_path,
+                    &ancestor_name,
+                    &ancestor_value,
+                );
+                // Keep $event.target pointing at the ORIGINAL target
+                self.script_engine
+                    .update_event_context(&activity, &resolved_path);
+
+                for script in &propagating_scripts {
+                    let result = self.script_engine.execute_script(script);
+                    if let Ok(Some(value)) = result {
+                        changed_fields.push(ancestor_path.clone());
+                        self.script_engine
+                            .update_field_value(&ancestor_path, &value);
+                    }
+                }
+            }
+            ancestor = ancestor_path.parent();
         }
 
         let values_changed = !changed_fields.is_empty();
@@ -1256,6 +1292,28 @@ impl XfaForm {
         }
     }
 
+    /// Find scripts on an ancestor node that have `listen="refAndDescendents"`
+    /// matching the given activity.
+    /// Per XFA 3.3 §10 p.387: these scripts fire when a descendant triggers
+    /// the same activity.
+    fn find_propagating_scripts(
+        &self,
+        ancestor_path: &SomPath,
+        activity: &EventActivity,
+    ) -> Vec<XfaScript> {
+        if let Some(node) = Self::find_xfa_node_by_path(&self.nodes, ancestor_path) {
+            parse_events_from_node(&node.children)
+                .into_iter()
+                .filter(|script| {
+                    &script.activity == activity
+                        && script.listen == ListenScope::RefAndDescendents
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
     fn extract_and_register_translations(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
         fn collect_variable_items(
             nodes: &[XfaNode],
@@ -1325,6 +1383,7 @@ impl XfaForm {
                 event_ref: EventRef::Form,
                 name: Some(name.clone()),
                 run_at: RunAt::Client,
+                listen: ListenScope::default(),
             });
         }
     }

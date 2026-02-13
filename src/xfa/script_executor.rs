@@ -20,8 +20,8 @@
 //! ```
 
 use crate::xfa::scripting::{
-    EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScript, XfaScriptEngine,
-    parse_events_from_node, wrap_script_object,
+    EventActivity, EventRef, ListenScope, Presence, ScriptContentType, SomPath, XfaScript,
+    XfaScriptEngine, parse_events_from_node, wrap_script_object,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
@@ -116,6 +116,19 @@ impl ScriptExecutor {
                  (only JavaScript is supported). Results may be incomplete.",
                 formcalc_count
             );
+        }
+
+        // Register all event scripts in the _xfa_event_scripts_ registry
+        // so that execEvent() can find them at runtime.
+        // Per XFA 3.3 §10 pp.407-409 Rule 3.
+        for (_, full_path, _, script, _) in &all_events {
+            if script.content_type == ScriptContentType::JavaScript {
+                engine.register_event_script(
+                    full_path,
+                    script.activity.activity_name(),
+                    &script.source,
+                );
+            }
         }
 
         // Phase 0: Execute calculate scripts with convergence loop

@@ -218,6 +218,17 @@ impl XfaScriptEngine {
                 Attribute::all(),
             )
             .ok();
+
+        // Create _xfa_event_scripts_ registry for execEvent():
+        // Maps "{som_path}:{activity}" → script source string
+        let event_scripts = ObjectInitializer::new(&mut self.context).build();
+        self.context
+            .register_global_property(
+                js_string!("_xfa_event_scripts_"),
+                event_scripts,
+                Attribute::all(),
+            )
+            .ok();
     }
 
     /// Set up JavaScript helpers for SOM resolution
@@ -1280,6 +1291,9 @@ impl XfaScriptEngine {
             )
             .ok();
 
+        // Add execEvent() method (XFA 3.3 §10 pp.407-409)
+        self.add_exec_event_method(&field);
+
         field
     }
 
@@ -1434,7 +1448,17 @@ impl XfaScriptEngine {
     pub fn resolve_field_by_name_with_context(&self, field_name: &str) -> Option<SomPath> {
         // If it's already a full path, just return it
         if field_name.contains('.') {
-            return Some(SomPath::new(field_name));
+            let som = SomPath::new(field_name);
+            if self.field_objects.contains_key(&som) {
+                return Some(som);
+            }
+            // Try as a multi-part unqualified reference via scope walk
+            if let Some(ctx) = &self.current_context_path {
+                if let Some(resolved) = self.som_resolver.resolve_unqualified(field_name, ctx) {
+                    return Some(resolved);
+                }
+            }
+            return Some(som);
         }
 
         // Get all paths that have this field name
@@ -1449,7 +1473,17 @@ impl XfaScriptEngine {
             return Some(paths[0].clone());
         }
 
-        // Multiple paths exist - use context-aware resolution
+        // Multiple paths exist - use XFA 3.3 §3 pp.110-114 scope walk
+        if let Some(ctx) = &self.current_context_path {
+            if let Some(resolved) = self.som_resolver.resolve_unqualified(field_name, ctx) {
+                // Verify the resolved path has a registered field object
+                if self.field_objects.contains_key(&resolved) {
+                    return Some(resolved);
+                }
+            }
+        }
+
+        // Fallback: use heuristic prefix matching
         let context_path = self
             .current_context_path
             .as_ref()
@@ -1550,6 +1584,43 @@ impl XfaScriptEngine {
         self.context
             .register_global_property(js_string!("_xfa_this_"), this_obj, Attribute::all())
             .ok();
+
+        // Rebind ambiguous global names to the scope-correct field.
+        // Per XFA 3.3 §3 pp.110-114: when a script uses a naked name like
+        // "Units", it should resolve to the field closest in scope to the
+        // current context, not whichever was registered last.
+        self.rebind_globals_for_context(&som_path);
+    }
+
+    /// For each field name that has multiple registrations, use the scope walk
+    /// to find the contextually correct one and rebind the JS global property.
+    fn rebind_globals_for_context(&mut self, context_path: &SomPath) {
+        // Collect ambiguous names that need rebinding
+        let ambiguous_names: Vec<String> = self
+            .field_objects_by_name
+            .iter()
+            .filter(|(_, paths)| paths.len() > 1)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        for field_name in &ambiguous_names {
+            // Use the scope walk to find the best match
+            if let Some(resolved) = self
+                .som_resolver
+                .resolve_unqualified(field_name, context_path)
+            {
+                if let Some(obj) = self.field_objects.get(&resolved) {
+                    let obj_clone = obj.clone();
+                    self.context
+                        .register_global_property(
+                            JsString::from(field_name.as_str()),
+                            obj_clone,
+                            Attribute::all(),
+                        )
+                        .ok();
+                }
+            }
+        }
     }
 
     /// Update `$event` / `xfa.event` properties before executing a script.
@@ -2138,6 +2209,9 @@ impl XfaScriptEngine {
                 });"#,
             ));
 
+            // Add execEvent() method (XFA 3.3 §10 pp.407-409)
+            self.add_exec_event_method(&subform_obj);
+
             subform_obj
         };
 
@@ -2255,6 +2329,82 @@ impl XfaScriptEngine {
                 }
             }
         }
+    }
+
+    /// Register an event script for a node so `execEvent()` can find it at runtime.
+    ///
+    /// Per XFA 3.3 §10 pp.407-409: `execEvent()` allows scripts to
+    /// programmatically trigger events on other containers. The script sources
+    /// are stored in `_xfa_event_scripts_["{path}:{activity}"]`.
+    pub fn register_event_script(&mut self, som_path: &str, activity: &str, source: &str) {
+        let key = format!("{}:{}", som_path, activity);
+        if let Ok(registry) = self.context.global_object().get(
+            PropertyKey::from(js_string!("_xfa_event_scripts_")),
+            &mut self.context,
+        ) && let Some(registry_obj) = registry.as_object()
+        {
+            registry_obj
+                .set(
+                    PropertyKey::from(JsString::from(key.as_str())),
+                    JsValue::from(js_string!(source)),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+        }
+    }
+
+    /// Add the `execEvent(activityName)` method to a JS object (field or subform).
+    ///
+    /// Per XFA 3.3 §10 pp.407-409 Rule 3: the handler executes right away
+    /// (not queued). If the container has `presence="inactive"`, the call
+    /// fails silently.
+    fn add_exec_event_method(&mut self, obj: &JsObject) {
+        // execEvent implementation as a JS function that uses the global
+        // _xfa_event_scripts_ registry and _xfa_fields_by_path_ for `this` binding.
+        let exec_event_src = r#"
+            Object.defineProperty(_xfa_tmp_, 'execEvent', {
+                value: function(activityName) {
+                    // Per XFA 3.3 §10 Rule 3: if presence is inactive, fail silently
+                    if (this.presence === 'inactive') return;
+
+                    var somPath = this.somExpression || '';
+                    var key = somPath + ':' + activityName;
+                    var scriptSrc = _xfa_event_scripts_[key];
+                    if (!scriptSrc) return;
+
+                    // Guard against infinite re-entrancy
+                    if (typeof _xfa_exec_depth_ === 'undefined') _xfa_exec_depth_ = 0;
+                    _xfa_exec_depth_++;
+                    if (_xfa_exec_depth_ > 50) {
+                        _xfa_exec_depth_--;
+                        return;
+                    }
+
+                    try {
+                        // Execute with `this` bound to the target object
+                        var fn = new Function(scriptSrc);
+                        fn.call(this);
+                    } finally {
+                        _xfa_exec_depth_--;
+                    }
+                },
+                writable: false,
+                enumerable: false,
+                configurable: false
+            });
+        "#;
+
+        self.context
+            .global_object()
+            .set(
+                PropertyKey::from(js_string!("_xfa_tmp_")),
+                JsValue::from(obj.clone()),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        let _ = self.context.eval(Source::from_bytes(exec_event_src));
     }
 
     /// Get the current presence value set on `this` by a script.

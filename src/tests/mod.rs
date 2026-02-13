@@ -3411,6 +3411,7 @@
                 event_ref: crate::xfa::scripting::EventRef::Form,
                 name: Some("test".to_string()),
                 run_at: crate::xfa::scripting::RunAt::Client,
+                listen: crate::xfa::scripting::ListenScope::default(),
             });
             println!("Script result: {:?}", result);
 

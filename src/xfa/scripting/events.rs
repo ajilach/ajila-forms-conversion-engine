@@ -66,6 +66,28 @@ impl FromStr for EventActivity {
     }
 }
 
+impl EventActivity {
+    /// Return the canonical string name of this activity, matching the XFA
+    /// attribute values used in `<event activity="...">`.
+    pub fn activity_name(&self) -> &str {
+        match self {
+            EventActivity::Ready => "ready",
+            EventActivity::Initialize => "initialize",
+            EventActivity::Enter => "enter",
+            EventActivity::Exit => "exit",
+            EventActivity::Change => "change",
+            EventActivity::Click => "click",
+            EventActivity::Calculate => "calculate",
+            EventActivity::Validate => "validate",
+            EventActivity::PreSubmit => "preSubmit",
+            EventActivity::PostSubmit => "postSubmit",
+            EventActivity::DocReady => "docReady",
+            EventActivity::IndexChange => "indexChange",
+            EventActivity::Other(s) => s.as_str(),
+        }
+    }
+}
+
 /// XFA Event reference target
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventRef {
@@ -86,6 +108,28 @@ impl FromStr for EventRef {
             "$data" | "xfa.data" => EventRef::Data,
             "$" => EventRef::Current,
             _ => EventRef::Named(s.to_string()),
+        })
+    }
+}
+
+/// Controls whether events propagate from descendant containers.
+/// Per XFA 3.3 §10 p.387 and §17 p.707.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ListenScope {
+    /// Event only fires on the target container (default, backward compat)
+    #[default]
+    RefOnly,
+    /// Event also fires when a descendant container triggers the same activity
+    RefAndDescendents,
+}
+
+impl FromStr for ListenScope {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "refAndDescendents" => ListenScope::RefAndDescendents,
+            _ => ListenScope::RefOnly,
         })
     }
 }
@@ -120,6 +164,8 @@ pub struct XfaScript {
     pub event_ref: EventRef,
     pub name: Option<String>,
     pub run_at: RunAt,
+    /// Per XFA 3.3 §10 p.387: controls upward event propagation.
+    pub listen: ListenScope,
 }
 
 // =============================================================================
@@ -158,6 +204,12 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
 
     let name = event_node.attributes.get("name").cloned();
 
+    let listen = event_node
+        .attributes
+        .get("listen")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_default();
+
     for child in &event_node.children {
         if let XfaNodeKind::Element {
             tag_name,
@@ -186,6 +238,7 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
                         event_ref,
                         name,
                         run_at,
+                        listen,
                     });
                 }
             }

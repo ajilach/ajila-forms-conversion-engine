@@ -176,7 +176,10 @@ impl SomResolver {
         resolver
     }
 
-    /// Register a node in the SOM tree
+    /// Register a node in the SOM tree.
+    /// Also ensures all ancestor containers in the path are registered
+    /// (e.g., for "A.B.C", both "A" and "A.B" are created as synthetic
+    /// containers if they don't already exist).
     pub fn register_node(
         &mut self,
         path: &SomPath,
@@ -184,6 +187,11 @@ impl SomResolver {
         class_name: &str,
         parent_path: Option<&SomPath>,
     ) {
+        // Ensure all ancestors exist in the tree
+        if let Some(parent) = parent_path {
+            self.ensure_ancestors(parent);
+        }
+
         let index = self.nodes_by_name.get(name).map(|v| v.len()).unwrap_or(0);
 
         let info = NodeInfo {
@@ -203,6 +211,48 @@ impl SomResolver {
         if let Some(parent) = parent_path {
             self.children
                 .entry(parent.clone())
+                .or_default()
+                .push(path.clone());
+        }
+    }
+
+    /// Ensure that all ancestor containers in the path hierarchy exist
+    /// in the SOM tree. Creates synthetic "subform" nodes for any missing
+    /// intermediate segments.
+    fn ensure_ancestors(&mut self, path: &SomPath) {
+        if self.nodes.contains_key(path) {
+            return; // Already registered
+        }
+
+        let parent = path.parent();
+        if let Some(ref parent_path) = parent {
+            self.ensure_ancestors(parent_path);
+        }
+
+        let node_name = path.name().to_string();
+        let index = self
+            .nodes_by_name
+            .get(&node_name)
+            .map(|v| v.len())
+            .unwrap_or(0);
+
+        let info = NodeInfo {
+            name: node_name.clone(),
+            path: path.clone(),
+            parent_path: parent.clone(),
+            index,
+            class_name: "subform".to_string(),
+        };
+
+        self.nodes.insert(path.clone(), info);
+        self.nodes_by_name
+            .entry(node_name)
+            .or_default()
+            .push(path.clone());
+
+        if let Some(ref parent_path) = parent {
+            self.children
+                .entry(parent_path.clone())
                 .or_default()
                 .push(path.clone());
         }
@@ -364,6 +414,103 @@ impl SomResolver {
     /// Get all paths for a given node name
     pub fn get_paths_by_name(&self, name: &str) -> Option<&Vec<SomPath>> {
         self.nodes_by_name.get(name)
+    }
+
+    /// Resolve an unqualified reference using the XFA 3.3 §3 pp.110-114 scope walk.
+    ///
+    /// The search order is:
+    /// 1. Children of the context container
+    /// 2. The context container itself and its siblings
+    /// 3. Parent of the container and siblings of the parent (uncles)
+    /// 4. Grandparent and siblings of the grandparent (great-uncles)
+    /// 5. Repeat recursively up to the root
+    ///
+    /// For multi-part names (e.g., "Sub.Field"), the first part is resolved via
+    /// the scope walk, then the remainder is resolved as children relative to it.
+    pub fn resolve_unqualified(
+        &self,
+        name: &str,
+        context_path: &SomPath,
+    ) -> Option<SomPath> {
+        // Handle multi-part unqualified expressions (e.g., "Sub.Field")
+        if let Some(dot_pos) = name.find('.') {
+            let first_part = &name[..dot_pos];
+            let remainder = &name[dot_pos + 1..];
+
+            // Resolve the first part via scope walk
+            if let Some(first_resolved) = self.resolve_unqualified(first_part, context_path) {
+                // Then resolve remainder as a child of that node
+                let full = first_resolved.child(remainder);
+                if self.nodes.contains_key(&full) {
+                    return Some(full);
+                }
+                // Try recursive resolution from that node
+                return self.resolve_unqualified(remainder, &first_resolved);
+            }
+            return None;
+        }
+
+        // Single-part name resolution with scope walk
+        // Get all registered paths for this name
+        let all_paths = match self.nodes_by_name.get(name) {
+            Some(paths) if !paths.is_empty() => paths,
+            _ => return None,
+        };
+
+        // If only one instance exists, return it immediately
+        if all_paths.len() == 1 {
+            return Some(all_paths[0].clone());
+        }
+
+        // Step 1: Children of the context container
+        if let Some(children) = self.children.get(context_path) {
+            for child_path in children {
+                if child_path.name() == name {
+                    return Some(child_path.clone());
+                }
+            }
+        }
+
+        // Step 2-5: Walk up from context, checking siblings at each level
+        let mut current = context_path.clone();
+        loop {
+            if let Some(parent) = current.parent() {
+                // Check siblings (children of the parent) for the name
+                if let Some(siblings) = self.children.get(&parent) {
+                    for sibling_path in siblings {
+                        if sibling_path.name() == name {
+                            return Some(sibling_path.clone());
+                        }
+                        // Also check children of siblings (nephews)
+                        if let Some(nephew_children) = self.children.get(sibling_path) {
+                            for nephew in nephew_children {
+                                if nephew.name() == name {
+                                    return Some(nephew.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                // Check the parent itself
+                if let Some(info) = self.nodes.get(&parent) {
+                    if info.name == name {
+                        return Some(parent.clone());
+                    }
+                }
+                current = parent;
+            } else {
+                // Reached root — check root-level nodes
+                for path in all_paths {
+                    if !path.as_str().contains('.') {
+                        return Some(path.clone());
+                    }
+                }
+                break;
+            }
+        }
+
+        // Final fallback: return the first registered path
+        Some(all_paths[0].clone())
     }
 }
 

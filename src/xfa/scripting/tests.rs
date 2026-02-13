@@ -26,6 +26,7 @@ fn test_script_engine_basic() {
         event_ref: EventRef::Form,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     let result = engine.execute_script(&script);
@@ -51,6 +52,7 @@ fn test_script_with_this_reference() {
         event_ref: EventRef::Form,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     let result = engine.execute_script(&script);
@@ -255,6 +257,7 @@ fn test_language_switch_german() {
         event_ref: EventRef::Form,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     let result = engine.execute_script(&script);
@@ -298,6 +301,7 @@ fn test_language_switch_english() {
         event_ref: EventRef::Form,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     let result = engine.execute_script(&script);
@@ -412,6 +416,7 @@ fn test_script_registry_registration() {
         event_ref: EventRef::Current,
         name: Some("testScript".to_string()),
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     registry.register(RegisteredScript {
@@ -671,6 +676,7 @@ fn test_exclgroup_script_sets_child_rawvalue() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script);
 
@@ -831,6 +837,7 @@ fn test_exclgroup_parent_to_child_via_script() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script);
 
@@ -911,6 +918,7 @@ fn test_script_clearing_field_via_empty_rawvalue_is_detected() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script);
 
@@ -996,6 +1004,7 @@ fn test_resolve_nodes_all_instances() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1023,6 +1032,7 @@ fn test_resolve_nodes_specific_index() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1052,6 +1062,7 @@ fn test_resolve_nodes_nonexistent() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1082,6 +1093,7 @@ fn test_resolve_nodes_descendant_accessor() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1113,6 +1125,7 @@ fn test_resolve_nodes_by_simple_name() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1229,6 +1242,7 @@ fn test_event_name_property() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1253,6 +1267,7 @@ fn test_event_target_property() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1281,6 +1296,7 @@ fn test_event_cancel_action_writable() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1305,6 +1321,7 @@ fn test_event_modifier_defaults_false() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1329,6 +1346,7 @@ fn test_event_change_property_for_change_event() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1378,6 +1396,7 @@ fn test_event_all_properties_accessible() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1410,6 +1429,7 @@ fn test_calc_convergence_forward_order() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script_a);
     assert!(result.is_ok());
@@ -1424,6 +1444,7 @@ fn test_calc_convergence_forward_order() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script_b);
     assert!(result.is_ok());
@@ -1453,6 +1474,7 @@ fn test_calc_convergence_reverse_order() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script_b);
 
@@ -1465,6 +1487,7 @@ fn test_calc_convergence_reverse_order() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script_a);
 
@@ -1495,6 +1518,7 @@ fn test_calc_convergence_chain_three_fields() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let script_b = XfaScript {
         source: r#"this.rawValue = String(Number(A.rawValue) + 1);"#.to_string(),
@@ -1503,6 +1527,7 @@ fn test_calc_convergence_chain_three_fields() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let script_a = XfaScript {
         source: r#"this.rawValue = "5";"#.to_string(),
@@ -1511,6 +1536,7 @@ fn test_calc_convergence_chain_three_fields() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
 
     // Simulate 3 passes:
@@ -1549,6 +1575,7 @@ fn test_calc_already_convergent_single_pass() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script_x);
 
@@ -1560,6 +1587,7 @@ fn test_calc_already_convergent_single_pass() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let _ = engine.execute_script(&script_y);
 
@@ -1601,6 +1629,7 @@ fn test_hidden_field_calculates_value() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1625,6 +1654,7 @@ fn test_hidden_field_initializes() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1652,6 +1682,7 @@ fn test_inactive_field_presence_in_engine() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     // Engine itself doesn't enforce presence — it always executes
@@ -1688,6 +1719,7 @@ fn test_border_property_accessible() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1717,6 +1749,7 @@ fn test_border_color_settable() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1751,6 +1784,7 @@ fn test_font_property_accessible() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1782,6 +1816,7 @@ fn test_caption_and_assist_accessible() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1813,6 +1848,7 @@ fn test_property_stubs_dont_affect_raw_value() {
         event_ref: EventRef::Current,
         name: None,
         run_at: RunAt::Client,
+        listen: ListenScope::default(),
     };
     let result = engine.execute_script(&script);
     assert!(result.is_ok());
@@ -1825,4 +1861,346 @@ fn test_property_stubs_dont_affect_raw_value() {
     // Verify rawValue is still "original"
     let values = engine.get_all_som_field_values();
     assert_eq!(values.get("Field1"), Some(&"original".to_string()));
+}
+
+// =============================================================================
+// Gap 8: SOM Resolution Heuristic Tests
+// =============================================================================
+
+#[test]
+fn test_unqualified_resolves_child_first() {
+    // Per XFA 3.3 §3 pp.110-114 Step 1: children of the context container
+    // are checked first.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Section1.Field1", "Field1", "value1");
+    engine.register_field("Section2.Field1", "Field1", "value2");
+
+    // Context is Section1 — should resolve Field1 to Section1.Field1
+    engine.set_current_field("Section1.Other", "Other", "");
+    let resolved = engine.resolve_field_by_name_with_context("Field1");
+    assert!(resolved.is_some());
+    assert_eq!(
+        resolved.unwrap().to_string(),
+        "Section1.Field1",
+        "Should resolve to child of current context container"
+    );
+
+    // Switch context to Section2
+    engine.set_current_field("Section2.Other", "Other", "");
+    let resolved = engine.resolve_field_by_name_with_context("Field1");
+    assert!(resolved.is_some());
+    assert_eq!(
+        resolved.unwrap().to_string(),
+        "Section2.Field1",
+        "Should resolve to child of current context container (Section2)"
+    );
+}
+
+#[test]
+fn test_unqualified_resolves_sibling() {
+    // Per XFA 3.3 §3 pp.110-114 Step 2: siblings (children of parent)
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Sub.FieldX", "FieldX", "x_val");
+    engine.register_field("Sub.FieldY", "FieldY", "y_val");
+    engine.register_field("Other.FieldY", "FieldY", "other_y");
+
+    // Context is Sub.FieldX — FieldY should resolve to Sub.FieldY (sibling)
+    engine.set_current_field("Sub.FieldX", "FieldX", "x_val");
+    let resolved = engine.resolve_field_by_name_with_context("FieldY");
+    assert!(resolved.is_some());
+    assert_eq!(
+        resolved.unwrap().to_string(),
+        "Sub.FieldY",
+        "Should resolve to sibling within same parent"
+    );
+}
+
+#[test]
+fn test_unqualified_resolves_ancestor_sibling() {
+    // Per XFA 3.3 §3 pp.110-114 Steps 3-5: walk up to
+    // parent/grandparent siblings (uncle search).
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Root.Sub.Inner.FieldA", "FieldA", "inner_a");
+    engine.register_field("Root.Sub.OuterField", "OuterField", "outer");
+    engine.register_field("Root.TopField", "TopField", "top");
+
+    // Context is deep inside Root.Sub.Inner.FieldA
+    engine.set_current_field("Root.Sub.Inner.FieldA", "FieldA", "inner_a");
+
+    // OuterField is sibling of Inner (uncle) — should find it via walk-up
+    let resolved = engine.resolve_field_by_name_with_context("OuterField");
+    assert!(resolved.is_some());
+    assert_eq!(
+        resolved.unwrap().to_string(),
+        "Root.Sub.OuterField",
+        "Should resolve uncle via ancestor walk-up"
+    );
+
+    // TopField is at grandparent level — should also find it
+    let resolved = engine.resolve_field_by_name_with_context("TopField");
+    assert!(resolved.is_some());
+    assert_eq!(
+        resolved.unwrap().to_string(),
+        "Root.TopField",
+        "Should resolve grand-uncle via ancestor walk-up"
+    );
+}
+
+#[test]
+fn test_unqualified_fails_when_not_found() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "");
+
+    engine.set_current_field("Form.Field1", "Field1", "");
+    let resolved = engine.resolve_field_by_name_with_context("Nonexistent");
+    assert!(
+        resolved.is_none(),
+        "Should return None for nonexistent field name"
+    );
+}
+
+#[test]
+fn test_relocatable_script_two_detail_subforms() {
+    // Per XFA 3.3 §3 pp.111-112 Example 3.33: same script in two
+    // instances of a Detail subform resolves to local siblings.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Receipt.Detail1.Units", "Units", "5");
+    engine.register_field("Receipt.Detail1.UnitPrice", "UnitPrice", "10");
+    engine.register_field("Receipt.Detail1.Total", "Total", "");
+    engine.register_field("Receipt.Detail2.Units", "Units", "3");
+    engine.register_field("Receipt.Detail2.UnitPrice", "UnitPrice", "20");
+    engine.register_field("Receipt.Detail2.Total", "Total", "");
+
+    // Script running on Detail1.Total should see Detail1.Units
+    engine.set_current_field("Receipt.Detail1.Total", "Total", "");
+    let script = XfaScript {
+        source: r#"this.rawValue = String(Number(Units.rawValue) * Number(UnitPrice.rawValue));"#
+            .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Calculate,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("50".to_string()),
+        "Detail1.Total should use Detail1.Units (5) * Detail1.UnitPrice (10) = 50"
+    );
+
+    // Script running on Detail2.Total should see Detail2.Units
+    engine.set_current_field("Receipt.Detail2.Total", "Total", "");
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("60".to_string()),
+        "Detail2.Total should use Detail2.Units (3) * Detail2.UnitPrice (20) = 60"
+    );
+}
+
+// =============================================================================
+// Gap 9: Event Propagation Tests
+// =============================================================================
+
+#[test]
+fn test_listen_attribute_parsed() {
+    // Verify that the listen attribute is correctly parsed.
+    assert_eq!(
+        "refAndDescendents".parse::<ListenScope>().unwrap(),
+        ListenScope::RefAndDescendents
+    );
+    assert_eq!(
+        "refOnly".parse::<ListenScope>().unwrap(),
+        ListenScope::RefOnly
+    );
+    // Default for unrecognized values
+    assert_eq!(
+        "unknown".parse::<ListenScope>().unwrap(),
+        ListenScope::RefOnly
+    );
+}
+
+#[test]
+fn test_event_activity_name() {
+    assert_eq!(EventActivity::Click.activity_name(), "click");
+    assert_eq!(EventActivity::Calculate.activity_name(), "calculate");
+    assert_eq!(EventActivity::Initialize.activity_name(), "initialize");
+    assert_eq!(EventActivity::Ready.activity_name(), "ready");
+    assert_eq!(EventActivity::Validate.activity_name(), "validate");
+    assert_eq!(EventActivity::Enter.activity_name(), "enter");
+    assert_eq!(EventActivity::Exit.activity_name(), "exit");
+    assert_eq!(EventActivity::Change.activity_name(), "change");
+    assert_eq!(EventActivity::DocReady.activity_name(), "docReady");
+    assert_eq!(
+        EventActivity::Other("custom".to_string()).activity_name(),
+        "custom"
+    );
+}
+
+// =============================================================================
+// Gap 10: execEvent Tests
+// =============================================================================
+
+#[test]
+fn test_exec_event_basic() {
+    // Field A's script calls B.execEvent("click"). B's click handler
+    // sets B.rawValue = "clicked".
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "");
+    engine.register_field("Form.B", "B", "");
+
+    // Register B's click event script
+    engine.register_event_script("Form.B", "click", r#"this.rawValue = "clicked";"#);
+
+    // A's script calls B.execEvent("click")
+    engine.set_current_field("Form.A", "A", "");
+    let script = XfaScript {
+        source: r#"B.execEvent("click");"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let _ = engine.execute_script(&script);
+
+    // Verify B's rawValue was set by the click handler
+    let values = engine.get_all_som_field_values();
+    assert_eq!(
+        values.get("B"),
+        Some(&"clicked".to_string()),
+        "B's click handler should have run via execEvent"
+    );
+}
+
+#[test]
+fn test_exec_event_inactive_fails_silently() {
+    // Per XFA 3.3 §10 Rule 3: execEvent on inactive container fails silently.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.B", "B", "", "inactive");
+
+    engine.register_event_script("Form.B", "click", r#"this.rawValue = "clicked";"#);
+
+    engine.set_current_field("Form.A", "A", "");
+    let script = XfaScript {
+        source: r#"B.execEvent("click");"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok(), "execEvent on inactive should not error");
+
+    // B's rawValue should remain empty — handler was NOT executed
+    let values = engine.get_all_som_field_values();
+    let b_val = values.get("B").cloned().unwrap_or_default();
+    assert!(
+        b_val.is_empty() || b_val == "",
+        "Inactive field's handler should not have run, got: {}",
+        b_val
+    );
+}
+
+#[test]
+fn test_exec_event_returns_to_caller() {
+    // After execEvent, the calling script should continue running.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "");
+    engine.register_field("Form.B", "B", "");
+
+    engine.register_event_script("Form.B", "enter", r#"this.rawValue = "entered";"#);
+
+    engine.set_current_field("Form.A", "A", "");
+    let script = XfaScript {
+        source: r#"
+            B.execEvent("enter");
+            this.rawValue = "continued";
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap(),
+        Some("continued".to_string()),
+        "Calling script should continue after execEvent"
+    );
+
+    // B should also have been updated
+    let values = engine.get_all_som_field_values();
+    assert_eq!(
+        values.get("B"),
+        Some(&"entered".to_string()),
+        "B's enter handler should have run"
+    );
+}
+
+#[test]
+fn test_exec_event_nonexistent_activity() {
+    // execEvent with a nonexistent activity should do nothing, no error.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.A", "A", "before");
+
+    engine.set_current_field("Form.A", "A", "before");
+    let script = XfaScript {
+        source: r#"A.execEvent("nonExistentEvent");"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(
+        result.is_ok(),
+        "execEvent with nonexistent activity should not error"
+    );
+}
+
+#[test]
+fn test_exec_event_calculate() {
+    // execEvent("calculate") should trigger the field's calculate script.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Total", "Total", "");
+    engine.register_field("Form.Price", "Price", "100");
+
+    engine.register_event_script(
+        "Form.Total",
+        "calculate",
+        r#"this.rawValue = String(Number(Price.rawValue) * 2);"#,
+    );
+
+    engine.set_current_field("Form.Price", "Price", "100");
+    let script = XfaScript {
+        source: r#"Total.execEvent("calculate");"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Initialize,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let _ = engine.execute_script(&script);
+
+    let values = engine.get_all_som_field_values();
+    assert_eq!(
+        values.get("Total"),
+        Some(&"200".to_string()),
+        "Total's calculate handler should run via execEvent"
+    );
 }
