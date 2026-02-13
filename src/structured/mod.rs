@@ -429,6 +429,16 @@ impl HeadingLevel {
 // Structural equality compares nodes by their type, field names, and text content,
 // ignoring field values. This is used for merging multiple form states.
 
+/// Controls what is compared when checking structural equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareMode {
+    /// Full structural comparison including text content.
+    Full,
+    /// Ignore text content (for translation merging where structure matches
+    /// but text differs by language).
+    IgnoreText,
+}
+
 impl StructuredNode {
     /// Check if two nodes are structurally equal.
     ///
@@ -443,47 +453,7 @@ impl StructuredNode {
     /// - Field values (InputValue)
     /// - Image content
     pub fn structural_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
-                a.level.as_u8() == b.level.as_u8() && a.content.structural_eq(&b.content)
-            }
-            (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
-                a.content.structural_eq(&b.content)
-            }
-            (StructuredNode::Image(a), StructuredNode::Image(b)) => {
-                // Compare by alt text only (content is binary data)
-                a.alt_text == b.alt_text
-            }
-            (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_eq(b),
-            (StructuredNode::Field(a), StructuredNode::Field(b)) => a.structural_eq(b),
-            (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
-                a.min_occurrences == b.min_occurrences
-                    && a.max_occurrences == b.max_occurrences
-                    && a.item.structural_eq(&b.item)
-            }
-            (StructuredNode::Group(a), StructuredNode::Group(b)) => {
-                a.children.len() == b.children.len()
-                    && a.children
-                        .iter()
-                        .zip(b.children.iter())
-                        .all(|(ca, cb)| ca.structural_eq(cb))
-            }
-            (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
-                // Conditionals are structurally equal if their contents are
-                a.content.structural_eq(&b.content)
-            }
-            (StructuredNode::Empty, StructuredNode::Empty) => true,
-            (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
-                a.columns == b.columns
-                    && a.elements.len() == b.elements.len()
-                    && a.elements
-                        .iter()
-                        .zip(b.elements.iter())
-                        .all(|(ea, eb)| ea.span == eb.span && ea.node.structural_eq(&eb.node))
-            }
-            // Different variants are never structurally equal
-            _ => false,
-        }
+        self.structural_cmp(other, CompareMode::Full)
     }
 
     /// Check if two nodes are structurally equal, ignoring all text content.
@@ -502,44 +472,56 @@ impl StructuredNode {
     /// - Field values
     /// - Image content
     pub fn structural_eq_ignore_text(&self, other: &Self) -> bool {
+        self.structural_cmp(other, CompareMode::IgnoreText)
+    }
+
+    /// Unified structural comparison parameterized by [`CompareMode`].
+    fn structural_cmp(&self, other: &Self, mode: CompareMode) -> bool {
         match (self, other) {
             (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
                 a.level.as_u8() == b.level.as_u8()
-                // Text content is ignored for translation matching
+                    && (mode == CompareMode::IgnoreText
+                        || a.content.structural_eq(&b.content))
             }
-            (StructuredNode::Paragraph(_), StructuredNode::Paragraph(_)) => {
-                // All paragraphs match structurally (text differs by language)
-                true
+            (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
+                // In IgnoreText mode all paragraphs match (text differs by language)
+                mode == CompareMode::IgnoreText || a.content.structural_eq(&b.content)
             }
-            (StructuredNode::Image(a), StructuredNode::Image(b)) => a.alt_text == b.alt_text,
-            (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_eq_ignore_text(b),
-            (StructuredNode::Field(a), StructuredNode::Field(b)) => {
-                // Compare only field name and input type structure
-                a.name == b.name && a.input_type.structural_eq(&b.input_type)
+            (StructuredNode::Image(a), StructuredNode::Image(b)) => {
+                a.alt_text == b.alt_text
             }
+            (StructuredNode::Table(a), StructuredNode::Table(b)) => {
+                a.structural_cmp(b, mode)
+            }
+            (StructuredNode::Field(a), StructuredNode::Field(b)) => a.structural_eq(b),
             (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
                 a.min_occurrences == b.min_occurrences
                     && a.max_occurrences == b.max_occurrences
-                    && a.item.structural_eq_ignore_text(&b.item)
+                    && a.item.structural_cmp(&b.item, mode)
             }
             (StructuredNode::Group(a), StructuredNode::Group(b)) => {
                 a.children.len() == b.children.len()
                     && a.children
                         .iter()
                         .zip(b.children.iter())
-                        .all(|(ca, cb)| ca.structural_eq_ignore_text(cb))
+                        .all(|(ca, cb)| ca.structural_cmp(cb, mode))
             }
             (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
-                a.content.structural_eq_ignore_text(&b.content)
+                a.content.structural_cmp(&b.content, mode)
             }
             (StructuredNode::Empty, StructuredNode::Empty) => true,
             (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
                 a.columns == b.columns
                     && a.elements.len() == b.elements.len()
-                    && a.elements.iter().zip(b.elements.iter()).all(|(ea, eb)| {
-                        ea.span == eb.span && ea.node.structural_eq_ignore_text(&eb.node)
-                    })
+                    && a.elements
+                        .iter()
+                        .zip(b.elements.iter())
+                        .all(|(ea, eb)| {
+                            ea.span == eb.span
+                                && ea.node.structural_cmp(&eb.node, mode)
+                        })
             }
+            // Different variants are never structurally equal
             _ => false,
         }
     }
@@ -637,6 +619,17 @@ impl FieldType {
 impl TableNode {
     /// Check if two tables are structurally equal.
     pub fn structural_eq(&self, other: &Self) -> bool {
+        self.structural_cmp(other, CompareMode::Full)
+    }
+
+    /// Check if two tables are structurally equal, ignoring text content.
+    /// Used for translation merging.
+    pub fn structural_eq_ignore_text(&self, other: &Self) -> bool {
+        self.structural_cmp(other, CompareMode::IgnoreText)
+    }
+
+    /// Unified structural comparison parameterized by [`CompareMode`].
+    fn structural_cmp(&self, other: &Self, mode: CompareMode) -> bool {
         // Compare header structure
         let header_eq = match (&self.header, &other.header) {
             (None, None) => true,
@@ -646,7 +639,7 @@ impl TableNode {
                         .cells
                         .iter()
                         .zip(h2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_eq(c2))
+                        .all(|(c1, c2)| c1.structural_cmp(c2, mode))
             }
             _ => false,
         };
@@ -659,46 +652,15 @@ impl TableNode {
                         .cells
                         .iter()
                         .zip(r2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_eq(c2))
+                        .all(|(c1, c2)| c1.structural_cmp(c2, mode))
             });
 
-        // Compare caption
-        let caption_eq = self.caption.as_ref().map(|c| c.as_plain_text())
-            == other.caption.as_ref().map(|c| c.as_plain_text());
+        // Caption is only compared in Full mode
+        let caption_eq = mode == CompareMode::IgnoreText
+            || self.caption.as_ref().map(|c| c.as_plain_text())
+                == other.caption.as_ref().map(|c| c.as_plain_text());
 
         header_eq && rows_eq && caption_eq
-    }
-
-    /// Check if two tables are structurally equal, ignoring text content.
-    /// Used for translation merging.
-    pub fn structural_eq_ignore_text(&self, other: &Self) -> bool {
-        // Compare header structure (ignoring text)
-        let header_eq = match (&self.header, &other.header) {
-            (None, None) => true,
-            (Some(h1), Some(h2)) => {
-                h1.cells.len() == h2.cells.len()
-                    && h1
-                        .cells
-                        .iter()
-                        .zip(h2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_eq_ignore_text(c2))
-            }
-            _ => false,
-        };
-
-        // Compare row structure (ignoring text)
-        let rows_eq = self.rows.len() == other.rows.len()
-            && self.rows.iter().zip(other.rows.iter()).all(|(r1, r2)| {
-                r1.cells.len() == r2.cells.len()
-                    && r1
-                        .cells
-                        .iter()
-                        .zip(r2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_eq_ignore_text(c2))
-            });
-
-        // Caption text is ignored for translation matching
-        header_eq && rows_eq
     }
 }
 
