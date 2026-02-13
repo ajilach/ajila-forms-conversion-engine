@@ -21,7 +21,7 @@
 
 use crate::xfa::scripting::{
     EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScript, XfaScriptEngine,
-    parse_events_from_node,
+    parse_events_from_node, wrap_script_object,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
@@ -761,31 +761,10 @@ impl ScriptExecutor {
         }
 
         // Register <script> variables as JavaScript objects
+        // Per XFA 3.3 §10 pp. 376-378: named script objects expose all
+        // top-level variables and functions as properties/methods.
         for (name, content) in &variable_scripts {
-            let wrapped = format!(
-                r#"
-                var {name} = (function() {{
-                    {content}
-                    
-                    var _obj = {{}};
-                    if (typeof setupVariables === 'function') {{
-                        _obj.setupVariables = function() {{ setupVariables(); }};
-                    }}
-                    if (typeof change === 'function') {{
-                        _obj.change = function() {{ change(); }};
-                    }}
-                    if (typeof calculate === 'function') {{
-                        _obj.calculate = function() {{ calculate(); }};
-                    }}
-                    if (typeof validate === 'function') {{
-                        _obj.validate = function() {{ return validate(); }};
-                    }}
-                    return _obj;
-                }})();
-                "#,
-                name = name,
-                content = content
-            );
+            let wrapped = wrap_script_object(name, content, false);
 
             let _ = engine.execute_variable_script(&wrapped);
         }

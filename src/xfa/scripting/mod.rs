@@ -56,6 +56,7 @@ pub mod events;
 pub mod form;
 pub mod js_helpers;
 pub mod registry;
+pub mod script_object;
 pub mod som;
 pub mod state;
 
@@ -81,6 +82,9 @@ pub use state::{FormState, Presence, SharedFormState, XfaValue};
 
 // Engine
 pub use engine::XfaScriptEngine;
+
+// Script object wrapper
+pub use script_object::wrap_script_object;
 
 // Form (high-level API)
 pub use form::{EventResult, NodeBounds, XfaForm, XfaNodeRef, XfaNodeRefMut};

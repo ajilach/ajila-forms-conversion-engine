@@ -1310,27 +1310,9 @@ impl XfaForm {
         }
 
         for (name, content) in &scripts {
-            let script_src = format!(
-                r#"globalThis.{name} = (function() {{ 
-                    {content} 
-                    var _obj = {{}};
-                    if (typeof setupVariables === 'function') {{
-                        _obj.setupVariables = function() {{ setupVariables(); }};
-                    }}
-                    if (typeof change === 'function') {{
-                        _obj.change = function() {{ change(); }};
-                    }}
-                    if (typeof calculate === 'function') {{
-                        _obj.calculate = function() {{ calculate(); }};
-                    }}
-                    if (typeof validate === 'function') {{
-                        _obj.validate = function() {{ return validate(); }};
-                    }}
-                    return _obj;
-                }})();"#,
-                name = name,
-                content = content
-            );
+            // Per XFA 3.3 §10 pp. 376-378: named script objects expose all
+            // top-level variables and functions as properties/methods.
+            let script_src = super::script_object::wrap_script_object(name, content, true);
 
             let _ = engine.execute_script(&XfaScript {
                 source: script_src,
