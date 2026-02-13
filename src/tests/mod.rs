@@ -6419,6 +6419,55 @@
     }
 
     #[test]
+    fn test_aaoe_has_exactly_one_h1_heading() {
+        // The AAOE document has a multi-line title that should be merged into a
+        // single TextBlock by the TextBlockMerger, so the HeadingDetector sees
+        // it as one heading. Without the merger the title is split into 3
+        // separate h1 headings which is incorrect.
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::document::GroupKind;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Find all H1 headings
+        let h1_headings: Vec<_> = doc
+            .headings()
+            .into_iter()
+            .filter(|&idx| {
+                matches!(
+                    doc.get_group(idx).map(|g| &g.kind),
+                    Some(GroupKind::Heading { level: 1 })
+                )
+            })
+            .collect();
+
+        let h1_texts: Vec<String> = h1_headings
+            .iter()
+            .map(|&idx| doc.get_text_content(idx))
+            .collect();
+
+        assert_eq!(
+            h1_headings.len(),
+            1,
+            "AAOE should have exactly 1 H1 heading, but found {}:\n{:#?}",
+            h1_headings.len(),
+            h1_texts
+        );
+    }
+
+    #[test]
     fn test_aaoe_labels_computed_from_javascript() {
         // The AAOE form has Draw elements (DES_FamilyName, DES_FirstName, etc.)
         // whose text is computed at runtime by JavaScript initialize scripts.

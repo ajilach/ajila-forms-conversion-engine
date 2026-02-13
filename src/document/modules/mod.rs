@@ -21,7 +21,7 @@
 //! MasterPageDetector          ─── identify header/footer from master page content
 //!     │
 //!     ▼
-//! TextBlockGrouper            ─── merges adjacent text into TextBlocks
+//! TextBlockGrouper            ─── wraps each text node in a TextBlock
 //!     │
 //!     ▼
 //! FieldGrouper                ─── wraps fields in Field groups
@@ -34,6 +34,9 @@
 //!     │
 //!     ▼
 //! RadioButtonGrouper          ─── groups radio buttons on same line
+//!     │
+//!     ▼
+//! TextBlockMerger             ─── merges nearby unclaimed TextBlocks with same font
 //!     │
 //!     ▼
 //! FieldTableDetector          ─── detects field tables with bold headers
@@ -70,8 +73,8 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
-mod date_field_detector;
 mod checkbox_detector;
+mod date_field_detector;
 mod field_grouper;
 mod field_table_detector;
 mod grid_template;
@@ -85,6 +88,7 @@ mod radio_button_detector;
 mod radio_button_grouper;
 mod repeatable_detector;
 mod text_block;
+mod text_block_merger;
 
 pub use checkbox_detector::CheckboxDetector;
 pub use date_field_detector::DateFieldDetector;
@@ -101,6 +105,7 @@ pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
 pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
 pub use text_block::TextBlockGrouper;
+pub use text_block_merger::TextBlockMerger;
 
 use crate::flattened::Flattened;
 
@@ -167,6 +172,7 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
+    TextBlockMerger::new().process_with_context(doc, ctx);
     FieldTableDetector::new().process_with_context(doc, ctx);
     HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
