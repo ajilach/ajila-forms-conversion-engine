@@ -7,7 +7,7 @@ use image::{ImageBuffer, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -1631,6 +1631,142 @@ impl Flattened {
         for node in xfa_nodes.iter_mut() {
             Self::inject_items_into_template(node, &form_items, &mut String::new());
         }
+    }
+
+    /// Merge presence values from the Form DOM packet into Template DOM nodes.
+    ///
+    /// Per XFA 3.3, the Form DOM is the result of merging data with the template.
+    /// When a PDF is saved interactively, the Form DOM preserves runtime state
+    /// including presence changes made by scripts (e.g., hiding a section based
+    /// on a dropdown selection). This method copies those presence values into
+    /// the corresponding Template DOM nodes so they are respected during layout.
+    ///
+    /// Only template nodes whose presence differs from the Form DOM are updated.
+    /// Matching is done by SOM-like path (e.g. "Page.Section.Company").
+    ///
+    /// Paths that were already set by script execution (via `script_presence_changes`)
+    /// are skipped, since scripts produce the authoritative runtime state and the
+    /// Form DOM may contain stale saved state.
+    pub fn merge_form_presence_into_template(
+        xfa_nodes: &mut [XfaNode],
+        script_presence_changes: &[(String, Option<String>, Presence)],
+    ) {
+        // Step 1: Find the "form" element and collect presence values
+        let mut form_presence: HashMap<String, Presence> = HashMap::new();
+        for node in xfa_nodes.iter() {
+            Self::find_form_element_and_collect_presence(node, &mut form_presence);
+        }
+
+        if form_presence.is_empty() {
+            return;
+        }
+
+        // Build a set of leaf names that scripts already set presence for.
+        // These take priority over stale Form DOM values.
+        let script_touched: HashSet<&str> = script_presence_changes
+            .iter()
+            .map(|(name, _, _)| name.as_str())
+            .collect();
+
+        // Remove any form DOM paths whose leaf name was touched by scripts
+        form_presence.retain(|path, _| {
+            let leaf = path.rsplit('.').next().unwrap_or(path);
+            !script_touched.contains(leaf)
+        });
+
+        // Step 2: Walk the template and apply presence from form DOM
+        for node in xfa_nodes.iter_mut() {
+            Self::apply_presence_to_template(node, &form_presence, &mut String::new());
+        }
+    }
+
+    /// Recursively find the `<form>` element and collect presence values.
+    fn find_form_element_and_collect_presence(
+        node: &XfaNode,
+        presence_map: &mut HashMap<String, Presence>,
+    ) {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+            && tag_name == "form" {
+                for child in &node.children {
+                    Self::collect_form_node_presence(child, &mut String::new(), presence_map);
+                }
+                return;
+            }
+        for child in &node.children {
+            Self::find_form_element_and_collect_presence(child, presence_map);
+        }
+    }
+
+    /// Walk inside the form packet collecting presence values for subforms and fields.
+    fn collect_form_node_presence(
+        node: &XfaNode,
+        path: &mut String,
+        presence_map: &mut HashMap<String, Presence>,
+    ) {
+        let segment = match &node.kind {
+            XfaNodeKind::Subform => node.name.as_deref(),
+            XfaNodeKind::Field => node.name.as_deref(),
+            XfaNodeKind::ExclGroup => node.name.as_deref(),
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        // Only record non-visible presence (hidden, invisible, inactive)
+        // which differs from the default.
+        let presence = node.get_presence();
+        if segment.is_some() && presence != Presence::Visible {
+            presence_map.insert(path.clone(), presence);
+        }
+
+        for child in &node.children {
+            Self::collect_form_node_presence(child, path, presence_map);
+        }
+
+        path.truncate(prev_len);
+    }
+
+    /// Walk the template and apply presence values from the form DOM.
+    fn apply_presence_to_template(
+        node: &mut XfaNode,
+        form_presence: &HashMap<String, Presence>,
+        path: &mut String,
+    ) {
+        let segment = match &node.kind {
+            XfaNodeKind::Subform => node.name.as_deref(),
+            XfaNodeKind::Field => node.name.as_deref(),
+            XfaNodeKind::ExclGroup => node.name.as_deref(),
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        // Apply presence from form DOM if it differs
+        if segment.is_some() {
+            if let Some(&form_pres) = form_presence.get(path.as_str()) {
+                if node.get_presence() != form_pres {
+                    node.set_presence(form_pres);
+                }
+            }
+        }
+
+        for child in &mut node.children {
+            Self::apply_presence_to_template(child, form_presence, path);
+        }
+
+        path.truncate(prev_len);
     }
 
     /// Recursively find the `<form>` element and collect items from all its fields.

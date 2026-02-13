@@ -12,6 +12,7 @@
         let script_result = ScriptExecutor::execute(nodes);
         ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
         Flattened::merge_form_items_into_template(nodes);
+        Flattened::merge_form_presence_into_template(nodes, &script_result.presence_changes);
         Flattened::from_xfa(nodes, &script_result.computed_values)
     }
 
@@ -6692,6 +6693,47 @@
     }
 
     #[test]
+    fn test_aaoe_company_section_hidden_when_individual_selected() {
+        // In AAOE, the Company section's presence is stored in the Form DOM
+        // packet as presence="hidden" when CL_ClientType = "Individual".
+        // The template itself has no presence attribute on Company (defaults
+        // to visible), so the Form DOM presence must be merged into the
+        // template before flattening.
+        //
+        // Without this merge, the Company section is rendered despite being
+        // hidden in the saved form state.
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        let mut nodes =
+            xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten");
+
+        // Collect all field names in the flattened output
+        let field_names: Vec<String> = flattened
+            .iter_nodes()
+            .filter_map(|n| {
+                if let FlattenedNodeKind::Field { name, .. } = &n.kind {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // The saved form has CL_ClientType = "Individual".
+        // The Form DOM has Company presence="hidden".
+        // Therefore, the Company-specific field ("Company") should NOT appear.
+        assert!(
+            !field_names.iter().any(|n| n == "Company"),
+            "Company field should be hidden when CL_ClientType = 'Individual', \
+             but it was found in the flattened output. Field names: {:?}",
+            field_names
+        );
+    }
+
+    #[test]
     fn test_set_value_as_user_fires_change_event_on_checkbox() {
         // Regression test: checkboxes must also fire change events when
         // their value is set via set_value_as_user.
@@ -6714,3 +6756,5 @@
         );
         form.refresh().expect("refresh should succeed");
     }
+
+

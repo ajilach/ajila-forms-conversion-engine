@@ -502,27 +502,64 @@ impl HeadingDetector {
             .unwrap_or(0.0);
 
         // CRITICAL: Headings must be DISTINCT from normal text.
-        // Only non-bold text at the most common size is body text (never a heading).
-        // Bold text at any size can still be a heading.
+        // Non-bold text at body size is body text (never a heading), regardless
+        // of whether most_common_style is bold or non-bold. When bold and non-bold
+        // are nearly tied, both participate in body text, so non-bold should not
+        // be promoted to heading.
+        let body_size_bits = OrderedFloat((body_size * 2.0).round() / 2.0);
         let is_body_text = !is_bold
-            && stats
+            && rounded_size == body_size_bits
+            && (stats
                 .most_common_style
                 .map(|common| common.size == rounded_size && !common.is_bold)
-                .unwrap_or(false);
+                .unwrap_or(false)
+                || {
+                    // Even if most_common_style is bold, non-bold text at body size
+                    // with substantial frequency is still body text.
+                    let non_bold_key = FontStyleKey {
+                        size: body_size_bits,
+                        is_bold: false,
+                    };
+                    let non_bold_freq = stats
+                        .style_distribution
+                        .get(&non_bold_key)
+                        .map(|&c| c as f32 / stats.total_text_nodes.max(1) as f32)
+                        .unwrap_or(0.0);
+                    non_bold_freq >= 0.15
+                });
 
         if is_body_text {
             return None;
         }
 
-        // Check if body text is non-bold at this size (makes bold at this size a valid heading)
-        let body_style_is_non_bold_same_size = stats
+        // Check if there is substantial non-bold text at body size.
+        // This determines whether bold text at body size can be a section header.
+        // We check BOTH whether most_common_style is non-bold at this size, AND
+        // whether a significant amount of non-bold text exists at this size even
+        // if the most common style happens to be bold. This makes the detector
+        // robust when bold and non-bold counts are nearly tied.
+        let non_bold_at_body_key = FontStyleKey {
+            size: OrderedFloat((body_size * 2.0).round() / 2.0),
+            is_bold: false,
+        };
+        let non_bold_body_count = stats
+            .style_distribution
+            .get(&non_bold_at_body_key)
+            .copied()
+            .unwrap_or(0);
+        let non_bold_body_ratio =
+            non_bold_body_count as f32 / stats.total_text_nodes.max(1) as f32;
+
+        let body_has_substantial_non_bold = stats
             .most_common_style
             .map(|common| common.size == rounded_size && !common.is_bold)
-            .unwrap_or(false);
+            .unwrap_or(false)
+            || (non_bold_body_ratio >= 0.15 && (size - body_size).abs() < 0.5);
 
-        // Bold text at body size is a valid heading if body text is non-bold at the same size
+        // Bold text at body size is a valid heading if there is significant
+        // non-bold text at the same size (making bold visually distinct).
         let is_bold_section_header =
-            is_bold && body_style_is_non_bold_same_size && (size - body_size).abs() < 0.5;
+            is_bold && body_has_substantial_non_bold && (size - body_size).abs() < 0.5;
 
         // For bold section headers, allow higher frequency (up to 40%)
         let max_style_frequency = if is_bold_section_header { 0.40 } else { 0.25 };

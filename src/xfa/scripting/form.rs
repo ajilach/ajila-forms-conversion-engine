@@ -492,6 +492,13 @@ impl XfaForm {
         // The Form DOM preserves runtime state (e.g. script-populated dropdown items).
         Flattened::merge_form_items_into_template(&mut nodes);
 
+        // Merge presence values from Form DOM into Template DOM.
+        // The Form DOM preserves visibility state set by scripts (e.g. hiding
+        // a section based on dropdown selection).
+        // Pass the script presence changes so we skip paths already handled
+        // by script execution (which produces authoritative runtime state).
+        Flattened::merge_form_presence_into_template(&mut nodes, &script_result.presence_changes);
+
         let init_values = script_result.computed_values;
 
         // Flatten with the init-time computed values
