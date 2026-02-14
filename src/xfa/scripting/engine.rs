@@ -1324,6 +1324,28 @@ impl XfaScriptEngine {
                 self.field_objects
                     .insert(som_path.clone(), field_obj.clone());
 
+                // Per XFA 3.3 §3: shortened SOM paths are aliases that
+                // resolve to the same object.  Mirror the field's initial
+                // presence so get_all_som_presence_changes() does not
+                // default to "visible" and report false positives.
+                let initial_pres = field_obj
+                    .get(
+                        PropertyKey::from(js_string!("_initialPresence")),
+                        &mut self.context,
+                    )
+                    .ok()
+                    .and_then(|v| {
+                        if v.is_undefined() || v.is_null() {
+                            None
+                        } else {
+                            v.to_string(&mut self.context)
+                                .ok()
+                                .map(|s| s.to_std_string_escaped())
+                        }
+                    })
+                    .unwrap_or_else(|| "visible".to_string());
+                self.initial_presence.insert(som_path.clone(), initial_pres);
+
                 // Also track in field_objects_by_name
                 self.field_objects_by_name
                     .entry(part.to_string())

@@ -2227,10 +2227,7 @@ fn test_update_field_presence_baseline_updates_existing_entry() {
     assert_eq!(engine.get_initial_presence(&path), Some("hidden"));
 
     // form_state value should be updated
-    assert_eq!(
-        engine.get_form_state_value(&path).as_deref(),
-        Some("world")
-    );
+    assert_eq!(engine.get_form_state_value(&path).as_deref(), Some("world"));
 
     // No presence change should be reported (JS object matches baseline)
     let changes = engine.get_all_som_presence_changes();
@@ -2305,5 +2302,70 @@ fn test_update_field_presence_baseline_presence_change_detection() {
         changes.get("Root.Page.Field1"),
         Some(&"visible".to_string()),
         "Presence change should be detected after script modifies JS object"
+    );
+}
+
+#[test]
+fn test_shortened_path_aliases_carry_initial_presence() {
+    // Regression test: register_path_on_object creates shortened-path aliases
+    // (e.g. "Root.Page.MyField" for "Form.Root.Page.MyField").  These aliases
+    // must carry the same initial_presence as the canonical path, otherwise
+    // get_all_som_presence_changes() defaults to "visible" and produces
+    // false-positive presence changes.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.Root.Page.MyField", "MyField", "", "hidden");
+
+    // No script has changed any presence — result must be empty.
+    let changes = engine.get_all_som_presence_changes();
+    assert!(
+        changes.is_empty(),
+        "Expected no presence changes, but got: {:?}",
+        changes
+    );
+
+    // Verify the shortened alias paths also have initial_presence = "hidden"
+    let alias = SomPath::new("Root.Page.MyField");
+    assert!(
+        engine.has_initial_presence(&alias),
+        "Shortened alias path should have an initial_presence entry"
+    );
+    assert_eq!(
+        engine.get_initial_presence(&alias),
+        Some("hidden"),
+        "Shortened alias path should inherit the field's initial presence"
+    );
+}
+
+#[test]
+fn test_shortened_path_aliases_visible_field_no_false_change() {
+    // A field with default visible presence should also not produce false
+    // changes through its aliases.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "val", "visible");
+
+    let changes = engine.get_all_som_presence_changes();
+    assert!(
+        changes.is_empty(),
+        "Visible field should produce no presence changes: {:?}",
+        changes
+    );
+}
+
+#[test]
+fn test_shortened_path_alias_detects_real_change() {
+    // After fixing the false positives, real changes must still be detected
+    // on shortened-path aliases.
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "", "visible");
+
+    // Mutate presence on the shortened alias
+    let alias = SomPath::new("Root.Page.Field1");
+    engine.set_js_presence(&alias, "hidden");
+
+    let changes = engine.get_all_som_presence_changes();
+    assert_eq!(
+        changes.get("Root.Page.Field1"),
+        Some(&"hidden".to_string()),
+        "Real presence change on shortened alias should be detected"
     );
 }
