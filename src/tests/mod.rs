@@ -6877,5 +6877,68 @@
             condition_values
         );
 
+        // The conditional fieldName must match the name of an actual field in the structured output.
+        // This ensures that the HTML converter's JS can find the <select> element by name
+        // and evaluate the condition correctly.
+        fn collect_all_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => names.push(f.name.clone()),
+                    StructuredNode::Conditional(cond) => {
+                        collect_all_field_names(&[(*cond.content).clone()], names);
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_all_field_names(&group.children, names);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_all_field_names(&[(*rep.item).clone()], names);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_all_field_names(&nodes, names);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fn collect_all_condition_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(cond) => {
+                        names.push(cond.condition.field_name.as_str().to_string());
+                        collect_all_condition_field_names(&[(*cond.content).clone()], names);
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_all_condition_field_names(&group.children, names);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_all_condition_field_names(&[(*rep.item).clone()], names);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_all_condition_field_names(&nodes, names);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut field_names = Vec::new();
+        collect_all_field_names(&merged, &mut field_names);
+
+        let mut condition_field_names = Vec::new();
+        collect_all_condition_field_names(&merged, &mut condition_field_names);
+
+        for cond_name in &condition_field_names {
+            assert!(
+                field_names.contains(cond_name),
+                "Conditional references field '{}' but no field with that name exists in the structured output.\n\
+                 Available field names: {:?}",
+                cond_name,
+                field_names
+            );
+        }
+
         println!("\n✓ AAOE merged output has expected dropdown conditionals");
     }

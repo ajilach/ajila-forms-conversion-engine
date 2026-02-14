@@ -2565,6 +2565,8 @@ impl Flattened {
                     is_checked,
                 );
                 // Add SomPath hint with full XFA path
+                // In flatten_single_node, the ctx was NOT extended with the field's name,
+                // so we need to append it here
                 let som_path = ctx.get_full_path(&field_name);
                 field_node.add_hint(Hint::SomPath(som_path));
                 // Add ExclGroupSomPath hint if inside an exclGroup
@@ -3336,7 +3338,8 @@ impl Flattened {
                             is_checked,
                         );
                         // Add SomPath hint with full XFA path
-                        let som_path = child_ctx.get_full_path(&field_name);
+                        // The context path already includes this field's name (via with_path_segment)
+                        let som_path = child_ctx.current_path.clone();
                         field_node.add_hint(Hint::SomPath(som_path));
                         // Add ExclGroupSomPath hint if inside an exclGroup
                         if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
@@ -3677,7 +3680,8 @@ impl Flattened {
                                     is_checked,
                                 );
                                 // Add SomPath hint with full XFA path
-                                let som_path = child_ctx.get_full_path(&field_name);
+                                // The context path already includes this field's name (via with_path_segment)
+                                let som_path = child_ctx.current_path.clone();
                                 field_node.add_hint(Hint::SomPath(som_path));
                                 // Add ExclGroupSomPath hint if inside an exclGroup
                                 if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
