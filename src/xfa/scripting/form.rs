@@ -563,11 +563,15 @@ impl XfaForm {
         })
     }
 
-    /// Execute an event activity on a node
+    /// Execute an event activity on a node.
+    ///
+    /// For change events, `prev_value` should carry the field's value before
+    /// the change so that `xfa.event.prevText` / `newText` are correct.
     pub fn execute_event(
         &mut self,
         som_expression: &str,
         activity: EventActivity,
+        prev_value: Option<&str>,
     ) -> Result<EventResult, String> {
         let resolved_path = self
             .som_resolver
@@ -597,7 +601,7 @@ impl XfaForm {
 
         // Set up $event context before script execution (XFA 3.3 §10 pp.398-404)
         self.script_engine
-            .update_event_context(&activity, &resolved_path);
+            .update_event_context(&activity, &resolved_path, prev_value);
 
         let mut changed_fields = Vec::new();
         for script in &scripts {
@@ -660,7 +664,7 @@ impl XfaForm {
                 );
                 // Keep $event.target pointing at the ORIGINAL target
                 self.script_engine
-                    .update_event_context(&activity, &resolved_path);
+                    .update_event_context(&activity, &resolved_path, prev_value);
 
                 for script in &propagating_scripts {
                     let result = self.script_engine.execute_script(script);
@@ -689,27 +693,27 @@ impl XfaForm {
 
     /// Convenience method to execute a click event
     pub fn click(&mut self, som_expression: &str) -> Result<EventResult, String> {
-        self.execute_event(som_expression, EventActivity::Click)
+        self.execute_event(som_expression, EventActivity::Click, None)
     }
 
     /// Convenience method to execute a change event
     pub fn change(&mut self, som_expression: &str) -> Result<EventResult, String> {
-        self.execute_event(som_expression, EventActivity::Change)
+        self.execute_event(som_expression, EventActivity::Change, None)
     }
 
     /// Convenience method to execute an initialize event
     pub fn initialize(&mut self, som_expression: &str) -> Result<EventResult, String> {
-        self.execute_event(som_expression, EventActivity::Initialize)
+        self.execute_event(som_expression, EventActivity::Initialize, None)
     }
 
     /// Convenience method to execute an enter event
     pub fn enter(&mut self, som_expression: &str) -> Result<EventResult, String> {
-        self.execute_event(som_expression, EventActivity::Enter)
+        self.execute_event(som_expression, EventActivity::Enter, None)
     }
 
     /// Convenience method to execute an exit event
     pub fn exit(&mut self, som_expression: &str) -> Result<EventResult, String> {
-        self.execute_event(som_expression, EventActivity::Exit)
+        self.execute_event(som_expression, EventActivity::Exit, None)
     }
 
     /// Re-flatten the form to reflect any changes
@@ -726,11 +730,12 @@ impl XfaForm {
     pub fn trigger_change_on_excl_group(
         &mut self,
         field_path: &str,
+        prev_value: Option<&str>,
     ) -> Result<EventResult, String> {
         let excl_group_path = self.find_parent_excl_group_by_path(field_path);
 
         if let Some(ref excl_path) = excl_group_path {
-            let result = self.execute_event(excl_path, EventActivity::Change)?;
+            let result = self.execute_event(excl_path, EventActivity::Change, prev_value)?;
             self.cascade_calculations(excl_path)?;
             Ok(result)
         } else {
@@ -738,7 +743,7 @@ impl XfaForm {
                 .som_resolver
                 .resolve_node(field_path, None)
                 .unwrap_or_else(|| SomPath::from(field_path));
-            let result = self.execute_event(field_path, EventActivity::Change)?;
+            let result = self.execute_event(field_path, EventActivity::Change, prev_value)?;
             self.cascade_calculations(&resolved_path)?;
             Ok(result)
         }
@@ -763,6 +768,13 @@ impl XfaForm {
             .resolve_node(field_path, None)
             .ok_or_else(|| format!("Could not resolve field: {}", field_path))?;
 
+        // Capture the previous value BEFORE updating so that
+        // xfa.event.prevText is correct in change event scripts.
+        let prev_value = self
+            .script_engine
+            .get_field_value(&resolved_path)
+            .unwrap_or_default();
+
         // Update engine (source of truth) and XFA node
         self.script_engine.update_field_value(&resolved_path, value);
         if let Some(node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, &resolved_path) {
@@ -772,7 +784,7 @@ impl XfaForm {
         self.dirty = true;
 
         // Fire change event and cascade calculations
-        self.trigger_change_on_excl_group(&resolved_path)
+        self.trigger_change_on_excl_group(&resolved_path, Some(&prev_value))
     }
 
     /// Select a radio button in an exclusion group.
@@ -789,6 +801,12 @@ impl XfaForm {
             .or_else(|| button_name.rsplit('_').next())
             .unwrap_or(button_name);
 
+        // Capture the previous value before updating for change event context.
+        let prev_value = self
+            .script_engine
+            .get_field_value(&resolved_path)
+            .unwrap_or_default();
+
         // Update engine (source of truth) and XFA node
         self.script_engine.update_field_value(&resolved_path, "1");
 
@@ -800,6 +818,11 @@ impl XfaForm {
         let excl_group_path = self.find_parent_excl_group_by_path(&resolved_path);
 
         if let Some(ref excl_path) = excl_group_path {
+            let excl_prev = self
+                .script_engine
+                .get_field_value(excl_path)
+                .unwrap_or_default();
+
             self.script_engine
                 .update_field_value(excl_path, button_value);
 
@@ -811,7 +834,7 @@ impl XfaForm {
 
             self.dirty = true;
 
-            self.trigger_change_on_excl_group(&resolved_path)
+            self.trigger_change_on_excl_group(&resolved_path, Some(&excl_prev))
         } else {
             self.dirty = true;
             Ok(EventResult::default())

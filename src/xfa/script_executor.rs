@@ -163,7 +163,7 @@ impl ScriptExecutor {
 
             for (field_name, full_path, child_fields, script, _presence) in &calc_events {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Calculate, full_path);
+                engine.update_event_context(&EventActivity::Calculate, full_path, None);
 
                 let old_value = computed_values.get(&SomPath::new(full_path.clone())).cloned();
 
@@ -211,7 +211,7 @@ impl ScriptExecutor {
                 && script.activity == EventActivity::Validate
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Validate, full_path);
+                engine.update_event_context(&EventActivity::Validate, full_path, None);
                 let _ = engine.execute_script(script);
 
                 // Collect any side-effect values set during validation
@@ -239,7 +239,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Initialize, full_path);
+                engine.update_event_context(&EventActivity::Initialize, full_path, None);
 
                 let result = engine.execute_script(script);
                 if let Err(ref e) = result
@@ -331,7 +331,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Ready, full_path);
+                engine.update_event_context(&EventActivity::Ready, full_path, None);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);
@@ -379,7 +379,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Ready, full_path);
+                engine.update_event_context(&EventActivity::Ready, full_path, None);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);
@@ -415,7 +415,7 @@ impl ScriptExecutor {
                 )
             {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::DocReady, full_path);
+                engine.update_event_context(&EventActivity::DocReady, full_path, None);
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     computed_values.insert(SomPath::new(field_name.clone()), value);

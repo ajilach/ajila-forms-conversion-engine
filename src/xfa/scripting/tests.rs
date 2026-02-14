@@ -1231,7 +1231,7 @@ fn test_event_name_property() {
     engine.register_field("Form.Field1", "Field1", "hello");
 
     // Set up event context for a click event
-    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.update_event_context(&EventActivity::Click, "Form.Field1", None);
     engine.set_current_field("Form.Field1", "Field1", "hello");
 
     // $event.name should be "click"
@@ -1256,7 +1256,7 @@ fn test_event_target_property() {
     let mut engine = XfaScriptEngine::new();
     engine.register_field("Form.MyField", "MyField", "test");
 
-    engine.update_event_context(&EventActivity::Enter, "Form.MyField");
+    engine.update_event_context(&EventActivity::Enter, "Form.MyField", None);
     engine.set_current_field("Form.MyField", "MyField", "test");
 
     // $event.target should be the field object with name "MyField"
@@ -1281,7 +1281,7 @@ fn test_event_cancel_action_writable() {
     let mut engine = XfaScriptEngine::new();
     engine.register_field("Form.Field1", "Field1", "");
 
-    engine.update_event_context(&EventActivity::Validate, "Form.Field1");
+    engine.update_event_context(&EventActivity::Validate, "Form.Field1", None);
     engine.set_current_field("Form.Field1", "Field1", "");
 
     // cancelAction should be writable
@@ -1310,7 +1310,7 @@ fn test_event_modifier_defaults_false() {
     let mut engine = XfaScriptEngine::new();
     engine.register_field("Form.Field1", "Field1", "");
 
-    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.update_event_context(&EventActivity::Click, "Form.Field1", None);
     engine.set_current_field("Form.Field1", "Field1", "");
 
     // modifier should default to false
@@ -1335,7 +1335,7 @@ fn test_event_change_property_for_change_event() {
     let mut engine = XfaScriptEngine::new();
     engine.register_field("Form.Field1", "Field1", "original");
 
-    engine.update_event_context(&EventActivity::Change, "Form.Field1");
+    engine.update_event_context(&EventActivity::Change, "Form.Field1", None);
     engine.set_current_field("Form.Field1", "Field1", "original");
 
     // prevText should be set to current value for change events
@@ -1363,7 +1363,7 @@ fn test_event_all_properties_accessible() {
     let mut engine = XfaScriptEngine::new();
     engine.register_field("Form.Field1", "Field1", "");
 
-    engine.update_event_context(&EventActivity::Click, "Form.Field1");
+    engine.update_event_context(&EventActivity::Click, "Form.Field1", None);
     engine.set_current_field("Form.Field1", "Field1", "");
 
     // Verify all expected properties are accessible (not undefined)
@@ -2368,4 +2368,157 @@ fn test_shortened_path_alias_detects_real_change() {
         Some(&"hidden".to_string()),
         "Real presence change on shortened alias should be detected"
     );
+}
+
+// =============================================================================
+// Change Event newText / prevText / fullText Tests
+// =============================================================================
+
+#[test]
+fn test_change_event_sets_new_text() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "old_value");
+
+    // Simulate: field was updated to "new_value", prev was "old_value"
+    engine.update_field_value(&SomPath::new("Form.Field1"), "new_value");
+    engine.update_event_context(&EventActivity::Change, "Form.Field1", Some("old_value"));
+    engine.set_current_field("Form.Field1", "Field1", "new_value");
+
+    // newText should be the NEW value
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.newText;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Change,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "new_value", "newText should be the new value");
+    }
+}
+
+#[test]
+fn test_change_event_prev_text_is_old_value() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "old_value");
+
+    // Simulate: field was updated to "new_value", prev was "old_value"
+    engine.update_field_value(&SomPath::new("Form.Field1"), "new_value");
+    engine.update_event_context(&EventActivity::Change, "Form.Field1", Some("old_value"));
+    engine.set_current_field("Form.Field1", "Field1", "new_value");
+
+    // prevText should be the OLD value
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.prevText;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Change,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "old_value", "prevText should be the old value");
+    }
+}
+
+#[test]
+fn test_change_event_full_text_is_new_value() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "old_value");
+
+    // Simulate: field was updated to "new_value", prev was "old_value"
+    engine.update_field_value(&SomPath::new("Form.Field1"), "new_value");
+    engine.update_event_context(&EventActivity::Change, "Form.Field1", Some("old_value"));
+    engine.set_current_field("Form.Field1", "Field1", "new_value");
+
+    // fullText should be the resulting complete text (= new value)
+    let script = XfaScript {
+        source: r#"this.rawValue = xfa.event.fullText;"#.to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Change,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "new_value", "fullText should be the new value");
+    }
+}
+
+// =============================================================================
+// instanceManager on Subform Objects Tests
+// =============================================================================
+
+#[test]
+fn test_field_object_does_not_have_instance_manager() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field("Form.Field1", "Field1", "hello");
+    engine.set_current_field("Form.Field1", "Field1", "hello");
+
+    // instanceManager should NOT be on field objects (only subforms per XFA spec)
+    let script = XfaScript {
+        source: r#"this.rawValue = String(typeof this.instanceManager === 'undefined');"#
+            .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Ready,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "true",
+            "field objects should NOT have instanceManager (only subforms)"
+        );
+    }
+}
+
+#[test]
+fn test_subform_object_has_instance_manager() {
+    let mut engine = XfaScriptEngine::new();
+
+    // register_xfa_node with is_field=false creates a subform object with instanceManager
+    engine.register_xfa_node(
+        "MySubform",
+        "Root.MySubform",
+        Some("Root"),
+        false, // is_field = false → subform
+        "",
+        false, // is_parent_exclgroup
+        None,
+        None,
+        "visible",
+    );
+
+    engine.set_current_field("Root.MySubform", "MySubform", "");
+
+    // instanceManager should be accessible on subform objects
+    let script = XfaScript {
+        source: r#"this.rawValue = String(typeof this.instanceManager !== 'undefined');"#
+            .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Ready,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(value, "true", "subform objects should have instanceManager");
+    }
 }

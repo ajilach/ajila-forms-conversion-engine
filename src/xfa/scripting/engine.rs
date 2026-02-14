@@ -1649,7 +1649,15 @@ impl XfaScriptEngine {
     ///
     /// Per XFA 3.3 §10 pp.398–404: the `$event` object carries context about
     /// the event being processed. Properties are set according to the event type.
-    pub fn update_event_context(&mut self, activity: &EventActivity, target_path: &str) {
+    ///
+    /// For change events, `prev_value` should carry the field's value BEFORE
+    /// the change so that `prevText`, `newText`, and `fullText` are correct.
+    pub fn update_event_context(
+        &mut self,
+        activity: &EventActivity,
+        target_path: &str,
+        prev_value: Option<&str>,
+    ) {
         let activity_name = match activity {
             EventActivity::Ready => "ready",
             EventActivity::Initialize => "initialize",
@@ -1744,14 +1752,32 @@ impl XfaScriptEngine {
             )
             .ok();
 
-        // Set event-type-specific properties.
-        // For change events, prevText/newText are set to the field's current value.
+        // Set event-type-specific properties for change events.
+        // Per XFA 3.3 §10 pp.398-404:
+        //   prevText  – the field value BEFORE the change
+        //   newText   – the new content being inserted / selected
+        //   fullText  – the resulting complete text after the change
         let is_change = matches!(activity, EventActivity::Change);
         if is_change {
             let current_value = self.get_field_value(&target_som).unwrap_or_default();
+            // If the caller captured the previous value before updating the
+            // field, use it for prevText.  Otherwise fall back to the current
+            // value (best-effort for callers that don't track the old value).
+            let prev = prev_value.unwrap_or(&current_value);
             event
                 .define_property_or_throw(
                     PropertyKey::from(js_string!("prevText")),
+                    boa_engine::property::PropertyDescriptor::builder()
+                        .value(JsValue::from(js_string!(prev)))
+                        .configurable(true)
+                        .enumerable(true)
+                        .build(),
+                    &mut self.context,
+                )
+                .ok();
+            event
+                .define_property_or_throw(
+                    PropertyKey::from(js_string!("newText")),
                     boa_engine::property::PropertyDescriptor::builder()
                         .value(JsValue::from(js_string!(current_value.as_str())))
                         .configurable(true)
