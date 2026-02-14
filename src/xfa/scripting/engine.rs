@@ -851,7 +851,7 @@ impl XfaScriptEngine {
 
     /// Register a field with SOM resolver
     pub fn register_field(&mut self, path: &str, name: &str, value: &str) {
-        self.register_field_with_presence(path, name, value, "visible");
+        self.register_field_with_presence(path, name, value, "visible", false);
     }
 
     /// Register a field with SOM resolver and explicit initial presence
@@ -861,13 +861,15 @@ impl XfaScriptEngine {
         name: &str,
         value: &str,
         initial_presence: &str,
+        is_subform: bool,
     ) {
         let som_path = SomPath::new(path);
         let parent_path = som_path.parent();
 
         // Register in SOM resolver
+        let node_type = if is_subform { "subform" } else { "field" };
         self.som_resolver
-            .register_node(&som_path, name, "field", parent_path.as_ref());
+            .register_node(&som_path, name, node_type, parent_path.as_ref());
 
         // Store initial presence for change detection
         self.initial_presence
@@ -880,7 +882,8 @@ impl XfaScriptEngine {
         }
 
         // Create JavaScript object with the actual initial presence
-        let field_obj = self.create_field_object_with_presence(name, path, value, initial_presence);
+        let field_obj =
+            self.create_field_object_with_presence(name, path, value, initial_presence, is_subform);
         self.field_objects
             .insert(som_path.clone(), field_obj.clone());
 
@@ -1038,7 +1041,7 @@ impl XfaScriptEngine {
     }
 
     fn create_field_object(&mut self, name: &str, path: &str, initial_value: &str) -> JsObject {
-        self.create_field_object_with_presence(name, path, initial_value, "visible")
+        self.create_field_object_with_presence(name, path, initial_value, "visible", false)
     }
 
     fn create_field_object_with_presence(
@@ -1047,6 +1050,7 @@ impl XfaScriptEngine {
         path: &str,
         initial_value: &str,
         initial_presence: &str,
+        is_subform: bool,
     ) -> JsObject {
         let name_js = js_string!(name);
         let path_js = js_string!(path);
@@ -1293,6 +1297,33 @@ impl XfaScriptEngine {
 
         // Add execEvent() method (XFA 3.3 §10 pp.407-409)
         self.add_exec_event_method(&field);
+
+        // XFA 3.3 §6.16: instanceManager is only for dynamic subforms.
+        // One instance manager is placed in the Form DOM for each dynamic
+        // subform. Fields do NOT get an instanceManager.
+        if is_subform {
+            let set_instances =
+                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
+            let add_instance =
+                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
+            let remove_instance =
+                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
+            let instance_manager = ObjectInitializer::new(&mut self.context)
+                .function(set_instances, js_string!("setInstances"), 1)
+                .function(add_instance, js_string!("addInstance"), 1)
+                .function(remove_instance, js_string!("removeInstance"), 1)
+                .property(js_string!("count"), JsValue::from(1), Attribute::all())
+                .property(js_string!("max"), JsValue::from(-1), Attribute::all())
+                .build();
+            field
+                .set(
+                    PropertyKey::from(js_string!("instanceManager")),
+                    instance_manager,
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+        }
 
         field
     }
@@ -2190,7 +2221,8 @@ impl XfaScriptEngine {
 
         // Create the JavaScript object for this node
         let node_obj = if is_field {
-            let obj = self.create_field_object_with_presence(name, path, value, initial_presence);
+            let obj =
+                self.create_field_object_with_presence(name, path, value, initial_presence, false);
             // Store the item key for exclGroup parent→child propagation.
             // Per XFA 3.3 §4 pp.195-197: each child in an exclGroup has a key
             // value from <items>. When the parent's rawValue is set, children

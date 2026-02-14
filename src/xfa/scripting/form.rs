@@ -726,6 +726,11 @@ impl XfaForm {
         Ok(())
     }
 
+    /// Return all SOM presence changes detected by the script engine.
+    pub fn get_presence_changes(&mut self) -> HashMap<String, String> {
+        self.script_engine.get_all_som_presence_changes()
+    }
+
     /// Execute change event scripts on the parent exclGroup when a radio button is selected.
     pub fn trigger_change_on_excl_group(
         &mut self,
@@ -1522,6 +1527,7 @@ impl XfaForm {
                             name,
                             &value,
                             initial_presence,
+                            is_subform,
                         );
                     }
                 }

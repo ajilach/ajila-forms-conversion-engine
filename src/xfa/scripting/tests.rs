@@ -1619,7 +1619,7 @@ fn test_hidden_field_calculates_value() {
     // Per XFA 3.3 §2 p.68: "hidden: The container... may still perform
     // calculations, validations, and event processing."
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.HiddenField", "HiddenField", "", "hidden");
+    engine.register_field_with_presence("Form.HiddenField", "HiddenField", "", "hidden", false);
 
     engine.set_current_field("Form.HiddenField", "HiddenField", "");
     let script = XfaScript {
@@ -1644,7 +1644,7 @@ fn test_hidden_field_calculates_value() {
 fn test_hidden_field_initializes() {
     // A hidden field's initialize event should still fire.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.HiddenInit", "HiddenInit", "", "hidden");
+    engine.register_field_with_presence("Form.HiddenInit", "HiddenInit", "", "hidden", false);
 
     engine.set_current_field("Form.HiddenInit", "HiddenInit", "");
     let script = XfaScript {
@@ -1672,7 +1672,7 @@ fn test_inactive_field_presence_in_engine() {
     // This test confirms the engine CAN run scripts on inactive fields —
     // the suppression happens at the ScriptExecutor level.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.InactiveField", "InactiveField", "", "inactive");
+    engine.register_field_with_presence("Form.InactiveField", "InactiveField", "", "inactive", false);
 
     engine.set_current_field("Form.InactiveField", "InactiveField", "");
     let script = XfaScript {
@@ -2082,7 +2082,7 @@ fn test_exec_event_basic() {
 fn test_exec_event_inactive_fails_silently() {
     // Per XFA 3.3 §10 Rule 3: execEvent on inactive container fails silently.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.B", "B", "", "inactive");
+    engine.register_field_with_presence("Form.B", "B", "", "inactive", false);
 
     engine.register_event_script("Form.B", "click", r#"this.rawValue = "clicked";"#);
 
@@ -2213,7 +2213,7 @@ fn test_exec_event_calculate() {
 fn test_update_field_presence_baseline_updates_existing_entry() {
     let mut engine = XfaScriptEngine::new();
     // Register a field with initial presence "visible"
-    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible");
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible", false);
 
     let path = SomPath::new("Root.Page.Field1");
 
@@ -2241,7 +2241,7 @@ fn test_update_field_presence_baseline_updates_existing_entry() {
 fn test_update_field_presence_baseline_skips_unregistered_path() {
     let mut engine = XfaScriptEngine::new();
     // Register one field
-    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible");
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible", false);
 
     // Try to update a path that was never registered
     let unknown = SomPath::new("Root.Page.Nonexistent");
@@ -2261,7 +2261,7 @@ fn test_update_field_presence_baseline_skips_unregistered_path() {
 #[test]
 fn test_update_field_presence_baseline_does_not_create_new_js_objects() {
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible");
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible", false);
 
     let count_before = engine.field_objects_count();
 
@@ -2279,7 +2279,7 @@ fn test_update_field_presence_baseline_does_not_create_new_js_objects() {
 #[test]
 fn test_update_field_presence_baseline_presence_change_detection() {
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible");
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible", false);
 
     let path = SomPath::new("Root.Page.Field1");
 
@@ -2313,7 +2313,7 @@ fn test_shortened_path_aliases_carry_initial_presence() {
     // get_all_som_presence_changes() defaults to "visible" and produces
     // false-positive presence changes.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.Root.Page.MyField", "MyField", "", "hidden");
+    engine.register_field_with_presence("Form.Root.Page.MyField", "MyField", "", "hidden", false);
 
     // No script has changed any presence — result must be empty.
     let changes = engine.get_all_som_presence_changes();
@@ -2341,7 +2341,7 @@ fn test_shortened_path_aliases_visible_field_no_false_change() {
     // A field with default visible presence should also not produce false
     // changes through its aliases.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "val", "visible");
+    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "val", "visible", false);
 
     let changes = engine.get_all_som_presence_changes();
     assert!(
@@ -2356,7 +2356,7 @@ fn test_shortened_path_alias_detects_real_change() {
     // After fixing the false positives, real changes must still be detected
     // on shortened-path aliases.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "", "visible");
+    engine.register_field_with_presence("Form.Root.Page.Field1", "Field1", "", "visible", false);
 
     // Mutate presence on the shortened alias
     let alias = SomPath::new("Root.Page.Field1");
@@ -2520,5 +2520,51 @@ fn test_subform_object_has_instance_manager() {
     assert!(result.is_ok());
     if let Ok(Some(value)) = result {
         assert_eq!(value, "true", "subform objects should have instanceManager");
+    }
+}
+
+#[test]
+fn test_subform_via_register_field_with_presence_has_instance_manager() {
+    let mut engine = XfaScriptEngine::new();
+
+    // register_field_with_presence with is_subform=true should add instanceManager
+    engine.register_field_with_presence(
+        "Root.DynSubform",
+        "DynSubform",
+        "",
+        "visible",
+        true, // is_subform
+    );
+
+    engine.set_current_field("Root.DynSubform", "DynSubform", "");
+
+    // instanceManager should be accessible with setInstances, addInstance,
+    // removeInstance, count, and max (XFA 3.3 §6.16)
+    let script = XfaScript {
+        source: r#"
+            var im = this.instanceManager;
+            var hasIM = typeof im !== 'undefined';
+            var hasSI = typeof im.setInstances === 'function';
+            var hasAI = typeof im.addInstance === 'function';
+            var hasRI = typeof im.removeInstance === 'function';
+            var hasCount = typeof im.count === 'number';
+            var hasMax = typeof im.max === 'number';
+            this.rawValue = [hasIM, hasSI, hasAI, hasRI, hasCount, hasMax].join(',');
+        "#
+        .to_string(),
+        content_type: ScriptContentType::JavaScript,
+        activity: EventActivity::Ready,
+        event_ref: EventRef::Current,
+        name: None,
+        run_at: RunAt::Client,
+        listen: ListenScope::default(),
+    };
+    let result = engine.execute_script(&script);
+    assert!(result.is_ok());
+    if let Ok(Some(value)) = result {
+        assert_eq!(
+            value, "true,true,true,true,true,true",
+            "subform instanceManager should have setInstances, addInstance, removeInstance, count, max"
+        );
     }
 }

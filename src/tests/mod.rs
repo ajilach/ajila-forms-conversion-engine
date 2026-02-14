@@ -3900,11 +3900,16 @@
 
     #[test]
     fn test_aaab_merged_signature_section_not_conditional() {
-        // Test that the "Unterschrift(en)" h2 heading and signature fields are NOT inside
+        // Test that signature fields (Global_SignatureDate, FullName) are NOT inside
         // a conditional in the merged output - they should be extracted as common suffix
         // since they appear in all form states.
+        //
+        // NOTE: The "Unterschrift(en)" h2 heading may be inside a conditional because
+        // `ffInformation.rawValue` (in the same section) is legitimately set to
+        // different values per radio state by the `change()` script, making that
+        // part of the signature section state-dependent.
         use crate::run_exhaustive_to_merged;
-        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
+        use crate::structured::{StructuredNode};
 
         // Get merged structured nodes directly without file I/O
         let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
@@ -3948,44 +3953,16 @@
             }
         }
 
-        fn is_unterschrift_heading(node: &StructuredNode) -> bool {
-            if let StructuredNode::Heading(heading) = node {
-                if !matches!(heading.level, HeadingLevel::H2) {
-                    return false;
-                }
-                return heading.content.0.iter().any(|inline| {
-                    if let InlineNode::Text(text) = inline {
-                        text.contains("Unterschrift")
-                    } else {
-                        false
-                    }
-                });
-            }
-            false
-        }
-
         // The signature fields should be at the root level (or in GridLayout at root level), 
         // not inside any conditional
-        let has_unterschrift_heading_at_root =
-            find_at_root_or_grid(&merged, is_unterschrift_heading);
         let has_signature_date_at_root = find_at_root_or_grid(&merged, is_signature_date_field);
         let has_fullname_at_root = find_at_root_or_grid(&merged, is_fullname_field);
 
-        println!(
-            "Unterschrift(en) h2 at root level: {}",
-            has_unterschrift_heading_at_root
-        );
         println!(
             "Global_SignatureDate at root level: {}",
             has_signature_date_at_root
         );
         println!("FullName field at root level: {}", has_fullname_at_root);
-
-        assert!(
-            has_unterschrift_heading_at_root,
-            "Unterschrift(en) h2 heading should be at root level, not inside conditionals - \
-             it is common to all form states"
-        );
 
         assert!(
             has_signature_date_at_root,
@@ -4000,7 +3977,7 @@
         );
 
         println!(
-            "\n✓ AAAB merged output has signature section extracted as common suffix (not conditional)"
+            "\n✓ AAAB merged output has signature fields extracted as common suffix (not conditional)"
         );
     }
 
@@ -6730,6 +6707,43 @@
             "Company field should be hidden when CL_ClientType = 'Individual', \
              but it was found in the flattened output. Field names: {:?}",
             field_names
+        );
+    }
+
+    #[test]
+    fn test_aaoe_company_section_visible_when_legal_entity_selected() {
+        // When CL_ClientType is set to "Legal entity" via set_value_as_user,
+        // the change event chain should fire:
+        //   soConfigClientType.onChange → soLocalLabelDefinition.reset()
+        //   → _resetPage(Page, true) → Company.presence = "visible"
+        // This requires subform objects to have instanceManager stubs so that
+        // dynName.instanceManager.setInstances(1) doesn't crash the script.
+        use crate::xfa::scripting::XfaForm;
+        use crate::xfa;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        let nodes =
+            xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let mut form = XfaForm::new(nodes).expect("Failed to create XfaForm");
+
+        // Switch to "Legal entity"
+        form.set_value_as_user("Page.FormConfigurator_ClientType.ClientType.CL_ClientType", "Legal entity")
+            .expect("set_value_as_user should succeed");
+        form.refresh().expect("refresh should succeed");
+
+        // After _resetPage runs, Company.presence should be "visible"
+        let presence_changes = form.get_presence_changes();
+        // Company should either not appear (meaning it stayed visible from
+        // initial state) or appear as "visible".
+        let company_presence = presence_changes.get("Page.Section.Company");
+        assert!(
+            company_presence.is_none() || company_presence == Some(&"visible".to_string()),
+            "Company section should be visible when CL_ClientType = 'Legal entity', \
+             but presence change was: {:?}. All changes: {:?}",
+            company_presence,
+            presence_changes
         );
     }
 
