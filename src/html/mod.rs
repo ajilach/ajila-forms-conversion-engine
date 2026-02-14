@@ -488,7 +488,6 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                 "<select id=\"{}\" name=\"{}\" class=\"form-select\">\n",
                 id, name
             );
-            html.push_str("  <option value=\"\">-- Select --</option>\n");
 
             let selected = f.value.as_ref().and_then(|v| {
                 if let InputValue::Text(s) = v {
