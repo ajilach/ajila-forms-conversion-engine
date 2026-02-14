@@ -3939,7 +3939,7 @@
 
         fn is_signature_date_field(node: &StructuredNode) -> bool {
             if let StructuredNode::Field(field) = node {
-                field.name == "Global_SignatureDate"
+                field.name.ends_with("Global_SignatureDate")
             } else {
                 false
             }
@@ -3947,7 +3947,7 @@
 
         fn is_fullname_field(node: &StructuredNode) -> bool {
             if let StructuredNode::Field(field) = node {
-                field.name == "FullName"
+                field.name.ends_with("FullName")
             } else {
                 false
             }
@@ -6352,7 +6352,7 @@
         // Find the "Firma" / "Company" field
         let firma_field = fields
             .iter()
-            .find(|f| f.name == "Firma")
+            .find(|f| f.name.ends_with("Firma"))
             .expect("Should find field named 'Firma'");
 
         let firma_label = firma_field

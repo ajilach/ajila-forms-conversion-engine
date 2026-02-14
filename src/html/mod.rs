@@ -1200,7 +1200,8 @@ fn generate_scripts(form_id: &str) -> String {
     }}
 
     if (field.tagName === 'SELECT') {{
-      return {{ type: 'select', value: field.value }};
+      const selectedOption = field.options[field.selectedIndex];
+      return {{ type: 'select', value: field.value, text: selectedOption ? selectedOption.textContent.trim() : '' }};
     }}
 
     return {{ type: 'text', value: field.value }};
@@ -1208,7 +1209,10 @@ fn generate_scripts(form_id: &str) -> String {
 
   function conditionMatches(condition, fieldValue) {{
     if (!fieldValue) return false;
-    return condition.value === fieldValue.value;
+    if (condition.value === fieldValue.value) return true;
+    // For select elements, also match against the display text of the selected option
+    if (fieldValue.type === 'select' && fieldValue.text && condition.value === fieldValue.text) return true;
+    return false;
   }}
 
   function evaluateConditional(el) {{

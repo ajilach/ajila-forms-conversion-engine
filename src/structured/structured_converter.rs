@@ -387,36 +387,37 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         for &child_idx in &group.children {
             if let Some(child_group) = self.doc.get_group(child_idx)
-                && let GroupKind::RadioButton { field: _, label } = &child_group.kind {
-                    // Get label text
-                    if let Some(&label_group_idx) = child_group.children.get(*label) {
-                        let label_text = self.doc.get_text_content(label_group_idx);
-                        options.push(label_text.clone());
-                    }
+                && let GroupKind::RadioButton { field: _, label } = &child_group.kind
+            {
+                // Get label text
+                if let Some(&label_group_idx) = child_group.children.get(*label) {
+                    let label_text = self.doc.get_text_content(label_group_idx);
+                    options.push(label_text.clone());
+                }
 
-                    // Get field for checking selected state and collecting names
-                    let nodes = self.doc.collect_nodes(child_idx);
-                    for node in nodes {
-                        if let FlattenedNodeKind::Field {
-                            is_checked, name, ..
-                        } = &node.kind
-                        {
-                            field_names.push(name.clone());
-                            if *is_checked == Some(true) {
-                                selected_value = options.last().cloned();
-                            }
-                            // Extract ExclGroupSomPath from first field's hints
-                            if excl_group_som_path.is_none() {
-                                for hint in &node.hints {
-                                    if let Hint::ExclGroupSomPath(path) = hint {
-                                        excl_group_som_path = Some(path.clone());
-                                        break;
-                                    }
+                // Get field for checking selected state and collecting names
+                let nodes = self.doc.collect_nodes(child_idx);
+                for node in nodes {
+                    if let FlattenedNodeKind::Field {
+                        is_checked, name, ..
+                    } = &node.kind
+                    {
+                        field_names.push(name.clone());
+                        if *is_checked == Some(true) {
+                            selected_value = options.last().cloned();
+                        }
+                        // Extract ExclGroupSomPath from first field's hints
+                        if excl_group_som_path.is_none() {
+                            for hint in &node.hints {
+                                if let Hint::ExclGroupSomPath(path) = hint {
+                                    excl_group_som_path = Some(path.clone());
+                                    break;
                                 }
                             }
                         }
                     }
                 }
+            }
         }
 
         if field_names.is_empty() {
@@ -505,9 +506,10 @@ impl<'a, 'b> Converter<'a, 'b> {
             .iter()
             .filter_map(|n| {
                 if let FlattenedNodeKind::Field { value, .. } = &n.kind
-                    && !value.is_empty() {
-                        return Some(value.clone());
-                    }
+                    && !value.is_empty()
+                {
+                    return Some(value.clone());
+                }
                 None
             })
             .collect();
@@ -545,14 +547,15 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         // If there's suffix text, emit it as a trailing paragraph
         if let Some(suffix) = suffix_text
-            && !suffix.is_empty() {
-                let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain(suffix.clone()),
-                });
-                return Some(StructuredNode::Group(GroupNode {
-                    children: vec![field_node, suffix_paragraph],
-                }));
-            }
+            && !suffix.is_empty()
+        {
+            let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain(suffix.clone()),
+            });
+            return Some(StructuredNode::Group(GroupNode {
+                children: vec![field_node, suffix_paragraph],
+            }));
+        }
 
         Some(field_node)
     }
@@ -570,8 +573,13 @@ impl<'a, 'b> Converter<'a, 'b> {
         let field_type = self.determine_field_type(node);
         let input_value = self.parse_input_value(value, &field_type);
 
+        // Use the full SOM path as the field name so it matches the condition
+        // field_name in conditionals (consistent with radio buttons which use
+        // the ExclGroupSomPath).
+        let field_name = self.get_som_path(node).unwrap_or_else(|| name.clone());
+
         Some(StructuredNode::Field(FieldNode {
-            name: name.clone(),
+            name: field_name,
             label,
             input_type: field_type,
             value: input_value,
@@ -715,6 +723,16 @@ impl<'a, 'b> Converter<'a, 'b> {
         None
     }
 
+    /// Extract the SOM path from a field's hints.
+    fn get_som_path(&self, node: &FlattenedNode) -> Option<String> {
+        for hint in &node.hints {
+            if let Hint::SomPath(path) = hint {
+                return Some(path.clone());
+            }
+        }
+        None
+    }
+
     fn get_field_name(&self, node: &FlattenedNode) -> String {
         if let FlattenedNodeKind::Field { name, .. } = &node.kind {
             name.clone()
@@ -778,9 +796,10 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         // Plain text fallback
         if let FlattenedNodeKind::Text { content, .. } = &node.kind
-            && !content.is_empty() {
-                result.push(InlineNode::Text(content.clone()));
-            }
+            && !content.is_empty()
+        {
+            result.push(InlineNode::Text(content.clone()));
+        }
     }
 
     /// Convert RichText to multiple ParagraphNodes (one per RichParagraph).
