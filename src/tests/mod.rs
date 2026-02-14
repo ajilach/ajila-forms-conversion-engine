@@ -6771,4 +6771,111 @@
         form.refresh().expect("refresh should succeed");
     }
 
+    #[test]
+    fn test_aaoe_merged_has_dropdown_conditionals() {
+        // AAOE has a dropdown (CL_ClientType) with 2 options: "Individual" and "Legal entity".
+        // The change event script toggles visibility of the Individual/Company sections.
+        // After exhaustive exploration + merge, the merged structured output should
+        // contain ConditionalNode(s) keyed on CL_ClientType — one per dropdown option,
+        // wrapping the content that differs between states.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
 
+        let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+            .expect("Failed to run exhaustive merge on AAOE");
+
+        // Helper to count conditionals recursively
+        fn count_conditionals(nodes: &[StructuredNode]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(cond) => {
+                        count += 1;
+                        count += count_conditionals(&[(*cond.content).clone()]);
+                    }
+                    StructuredNode::Group(group) => {
+                        count += count_conditionals(&group.children);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        count += count_conditionals(&[(*rep.item).clone()]);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        count += count_conditionals(&nodes);
+                    }
+                    _ => {}
+                }
+            }
+            count
+        }
+
+        // Helper to find conditionals on a specific field
+        fn find_conditional_values_for_field(
+            nodes: &[StructuredNode],
+            field_suffix: &str,
+        ) -> Vec<String> {
+            let mut found = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(cond) => {
+                        if cond.condition.field_name.as_str().ends_with(field_suffix) {
+                            if let crate::structured::InputValue::Text(v) = &cond.condition.value {
+                                found.push(v.clone());
+                            }
+                        }
+                        // Also recurse into conditionals
+                        found.extend(find_conditional_values_for_field(
+                            &[(*cond.content).clone()],
+                            field_suffix,
+                        ));
+                    }
+                    StructuredNode::Group(group) => {
+                        found.extend(find_conditional_values_for_field(&group.children, field_suffix));
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        found.extend(find_conditional_values_for_field(
+                            &[(*rep.item).clone()],
+                            field_suffix,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            found
+        }
+
+        let total_conditionals = count_conditionals(&merged);
+        println!(
+            "Total conditionals in AAOE merged output: {}",
+            total_conditionals
+        );
+
+        // There must be at least 2 conditionals (one per dropdown option)
+        assert!(
+            total_conditionals >= 2,
+            "AAOE merged output should have at least 2 conditionals \
+             (one per dropdown option), got {}",
+            total_conditionals
+        );
+
+        // The conditionals must be keyed on the CL_ClientType field
+        let condition_values = find_conditional_values_for_field(&merged, "CL_ClientType");
+        assert!(
+            condition_values.len() >= 2,
+            "Should have at least 2 conditionals keyed on CL_ClientType, got {}",
+            condition_values.len()
+        );
+
+        assert!(
+            condition_values.contains(&"Individual".to_string()),
+            "Should have a conditional for 'Individual', got: {:?}",
+            condition_values
+        );
+        assert!(
+            condition_values.contains(&"Legal entity".to_string()),
+            "Should have a conditional for 'Legal entity', got: {:?}",
+            condition_values
+        );
+
+        println!("\n✓ AAOE merged output has expected dropdown conditionals");
+    }
