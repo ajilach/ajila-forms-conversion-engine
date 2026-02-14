@@ -9,7 +9,7 @@
 - Instead of assuming something when the task is unclear, ask the user.
 - When making an architectural decision, always ask the user first with all possible options.
 - When asked to find the issue of a failing test, do not simplify the test itself without the users consent.
-- As soon as you have implemented a feature and all tests pass, commit it.
+- As soon as you have implemented a feature and all tests pass, commit it. Use a simple one-sentence commit message.
 
 ## Project-specific
 
