@@ -1975,6 +1975,43 @@ impl XfaScriptEngine {
             .insert(path.clone(), presence.to_string());
     }
 
+    /// Update initial_presence baseline and form_state value for an
+    /// already-registered SOM path.  Used by the Form DOM second pass to
+    /// overlay saved runtime state (presence / values) from the `<form>`
+    /// packet without creating new JS objects or touching the SOM hierarchy.
+    ///
+    /// Per XFA 3.3 §3: the `<form>` packet is a saved snapshot of the Form
+    /// DOM.  On reload the Form DOM is rebuilt from the Template DOM and then
+    /// the saved content is applied as updates.
+    pub fn update_field_presence_baseline(&mut self, path: &SomPath, value: &str, presence: &str) {
+        // Only update entries that were already registered by the template pass.
+        let Some(obj) = self.field_objects.get(path).cloned() else {
+            return;
+        };
+
+        // Update the initial-presence baseline used by
+        // get_all_som_presence_changes() for change detection.
+        self.initial_presence
+            .insert(path.clone(), presence.to_string());
+
+        // Update the JS object's presence property so the runtime state
+        // matches the new baseline (prevents false positives in change
+        // detection).
+        obj.set(
+            PropertyKey::from(js_string!("presence")),
+            JsValue::from(js_string!(presence)),
+            false,
+            &mut self.context,
+        )
+        .ok();
+
+        // Update form_state value.
+        {
+            let mut state = self.form_state.write().unwrap();
+            state.set_value(path.clone(), XfaValue::String(value.to_string()));
+        }
+    }
+
     pub fn execute_script(&mut self, script: &XfaScript) -> Result<Option<String>, String> {
         match script.content_type {
             ScriptContentType::JavaScript => self.execute_javascript(&script.source),
@@ -2498,5 +2535,47 @@ impl XfaScriptEngine {
 impl Default for XfaScriptEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+impl XfaScriptEngine {
+    /// Number of registered field objects (test helper).
+    pub fn field_objects_count(&self) -> usize {
+        self.field_objects.len()
+    }
+
+    /// Whether a SOM path has an initial-presence entry (test helper).
+    pub fn has_initial_presence(&self, path: &SomPath) -> bool {
+        self.initial_presence.contains_key(path)
+    }
+
+    /// Whether a SOM path has a registered JS object (test helper).
+    pub fn has_field_object(&self, path: &SomPath) -> bool {
+        self.field_objects.contains_key(path)
+    }
+
+    /// Get the initial-presence value for a path (test helper).
+    pub fn get_initial_presence(&self, path: &SomPath) -> Option<&str> {
+        self.initial_presence.get(path).map(|s| s.as_str())
+    }
+
+    /// Set the JS `presence` property on an existing field object (test helper).
+    pub fn set_js_presence(&mut self, path: &SomPath, presence: &str) {
+        if let Some(obj) = self.field_objects.get(path) {
+            obj.set(
+                PropertyKey::from(js_string!("presence")),
+                JsValue::from(js_string!(presence)),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        }
+    }
+
+    /// Read the form-state value for a path (test helper).
+    pub fn get_form_state_value(&self, path: &SomPath) -> Option<String> {
+        let state = self.form_state.read().unwrap();
+        state.get_value(path).map(|v| v.as_string())
     }
 }

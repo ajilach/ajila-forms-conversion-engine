@@ -646,8 +646,7 @@ impl XfaForm {
         // enclosing containers."
         let mut ancestor = resolved_path.parent();
         while let Some(ancestor_path) = ancestor {
-            let propagating_scripts =
-                self.find_propagating_scripts(&ancestor_path, &activity);
+            let propagating_scripts = self.find_propagating_scripts(&ancestor_path, &activity);
             if !propagating_scripts.is_empty() {
                 let ancestor_name = ancestor_path.name().to_string();
                 let ancestor_value = self
@@ -1312,8 +1311,7 @@ impl XfaForm {
             parse_events_from_node(&node.children)
                 .into_iter()
                 .filter(|script| {
-                    &script.activity == activity
-                        && script.listen == ListenScope::RefAndDescendents
+                    &script.activity == activity && script.listen == ListenScope::RefAndDescendents
                 })
                 .collect()
         } else {
@@ -1438,6 +1436,9 @@ impl XfaForm {
             String::new()
         }
 
+        /// First pass: register Template DOM nodes in the SOM hierarchy.
+        /// Skips `Element { tag_name: "form" }` subtrees — those are handled
+        /// by the second pass below.
         fn register_fields(
             nodes: &[XfaNode],
             path: &str,
@@ -1446,6 +1447,13 @@ impl XfaForm {
             parent_is_exclgroup: bool,
         ) {
             for node in nodes {
+                // Skip the Form DOM packet entirely — it is processed in a
+                // dedicated second pass that only updates existing entries.
+                if matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "form")
+                {
+                    continue;
+                }
+
                 let node_path = match &node.name {
                     Some(name) if path.is_empty() => name.clone(),
                     Some(name) => format!("{}.{}", path, name),
@@ -1505,6 +1513,55 @@ impl XfaForm {
             }
         }
 
+        /// Second pass: walk `Element { tag_name: "form" }` subtrees and
+        /// update initial_presence + form_state values on entries that were
+        /// already registered by the template pass.  Does NOT create new JS
+        /// objects or touch the SOM hierarchy.
+        ///
+        /// Per XFA 3.3 §3: the `<form>` packet is a saved snapshot of the
+        /// Form DOM.  On reload the Form DOM is rebuilt from the Template DOM
+        /// and then the saved content is applied as updates.
+        fn update_from_form_dom(
+            nodes: &[XfaNode],
+            path: &str,
+            computed_values: &HashMap<SomPath, String>,
+            engine: &mut XfaScriptEngine,
+        ) {
+            for node in nodes {
+                let node_path = match &node.name {
+                    Some(name) if path.is_empty() => name.clone(),
+                    Some(name) => format!("{}.{}", path, name),
+                    None => path.to_string(),
+                };
+
+                let is_registrable = matches!(
+                    node.kind,
+                    XfaNodeKind::Field
+                        | XfaNodeKind::Subform
+                        | XfaNodeKind::ExclGroup
+                        | XfaNodeKind::Draw
+                ) || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
+
+                if is_registrable && node.name.is_some() {
+                    let value = get_node_value(node, &node_path, computed_values);
+                    let presence = node.get_presence().as_str();
+                    let som_path = SomPath::new(&node_path);
+                    engine.update_field_presence_baseline(&som_path, &value, presence);
+                }
+
+                // Recurse into children of the form DOM subtree.
+                update_from_form_dom(&node.children, &node_path, computed_values, engine);
+            }
+        }
+
+        // Pass 1: Register Template DOM nodes (skip <form> subtrees).
         register_fields(nodes, "", computed_values, engine, false);
+
+        // Pass 2: Apply Form DOM state to already-registered entries.
+        for node in nodes {
+            if matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "form") {
+                update_from_form_dom(&node.children, "", computed_values, engine);
+            }
+        }
     }
 }

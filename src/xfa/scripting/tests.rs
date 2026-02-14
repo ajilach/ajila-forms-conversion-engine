@@ -2204,3 +2204,106 @@ fn test_exec_event_calculate() {
         "Total's calculate handler should run via execEvent"
     );
 }
+
+// =============================================================================
+// update_field_presence_baseline Tests
+// =============================================================================
+
+#[test]
+fn test_update_field_presence_baseline_updates_existing_entry() {
+    let mut engine = XfaScriptEngine::new();
+    // Register a field with initial presence "visible"
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible");
+
+    let path = SomPath::new("Root.Page.Field1");
+
+    // Verify initial state
+    assert_eq!(engine.get_initial_presence(&path), Some("visible"));
+
+    // Update presence baseline from form DOM
+    engine.update_field_presence_baseline(&path, "world", "hidden");
+
+    // initial_presence should be updated
+    assert_eq!(engine.get_initial_presence(&path), Some("hidden"));
+
+    // form_state value should be updated
+    assert_eq!(
+        engine.get_form_state_value(&path).as_deref(),
+        Some("world")
+    );
+
+    // No presence change should be reported (JS object matches baseline)
+    let changes = engine.get_all_som_presence_changes();
+    assert!(
+        !changes.contains_key("Root.Page.Field1"),
+        "No presence change should be reported after baseline update"
+    );
+}
+
+#[test]
+fn test_update_field_presence_baseline_skips_unregistered_path() {
+    let mut engine = XfaScriptEngine::new();
+    // Register one field
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "hello", "visible");
+
+    // Try to update a path that was never registered
+    let unknown = SomPath::new("Root.Page.Nonexistent");
+    engine.update_field_presence_baseline(&unknown, "val", "hidden");
+
+    // Should not create a new entry
+    assert!(
+        !engine.has_field_object(&unknown),
+        "No JS object should be created for unregistered path"
+    );
+    assert!(
+        !engine.has_initial_presence(&unknown),
+        "No initial_presence entry should be created for unregistered path"
+    );
+}
+
+#[test]
+fn test_update_field_presence_baseline_does_not_create_new_js_objects() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible");
+
+    let count_before = engine.field_objects_count();
+
+    let path = SomPath::new("Root.Page.Field1");
+    engine.update_field_presence_baseline(&path, "v2", "hidden");
+
+    // field_objects count should not change
+    assert_eq!(
+        engine.field_objects_count(),
+        count_before,
+        "No new JS objects should be created"
+    );
+}
+
+#[test]
+fn test_update_field_presence_baseline_presence_change_detection() {
+    let mut engine = XfaScriptEngine::new();
+    engine.register_field_with_presence("Root.Page.Field1", "Field1", "v1", "visible");
+
+    let path = SomPath::new("Root.Page.Field1");
+
+    // Update baseline to "hidden" — JS object also becomes "hidden"
+    engine.update_field_presence_baseline(&path, "v1", "hidden");
+
+    // No change reported (JS matches baseline)
+    let changes = engine.get_all_som_presence_changes();
+    assert!(
+        !changes.contains_key("Root.Page.Field1"),
+        "Baseline and JS object match — no change expected"
+    );
+
+    // Simulate a script changing presence to "visible" on the JS object
+    engine.set_js_presence(&path, "visible");
+
+    // Now a change should be detected (JS="visible" vs baseline="hidden")
+    let changes = engine.get_all_som_presence_changes();
+    assert_eq!(
+        changes.get("Root.Page.Field1"),
+        Some(&"visible".to_string()),
+        "Presence change should be detected after script modifies JS object"
+    );
+}
