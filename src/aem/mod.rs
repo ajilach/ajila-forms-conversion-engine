@@ -132,8 +132,16 @@ pub struct AemConfig {
     pub repeatable_max_occur: u32,
 
     // -- Template references -------------------------------------------------
+    /// Sling resource type for the page component (`jcr:content`).
+    ///
+    /// This is NOT the guide container resource type — it is the page-level
+    /// rendering component that AEM uses to render the `cq:Page`.
+    ///
+    /// Default: `"fd/af/components/page2"`.
+    pub page_resource_type: String,
+
     /// Path to the AEM template (used in `cq:template`).
-    /// Default: `"/conf/core-components-examples/settings/wcm/templates/af-blank-v2"`.
+    /// Default: `"/conf/ajila-forms-ubs/settings/wcm/templates/basic"`.
     pub template_path: String,
 
     /// Path to the theme client library.
@@ -145,7 +153,7 @@ pub struct AemConfig {
     pub dor_template_ref: String,
 
     /// Redirect URL after form submission.
-    /// Default: `"/content/core-components-examples/library/adaptive-form/thankyou"`.
+    /// Default: `"/content/forms/af/afforms_global_common/confirm-successful-submission"`.
     pub redirect_url: String,
 
     // -- Package paths -------------------------------------------------------
@@ -189,11 +197,12 @@ impl Default for AemConfig {
             repeatable_min_occur: 1,
             repeatable_max_occur: 20,
 
-            template_path: "/conf/core-components-examples/settings/wcm/templates/af-blank-v2"
+            page_resource_type: "fd/af/components/page2".into(),
+            template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic"
                 .into(),
             theme_ref: String::new(),
             dor_template_ref: String::new(),
-            redirect_url: "/content/core-components-examples/library/adaptive-form/thankyou".into(),
+            redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission".into(),
 
             form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
         }

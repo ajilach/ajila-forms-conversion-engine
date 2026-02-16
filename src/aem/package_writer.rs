@@ -127,13 +127,14 @@ pub fn generate_aem_package(
     // ── Intermediate folder .content.xml files ──────────────────────────
     let path_segments: Vec<&str> = config.form_path.split('/').collect();
     // content/forms/af/<seg1>/<seg2>/.../<form_code>
-    write_intermediate_folders(&mut zip, &opts, "jcr_root/content/forms/af", &path_segments);
+    write_intermediate_folders(&mut zip, &opts, "jcr_root/content/forms/af", &path_segments, false);
     // content/dam/formsanddocuments/<seg1>/<seg2>/.../<form_code>
     write_intermediate_folders(
         &mut zip,
         &opts,
         "jcr_root/content/dam/formsanddocuments",
         &path_segments,
+        true,
     );
 
     // ── Form content .content.xml ───────────────────────────────────────
@@ -203,19 +204,25 @@ fn write_entry(
     zip.write_all(content.as_bytes()).expect("zip write");
 }
 
-/// Write `sling:OrderedFolder` `.content.xml` files for each intermediate
-/// directory segment (e.g. `ajila-forms-ubs`, `output`, `Germany_Tranch_1`).
+/// Write intermediate folder `.content.xml` files for each segment.
+/// DAM folders use `sling:Folder` with `lcFolder`/`type` attributes;
+/// forms folders use `sling:OrderedFolder`.
 fn write_intermediate_folders(
     zip: &mut ZipWriter<Cursor<Vec<u8>>>,
     opts: &SimpleFileOptions,
     base: &str,
     segments: &[&str],
+    is_dam: bool,
 ) {
     let mut current = base.to_string();
     for seg in segments {
         current = format!("{}/{}", current, seg);
         let path = format!("{}/.content.xml", current);
-        write_entry(zip, opts, &path, ORDERED_FOLDER_XML);
+        if is_dam {
+            write_entry(zip, opts, &path, DAM_FOLDER_XML);
+        } else {
+            write_entry(zip, opts, &path, ORDERED_FOLDER_XML);
+        }
     }
 }
 
@@ -799,6 +806,13 @@ const ORDERED_FOLDER_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     jcr:primaryType="sling:OrderedFolder"/>
 "#;
 
+const DAM_FOLDER_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    jcr:primaryType="sling:Folder"
+    lcFolder="{Long}0"
+    type="lcFolder"/>
+"#;
+
 const VAULT_CONFIG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <vaultfs version="1.1">
     <aggregates>
@@ -942,3 +956,107 @@ const NODETYPES_CND: &str = r#"<'sling'='http://sling.apache.org/jcr/sling/1.0'>
   mixin
   - fd:trusted (boolean)
 "#;
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn dam_asset_xml_has_correct_resource_type() {
+        let config = AemConfig {
+            form_title: "TEST_FORM".into(),
+            form_code: "TEST_FORM".into(),
+            ..Default::default()
+        };
+        let xml = generate_dam_asset_xml(&config);
+        assert!(
+            xml.contains("jcr:primaryType=\"dam:Asset\""),
+            "root must be dam:Asset"
+        );
+        assert!(
+            xml.contains("jcr:primaryType=\"dam:AssetContent\""),
+            "jcr:content must be dam:AssetContent"
+        );
+        assert!(
+            xml.contains("sling:resourceType=\"fd/fm/af/render\""),
+            "jcr:content must have sling:resourceType=fd/fm/af/render"
+        );
+        assert!(xml.contains("guide=\"1\""));
+        assert!(xml.contains("type=\"guide\""));
+    }
+
+    #[test]
+    fn dam_intermediate_folders_use_sling_folder() {
+        assert!(
+            DAM_FOLDER_XML.contains("sling:Folder"),
+            "DAM folders must use sling:Folder"
+        );
+        assert!(
+            DAM_FOLDER_XML.contains("lcFolder"),
+            "DAM folders must have lcFolder attribute"
+        );
+        assert!(
+            !DAM_FOLDER_XML.contains("OrderedFolder"),
+            "DAM folders must NOT use sling:OrderedFolder"
+        );
+    }
+
+    #[test]
+    fn package_contains_dam_and_form_content() {
+        let config = AemConfig {
+            form_title: "TEST".into(),
+            form_code: "TEST".into(),
+            ..Default::default()
+        };
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let mut found_form = false;
+        let mut found_dam = false;
+        let mut found_dam_folder = false;
+
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).unwrap();
+            let name = entry.name().to_string();
+            if name.contains("content/forms/af/") && name.ends_with("TEST/.content.xml") {
+                found_form = true;
+            }
+            if name.contains("content/dam/formsanddocuments/") && name.ends_with("TEST/.content.xml") {
+                found_dam = true;
+            }
+            if name.contains("content/dam/formsanddocuments/ajila-forms-ubs/.content.xml") {
+                found_dam_folder = true;
+            }
+        }
+
+        assert!(found_form, "package must contain form .content.xml");
+        assert!(found_dam, "package must contain DAM .content.xml");
+        assert!(found_dam_folder, "package must contain DAM intermediate folder");
+
+        // Verify DAM intermediate folder uses sling:Folder
+        let mut dam_folder = archive
+            .by_name("jcr_root/content/dam/formsanddocuments/ajila-forms-ubs/.content.xml")
+            .expect("DAM folder entry");
+        let mut dam_folder_xml = String::new();
+        dam_folder.read_to_string(&mut dam_folder_xml).unwrap();
+        assert!(
+            dam_folder_xml.contains("sling:Folder"),
+            "DAM folder must be sling:Folder, got: {}",
+            dam_folder_xml
+        );
+        assert!(
+            dam_folder_xml.contains("lcFolder"),
+            "DAM folder must have lcFolder"
+        );
+    }
+}

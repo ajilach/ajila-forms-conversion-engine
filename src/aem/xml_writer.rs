@@ -82,9 +82,10 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
         content_elem.push_attribute(("jcr:title", title.as_str()));
         content_elem.push_attribute((
             "sling:resourceType",
-            config.guide_container_resource_type().as_str(),
+            config.page_resource_type.as_str(),
         ));
         content_elem.push_attribute(("cq:template", config.template_path.as_str()));
+        content_elem.push_attribute(("jcr:language", config.master_language.as_str()));
         w.write_event(Event::Start(content_elem)).unwrap();
 
         // <guideContainer>
@@ -117,6 +118,9 @@ fn write_guide_container(
     elem.push_attribute(("guideNodeClass", "guideContainerNode"));
     elem.push_attribute(("fd:version", "2.1"));
     elem.push_attribute(("dorType", config.dor_type.as_str()));
+    elem.push_attribute(("guideCss", "guideContainer"));
+    elem.push_attribute(("name", "guide1"));
+    elem.push_attribute(("textIsRich", "true"));
     if !config.theme_ref.is_empty() {
         elem.push_attribute(("themeRef", config.theme_ref.as_str()));
     }
@@ -127,6 +131,16 @@ fn write_guide_container(
         elem.push_attribute(("redirect", config.redirect_url.as_str()));
     }
     w.write_event(Event::Start(elem)).unwrap();
+
+    // <layout>
+    {
+        let mut layout = BytesStart::new("layout");
+        layout.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        layout.push_attribute(("sling:resourceType", "fd/af/layouts/defaultGuideLayout"));
+        layout.push_attribute(("mobileLayout", "fd/af/layouts/mobile/step"));
+        layout.push_attribute(("toolbarPosition", "Bottom"));
+        w.write_event(Event::Empty(layout)).unwrap();
+    }
 
     // <rootPanel>
     write_root_panel(w, title, children, config);
@@ -144,10 +158,16 @@ fn write_root_panel(
 ) {
     let mut elem = BytesStart::new("rootPanel");
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    elem.push_attribute(("sling:resourceType", config.panel_resource_type().as_str()));
-    elem.push_attribute(("guideNodeClass", "guideRootPanel"));
+    elem.push_attribute(("sling:resourceType", "fd/af/components/rootPanel"));
+    elem.push_attribute(("guideNodeClass", "rootPanelNode"));
     elem.push_attribute(("jcr:title", title));
+    elem.push_attribute(("name", "guideRootPanel"));
     elem.push_attribute(("textIsRich", "true"));
+    elem.push_attribute(("completionExpReq", "{Boolean}true"));
+    elem.push_attribute(("dorExcludeDescription", "true"));
+    elem.push_attribute(("dorExcludeTitle", "true"));
+    elem.push_attribute(("panelSetType", "Navigable"));
+    elem.push_attribute(("validateOnStepCompletion", "{Boolean}true"));
     w.write_event(Event::Start(elem)).unwrap();
 
     // <layout>
@@ -1059,6 +1079,49 @@ mod tests {
         assert!(xml.contains("jcr:content"));
         assert!(xml.contains("guideContainer"));
         assert!(xml.contains("rootPanel"));
+    }
+
+    #[test]
+    fn page_wrapper_has_correct_resource_types() {
+        let config = AemConfig {
+            include_page_wrapper: true,
+            include_toolbar: false,
+            page_resource_type: "fd/af/components/page2".into(),
+            ..test_config()
+        };
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![],
+        };
+        let xml = generate_aem_xml(&root, &config);
+
+        // jcr:content must use page resource type, NOT guideContainer
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/page2\""),
+            "jcr:content should use page_resource_type"
+        );
+        // guideContainer must use the guide container resource type
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/guideContainer\""),
+            "guideContainer should use guide_container_resource_type"
+        );
+        // rootPanel must use rootPanel resource type
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/rootPanel\""),
+            "rootPanel should use rootPanel resource type"
+        );
+        // jcr:language attribute present
+        assert!(xml.contains("jcr:language="));
+        // guideContainer attributes
+        assert!(xml.contains("guideCss=\"guideContainer\""));
+        assert!(xml.contains("name=\"guide1\""));
+        // rootPanel attributes
+        assert!(xml.contains("guideNodeClass=\"rootPanelNode\""));
+        assert!(xml.contains("name=\"guideRootPanel\""));
+        assert!(xml.contains("panelSetType=\"Navigable\""));
+        // guideContainer layout element
+        assert!(xml.contains("sling:resourceType=\"fd/af/layouts/defaultGuideLayout\""));
+        assert!(xml.contains("mobileLayout=\"fd/af/layouts/mobile/step\""));
     }
 
     #[test]
