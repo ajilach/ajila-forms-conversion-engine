@@ -1080,10 +1080,10 @@ mod tests {
         assert!(xml.contains("rootPanel"));
         assert!(xml.contains("guideTextDraw"));
         assert!(xml.contains("ST_1"));
-        // Control resource type must NOT have doubled /components/
+        // Control resource type must use custom base
         assert!(
-            xml.contains("sling:resourceType=\"fd/af/components/controls/textdraw\""),
-            "textdraw resource type should be fd/af/components/controls/textdraw, not doubled"
+            xml.contains("sling:resourceType=\"ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw\""),
+            "textdraw resource type should use custom base"
         );
         assert!(
             !xml.contains("components/components"),

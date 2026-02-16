@@ -177,7 +177,9 @@ impl Default for AemConfig {
             master_language: "en".into(),
 
             resource_type_base: "fd/af/components".into(),
-            custom_resource_type_base: None,
+            custom_resource_type_base: Some(
+                "ajila-forms-customers/ajila-forms-ubs/components".into(),
+            ),
 
             default_layout: "fd/af/layouts/gridFluidLayout2".into(),
             grid_columns: 12,
