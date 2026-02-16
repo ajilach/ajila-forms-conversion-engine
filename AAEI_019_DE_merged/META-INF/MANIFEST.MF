@@ -1,7 +1,0 @@
-Manifest-Version: 1.0
-Content-Package-Id: fd/export:BlueprintFormsPackage_1771239504731
-Content-Package-Roots: /content/forms/af/ajila-forms-ubs/output/Germany_
- Tranch_1/FORM_001,/content/dam/formsanddocuments/ajila-forms-ubs/output
- /Germany_Tranch_1/FORM_001
-Content-Package-Type: mixed
-
