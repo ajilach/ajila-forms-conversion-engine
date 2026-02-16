@@ -78,15 +78,31 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
 
         // <jcr:content>
         let mut content_elem = BytesStart::new("jcr:content");
-        content_elem.push_attribute(("jcr:primaryType", "cq:PageContent"));
-        content_elem.push_attribute(("jcr:title", title.as_str()));
-        content_elem.push_attribute(("sling:resourceType", config.page_resource_type.as_str()));
+        content_elem.push_attribute((
+            "cq:deviceGroups",
+            "[/etc/mobile/groups/responsive]",
+        ));
+        content_elem.push_attribute((
+            "cq:lastModified",
+            "{Date}2025-01-01T00:00:00.000+01:00",
+        ));
+        content_elem.push_attribute(("cq:lastModifiedBy", config.author.as_str()));
         content_elem.push_attribute(("cq:template", config.template_path.as_str()));
         content_elem.push_attribute(("jcr:language", config.master_language.as_str()));
+        content_elem.push_attribute(("jcr:primaryType", "cq:PageContent"));
+        content_elem.push_attribute(("jcr:title", config.form_code.as_str()));
+        content_elem.push_attribute(("sling:resourceType", config.page_resource_type.as_str()));
+        content_elem.push_attribute(("ignoreTranslationInvalidation", "{Boolean}true"));
         w.write_event(Event::Start(content_elem)).unwrap();
+
+        // <parsys1>
+        write_parsys1(w, title, config);
 
         // <guideContainer>
         write_guide_container(w, title, children, config);
+
+        // <parsys2>
+        write_parsys2(w, config);
 
         // </jcr:content>
         w.write_event(Event::End(BytesEnd::new("jcr:content")))
@@ -96,37 +112,106 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
             .unwrap();
     } else {
         // No page wrapper — emit rootPanel directly
-        write_root_panel(w, title, children, config);
+        write_root_panel(w, children, config);
     }
+}
+
+/// Write `<parsys1>` with guide header and form title.
+fn write_parsys1(w: &mut Writer<&mut Cursor<Vec<u8>>>, form_title: &str, config: &AemConfig) {
+    let mut parsys = BytesStart::new("parsys1");
+    parsys.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    parsys.push_attribute(("sling:resourceType", "wcm/foundation/components/responsivegrid"));
+    w.write_event(Event::Start(parsys)).unwrap();
+
+    // <guideheader>
+    let mut header = BytesStart::new("guideheader");
+    header.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    header.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("guideheader").as_str(),
+    ));
+    w.write_event(Event::Empty(header)).unwrap();
+
+    // <guideformtitle>
+    let guide_form_title = format!("<p>{form_title}</p>");
+    let mut title_elem = BytesStart::new("guideformtitle");
+    title_elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    title_elem.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("formtitle").as_str(),
+    ));
+    title_elem.push_attribute(("_value", guide_form_title.as_str()));
+    title_elem.push_attribute(("css", "guideformtitle container"));
+    title_elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+    title_elem.push_attribute(("name", "formTitle"));
+    title_elem.push_attribute(("textIsRich", "true"));
+    w.write_event(Event::Empty(title_elem)).unwrap();
+
+    w.write_event(Event::End(BytesEnd::new("parsys1"))).unwrap();
+}
+
+/// Write `<parsys2>` with guide footer.
+fn write_parsys2(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut parsys = BytesStart::new("parsys2");
+    parsys.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    parsys.push_attribute(("sling:resourceType", "wcm/foundation/components/responsivegrid"));
+    w.write_event(Event::Start(parsys)).unwrap();
+
+    let mut footer = BytesStart::new("guidefooter");
+    footer.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    footer.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("guidefooter").as_str(),
+    ));
+    w.write_event(Event::Empty(footer)).unwrap();
+
+    w.write_event(Event::End(BytesEnd::new("parsys2"))).unwrap();
 }
 
 fn write_guide_container(
     w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    title: &str,
+    _title: &str,
     children: &[AemNode],
     config: &AemConfig,
 ) {
     let mut elem = BytesStart::new("guideContainer");
+    elem.push_attribute(("fd:version", "1.1"));
+    elem.push_attribute((
+        "jcr:lastModified",
+        "{Date}2025-01-01T00:00:00.000+01:00",
+    ));
+    elem.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute((
         "sling:resourceType",
         config.guide_container_resource_type().as_str(),
     ));
-    elem.push_attribute(("guideNodeClass", "guideContainerNode"));
-    elem.push_attribute(("fd:version", "1.1"));
-    elem.push_attribute(("dorType", config.dor_type.as_str()));
-    elem.push_attribute(("guideCss", "guideContainer"));
-    elem.push_attribute(("name", "guide1"));
-    elem.push_attribute(("textIsRich", "true"));
-    if !config.theme_ref.is_empty() {
-        elem.push_attribute(("themeRef", config.theme_ref.as_str()));
-    }
+    elem.push_attribute(("actionType", config.action_type.as_str()));
+    elem.push_attribute((
+        "autoSaveStrategyType",
+        "fd/fp/components/actions/autosave/timebased",
+    ));
+    elem.push_attribute(("clientLibRef", config.client_lib_ref.as_str()));
+    elem.push_attribute(("disableSwipeGesture", "{Boolean}false"));
     if !config.dor_template_ref.is_empty() {
         elem.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
     }
+    elem.push_attribute(("dorType", config.dor_type.as_str()));
+    elem.push_attribute(("enableFocusOnFirstField", "{Boolean}true"));
+    elem.push_attribute(("enableLayoutLayer", "false"));
+    elem.push_attribute(("guideCss", "guideContainer"));
+    elem.push_attribute(("guideNodeClass", "guideContainerNode"));
+    elem.push_attribute(("name", "guide1"));
     if !config.redirect_url.is_empty() {
         elem.push_attribute(("redirect", config.redirect_url.as_str()));
     }
+    elem.push_attribute(("textIsRich", "true"));
+    elem.push_attribute(("thankYouMessage", "Thank you for submitting the form."));
+    elem.push_attribute(("thankYouOption", "page"));
+    if !config.theme_ref.is_empty() {
+        elem.push_attribute(("themeRef", config.theme_ref.as_str()));
+    }
+    elem.push_attribute(("useExistingAF", "false"));
     w.write_event(Event::Start(elem)).unwrap();
 
     // <layout>
@@ -140,35 +225,290 @@ fn write_guide_container(
     }
 
     // <rootPanel>
-    write_root_panel(w, title, children, config);
+    write_root_panel(w, children, config);
+
+    // <autoSaveInfo>
+    {
+        let mut auto_save = BytesStart::new("autoSaveInfo");
+        auto_save.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        auto_save.push_attribute(("metadataselector", "global"));
+        w.write_event(Event::Empty(auto_save)).unwrap();
+    }
+
+    // <signerInfo>
+    {
+        let mut signer_info = BytesStart::new("signerInfo");
+        signer_info.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        signer_info.push_attribute(("firstSignerFormFiller", "false"));
+        signer_info.push_attribute(("workflowType", "SEQUENTIAL"));
+        w.write_event(Event::Start(signer_info)).unwrap();
+
+        let mut signer0 = BytesStart::new("signer0");
+        signer0.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        signer0.push_attribute(("countryCode", "undefined"));
+        signer0.push_attribute(("countryCodeSource", "undefined"));
+        signer0.push_attribute(("email", "undefined"));
+        signer0.push_attribute(("emailSource", "undefined"));
+        signer0.push_attribute(("phone", "undefined"));
+        signer0.push_attribute(("phoneSource", "undefined"));
+        signer0.push_attribute(("securityOption", "undefined"));
+        signer0.push_attribute(("signerTitle", "Signer One"));
+        w.write_event(Event::Empty(signer0)).unwrap();
+
+        w.write_event(Event::End(BytesEnd::new("signerInfo")))
+            .unwrap();
+    }
+
+    // <view> with <print> (DOR branding)
+    write_view(w, config);
+
+    // <assets> with <dictionary> (languages)
+    write_assets(w, config);
 
     // </guideContainer>
     w.write_event(Event::End(BytesEnd::new("guideContainer")))
         .unwrap();
 }
 
+/// Write the `<view>` element with DOR print/branding settings.
+fn write_view(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut view = BytesStart::new("view");
+    view.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(view)).unwrap();
+
+    // <print>
+    let mut print = BytesStart::new("print");
+    print.push_attribute(("jcr:created", "{Date}2025-01-01T00:00:00.000+01:00"));
+    print.push_attribute(("jcr:lastModified", "{Date}2025-01-01T00:00:00.000+01:00"));
+    print.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
+    print.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    print.push_attribute((
+        "sling:resourceType",
+        "fd/af/authoring/components/dor/dorProperties",
+    ));
+    print.push_attribute(("accentColor", "#04a6cb"));
+    print.push_attribute(("alignment", "dorFieldVerticalAlignment"));
+    print.push_attribute(("fontFamily", "Arial"));
+    print.push_attribute(("hidePanelDescriptions", "true"));
+    print.push_attribute(("includeUnboundFields", "true"));
+    print.push_attribute(("metaTemplateRef", config.meta_template_ref.as_str()));
+    print.push_attribute(("optionSeparator", ", "));
+    print.push_attribute(("optionsNumberInHorizontalAlign", "4"));
+    print.push_attribute(("showSelectedOptions", "false"));
+    w.write_event(Event::Start(print)).unwrap();
+
+    // <branding>
+    write_branding(w, config);
+
+    w.write_event(Event::End(BytesEnd::new("print"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("view"))).unwrap();
+}
+
+/// Write DOR branding section inside `<print>`.
+fn write_branding(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut branding = BytesStart::new("branding");
+    branding.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(branding)).unwrap();
+
+    let mut items = BytesStart::new("items");
+    items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(items)).unwrap();
+
+    let mut mp = BytesStart::new("masterpage0");
+    mp.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(mp)).unwrap();
+
+    let mut mp_items = BytesStart::new("items");
+    mp_items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(mp_items)).unwrap();
+
+    // txtBankingRelationship
+    let mut txt_br = BytesStart::new("txtBankingRelationship");
+    txt_br.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(txt_br)).unwrap();
+
+    // ShowBankingRelationship
+    let mut show_br = BytesStart::new("ShowBankingRelationship");
+    show_br.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    show_br.push_attribute(("value", "1"));
+    w.write_event(Event::Empty(show_br)).unwrap();
+
+    // Header
+    {
+        let mut header = BytesStart::new("Header");
+        header.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Start(header)).unwrap();
+
+        let mut h_items = BytesStart::new("items");
+        h_items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Start(h_items)).unwrap();
+
+        let mut logo = BytesStart::new("AF_LOGO_IMAGE");
+        logo.push_attribute(("jcr:lastModified", "{Date}2025-01-01T00:00:00.000+01:00"));
+        logo.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
+        logo.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        logo.push_attribute(("valueFrom", "template"));
+        w.write_event(Event::Empty(logo)).unwrap();
+
+        let mut form_type = BytesStart::new("FormType");
+        form_type.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        form_type.push_attribute((
+            "resourceType",
+            "granite/ui/components/coral/foundation/form/textarea",
+        ));
+        form_type.push_attribute(("value", config.form_type.as_str()));
+        form_type.push_attribute(("valueFrom", "     "));
+        w.write_event(Event::Empty(form_type)).unwrap();
+
+        // HeaderInfo
+        {
+            let mut hi = BytesStart::new("HeaderInfo");
+            hi.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            w.write_event(Event::Start(hi)).unwrap();
+
+            let mut hi_items = BytesStart::new("items");
+            hi_items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            w.write_event(Event::Start(hi_items)).unwrap();
+
+            let mut ht = BytesStart::new("AF_HEADER_TEXT");
+            ht.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            ht.push_attribute((
+                "resourceType",
+                "granite/ui/components/coral/foundation/form/textarea",
+            ));
+            ht.push_attribute(("valueFrom", "template"));
+            w.write_event(Event::Empty(ht)).unwrap();
+
+            let mut ft = BytesStart::new("AF_FORM_TITLE");
+            ft.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            ft.push_attribute((
+                "resourceType",
+                "granite/ui/components/coral/foundation/form/textarea",
+            ));
+            ft.push_attribute(("valueFrom", "formTitle"));
+            w.write_event(Event::Empty(ft)).unwrap();
+
+            w.write_event(Event::End(BytesEnd::new("items"))).unwrap();
+            w.write_event(Event::End(BytesEnd::new("HeaderInfo")))
+                .unwrap();
+        }
+
+        // Adressblock
+        {
+            let mut ab = BytesStart::new("Adressblock");
+            ab.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            w.write_event(Event::Start(ab)).unwrap();
+
+            let mut ab_items = BytesStart::new("items");
+            ab_items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            w.write_event(Event::Start(ab_items)).unwrap();
+
+            let mut sat = BytesStart::new("senderAddressTitle");
+            sat.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            sat.push_attribute((
+                "resourceType",
+                "granite/ui/components/coral/foundation/form/textarea",
+            ));
+            sat.push_attribute(("valueFrom", "template"));
+            w.write_event(Event::Empty(sat)).unwrap();
+
+            w.write_event(Event::End(BytesEnd::new("items"))).unwrap();
+            w.write_event(Event::End(BytesEnd::new("Adressblock")))
+                .unwrap();
+        }
+
+        w.write_event(Event::End(BytesEnd::new("items"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("Header"))).unwrap();
+    }
+
+    // Remaining simple elements
+    for name in &[
+        "formId",
+        "displayLanguage",
+        "language",
+        "footerVersion",
+        "mandator",
+        "footerFormCode",
+        "footerFormVersionDate",
+    ] {
+        let mut e = BytesStart::new(*name);
+        e.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(e)).unwrap();
+    }
+
+    // APPCode
+    let mut app_code = BytesStart::new("APPCode");
+    app_code.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    app_code.push_attribute(("value", "AFC"));
+    w.write_event(Event::Empty(app_code)).unwrap();
+
+    // footerFreeText
+    let mut fft = BytesStart::new("footerFreeText");
+    fft.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(fft)).unwrap();
+
+    w.write_event(Event::End(BytesEnd::new("items"))).unwrap(); // masterpage0 items
+    w.write_event(Event::End(BytesEnd::new("masterpage0")))
+        .unwrap();
+    w.write_event(Event::End(BytesEnd::new("items"))).unwrap(); // branding items
+    w.write_event(Event::End(BytesEnd::new("branding"))).unwrap();
+}
+
+/// Write `<assets>` with language dictionary entries.
+fn write_assets(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut assets = BytesStart::new("assets");
+    assets.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(assets)).unwrap();
+
+    let mut dict = BytesStart::new("dictionary");
+    dict.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Start(dict)).unwrap();
+
+    for lang in &config.languages {
+        let lang_elem = BytesStart::new(lang.as_str());
+        w.write_event(Event::Empty(lang_elem)).unwrap();
+    }
+
+    w.write_event(Event::End(BytesEnd::new("dictionary")))
+        .unwrap();
+    w.write_event(Event::End(BytesEnd::new("assets"))).unwrap();
+}
+
 fn write_root_panel(
     w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    title: &str,
     children: &[AemNode],
     config: &AemConfig,
 ) {
     let mut elem = BytesStart::new("rootPanel");
+    elem.push_attribute((
+        "jcr:lastModified",
+        "{Date}2025-01-01T00:00:00.000+01:00",
+    ));
+    elem.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    elem.push_attribute(("jcr:title", "Root Panel"));
     elem.push_attribute(("sling:resourceType", "fd/af/components/rootPanel"));
-    elem.push_attribute(("guideNodeClass", "rootPanelNode"));
-    elem.push_attribute(("jcr:title", title));
-    elem.push_attribute(("name", "guideRootPanel"));
-    elem.push_attribute(("textIsRich", "true"));
     elem.push_attribute(("completionExpReq", "{Boolean}true"));
     elem.push_attribute(("dorExcludeDescription", "true"));
     elem.push_attribute(("dorExcludeTitle", "true"));
+    elem.push_attribute(("guideNodeClass", "rootPanelNode"));
+    elem.push_attribute(("name", "guideRootPanel"));
     elem.push_attribute(("panelSetType", "Navigable"));
     elem.push_attribute(("validateOnStepCompletion", "{Boolean}true"));
     w.write_event(Event::Start(elem)).unwrap();
 
-    // <layout>
-    write_layout(w, config, false);
+    // <layout> — wizard layout for root panel
+    {
+        let mut layout = BytesStart::new("layout");
+        layout.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        layout.push_attribute(("sling:resourceType", config.wizard_layout.as_str()));
+        if config.enable_layout_optimization {
+            layout.push_attribute(("enableLayoutOptimization", "true"));
+        }
+        layout.push_attribute(("guideNavigatorTab", "wizard-tab"));
+        layout.push_attribute(("toolbarPosition", "Bottom"));
+        w.write_event(Event::Empty(layout)).unwrap();
+    }
 
     // <items>
     write_items_start(w, config);
@@ -640,59 +980,101 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
         return;
     };
 
-    // Outer wrapping panel
+    let panel_name = format!("PN_{name}");
+
+    // Outer wrapping panel (panel_repeatable_<uuid>)
     let outer_tag = format!("repeatable_{}", uuid.as_simple());
     let mut outer = BytesStart::new(outer_tag.clone());
     push_jcr_timestamps(&mut outer, config);
     outer.push_attribute(("jcr:primaryType", "nt:unstructured"));
     outer.push_attribute(("sling:resourceType", config.panel_resource_type().as_str()));
+    outer.push_attribute(("dorExcludeDescription", "true"));
+    outer.push_attribute(("dorExcludeTitle", "true"));
     outer.push_attribute(("guideNodeClass", "guidePanel"));
-    outer.push_attribute(("jcr:title", title.as_str()));
     outer.push_attribute(("name", name.as_str()));
     outer.push_attribute(("textIsRich", "true"));
-    outer.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
+    outer.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
     w.write_event(Event::Start(outer)).unwrap();
 
-    // <items>
+    // Outer <layout>
+    write_repeatable_layout(w, config);
+
+    // Outer <items>
     write_items_start(w, config);
 
-    // Inner repeatable panel with minOccur/maxOccur
+    // Inner repeatable panel with minOccur/maxOccur — uses custom panel resource type
     {
-        let inner_name = format!("PN_{name}");
-        let mut inner = BytesStart::new("repeatableInner");
+        let inner_tag = "repeatableInner";
+        let mut inner = BytesStart::new(inner_tag);
+        push_jcr_timestamps(&mut inner, config);
         inner.push_attribute(("jcr:primaryType", "nt:unstructured"));
-        inner.push_attribute(("sling:resourceType", config.panel_resource_type().as_str()));
+        inner.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("panel").as_str(),
+        ));
+        inner.push_attribute(("dorExcludeDescription", "true"));
+        inner.push_attribute(("dorExcludeTitle", "true"));
         inner.push_attribute(("guideNodeClass", "guidePanel"));
-        inner.push_attribute(("name", inner_name.as_str()));
-        inner.push_attribute(("textIsRich", "true"));
         inner.push_attribute(("maxOccur", max_occur.to_string().as_str()));
         inner.push_attribute(("minOccur", min_occur.to_string().as_str()));
+        inner.push_attribute(("name", panel_name.as_str()));
+        inner.push_attribute(("textIsRich", "true"));
+        inner.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
         w.write_event(Event::Start(inner)).unwrap();
+
+        // Inner <layout>
+        write_repeatable_layout(w, config);
 
         // Inner <items>
         write_items_start(w, config);
-        for child in children {
-            write_node(w, child, config);
+
+        // Remove button
+        write_repeatable_remove_button(w, config);
+
+        // Children wrapper panel (panel_copy_copy)
+        {
+            let mut wrapper = BytesStart::new("panel_copy_copy");
+            push_jcr_timestamps(&mut wrapper, config);
+            wrapper.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            wrapper.push_attribute((
+                "sling:resourceType",
+                config.control_resource_type("panel").as_str(),
+            ));
+            wrapper.push_attribute(("dorExcludeDescription", "true"));
+            wrapper.push_attribute(("dorExcludeTitle", "true"));
+            wrapper.push_attribute(("guideNodeClass", "guidePanel"));
+            wrapper.push_attribute(("name", format!("panel_{title}").as_str()));
+            wrapper.push_attribute(("textIsRich", "true"));
+            wrapper.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
+            w.write_event(Event::Start(wrapper)).unwrap();
+
+            // Wrapper <layout>
+            write_repeatable_layout(w, config);
+
+            // Wrapper <items>
+            write_items_start(w, config);
+            for child in children {
+                write_node(w, child, config);
+            }
+            write_items_end(w);
+
+            // <cq:responsive>
+            write_responsive(w, 12);
+
+            w.write_event(Event::End(BytesEnd::new("panel_copy_copy")))
+                .unwrap();
         }
-        write_items_end(w);
 
-        // Inner <layout>
-        write_layout(w, config, true);
+        write_items_end(w); // inner items
 
-        // <toolbar> with remove button
-        write_repeatable_toolbar_remove(w, config);
-
-        w.write_event(Event::End(BytesEnd::new("repeatableInner")))
+        w.write_event(Event::End(BytesEnd::new(inner_tag)))
             .unwrap();
     }
 
-    // Add button (tertiary)
-    write_repeatable_add_button(w, name, config);
+    // Add button (tertiarybutton)
+    write_repeatable_add_button(w, config);
 
-    write_items_end(w);
-
-    // <layout>
-    write_layout(w, config, true);
+    write_items_end(w); // outer items
 
     w.write_event(Event::End(BytesEnd::new(outer_tag))).unwrap();
 }
@@ -724,6 +1106,19 @@ fn write_layout(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig, non_na
     if non_navigable {
         elem.push_attribute(("nonNavigable", "{Boolean}true"));
     }
+    elem.push_attribute(("toolbarPosition", "Bottom"));
+    w.write_event(Event::Empty(elem)).unwrap();
+}
+
+/// Write `<layout>` element for repeatable panels (includes columns and DOR layout attributes).
+fn write_repeatable_layout(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut elem = BytesStart::new("layout");
+    elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    elem.push_attribute(("sling:resourceType", config.default_layout.as_str()));
+    elem.push_attribute(("columns", "1"));
+    elem.push_attribute(("dorLayoutType", "columnar"));
+    elem.push_attribute(("dorNumCols", "1"));
+    elem.push_attribute(("nonNavigable", "{Boolean}true"));
     elem.push_attribute(("toolbarPosition", "Bottom"));
     w.write_event(Event::Empty(elem)).unwrap();
 }
@@ -764,30 +1159,128 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     ));
     w.write_event(Event::Start(items)).unwrap();
 
-    // Previous
-    write_toolbar_button(
-        w,
-        "previtemnav",
-        "Previous",
-        "fd/af/components/actions/previtemnav",
-        config,
-    );
-    // Next
-    write_toolbar_button(
-        w,
-        "nextitemnav",
-        "Next",
-        "fd/af/components/actions/nextitemnav",
-        config,
-    );
-    // Submit
-    write_toolbar_button(
-        w,
-        "submit",
-        "Submit",
-        "fd/af/components/actions/submit",
-        config,
-    );
+    // Previous — simple button
+    {
+        let mut elem = BytesStart::new("previtemnav");
+        elem.push_attribute(("fd:targetVersion", "1.1"));
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute(("jcr:title", "Back"));
+        elem.push_attribute((
+            "sling:resourceType",
+            "fd/af/components/actions/previtemnav",
+        ));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideButton"));
+        elem.push_attribute(("name", "previtemnav"));
+        elem.push_attribute(("type", "movePrev"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // Next — has fd:rules and fd:scripts
+    {
+        let mut elem = BytesStart::new("nextitemnav");
+        elem.push_attribute(("fd:targetVersion", "1.1"));
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute(("jcr:title", "Next"));
+        elem.push_attribute((
+            "sling:resourceType",
+            "fd/af/components/actions/nextitemnav",
+        ));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideButton"));
+        elem.push_attribute(("name", "nextitemnav"));
+        elem.push_attribute(("type", "moveNext"));
+        w.write_event(Event::Start(elem)).unwrap();
+
+        let rules = BytesStart::new("fd:rules");
+        w.write_event(Event::Empty(rules)).unwrap();
+
+        let mut scripts = BytesStart::new("fd:scripts");
+        scripts.push_attribute((
+            "fd:click",
+            "[{\"script\":{\"field\":\"guide.guideRootPanel.toolbar.nextitemnav\"\\,\"event\":\"Click\"\\,\"model\":{\"nodeName\":\"EVENT_SCRIPTS\"}\\,\"content\":\"window.com.ajila.forms.ubs.navigation.nextStep(this);\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
+        ));
+        scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(scripts)).unwrap();
+
+        w.write_event(Event::End(BytesEnd::new("nextitemnav")))
+            .unwrap();
+    }
+
+    // Submit — has fd:rules and fd:scripts
+    {
+        let mut elem = BytesStart::new("submit");
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute(("jcr:title", "Submit"));
+        elem.push_attribute((
+            "sling:resourceType",
+            "fd/af/components/actions/submit",
+        ));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideButton"));
+        elem.push_attribute(("name", "submit"));
+        elem.push_attribute(("type", "submit"));
+        w.write_event(Event::Start(elem)).unwrap();
+
+        let mut rules = BytesStart::new("fd:rules");
+        rules.push_attribute((
+            "fd:click",
+            "[{\"nodeName\":\"ROOT\"\\,\"items\":[{\"nodeName\":\"STATEMENT\"\\,\"choice\":{\"nodeName\":\"EVENT_SCRIPTS\"\\,\"items\":[{\"nodeName\":\"EVENT_CONDITION\"\\,\"choice\":{\"nodeName\":\"EVENT_AND_COMPARISON\"\\,\"items\":[{\"nodeName\":\"COMPONENT\"\\,\"value\":{\"id\":\"guide.guideRootPanel.toolbar.submit\"\\,\"type\":\"BUTTON\"\\,\"name\":\"submit\"}}\\,{\"nodeName\":\"EVENT_AND_COMPARISON_OPERATOR\"\\,\"choice\":{\"nodeName\":\"is clicked\"\\,\"value\":null}}\\,{\"nodeName\":\"PRIMITIVE_EXPRESSION\"\\,\"choice\":null}]}\\,\"nested\":false}\\,{\"nodeName\":\"Then\"\\,\"value\":null}\\,{\"nodeName\":\"BLOCK_STATEMENTS\"\\,\"items\":[{\"nodeName\":\"BLOCK_STATEMENT\"\\,\"choice\":{\"nodeName\":\"SUBMIT_FORM\"\\,\"items\":[]}}]}]}}]\\,\"isValid\":true\\,\"enabled\":true\\,\"version\":1\\,\"script\":\"/**\\\\n\\\\n * This is a machine-generated code for the rule.\\\\n * If you modify it in the code editor\\, you will not be able to view and edit the rule in the visual editor.\\\\n */\\\\n\\\\nguideBridge.submit();\\\\n\\\\n\"\\,\"eventName\":\"Click\"\\,\"ruleType\":\"\"\\,\"description\":\"\"}]",
+        ));
+        rules.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(rules)).unwrap();
+
+        let mut scripts = BytesStart::new("fd:scripts");
+        scripts.push_attribute((
+            "fd:navigationChange",
+            "[{\"script\":{\"content\":\"this.visible=(!this.panel.navigationContext.hasNextItem);\"\\,\"event\":\"Navigation\"\\,\"field\":\"guide.guideRootPanel.toolbar.submit\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
+        ));
+        scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(scripts)).unwrap();
+
+        w.write_event(Event::End(BytesEnd::new("submit"))).unwrap();
+    }
+
+    // Preview button
+    {
+        let mut elem = BytesStart::new("preview");
+        push_jcr_timestamps(&mut elem, config);
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute(("jcr:title", "Preview"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("tertiarybutton").as_str(),
+        ));
+        elem.push_attribute(("css", "previewGenerationButton"));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideButton"));
+        elem.push_attribute(("name", "preview"));
+        elem.push_attribute(("textIsRich", "[true,true]"));
+        elem.push_attribute(("type", "Button"));
+        w.write_event(Event::Start(elem)).unwrap();
+
+        let mut rules = BytesStart::new("fd:rules");
+        rules.push_attribute((
+            "fd:click",
+            "[{\"nodeName\":\"ROOT\"\\,\"items\":[{\"nodeName\":\"STATEMENT\"\\,\"choice\":{\"nodeName\":\"EVENT_SCRIPTS\"\\,\"items\":[{\"nodeName\":\"EVENT_CONDITION\"\\,\"choice\":{\"nodeName\":\"EVENT_AND_COMPARISON\"\\,\"items\":[{\"nodeName\":\"COMPONENT\"\\,\"value\":{\"id\":\"guide.guideRootPanel.toolbar.preview\"\\,\"type\":\"BUTTON|AFCOMPONENT|TOOLBAR_BUTTON\"\\,\"name\":\"preview\"}}\\,{\"nodeName\":\"EVENT_AND_COMPARISON_OPERATOR\"\\,\"choice\":{\"nodeName\":\"is clicked\"\\,\"value\":null}}\\,{\"nodeName\":\"PRIMITIVE_EXPRESSION\"\\,\"choice\":null}]}\\,\"nested\":false}\\,{\"nodeName\":\"Then\"\\,\"value\":null}\\,{\"nodeName\":\"BLOCK_STATEMENTS\"\\,\"items\":[{\"nodeName\":\"BLOCK_STATEMENT\"\\,\"choice\":{\"nodeName\":\"SHOW_STATEMENT\"\\,\"items\":[{\"nodeName\":\"AFCOMPONENT\"\\,\"value\":{\"id\":\"guide.guideRootPanel.panel1597308651601.carouselPreview\"\\,\"displayName\":\"Carousel\"\\,\"type\":\"AFCOMPONENT\"\\,\"displayPath\":\"FORM/Root Panel/panel1597308651601/Carousel/\"\\,\"name\":\"carouselPreview\"\\,\"parent\":\"guide.guideRootPanel.panel1597308651601\"}}]}}]}]}}]\\,\"isValid\":true\\,\"enabled\":true\\,\"version\":1\\,\"script\":\"/**\\\\n\\\\n * This is a machine-generated code for the rule.\\\\n * If you modify it in the code editor\\, you will not be able to view and edit the rule in the visual editor.\\\\n */\\\\n\\\\ncarouselPreview.visible = true;\\\\n\\\\n\"\\,\"eventName\":\"Click\"\\,\"ruleType\":\"\"\\,\"description\":\"\"}]",
+        ));
+        rules.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(rules)).unwrap();
+
+        let mut scripts = BytesStart::new("fd:scripts");
+        scripts.push_attribute((
+            "fd:click",
+            "[{\"script\":{\"field\":\"guide.guideRootPanel.toolbar.preview\"\\,\"event\":\"Click\"\\,\"model\":{\"nodeName\":\"EVENT_SCRIPTS\"}\\,\"content\":\"com.ajila.forms.control.carousel.initializeForPreview(carouselPreview\\, undefined\\, previewErrorMessage);\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
+        ));
+        scripts.push_attribute((
+            "fd:navigationChange",
+            "[{\"script\":{\"content\":\"this.visible=(!this.panel.navigationContext.hasNextItem);\"\\,\"event\":\"Navigation\"\\,\"field\":\"guide.guideRootPanel.toolbar.preview\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
+        ));
+        scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Empty(scripts)).unwrap();
+
+        w.write_event(Event::End(BytesEnd::new("preview"))).unwrap();
+    }
 
     // </items>
     w.write_event(Event::End(BytesEnd::new("items"))).unwrap();
@@ -804,60 +1297,56 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     w.write_event(Event::End(BytesEnd::new("toolbar"))).unwrap();
 }
 
-fn write_toolbar_button(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    tag_name: &str,
-    title: &str,
-    resource_type: &str,
-    _config: &AemConfig,
-) {
-    let mut elem = BytesStart::new(tag_name);
-    elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    elem.push_attribute(("jcr:title", title));
-    elem.push_attribute(("sling:resourceType", resource_type));
-    elem.push_attribute(("dorExclusion", "true"));
-    elem.push_attribute(("guideNodeClass", "guideButton"));
-    elem.push_attribute(("name", tag_name));
-    w.write_event(Event::Empty(elem)).unwrap();
-}
-
-/// Write the remove button inside a repeatable toolbar.
-fn write_repeatable_toolbar_remove(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
-    let mut toolbar = BytesStart::new("toolbar");
-    toolbar.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    w.write_event(Event::Start(toolbar)).unwrap();
-
+/// Write the remove button inside a repeatable panel's items.
+fn write_repeatable_remove_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     let mut btn = BytesStart::new("removebutton");
+    push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
     btn.push_attribute((
         "sling:resourceType",
         config.control_resource_type("removebutton").as_str(),
     ));
-    btn.push_attribute(("guideNodeClass", "guideButton"));
     btn.push_attribute(("dorExclusion", "true"));
-    btn.push_attribute(("jcr:title", "Remove"));
-    w.write_event(Event::Empty(btn)).unwrap();
+    btn.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
+    btn.push_attribute(("guideNodeClass", "guideButton"));
+    btn.push_attribute(("name", "BT_Remove"));
+    btn.push_attribute(("textIsRich", "[true,true]"));
+    btn.push_attribute(("type", "Button"));
+    btn.push_attribute(("visible", "{Boolean}false"));
+    w.write_event(Event::Start(btn)).unwrap();
 
-    w.write_event(Event::End(BytesEnd::new("toolbar"))).unwrap();
+    // <fd:rules>
+    let rules = BytesStart::new("fd:rules");
+    w.write_event(Event::Empty(rules)).unwrap();
+
+    w.write_event(Event::End(BytesEnd::new("removebutton")))
+        .unwrap();
 }
 
 /// Write the Add button for a repeatable section.
-fn write_repeatable_add_button(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    repeatable_name: &str,
-    config: &AemConfig,
-) {
-    let mut btn = BytesStart::new("addbutton");
+fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let mut btn = BytesStart::new("tertiarybutton");
+    push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    btn.push_attribute(("jcr:title", "Add"));
     btn.push_attribute((
         "sling:resourceType",
         config.control_resource_type("tertiarybutton").as_str(),
     ));
-    btn.push_attribute(("guideNodeClass", "guideButton"));
     btn.push_attribute(("dorExclusion", "true"));
-    btn.push_attribute(("jcr:title", format!("Add {repeatable_name}").as_str()));
-    btn.push_attribute(("type", "button"));
-    w.write_event(Event::Empty(btn)).unwrap();
+    btn.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
+    btn.push_attribute(("guideNodeClass", "guideButton"));
+    btn.push_attribute(("name", "BT_Add"));
+    btn.push_attribute(("textIsRich", "[true,true]"));
+    btn.push_attribute(("type", "Button"));
+    w.write_event(Event::Start(btn)).unwrap();
+
+    // <fd:rules>
+    let rules = BytesStart::new("fd:rules");
+    w.write_event(Event::Empty(rules)).unwrap();
+
+    w.write_event(Event::End(BytesEnd::new("tertiarybutton")))
+        .unwrap();
 }
 
 // ============================================================================
@@ -1260,10 +1749,57 @@ mod tests {
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
-        assert!(xml.contains("minOccur=\"1\""));
-        assert!(xml.contains("maxOccur=\"10\""));
-        assert!(xml.contains("addbutton"));
-        assert!(xml.contains("removebutton"));
+
+        // Inner panel carries minOccur/maxOccur
+        assert!(xml.contains("minOccur=\"1\""), "missing minOccur");
+        assert!(xml.contains("maxOccur=\"10\""), "missing maxOccur");
+
+        // Remove button inside items (not toolbar)
+        assert!(xml.contains("<removebutton"), "missing removebutton");
+        assert!(
+            xml.contains("name=\"BT_Remove\""),
+            "removebutton should be named BT_Remove"
+        );
+        assert!(
+            xml.contains("visible=\"{Boolean}false\""),
+            "removebutton should be hidden by default"
+        );
+
+        // Add button as tertiarybutton
+        assert!(xml.contains("<tertiarybutton"), "missing tertiarybutton (Add)");
+        assert!(
+            xml.contains("name=\"BT_Add\""),
+            "add button should be named BT_Add"
+        );
+        assert!(
+            xml.contains("jcr:title=\"Add\""),
+            "add button title should be 'Add'"
+        );
+
+        // Inner panel uses custom resource type
+        let config = test_config();
+        assert!(
+            xml.contains(&config.control_resource_type("panel")),
+            "inner panel should use custom panel resource type"
+        );
+
+        // panel_copy_copy wrapper exists
+        assert!(
+            xml.contains("<panel_copy_copy"),
+            "children should be wrapped in panel_copy_copy"
+        );
+
+        // Outer panel name
+        assert!(
+            xml.contains("name=\"RPT_1\""),
+            "outer panel should carry the repeatable name"
+        );
+
+        // Inner panel name = PN_<name>
+        assert!(
+            xml.contains("name=\"PN_RPT_1\""),
+            "inner panel should be named PN_RPT_1"
+        );
     }
 
     #[test]

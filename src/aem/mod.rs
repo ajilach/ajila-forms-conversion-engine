@@ -156,6 +156,29 @@ pub struct AemConfig {
     /// Default: `"/content/forms/af/afforms_global_common/confirm-successful-submission"`.
     pub redirect_url: String,
 
+    // -- Guide container extras -----------------------------------------------
+    /// Action type for form submission.
+    /// Default: `"ajila-forms-customers/ajila-forms-ubs/components/actions/submit"`.
+    pub action_type: String,
+
+    /// Client library reference.
+    /// Default: `"ajila-forms-ubs"`.
+    pub client_lib_ref: String,
+
+    // -- Root panel wizard layout --------------------------------------------
+    /// Sling resource type for the root panel wizard layout.
+    /// Default: `"ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard"`.
+    pub wizard_layout: String,
+
+    // -- DOR branding --------------------------------------------------------
+    /// Form type indicator for DOR branding (e.g. `" "` or `"K"`).
+    /// Default: `" "`.
+    pub form_type: String,
+
+    /// DOR meta-template reference path.
+    /// Default: `"/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp"`.
+    pub meta_template_ref: String,
+
     // -- Package paths -------------------------------------------------------
     /// JCR path segment between `content/forms/af/` (or
     /// `content/dam/formsanddocuments/`) and the form code.
@@ -207,6 +230,12 @@ impl Default for AemConfig {
             dor_template_ref: String::new(),
             redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission"
                 .into(),
+
+            action_type: "ajila-forms-customers/ajila-forms-ubs/components/actions/submit".into(),
+            client_lib_ref: "ajila-forms-ubs".into(),
+            wizard_layout: "ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard".into(),
+            form_type: " ".into(),
+            meta_template_ref: "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp".into(),
 
             form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
         }
