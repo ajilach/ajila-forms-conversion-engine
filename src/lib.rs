@@ -60,6 +60,7 @@
 //!   └──► render_*()       ──► RgbaImage               (flattened/ + document/)
 //! ```
 
+pub mod aem;
 pub mod context;
 pub mod document;
 pub mod exhaustive;
@@ -93,6 +94,9 @@ pub use structured::{
     MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, SelectionKind,
     StructuredNode, TranslatableString,
 };
+
+// AEM generation
+pub use aem::{AemConfig, AemNode, convert_to_aem, generate_aem_xml};
 
 // HTML generation
 pub use html::{HtmlConfig, generate_form_body, generate_html};
@@ -583,6 +587,12 @@ pub fn merge_translations(
 /// Generate a complete HTML document from structured nodes.
 pub fn to_html(content: &[StructuredNode], config: &HtmlConfig) -> String {
     generate_html(content, config)
+}
+
+/// Convert structured nodes to an AEM node tree and serialize to XML.
+pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
+    let root = convert_to_aem(content, config);
+    generate_aem_xml(&root, config)
 }
 
 /// Run exhaustive exploration on a PDF file and return the merged structured tree.

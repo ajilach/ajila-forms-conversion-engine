@@ -65,6 +65,10 @@ struct Args {
     #[arg(long)]
     html: bool,
 
+    /// Export the form as AEM Adaptive Forms JCR content XML
+    #[arg(long)]
+    aem: bool,
+
     /// Suppress verbose output (only show errors and final results)
     #[arg(short, long)]
     quiet: bool,
@@ -288,7 +292,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // =====================================================================
         // PIPELINE STAGE 3: Run exhaustive exploration (no I/O inside lib)
         // =====================================================================
-        let need_structured = args.structured || args.html || args.documents.len() > 1;
+        let need_structured = args.structured || args.html || args.aem || args.documents.len() > 1;
         let generate_html = if args.documents.len() > 1 {
             false
         } else {
@@ -305,6 +309,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if args.html {
                 println!("  HTML output: enabled");
+            }
+            if args.aem {
+                println!("  AEM XML output: enabled");
             }
         }
 
@@ -421,6 +428,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 vprintln!(quiet, "    ✓ Merged HTML: {}", html_path.display());
             }
 
+            if args.aem && args.documents.len() <= 1 {
+                let aem_config = blueprint::AemConfig::default();
+                let aem_output = blueprint::to_aem(&merged_envelope.content, &aem_config);
+
+                let aem_path = std::path::PathBuf::from(format!("{}_merged.aem.xml", doc_name));
+                std::fs::write(&aem_path, aem_output)
+                    .map_err(|e| format!("Failed to write AEM XML file: {}", e))?;
+
+                vprintln!(quiet, "    ✓ Merged AEM XML: {}", aem_path.display());
+            }
+
             if args.documents.len() > 1 {
                 all_envelopes.push(merged_envelope);
             }
@@ -466,6 +484,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("Failed to write multilingual HTML: {}", e))?;
 
             vprintln!(quiet, "✓ Multilingual HTML: {}", html_path.display());
+        }
+
+        // Generate merged multilingual AEM XML
+        if args.aem {
+            let aem_config = blueprint::AemConfig::default();
+            let aem_output = blueprint::to_aem(&merged_envelope.content, &aem_config);
+
+            let aem_path = std::path::PathBuf::from(format!("{}_multilingual.aem.xml", merged_name));
+            std::fs::write(&aem_path, aem_output)
+                .map_err(|e| format!("Failed to write multilingual AEM XML: {}", e))?;
+
+            vprintln!(quiet, "✓ Multilingual AEM XML: {}", aem_path.display());
         }
     }
 
