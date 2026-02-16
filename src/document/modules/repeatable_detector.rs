@@ -126,7 +126,7 @@ impl RepeatableDetector {
 
                         if let Some((min, max)) = occur_hint {
                             let is_repeatable = max.map(|m| m > 1).unwrap_or(true);
-                            if is_repeatable {
+                            if is_repeatable && group_contains_button(group_children) {
                                 // Collect node indices for this group
                                 let start_index = *current_index;
                                 let node_count = count_nodes(group_children);
@@ -154,6 +154,38 @@ impl RepeatableDetector {
                     }
                 }
             }
+        }
+
+        /// Check if a FlattenedKind tree contains at least one button node.
+        /// A button is identified by having a WidgetType(Button) hint.
+        /// Only groups with buttons are treated as user-facing repeatables;
+        /// groups with occur max="-1" but no buttons are just pagination wrappers.
+        fn group_contains_button(children: &[crate::flattened::FlattenedKind]) -> bool {
+            for child in children {
+                match child {
+                    crate::flattened::FlattenedKind::Node(node) => {
+                        if node.hints.iter().any(|h| {
+                            matches!(
+                                h,
+                                crate::flattened::Hint::WidgetType(
+                                    crate::flattened::WidgetKind::Button
+                                )
+                            )
+                        }) {
+                            return true;
+                        }
+                    }
+                    crate::flattened::FlattenedKind::Group {
+                        children: group_children,
+                        ..
+                    } => {
+                        if group_contains_button(group_children) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
         }
 
         /// Count leaf nodes in a FlattenedKind tree.
@@ -416,7 +448,7 @@ impl AnalysisModule for RepeatableDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flattened::{Flattened, FlattenedNode, Hint, Page};
+    use crate::flattened::{Flattened, FlattenedKind, FlattenedNode, Hint, Page, WidgetKind};
     use crate::xfa::num;
 
     fn create_test_node_with_occurrence(
@@ -540,5 +572,144 @@ mod tests {
         // Should be separate sections despite proximity
         assert_eq!(sections.len(), 2);
         assert!(sections.iter().all(|s| s.member_groups.len() == 1));
+    }
+
+    #[test]
+    fn test_repeatable_group_without_button_is_ignored() {
+        // A FlattenedKind::Group with Occurrence hint but NO button nodes
+        // should NOT be detected as repeatable (it's just a pagination wrapper)
+        let field_node = FlattenedNode::new_field(
+            "field".to_string(),
+            "".to_string(),
+            "field".to_string(),
+            num(10.0),
+            num(10.0),
+            num(100.0),
+            num(20.0),
+        );
+
+        let flattened = Flattened {
+            page: Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            children: vec![FlattenedKind::Group {
+                children: vec![FlattenedKind::Node(field_node)],
+                hints: vec![Hint::Occurrence {
+                    min: 1,
+                    max: None,
+                }],
+            }],
+        };
+
+        let doc = Document::from_flattened(&flattened);
+        let detector = RepeatableDetector::new();
+        let sections = detector.detect_sections(&doc);
+
+        assert_eq!(sections.len(), 0, "Group without buttons should not be repeatable");
+    }
+
+    #[test]
+    fn test_repeatable_group_with_button_is_detected() {
+        // A FlattenedKind::Group with Occurrence hint AND a button node
+        // should be detected as repeatable
+        let field_node = FlattenedNode::new_field(
+            "field".to_string(),
+            "".to_string(),
+            "field".to_string(),
+            num(10.0),
+            num(10.0),
+            num(100.0),
+            num(20.0),
+        );
+
+        let mut button_node = FlattenedNode::new_field(
+            "Button_Add".to_string(),
+            "".to_string(),
+            "Button_Add".to_string(),
+            num(175.0),
+            num(10.0),
+            num(5.0),
+            num(5.0),
+        );
+        button_node.add_hint(Hint::WidgetType(WidgetKind::Button));
+        button_node.add_hint(Hint::NoPrint);
+
+        let flattened = Flattened {
+            page: Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            children: vec![FlattenedKind::Group {
+                children: vec![
+                    FlattenedKind::Node(field_node),
+                    FlattenedKind::Node(button_node),
+                ],
+                hints: vec![Hint::Occurrence {
+                    min: 1,
+                    max: None,
+                }],
+            }],
+        };
+
+        let doc = Document::from_flattened(&flattened);
+        let detector = RepeatableDetector::new();
+        let sections = detector.detect_sections(&doc);
+
+        assert_eq!(sections.len(), 1, "Group with button should be repeatable");
+        assert_eq!(sections[0].min_occurrences, 1);
+        assert_eq!(sections[0].max_occurrences, None);
+    }
+
+    #[test]
+    fn test_repeatable_group_with_nested_button_is_detected() {
+        // A button inside a nested group should still be found
+        let field_node = FlattenedNode::new_field(
+            "field".to_string(),
+            "".to_string(),
+            "field".to_string(),
+            num(10.0),
+            num(10.0),
+            num(100.0),
+            num(20.0),
+        );
+
+        let mut button_node = FlattenedNode::new_field(
+            "Button_Add".to_string(),
+            "".to_string(),
+            "Button_Add".to_string(),
+            num(175.0),
+            num(10.0),
+            num(5.0),
+            num(5.0),
+        );
+        button_node.add_hint(Hint::WidgetType(WidgetKind::Button));
+
+        let flattened = Flattened {
+            page: Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            children: vec![FlattenedKind::Group {
+                children: vec![
+                    FlattenedKind::Node(field_node),
+                    // Button inside a nested group (like STP_PlusMinus subform)
+                    FlattenedKind::Group {
+                        children: vec![FlattenedKind::Node(button_node)],
+                        hints: vec![],
+                    },
+                ],
+                hints: vec![Hint::Occurrence {
+                    min: 1,
+                    max: None,
+                }],
+            }],
+        };
+
+        let doc = Document::from_flattened(&flattened);
+        let detector = RepeatableDetector::new();
+        let sections = detector.detect_sections(&doc);
+
+        assert_eq!(sections.len(), 1, "Nested button should still make group repeatable");
     }
 }

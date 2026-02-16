@@ -5601,6 +5601,53 @@
     }
 
     #[test]
+    fn test_aaei_has_exactly_one_repeatable() {
+        // AAEI has three subforms with <occur max="-1"/>:
+        // - Client_Details: pagination wrapper (no buttons) → NOT repeatable
+        // - STP_Master_DYN: user-facing repeater with add/remove buttons → repeatable
+        // - Master_Slave: pagination wrapper for Signature (no buttons) → NOT repeatable
+        // Only STP_Master_DYN should produce a RepeatableNode in the structured tree.
+        use crate::structured::StructuredNode;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = crate::document::Document::from_flattened(&flattened);
+        crate::document::modules::run_analysis_pipeline(&mut doc);
+
+        let structured_nodes = crate::structured::convert(&doc);
+
+        // Count all RepeatableNode instances in the tree
+        fn count_repeatables(nodes: &[StructuredNode]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(_) => count += 1,
+                    StructuredNode::Group(group) => {
+                        count += count_repeatables(&group.children);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        count += count_repeatables(&[(*cond.content).clone()]);
+                    }
+                    _ => {}
+                }
+            }
+            count
+        }
+
+        let repeatable_count = count_repeatables(&structured_nodes);
+        assert_eq!(
+            repeatable_count, 1,
+            "AAEI should have exactly 1 repeatable (STP_Master_DYN name repeater), found {}",
+            repeatable_count
+        );
+    }
+
+    #[test]
     fn test_aaei_has_expected_field_labels() {
         // Test that the AAEI document has fields with specific labels:
         // - Firma

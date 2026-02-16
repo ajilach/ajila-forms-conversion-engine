@@ -2580,6 +2580,10 @@ impl Flattened {
                     max_length: None,
                     comb_cells: None,
                 });
+                // Add WidgetType hint if extracted
+                if let Some(kind) = Self::extract_widget_kind(node) {
+                    field_node.add_hint(Hint::WidgetType(kind));
+                }
                 // Add NoPrint hint if relevant="-print" or inherited from parent
                 if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
                     field_node.add_hint(Hint::NoPrint);
@@ -2758,6 +2762,7 @@ impl Flattened {
                                 }
                                 "numericEdit" => return Some(WidgetKind::Numeric),
                                 "passwordEdit" => return Some(WidgetKind::Password),
+                                "button" => return Some(WidgetKind::Button),
                                 _ => {}
                             }
                         }

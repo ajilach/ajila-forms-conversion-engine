@@ -78,14 +78,8 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
 
         // <jcr:content>
         let mut content_elem = BytesStart::new("jcr:content");
-        content_elem.push_attribute((
-            "cq:deviceGroups",
-            "[/etc/mobile/groups/responsive]",
-        ));
-        content_elem.push_attribute((
-            "cq:lastModified",
-            "{Date}2025-01-01T00:00:00.000+01:00",
-        ));
+        content_elem.push_attribute(("cq:deviceGroups", "[/etc/mobile/groups/responsive]"));
+        content_elem.push_attribute(("cq:lastModified", "{Date}2025-01-01T00:00:00.000+01:00"));
         content_elem.push_attribute(("cq:lastModifiedBy", config.author.as_str()));
         content_elem.push_attribute(("cq:template", config.template_path.as_str()));
         content_elem.push_attribute(("jcr:language", config.master_language.as_str()));
@@ -120,7 +114,10 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
 fn write_parsys1(w: &mut Writer<&mut Cursor<Vec<u8>>>, form_title: &str, config: &AemConfig) {
     let mut parsys = BytesStart::new("parsys1");
     parsys.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    parsys.push_attribute(("sling:resourceType", "wcm/foundation/components/responsivegrid"));
+    parsys.push_attribute((
+        "sling:resourceType",
+        "wcm/foundation/components/responsivegrid",
+    ));
     w.write_event(Event::Start(parsys)).unwrap();
 
     // <guideheader>
@@ -154,7 +151,10 @@ fn write_parsys1(w: &mut Writer<&mut Cursor<Vec<u8>>>, form_title: &str, config:
 fn write_parsys2(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     let mut parsys = BytesStart::new("parsys2");
     parsys.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    parsys.push_attribute(("sling:resourceType", "wcm/foundation/components/responsivegrid"));
+    parsys.push_attribute((
+        "sling:resourceType",
+        "wcm/foundation/components/responsivegrid",
+    ));
     w.write_event(Event::Start(parsys)).unwrap();
 
     let mut footer = BytesStart::new("guidefooter");
@@ -176,10 +176,7 @@ fn write_guide_container(
 ) {
     let mut elem = BytesStart::new("guideContainer");
     elem.push_attribute(("fd:version", "1.1"));
-    elem.push_attribute((
-        "jcr:lastModified",
-        "{Date}2025-01-01T00:00:00.000+01:00",
-    ));
+    elem.push_attribute(("jcr:lastModified", "{Date}2025-01-01T00:00:00.000+01:00"));
     elem.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute((
@@ -451,7 +448,8 @@ fn write_branding(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     w.write_event(Event::End(BytesEnd::new("masterpage0")))
         .unwrap();
     w.write_event(Event::End(BytesEnd::new("items"))).unwrap(); // branding items
-    w.write_event(Event::End(BytesEnd::new("branding"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("branding")))
+        .unwrap();
 }
 
 /// Write `<assets>` with language dictionary entries.
@@ -480,10 +478,7 @@ fn write_root_panel(
     config: &AemConfig,
 ) {
     let mut elem = BytesStart::new("rootPanel");
-    elem.push_attribute((
-        "jcr:lastModified",
-        "{Date}2025-01-01T00:00:00.000+01:00",
-    ));
+    elem.push_attribute(("jcr:lastModified", "{Date}2025-01-01T00:00:00.000+01:00"));
     elem.push_attribute(("jcr:lastModifiedBy", config.author.as_str()));
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute(("jcr:title", "Root Panel"));
@@ -1067,8 +1062,7 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
 
         write_items_end(w); // inner items
 
-        w.write_event(Event::End(BytesEnd::new(inner_tag)))
-            .unwrap();
+        w.write_event(Event::End(BytesEnd::new(inner_tag))).unwrap();
     }
 
     // Add button (tertiarybutton)
@@ -1165,10 +1159,7 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
         elem.push_attribute(("fd:targetVersion", "1.1"));
         elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
         elem.push_attribute(("jcr:title", "Back"));
-        elem.push_attribute((
-            "sling:resourceType",
-            "fd/af/components/actions/previtemnav",
-        ));
+        elem.push_attribute(("sling:resourceType", "fd/af/components/actions/previtemnav"));
         elem.push_attribute(("dorExclusion", "true"));
         elem.push_attribute(("guideNodeClass", "guideButton"));
         elem.push_attribute(("name", "previtemnav"));
@@ -1182,10 +1173,7 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
         elem.push_attribute(("fd:targetVersion", "1.1"));
         elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
         elem.push_attribute(("jcr:title", "Next"));
-        elem.push_attribute((
-            "sling:resourceType",
-            "fd/af/components/actions/nextitemnav",
-        ));
+        elem.push_attribute(("sling:resourceType", "fd/af/components/actions/nextitemnav"));
         elem.push_attribute(("dorExclusion", "true"));
         elem.push_attribute(("guideNodeClass", "guideButton"));
         elem.push_attribute(("name", "nextitemnav"));
@@ -1212,10 +1200,7 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
         let mut elem = BytesStart::new("submit");
         elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
         elem.push_attribute(("jcr:title", "Submit"));
-        elem.push_attribute((
-            "sling:resourceType",
-            "fd/af/components/actions/submit",
-        ));
+        elem.push_attribute(("sling:resourceType", "fd/af/components/actions/submit"));
         elem.push_attribute(("dorExclusion", "true"));
         elem.push_attribute(("guideNodeClass", "guideButton"));
         elem.push_attribute(("name", "submit"));
@@ -1766,7 +1751,10 @@ mod tests {
         );
 
         // Add button as tertiarybutton
-        assert!(xml.contains("<tertiarybutton"), "missing tertiarybutton (Add)");
+        assert!(
+            xml.contains("<tertiarybutton"),
+            "missing tertiarybutton (Add)"
+        );
         assert!(
             xml.contains("name=\"BT_Add\""),
             "add button should be named BT_Add"
