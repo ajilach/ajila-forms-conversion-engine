@@ -68,12 +68,71 @@ impl ConversionContext {
 ///
 /// The returned root node wraps all converted children and carries the form
 /// title from the supplied configuration.
+///
+/// H2 headings are used to split the top-level children into sub-panels:
+/// each H2 starts a new panel whose title is the heading text, and all
+/// following nodes (until the next H2) become that panel's children.
+/// Nodes before the first H2 remain directly under the root.
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
-    let children: Vec<AemNode> = nodes
-        .iter()
-        .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns))
-        .collect();
+
+    // First pass: split StructuredNodes into sections by H2.
+    // Each section is (Option<heading_text>, nodes_in_section).
+    let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
+
+    for node in nodes {
+        if let StructuredNode::Heading(h) = node {
+            if matches!(h.level, HeadingLevel::H2) {
+                let title = h.content.as_plain_text().trim().to_string();
+                sections.push((Some(title), vec![node]));
+                continue;
+            }
+        }
+        // Append to the current section, or create a preamble section
+        if let Some(last) = sections.last_mut() {
+            last.1.push(node);
+        } else {
+            sections.push((None, vec![node]));
+        }
+    }
+
+    // Second pass: convert each section into AemNodes.
+    let mut children: Vec<AemNode> = Vec::new();
+
+    for (title, section_nodes) in &sections {
+        let converted: Vec<AemNode> = section_nodes
+            .iter()
+            .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns))
+            .collect();
+
+        if let Some(title) = title {
+            // H2 section → wrap in a Panel
+            let name = ctx.next_name("PN");
+            let uuid = ctx.uuid(&name);
+            children.push(AemNode::Panel {
+                uuid,
+                name,
+                title: title.clone(),
+                children: converted,
+                is_page: false,
+                dor_exclude: false,
+            });
+        } else {
+            // Preamble (before first H2) → also wrap in a Panel
+            if !converted.is_empty() {
+                let name = ctx.next_name("PN");
+                let uuid = ctx.uuid(&name);
+                children.push(AemNode::Panel {
+                    uuid,
+                    name,
+                    title: String::new(),
+                    children: converted,
+                    is_page: false,
+                    dor_exclude: false,
+                });
+            }
+        }
+    }
 
     AemNode::Root {
         title: config.form_title.clone(),
@@ -561,22 +620,142 @@ mod tests {
         }
     }
 
+    /// Helper: extract the children from the single preamble panel under Root.
+    /// When there are no H2 headings, all content is wrapped in one preamble panel.
+    fn unwrap_preamble(root: &AemNode) -> &[AemNode] {
+        match root {
+            AemNode::Root { children, .. } => {
+                assert_eq!(children.len(), 1, "Expected single preamble panel");
+                match &children[0] {
+                    AemNode::Panel {
+                        children, title, ..
+                    } => {
+                        assert!(title.is_empty(), "Preamble panel should have empty title");
+                        children
+                    }
+                    other => panic!("Expected Panel, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Root, got {:?}", other),
+        }
+    }
+
     #[test]
     fn convert_heading_produces_textdraw() {
+        // H3 headings are NOT used for sectioning — they stay inline
         let nodes = vec![StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: InlineText::plain("Section Title"),
+            level: HeadingLevel::H3,
+            content: InlineText::plain("Sub Title"),
         })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextDraw { content, .. } => {
+                assert!(content.contains("<h3>"));
+                assert!(content.contains("Sub Title"));
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn h2_headings_create_section_panels() {
+        // H2 headings split the top-level children into sub-panels.
+        // Content before the first H2 is also wrapped in a panel.
+        let nodes = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Preamble"),
+            }),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H2,
+                content: InlineText::plain("Section A"),
+            }),
+            StructuredNode::Field(FieldNode {
+                name: "fieldA".into(),
+                label: Some(InlineText::plain("Field A")),
+                input_type: FieldType::Text {
+                    regex: None,
+                    max_length: None,
+                    min_length: None,
+                },
+                value: None,
+                placeholder: None,
+            }),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H2,
+                content: InlineText::plain("Section B"),
+            }),
+            StructuredNode::Field(FieldNode {
+                name: "fieldB".into(),
+                label: Some(InlineText::plain("Field B")),
+                input_type: FieldType::Text {
+                    regex: None,
+                    max_length: None,
+                    min_length: None,
+                },
+                value: None,
+                placeholder: None,
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Footer text"),
+            }),
+        ];
         let root = convert_to_aem(&nodes, &default_config());
         match &root {
             AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
+                // Preamble panel + Panel "Section A" + Panel "Section B"
+                assert_eq!(
+                    children.len(),
+                    3,
+                    "Expected 3 root children: preamble panel + 2 section panels"
+                );
+
+                // First child: preamble panel wrapping the paragraph
                 match &children[0] {
-                    AemNode::TextDraw { content, .. } => {
-                        assert!(content.contains("<h2>"));
-                        assert!(content.contains("Section Title"));
+                    AemNode::Panel {
+                        title,
+                        children: panel_children,
+                        ..
+                    } => {
+                        assert!(title.is_empty(), "Preamble panel should have empty title");
+                        assert_eq!(panel_children.len(), 1);
+                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
                     }
-                    other => panic!("Expected TextDraw, got {:?}", other),
+                    other => panic!("Expected Panel for preamble, got {:?}", other),
+                }
+
+                // Second child: Panel for Section A
+                match &children[1] {
+                    AemNode::Panel {
+                        title,
+                        children: panel_children,
+                        ..
+                    } => {
+                        assert_eq!(title, "Section A");
+                        // H2 heading TextDraw + fieldA
+                        assert_eq!(panel_children.len(), 2);
+                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
+                        assert!(matches!(&panel_children[1], AemNode::TextField { .. }));
+                    }
+                    other => panic!("Expected Panel for Section A, got {:?}", other),
+                }
+
+                // Third child: Panel for Section B
+                match &children[2] {
+                    AemNode::Panel {
+                        title,
+                        children: panel_children,
+                        ..
+                    } => {
+                        assert_eq!(title, "Section B");
+                        // H2 heading TextDraw + fieldB + footer paragraph
+                        assert_eq!(panel_children.len(), 3);
+                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
+                        assert!(matches!(&panel_children[1], AemNode::TextField { .. }));
+                        assert!(matches!(&panel_children[2], AemNode::TextDraw { .. }));
+                    }
+                    other => panic!("Expected Panel for Section B, got {:?}", other),
                 }
             }
             other => panic!("Expected Root, got {:?}", other),
@@ -589,18 +768,14 @@ mod tests {
             content: InlineText::plain("Hello world"),
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::TextDraw { content, .. } => {
-                        assert!(content.contains("<p>"));
-                        assert!(content.contains("Hello world"));
-                    }
-                    other => panic!("Expected TextDraw, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextDraw { content, .. } => {
+                assert!(content.contains("<p>"));
+                assert!(content.contains("Hello world"));
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected TextDraw, got {:?}", other),
         }
     }
 
@@ -618,24 +793,20 @@ mod tests {
             placeholder: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::TextField {
-                        name,
-                        label,
-                        max_chars,
-                        ..
-                    } => {
-                        assert_eq!(name, "TF_firstName");
-                        assert_eq!(label, "First Name");
-                        assert_eq!(*max_chars, Some(50));
-                    }
-                    other => panic!("Expected TextField, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextField {
+                name,
+                label,
+                max_chars,
+                ..
+            } => {
+                assert_eq!(name, "TF_firstName");
+                assert_eq!(label, "First Name");
+                assert_eq!(*max_chars, Some(50));
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected TextField, got {:?}", other),
         }
     }
 
@@ -660,20 +831,16 @@ mod tests {
             placeholder: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::RadioButton { name, options, .. } => {
-                        assert_eq!(name, "RB_gender");
-                        assert_eq!(options.len(), 2);
-                        assert_eq!(options[0].label, "Male");
-                        assert_eq!(options[0].value, "M");
-                    }
-                    other => panic!("Expected RadioButton, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::RadioButton { name, options, .. } => {
+                assert_eq!(name, "RB_gender");
+                assert_eq!(options.len(), 2);
+                assert_eq!(options[0].label, "Male");
+                assert_eq!(options[0].value, "M");
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected RadioButton, got {:?}", other),
         }
     }
 
@@ -698,18 +865,14 @@ mod tests {
             placeholder: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::Dropdown { name, options, .. } => {
-                        assert_eq!(name, "DD_country");
-                        assert_eq!(options.len(), 2);
-                    }
-                    other => panic!("Expected Dropdown, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::Dropdown { name, options, .. } => {
+                assert_eq!(name, "DD_country");
+                assert_eq!(options.len(), 2);
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected Dropdown, got {:?}", other),
         }
     }
 
@@ -723,19 +886,15 @@ mod tests {
             placeholder: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::Checkbox { name, options, .. } => {
-                        assert_eq!(name, "CB_agreeTerms");
-                        assert_eq!(options.len(), 1);
-                        assert_eq!(options[0].value, "true");
-                    }
-                    other => panic!("Expected Checkbox, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::Checkbox { name, options, .. } => {
+                assert_eq!(name, "CB_agreeTerms");
+                assert_eq!(options.len(), 1);
+                assert_eq!(options[0].value, "true");
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected Checkbox, got {:?}", other),
         }
     }
 
@@ -749,18 +908,14 @@ mod tests {
             placeholder: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::DatePicker { name, label, .. } => {
-                        assert_eq!(name, "DATE_birthDate");
-                        assert_eq!(label, "Date of Birth");
-                    }
-                    other => panic!("Expected DatePicker, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::DatePicker { name, label, .. } => {
+                assert_eq!(name, "DATE_birthDate");
+                assert_eq!(label, "Date of Birth");
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected DatePicker, got {:?}", other),
         }
     }
 
@@ -782,24 +937,20 @@ mod tests {
             max_occurrences: Some(5),
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::Repeatable {
+                min_occur,
+                max_occur,
+                children,
+                ..
+            } => {
+                assert_eq!(*min_occur, 1);
+                assert_eq!(*max_occur, 5);
                 assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::Repeatable {
-                        min_occur,
-                        max_occur,
-                        children,
-                        ..
-                    } => {
-                        assert_eq!(*min_occur, 1);
-                        assert_eq!(*max_occur, 5);
-                        assert_eq!(children.len(), 1);
-                    }
-                    other => panic!("Expected Repeatable, got {:?}", other),
-                }
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected Repeatable, got {:?}", other),
         }
     }
 
@@ -824,17 +975,13 @@ mod tests {
             ],
         })];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    AemNode::Panel { children, .. } => {
-                        assert_eq!(children.len(), 2);
-                    }
-                    other => panic!("Expected Panel, got {:?}", other),
-                }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::Panel { children, .. } => {
+                assert_eq!(children.len(), 2);
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected Panel, got {:?}", other),
         }
     }
 
@@ -848,12 +995,8 @@ mod tests {
             StructuredNode::Empty,
         ];
         let root = convert_to_aem(&nodes, &default_config());
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
-            }
-            other => panic!("Expected Root, got {:?}", other),
-        }
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
     }
 
     #[test]
@@ -865,18 +1008,12 @@ mod tests {
         let root1 = convert_to_aem(&nodes, &config);
         let root2 = convert_to_aem(&nodes, &config);
 
-        let uuid1 = match &root1 {
-            AemNode::Root { children, .. } => match &children[0] {
-                AemNode::TextDraw { uuid, .. } => *uuid,
-                _ => panic!(),
-            },
+        let uuid1 = match &unwrap_preamble(&root1)[0] {
+            AemNode::TextDraw { uuid, .. } => *uuid,
             _ => panic!(),
         };
-        let uuid2 = match &root2 {
-            AemNode::Root { children, .. } => match &children[0] {
-                AemNode::TextDraw { uuid, .. } => *uuid,
-                _ => panic!(),
-            },
+        let uuid2 = match &unwrap_preamble(&root2)[0] {
+            AemNode::TextDraw { uuid, .. } => *uuid,
             _ => panic!(),
         };
         assert_eq!(uuid1, uuid2);
@@ -919,27 +1056,23 @@ mod tests {
         })];
         let config = default_config();
         let root = convert_to_aem(&nodes, &config);
-        match &root {
-            AemNode::Root { children, .. } => {
-                assert_eq!(children.len(), 1);
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::Panel { children, .. } => {
+                assert_eq!(children.len(), 2);
+                // span=1 of 3 columns → 12/3*1 = 4
                 match &children[0] {
-                    AemNode::Panel { children, .. } => {
-                        assert_eq!(children.len(), 2);
-                        // span=1 of 3 columns → 12/3*1 = 4
-                        match &children[0] {
-                            AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 4),
-                            other => panic!("Expected TextField, got {:?}", other),
-                        }
-                        // span=2 of 3 columns → 12/3*2 = 8
-                        match &children[1] {
-                            AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 8),
-                            other => panic!("Expected TextField, got {:?}", other),
-                        }
-                    }
-                    other => panic!("Expected Panel, got {:?}", other),
+                    AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 4),
+                    other => panic!("Expected TextField, got {:?}", other),
+                }
+                // span=2 of 3 columns → 12/3*2 = 8
+                match &children[1] {
+                    AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 8),
+                    other => panic!("Expected TextField, got {:?}", other),
                 }
             }
-            other => panic!("Expected Root, got {:?}", other),
+            other => panic!("Expected Panel, got {:?}", other),
         }
     }
 }
