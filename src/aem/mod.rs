@@ -31,7 +31,7 @@ mod package_writer;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
-pub use package_writer::generate_aem_package;
+pub use package_writer::{collect_languages, detect_master_language, generate_aem_package};
 pub use xml_writer::generate_aem_xml;
 
 use uuid::Uuid;

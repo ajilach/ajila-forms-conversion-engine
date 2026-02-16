@@ -17,5 +17,9 @@
         "true": true,
         "false": true,
     },
+    "chat.tools.urls.autoApprove": {
+        "https://*.adobe.com": true,
+        "https://*.githubusercontent.com": true
+    },
     "liveServer.settings.port": 5501,
 }

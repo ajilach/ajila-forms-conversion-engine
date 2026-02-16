@@ -96,7 +96,10 @@ pub use structured::{
 };
 
 // AEM generation
-pub use aem::{AemConfig, AemNode, convert_to_aem, generate_aem_package, generate_aem_xml};
+pub use aem::{
+    AemConfig, AemNode, collect_languages, convert_to_aem, detect_master_language,
+    generate_aem_package, generate_aem_xml,
+};
 
 // HTML generation
 pub use html::{HtmlConfig, generate_form_body, generate_html};
@@ -591,16 +594,42 @@ pub fn to_html(content: &[StructuredNode], config: &HtmlConfig) -> String {
 
 /// Convert structured nodes to an AEM node tree and serialize to XML.
 pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
-    let root = convert_to_aem(content, config);
-    generate_aem_xml(&root, config)
+    let config = resolve_aem_languages(content, config);
+    let root = convert_to_aem(content, &config);
+    generate_aem_xml(&root, &config)
 }
 
 /// Convert structured nodes to a complete AEM FileVault content package (ZIP).
 ///
 /// Returns the raw ZIP bytes ready to be written to disk.
 pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8> {
-    let root = convert_to_aem(content, config);
-    generate_aem_package(&root, config)
+    let config = resolve_aem_languages(content, config);
+    let root = convert_to_aem(content, &config);
+    generate_aem_package(&root, &config, content)
+}
+
+/// Auto-detect master language and available languages from content,
+/// applying them to a clone of the provided config.
+fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
+    let detected_langs = collect_languages(content);
+    if detected_langs.is_empty() {
+        return config.clone();
+    }
+    let mut config = config.clone();
+    config.master_language = detect_master_language_from_set(&detected_langs);
+    config.languages = detected_langs.into_iter().collect();
+    config
+}
+
+/// Pick "en" if present, otherwise the first language alphabetically.
+fn detect_master_language_from_set(
+    langs: &std::collections::BTreeSet<String>,
+) -> String {
+    if langs.contains("en") {
+        "en".into()
+    } else {
+        langs.iter().next().cloned().unwrap_or_else(|| "en".into())
+    }
 }
 
 /// Run exhaustive exploration on a PDF file and return the merged structured tree.

@@ -4,16 +4,22 @@
 //! FileVault content package (ZIP) that can be uploaded directly to an AEM
 //! instance via the Package Manager.
 
+use std::collections::{BTreeSet, HashMap};
 use std::io::{Cursor, Write};
 use std::time::SystemTime;
 
-use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use quick_xml::Writer;
-use zip::write::SimpleFileOptions;
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
+use uuid::Uuid;
 use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 use super::{AemConfig, AemNode};
 use crate::aem::generate_aem_xml;
+use crate::aem::xml_writer::reformat_attributes;
+use crate::structured::{
+    FieldType, InlineNode, InlineText, StructuredNode, TranslatableString,
+};
 
 // ============================================================================
 // Public API
@@ -23,7 +29,11 @@ use crate::aem::generate_aem_xml;
 /// form page and its DAM asset metadata.
 ///
 /// Returns the raw ZIP bytes that can be written to disk as a `.zip` file.
-pub fn generate_aem_package(root: &AemNode, config: &AemConfig) -> Vec<u8> {
+pub fn generate_aem_package(
+    root: &AemNode,
+    config: &AemConfig,
+    content: &[StructuredNode],
+) -> Vec<u8> {
     let form_xml = generate_aem_xml(root, config);
     let dam_xml = generate_dam_asset_xml(config);
 
@@ -46,36 +56,85 @@ pub fn generate_aem_package(root: &AemNode, config: &AemConfig) -> Vec<u8> {
 
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
-    let opts = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // ── META-INF ────────────────────────────────────────────────────────
-    write_entry(&mut zip, &opts, "META-INF/MANIFEST.MF",
-        &generate_manifest(&package_name, &filter_roots));
+    write_entry(
+        &mut zip,
+        &opts,
+        "META-INF/MANIFEST.MF",
+        &generate_manifest(&package_name, &filter_roots),
+    );
     write_entry(&mut zip, &opts, "META-INF/vault/config.xml", VAULT_CONFIG);
-    write_entry(&mut zip, &opts, "META-INF/vault/nodetypes.cnd", NODETYPES_CND);
-    write_entry(&mut zip, &opts, "META-INF/vault/filter.xml",
-        &generate_filter_xml(&filter_roots));
-    write_entry(&mut zip, &opts, "META-INF/vault/properties.xml",
-        &generate_properties_xml(&package_name, &config.author));
-    write_entry(&mut zip, &opts, "META-INF/vault/definition/.content.xml",
-        &generate_definition_xml(&package_name, &config.author, &filter_roots));
+    write_entry(
+        &mut zip,
+        &opts,
+        "META-INF/vault/nodetypes.cnd",
+        NODETYPES_CND,
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "META-INF/vault/filter.xml",
+        &generate_filter_xml(&filter_roots),
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "META-INF/vault/properties.xml",
+        &generate_properties_xml(&package_name, &config.author),
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "META-INF/vault/definition/.content.xml",
+        &generate_definition_xml(&package_name, &config.author, &filter_roots),
+    );
 
     // ── jcr_root boilerplate ────────────────────────────────────────────
     write_entry(&mut zip, &opts, "jcr_root/.content.xml", JCR_ROOT_XML);
-    write_entry(&mut zip, &opts, "jcr_root/content/.content.xml", CONTENT_XML);
-    write_entry(&mut zip, &opts, "jcr_root/content/forms/.content.xml", FORMS_XML);
-    write_entry(&mut zip, &opts, "jcr_root/content/forms/af/.content.xml", AF_XML);
-    write_entry(&mut zip, &opts, "jcr_root/content/dam/.content.xml", DAM_XML);
-    write_entry(&mut zip, &opts,
-        "jcr_root/content/dam/formsanddocuments/.content.xml", FORMSANDDOCUMENTS_XML);
+    write_entry(
+        &mut zip,
+        &opts,
+        "jcr_root/content/.content.xml",
+        CONTENT_XML,
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "jcr_root/content/forms/.content.xml",
+        FORMS_XML,
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "jcr_root/content/forms/af/.content.xml",
+        AF_XML,
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "jcr_root/content/dam/.content.xml",
+        DAM_XML,
+    );
+    write_entry(
+        &mut zip,
+        &opts,
+        "jcr_root/content/dam/formsanddocuments/.content.xml",
+        FORMSANDDOCUMENTS_XML,
+    );
 
     // ── Intermediate folder .content.xml files ──────────────────────────
     let path_segments: Vec<&str> = config.form_path.split('/').collect();
     // content/forms/af/<seg1>/<seg2>/.../<form_code>
     write_intermediate_folders(&mut zip, &opts, "jcr_root/content/forms/af", &path_segments);
     // content/dam/formsanddocuments/<seg1>/<seg2>/.../<form_code>
-    write_intermediate_folders(&mut zip, &opts, "jcr_root/content/dam/formsanddocuments", &path_segments);
+    write_intermediate_folders(
+        &mut zip,
+        &opts,
+        "jcr_root/content/dam/formsanddocuments",
+        &path_segments,
+    );
 
     // ── Form content .content.xml ───────────────────────────────────────
     let form_content_path = format!(
@@ -91,6 +150,42 @@ pub fn generate_aem_package(root: &AemNode, config: &AemConfig) -> Vec<u8> {
     );
     write_entry(&mut zip, &opts, &dam_content_path, &dam_xml);
 
+    // ── Translation dictionaries ────────────────────────────────────────
+    let translations = extract_translations(content, &config.master_language);
+    if !translations.is_empty() {
+        let dict_base = format!(
+            "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
+            config.form_path, config.form_code
+        );
+        let basename = format!(
+            "/content/forms/af/{}/{}/jcr:content/guideContainer/assets/dictionary",
+            config.form_path, config.form_code
+        );
+
+        // Collect all languages that have translations
+        let mut languages = BTreeSet::<String>::new();
+        for lang_map in translations.values() {
+            languages.extend(lang_map.keys().cloned());
+        }
+
+        for lang in &languages {
+            let entries: Vec<(String, String)> = translations
+                .iter()
+                .filter_map(|(master_text, lang_map)| {
+                    lang_map
+                        .get(lang.as_str())
+                        .map(|translated| (master_text.clone(), translated.clone()))
+                })
+                .collect();
+
+            if !entries.is_empty() {
+                let dict_xml = generate_dictionary_xml(lang, &entries, &basename);
+                let dict_path = format!("{}/{}.xml", dict_base, lang);
+                write_entry(&mut zip, &opts, &dict_path, &dict_xml);
+            }
+        }
+    }
+
     zip.finish().expect("finalize zip").into_inner()
 }
 
@@ -98,7 +193,12 @@ pub fn generate_aem_package(root: &AemNode, config: &AemConfig) -> Vec<u8> {
 // Helpers
 // ============================================================================
 
-fn write_entry(zip: &mut ZipWriter<Cursor<Vec<u8>>>, opts: &SimpleFileOptions, path: &str, content: &str) {
+fn write_entry(
+    zip: &mut ZipWriter<Cursor<Vec<u8>>>,
+    opts: &SimpleFileOptions,
+    path: &str,
+    content: &str,
+) {
     zip.start_file(path, *opts).expect("zip start_file");
     zip.write_all(content.as_bytes()).expect("zip write");
 }
@@ -169,12 +269,15 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
         w.write_event(Event::Empty(meta)).unwrap();
 
         // </jcr:content>
-        w.write_event(Event::End(BytesEnd::new("jcr:content"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:content")))
+            .unwrap();
         // </jcr:root>
-        w.write_event(Event::End(BytesEnd::new("jcr:root"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:root")))
+            .unwrap();
     }
 
-    String::from_utf8(buf.into_inner()).expect("UTF-8 dam xml")
+    let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 dam xml");
+    reformat_attributes(&raw)
 }
 
 // ============================================================================
@@ -187,7 +290,11 @@ fn generate_manifest(package_name: &str, roots: &[String]) -> String {
     let roots_value = roots.join(",");
     let mut manifest = String::new();
     manifest.push_str("Manifest-Version: 1.0\r\n");
-    write_manifest_entry(&mut manifest, "Content-Package-Id", &format!("fd/export:{}", package_name));
+    write_manifest_entry(
+        &mut manifest,
+        "Content-Package-Id",
+        &format!("fd/export:{}", package_name),
+    );
     write_manifest_entry(&mut manifest, "Content-Package-Roots", &roots_value);
     write_manifest_entry(&mut manifest, "Content-Package-Type", "mixed");
     manifest.push_str("\r\n");
@@ -236,7 +343,8 @@ fn generate_filter_xml(roots: &[String]) -> String {
             w.write_event(Event::Empty(f)).unwrap();
         }
 
-        w.write_event(Event::End(BytesEnd::new("workspaceFilter"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("workspaceFilter")))
+            .unwrap();
     }
     String::from_utf8(buf.into_inner()).expect("UTF-8 filter xml")
 }
@@ -309,9 +417,11 @@ fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -
         }
 
         w.write_event(Event::End(BytesEnd::new("filter"))).unwrap();
-        w.write_event(Event::End(BytesEnd::new("jcr:root"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:root")))
+            .unwrap();
     }
-    String::from_utf8(buf.into_inner()).expect("UTF-8 definition xml")
+    let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 definition xml");
+    reformat_attributes(&raw)
 }
 
 /// Produce an ISO 8601 timestamp like `2026-02-16T12:00:00.000+00:00`.
@@ -352,6 +462,287 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
+}
+
+// ============================================================================
+// Language detection
+// ============================================================================
+
+/// Detect the best master language from the structured content.
+///
+/// Scans all `TranslatableString::Translated` and `InlineNode::TranslatedText`
+/// entries. Returns `"en"` if English is among the available languages,
+/// otherwise the first language alphabetically. Falls back to `"en"` if no
+/// translations are present at all.
+pub fn detect_master_language(content: &[StructuredNode]) -> String {
+    let langs = collect_languages(content);
+    if langs.is_empty() || langs.contains("en") {
+        "en".into()
+    } else {
+        // First alphabetically
+        langs.into_iter().next().unwrap()
+    }
+}
+
+/// Collect all language codes present in the structured content.
+pub fn collect_languages(content: &[StructuredNode]) -> BTreeSet<String> {
+    let mut langs = BTreeSet::new();
+    for node in content {
+        collect_langs_from_node(node, &mut langs);
+    }
+    langs
+}
+
+fn collect_langs_from_node(node: &StructuredNode, langs: &mut BTreeSet<String>) {
+    match node {
+        StructuredNode::Heading(h) => collect_langs_from_inline_text(&h.content, langs),
+        StructuredNode::Paragraph(p) => collect_langs_from_inline_text(&p.content, langs),
+        StructuredNode::Field(f) => {
+            if let Some(label) = &f.label {
+                collect_langs_from_inline_text(label, langs);
+            }
+            if let Some(TranslatableString::Translated(tmap)) = &f.placeholder {
+                langs.extend(tmap.keys().cloned());
+            }
+            match &f.input_type {
+                FieldType::Radio { options } | FieldType::Select { options } => {
+                    for opt in options {
+                        if let TranslatableString::Translated(tmap) = &opt.name {
+                            langs.extend(tmap.keys().cloned());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        StructuredNode::Table(t) => {
+            if let Some(caption) = &t.caption {
+                collect_langs_from_inline_text(caption, langs);
+            }
+            if let Some(header) = &t.header {
+                for cell in &header.cells {
+                    collect_langs_from_node(cell, langs);
+                }
+            }
+            for row in &t.rows {
+                for cell in &row.cells {
+                    collect_langs_from_node(cell, langs);
+                }
+            }
+        }
+        StructuredNode::Group(g) => {
+            for child in &g.children {
+                collect_langs_from_node(child, langs);
+            }
+        }
+        StructuredNode::Repeatable(r) => {
+            collect_langs_from_node(&r.item, langs);
+        }
+        StructuredNode::Conditional(c) => {
+            collect_langs_from_node(&c.content, langs);
+        }
+        StructuredNode::GridLayout(g) => {
+            for elem in &g.elements {
+                collect_langs_from_node(&elem.node, langs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_langs_from_inline_text(text: &InlineText, langs: &mut BTreeSet<String>) {
+    for node in &text.0 {
+        collect_langs_from_inline_node(node, langs);
+    }
+}
+
+fn collect_langs_from_inline_node(node: &InlineNode, langs: &mut BTreeSet<String>) {
+    match node {
+        InlineNode::TranslatedText(tmap) => {
+            langs.extend(tmap.keys().cloned());
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_langs_from_inline_node(inner, langs);
+        }
+        InlineNode::Link(link) => {
+            collect_langs_from_inline_text(&link.content, langs);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+// ============================================================================
+// Translation extraction
+// ============================================================================
+
+/// A map of master-language text → { lang_code → translated_text }.
+type TranslationMap = HashMap<String, HashMap<String, String>>;
+
+/// Walk the structured node tree and extract all translatable strings.
+///
+/// Returns a map where each key is the master-language text and each value
+/// is a map of language codes to their translations.
+fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> TranslationMap {
+    let mut map = TranslationMap::new();
+    for node in nodes {
+        extract_from_node(node, master_lang, &mut map);
+    }
+    map
+}
+
+fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut TranslationMap) {
+    match node {
+        StructuredNode::Heading(h) => extract_from_inline_text(&h.content, master_lang, map),
+        StructuredNode::Paragraph(p) => extract_from_inline_text(&p.content, master_lang, map),
+        StructuredNode::Field(f) => {
+            if let Some(label) = &f.label {
+                extract_from_inline_text(label, master_lang, map);
+            }
+            if let Some(TranslatableString::Translated(tmap)) = &f.placeholder {
+                if let Some(master) = tmap.get(master_lang) {
+                    let others: HashMap<String, String> = tmap
+                        .iter()
+                        .filter(|(k, _)| k.as_str() != master_lang)
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    if !others.is_empty() {
+                        map.insert(master.clone(), others);
+                    }
+                }
+            }
+            match &f.input_type {
+                FieldType::Radio { options } | FieldType::Select { options } => {
+                    for opt in options {
+                        if let TranslatableString::Translated(tmap) = &opt.name {
+                            if let Some(master) = tmap.get(master_lang) {
+                                let others: HashMap<String, String> = tmap
+                                    .iter()
+                                    .filter(|(k, _)| k.as_str() != master_lang)
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect();
+                                if !others.is_empty() {
+                                    map.insert(master.clone(), others);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        StructuredNode::Table(t) => {
+            if let Some(caption) = &t.caption {
+                extract_from_inline_text(caption, master_lang, map);
+            }
+            if let Some(header) = &t.header {
+                for cell in &header.cells {
+                    extract_from_node(cell, master_lang, map);
+                }
+            }
+            for row in &t.rows {
+                for cell in &row.cells {
+                    extract_from_node(cell, master_lang, map);
+                }
+            }
+        }
+        StructuredNode::Group(g) => {
+            for child in &g.children {
+                extract_from_node(child, master_lang, map);
+            }
+        }
+        StructuredNode::Repeatable(r) => {
+            extract_from_node(&r.item, master_lang, map);
+        }
+        StructuredNode::Conditional(c) => {
+            extract_from_node(&c.content, master_lang, map);
+        }
+        StructuredNode::GridLayout(g) => {
+            for elem in &g.elements {
+                extract_from_node(&elem.node, master_lang, map);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_from_inline_text(text: &InlineText, master_lang: &str, map: &mut TranslationMap) {
+    for node in &text.0 {
+        extract_from_inline_node(node, master_lang, map);
+    }
+}
+
+fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut TranslationMap) {
+    match node {
+        InlineNode::TranslatedText(tmap) => {
+            if let Some(master) = tmap.get(master_lang) {
+                let others: HashMap<String, String> = tmap
+                    .iter()
+                    .filter(|(k, _)| k.as_str() != master_lang)
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                if !others.is_empty() {
+                    map.insert(master.clone(), others);
+                }
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            extract_from_inline_node(inner, master_lang, map);
+        }
+        InlineNode::Link(link) => {
+            extract_from_inline_text(&link.content, master_lang, map);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+// ============================================================================
+// Dictionary XML generation
+// ============================================================================
+
+/// Generate a Sling dictionary XML file for a single locale.
+fn generate_dictionary_xml(locale: &str, entries: &[(String, String)], basename: &str) -> String {
+    let mut buf = Cursor::new(Vec::new());
+    {
+        let mut w = Writer::new_with_indent(&mut buf, b' ', 4);
+
+        w.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
+            .unwrap();
+
+        // <jcr:root>
+        let mut root = BytesStart::new("jcr:root");
+        root.push_attribute(("xmlns:sling", "http://sling.apache.org/jcr/sling/1.0"));
+        root.push_attribute(("xmlns:jcr", "http://www.jcp.org/jcr/1.0"));
+        root.push_attribute(("xmlns:mix", "http://www.jcp.org/jcr/mix/1.0"));
+        root.push_attribute(("xmlns:nt", "http://www.jcp.org/jcr/nt/1.0"));
+        root.push_attribute(("jcr:language", locale));
+        root.push_attribute(("jcr:mixinTypes", "[mix:language]"));
+        root.push_attribute(("jcr:primaryType", "sling:Folder"));
+        root.push_attribute(("sling:basename", basename));
+        w.write_event(Event::Start(root)).unwrap();
+
+        // Fixed namespace for deterministic UUIDs
+        let ns = Uuid::NAMESPACE_URL;
+
+        for (master_text, translated_text) in entries {
+            let key = format!("fd_{}", master_text);
+
+            // Deterministic element name from the key
+            let uuid = Uuid::new_v5(&ns, key.as_bytes());
+            let elem_name = format!("fd_{}", uuid.as_hyphenated());
+
+            let mut entry = BytesStart::new(elem_name.as_str());
+            entry.push_attribute(("jcr:mixinTypes", "[sling:Message]"));
+            entry.push_attribute(("jcr:primaryType", "nt:folder"));
+            entry.push_attribute(("sling:key", key.as_str()));
+            entry.push_attribute(("sling:message", translated_text.as_str()));
+            w.write_event(Event::Empty(entry)).unwrap();
+        }
+
+        w.write_event(Event::End(BytesEnd::new("jcr:root"))).unwrap();
+    }
+
+    let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 dictionary xml");
+    reformat_attributes(&raw)
 }
 
 // ============================================================================

@@ -4,8 +4,8 @@
 
 use std::io::Cursor;
 
-use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Writer;
+use quick_xml::events::{BytesEnd, BytesStart, Event};
 
 use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 
@@ -15,18 +15,25 @@ use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 
 /// Serialize an `AemNode` tree (starting from `Root`) into a complete AEM
 /// JCR content XML string.
+///
+/// Attributes are formatted one-per-line (matching AEM's export style).
 pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
     let mut buf = Cursor::new(Vec::new());
     {
         let mut w = Writer::new_with_indent(&mut buf, b' ', 4);
 
         // XML declaration
-        w.write_event(Event::Decl(quick_xml::events::BytesDecl::new("1.0", Some("UTF-8"), None)))
-            .expect("write xml decl");
+        w.write_event(Event::Decl(quick_xml::events::BytesDecl::new(
+            "1.0",
+            Some("UTF-8"),
+            None,
+        )))
+        .expect("write xml decl");
 
         write_node(&mut w, root, config);
     }
-    String::from_utf8(buf.into_inner()).expect("UTF-8 xml output")
+    let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 xml output");
+    reformat_attributes(&raw)
 }
 
 // ============================================================================
@@ -73,8 +80,10 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
         let mut content_elem = BytesStart::new("jcr:content");
         content_elem.push_attribute(("jcr:primaryType", "cq:PageContent"));
         content_elem.push_attribute(("jcr:title", title.as_str()));
-        content_elem
-            .push_attribute(("sling:resourceType", config.guide_container_resource_type().as_str()));
+        content_elem.push_attribute((
+            "sling:resourceType",
+            config.guide_container_resource_type().as_str(),
+        ));
         content_elem.push_attribute(("cq:template", config.template_path.as_str()));
         w.write_event(Event::Start(content_elem)).unwrap();
 
@@ -82,9 +91,11 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
         write_guide_container(w, title, children, config);
 
         // </jcr:content>
-        w.write_event(Event::End(BytesEnd::new("jcr:content"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:content")))
+            .unwrap();
         // </jcr:root>
-        w.write_event(Event::End(BytesEnd::new("jcr:root"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:root")))
+            .unwrap();
     } else {
         // No page wrapper — emit rootPanel directly
         write_root_panel(w, title, children, config);
@@ -99,7 +110,10 @@ fn write_guide_container(
 ) {
     let mut elem = BytesStart::new("guideContainer");
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    elem.push_attribute(("sling:resourceType", config.guide_container_resource_type().as_str()));
+    elem.push_attribute((
+        "sling:resourceType",
+        config.guide_container_resource_type().as_str(),
+    ));
     elem.push_attribute(("guideNodeClass", "guideContainerNode"));
     elem.push_attribute(("fd:version", "2.1"));
     elem.push_attribute(("dorType", config.dor_type.as_str()));
@@ -118,7 +132,8 @@ fn write_guide_container(
     write_root_panel(w, title, children, config);
 
     // </guideContainer>
-    w.write_event(Event::End(BytesEnd::new("guideContainer"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("guideContainer")))
+        .unwrap();
 }
 
 fn write_root_panel(
@@ -150,7 +165,8 @@ fn write_root_panel(
         write_toolbar(w, config);
     }
 
-    w.write_event(Event::End(BytesEnd::new("rootPanel"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("rootPanel")))
+        .unwrap();
 }
 
 // ============================================================================
@@ -206,11 +222,7 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
 // Text Field
 // ============================================================================
 
-fn write_text_field(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_text_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::TextField {
         uuid,
         name,
@@ -258,11 +270,7 @@ fn write_text_field(
 // Number Field
 // ============================================================================
 
-fn write_number_field(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_number_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::NumberField {
         uuid,
         name,
@@ -306,11 +314,7 @@ fn write_number_field(
 // Date Picker
 // ============================================================================
 
-fn write_date_picker(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_date_picker(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::DatePicker {
         uuid,
         name,
@@ -363,11 +367,7 @@ fn write_date_picker(
 // Dropdown
 // ============================================================================
 
-fn write_dropdown(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_dropdown(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::Dropdown {
         uuid,
         name,
@@ -411,11 +411,7 @@ fn write_dropdown(
 // Checkbox
 // ============================================================================
 
-fn write_checkbox(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::Checkbox {
         uuid,
         name,
@@ -466,11 +462,7 @@ fn write_checkbox(
 // Radio Button
 // ============================================================================
 
-fn write_radio_button(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::RadioButton {
         uuid,
         name,
@@ -524,11 +516,7 @@ fn write_radio_button(
 // Text Draw (static text / headings)
 // ============================================================================
 
-fn write_text_draw(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::TextDraw {
         uuid,
         name,
@@ -601,7 +589,10 @@ fn write_text_box_multiline(
         "sling:resourceType",
         config.control_resource_type("textboxMultiline").as_str(),
     ));
-    elem.push_attribute(("css", format!("{} ubs-textbox-multiline", config.css_class("textbox")).as_str()));
+    elem.push_attribute((
+        "css",
+        format!("{} ubs-textbox-multiline", config.css_class("textbox")).as_str(),
+    ));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -619,11 +610,7 @@ fn write_text_box_multiline(
 // Repeatable
 // ============================================================================
 
-fn write_repeatable(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    node: &AemNode,
-    config: &AemConfig,
-) {
+fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
     let AemNode::Repeatable {
         uuid,
         name,
@@ -678,7 +665,8 @@ fn write_repeatable(
         // <toolbar> with remove button
         write_repeatable_toolbar_remove(w, config);
 
-        w.write_event(Event::End(BytesEnd::new("repeatableInner"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("repeatableInner")))
+            .unwrap();
     }
 
     // Add button (tertiary)
@@ -735,7 +723,8 @@ fn write_responsive(w: &mut Writer<&mut Cursor<Vec<u8>>>, width: u32) {
     default.push_attribute(("width", width.to_string().as_str()));
     w.write_event(Event::Empty(default)).unwrap();
 
-    w.write_event(Event::End(BytesEnd::new("cq:responsive"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("cq:responsive")))
+        .unwrap();
 }
 
 /// Write the standard toolbar with prev/next/submit buttons.
@@ -746,9 +735,21 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     w.write_event(Event::Start(toolbar)).unwrap();
 
     // Previous
-    write_toolbar_button(w, "previtemnav", "Previous", "fd/af/components/previtemnav", config);
+    write_toolbar_button(
+        w,
+        "previtemnav",
+        "Previous",
+        "fd/af/components/previtemnav",
+        config,
+    );
     // Next
-    write_toolbar_button(w, "nextitemnav", "Next", "fd/af/components/nextitemnav", config);
+    write_toolbar_button(
+        w,
+        "nextitemnav",
+        "Next",
+        "fd/af/components/nextitemnav",
+        config,
+    );
     // Submit
     write_toolbar_button(w, "submit", "Submit", "fd/af/components/submit", config);
 
@@ -780,7 +781,10 @@ fn write_repeatable_toolbar_remove(w: &mut Writer<&mut Cursor<Vec<u8>>>, config:
 
     let mut btn = BytesStart::new("removebutton");
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    btn.push_attribute(("sling:resourceType", config.control_resource_type("removebutton").as_str()));
+    btn.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("removebutton").as_str(),
+    ));
     btn.push_attribute(("guideNodeClass", "guideButton"));
     btn.push_attribute(("dorExclusion", "true"));
     btn.push_attribute(("jcr:title", "Remove"));
@@ -797,7 +801,10 @@ fn write_repeatable_add_button(
 ) {
     let mut btn = BytesStart::new("addbutton");
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    btn.push_attribute(("sling:resourceType", config.control_resource_type("tertiarybutton").as_str()));
+    btn.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("tertiarybutton").as_str(),
+    ));
     btn.push_attribute(("guideNodeClass", "guideButton"));
     btn.push_attribute(("dorExclusion", "true"));
     btn.push_attribute(("jcr:title", format!("Add {repeatable_name}").as_str()));
@@ -838,6 +845,155 @@ fn format_options_attr(options: &[AemOption]) -> String {
 }
 
 // ============================================================================
+// Attribute reformatting (one-per-line)
+// ============================================================================
+
+/// Reformat XML so that element attributes appear one per line, indented to
+/// align with the first attribute.
+///
+/// Turns:
+/// ```xml
+///     <tag attr1="v1" attr2="v2">
+/// ```
+/// into:
+/// ```xml
+///     <tag
+///         attr1="v1"
+///         attr2="v2">
+/// ```
+///
+/// Only elements with more than one attribute are reformatted.
+pub(crate) fn reformat_attributes(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len() + xml.len() / 4);
+
+    for line in xml.lines() {
+        if let Some(reformatted) = try_reformat_line(line) {
+            out.push_str(&reformatted);
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+/// Try to reformat a single XML line. Returns `None` if the line should be
+/// kept as-is (not an element, or has ≤1 attribute).
+fn try_reformat_line(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+
+    // Must start with '<' and not be a closing tag, comment, PI, or declaration
+    if !trimmed.starts_with('<')
+        || trimmed.starts_with("</")
+        || trimmed.starts_with("<?")
+        || trimmed.starts_with("<!")
+    {
+        return None;
+    }
+
+    // Find the leading indentation
+    let indent = &line[..line.len() - trimmed.len()];
+
+    // Parse the tag name and attributes.
+    // Find the end of the opening tag (matching '>' or '/>').
+    let (tag_content, suffix) = extract_tag_content(trimmed)?;
+
+    // Split into tag name and attributes
+    let first_space = tag_content.find(' ')?;
+    let tag_name = &tag_content[1..first_space]; // skip '<'
+    let attrs_str = &tag_content[first_space + 1..];
+
+    // Parse attributes
+    let attrs = parse_attributes(attrs_str);
+    if attrs.len() <= 1 {
+        return None;
+    }
+
+    // Build reformatted output
+    let attr_indent = format!("{}{}", indent, " ".repeat(tag_name.len() + 2)); // +2 for '<' and space
+    let mut result = format!("{}<{}", indent, tag_name);
+    for (i, attr) in attrs.iter().enumerate() {
+        if i == 0 {
+            result.push(' ');
+        } else {
+            result.push('\n');
+            result.push_str(&attr_indent);
+        }
+        result.push_str(attr);
+    }
+    result.push_str(suffix);
+
+    Some(result)
+}
+
+/// Extract the content between '<' ... '>' or '<' ... '/>', returning
+/// (content_without_close, suffix). Suffix is ">" or "/>" or "/>".
+fn extract_tag_content(trimmed: &str) -> Option<(&str, &str)> {
+    if trimmed.ends_with("/>") {
+        Some((&trimmed[..trimmed.len() - 2], "/>"))
+    } else if trimmed.ends_with('>') {
+        Some((&trimmed[..trimmed.len() - 1], ">"))
+    } else {
+        None
+    }
+}
+
+/// Parse a string of XML attributes like `attr1="val1" attr2="val2"` into
+/// a vec of individual attribute strings.
+fn parse_attributes(s: &str) -> Vec<&str> {
+    let mut attrs = Vec::new();
+    let mut i = 0;
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+
+    while i < len {
+        // Skip whitespace
+        while i < len && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= len {
+            break;
+        }
+
+        // Start of attribute name
+        let start = i;
+
+        // Find '='
+        while i < len && bytes[i] != b'=' {
+            i += 1;
+        }
+        if i >= len {
+            break;
+        }
+        i += 1; // skip '='
+
+        // Expect opening quote
+        if i >= len {
+            break;
+        }
+        let quote = bytes[i];
+        if quote != b'"' && quote != b'\'' {
+            break;
+        }
+        i += 1; // skip opening quote
+
+        // Find closing quote
+        while i < len && bytes[i] != quote {
+            i += 1;
+        }
+        if i >= len {
+            break;
+        }
+        i += 1; // skip closing quote
+
+        attrs.push(&s[start..i]);
+    }
+
+    attrs
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -857,10 +1013,7 @@ mod tests {
     }
 
     fn fixed_uuid() -> Uuid {
-        Uuid::new_v5(
-            &Uuid::from_bytes([0; 16]),
-            b"test",
-        )
+        Uuid::new_v5(&Uuid::from_bytes([0; 16]), b"test")
     }
 
     #[test]
@@ -1001,8 +1154,14 @@ mod tests {
                 name: "DD_test".into(),
                 label: "Pick one".into(),
                 options: vec![
-                    AemOption { label: "A".into(), value: "a".into() },
-                    AemOption { label: "B".into(), value: "b".into() },
+                    AemOption {
+                        label: "A".into(),
+                        value: "a".into(),
+                    },
+                    AemOption {
+                        label: "B".into(),
+                        value: "b".into(),
+                    },
                 ],
                 mandatory: true,
                 visible: true,
