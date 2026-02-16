@@ -80,10 +80,7 @@ fn write_root(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
         let mut content_elem = BytesStart::new("jcr:content");
         content_elem.push_attribute(("jcr:primaryType", "cq:PageContent"));
         content_elem.push_attribute(("jcr:title", title.as_str()));
-        content_elem.push_attribute((
-            "sling:resourceType",
-            config.page_resource_type.as_str(),
-        ));
+        content_elem.push_attribute(("sling:resourceType", config.page_resource_type.as_str()));
         content_elem.push_attribute(("cq:template", config.template_path.as_str()));
         content_elem.push_attribute(("jcr:language", config.master_language.as_str()));
         w.write_event(Event::Start(content_elem)).unwrap();
@@ -116,7 +113,7 @@ fn write_guide_container(
         config.guide_container_resource_type().as_str(),
     ));
     elem.push_attribute(("guideNodeClass", "guideContainerNode"));
-    elem.push_attribute(("fd:version", "2.1"));
+    elem.push_attribute(("fd:version", "1.1"));
     elem.push_attribute(("dorType", config.dor_type.as_str()));
     elem.push_attribute(("guideCss", "guideContainer"));
     elem.push_attribute(("name", "guide1"));
@@ -269,7 +266,7 @@ fn write_text_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     ));
     elem.push_attribute(("assistPriority", "label"));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
-    elem.push_attribute(("dorExclusion", format!("{{Boolean}}{}", !visible).as_str()));
+    elem.push_attribute(("dorExclusion", bool_str(!visible)));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -316,7 +313,7 @@ fn write_number_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
     ));
     elem.push_attribute(("assistPriority", "label"));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
-    elem.push_attribute(("dorExclusion", format!("{{Boolean}}{}", !visible).as_str()));
+    elem.push_attribute(("dorExclusion", bool_str(!visible)));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideNumberBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -359,7 +356,7 @@ fn write_date_picker(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, confi
         config.control_resource_type("datepicker").as_str(),
     ));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
-    elem.push_attribute(("dorExclusion", format!("{{Boolean}}{}", !visible).as_str()));
+    elem.push_attribute(("dorExclusion", bool_str(!visible)));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("defaultToCurrentDate", "true"));
     elem.push_attribute(("guideNodeClass", "guideDatePicker"));
@@ -722,7 +719,7 @@ fn write_layout(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig, non_na
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute(("sling:resourceType", config.default_layout.as_str()));
     if config.enable_layout_optimization {
-        elem.push_attribute(("enableLayoutOptimization", "{Boolean}true"));
+        elem.push_attribute(("enableLayoutOptimization", "true"));
     }
     if non_navigable {
         elem.push_attribute(("nonNavigable", "{Boolean}true"));
@@ -751,15 +748,28 @@ fn write_responsive(w: &mut Writer<&mut Cursor<Vec<u8>>>, width: u32) {
 fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     let mut toolbar = BytesStart::new("toolbar");
     toolbar.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    toolbar.push_attribute(("sling:resourceType", config.default_layout.as_str()));
+    toolbar.push_attribute(("jcr:title", "Toolbar"));
+    toolbar.push_attribute(("sling:resourceType", "fd/af/components/toolbar"));
+    toolbar.push_attribute(("css", ""));
+    toolbar.push_attribute(("guideNodeClass", "guideToolbar"));
+    toolbar.push_attribute(("name", "toolbar"));
     w.write_event(Event::Start(toolbar)).unwrap();
+
+    // <items> with toolbar layout
+    let mut items = BytesStart::new("items");
+    items.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    items.push_attribute((
+        "sling:resourceType",
+        "fd/af/layouts/toolbar/defaultToolbarLayout",
+    ));
+    w.write_event(Event::Start(items)).unwrap();
 
     // Previous
     write_toolbar_button(
         w,
         "previtemnav",
         "Previous",
-        "fd/af/components/previtemnav",
+        "fd/af/components/actions/previtemnav",
         config,
     );
     // Next
@@ -767,11 +777,29 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
         w,
         "nextitemnav",
         "Next",
-        "fd/af/components/nextitemnav",
+        "fd/af/components/actions/nextitemnav",
         config,
     );
     // Submit
-    write_toolbar_button(w, "submit", "Submit", "fd/af/components/submit", config);
+    write_toolbar_button(
+        w,
+        "submit",
+        "Submit",
+        "fd/af/components/actions/submit",
+        config,
+    );
+
+    // </items>
+    w.write_event(Event::End(BytesEnd::new("items"))).unwrap();
+
+    // <layout>
+    let mut layout = BytesStart::new("layout");
+    layout.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    layout.push_attribute((
+        "sling:resourceType",
+        "fd/af/layouts/toolbar/defaultToolbarLayout",
+    ));
+    w.write_event(Event::Empty(layout)).unwrap();
 
     w.write_event(Event::End(BytesEnd::new("toolbar"))).unwrap();
 }
@@ -781,15 +809,15 @@ fn write_toolbar_button(
     tag_name: &str,
     title: &str,
     resource_type: &str,
-    config: &AemConfig,
+    _config: &AemConfig,
 ) {
     let mut elem = BytesStart::new(tag_name);
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    elem.push_attribute(("sling:resourceType", resource_type));
     elem.push_attribute(("jcr:title", title));
-    elem.push_attribute(("guideNodeClass", "guideButton"));
+    elem.push_attribute(("sling:resourceType", resource_type));
     elem.push_attribute(("dorExclusion", "true"));
-    elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
+    elem.push_attribute(("guideNodeClass", "guideButton"));
+    elem.push_attribute(("name", tag_name));
     w.write_event(Event::Empty(elem)).unwrap();
 }
 
@@ -1052,6 +1080,15 @@ mod tests {
         assert!(xml.contains("rootPanel"));
         assert!(xml.contains("guideTextDraw"));
         assert!(xml.contains("ST_1"));
+        // Control resource type must NOT have doubled /components/
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/controls/textdraw\""),
+            "textdraw resource type should be fd/af/components/controls/textdraw, not doubled"
+        );
+        assert!(
+            !xml.contains("components/components"),
+            "resource type must not have doubled /components/"
+        );
         // Ensure the XML is parseable
         let mut reader = quick_xml::Reader::from_str(&xml);
         loop {
@@ -1183,9 +1220,30 @@ mod tests {
             children: vec![],
         };
         let xml = generate_aem_xml(&root, &config);
-        assert!(xml.contains("previtemnav"));
-        assert!(xml.contains("nextitemnav"));
-        assert!(xml.contains("submit"));
+        // Toolbar element with correct resource type
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/toolbar\""),
+            "toolbar should use fd/af/components/toolbar"
+        );
+        assert!(xml.contains("guideNodeClass=\"guideToolbar\""));
+        // Toolbar items use toolbar layout
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/layouts/toolbar/defaultToolbarLayout\""),
+            "toolbar items should use toolbar layout"
+        );
+        // Button resource types include actions/ prefix
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/actions/previtemnav\""),
+            "previtemnav should use actions/ prefix"
+        );
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/actions/nextitemnav\""),
+            "nextitemnav should use actions/ prefix"
+        );
+        assert!(
+            xml.contains("sling:resourceType=\"fd/af/components/actions/submit\""),
+            "submit should use actions/ prefix"
+        );
     }
 
     #[test]

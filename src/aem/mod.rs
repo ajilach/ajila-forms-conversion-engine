@@ -197,12 +197,14 @@ impl Default for AemConfig {
             repeatable_min_occur: 1,
             repeatable_max_occur: 20,
 
-            page_resource_type: "fd/af/components/page2".into(),
-            template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic"
-                .into(),
+            page_resource_type:
+                "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
+                    .into(),
+            template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic".into(),
             theme_ref: String::new(),
             dor_template_ref: String::new(),
-            redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission".into(),
+            redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission"
+                .into(),
 
             form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
         }
@@ -213,15 +215,15 @@ impl AemConfig {
     /// Resolve the sling resource type for a control component.
     ///
     /// If `custom_resource_type_base` is set, produces
-    /// `"{custom_base}/components/controls/{component}"`.
+    /// `"{custom_base}/controls/{component}"`.
     /// Otherwise falls back to
-    /// `"{resource_type_base}/components/controls/{component}"`.
+    /// `"{resource_type_base}/controls/{component}"`.
     pub fn control_resource_type(&self, component: &str) -> String {
         let base = self
             .custom_resource_type_base
             .as_deref()
             .unwrap_or(&self.resource_type_base);
-        format!("{}/components/controls/{}", base, component)
+        format!("{}/controls/{}", base, component)
     }
 
     /// Resolve the sling resource type for a panel.
