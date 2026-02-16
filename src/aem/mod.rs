@@ -27,9 +27,11 @@
 //! ```
 
 mod converter;
+mod package_writer;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
+pub use package_writer::generate_aem_package;
 pub use xml_writer::generate_aem_xml;
 
 use uuid::Uuid;
@@ -45,7 +47,6 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct AemConfig {
     // -- Form identity -------------------------------------------------------
-
     /// Human-readable form title (appears in `jcr:title`).
     pub form_title: String,
 
@@ -59,7 +60,6 @@ pub struct AemConfig {
     pub master_language: String,
 
     // -- Resource types ------------------------------------------------------
-
     /// Base path for standard AEM Forms components.
     /// Default: `"fd/af/components"`.
     pub resource_type_base: String,
@@ -70,7 +70,6 @@ pub struct AemConfig {
     pub custom_resource_type_base: Option<String>,
 
     // -- Layout --------------------------------------------------------------
-
     /// Sling resource type for the default panel layout.
     /// Default: `"fd/af/layouts/gridFluidLayout2"`.
     pub default_layout: String,
@@ -84,7 +83,6 @@ pub struct AemConfig {
     pub enable_layout_optimization: bool,
 
     // -- Document of Record (DOR) defaults -----------------------------------
-
     /// Default DOR field styling.
     /// Default: `"Default"`.
     pub dor_field_styling: String,
@@ -98,7 +96,6 @@ pub struct AemConfig {
     pub dor_type: String,
 
     // -- Page chrome ---------------------------------------------------------
-
     /// Include the standard toolbar (prev/next/submit) in root output.
     /// Default: `true`.
     pub include_toolbar: bool,
@@ -109,19 +106,16 @@ pub struct AemConfig {
     pub include_page_wrapper: bool,
 
     // -- CSS -----------------------------------------------------------------
-
     /// CSS class prefix prepended to widget classes (e.g. `"widget_"`).
     /// Default: `"widget_"`.
     pub css_prefix: String,
 
     // -- Authoring metadata --------------------------------------------------
-
     /// Value for `jcr:createdBy` / `jcr:lastModifiedBy`.
     /// Default: `"blueprint"`.
     pub author: String,
 
     // -- UUID generation -----------------------------------------------------
-
     /// When `true`, UUIDs are derived deterministically from the node name
     /// (UUID v5 with a fixed namespace), making the output reproducible
     /// across runs. When `false`, random UUID v4 values are used.
@@ -129,7 +123,6 @@ pub struct AemConfig {
     pub deterministic_uuids: bool,
 
     // -- Repeatable defaults -------------------------------------------------
-
     /// Default minimum occurrences for repeatable panels.
     /// Default: `1`.
     pub repeatable_min_occur: u32,
@@ -139,7 +132,6 @@ pub struct AemConfig {
     pub repeatable_max_occur: u32,
 
     // -- Template references -------------------------------------------------
-
     /// Path to the AEM template (used in `cq:template`).
     /// Default: `"/conf/core-components-examples/settings/wcm/templates/af-blank-v2"`.
     pub template_path: String,
@@ -155,6 +147,17 @@ pub struct AemConfig {
     /// Redirect URL after form submission.
     /// Default: `"/content/core-components-examples/library/adaptive-form/thankyou"`.
     pub redirect_url: String,
+
+    // -- Package paths -------------------------------------------------------
+    /// JCR path segment between `content/forms/af/` (or
+    /// `content/dam/formsanddocuments/`) and the form code.
+    ///
+    /// For example, `"ajila-forms-ubs/output/Germany_Tranch_1"` results in
+    /// the form page being placed at
+    /// `/content/forms/af/ajila-forms-ubs/output/Germany_Tranch_1/<form_code>`.
+    ///
+    /// Default: `"ajila-forms-ubs/output/Germany_Tranch_1"`.
+    pub form_path: String,
 }
 
 impl Default for AemConfig {
@@ -186,12 +189,13 @@ impl Default for AemConfig {
             repeatable_min_occur: 1,
             repeatable_max_occur: 20,
 
-            template_path:
-                "/conf/core-components-examples/settings/wcm/templates/af-blank-v2".into(),
+            template_path: "/conf/core-components-examples/settings/wcm/templates/af-blank-v2"
+                .into(),
             theme_ref: String::new(),
             dor_template_ref: String::new(),
-            redirect_url:
-                "/content/core-components-examples/library/adaptive-form/thankyou".into(),
+            redirect_url: "/content/core-components-examples/library/adaptive-form/thankyou".into(),
+
+            form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
         }
     }
 }

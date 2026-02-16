@@ -6,9 +6,9 @@
 use uuid::Uuid;
 
 use crate::structured::{
-    ConditionalNode, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel,
-    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode, TranslatableString,
+    ConditionalNode, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel, HeadingNode,
+    ImageNode, InlineNode, InlineText, InputValue, NameValue, ParagraphNode, RepeatableNode,
+    StructuredNode, TableNode, TranslatableString,
 };
 
 use super::{AemConfig, AemNode, AemOption, OptionAlignment};
@@ -19,8 +19,7 @@ use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 
 /// Namespace UUID used for deterministic UUID v5 generation.
 const NAMESPACE_AEM: Uuid = Uuid::from_bytes([
-    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30,
-    0xc8,
+    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
 ]);
 
 /// Internal state carried through the conversion.
@@ -265,9 +264,7 @@ fn convert_field(
         .unwrap_or_default();
 
     match &f.input_type {
-        FieldType::Text {
-            max_length, ..
-        } => {
+        FieldType::Text { max_length, .. } => {
             let name = format!("TF_{}", &f.name);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
@@ -387,9 +384,7 @@ fn convert_repeatable(
         title: name,
         children,
         min_occur: r.min_occurrences,
-        max_occur: r
-            .max_occurrences
-            .unwrap_or(config.repeatable_max_occur),
+        max_occur: r.max_occurrences.unwrap_or(config.repeatable_max_occur),
     }
 }
 
@@ -669,9 +664,7 @@ mod tests {
             AemNode::Root { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    AemNode::RadioButton {
-                        name, options, ..
-                    } => {
+                    AemNode::RadioButton { name, options, .. } => {
                         assert_eq!(name, "RB_gender");
                         assert_eq!(options.len(), 2);
                         assert_eq!(options[0].label, "Male");
@@ -709,9 +702,7 @@ mod tests {
             AemNode::Root { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    AemNode::Dropdown {
-                        name, options, ..
-                    } => {
+                    AemNode::Dropdown { name, options, .. } => {
                         assert_eq!(name, "DD_country");
                         assert_eq!(options.len(), 2);
                     }
@@ -736,9 +727,7 @@ mod tests {
             AemNode::Root { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    AemNode::Checkbox {
-                        name, options, ..
-                    } => {
+                    AemNode::Checkbox { name, options, .. } => {
                         assert_eq!(name, "CB_agreeTerms");
                         assert_eq!(options.len(), 1);
                         assert_eq!(options[0].value, "true");

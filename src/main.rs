@@ -311,7 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  HTML output: enabled");
             }
             if args.aem {
-                println!("  AEM XML output: enabled");
+                println!("  AEM package output: enabled");
             }
         }
 
@@ -430,13 +430,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if args.aem && args.documents.len() <= 1 {
                 let aem_config = blueprint::AemConfig::default();
-                let aem_output = blueprint::to_aem(&merged_envelope.content, &aem_config);
+                let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
-                let aem_path = std::path::PathBuf::from(format!("{}_merged.aem.xml", doc_name));
+                let aem_path = std::path::PathBuf::from(format!("{}_merged.zip", doc_name));
                 std::fs::write(&aem_path, aem_output)
-                    .map_err(|e| format!("Failed to write AEM XML file: {}", e))?;
+                    .map_err(|e| format!("Failed to write AEM package: {}", e))?;
 
-                vprintln!(quiet, "    ✓ Merged AEM XML: {}", aem_path.display());
+                vprintln!(quiet, "    ✓ Merged AEM package: {}", aem_path.display());
             }
 
             if args.documents.len() > 1 {
@@ -486,16 +486,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             vprintln!(quiet, "✓ Multilingual HTML: {}", html_path.display());
         }
 
-        // Generate merged multilingual AEM XML
+        // Generate merged multilingual AEM package
         if args.aem {
             let aem_config = blueprint::AemConfig::default();
-            let aem_output = blueprint::to_aem(&merged_envelope.content, &aem_config);
+            let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
-            let aem_path = std::path::PathBuf::from(format!("{}_multilingual.aem.xml", merged_name));
+            let aem_path = std::path::PathBuf::from(format!("{}_multilingual.zip", merged_name));
             std::fs::write(&aem_path, aem_output)
-                .map_err(|e| format!("Failed to write multilingual AEM XML: {}", e))?;
+                .map_err(|e| format!("Failed to write multilingual AEM package: {}", e))?;
 
-            vprintln!(quiet, "✓ Multilingual AEM XML: {}", aem_path.display());
+            vprintln!(quiet, "✓ Multilingual AEM package: {}", aem_path.display());
         }
     }
 
