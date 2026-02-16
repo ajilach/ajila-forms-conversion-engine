@@ -595,10 +595,7 @@ mod tests {
             },
             children: vec![FlattenedKind::Group {
                 children: vec![FlattenedKind::Node(field_node)],
-                hints: vec![Hint::Occurrence {
-                    min: 1,
-                    max: None,
-                }],
+                hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
         };
 
@@ -606,7 +603,11 @@ mod tests {
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
 
-        assert_eq!(sections.len(), 0, "Group without buttons should not be repeatable");
+        assert_eq!(
+            sections.len(),
+            0,
+            "Group without buttons should not be repeatable"
+        );
     }
 
     #[test]
@@ -645,10 +646,7 @@ mod tests {
                     FlattenedKind::Node(field_node),
                     FlattenedKind::Node(button_node),
                 ],
-                hints: vec![Hint::Occurrence {
-                    min: 1,
-                    max: None,
-                }],
+                hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
         };
 
@@ -699,10 +697,7 @@ mod tests {
                         hints: vec![],
                     },
                 ],
-                hints: vec![Hint::Occurrence {
-                    min: 1,
-                    max: None,
-                }],
+                hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
         };
 
@@ -710,6 +705,10 @@ mod tests {
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
 
-        assert_eq!(sections.len(), 1, "Nested button should still make group repeatable");
+        assert_eq!(
+            sections.len(),
+            1,
+            "Nested button should still make group repeatable"
+        );
     }
 }
