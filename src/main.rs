@@ -24,6 +24,7 @@ struct ProcessingState {
     labelled_images: HashMap<String, Vec<u8>>, // state_name -> PNG bytes
     merged_json: Option<String>,
     html_preview: Option<String>,
+    aem_package: Option<Vec<u8>>,
     error: Option<String>,
 }
 
@@ -38,6 +39,7 @@ impl ProcessingState {
             labelled_images: HashMap::new(),
             merged_json: None,
             html_preview: None,
+            aem_package: None,
             error: None,
         }
     }
@@ -395,6 +397,20 @@ fn ResultsSection(state: ProcessingState) -> Element {
 
             div { style: "margin-top: 20px; display: flex; gap: 15px; flex-wrap: wrap;",
 
+                // HTML Preview button
+                if let Some(ref html_preview) = state.html_preview {
+                    button {
+                        style: "padding: 12px 24px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;",
+                        onclick: {
+                            let html_preview = html_preview.clone();
+                            move |_| {
+                                show_html_preview(html_preview.clone());
+                            }
+                        },
+                        "Preview as HTML Form"
+                    }
+                }
+
                 // Download JSON button
                 if let Some(ref json_data) = state.merged_json {
                     button {
@@ -409,17 +425,17 @@ fn ResultsSection(state: ProcessingState) -> Element {
                     }
                 }
 
-                // HTML Preview button
-                if let Some(ref html_preview) = state.html_preview {
+                // AEM Package Download button
+                if let Some(ref aem_data) = state.aem_package {
                     button {
-                        style: "padding: 12px 24px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;",
+                        style: "padding: 12px 24px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;",
                         onclick: {
-                            let html_preview = html_preview.clone();
+                            let aem_data = aem_data.clone();
                             move |_| {
-                                show_html_preview(html_preview.clone());
+                                download_aem_package(aem_data.clone());
                             }
                         },
-                        "Preview as HTML Form"
+                        "Download AEM Package"
                     }
                 }
             }
@@ -434,7 +450,7 @@ fn process_files_blocking(
     files: Vec<PathBuf>,
     state_tx: std::sync::mpsc::Sender<ProcessingState>,
 ) {
-    use blueprint::{Blueprint, HtmlConfig};
+    use blueprint::{Blueprint, HtmlConfig, AemConfig};
     
     // Process each PDF file
     let mut all_envelopes = Vec::new();
@@ -450,6 +466,7 @@ fn process_files_blocking(
             labelled_images: labelled_images.clone(),
             merged_json: None,
             html_preview: None,
+            aem_package: None,
             error: None,
         };
         let _ = state_tx.send(current_state.clone());
@@ -556,6 +573,7 @@ fn process_files_blocking(
         labelled_images: labelled_images.clone(),
         merged_json: None,
         html_preview: None,
+        aem_package: None,
         error: None,
     };
     let _ = state_tx.send(current_state.clone());
@@ -592,10 +610,14 @@ fn process_files_blocking(
     // Generate HTML preview
     let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
     
+    // Generate AEM package
+    let aem_zip = blueprint::to_aem_package(&merged.content, &AemConfig::default());
+    
     // Complete
     current_state.step = ProcessingStep::Complete;
     current_state.merged_json = Some(json);
     current_state.html_preview = Some(html);
+    current_state.aem_package = Some(aem_zip);
     let _ = state_tx.send(current_state);
 }
 
@@ -628,7 +650,7 @@ fn download_json(json_data: String) {
             match fs::write(&download_path, json_data) {
                 Ok(_) => {
                     println!("✓ File saved to: {}", download_path.display());
-                    // TODO: Show success notification to user in UI
+                    reveal_in_file_explorer(&download_path);
                 }
                 Err(e) => {
                     eprintln!("✗ Failed to save file to {}: {}", download_path.display(), e);
@@ -693,6 +715,65 @@ fn show_html_preview(html: String) {
             .spawn()
         {
             eprintln!("✗ Failed to open preview in browser: {}", e);
+        }
+    }
+}
+
+fn download_aem_package(aem_data: Vec<u8>) {
+    use std::fs;
+    
+    match dirs::home_dir() {
+        Some(home) => {
+            let download_path = home.join("Downloads").join("aem_forms_package.zip");
+            match fs::write(&download_path, aem_data) {
+                Ok(_) => {
+                    println!("✓ AEM package saved to: {}", download_path.display());
+                    reveal_in_file_explorer(&download_path);
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed to save AEM package to {}: {}", download_path.display(), e);
+                    // TODO: Show error notification to user in UI
+                }
+            }
+        }
+        None => {
+            eprintln!("✗ Failed to determine home directory for saving AEM package");
+            // TODO: Show error notification to user in UI
+        }
+    }
+}
+
+// Helper function to reveal a file in the system file explorer
+fn reveal_in_file_explorer(path: &std::path::Path) {
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+        {
+            eprintln!("✗ Failed to reveal file in Finder: {}", e);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Try to use dbus to select the file if available, otherwise open parent directory
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+            {
+                eprintln!("✗ Failed to open file manager: {}", e);
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Err(e) = std::process::Command::new("explorer")
+            .args(&["/select,", &path.to_string_lossy()])
+            .spawn()
+        {
+            eprintln!("✗ Failed to reveal file in Explorer: {}", e);
         }
     }
 }
