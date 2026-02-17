@@ -64,14 +64,22 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: blueprint-app
             asset_name: blueprint-macos-aarch64
+            platform: desktop
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: blueprint-app
             asset_name: blueprint-linux-x86_64
+            platform: desktop
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: blueprint-app.exe
             asset_name: blueprint-windows-x86_64.exe
+            platform: desktop
+          - os: ubuntu-latest
+            target: wasm32-unknown-unknown
+            artifact_name: blueprint-app
+            asset_name: blueprint-web
+            platform: web
 
     steps:
       - name: Checkout code
@@ -99,6 +107,10 @@ jobs:
             mv dx.exe C:/Windows/System32/
           fi
         shell: bash
+
+      - name: Install wasm32 target
+        if: matrix.platform == 'web'
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -131,7 +143,7 @@ jobs:
         shell: bash
 
       - name: Build with Dioxus CLI
-        run: dx build --release --platform desktop
+        run: dx build --release --platform ${{ matrix.platform }}
 
       - name: Sign macOS app (ad-hoc)
         if: startsWith(matrix.os, 'macos')
@@ -141,6 +153,7 @@ jobs:
         shell: bash
 
       - name: Prepare artifact
+        if: matrix.platform == 'desktop'
         run: |
           mkdir -p release-artifacts
           if [[ "${{ matrix.os }}" == macos* ]]; then
@@ -167,8 +180,16 @@ jobs:
           fi
         shell: bash
 
-      - name: Upload Release Asset (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Prepare web artifact
+        if: matrix.platform == 'web'
+        run: |
+          mkdir -p release-artifacts
+          cd target/dx/blueprint-app/release/web
+          zip -r ../../../../../release-artifacts/${{ matrix.asset_name }}.zip .
+        shell: bash
+
+      - name: Upload Release Asset (Unix Desktop)
+        if: matrix.platform == 'desktop' && matrix.os != 'windows-latest'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -178,8 +199,19 @@ jobs:
           asset_name: ${{ matrix.asset_name }}.tar.gz
           asset_content_type: application/gzip
 
-      - name: Upload Release Asset (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Upload Release Asset (Windows Desktop)
+        if: matrix.platform == 'desktop' && matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./release-artifacts/${{ matrix.asset_name }}.zip
+          asset_name: ${{ matrix.asset_name }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload Release Asset (Web)
+        if: matrix.platform == 'web'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
