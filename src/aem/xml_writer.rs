@@ -1098,7 +1098,7 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     }
 
     // Add button (tertiarybutton)
-    write_repeatable_add_button(w, config);
+    write_repeatable_add_button(w, &panel_name, config);
 
     write_items_end(w); // outer items
 
@@ -1335,12 +1335,25 @@ fn write_repeatable_remove_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: 
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
 
+    // <fd:scripts> — remove instance + show/hide remove buttons + re-show add button
+    let mut scripts = BytesStart::new("fd:scripts");
+    scripts.push_attribute((
+        "fd:click",
+        "[{\"script\":{\"content\":\"this.parent.instanceManager.removeInstance(this.parent.instanceIndex);\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var len = this.parent.instanceManager.instances.length;\\\\nfor(var i = 0; i < len; i++){\\\\n  this.parent.instanceManager.instances[i].BT_Remove.visible = (i === (len-1) && len > 1) ? true : false;\\\\n}\\\\n\\\\nBT_Add.visible = true;\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
+    ));
+    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(scripts)).unwrap();
+
     w.write_event(Event::End(BytesEnd::new("removebutton")))
         .unwrap();
 }
 
 /// Write the Add button for a repeatable section.
-fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+fn write_repeatable_add_button(
+    w: &mut Writer<&mut Cursor<Vec<u8>>>,
+    panel_name: &str,
+    config: &AemConfig,
+) {
     let mut btn = BytesStart::new("tertiarybutton");
     push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
@@ -1360,6 +1373,14 @@ fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &Ae
     // <fd:rules>
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
+
+    // <fd:scripts> — add instance + show/hide remove buttons + hide add at max
+    let add_click_template = "[{\"script\":{\"content\":\"__PN__.instanceManager.addInstance();\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var len = __PN__.instanceManager.instances.length;\\\\n\\\\nfor(var i = 0; i < len; i++){\\\\n  __PN__.instanceManager.instances[i].BT_Remove.visible = (i === (len-1)) ? true : false;\\\\n}\\\\n\\\\n\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var myInstance = __PN__.instanceManager.instances.length;\\\\n\\\\nif(myInstance >= parseInt(__PN__.maxOccur)) {\\\\n  this.visible = false;\\\\n}\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]";
+    let add_click_value = add_click_template.replace("__PN__", panel_name);
+    let mut scripts = BytesStart::new("fd:scripts");
+    scripts.push_attribute(("fd:click", add_click_value.as_str()));
+    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(scripts)).unwrap();
 
     w.write_event(Event::End(BytesEnd::new("tertiarybutton")))
         .unwrap();
@@ -1818,6 +1839,30 @@ mod tests {
         assert!(
             xml.contains("name=\"PN_RPT_1\""),
             "inner panel should be named PN_RPT_1"
+        );
+
+        // Remove button has fd:scripts with remove-instance and show/hide logic
+        assert!(
+            xml.contains("this.parent.instanceManager.removeInstance(this.parent.instanceIndex);"),
+            "remove button should have remove-instance script"
+        );
+        assert!(
+            xml.contains("BT_Add.visible = true;"),
+            "remove button script should re-show add button"
+        );
+
+        // Add button has fd:scripts with panel_name-based scripts
+        assert!(
+            xml.contains("PN_RPT_1.instanceManager.addInstance();"),
+            "add button should have addInstance script using panel name"
+        );
+        assert!(
+            xml.contains("PN_RPT_1.instanceManager.instances.length;"),
+            "add button should reference panel instances"
+        );
+        assert!(
+            xml.contains("PN_RPT_1.maxOccur"),
+            "add button should check maxOccur to hide itself"
         );
     }
 
