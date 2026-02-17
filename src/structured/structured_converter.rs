@@ -120,9 +120,7 @@ fn strip_marker_from_str(s: &str) -> Option<String> {
         }
         if i < bytes.len() && (bytes[i] == b'.' || bytes[i] == b')') {
             let after = &trimmed[i + 1..];
-            if after.is_empty() || after.starts_with(char::is_whitespace) {
-                return Some(after.trim_start().to_string());
-            }
+            return Some(after.trim_start().to_string());
         }
     }
 
@@ -130,9 +128,7 @@ fn strip_marker_from_str(s: &str) -> Option<String> {
     if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && (bytes[1] == b'.' || bytes[1] == b')')
     {
         let after = &trimmed[2..];
-        if after.is_empty() || after.starts_with(char::is_whitespace) {
-            return Some(after.trim_start().to_string());
-        }
+        return Some(after.trim_start().to_string());
     }
 
     // Ordered: roman numerals followed by . or )
@@ -154,9 +150,7 @@ fn strip_marker_from_str(s: &str) -> Option<String> {
         }
         if i >= 2 && i < bytes.len() && (bytes[i] == b'.' || bytes[i] == b')') {
             let after = &trimmed[i + 1..];
-            if after.is_empty() || after.starts_with(char::is_whitespace) {
-                return Some(after.trim_start().to_string());
-            }
+            return Some(after.trim_start().to_string());
         }
     }
 

@@ -7132,3 +7132,76 @@
 
         println!("\n✓ AAEI has one unordered list with 2 items");
     }
+    #[test]
+    fn test_aaoe_has_one_ordered_list_with_three_items() {
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::structured::{ListNode, StructuredNode};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        let structured_nodes = crate::structured::convert(&doc);
+
+        // Collect all lists from the structured output
+        fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+            let mut lists = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::List(l) => lists.push(l.clone()),
+                    StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                    StructuredNode::Repeatable(r) => {
+                        lists.extend(collect_lists(&[(*r.item).clone()]));
+                    }
+                    StructuredNode::Conditional(c) => {
+                        lists.extend(collect_lists(&[(*c.content).clone()]));
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        lists.extend(collect_lists(&child_nodes));
+                    }
+                    _ => {}
+                }
+            }
+            lists
+        }
+
+        let lists = collect_lists(&structured_nodes);
+
+        assert_eq!(
+            lists.len(),
+            1,
+            "AAOE should have exactly 1 list, found {}",
+            lists.len()
+        );
+
+        let list = &lists[0];
+        assert!(list.ordered, "AAOE list should be ordered (numbered list)");
+        assert_eq!(
+            list.items.len(),
+            3,
+            "AAOE ordered list should have 3 items, found {}",
+            list.items.len()
+        );
+
+        // Verify that the numeric markers have been stripped from items
+        for (i, item) in list.items.iter().enumerate() {
+            let text = item.as_plain_text();
+            assert!(
+                !text.starts_with(char::is_numeric),
+                "List item {} should not start with a numeric marker, got: {}",
+                i,
+                text
+            );
+        }
+    }
