@@ -268,8 +268,26 @@ impl AemConfig {
     }
 
     /// CSS class for a control component.
+    ///
+    /// When a custom resource type base is configured, returns the
+    /// component-specific widget class that matches the AEM component
+    /// library (e.g. `widget_ajila-forms-ubs-textbox`).
+    /// Otherwise falls back to `"{css_prefix}{component}"`.
     pub fn css_class(&self, component: &str) -> String {
-        format!("{}{}", self.css_prefix, component)
+        if self.custom_resource_type_base.is_some() {
+            match component {
+                "textbox" => "widget_ajila-forms-ubs-textbox".into(),
+                "numericbox" => "widget_ajila-forms-ubs-numericbox".into(),
+                "datepicker" => "widget_ajila_forms_datepicker".into(),
+                "checkbox" => "widget_ajila_forms_checkbox".into(),
+                "radiobutton" => "widget_ajila_forms_radiobutton".into(),
+                "dropdownlist" => "widget_ajila_forms_dropdownlist".into(),
+                "primarybutton" => "widget_ajila-forms-ubs-primarybutton".into(),
+                _ => format!("{}{}", self.css_prefix, component),
+            }
+        } else {
+            format!("{}{}", self.css_prefix, component)
+        }
     }
 
     /// Compute the DOR template ref from `form_path` and `form_code`.
@@ -289,17 +307,9 @@ impl AemConfig {
     /// `doc_name` is the filename stem (e.g. `"AAEI_019_DE"`).
     /// The form code is extracted as the part before the first `_`.
     /// The form title is extracted from the first H1 heading in the content.
-    pub fn populate_from_document(
-        &mut self,
-        doc_name: &str,
-        content: &[crate::StructuredNode],
-    ) {
+    pub fn populate_from_document(&mut self, doc_name: &str, content: &[crate::StructuredNode]) {
         // Extract form code: everything before the first '_'
-        let form_code = doc_name
-            .split('_')
-            .next()
-            .unwrap_or(doc_name)
-            .to_string();
+        let form_code = doc_name.split('_').next().unwrap_or(doc_name).to_string();
         self.form_code = form_code;
 
         // Extract form title from first H1 heading
