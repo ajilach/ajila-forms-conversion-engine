@@ -3,16 +3,30 @@ name = "blueprint-app"
 version = "0.1.2"
 edition = "2024"
 
+[features]
+default = []
+desktop = ["dioxus/desktop"]
+
 [dependencies]
-dioxus = { version = "0.6", features = ["desktop"] }
-blueprint = { git = "ssh://git@github.com/ajilach/blueprint.git" }
-tokio = { version = "1", features = ["full"] }
+dioxus = { version = "0.6", features = ["fullstack"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures-util = "0.3"
 base64 = "0.22"
+
+# Server/Desktop-only deps (not available in WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+blueprint = { git = "ssh://git@github.com/ajilach/blueprint.git" }
 dirs = "5.0"
 image = { version = "0.25", features = ["png"] }
+
+# WASM-only deps (browser downloads)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Blob", "BlobPropertyBag", "Url", "HtmlAnchorElement", "Document", "Window"] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 [profile]
 

@@ -1,12 +1,13 @@
 use dioxus::prelude::*;
-use std::path::PathBuf;
 use base64::Engine;
-use image::ImageEncoder;
-use std::sync::mpsc::{channel, Receiver};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq)]
-enum ProcessingStep {
+#[cfg(not(target_arch = "wasm32"))]
+use image::ImageEncoder;
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProcessingStep {
+    #[default]
     Idle,
     Parsing,
     ExhaustiveSearching,
@@ -16,8 +17,8 @@ enum ProcessingStep {
     Complete,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct ProcessingState {
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessingState {
     step: ProcessingStep,
     available_states: Vec<String>, // List of state names that can be rendered
     plain_images: HashMap<String, Vec<u8>>, // state_name -> PNG bytes
@@ -32,66 +33,288 @@ struct ProcessingState {
 
 impl ProcessingState {
     fn new() -> Self {
-        Self {
-            step: ProcessingStep::Idle,
-            available_states: Vec::new(),
-            plain_images: HashMap::new(),
-            labelled_images: HashMap::new(),
-            merged_json: None,
-            html_preview: None,
-            aem_package: None,
-            error: None,
-        }
+        Self::default()
     }
 }
 
+// ── Server-side session store for incremental progress ───────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+static SESSIONS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, ProcessingState>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn next_session_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    format!("s{}", COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+// ── Core blueprint processing pipeline (native only) ─────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn run_blueprint_pipeline(
+    files: &[(String, Vec<u8>)],
+    on_progress: impl Fn(&ProcessingState),
+) -> ProcessingState {
+    use blueprint::{Blueprint, HtmlConfig, AemConfig, MergeInput, RecursiveMerger};
+
+    let mut state = ProcessingState::new();
+    let mut all_envelopes = Vec::new();
+
+    for (filename, bytes) in files {
+        // Parsing
+        state.step = ProcessingStep::Parsing;
+        on_progress(&state);
+
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join(filename);
+        if let Err(e) = std::fs::write(&temp_path, bytes) {
+            state.error = Some(format!("Failed to write temp file: {e}"));
+            on_progress(&state);
+            return state;
+        }
+
+        let mut bp = match Blueprint::from_pdf(&temp_path) {
+            Ok(bp) => bp,
+            Err(e) => {
+                state.error = Some(format!("Failed to parse {filename}: {e}"));
+                on_progress(&state);
+                return state;
+            }
+        };
+
+        let language = bp.language().to_string();
+
+        // Exhaustive Searching
+        state.step = ProcessingStep::ExhaustiveSearching;
+        on_progress(&state);
+
+        let form_states = match bp.states() {
+            Ok(s) => s,
+            Err(e) => {
+                state.error = Some(format!("Failed to explore states: {e}"));
+                on_progress(&state);
+                return state;
+            }
+        };
+
+        let context = bp.context();
+
+        // Flattening – render plain images
+        state.step = ProcessingStep::Flattening;
+        on_progress(&state);
+
+        for (state_idx, form_state) in form_states.iter().enumerate() {
+            let state_name = format!("{language}_{state_idx}");
+            if let Ok(img) = form_state.render_plain(1.5) {
+                let mut png_bytes = Vec::new();
+                if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
+                    state.plain_images.insert(state_name, png_bytes);
+                }
+            }
+        }
+        on_progress(&state);
+
+        // Structuring – render labelled images & extract structured data
+        state.step = ProcessingStep::Structuring;
+        on_progress(&state);
+
+        let mut structured_outputs = Vec::new();
+        for (state_idx, form_state) in form_states.iter().enumerate() {
+            let state_name = format!("{language}_{state_idx}");
+            if let Ok(img) = form_state.render_labelled(1.5) {
+                let mut png_bytes = Vec::new();
+                if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
+                    state.labelled_images.insert(state_name, png_bytes);
+                }
+            }
+            let envelope = form_state.structured(context.clone());
+            structured_outputs.push((form_state.selections.clone(), envelope.content));
+        }
+        on_progress(&state);
+
+        // Merge exhaustive states for this document
+        if !structured_outputs.is_empty() {
+            let merge_inputs: Vec<MergeInput> = structured_outputs
+                .into_iter()
+                .map(|(selections, nodes)| MergeInput::new(selections, nodes))
+                .collect();
+
+            let merger = RecursiveMerger::new(merge_inputs);
+            let merged_states = merger.merge();
+
+            let merged_envelope = blueprint::DocumentEnvelope {
+                context: context.clone(),
+                content: merged_states,
+            };
+            all_envelopes.push(merged_envelope);
+        }
+
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    // Merging
+    state.step = ProcessingStep::Merging;
+    on_progress(&state);
+
+    let merged = if all_envelopes.is_empty() {
+        state.error = Some("No envelopes to merge".into());
+        on_progress(&state);
+        return state;
+    } else if files.len() > 1 && all_envelopes.len() > 1 {
+        match blueprint::merge_translations(all_envelopes) {
+            Ok(m) => m,
+            Err(e) => {
+                state.error = Some(format!("Failed to merge translations: {e}"));
+                on_progress(&state);
+                return state;
+            }
+        }
+    } else {
+        all_envelopes.into_iter().next().unwrap()
+    };
+
+    let json = match serde_json::to_string_pretty(&merged) {
+        Ok(j) => j,
+        Err(e) => {
+            state.error = Some(format!("Failed to serialize JSON: {e}"));
+            on_progress(&state);
+            return state;
+        }
+    };
+    let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
+    let aem_zip = blueprint::to_aem_package(&merged.content, &AemConfig::default());
+
+    state.step = ProcessingStep::Complete;
+    state.merged_json = Some(json);
+    state.html_preview = Some(html);
+    state.aem_package = Some(aem_zip);
+    on_progress(&state);
+
+    state
+}
+
+// ── Server functions (fullstack) ─────────────────────────────────────
+
+#[server]
+async fn start_processing(
+    files: Vec<(String, Vec<u8>)>,
+) -> Result<String, ServerFnError> {
+    let session_id = next_session_id();
+    SESSIONS.lock().unwrap().insert(
+        session_id.clone(),
+        ProcessingState {
+            step: ProcessingStep::Parsing,
+            ..ProcessingState::new()
+        },
+    );
+
+    let sid = session_id.clone();
+    std::thread::spawn(move || {
+        let final_state = run_blueprint_pipeline(&files, |state| {
+            SESSIONS.lock().unwrap().insert(sid.clone(), state.clone());
+        });
+        SESSIONS.lock().unwrap().insert(sid, final_state);
+    });
+
+    Ok(session_id)
+}
+
+#[server]
+async fn poll_progress(session_id: String) -> Result<ProcessingState, ServerFnError> {
+    let state = SESSIONS
+        .lock()
+        .unwrap()
+        .get(&session_id)
+        .cloned()
+        .ok_or_else(|| ServerFnError::new("Session not found"))?;
+
+    // Clean up completed sessions
+    if state.step == ProcessingStep::Complete || state.error.is_some() {
+        SESSIONS.lock().unwrap().remove(&session_id);
+    }
+
+    Ok(state)
+}
+
+// ── Platform-agnostic async sleep ────────────────────────────────────
+
+async fn async_sleep_ms(ms: u32) {
+    #[cfg(target_arch = "wasm32")]
+    gloo_timers::future::TimeoutFuture::new(ms).await;
+    #[cfg(not(target_arch = "wasm32"))]
+    tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
+}
+
 fn main() {
-    dioxus::LaunchBuilder::desktop()
-        .with_cfg(
-            dioxus::desktop::Config::new()
-                .with_window(
-                    dioxus::desktop::WindowBuilder::new()
-                        .with_title("Blueprint")
-                )
-        )
-        .launch(App);
+    #[cfg(feature = "desktop")]
+    {
+        dioxus::LaunchBuilder::desktop()
+            .with_cfg(
+                dioxus::desktop::Config::new().with_window(
+                    dioxus::desktop::WindowBuilder::new().with_title("Blueprint"),
+                ),
+            )
+            .launch(App);
+    }
+
+    #[cfg(not(feature = "desktop"))]
+    {
+        dioxus::launch(App);
+    }
 }
 
 #[component]
 fn App() -> Element {
-    let mut uploaded_files = use_signal(Vec::<PathBuf>::new);
     let mut processing_state = use_signal(ProcessingState::new);
     let mut is_processing = use_signal(|| false);
-    let mut update_receiver = use_signal(|| None::<Receiver<ProcessingState>>);
-    let mut enlarged_image = use_signal(|| None::<(String, String)>); // (name, base64_data)
+    let mut enlarged_image = use_signal(|| None::<(String, String)>);
 
-    // Continuously poll for updates from the background thread
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-            
-            let should_clear = if let Some(ref rx) = *update_receiver.read() {
-                if let Ok(new_state) = rx.try_recv() {
-                    let is_done = new_state.step == ProcessingStep::Complete || new_state.error.is_some();
-                    processing_state.set(new_state);
-                    if is_done {
-                        is_processing.set(false);
-                        true
-                    } else {
-                        false
+    let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
+        is_processing.set(true);
+        processing_state.set(ProcessingState {
+            step: ProcessingStep::Parsing,
+            ..ProcessingState::new()
+        });
+
+        spawn(async move {
+            match start_processing(file_data).await {
+                Ok(session_id) => {
+                    loop {
+                        async_sleep_ms(200).await;
+                        match poll_progress(session_id.clone()).await {
+                            Ok(state) => {
+                                let done = state.step == ProcessingStep::Complete
+                                    || state.error.is_some();
+                                processing_state.set(state);
+                                if done {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                processing_state.set(ProcessingState {
+                                    error: Some(format!("{e}")),
+                                    ..ProcessingState::new()
+                                });
+                                break;
+                            }
+                        }
                     }
-                } else {
-                    false
                 }
-            } else {
-                false
-            };
-            
-            if should_clear {
-                update_receiver.set(None);
+                Err(e) => {
+                    processing_state.set(ProcessingState {
+                        error: Some(format!("{e}")),
+                        ..ProcessingState::new()
+                    });
+                }
             }
-        }
-    });
+            is_processing.set(false);
+        });
+    };
 
     rsx! {
         div { style: "padding: 20px; font-family: system-ui; max-width: 1400px; margin: 0 auto;",
@@ -104,29 +327,11 @@ fn App() -> Element {
             "
             }
 
-            //h1 { "Blueprint" }
-
             // File Upload Section
             FileUploadSection {
-                uploaded_files,
-                is_processing: is_processing.read().clone(),
-                on_files_selected: move |files| {
-                    uploaded_files.set(files);
-                },
-                on_process: move |_| {
-                    is_processing.set(true);
-                    processing_state.set(ProcessingState::new());
-                    let files = uploaded_files.read().clone();
-
-                    // Create channel for updates
-                    let (state_tx, state_rx) = channel();
-
-                    update_receiver.set(Some(state_rx));
-
-                    // Spawn a background thread since Blueprint structs are not Send
-                    std::thread::spawn(move || {
-                        process_files_blocking(files, state_tx);
-                    });
+                is_processing: *is_processing.read(),
+                on_process: move |files: Vec<(String, Vec<u8>)>| {
+                    on_process(files);
                 },
             }
 
@@ -157,11 +362,11 @@ fn App() -> Element {
 
 #[component]
 fn FileUploadSection(
-    uploaded_files: Signal<Vec<PathBuf>>,
     is_processing: bool,
-    on_files_selected: EventHandler<Vec<PathBuf>>,
-    on_process: EventHandler<()>,
+    on_process: EventHandler<Vec<(String, Vec<u8>)>>,
 ) -> Element {
+    let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
+
     rsx! {
         div { style: "border: 2px dashed #ccc; padding: 30px; margin-bottom: 20px; border-radius: 8px;",
 
@@ -174,13 +379,16 @@ fn FileUploadSection(
                 accept: ".pdf",
                 disabled: is_processing,
                 onchange: move |evt| {
-                    if let Some(file_engine) = evt.files() {
-                        let files: Vec<PathBuf> = file_engine
-                            .files()
-                            .into_iter()
-                            .filter_map(|name| { Some(PathBuf::from(name)) }) // In a real implementation, we'd get the actual file path
-                            .collect();
-                        on_files_selected.call(files);
+                    async move {
+                        if let Some(file_engine) = evt.files() {
+                            let mut files_data = Vec::new();
+                            for filename in file_engine.files() {
+                                if let Some(bytes) = file_engine.read_file(&filename).await {
+                                    files_data.push((filename, bytes));
+                                }
+                            }
+                            uploaded_files.set(files_data);
+                        }
                     }
                 },
             }
@@ -189,15 +397,20 @@ fn FileUploadSection(
                 div { style: "margin-top: 15px;",
                     h3 { "Selected Files:" }
                     ul {
-                        for file in uploaded_files.read().iter() {
-                            li { "{file.display()}" }
+                        for (name , _bytes) in uploaded_files.read().iter() {
+                            li { "{name}" }
                         }
                     }
 
                     button {
                         style: "padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;",
                         disabled: is_processing,
-                        onclick: move |_| on_process.call(()),
+                        onclick: {
+                            let files = uploaded_files.read().clone();
+                            move |_| {
+                                on_process.call(files.clone());
+                            }
+                        },
                         if is_processing {
                             "Processing..."
                         } else {
@@ -418,7 +631,11 @@ fn ResultsSection(state: ProcessingState) -> Element {
                         onclick: {
                             let json_data = json_data.clone();
                             move |_| {
-                                download_json(json_data.clone());
+                                download_file(
+                                    json_data.as_bytes(),
+                                    "merged_structure.json",
+                                    "application/json",
+                                );
                             }
                         },
                         "Download Structure JSON"
@@ -432,7 +649,7 @@ fn ResultsSection(state: ProcessingState) -> Element {
                         onclick: {
                             let aem_data = aem_data.clone();
                             move |_| {
-                                download_aem_package(aem_data.clone());
+                                download_file(&aem_data, "aem_forms_package.zip", "application/zip");
                             }
                         },
                         "Download AEM Package"
@@ -443,185 +660,9 @@ fn ResultsSection(state: ProcessingState) -> Element {
     }
 }
 
-// Blocking function to process files through the blueprint pipeline
-// Runs in a background thread since Blueprint structs are not Send
-// Sends updates via channel to avoid needing Send for Signals
-fn process_files_blocking(
-    files: Vec<PathBuf>,
-    state_tx: std::sync::mpsc::Sender<ProcessingState>,
-) {
-    use blueprint::{Blueprint, HtmlConfig, AemConfig};
-    
-    // Process each PDF file
-    let mut all_envelopes = Vec::new();
-    let mut plain_images = HashMap::new();
-    let mut labelled_images = HashMap::new();
-    
-    for (_file_idx, pdf_path) in files.iter().enumerate() {
-        // Step 1: Parsing
-        let mut current_state = ProcessingState {
-            step: ProcessingStep::Parsing,
-            available_states: Vec::new(),
-            plain_images: plain_images.clone(),
-            labelled_images: labelled_images.clone(),
-            merged_json: None,
-            html_preview: None,
-            aem_package: None,
-            error: None,
-        };
-        let _ = state_tx.send(current_state.clone());
-        
-        let mut bp = match Blueprint::from_pdf(pdf_path) {
-            Ok(bp) => bp,
-            Err(e) => {
-                current_state.error = Some(format!("Failed to parse {}: {}", pdf_path.display(), e));
-                let _ = state_tx.send(current_state);
-                return;
-            }
-        };
-        
-        let language = bp.language().to_string();
-        
-        // Step 2: Exhaustive Searching
-        current_state.step = ProcessingStep::ExhaustiveSearching;
-        let _ = state_tx.send(current_state.clone());
-        
-        let form_states = match bp.states() {
-            Ok(states) => states,
-            Err(e) => {
-                current_state.error = Some(format!("Failed to explore states: {}", e));
-                let _ = state_tx.send(current_state);
-                return;
-            }
-        };
-        
-        let context = bp.context();
-        
-        // Step 3: Flattening - render plain images
-        current_state.step = ProcessingStep::Flattening;
-        let _ = state_tx.send(current_state.clone());
-        
-        // Render plain images for all states
-        for state_idx in 0..form_states.len() {
-            if let Some(form_state) = form_states.iter().nth(state_idx) {
-                let state_name = format!("{}_{}", language, state_idx);
-                if let Ok(img) = form_state.render_plain(1.5) {
-                    let mut png_bytes = Vec::new();
-                    if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                        plain_images.insert(state_name, png_bytes);
-                    }
-                }
-            }
-        }
-        
-        current_state.plain_images = plain_images.clone();
-        let _ = state_tx.send(current_state.clone());
-        
-        // Step 4: Structuring - render labelled images and get structured data
-        current_state.step = ProcessingStep::Structuring;
-        let _ = state_tx.send(current_state.clone());
-        
-        // Collect structured outputs for all states of this document
-        let mut structured_outputs = Vec::new();
-        for state_idx in 0..form_states.len() {
-            if let Some(form_state) = form_states.iter().nth(state_idx) {
-                // Render labelled image
-                let state_name = format!("{}_{}", language, state_idx);
-                if let Ok(img) = form_state.render_labelled(1.5) {
-                    let mut png_bytes = Vec::new();
-                    if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                        labelled_images.insert(state_name, png_bytes);
-                    }
-                }
-                
-                // Get structured envelope
-                let envelope = form_state.structured(context.clone());
-                structured_outputs.push((form_state.selections.clone(), envelope.content));
-            }
-        }
-        
-        current_state.labelled_images = labelled_images.clone();
-        let _ = state_tx.send(current_state.clone());
-        
-        // Merge exhaustive states for this document
-        if !structured_outputs.is_empty() {
-            use blueprint::{MergeInput, RecursiveMerger};
-            
-            let merge_inputs: Vec<MergeInput> = structured_outputs
-                .into_iter()
-                .map(|(selections, nodes)| MergeInput::new(selections, nodes))
-                .collect();
-            
-            let merger = RecursiveMerger::new(merge_inputs);
-            let merged_states = merger.merge();
-            
-            let merged_envelope = blueprint::DocumentEnvelope {
-                context: context.clone(),
-                content: merged_states,
-            };
-            
-            // Store the merged envelope for this document (one per language)
-            all_envelopes.push(merged_envelope);
-        }
-    }
-    
-    // Step 5: Merging - merge translations only if multiple documents
-    let mut current_state = ProcessingState {
-        step: ProcessingStep::Merging,
-        available_states: Vec::new(),
-        plain_images: plain_images.clone(),
-        labelled_images: labelled_images.clone(),
-        merged_json: None,
-        html_preview: None,
-        aem_package: None,
-        error: None,
-    };
-    let _ = state_tx.send(current_state.clone());
-    
-    let merged = if all_envelopes.is_empty() {
-        current_state.error = Some("No envelopes to merge".to_string());
-        let _ = state_tx.send(current_state);
-        return;
-    } else if files.len() > 1 && all_envelopes.len() > 1 {
-        // Multiple documents - merge translations
-        match blueprint::merge_translations(all_envelopes) {
-            Ok(merged) => merged,
-            Err(e) => {
-                current_state.error = Some(format!("Failed to merge translations: {}", e));
-                let _ = state_tx.send(current_state);
-                return;
-            }
-        }
-    } else {
-        // Single document - just use the merged exhaustive states
-        all_envelopes.into_iter().next().unwrap()
-    };
-    
-    // Serialize to JSON
-    let json = match serde_json::to_string_pretty(&merged) {
-        Ok(json) => json,
-        Err(e) => {
-            current_state.error = Some(format!("Failed to serialize JSON: {}", e));
-            let _ = state_tx.send(current_state);
-            return;
-        }
-    };
-    
-    // Generate HTML preview
-    let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
-    
-    // Generate AEM package
-    let aem_zip = blueprint::to_aem_package(&merged.content, &AemConfig::default());
-    
-    // Complete
-    current_state.step = ProcessingStep::Complete;
-    current_state.merged_json = Some(json);
-    current_state.html_preview = Some(html);
-    current_state.aem_package = Some(aem_zip);
-    let _ = state_tx.send(current_state);
-}
-
 // Helper function to encode RGBA image to PNG bytes
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> Result<(), String> {
     use image::codecs::png::PngEncoder;
     use image::ExtendedColorType;
@@ -639,40 +680,66 @@ fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> Resul
         .map_err(|e| format!("PNG encoding error: {}", e))
 }
 
-fn download_json(json_data: String) {
-    // In a desktop app, we need to use native file dialog
-    // This is a simplified version - you may need to use rfd crate for file dialogs
-    use std::fs;
-    
+// ── File download / preview helpers (platform-aware) ──────────────────
+
+#[cfg(target_arch = "wasm32")]
+fn download_file(data: &[u8], filename: &str, mime_type: &str) {
+    use wasm_bindgen::JsCast;
+    use js_sys::{Array, Uint8Array};
+    use web_sys::{Blob, BlobPropertyBag, Url, HtmlAnchorElement};
+
+    let uint8_array = Uint8Array::from(data);
+    let array = Array::new();
+    array.push(&uint8_array.buffer());
+
+    let mut options = BlobPropertyBag::new();
+    options.set_type(mime_type);
+
+    let blob = Blob::new_with_buffer_source_sequence_and_options(&array, &options).unwrap();
+    let url = Url::create_object_url_with_blob(&blob).unwrap();
+
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let a: HtmlAnchorElement = document
+        .create_element("a")
+        .unwrap()
+        .dyn_into()
+        .unwrap();
+    a.set_href(&url);
+    a.set_download(filename);
+    a.click();
+
+    let _ = Url::revoke_object_url(&url);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
     match dirs::home_dir() {
         Some(home) => {
-            let download_path = home.join("Downloads").join("merged_structure.json");
-            match fs::write(&download_path, json_data) {
+            let download_path = home.join("Downloads").join(filename);
+            match std::fs::write(&download_path, data) {
                 Ok(_) => {
                     println!("✓ File saved to: {}", download_path.display());
                     reveal_in_file_explorer(&download_path);
                 }
                 Err(e) => {
                     eprintln!("✗ Failed to save file to {}: {}", download_path.display(), e);
-                    // TODO: Show error notification to user in UI
                 }
             }
         }
         None => {
             eprintln!("✗ Failed to determine home directory for saving file");
-            // TODO: Show error notification to user in UI
         }
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn show_html_preview(html: String) {
-    // For desktop apps, you could:
-    // 1. Open in system browser
-    // 2. Show in an embedded webview
-    // 3. Display in a modal dialog
-    
-    use std::fs;
-    
+    download_file(html.as_bytes(), "form_preview.html", "text/html");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn show_html_preview(html: String) {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
@@ -682,98 +749,54 @@ fn show_html_preview(html: String) {
     };
     
     let preview_path = home.join("Downloads").join("form_preview.html");
-    if let Err(e) = fs::write(&preview_path, html) {
+    if let Err(e) = std::fs::write(&preview_path, html) {
         eprintln!("✗ Failed to save preview to {}: {}", preview_path.display(), e);
         return;
     }
     
     println!("✓ Preview saved to: {}", preview_path.display());
     
-    // Open in system browser
     #[cfg(target_os = "macos")]
     {
-        if let Err(e) = std::process::Command::new("open")
+        let _ = std::process::Command::new("open")
             .arg(&preview_path)
-            .spawn()
-        {
-            eprintln!("✗ Failed to open preview in browser: {}", e);
-        }
+            .spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = std::process::Command::new("xdg-open")
+        let _ = std::process::Command::new("xdg-open")
             .arg(&preview_path)
-            .spawn()
-        {
-            eprintln!("✗ Failed to open preview in browser: {}", e);
-        }
+            .spawn();
     }
     #[cfg(target_os = "windows")]
     {
-        if let Err(e) = std::process::Command::new("cmd")
+        let _ = std::process::Command::new("cmd")
             .args(&["/C", "start", "", &preview_path.to_string_lossy()])
-            .spawn()
-        {
-            eprintln!("✗ Failed to open preview in browser: {}", e);
-        }
+            .spawn();
     }
 }
 
-fn download_aem_package(aem_data: Vec<u8>) {
-    use std::fs;
-    
-    match dirs::home_dir() {
-        Some(home) => {
-            let download_path = home.join("Downloads").join("aem_forms_package.zip");
-            match fs::write(&download_path, aem_data) {
-                Ok(_) => {
-                    println!("✓ AEM package saved to: {}", download_path.display());
-                    reveal_in_file_explorer(&download_path);
-                }
-                Err(e) => {
-                    eprintln!("✗ Failed to save AEM package to {}: {}", download_path.display(), e);
-                    // TODO: Show error notification to user in UI
-                }
-            }
-        }
-        None => {
-            eprintln!("✗ Failed to determine home directory for saving AEM package");
-            // TODO: Show error notification to user in UI
-        }
-    }
-}
-
-// Helper function to reveal a file in the system file explorer
+#[cfg(not(target_arch = "wasm32"))]
 fn reveal_in_file_explorer(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
     {
-        if let Err(e) = std::process::Command::new("open")
+        let _ = std::process::Command::new("open")
             .arg("-R")
             .arg(path)
-            .spawn()
-        {
-            eprintln!("✗ Failed to reveal file in Finder: {}", e);
-        }
+            .spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        // Try to use dbus to select the file if available, otherwise open parent directory
         if let Some(parent) = path.parent() {
-            if let Err(e) = std::process::Command::new("xdg-open")
+            let _ = std::process::Command::new("xdg-open")
                 .arg(parent)
-                .spawn()
-            {
-                eprintln!("✗ Failed to open file manager: {}", e);
-            }
+                .spawn();
         }
     }
     #[cfg(target_os = "windows")]
     {
-        if let Err(e) = std::process::Command::new("explorer")
+        let _ = std::process::Command::new("explorer")
             .args(&["/select,", &path.to_string_lossy()])
-            .spawn()
-        {
-            eprintln!("✗ Failed to reveal file in Explorer: {}", e);
-        }
+            .spawn();
     }
 }
