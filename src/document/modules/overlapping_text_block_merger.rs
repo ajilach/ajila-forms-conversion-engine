@@ -136,8 +136,8 @@ impl AnalysisModule for OverlappingTextBlockMerger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::modules::TextBlockGrouper;
     use crate::document::Document;
+    use crate::document::modules::TextBlockGrouper;
     use crate::flattened::{Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 

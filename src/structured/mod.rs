@@ -27,17 +27,13 @@ pub enum StructuredNode {
     Conditional(ConditionalNode),
     Empty,
     GridLayout(GridLayout),
+    List(ListNode),
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UnorderedListNode {
-    pub items: Vec<InlineNode>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderedListNode {
+pub struct ListNode {
+    pub ordered: bool,
     pub items: Vec<InlineNode>,
 }
 
