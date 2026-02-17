@@ -6989,3 +6989,62 @@
 
         println!("\n✓ AAOE merged output has expected dropdown conditionals");
     }
+
+    #[test]
+    fn test_aaei_overlapping_text_block_merger() {
+        // Test that the OverlappingTextBlockMerger correctly merges the "–" bullet
+        // markers with their corresponding paragraph text blocks in the AAEI form.
+        //
+        // The XFA has two overlapping <draw name="T_Left"> elements:
+        //   - A wide 175mm column with the full agreement text (indented paragraphs)
+        //   - A narrow 9mm column with "–" en-dashes aligned to the indented paragraphs
+        //
+        // After merging, each "–" should be joined as a prefix to its paragraph.
+        use crate::document::modules::{
+            AnalysisModule, OverlappingTextBlockMerger, TextBlockGrouper, TextBlockMerger,
+        };
+        use crate::document::Document;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        OverlappingTextBlockMerger::new().process(&mut doc);
+        TextBlockMerger::new().process(&mut doc);
+
+        // Collect all root text block contents
+        let text_blocks: Vec<String> = doc
+            .root_text_blocks()
+            .iter()
+            .map(|&idx| doc.get_text_content(idx))
+            .collect();
+
+        // First merge: "–" + "in der Bundesrepublik Deutschland ansässigen, natürlichen Personen ..."
+        let has_first = text_blocks.iter().any(|t| {
+            t.contains("\u{2013}")
+                && t.contains("in der Bundesrepublik Deutschland ansässigen, natürlichen Personen")
+        });
+        assert!(
+            has_first,
+            "Expected a text block containing '–' merged with 'in der Bundesrepublik Deutschland ansässigen, natürlichen Personen ...'\nFound text blocks:\n{}",
+            text_blocks.iter().enumerate().map(|(i, t)| format!("  [{}] {}", i, t)).collect::<Vec<_>>().join("\n")
+        );
+
+        // Second merge: "–" + "Personen, die hinsichtlich der Einkünfte des deutschen Investmentvermögens ..."
+        let has_second = text_blocks.iter().any(|t| {
+            t.contains("\u{2013}")
+                && t.contains("Personen, die hinsichtlich der Einkünfte des deutschen Investmentvermögens")
+        });
+        assert!(
+            has_second,
+            "Expected a text block containing '–' merged with 'Personen, die hinsichtlich der Einkünfte des deutschen Investmentvermögens ...'\nFound text blocks:\n{}",
+            text_blocks.iter().enumerate().map(|(i, t)| format!("  [{}] {}", i, t)).collect::<Vec<_>>().join("\n")
+        );
+
+        println!("\n✓ AAEI overlapping text block merger correctly merged both dash markers");
+    }

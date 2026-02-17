@@ -84,7 +84,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         if let StructuredNode::Heading(h) = node {
             if matches!(h.level, HeadingLevel::H2) {
                 let title = h.content.as_plain_text().trim().to_string();
-                sections.push((Some(title), vec![node]));
+                sections.push((Some(title), vec![]));
                 continue;
             }
         }
@@ -153,6 +153,11 @@ fn convert_node(
     colspan: u32,
 ) -> Option<AemNode> {
     match node {
+        StructuredNode::Heading(h) if matches!(h.level, HeadingLevel::H1 | HeadingLevel::H2) => {
+            // H1 is used as the form title; H2 is used for section panel titles.
+            // Neither should produce an inline TextDraw.
+            None
+        }
         StructuredNode::Heading(h) => Some(convert_heading(h, config, ctx, colspan)),
         StructuredNode::Paragraph(p) => Some(convert_paragraph(p, config, ctx, colspan)),
         StructuredNode::Image(img) => Some(convert_image(img, config, ctx, colspan)),
@@ -733,10 +738,9 @@ mod tests {
                         ..
                     } => {
                         assert_eq!(title, "Section A");
-                        // H2 heading TextDraw + fieldA
-                        assert_eq!(panel_children.len(), 2);
-                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
-                        assert!(matches!(&panel_children[1], AemNode::TextField { .. }));
+                        // Only fieldA (H2 heading is NOT converted to TextDraw)
+                        assert_eq!(panel_children.len(), 1);
+                        assert!(matches!(&panel_children[0], AemNode::TextField { .. }));
                     }
                     other => panic!("Expected Panel for Section A, got {:?}", other),
                 }
@@ -749,11 +753,10 @@ mod tests {
                         ..
                     } => {
                         assert_eq!(title, "Section B");
-                        // H2 heading TextDraw + fieldB + footer paragraph
-                        assert_eq!(panel_children.len(), 3);
-                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
-                        assert!(matches!(&panel_children[1], AemNode::TextField { .. }));
-                        assert!(matches!(&panel_children[2], AemNode::TextDraw { .. }));
+                        // fieldB + footer paragraph (H2 heading is NOT converted to TextDraw)
+                        assert_eq!(panel_children.len(), 2);
+                        assert!(matches!(&panel_children[0], AemNode::TextField { .. }));
+                        assert!(matches!(&panel_children[1], AemNode::TextDraw { .. }));
                     }
                     other => panic!("Expected Panel for Section B, got {:?}", other),
                 }

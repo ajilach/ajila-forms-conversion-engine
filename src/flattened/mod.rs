@@ -1245,6 +1245,30 @@ impl Bounds {
     // Bounding box operations
     // ========================================================================
 
+    /// Compute the fraction (0.0–1.0) of `other`'s area that is contained within `self`.
+    ///
+    /// Returns 0.0 when the two bounds do not overlap at all, and 1.0 when
+    /// `other` is fully inside `self`.
+    pub fn contains_percentage(&self, other: &Bounds) -> f64 {
+        let other_area = other.width * other.height;
+        if other_area <= Decimal::ZERO {
+            return 0.0;
+        }
+
+        // Intersection rectangle
+        let ix = self.x.max(other.x);
+        let iy = self.y.max(other.y);
+        let ix2 = self.right().min(other.right());
+        let iy2 = self.bottom().min(other.bottom());
+
+        if ix >= ix2 || iy >= iy2 {
+            return 0.0;
+        }
+
+        let intersection_area = (ix2 - ix) * (iy2 - iy);
+        (intersection_area / other_area).to_f64().unwrap_or(0.0)
+    }
+
     /// Compute union of this bounds with another.
     pub fn union(&self, other: &Bounds) -> Bounds {
         let min_x = self.x.min(other.x);

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+<comment>FileVault Package Properties</comment>
+<entry key="packageType">mixed</entry>
+<entry key="lastWrappedBy">blueprint</entry>
+<entry key="packageFormatVersion">2</entry>
+<entry key="group">fd/export</entry>
+<entry key="created">2026-02-17T10:19:38.270+00:00</entry>
+<entry key="lastModifiedBy">blueprint</entry>
+<entry key="buildCount">1</entry>
+<entry key="lastWrapped">2026-02-17T10:19:38.270+00:00</entry>
+<entry key="version"></entry>
+<entry key="dependencies"></entry>
+<entry key="createdBy">blueprint</entry>
+<entry key="name">BlueprintFormsPackage_1771323578270</entry>
+<entry key="lastModified">2026-02-17T10:19:38.270+00:00</entry>
+</properties>

@@ -36,6 +36,9 @@
 //! RadioButtonGrouper          ─── groups radio buttons on same line
 //!     │
 //!     ▼
+//! OverlappingTextBlockMerger  ─── merges text blocks contained within others
+//!     │
+//!     ▼
 //! TextBlockMerger             ─── merges nearby unclaimed TextBlocks with same font
 //!     │
 //!     ▼
@@ -84,6 +87,7 @@ mod inline_field_detector;
 mod label_attacher;
 mod master_page_detector;
 mod no_print_detector;
+mod overlapping_text_block_merger;
 mod radio_button_detector;
 mod radio_button_grouper;
 mod repeatable_detector;
@@ -101,6 +105,7 @@ pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
 pub use master_page_detector::MasterPageDetector;
 pub use no_print_detector::NoPrintDetector;
+pub use overlapping_text_block_merger::OverlappingTextBlockMerger;
 pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
 pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
@@ -172,6 +177,7 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
+    OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);
     FieldTableDetector::new().process_with_context(doc, ctx);
     HeadingDetector::new().process_with_context(doc, ctx);

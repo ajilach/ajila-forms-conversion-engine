@@ -1,0 +1,609 @@
+Adaptive Forms Naming Convention
+              UBS Forms
+
+
+
+
+          Exported on 10/15/2025
+                                        UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+Table of Contents
+
+No headings included in this document
+
+
+
+
+                                                                                  2
+                                                                UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+Pending: Footer Naming Convention TBD
+
+
+
+
+Adaptive Forms naming Convention for Components Library and Content Library
+
+
+Library                Naming Convention        Path                        Comment
+
+
+Component Library      afbase_complib_all       apps/afbase_complib_all
+
+
+Content Library        afbase_contentlib_all    apps/                       To be used for all DOR
+                                                afbase_contentlib_all       templates
+
+
+
+
+Adaptive Forms naming Convention for Packages
+
+
+Naming              Path                                Example            Comment
+Convention
+
+
+afforms_global_a    /content/forms/af/
+ll                  afforms_global_all
+
+
+afforms_global_<    /content/forms/af/                  afforms_global     Owned by Helen Gillholm
+package_name>       afforms_global_<package_name>       _fragmentlib       To be used in Publisher
+                                                                           Node
+
+
+afforms_<locatio    /content/forms/af/                  afforms_ch_fra     To be used for locations
+n>_<package_na      afforms_<location>_<package_na      gmentlib           specific deviations CH/DE/
+me>                 me>                                                    APAC/etc. The naming
+                                                                           convention used is
+                                                                           afforms_apac_fragmentlib,
+                                                                           afforms_italy_fragmentlib,
+                                                                           which looks in line with
+                                                                           original names for folder.
+                                                                           However, the swiss one is
+                                                                           under
+                                                                           afforms_global_fragmentlib
+                                                                           , it was also the first folder
+                                                                           for fragments created.
+
+
+
+
+                                                                                                         –3
+                                                                   UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+                        /content/dam/                      afforms_global     Used in Author Node
+                        formsanddocuments/                 _account_openi
+                        afforms_local_<package_name>       ng
+
+
+                        /content/dam/                      afforms_ch_ac      To be used for locations
+                        formsanddocuments/                 count_opening      specific deviations CH/DE/
+                        afforms_<location>_<package_na                        APAC/etc
+                        me>
+
+
+ afforms_global_x       /content/dam/                      afforms_global     x used for technical
+ _<package_name         formsanddocuments/                 _x_account_op      packages
+ >                      afforms_global_x_<package_name     ening
+                        >
+
+
+ afforms_<locatio       /content/dam/                      afforms_ch_x_a     To be used for locations
+ n>_x_<package_n        formsanddocuments/                 ccount_openin      specific deviations CH/DE/
+ ame                    afforms_<location>_x_<package_n    g                  APAC/etc
+                        ame>
+
+
+
+
+AF Java – will be moved inside the OP2_1_UBSFormsBundle in https://githuboce.ubs.net/OP2/
+OP2_1_UbsFormsBundle
+
+
+Proposed list of packages:
+
+
+afforms_global_all
+afforms_global_formsets
+afforms_global_form0sets - Doesn't exist.
+afforms_global_common - (to be used for confirmation pages)
+afforms_global_account_opening - Doesn't exist.
+afforms_global_fragmentlib
+afforms_ch_fragmentlib -(location specific; to be used for specific CH/DE/APAC/etc deviations)
+afforms_global_objectlib
+afforms_global_divers
+afforms_global_qi_tax
+afforms_global_declaration_regulation
+afforms_global_data_dictionary
+
+
+
+
+                                                                                                            –4
+                                                                       UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+Some of the listed folders do not exist on AEM as they have been consolidated based on the geographic
+location for the form and all af are distributed based on this criteria. The XFA forms used to have distribution
+based on QI Tax, Account opening forms, etc.
+
+
+
+
+ Adaptive Form Fragment Naming Convention
+
+
+ Prefix      Naming Convention        Location                   Example                   Comments
+
+
+ af<frg>     af<frg>_<global>_<fr     /content/forms/af/         affrg_global_Persona
+             agment_name>_<           fragments/                 l Details_ Name_
+             field1>-<field2>-        af<frg>_<global>_<frag     Address_
+             <fieldN                  ment_name>_< field1>-      Country_text
+                                      <field2>-<fieldN
+
+
+             af<frg>_<location>_<     /content/forms/af/         affrg_ch_ Personal        To be used for
+             fragment_name>_<         fragments/                 Details_ Name_            location specific
+             field1>-<field2>-        af<frg>_<location>_<fr     Address_                  deviations
+             <fieldN                  agment_name>_<             Country_text
+                                      field1>-<field2>-<fieldN
+
+
+
+ Current Fragment Name                                  New AF Fragment name (that aligns with naming
+                                                        convention)
+
+
+ internal-bank-use-signatureofcustomeradviser-          affrg_global_PersonalDetails_ Name_ Company
+ signatureofsupervisor
+
+
+ personal-details-name-address-country_text             affrg_global_PersonalDetails_ Name_
+                                                        Address_Country-text
+
+
+ personal-details-name-address-country_dropdown         affrg_global_PersonalDetails_ Name_
+                                                        Address_Country-dropdown
+
+
+ personal-details-last-name-first-name-address-         affrg_global_PersonalDetails_ Name_
+ date-of-birth-nationality                              Address_DOB_Nationality
+
+
+ personal-details-last-name--first-name-company-        affrg_global_PersonalDetails_ Name_Company_
+ address-country-phone                                  Address_Phone
+
+
+ panelPersonalDetailsDOBNationality                     affrg_global_PersonalDetails_ Name_Company_
+                                                        Address_DOB_Nationality
+
+
+
+
+                                                                                                                –5
+                                                           UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+personalDetailsPanel_copy_1                   affrg_global_PersonalDetails_ Name_Company_
+                                              Address
+
+
+addressDetailsPanel                           affrg_global_AddressDetails_Address_POBox_Phon
+                                              e_Email
+
+
+attorneyPanel                                 affrg_global_AttorneyDetails_Name_DOB_Nationalit
+                                              y_Address
+
+
+panelApplicantDetails                         affrg_global_ApplicantDetails_Company_Domicile_A
+                                              ddress_LegalForm_Branch_RangeOfActivities
+
+
+panelBeneficiary                              affrg_global_BeneficiaryDetails_Name_Company_Ad
+                                              dress_IBAN_PurposeOfPayment
+
+
+beneficial-owner-entity-address-date-of-      affrg_global_BeneficialOwner_Entity_Address_Date
+incorporation-place-of-incorporation          OfIncorporation_PlaceOfIncorporation
+
+
+bank-of-beneficiary-name-of-bank-bank-code-   affrg_global_BeneficiaryBank_BankName_BankOfCo
+address                                       de_Address
+
+
+legal-counsel-details-company-name-           affrg_global_
+professionalassociation-address-phone         LegalCounselDetails_Company_Name_Professional
+                                              Association_Address_Phone
+
+
+change-of-name-title--last-name-first-name-   affrg_global_ChangeOfName_Title_Name_Additiona
+additional-designation                        lDesignation
+
+
+panelDomicileAddress                          affrg_global_DomicileAddress_Address_Phone
+
+
+banking-relationship                          affrg_global_BankingRelationship
+
+
+banking-relationship-custody                  affrg_global_BankingRelationship_CustodyAccount
+
+
+addressblock-address-postalcode-city-state-   affrg_global_AddressBlock
+country
+
+
+signature-place-date-legalcounselsignature-   affrg_global_Signature_Place_Date_LegalCounselNa
+legalcounselname                              me
+
+
+signature-place-date-signature-name           affrg_global_Signature_Place_Date_Name
+
+
+
+
+                                                                                                    –6
+                                                                       UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+ internal-bank-use-no-signature-text                    affrg_global_InternalBankUse_OURef_Signature
+
+
+ panelDispatchViaCourier                                affrg_global_InternalBankUse_Dispatch_OUGPN_Dat
+                                                        e
+
+
+ generic-internal-bank-use                              affrg_global_InternalBankUse_Text_OURef_Signatur
+                                                        e
+
+
+ internal-bank-use-signature-signature-of-client-       affrg_global_InternalBankUse_OURef_Signature_Clie
+ advisor-signature-of-supervisor                        ntAdvisorSignature_SupervisorSignature
+
+
+ internal-bank-use-signatureclientadvisor-              affrg_global_InternalBankUse_Line_CallBack_Spoke
+ signaturewitness                                       To_Extension_ClientAdvisor_Witness_OURef_Date
+
+
+ internal-bank-use-signaturelegalcounsel                affrg_global_InternalBankUse_OURef_LegalCounsel
+                                                        Signature
+
+
+ internal-bank-use-signatureofcustomeradviser-          affrg_global_InternalBankUse_OURef_CustomerAdvi
+ signatureofsupervisor                                  serSignature_SupervisorSignature
+
+
+Guidelines for Adaptive Forms Label Definition
+    • All labels in Adaptive Forms will start with the <PREFIX> of the Component Type
+    • The recommended label naming convention in an adaptive form is the <UpperCamelCase>
+      style, which capitalizes the first letters of all words in a compound word, including the first word.
+    • The underscore "_" will be used when additional attribute clustering is
+      required. (e.g: TXT_FirstName_ClientAdvisor)
+
+
+ Adaptive Form Label Naming Convention following the <UpperCamelCase> style
+
+
+ Component Type                Prefix            Naming Convention                  Example:
+
+
+ Radio Button                  RB                RB_<GroupName>                     RB_Currency
+                                                 RB_<GroupSelection>                RB_CHF
+
+
+ Date                          DATE              DATE_<ComponentName>               DATE_ ClientSignature
+                                                                                    DATE_ClientAdvisorSignat
+                                                                                    ure
+                                                                                    DATE_Enrollment
+
+
+
+
+                                                                                                                –7
+                                                    UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+Text Box                  TXT    TXT_<ComponentName>             TXT_FirstName_ClientAdvi
+                                                                 sor
+                                                                 TXT_Signature_ClientAdvi
+                                                                 sor
+
+
+Check Box                 CB     CB_<CBName>                     CB_Currency
+                                                                 CB_Countries
+
+
+Check Box for T&C         CB     CB_Confirmed_<Name>             CB_Confirmed_T&C
+
+
+Drop Down                 DD     DD_<GroupName>                  DD_PrefixName
+
+
+Panel                     PN     PN_<PanelName>                  PN_ClientDetailSection
+                                                                 PN_ClientApplicationDetail
+                                                                 s
+
+
+Repeat Container Header   RCHT   RCHT_<Name>                     RCHT_ClientInformation
+Title
+
+
+Repeat Container Panel    RCP    RCP_<Name>
+
+
+Repeat Container Button   RCBP   RCBP_<Name>
+Panel
+
+
+Repeat Container Header   RCHP   RCHP_<Name>
+Panel
+
+
+Number Box                NB     NB_<NBName>                     NB_Amount
+
+
+Buttons                   BT     BT_<ActionName>                 BT_OpenURL
+
+
+Static Text               ST     ST_<Label>                      ST_Title
+                                                                 ST_Heading
+                                                                 ST_Terms&Conditions
+
+
+Telephone                 TEL    TEL_<PhoneNumber>               TEL_Mobile
+
+
+Title                     TTL    TTL_<Form/SectionTitle>
+
+
+
+
+                                                                                             –8
+                                                                     UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+ TextBox multiline             TXTM             TXTM_<Name>
+
+
+ Email                         EML              EML_<EmailAddress>
+
+
+ Image                         IMG              IMG_<ImageName>
+
+
+ Chart                         CRT              CRT_<ChartName>
+
+
+ Separator                     SPT              SPT_<SeparatorNumber>             SPT_1
+
+
+ Information Text              ITXT             ITXT_<InformationTextName>
+
+
+ Error Text                    ETXT             ETXT_<ErrorTextName>
+
+
+ Interactive Table             TBL              TBL_<InteractiveTableName>
+
+
+ Barcode                       BARCODE          BARCODE_<FormBaseCode_<L          BARCODE_AAAA_EN_001
+                                                anguage>_<Mandator>
+
+
+ QRcode                        QRCODE           QRCODE_<FormBaseCode_<La          QRCODE_AAAA_EN_001
+                                                nguage>_<Mandator>
+
+
+
+Commonly used conventions & clarifications:
+    •    TXT_BC_AccountNumber and TXT_MAST_AccountNumber for the 2 Banking Relationship fields
+    •    TXT_ClientName, TXT_CompanyName
+    •    DD_NamePrefix for (Mr/Mrs/Dr), TXT_FirstName, TXT_MiddleName, TXT_LastName
+    •    DATE_BirthDate, TXT_Nationality
+    •    TXT_StreetName, TXT_StreetNo, TXT_AddressDetails1, TXT_AddressDetails2, TXT_CityName,
+         TXT_PostalCode, TXT_Canton_Province_State, TXT_CountryName
+    •    DATE_SignatureDate, TXT_SignaturePlace, TXT_Signature, TXT_CA_Signature (Client Advisor
+         Signature), TXT_CA1_Signature, TXT_CAn_Signature (for repeatable panel)
+    •    Dedicated CheckBox label in a T&C form, for signing confirmation agreement for ClientAdvisor/Client
+         (e.g: CB_Confirmed_<Name>;
+    •    Naming convention for a regular text section within a form irrespective of show/hide function -
+         ST_<Label> (e.g: ST_CreditCard_Information)
+    •    Primary, Secondary, Tertiary & Remove Buttons components present in Library, can be identified as
+         BT_<ActionName>
+
+
+
+
+                                                                                                              –9
+                                                                                  UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+For more commonly used label definitions please consult the attached file: Commonly used Label Definitions
+- 2020.091
+
+
+Adaptive Form - File Naming Convention:
+Adaptive form file names will include the prefix <AF> and the <4 chars FormBaseCode>, as a single HTML file
+will be shared across multiple mandators & languages.
+<prefix AF>_<FormBaseCode> (e.g: AF_AAAA, AF_AAAZ)
+
+Adaptive Form - Folder Naming Convention and Structure
+An Adaptive Forms folder name will contain the prefix <AF> and the <first 2 chars from the FormBaseCode>,
+representing the range of forms to be included in each folder.
+<AF>_<First 2 chars from the FormBaseCode>
+Example: folder AF_AA will include all adaptive forms with the formbasecode starting with AF_AA..:
+
+
+
+
+  AF Package               AF Folder                                              AF File
+
+ afforms_global_all       AF_AA                                                   AF_AAAA
+
+
+                                                                                  AF_AAAB
+
+
+                                                                                  ...
+
+
+                                                                                  AF_AAZZ
+
+
+                          AF_AB                                                   AF_ABAA
+
+
+                                                                                  AF_ABAB
+
+
+                                                                                  ...
+
+
+                                                                                  AF_ABZZ
+
+
+                          AF_AC
+
+
+                          ...
+
+
+
+
+1 https://central-confluence.ubs.net/confluence/download/attachments/301279857/
+ CommonLabelDefinition_Translation_Version_2020_09.xlsx?api=v2&modificationDate=1601044471000&version=1
+
+
+
+
+                                                                                                                         – 10
+                                                                      UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+ AF Package            AF Folder                                      AF File
+
+                       AF_ZZ
+
+
+
+
+Adaptive Form Set - File Naming Convention
+Adaptive Form Set file names will include the prefix <AFS> and <4 digits AdaptiveFormSetBaseCode>
+<prefix AFS>_<4 digits AdaptiveFormSetBaseCode> (e.g: AFS_0000, AFS_0001)
+Adaptive (Business) Form Set - Folder Naming Convention and Structure:
+
+
+ AFS Package                                   AFS Folder                          AFS File
+
+ afforms_global_formsets                       AFS_0                               AFS_0000
+
+
+                                                                                   AFS_0001
+
+
+                                                                                   ...
+
+
+                                                                                   AFS_0999
+
+
+                                               AFS_1
+
+
+                                               ....
+
+
+                                               AFS_9
+
+
+
+
+the naming convention is place is different than the one proposed. The folder names are
+afforms_global_integrated (CH), afforms_apac_integrated for (APAC). The name of AFS are with 4
+character code instead of number formsetbasecode.
+
+
+Adaptive Form0 Form Set - File Naming Convention
+An Adaptive Form0 Form Set, will be treated in KIOSK like a form, therefore will receive a unique <4 chars
+FormBaseCode>
+<prefix AFS>_<4 chars FormBaseCode> (e.g: AFS_AAAB)
+Adaptive Form0 Form Set - Folder Naming Convention and Structure
+
+
+
+
+                                                                                                             – 11
+                                                                UBS Forms – Adaptive Forms Naming Convention
+
+
+
+
+ AFS Form0 Package                     AFS Form0 Folder                  AFS Form0 File
+
+ afforms_global_form0sets              AFS_AA                            AFS_AAAA
+
+
+                                                                         AFS_AAAB
+
+
+                                                                         ...
+
+
+                                                                         AFS_AAZZ
+
+
+                                       AFS_AB                            AFS_ABAA
+
+
+                                                                         AFS_ABAB
+
+
+                                                                         ...
+
+
+                                                                         AFS_ABZZ
+
+
+                                       AFS_AC
+
+
+                                       ...
+
+
+                                       AFS_ZZ
+
+
+Please note that the FormBaseCode is unique across Forms and Form0(s).
+
+
+
+
+                                                                                                       – 12
+
