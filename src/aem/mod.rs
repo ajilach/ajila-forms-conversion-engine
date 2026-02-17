@@ -226,7 +226,7 @@ impl Default for AemConfig {
                 "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
                     .into(),
             template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic".into(),
-            theme_ref: String::new(),
+            theme_ref: "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme".into(),
             dor_template_ref: String::new(),
             redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission"
                 .into(),
@@ -270,6 +270,50 @@ impl AemConfig {
     /// CSS class for a control component.
     pub fn css_class(&self, component: &str) -> String {
         format!("{}{}", self.css_prefix, component)
+    }
+
+    /// Compute the DOR template ref from `form_path` and `form_code`.
+    ///
+    /// Produces a path like:
+    /// `/content/dam/formsanddocuments/{form_path}/{form_code}/jcr:content/renditions/dorTemplate`
+    pub fn compute_dor_template_ref(&self) -> String {
+        format!(
+            "/content/dam/formsanddocuments/{}/{}/jcr:content/renditions/dorTemplate",
+            self.form_path, self.form_code
+        )
+    }
+
+    /// Populate `form_code`, `form_title`, and `dor_template_ref` from a
+    /// document filename and structured content.
+    ///
+    /// `doc_name` is the filename stem (e.g. `"AAEI_019_DE"`).
+    /// The form code is extracted as the part before the first `_`.
+    /// The form title is extracted from the first H1 heading in the content.
+    pub fn populate_from_document(
+        &mut self,
+        doc_name: &str,
+        content: &[crate::StructuredNode],
+    ) {
+        // Extract form code: everything before the first '_'
+        let form_code = doc_name
+            .split('_')
+            .next()
+            .unwrap_or(doc_name)
+            .to_string();
+        self.form_code = form_code;
+
+        // Extract form title from first H1 heading
+        for node in content {
+            if let crate::StructuredNode::Heading(h) = node {
+                if matches!(h.level, crate::HeadingLevel::H1) {
+                    self.form_title = h.content.as_plain_text().trim().to_string();
+                    break;
+                }
+            }
+        }
+
+        // Compute dor_template_ref from form_path and form_code
+        self.dor_template_ref = self.compute_dor_template_ref();
     }
 }
 

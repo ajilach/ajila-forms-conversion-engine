@@ -114,7 +114,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 name,
                 title: title.clone(),
                 children: converted,
-                is_page: false,
+                is_page: true,
                 dor_exclude: false,
             });
         } else {
@@ -127,7 +127,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     name,
                     title: String::new(),
                     children: converted,
-                    is_page: false,
+                    is_page: true,
                     dor_exclude: false,
                 });
             }

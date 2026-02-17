@@ -429,7 +429,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if args.aem && args.documents.len() <= 1 {
-                let aem_config = blueprint::AemConfig::default();
+                let mut aem_config = blueprint::AemConfig::default();
+                aem_config.populate_from_document(doc_name, &merged_envelope.content);
                 let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
                 let aem_path = std::path::PathBuf::from(format!("{}_merged.zip", doc_name));
@@ -488,7 +489,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Generate merged multilingual AEM package
         if args.aem {
-            let aem_config = blueprint::AemConfig::default();
+            let mut aem_config = blueprint::AemConfig::default();
+            aem_config.populate_from_document(
+                base_doc_name.as_deref().unwrap_or("document"),
+                &merged_envelope.content,
+            );
             let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
             let aem_path = std::path::PathBuf::from(format!("{}_multilingual.zip", merged_name));

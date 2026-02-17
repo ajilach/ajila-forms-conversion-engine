@@ -10,6 +10,30 @@ use quick_xml::events::{BytesEnd, BytesStart, Event};
 use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/// Escape a string for use in an XML attribute value, encoding only `<` and `&`.
+///
+/// Unlike quick_xml's default escaping (which also encodes `>`, `"`, and `'`),
+/// this only encodes the two characters that are strictly required inside
+/// double-quoted attribute values. This keeps HTML fragments like `<h1>Title</h1>`
+/// readable in the output (as `&lt;h1>Title&lt;/h1>` rather than
+/// `&lt;h1&gt;Title&lt;/h1&gt;`).
+fn escape_xml_attr(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -137,7 +161,8 @@ fn write_parsys1(w: &mut Writer<&mut Cursor<Vec<u8>>>, form_title: &str, config:
         "sling:resourceType",
         config.control_resource_type("formtitle").as_str(),
     ));
-    title_elem.push_attribute(("_value", guide_form_title.as_str()));
+    let escaped_title = escape_xml_attr(&guide_form_title);
+    title_elem.push_attribute(("_value".as_bytes(), escaped_title.as_bytes()));
     title_elem.push_attribute(("css", "guideformtitle container"));
     title_elem.push_attribute(("guideNodeClass", "guideTextDraw"));
     title_elem.push_attribute(("name", "formTitle"));
@@ -531,7 +556,7 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
         name,
         title,
         children,
-        is_page: _,
+        is_page,
         dor_exclude,
     } = node
     else {
@@ -543,6 +568,9 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
     push_jcr_timestamps(&mut elem, config);
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute(("sling:resourceType", config.panel_resource_type().as_str()));
+    if *is_page {
+        elem.push_attribute(("css", "stepTitle"));
+    }
     elem.push_attribute(("guideNodeClass", "guidePanel"));
     elem.push_attribute(("name", name.as_str()));
     if !title.is_empty() {
@@ -552,6 +580,9 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
     elem.push_attribute(("dorExclusion", bool_str(*dor_exclude)));
     if config.dor_exclude_description {
         elem.push_attribute(("dorExcludeDescription", "true"));
+    }
+    if *is_page {
+        elem.push_attribute(("dorExcludeTitle", "true"));
     }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
@@ -888,7 +919,8 @@ fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config:
         "sling:resourceType",
         config.control_resource_type("textdraw").as_str(),
     ));
-    elem.push_attribute(("_value", content.as_str()));
+    let escaped_content = escape_xml_attr(content);
+    elem.push_attribute(("_value".as_bytes(), escaped_content.as_bytes()));
     elem.push_attribute(("css", ""));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextDraw"));
@@ -1094,9 +1126,8 @@ fn write_layout(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig, non_na
     let mut elem = BytesStart::new("layout");
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute(("sling:resourceType", config.default_layout.as_str()));
-    if config.enable_layout_optimization {
-        elem.push_attribute(("enableLayoutOptimization", "true"));
-    }
+    elem.push_attribute(("columns", "1"));
+    elem.push_attribute(("dorLayoutType", "columnar"));
     if non_navigable {
         elem.push_attribute(("nonNavigable", "{Boolean}true"));
     }
@@ -1816,5 +1847,38 @@ mod tests {
         let xml = generate_aem_xml(&root, &test_config());
         assert!(xml.contains("guideDropDownList"));
         assert!(xml.contains("options=\"[a=A,b=B]\""));
+    }
+
+    #[test]
+    fn textdraw_html_preserves_gt_unescaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::TextDraw {
+                uuid: fixed_uuid(),
+                name: "ST_1".into(),
+                content: "<h1>Title</h1>".into(),
+                dor_exclude: false,
+                colspan: 12,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // > must NOT be escaped — only < and & are encoded
+        assert!(
+            xml.contains("&lt;h1>Title&lt;/h1>"),
+            "> should stay unescaped in _value attribute. Got: {}",
+            xml
+        );
+        assert!(
+            !xml.contains("&lt;h1&gt;"),
+            "> must not be escaped to &gt; in _value attribute",
+        );
+    }
+
+    #[test]
+    fn escape_xml_attr_only_escapes_lt_amp_quot() {
+        assert_eq!(escape_xml_attr("<h1>Title</h1>"), "&lt;h1>Title&lt;/h1>");
+        assert_eq!(escape_xml_attr("A & B"), "A &amp; B");
+        assert_eq!(escape_xml_attr("no special"), "no special");
+        assert_eq!(escape_xml_attr("say \"hello\""), "say &quot;hello&quot;");
     }
 }
