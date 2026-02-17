@@ -20,8 +20,8 @@
 //! ```
 
 use crate::xfa::scripting::{
-    EventActivity, EventRef, ListenScope, Presence, ScriptContentType, SomPath, XfaScript,
-    XfaScriptEngine, parse_events_from_node, wrap_script_object,
+    EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScript, XfaScriptEngine,
+    parse_events_from_node, wrap_script_object,
 };
 use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
@@ -165,7 +165,9 @@ impl ScriptExecutor {
                 engine.set_current_field_with_children(full_path, field_name, "", child_fields);
                 engine.update_event_context(&EventActivity::Calculate, full_path, None);
 
-                let old_value = computed_values.get(&SomPath::new(full_path.clone())).cloned();
+                let old_value = computed_values
+                    .get(&SomPath::new(full_path.clone()))
+                    .cloned();
 
                 if let Ok(Some(value)) = engine.execute_script(script) {
                     // Per XFA 3.3 §10 p.380: the calculate result replaces the

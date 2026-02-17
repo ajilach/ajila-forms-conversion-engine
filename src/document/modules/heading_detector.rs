@@ -164,7 +164,7 @@ impl GlobalFontStats {
                         .unwrap_or(false);
 
                     // Skip body text style: only non-bold text at the most common size
-                    let body_is_non_bold = most_common_style.map(|(s, b)| !b).unwrap_or(false);
+                    let body_is_non_bold = most_common_style.map(|(_s, b)| !b).unwrap_or(false);
                     if !is_bold && body_is_non_bold {
                         let body_size_bits = most_common_style.map(|(s, _)| s);
                         if body_size_bits == Some(size_bits) {
@@ -419,7 +419,8 @@ impl HeadingDetector {
     /// Delegates core computation to `GlobalFontStats::from_flattened_iter`,
     /// then augments with percentile data only available from a single document.
     fn collect_font_stats(&self, doc: &Document) -> FontStats {
-        let global = GlobalFontStats::from_flattened_iter(std::iter::once(&doc.source as &Flattened));
+        let global =
+            GlobalFontStats::from_flattened_iter(std::iter::once(doc.source as &Flattened));
         let mut stats = global.to_font_stats();
 
         // Compute percentiles from sorted sizes (GlobalFontStats doesn't track these)
@@ -547,8 +548,7 @@ impl HeadingDetector {
             .get(&non_bold_at_body_key)
             .copied()
             .unwrap_or(0);
-        let non_bold_body_ratio =
-            non_bold_body_count as f32 / stats.total_text_nodes.max(1) as f32;
+        let non_bold_body_ratio = non_bold_body_count as f32 / stats.total_text_nodes.max(1) as f32;
 
         let body_has_substantial_non_bold = stats
             .most_common_style

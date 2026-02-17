@@ -807,7 +807,7 @@ impl XfaForm {
             .unwrap_or(button_name);
 
         // Capture the previous value before updating for change event context.
-        let prev_value = self
+        let _prev_value = self
             .script_engine
             .get_field_value(&resolved_path)
             .unwrap_or_default();

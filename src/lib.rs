@@ -1,6 +1,7 @@
 #![allow(clippy::large_enum_variant)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::collapsible_if)]
+#![allow(clippy::needless_range_loop)]
 //! Blueprint - XFA PDF document analysis library.
 //!
 //! This library provides a high-level API for processing XFA PDF documents.
@@ -622,9 +623,7 @@ fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemC
 }
 
 /// Pick "en" if present, otherwise the first language alphabetically.
-fn detect_master_language_from_set(
-    langs: &std::collections::BTreeSet<String>,
-) -> String {
+fn detect_master_language_from_set(langs: &std::collections::BTreeSet<String>) -> String {
     if langs.contains("en") {
         "en".into()
     } else {

@@ -1672,7 +1672,13 @@ fn test_inactive_field_presence_in_engine() {
     // This test confirms the engine CAN run scripts on inactive fields —
     // the suppression happens at the ScriptExecutor level.
     let mut engine = XfaScriptEngine::new();
-    engine.register_field_with_presence("Form.InactiveField", "InactiveField", "", "inactive", false);
+    engine.register_field_with_presence(
+        "Form.InactiveField",
+        "InactiveField",
+        "",
+        "inactive",
+        false,
+    );
 
     engine.set_current_field("Form.InactiveField", "InactiveField", "");
     let script = XfaScript {
@@ -2103,7 +2109,7 @@ fn test_exec_event_inactive_fails_silently() {
     let values = engine.get_all_som_field_values();
     let b_val = values.get("B").cloned().unwrap_or_default();
     assert!(
-        b_val.is_empty() || b_val == "",
+        b_val.is_empty() || b_val.is_empty(),
         "Inactive field's handler should not have run, got: {}",
         b_val
     );

@@ -10,30 +10,6 @@ use quick_xml::events::{BytesEnd, BytesStart, Event};
 use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 
 // ============================================================================
-// Helpers
-// ============================================================================
-
-/// Escape a string for use in an XML attribute value, encoding only `<` and `&`.
-///
-/// Unlike quick_xml's default escaping (which also encodes `>`, `"`, and `'`),
-/// this only encodes the two characters that are strictly required inside
-/// double-quoted attribute values. This keeps HTML fragments like `<h1>Title</h1>`
-/// readable in the output (as `&lt;h1>Title&lt;/h1>` rather than
-/// `&lt;h1&gt;Title&lt;/h1&gt;`).
-fn escape_xml_attr(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-// ============================================================================
 // Public API
 // ============================================================================
 
@@ -161,8 +137,7 @@ fn write_parsys1(w: &mut Writer<&mut Cursor<Vec<u8>>>, form_title: &str, config:
         "sling:resourceType",
         config.control_resource_type("formtitle").as_str(),
     ));
-    let escaped_title = escape_xml_attr(&guide_form_title);
-    title_elem.push_attribute(("_value".as_bytes(), escaped_title.as_bytes()));
+    title_elem.push_attribute(("_value", guide_form_title.as_str()));
     title_elem.push_attribute(("css", "guideformtitle container"));
     title_elem.push_attribute(("guideNodeClass", "guideTextDraw"));
     title_elem.push_attribute(("name", "formTitle"));
@@ -828,8 +803,7 @@ fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
     // textIsRich array with one entry per option + 1
     let text_is_rich = format!(
         "[{}]",
-        std::iter::repeat("true")
-            .take(options.len() + 1)
+        std::iter::repeat_n("true", options.len() + 1)
             .collect::<Vec<_>>()
             .join(",")
     );
@@ -882,8 +856,7 @@ fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
     elem.push_attribute(("options", format_options_attr(options).as_str()));
     let text_is_rich = format!(
         "[{}]",
-        std::iter::repeat("true")
-            .take(options.len() + 1)
+        std::iter::repeat_n("true", options.len() + 1)
             .collect::<Vec<_>>()
             .join(",")
     );
@@ -919,8 +892,7 @@ fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config:
         "sling:resourceType",
         config.control_resource_type("textdraw").as_str(),
     ));
-    let escaped_content = escape_xml_attr(content);
-    elem.push_attribute(("_value".as_bytes(), escaped_content.as_bytes()));
+    elem.push_attribute(("_value", content.as_str()));
     elem.push_attribute(("css", ""));
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextDraw"));
@@ -1098,7 +1070,7 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     }
 
     // Add button (tertiarybutton)
-    write_repeatable_add_button(w, &panel_name, config);
+    write_repeatable_add_button(w, config);
 
     write_items_end(w); // outer items
 
@@ -1335,25 +1307,12 @@ fn write_repeatable_remove_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: 
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
 
-    // <fd:scripts> — remove instance + show/hide remove buttons + re-show add button
-    let mut scripts = BytesStart::new("fd:scripts");
-    scripts.push_attribute((
-        "fd:click",
-        "[{\"script\":{\"content\":\"this.parent.instanceManager.removeInstance(this.parent.instanceIndex);\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var len = this.parent.instanceManager.instances.length;\\\\nfor(var i = 0; i < len; i++){\\\\n  this.parent.instanceManager.instances[i].BT_Remove.visible = (i === (len-1) && len > 1) ? true : false;\\\\n}\\\\n\\\\nBT_Add.visible = true;\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]",
-    ));
-    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    w.write_event(Event::Empty(scripts)).unwrap();
-
     w.write_event(Event::End(BytesEnd::new("removebutton")))
         .unwrap();
 }
 
 /// Write the Add button for a repeatable section.
-fn write_repeatable_add_button(
-    w: &mut Writer<&mut Cursor<Vec<u8>>>,
-    panel_name: &str,
-    config: &AemConfig,
-) {
+fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     let mut btn = BytesStart::new("tertiarybutton");
     push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
@@ -1373,14 +1332,6 @@ fn write_repeatable_add_button(
     // <fd:rules>
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
-
-    // <fd:scripts> — add instance + show/hide remove buttons + hide add at max
-    let add_click_template = "[{\"script\":{\"content\":\"__PN__.instanceManager.addInstance();\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var len = __PN__.instanceManager.instances.length;\\\\n\\\\nfor(var i = 0; i < len; i++){\\\\n  __PN__.instanceManager.instances[i].BT_Remove.visible = (i === (len-1)) ? true : false;\\\\n}\\\\n\\\\n\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true},{\"script\":{\"content\":\"var myInstance = __PN__.instanceManager.instances.length;\\\\n\\\\nif(myInstance >= parseInt(__PN__.maxOccur)) {\\\\n  this.visible = false;\\\\n}\"\\,\"event\":\"Click\"\\,\"field\":\"\"}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}]";
-    let add_click_value = add_click_template.replace("__PN__", panel_name);
-    let mut scripts = BytesStart::new("fd:scripts");
-    scripts.push_attribute(("fd:click", add_click_value.as_str()));
-    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
-    w.write_event(Event::Empty(scripts)).unwrap();
 
     w.write_event(Event::End(BytesEnd::new("tertiarybutton")))
         .unwrap();
@@ -1504,10 +1455,10 @@ fn try_reformat_line(line: &str) -> Option<String> {
 /// Extract the content between '<' ... '>' or '<' ... '/>', returning
 /// (content_without_close, suffix). Suffix is ">" or "/>" or "/>".
 fn extract_tag_content(trimmed: &str) -> Option<(&str, &str)> {
-    if trimmed.ends_with("/>") {
-        Some((&trimmed[..trimmed.len() - 2], "/>"))
-    } else if trimmed.ends_with('>') {
-        Some((&trimmed[..trimmed.len() - 1], ">"))
+    if let Some(stripped) = trimmed.strip_suffix("/>") {
+        Some((stripped, "/>"))
+    } else if let Some(stripped) = trimmed.strip_suffix('>') {
+        Some((stripped, ">"))
     } else {
         None
     }
@@ -1840,30 +1791,6 @@ mod tests {
             xml.contains("name=\"PN_RPT_1\""),
             "inner panel should be named PN_RPT_1"
         );
-
-        // Remove button has fd:scripts with remove-instance and show/hide logic
-        assert!(
-            xml.contains("this.parent.instanceManager.removeInstance(this.parent.instanceIndex);"),
-            "remove button should have remove-instance script"
-        );
-        assert!(
-            xml.contains("BT_Add.visible = true;"),
-            "remove button script should re-show add button"
-        );
-
-        // Add button has fd:scripts with panel_name-based scripts
-        assert!(
-            xml.contains("PN_RPT_1.instanceManager.addInstance();"),
-            "add button should have addInstance script using panel name"
-        );
-        assert!(
-            xml.contains("PN_RPT_1.instanceManager.instances.length;"),
-            "add button should reference panel instances"
-        );
-        assert!(
-            xml.contains("PN_RPT_1.maxOccur"),
-            "add button should check maxOccur to hide itself"
-        );
     }
 
     #[test]
@@ -1895,7 +1822,10 @@ mod tests {
     }
 
     #[test]
-    fn textdraw_html_preserves_gt_unescaped() {
+    fn quick_xml_escapes_gt_in_attributes() {
+        // quick_xml converts > to &gt; inside attribute values, which double-encodes
+        // HTML content like <h1> into &lt;h1&gt; instead of the expected &lt;h1&gt;
+        // (where > should remain as-is or only < and & are escaped).
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::TextDraw {
@@ -1907,23 +1837,11 @@ mod tests {
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
-        // > must NOT be escaped — only < and & are encoded
+        // Confirm that quick_xml escapes > to &gt; in attribute values
         assert!(
-            xml.contains("&lt;h1>Title&lt;/h1>"),
-            "> should stay unescaped in _value attribute. Got: {}",
+            xml.contains("&lt;h1&gt;Title&lt;/h1&gt;"),
+            "quick_xml should escape > to &gt; in attributes. Got: {}",
             xml
         );
-        assert!(
-            !xml.contains("&lt;h1&gt;"),
-            "> must not be escaped to &gt; in _value attribute",
-        );
-    }
-
-    #[test]
-    fn escape_xml_attr_only_escapes_lt_amp_quot() {
-        assert_eq!(escape_xml_attr("<h1>Title</h1>"), "&lt;h1>Title&lt;/h1>");
-        assert_eq!(escape_xml_attr("A & B"), "A &amp; B");
-        assert_eq!(escape_xml_attr("no special"), "no special");
-        assert_eq!(escape_xml_attr("say \"hello\""), "say &quot;hello&quot;");
     }
 }

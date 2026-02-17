@@ -56,7 +56,7 @@ fn strip_list_marker_from_inline_text(mut text: InlineText) -> InlineText {
     }
 
     // Find the first Text node and strip the marker from it
-    for node in &mut text.0 {
+    if let Some(node) = text.0.iter_mut().next() {
         match node {
             InlineNode::Text(s) => {
                 if let Some(stripped) = strip_marker_from_str(s) {

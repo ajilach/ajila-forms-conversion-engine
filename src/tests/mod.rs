@@ -2025,8 +2025,6 @@
 
     #[test]
     fn test_flattened_with_scripts_has_vorname() {
-        use crate::flattened::FlattenedNodeKind;
-
         // Extract and parse XFA from AAAB
         let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
@@ -6657,7 +6655,7 @@
         let mut form = XfaForm::new(nodes).expect("Failed to create XfaForm");
 
         // Use set_value_as_user — this should fire the change event
-        let result = form
+        let _result = form
             .set_value_as_user("CL_ClientType", "Legal entity")
             .expect("set_value_as_user should succeed");
 
