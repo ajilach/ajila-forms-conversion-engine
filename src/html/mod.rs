@@ -5,8 +5,8 @@
 
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, ParagraphNode, RepeatableNode, StructuredNode,
-    TableNode,
+    ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode, RepeatableNode,
+    StructuredNode, TableNode,
 };
 
 /// Configuration for HTML generation
@@ -150,8 +150,23 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Group(g) => generate_group(g, ctx, indent),
         StructuredNode::Conditional(c) => generate_conditional(c, ctx, indent),
         StructuredNode::GridLayout(g) => generate_grid_layout(g, ctx, indent),
+        StructuredNode::List(l) => generate_list(l, &ind),
         StructuredNode::Empty => String::new(),
     }
+}
+
+fn generate_list(l: &ListNode, ind: &str) -> String {
+    let tag = if l.ordered { "ol" } else { "ul" };
+    let mut html = format!("{}<{} class=\"form-list\">\n", ind, tag);
+    for item in &l.items {
+        html.push_str(&format!(
+            "{}  <li>{}</li>\n",
+            ind,
+            generate_inline_text(item)
+        ));
+    }
+    html.push_str(&format!("{}</{}>\n", ind, tag));
+    html
 }
 
 fn generate_heading(h: &HeadingNode, ind: &str) -> String {

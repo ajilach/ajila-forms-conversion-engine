@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use crate::context::Context;
 use crate::structured::{
     ConditionalNode, DocumentEnvelope, FieldNode, FieldType, GridLayout, GridLayoutElement,
-    GroupNode, HeadingNode, InlineNode, InlineText, NameValue, ParagraphNode,
+    GroupNode, HeadingNode, InlineNode, InlineText, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
 };
 
@@ -332,6 +332,18 @@ fn merge_node(
             StructuredNode::GridLayout(GridLayout {
                 columns: a.columns,
                 elements,
+            })
+        }
+        (StructuredNode::List(a), StructuredNode::List(b)) => {
+            let items = a
+                .items
+                .iter()
+                .zip(b.items.iter())
+                .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
+                .collect();
+            StructuredNode::List(ListNode {
+                ordered: a.ordered,
+                items,
             })
         }
         // Fallback: if nodes don't match (shouldn't happen after LCS), keep base

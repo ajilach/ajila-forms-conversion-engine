@@ -7048,3 +7048,87 @@
 
         println!("\n✓ AAEI overlapping text block merger correctly merged both dash markers");
     }
+
+    #[test]
+    fn test_aaei_has_one_unordered_list_with_two_items() {
+        // The AAEI form has two paragraphs prefixed with "–" (en-dash) bullet markers.
+        // After the overlapping text block merger merges the dashes with their text,
+        // the list detector should group them into a single unordered list with 2 items.
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::structured::{ListNode, StructuredNode};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        let structured_nodes = crate::structured::convert(&doc);
+
+        // Collect all lists from the structured output
+        fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+            let mut lists = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::List(l) => lists.push(l.clone()),
+                    StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                    StructuredNode::Repeatable(r) => {
+                        lists.extend(collect_lists(&[(*r.item).clone()]));
+                    }
+                    StructuredNode::Conditional(c) => {
+                        lists.extend(collect_lists(&[(*c.content).clone()]));
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        lists.extend(collect_lists(&child_nodes));
+                    }
+                    _ => {}
+                }
+            }
+            lists
+        }
+
+        let lists = collect_lists(&structured_nodes);
+
+        assert_eq!(
+            lists.len(),
+            1,
+            "AAEI should have exactly 1 list, found {}",
+            lists.len()
+        );
+
+        let list = &lists[0];
+        assert!(
+            !list.ordered,
+            "AAEI list should be unordered (bullet list)"
+        );
+        assert_eq!(
+            list.items.len(),
+            2,
+            "AAEI unordered list should have 2 items, found {}",
+            list.items.len()
+        );
+
+        // Verify that the marker text has been stripped from items
+        let item0_text = list.items[0].as_plain_text();
+        let item1_text = list.items[1].as_plain_text();
+        assert!(
+            !item0_text.starts_with('\u{2013}'),
+            "First list item should not start with '–' marker, got: {}",
+            item0_text
+        );
+        assert!(
+            !item1_text.starts_with('\u{2013}'),
+            "Second list item should not start with '–' marker, got: {}",
+            item1_text
+        );
+
+        println!("\n✓ AAEI has one unordered list with 2 items");
+    }

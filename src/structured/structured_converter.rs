@@ -25,7 +25,7 @@ use crate::flattened::{
 };
 use crate::structured::{
     FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
-    NameValue, ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
+    ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
 };
 
 /// Check if a StructuredNode contains any fields (recursively).
@@ -40,8 +40,128 @@ fn contains_fields(node: &StructuredNode) -> bool {
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
+        | StructuredNode::List(_)
         | StructuredNode::Empty => false,
     }
+}
+
+/// Strip a list marker prefix from InlineText.
+///
+/// Recognizes the same markers as the list detector: unordered bullets
+/// (`-`, `–`, `—`, `•`, `◦`, `▪`, `*`) and ordered markers (`1.`, `a.`, `ii.`, etc.)
+/// followed by whitespace. Only strips from the first InlineNode if it's a Text node.
+fn strip_list_marker_from_inline_text(mut text: InlineText) -> InlineText {
+    if text.0.is_empty() {
+        return text;
+    }
+
+    // Find the first Text node and strip the marker from it
+    for node in &mut text.0 {
+        match node {
+            InlineNode::Text(s) => {
+                if let Some(stripped) = strip_marker_from_str(s) {
+                    *s = stripped;
+                }
+                return text;
+            }
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                if let InlineNode::Text(s) = inner.as_mut() {
+                    if let Some(stripped) = strip_marker_from_str(s) {
+                        *s = stripped;
+                    }
+                    return text;
+                }
+                // Not a text node inside styling — stop looking
+                return text;
+            }
+            _ => return text,
+        }
+    }
+
+    text
+}
+
+/// Try to strip a list marker prefix from a string.
+/// Returns the stripped string if a marker was found, None otherwise.
+fn strip_marker_from_str(s: &str) -> Option<String> {
+    let trimmed = s.trim_start();
+    let leading_ws = s.len() - trimmed.len();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Unordered markers: non-ambiguous bullets (–, —, •, ◦, ▪) don't need space after
+    let unordered_no_space = ['\u{2013}', '\u{2014}', '\u{2022}', '\u{25E6}', '\u{25AA}'];
+    for &ch in &unordered_no_space {
+        if trimmed.starts_with(ch) {
+            let after = &trimmed[ch.len_utf8()..];
+            return Some(after.trim_start().to_string());
+        }
+    }
+
+    // Unordered markers: ambiguous chars (-, *) require space after
+    let unordered_need_space = ['-', '*'];
+    for &ch in &unordered_need_space {
+        if trimmed.starts_with(ch) {
+            let after = &trimmed[ch.len_utf8()..];
+            if after.is_empty() || after.starts_with(char::is_whitespace) {
+                return Some(after.trim_start().to_string());
+            }
+        }
+    }
+
+    // Ordered: digits followed by . or )
+    let bytes = trimmed.as_bytes();
+    if !bytes.is_empty() && bytes[0].is_ascii_digit() {
+        let mut i = 0;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i < bytes.len() && (bytes[i] == b'.' || bytes[i] == b')') {
+            let after = &trimmed[i + 1..];
+            if after.is_empty() || after.starts_with(char::is_whitespace) {
+                return Some(after.trim_start().to_string());
+            }
+        }
+    }
+
+    // Ordered: single letter followed by . or )
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && (bytes[1] == b'.' || bytes[1] == b')')
+    {
+        let after = &trimmed[2..];
+        if after.is_empty() || after.starts_with(char::is_whitespace) {
+            return Some(after.trim_start().to_string());
+        }
+    }
+
+    // Ordered: roman numerals followed by . or )
+    let roman_chars = b"ivxlcdm";
+    if !bytes.is_empty() && roman_chars.contains(&bytes[0].to_ascii_lowercase()) {
+        let is_upper = bytes[0].is_ascii_uppercase();
+        let mut i = 0;
+        while i < bytes.len() {
+            let ch = bytes[i];
+            let is_roman = if is_upper {
+                roman_chars.contains(&ch.to_ascii_lowercase()) && ch.is_ascii_uppercase()
+            } else {
+                roman_chars.contains(&ch) && ch.is_ascii_lowercase()
+            };
+            if !is_roman {
+                break;
+            }
+            i += 1;
+        }
+        if i >= 2 && i < bytes.len() && (bytes[i] == b'.' || bytes[i] == b')') {
+            let after = &trimmed[i + 1..];
+            if after.is_empty() || after.starts_with(char::is_whitespace) {
+                return Some(after.trim_start().to_string());
+            }
+        }
+    }
+
+    let _ = leading_ws; // leading whitespace is consumed by trim_start
+    None
 }
 
 /// Convert a Document to a list of StructuredNodes (one per root group).
@@ -269,6 +389,35 @@ impl<'a, 'b> Converter<'a, 'b> {
                     children.into_iter().next()
                 } else {
                     Some(StructuredNode::Group(GroupNode { children }))
+                }
+            }
+
+            // List → ListNode
+            GroupKind::List { ordered } => {
+                let group = self.doc.get_group(group_idx)?;
+                let mut items = Vec::new();
+                // Sort children by reading order
+                let mut children = group.children.clone();
+                children.sort_by(|&a, &b| {
+                    let bounds_a = self.doc.get_bounds(a);
+                    let bounds_b = self.doc.get_bounds(b);
+                    compare_bounds_reading_order(bounds_a, bounds_b)
+                });
+                for &child_idx in &children {
+                    let text = self.extract_inline_text(child_idx);
+                    if !text.is_empty() {
+                        // Strip list marker prefix from the item text
+                        let stripped = strip_list_marker_from_inline_text(text);
+                        items.push(stripped);
+                    }
+                }
+                if items.is_empty() {
+                    None
+                } else {
+                    Some(StructuredNode::List(ListNode {
+                        ordered: *ordered,
+                        items,
+                    }))
                 }
             }
 

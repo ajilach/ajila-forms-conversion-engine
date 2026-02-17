@@ -167,6 +167,7 @@ fn convert_node(
         StructuredNode::Group(g) => Some(convert_group(g, config, ctx)),
         StructuredNode::Conditional(c) => Some(convert_conditional(c, config, ctx)),
         StructuredNode::GridLayout(gl) => Some(convert_grid_layout(gl, config, ctx)),
+        StructuredNode::List(_) => None, // TODO: implement AEM list conversion
         StructuredNode::Empty => None,
     }
 }

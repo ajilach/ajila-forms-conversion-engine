@@ -189,6 +189,13 @@ pub enum GroupKind {
         /// Column span for each child element (in order)
         spans: Vec<usize>,
     },
+
+    /// A list of items (ordered or unordered)
+    /// Children are TextBlock groups, one per list item.
+    List {
+        /// Whether the list is ordered (numbered) or unordered (bulleted)
+        ordered: bool,
+    },
 }
 
 impl<'a> Document<'a> {
@@ -738,6 +745,13 @@ impl<'a> Document<'a> {
             }
             GroupKind::NoPrint => "NoPrint".to_string(),
             GroupKind::GridLayout { columns, .. } => format!("GridLayout[{}cols]", columns),
+            GroupKind::List { ordered } => {
+                if *ordered {
+                    "OrderedList".to_string()
+                } else {
+                    "UnorderedList".to_string()
+                }
+            }
         }
     }
 

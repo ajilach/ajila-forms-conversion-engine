@@ -34,7 +34,7 @@ pub enum StructuredNode {
 #[serde(rename_all = "camelCase")]
 pub struct ListNode {
     pub ordered: bool,
-    pub items: Vec<InlineNode>,
+    pub items: Vec<InlineText>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -508,6 +508,15 @@ impl StructuredNode {
                         ea.span == eb.span && ea.node.structural_cmp(&eb.node, mode)
                     })
             }
+            (StructuredNode::List(a), StructuredNode::List(b)) => {
+                a.ordered == b.ordered
+                    && a.items.len() == b.items.len()
+                    && (mode == CompareMode::IgnoreText
+                        || a.items
+                            .iter()
+                            .zip(b.items.iter())
+                            .all(|(ia, ib)| ia.structural_eq(ib)))
+            }
             // Different variants are never structurally equal
             _ => false,
         }
@@ -527,6 +536,7 @@ impl StructuredNode {
             StructuredNode::Conditional(_) => 7,
             StructuredNode::Empty => 8,
             StructuredNode::GridLayout(_) => 9,
+            StructuredNode::List(_) => 10,
         }
     }
 }
