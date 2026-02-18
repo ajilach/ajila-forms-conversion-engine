@@ -679,6 +679,7 @@ mod tests {
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldA".into(),
+                som_path: None,
                 label: Some(InlineText::plain("Field A")),
                 input_type: FieldType::Text {
                     regex: None,
@@ -694,6 +695,7 @@ mod tests {
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldB".into(),
+                som_path: None,
                 label: Some(InlineText::plain("Field B")),
                 input_type: FieldType::Text {
                     regex: None,
@@ -787,6 +789,7 @@ mod tests {
     fn convert_text_field() {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "firstName".into(),
+            som_path: None,
             label: Some(InlineText::plain("First Name")),
             input_type: FieldType::Text {
                 regex: None,
@@ -806,7 +809,8 @@ mod tests {
                 max_chars,
                 ..
             } => {
-                assert_eq!(name, "TF_firstName");
+                let expected_id: crate::structured::FieldId = "firstName".into();
+                assert_eq!(name, &format!("TF_{}", expected_id));
                 assert_eq!(label, "First Name");
                 assert_eq!(*max_chars, Some(50));
             }
@@ -818,6 +822,7 @@ mod tests {
     fn convert_radio_field() {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "gender".into(),
+            som_path: None,
             label: Some(InlineText::plain("Gender")),
             input_type: FieldType::Radio {
                 options: vec![
@@ -839,7 +844,8 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::RadioButton { name, options, .. } => {
-                assert_eq!(name, "RB_gender");
+                let expected_id: crate::structured::FieldId = "gender".into();
+                assert_eq!(name, &format!("RB_{}", expected_id));
                 assert_eq!(options.len(), 2);
                 assert_eq!(options[0].label, "Male");
                 assert_eq!(options[0].value, "M");
@@ -852,6 +858,7 @@ mod tests {
     fn convert_select_field() {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "country".into(),
+            som_path: None,
             label: Some(InlineText::plain("Country")),
             input_type: FieldType::Select {
                 options: vec![
@@ -873,7 +880,8 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::Dropdown { name, options, .. } => {
-                assert_eq!(name, "DD_country");
+                let expected_id: crate::structured::FieldId = "country".into();
+                assert_eq!(name, &format!("DD_{}", expected_id));
                 assert_eq!(options.len(), 2);
             }
             other => panic!("Expected Dropdown, got {:?}", other),
@@ -884,6 +892,7 @@ mod tests {
     fn convert_checkbox_from_bool() {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "agreeTerms".into(),
+            som_path: None,
             label: Some(InlineText::plain("I agree to the terms")),
             input_type: FieldType::Bool,
             value: None,
@@ -894,7 +903,8 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::Checkbox { name, options, .. } => {
-                assert_eq!(name, "CB_agreeTerms");
+                let expected_id: crate::structured::FieldId = "agreeTerms".into();
+                assert_eq!(name, &format!("CB_{}", expected_id));
                 assert_eq!(options.len(), 1);
                 assert_eq!(options[0].value, "true");
             }
@@ -906,6 +916,7 @@ mod tests {
     fn convert_date_field() {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "birthDate".into(),
+            som_path: None,
             label: Some(InlineText::plain("Date of Birth")),
             input_type: FieldType::Date,
             value: None,
@@ -916,7 +927,8 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::DatePicker { name, label, .. } => {
-                assert_eq!(name, "DATE_birthDate");
+                let expected_id: crate::structured::FieldId = "birthDate".into();
+                assert_eq!(name, &format!("DATE_{}", expected_id));
                 assert_eq!(label, "Date of Birth");
             }
             other => panic!("Expected DatePicker, got {:?}", other),
@@ -928,6 +940,7 @@ mod tests {
         let nodes = vec![StructuredNode::Repeatable(RepeatableNode {
             item: Box::new(StructuredNode::Field(FieldNode {
                 name: "phone".into(),
+                som_path: None,
                 label: Some(InlineText::plain("Phone")),
                 input_type: FieldType::Text {
                     regex: None,
@@ -967,6 +980,7 @@ mod tests {
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "x".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Text {
                         regex: None,
@@ -1032,6 +1046,7 @@ mod tests {
                     span: 1,
                     node: StructuredNode::Field(FieldNode {
                         name: "a".into(),
+                        som_path: None,
                         label: None,
                         input_type: FieldType::Text {
                             regex: None,
@@ -1046,6 +1061,7 @@ mod tests {
                     span: 2,
                     node: StructuredNode::Field(FieldNode {
                         name: "b".into(),
+                        som_path: None,
                         label: None,
                         input_type: FieldType::Text {
                             regex: None,

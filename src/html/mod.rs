@@ -4,10 +4,11 @@
 //! with embedded JavaScript for dynamic repeatables and conditionals.
 
 use crate::structured::{
-    ConditionalNode, FieldCondition, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode, RepeatableNode,
-    StructuredNode, TableNode,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
+    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode,
+    RepeatableNode, StructuredNode, TableNode,
 };
+use crate::xfa::scripting::SomPath;
 
 /// Configuration for HTML generation
 #[derive(Debug, Clone)]
@@ -256,7 +257,7 @@ fn generate_node_inline(node: &StructuredNode, ctx: &mut GeneratorContext) -> St
     match node {
         StructuredNode::Paragraph(p) => generate_inline_text(&p.content),
         StructuredNode::Field(f) => {
-            let field_id = ctx.next_id(&f.name);
+            let field_id = ctx.next_id(&f.name.to_string());
             generate_field_input(f, ctx, &field_id)
         }
         StructuredNode::Group(g) => {
@@ -274,7 +275,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
     let mut html = format!("{}<div class=\"form-field\">\n", ind);
 
     // Generate a unique ID for this field instance
-    let field_id = ctx.next_id(&f.name);
+    let field_id = ctx.next_id(&f.name.to_string());
 
     // For checkboxes, wrap input and label together (like radio buttons)
     if matches!(f.input_type, FieldType::Bool) {
@@ -325,7 +326,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
 
 fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &str) -> String {
     let id = escape_attr(field_id);
-    let name = escape_attr(&f.name);
+    let name = escape_attr(&f.name.to_string());
     let placeholder = f
         .placeholder
         .as_ref()
@@ -669,10 +670,10 @@ fn generate_grid_layout(
 fn generate_conditional(c: &ConditionalNode, ctx: &mut GeneratorContext, indent: usize) -> String {
     let ind = "  ".repeat(indent);
 
-    // Skip "default" conditionals (where field_name is "unknown")
+    // Skip "default" conditionals (where field_name is the "unknown" sentinel)
     // These represent the initial/default form state before any selections
     // Their content typically duplicates content in other specific conditionals
-    if c.condition.field_name.as_str() == "unknown" {
+    if c.condition.field_name == FieldId::from_som_path(&SomPath::new("unknown")) {
         return String::new();
     }
 
@@ -1406,8 +1407,11 @@ mod tests {
 
     #[test]
     fn test_generate_simple_field() {
+        use crate::structured::FieldId;
+        let field_id: FieldId = "test_field".into();
         let field = FieldNode {
-            name: "test_field".to_string(),
+            name: field_id.clone(),
+            som_path: None,
             label: Some(InlineText::plain("Test Label")),
             input_type: FieldType::Text {
                 regex: None,
@@ -1426,14 +1430,15 @@ mod tests {
 
         assert!(html.contains("form-field"));
         assert!(html.contains("Test Label"));
-        assert!(html.contains("test_field"));
+        assert!(html.contains(&field_id.to_string()));
         assert!(html.contains("Enter text"));
     }
 
     #[test]
     fn test_generate_radio_field() {
         let field = FieldNode {
-            name: "choice".to_string(),
+            name: "choice".into(),
+            som_path: None,
             label: Some(InlineText::plain("Choose one")),
             input_type: FieldType::Radio {
                 options: vec![
@@ -1464,7 +1469,8 @@ mod tests {
     #[test]
     fn test_generate_repeatable() {
         let inner = StructuredNode::Field(FieldNode {
-            name: "item".to_string(),
+            name: "item".into(),
+            som_path: None,
             label: Some(InlineText::plain("Item")),
             input_type: FieldType::Text {
                 regex: None,
@@ -1494,7 +1500,7 @@ mod tests {
 
     #[test]
     fn test_generate_conditional() {
-        use crate::xfa::scripting::SomPath;
+        use crate::structured::FieldId;
 
         let content = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Conditional content"),
@@ -1502,7 +1508,7 @@ mod tests {
 
         let conditional = ConditionalNode {
             condition: FieldCondition {
-                field_name: SomPath::new("toggle"),
+                field_name: FieldId::from("toggle"),
                 value: InputValue::Bool(true),
             },
             content: Box::new(content),
@@ -1520,9 +1526,14 @@ mod tests {
 
     #[test]
     fn test_duplicate_field_names_get_unique_ids() {
+        use crate::structured::FieldId;
+        let field_id: FieldId = "FullName".into();
+        let field_id_str = field_id.to_string();
+
         // Two fields with the same name should get unique IDs
         let make_field = || FieldNode {
-            name: "FullName".to_string(),
+            name: "FullName".into(),
+            som_path: None,
             label: Some(InlineText::plain("Full Name")),
             input_type: FieldType::Text {
                 regex: None,
@@ -1554,40 +1565,43 @@ mod tests {
             assert!(seen.insert(*id), "Duplicate id found: {}", id);
         }
 
-        // The two FullName fields should have distinct IDs
-        let fullname_ids: Vec<&&str> = ids.iter().filter(|id| id.starts_with("FullName")).collect();
+        // The two fields should have distinct IDs (based on the FieldId UUID)
+        let field_ids: Vec<&&str> = ids.iter().filter(|id| id.starts_with(&field_id_str)).collect();
         assert_eq!(
-            fullname_ids.len(),
+            field_ids.len(),
             2,
-            "Expected 2 FullName IDs, got {:?}",
-            fullname_ids
+            "Expected 2 field IDs starting with {}, got {:?}",
+            field_id_str,
+            field_ids
         );
         assert_ne!(
-            fullname_ids[0], fullname_ids[1],
-            "FullName IDs should differ"
+            field_ids[0], field_ids[1],
+            "Field IDs should differ"
         );
 
         // label for= should match the corresponding input id=
+        let id_1 = format!("{}_1", field_id_str);
+        let id_2 = format!("{}_2", field_id_str);
         assert!(
-            html.contains("for=\"FullName_1\""),
+            html.contains(&format!("for=\"{}\"", id_1)),
             "label for= should use unique ID"
         );
         assert!(
-            html.contains("id=\"FullName_1\""),
+            html.contains(&format!("id=\"{}\"", id_1)),
             "input id= should use unique ID"
         );
         assert!(
-            html.contains("for=\"FullName_2\""),
+            html.contains(&format!("for=\"{}\"", id_2)),
             "second label for= should use unique ID"
         );
         assert!(
-            html.contains("id=\"FullName_2\""),
+            html.contains(&format!("id=\"{}\"", id_2)),
             "second input id= should use unique ID"
         );
 
         // name= should stay as the original field name (not suffixed)
         assert!(
-            html.contains("name=\"FullName\""),
+            html.contains(&format!("name=\"{}\"", field_id_str)),
             "name= should use the original field name"
         );
     }

@@ -504,6 +504,7 @@ fn merge_field(
 
     FieldNode {
         name: base.name.clone(),
+        som_path: base.som_path.clone(),
         label,
         input_type,
         value: base.value.clone(),
@@ -756,7 +757,8 @@ mod tests {
                     content: InlineText::plain("Nur auf Deutsch"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field1".to_string(),
+                    name: "field1".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Name")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -775,7 +777,8 @@ mod tests {
                     content: InlineText::plain("Introduction"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field1".to_string(),
+                    name: "field1".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Name")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -843,7 +846,8 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Field(FieldNode {
-                name: "gender".to_string(),
+                name: "gender".into(),
+                som_path: None,
                 label: Some(InlineText::plain("Geschlecht")),
                 input_type: FieldType::Radio {
                     options: vec![
@@ -864,7 +868,8 @@ mod tests {
         let en = make_envelope(
             "en",
             vec![StructuredNode::Field(FieldNode {
-                name: "gender".to_string(),
+                name: "gender".into(),
+                som_path: None,
                 label: Some(InlineText::plain("Gender")),
                 input_type: FieldType::Radio {
                     options: vec![
@@ -937,7 +942,8 @@ mod tests {
                     content: InlineText::plain("Formular A"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field1".to_string(),
+                    name: "field1".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Name")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -961,7 +967,8 @@ mod tests {
                     caption: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "different_field".to_string(),
+                    name: "different_field".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Bool,
                     value: None,
@@ -1017,7 +1024,8 @@ mod tests {
                     content: InlineText::plain("Title"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field1".to_string(),
+                    name: "field1".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Text {
                         regex: None,
@@ -1028,7 +1036,8 @@ mod tests {
                     placeholder: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field2".to_string(),
+                    name: "field2".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Text {
                         regex: None,
@@ -1039,7 +1048,8 @@ mod tests {
                     placeholder: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field3".to_string(),
+                    name: "field3".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Text {
                         regex: None,
@@ -1050,7 +1060,8 @@ mod tests {
                     placeholder: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "field4".to_string(),
+                    name: "field4".into(),
+                    som_path: None,
                     label: None,
                     input_type: FieldType::Text {
                         regex: None,
@@ -1082,7 +1093,8 @@ mod tests {
                     content: InlineText::plain("Beschreibung"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "name".to_string(),
+                    name: "name".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Name")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -1093,7 +1105,8 @@ mod tests {
                     placeholder: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "email".to_string(),
+                    name: "email".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("E-Mail")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -1116,7 +1129,8 @@ mod tests {
                     content: InlineText::plain("Description"),
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "name".to_string(),
+                    name: "name".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Name")),
                     input_type: FieldType::Text {
                         regex: None,
@@ -1127,7 +1141,8 @@ mod tests {
                     placeholder: None,
                 }),
                 StructuredNode::Field(FieldNode {
-                    name: "email".to_string(),
+                    name: "email".into(),
+                    som_path: None,
                     label: Some(InlineText::plain("Email")),
                     input_type: FieldType::Text {
                         regex: None,
