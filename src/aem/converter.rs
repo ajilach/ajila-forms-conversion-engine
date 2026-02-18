@@ -720,10 +720,7 @@ mod tests {
     fn convert_ordered_list_produces_textdraw() {
         let nodes = vec![StructuredNode::List(ListNode {
             ordered: true,
-            items: vec![
-                InlineText::plain("Step one"),
-                InlineText::plain("Step two"),
-            ],
+            items: vec![InlineText::plain("Step one"), InlineText::plain("Step two")],
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
