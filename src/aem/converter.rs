@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::structured::{
     ConditionalNode, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, NameValue, ParagraphNode, RepeatableNode,
-    StructuredNode, TableNode, TranslatableString,
+    ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
 use super::{AemConfig, AemNode, AemOption, OptionAlignment};
@@ -167,7 +167,7 @@ fn convert_node(
         StructuredNode::Group(g) => Some(convert_group(g, config, ctx)),
         StructuredNode::Conditional(c) => Some(convert_conditional(c, config, ctx)),
         StructuredNode::GridLayout(gl) => Some(convert_grid_layout(gl, config, ctx)),
-        StructuredNode::List(_) => None, // TODO: implement AEM list conversion
+        StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan)),
         StructuredNode::Empty => None,
     }
 }
@@ -211,6 +211,33 @@ fn convert_paragraph(
 ) -> AemNode {
     let html = inline_text_to_html(&p.content, &ctx.language);
     let content = format!("<p>{html}</p>");
+    let name = ctx.next_name("ST");
+    let uuid = ctx.uuid(&name);
+    AemNode::TextDraw {
+        uuid,
+        name,
+        content,
+        dor_exclude: false,
+        colspan,
+    }
+}
+
+fn convert_list(
+    list: &ListNode,
+    _config: &AemConfig,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+) -> AemNode {
+    let tag = if list.ordered { "ol" } else { "ul" };
+    let items_html: String = list
+        .items
+        .iter()
+        .map(|item| {
+            let html = inline_text_to_html(item, &ctx.language);
+            format!("<li>{html}</li>")
+        })
+        .collect();
+    let content = format!("<{tag}>{items_html}</{tag}>");
     let name = ctx.next_name("ST");
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
@@ -660,6 +687,54 @@ mod tests {
             AemNode::TextDraw { content, .. } => {
                 assert!(content.contains("<h3>"));
                 assert!(content.contains("Sub Title"));
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn convert_unordered_list_produces_textdraw() {
+        let nodes = vec![StructuredNode::List(ListNode {
+            ordered: false,
+            items: vec![
+                InlineText::plain("First item"),
+                InlineText::plain("Second item"),
+            ],
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextDraw { content, .. } => {
+                assert!(content.contains("<ul>"));
+                assert!(content.contains("</ul>"));
+                assert!(content.contains("<li>First item</li>"));
+                assert!(content.contains("<li>Second item</li>"));
+                assert!(!content.contains("<ol>"));
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn convert_ordered_list_produces_textdraw() {
+        let nodes = vec![StructuredNode::List(ListNode {
+            ordered: true,
+            items: vec![
+                InlineText::plain("Step one"),
+                InlineText::plain("Step two"),
+            ],
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextDraw { content, .. } => {
+                assert!(content.contains("<ol>"));
+                assert!(content.contains("</ol>"));
+                assert!(content.contains("<li>Step one</li>"));
+                assert!(content.contains("<li>Step two</li>"));
+                assert!(!content.contains("<ul>"));
             }
             other => panic!("Expected TextDraw, got {:?}", other),
         }
