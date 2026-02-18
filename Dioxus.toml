@@ -16,3 +16,6 @@ script = []
 [web.resource.dev]
 style = []
 script = []
+
+[web.wasm_opt]
+level = "0"

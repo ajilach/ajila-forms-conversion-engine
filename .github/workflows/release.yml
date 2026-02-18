@@ -16,6 +16,7 @@ env:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   create-release:
@@ -75,11 +76,6 @@ jobs:
             artifact_name: blueprint-app.exe
             asset_name: blueprint-windows-x86_64.exe
             platform: desktop
-          - os: ubuntu-latest
-            target: wasm32-unknown-unknown
-            artifact_name: blueprint-app
-            asset_name: blueprint-web
-            platform: web
 
     steps:
       - name: Checkout code
@@ -107,10 +103,6 @@ jobs:
             mv dx.exe C:/Windows/System32/
           fi
         shell: bash
-
-      - name: Install wasm32 target
-        if: matrix.platform == 'web'
-        run: rustup target add wasm32-unknown-unknown
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -180,14 +172,6 @@ jobs:
           fi
         shell: bash
 
-      - name: Prepare web artifact
-        if: matrix.platform == 'web'
-        run: |
-          mkdir -p release-artifacts
-          cd target/dx/blueprint-app/release/web
-          zip -r ../../../../../release-artifacts/${{ matrix.asset_name }}.zip .
-        shell: bash
-
       - name: Upload Release Asset (Unix Desktop)
         if: matrix.platform == 'desktop' && matrix.os != 'windows-latest'
         uses: actions/upload-release-asset@v1
@@ -210,13 +194,41 @@ jobs:
           asset_name: ${{ matrix.asset_name }}.zip
           asset_content_type: application/zip
 
-      - name: Upload Release Asset (Web)
-        if: matrix.platform == 'web'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build-docker:
+    name: Build Docker Image
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for private git dependencies
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./release-artifacts/${{ matrix.asset_name }}.zip
-          asset_name: ${{ matrix.asset_name }}.zip
-          asset_content_type: application/zip
+          ssh-private-key: ${{ secrets.BLUEPRINT_DEPLOY_KEY }}
+
+      - name: Update version in Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.create-release.outputs.version }}"/' Cargo.toml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/ajilach/blueprint-app:latest
+            ghcr.io/ajilach/blueprint-app:v${{ needs.create-release.outputs.version }}
+          ssh: default
+
+

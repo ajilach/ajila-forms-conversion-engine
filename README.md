@@ -6,4 +6,12 @@ The app is built for Windows, Linux, MacOS, as well as for the web using WASM. T
 
 ## Running the Web App
 
-To run the web app, simply download and unzip the web app release. Execute the precompiled server binary. Ensure that the public directory stays in the same working directory as the server executable. The app runs at port 8080.
+The web app is published as a Docker image on GitHub Container Registry with every release.
+
+```sh
+docker pull ghcr.io/ajilach/blueprint-app:latest
+docker run -p 8080:8080 ghcr.io/ajilach/blueprint-app:latest
+```
+
+Then open http://localhost:8080 in your browser.
+
