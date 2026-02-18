@@ -1440,3 +1440,229 @@ impl XfaNode {
         (None, None)
     }
 }
+
+// ============================================================================
+// Public helper functions for extracting context from the XFA node tree
+// ============================================================================
+
+/// Find the root content subform (the first named `<subform>` that is not a `<pageSet>`).
+pub fn find_root_subform(xfa_nodes: &[XfaNode]) -> Option<&XfaNode> {
+    for node in xfa_nodes {
+        let is_subform = matches!(node.kind, XfaNodeKind::Subform)
+            || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+        let is_page_set =
+            matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
+
+        if is_page_set {
+            continue;
+        }
+
+        if is_subform && node.name.is_some() {
+            return Some(node);
+        }
+
+        if let Some(found) = find_root_subform(&node.children) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Recursively collect all `<text name="...">value</text>` items from
+/// `<variables>` elements in the XFA node tree.
+///
+/// Returns a map of variable name → value for all text variables found.
+pub fn collect_text_variables(nodes: &[XfaNode]) -> HashMap<String, String> {
+    let mut text_vars: Vec<(String, String)> = Vec::new();
+    collect_text_variables_recursive(nodes, &mut text_vars);
+    text_vars.into_iter().collect()
+}
+
+fn collect_text_variables_recursive(
+    nodes: &[XfaNode],
+    text_vars: &mut Vec<(String, String)>,
+) {
+    for node in nodes {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+            && tag_name == "variables"
+        {
+            for child in &node.children {
+                if let XfaNodeKind::Element {
+                    tag_name: child_tag,
+                    text_content,
+                    ..
+                } = &child.kind
+                    && child_tag == "text"
+                    && let Some(name) =
+                        child.name.as_ref().or_else(|| child.attributes.get("name"))
+                {
+                    let value = text_content.clone().unwrap_or_default();
+                    text_vars.push((name.clone(), value));
+                }
+            }
+        }
+
+        collect_text_variables_recursive(&node.children, text_vars);
+    }
+}
+
+/// Extract the document language from the root subform's `locale` attribute.
+///
+/// Per XFA 3.3 §17: the `locale` attribute on a `<subform>` specifies the
+/// prevailing locale using `language[_country]` format (e.g. `"de_DE"`, `"en_US"`).
+/// If no locale is found, falls back to `"en"` (ambient default per spec is `en_US`).
+pub fn extract_language_from_nodes(nodes: &[XfaNode]) -> String {
+    if let Some(root) = find_root_subform(nodes) {
+        if let Some(locale) = root.attributes.get("locale") {
+            // locale is e.g. "de_DE", "en_US", "fr_FR" — take the language part before '_'
+            let lang = locale.split('_').next().unwrap_or("en");
+            return lang.to_lowercase();
+        }
+    }
+    "en".to_string()
+}
+
+/// Extract both the document language and all `<variables><text>` values from
+/// the XFA node tree.
+///
+/// Returns `(language, variables)` where language comes from the root subform's
+/// `locale` attribute (spec-compliant) and variables contains all text variable
+/// name-value pairs.
+pub fn extract_context_from_nodes(nodes: &[XfaNode]) -> (String, HashMap<String, String>) {
+    let language = extract_language_from_nodes(nodes);
+    let variables = collect_text_variables(nodes);
+    (language, variables)
+}
+
+#[cfg(test)]
+mod context_extraction_tests {
+    use super::*;
+
+    /// Helper to create a minimal XfaNode with only the required fields set.
+    fn bare_node(kind: XfaNodeKind) -> XfaNode {
+        XfaNode {
+            kind,
+            x: None, y: None, w: None, h: None,
+            min_w: None, min_h: None, max_w: None, max_h: None,
+            layout: None, rotate: 0,
+            margin_top: None, margin_bottom: None,
+            margin_left: None, margin_right: None,
+            border: None, font: None, para: None,
+            name: None,
+            presence: Presence::Visible,
+            attributes: HashMap::new(),
+            children: vec![],
+        }
+    }
+
+    /// Build a minimal XFA node tree with a root subform carrying the given locale
+    /// and optional `<variables><text>` entries.
+    fn make_tree(locale: Option<&str>, text_vars: &[(&str, &str)]) -> Vec<XfaNode> {
+        let variables_children: Vec<XfaNode> = text_vars
+            .iter()
+            .map(|(name, value)| {
+                let mut node = bare_node(XfaNodeKind::Element {
+                    tag_name: "text".to_string(),
+                    text_content: Some(value.to_string()),
+                });
+                node.name = Some(name.to_string());
+                node
+            })
+            .collect();
+
+        let mut subform_children = vec![];
+        if !variables_children.is_empty() {
+            let mut vars_node = bare_node(XfaNodeKind::Element {
+                tag_name: "variables".to_string(),
+                text_content: None,
+            });
+            vars_node.children = variables_children;
+            subform_children.push(vars_node);
+        }
+
+        let mut root = bare_node(XfaNodeKind::Subform);
+        root.name = Some("RootForm".to_string());
+        root.children = subform_children;
+        if let Some(loc) = locale {
+            root.attributes.insert("locale".to_string(), loc.to_string());
+        }
+
+        vec![root]
+    }
+
+    #[test]
+    fn test_extract_language_from_locale_de_de() {
+        let nodes = make_tree(Some("de_DE"), &[]);
+        assert_eq!(extract_language_from_nodes(&nodes), "de");
+    }
+
+    #[test]
+    fn test_extract_language_from_locale_it_it() {
+        let nodes = make_tree(Some("it_IT"), &[]);
+        assert_eq!(extract_language_from_nodes(&nodes), "it");
+    }
+
+    #[test]
+    fn test_extract_language_from_locale_language_only() {
+        let nodes = make_tree(Some("fr"), &[]);
+        assert_eq!(extract_language_from_nodes(&nodes), "fr");
+    }
+
+    #[test]
+    fn test_extract_language_fallback_no_locale() {
+        let nodes = make_tree(None, &[]);
+        assert_eq!(extract_language_from_nodes(&nodes), "en");
+    }
+
+    #[test]
+    fn test_extract_language_fallback_empty_tree() {
+        let nodes: Vec<XfaNode> = vec![];
+        assert_eq!(extract_language_from_nodes(&nodes), "en");
+    }
+
+    #[test]
+    fn test_collect_text_variables() {
+        let nodes = make_tree(
+            Some("de_DE"),
+            &[
+                ("formrange_language", "DE"),
+                ("formrange_code", "AAEI"),
+                ("Footer_Line_txtformid", "66284"),
+            ],
+        );
+        let vars = collect_text_variables(&nodes);
+        assert_eq!(vars.len(), 3);
+        assert_eq!(vars.get("formrange_language").unwrap(), "DE");
+        assert_eq!(vars.get("formrange_code").unwrap(), "AAEI");
+        assert_eq!(vars.get("Footer_Line_txtformid").unwrap(), "66284");
+    }
+
+    #[test]
+    fn test_extract_context_from_nodes() {
+        let nodes = make_tree(
+            Some("fr_FR"),
+            &[("formrange_language", "FR"), ("formrange_entity", "019")],
+        );
+        let (lang, vars) = extract_context_from_nodes(&nodes);
+        assert_eq!(lang, "fr");
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars.get("formrange_language").unwrap(), "FR");
+        assert_eq!(vars.get("formrange_entity").unwrap(), "019");
+    }
+
+    #[test]
+    fn test_find_root_subform_skips_page_set() {
+        let page_set = bare_node(XfaNodeKind::Element {
+            tag_name: "pageSet".to_string(),
+            text_content: None,
+        });
+
+        let mut root = bare_node(XfaNodeKind::Subform);
+        root.name = Some("RootForm".to_string());
+        root.attributes.insert("locale".to_string(), "en_US".to_string());
+
+        let nodes = vec![page_set, root];
+        let found = find_root_subform(&nodes).unwrap();
+        assert_eq!(found.name.as_deref(), Some("RootForm"));
+    }
+}

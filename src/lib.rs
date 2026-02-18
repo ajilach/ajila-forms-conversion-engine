@@ -250,24 +250,7 @@ pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, E
     Ok(None)
 }
 
-/// Extract language from an XFA form by inspecting the `Footer_Line_txtlanguage` field.
-pub fn extract_language(form: &XfaForm) -> String {
-    if let Some(node) = form.resolve("Footer_Line_txtlanguage")
-        && let Some(value) = node.raw_value()
-    {
-        let lang = value.to_uppercase();
-        return match lang.as_str() {
-            "DE" => "de",
-            "EN" => "en",
-            "FR" => "fr",
-            "IT" => "it",
-            "ES" => "es",
-            _ => "de",
-        }
-        .to_string();
-    }
-    "de".to_string()
-}
+
 
 // ============================================================================
 // FormState — a single snapshot of the form
@@ -345,6 +328,8 @@ pub struct Blueprint {
     form: XfaForm,
     /// Auto-detected (or caller-supplied) document language.
     language: String,
+    /// All `<variables><text>` values from the XFA template.
+    variables: std::collections::HashMap<String, String>,
 }
 
 impl Blueprint {
@@ -361,12 +346,11 @@ impl Blueprint {
     /// Create a `Blueprint` from in-memory PDF bytes.
     pub fn from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Self, Error> {
         let xfa_bytes = extract_xfa_from_pdf_bytes(pdf_bytes)?.ok_or(Error::NoXfaData)?;
-        let language = {
+        let (language, variables) = {
             let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
-            let form = XfaForm::new(nodes).map_err(Error::FormCreation)?;
-            extract_language(&form)
+            xfa::extract_context_from_nodes(&nodes)
         };
-        Self::from_xfa_bytes(xfa_bytes, &language)
+        Self::from_xfa_bytes_with_variables(xfa_bytes, &language, variables)
     }
 
     /// Create a `Blueprint` directly from raw XFA XML bytes and a language tag.
@@ -374,12 +358,23 @@ impl Blueprint {
     /// Use this when you have already extracted the XFA XML yourself or when
     /// working with non-PDF sources of XFA data.
     pub fn from_xfa_bytes(xfa_bytes: Vec<u8>, language: &str) -> Result<Self, Error> {
+        Self::from_xfa_bytes_with_variables(xfa_bytes, language, std::collections::HashMap::new())
+    }
+
+    /// Create a `Blueprint` from raw XFA XML bytes, a language tag, and
+    /// pre-extracted variables.
+    fn from_xfa_bytes_with_variables(
+        xfa_bytes: Vec<u8>,
+        language: &str,
+        variables: std::collections::HashMap<String, String>,
+    ) -> Result<Self, Error> {
         let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
         let form = XfaForm::new(nodes).map_err(Error::FormCreation)?;
         Ok(Blueprint {
             xfa_bytes,
             form,
             language: language.to_string(),
+            variables,
         })
     }
 
@@ -392,9 +387,9 @@ impl Blueprint {
         &self.language
     }
 
-    /// Build a [`Context`] seeded with the document language.
+    /// Build a [`Context`] seeded with the document language and XFA variables.
     pub fn context(&self) -> Context {
-        Context::new(self.language.clone())
+        Context::new(self.language.clone(), self.variables.clone())
     }
 
     /// Access the underlying [`XfaForm`] (e.g. to resolve individual fields).
@@ -639,7 +634,7 @@ fn detect_master_language_from_set(langs: &std::collections::BTreeSet<String>) -
 pub fn run_exhaustive_to_merged(pdf_path: &str) -> Result<Vec<StructuredNode>, Error> {
     let mut bp = Blueprint::from_pdf(pdf_path)?;
     let form_states = bp.states()?;
-    let context = Context::new("en".to_string());
+    let context = bp.context();
     Ok(merge_form_states(&form_states, context))
 }
 
@@ -650,9 +645,14 @@ pub fn run_exhaustive_to_envelope(
     pdf_path: &str,
     language: &str,
 ) -> Result<DocumentEnvelope, Error> {
-    let nodes = run_exhaustive_to_merged(pdf_path)?;
+    let mut bp = Blueprint::from_pdf(pdf_path)?;
+    let form_states = bp.states()?;
+    let mut context = bp.context();
+    // Override language if caller provides one (e.g. for translation merging)
+    context.set_language(language.to_string());
+    let content = merge_form_states(&form_states, context.clone());
     Ok(DocumentEnvelope {
-        context: Context::new(language.to_string()),
-        content: nodes,
+        context,
+        content,
     })
 }

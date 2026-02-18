@@ -74,7 +74,7 @@ pub fn merge_translations(
 ) -> Result<DocumentEnvelope, MergeError> {
     if envelopes.is_empty() {
         return Ok(DocumentEnvelope {
-            context: Context::new("und".to_string()),
+            context: Context::with_language("und"),
             content: Vec::new(),
         });
     }
@@ -86,7 +86,7 @@ pub fn merge_translations(
     // Collect all languages and check for duplicates
     let languages: Vec<String> = envelopes
         .iter()
-        .map(|e| e.context.language.clone())
+        .map(|e| e.context.language().to_string())
         .collect();
 
     let mut seen_languages = std::collections::HashSet::new();
@@ -115,18 +115,18 @@ pub fn merge_translations(
     // Start with the first envelope as the base
     let mut iter = envelopes.into_iter();
     let base = iter.next().unwrap();
-    let base_lang = base.context.language.clone();
+    let base_lang = base.context.language().to_string();
     let mut merged_content = base.content;
 
     // Merge each subsequent language into the base
     for envelope in iter {
-        let other_lang = envelope.context.language.clone();
+        let other_lang = envelope.context.language().to_string();
         merged_content =
             merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
     }
 
     // Create merged context
-    let context = Context::new(languages.join(","));
+    let context = Context::with_language(languages.join(","));
 
     Ok(DocumentEnvelope {
         context,
@@ -667,7 +667,7 @@ mod tests {
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
         DocumentEnvelope {
-            context: Context::new(lang.to_string()),
+            context: Context::with_language(lang),
             content,
         }
     }
@@ -683,7 +683,7 @@ mod tests {
 
         let result = merge_translations(vec![envelope]).unwrap();
         assert_eq!(result.content.len(), 1);
-        assert_eq!(result.context.language, "de");
+        assert_eq!(result.context.language(), "de");
     }
 
     #[test]
@@ -715,7 +715,7 @@ mod tests {
 
         let result = merge_translations(vec![de, en]).unwrap();
         assert_eq!(result.content.len(), 2);
-        assert_eq!(result.context.language, "de,en");
+        assert_eq!(result.context.language(), "de,en");
 
         // Check heading has translated text
         if let StructuredNode::Heading(h) = &result.content[0] {
@@ -826,7 +826,7 @@ mod tests {
 
         let result = merge_translations(vec![de, en, fr]).unwrap();
         assert_eq!(result.content.len(), 1);
-        assert_eq!(result.context.language, "de,en,fr");
+        assert_eq!(result.context.language(), "de,en,fr");
 
         if let StructuredNode::Paragraph(p) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &p.content.0[0] {

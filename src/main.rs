@@ -279,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let language = bp.language().to_string();
         vprintln!(quiet, "✓ Detected language: {}", language);
 
-        let mut context = Context::new(language);
+        let mut context = bp.context();
 
         // Store enabled modules in context
         if !args.modules.is_empty() {

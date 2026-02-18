@@ -6277,14 +6277,14 @@
         let en_envelope = run_exhaustive_to_envelope("input/AAAI_019_EN.pdf", "en")
             .expect("Failed to process AAAI_019_EN");
 
-        assert_eq!(de_envelope.context.language, "de");
-        assert_eq!(en_envelope.context.language, "en");
+        assert_eq!(de_envelope.context.language(), "de");
+        assert_eq!(en_envelope.context.language(), "en");
 
         // Merge translations
         let merged = structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
 
         // The merged context should mention both languages
-        println!("Merged context language: {}", merged.context.language);
+        println!("Merged context language: {}", merged.context.language());
         assert!(!merged.content.is_empty(), "Merged content should not be empty");
 
         // =====================================================================
@@ -7307,4 +7307,57 @@
             xml.contains("BT_Remove.visible"),
             "Button scripts should manage BT_Remove visibility"
         );
+    }
+
+    // =========================================================================
+    // Context extraction from XFA
+    // =========================================================================
+
+    #[test]
+    fn test_context_extraction_from_aaei_pdf() {
+        let bp = Blueprint::from_pdf("input/AAEI_019_DE.pdf")
+            .expect("Failed to load AAEI PDF");
+        let ctx = bp.context();
+
+        // Language should come from root subform locale="de_DE"
+        assert_eq!(ctx.language(), "de");
+
+        // Variables should contain the expected text entries
+        assert_eq!(ctx.get_variable("formrange_language"), Some("DE"));
+        assert_eq!(ctx.get_variable("formrange_code"), Some("AAEI"));
+        assert_eq!(ctx.get_variable("formrange_entity"), Some("019"));
+        assert_eq!(ctx.get_variable("formrange_version"), Some("V0"));
+        assert_eq!(ctx.get_variable("Footer_Line_txtlanguage"), Some("DE"));
+        assert_eq!(ctx.get_variable("Footer_Line_txtformid"), Some("66284"));
+        assert_eq!(ctx.get_variable("Footer_Line_MANCode"), Some("019"));
+        assert_eq!(ctx.get_variable("Footer_Line_txtvversion"), Some("V0"));
+        assert!(!ctx.variables.is_empty(), "Variables should not be empty");
+    }
+
+    #[test]
+    fn test_context_extraction_from_aaoe_pdf() {
+        let bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to load AAOE PDF");
+        let ctx = bp.context();
+
+        // Language should come from root subform locale="it_IT"
+        assert_eq!(ctx.language(), "it");
+
+        // Variables should reflect the Italian form
+        assert_eq!(ctx.get_variable("formrange_language"), Some("IT"));
+        assert_eq!(ctx.get_variable("formrange_code"), Some("AAOE"));
+        assert_eq!(ctx.get_variable("formrange_entity"), Some("033"));
+        assert_eq!(ctx.get_variable("Footer_Line_txtlanguage"), Some("IT"));
+    }
+
+    #[test]
+    fn test_context_serialization_includes_variables() {
+        let bp = Blueprint::from_pdf("input/AAEI_019_DE.pdf")
+            .expect("Failed to load AAEI PDF");
+        let ctx = bp.context();
+
+        let json = serde_json::to_string_pretty(&ctx).unwrap();
+        assert!(json.contains("\"language\": \"de\""), "JSON should contain language");
+        assert!(json.contains("\"variables\""), "JSON should contain variables");
+        assert!(json.contains("\"formrange_code\": \"AAEI\""), "JSON should contain formrange_code");
     }

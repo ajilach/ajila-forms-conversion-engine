@@ -790,55 +790,37 @@ impl ScriptExecutor {
         }
     }
 
-    /// Find the root content subform
+    /// Find the root content subform — delegates to the public helper.
     fn find_root_subform(xfa_nodes: &[XfaNode]) -> Option<&XfaNode> {
-        for node in xfa_nodes {
-            let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-                || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-            let is_page_set = matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
-
-            if is_page_set {
-                continue;
-            }
-
-            if is_subform && node.name.is_some() {
-                return Some(node);
-            }
-
-            if let Some(found) = Self::find_root_subform(&node.children) {
-                return Some(found);
-            }
-        }
-        None
+        super::find_root_subform(xfa_nodes)
     }
 
     /// Extract and register translations from <variables> elements.
     /// This handles both <text> variables (simple values) and <script> variables (code objects).
     fn extract_and_register_translations(xfa_nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
-        let mut variable_scripts: Vec<(String, String)> = Vec::new();
-        let mut text_vars: Vec<(String, String)> = Vec::new();
-        Self::collect_variable_items(xfa_nodes, &mut variable_scripts, &mut text_vars);
-
-        // Register <text> variables as fields (e.g., Footer_Line_txtlanguage, Footer_Line_txtformid)
+        // Register <text> variables as fields using the shared helper
+        let text_vars = super::collect_text_variables(xfa_nodes);
         for (name, value) in &text_vars {
             engine.register_field(name, name, value);
         }
+
+        // Collect and register <script> variables (only scripts, not text)
+        let mut variable_scripts: Vec<(String, String)> = Vec::new();
+        Self::collect_variable_scripts(xfa_nodes, &mut variable_scripts);
 
         // Register <script> variables as JavaScript objects
         // Per XFA 3.3 §10 pp. 376-378: named script objects expose all
         // top-level variables and functions as properties/methods.
         for (name, content) in &variable_scripts {
             let wrapped = wrap_script_object(name, content, false);
-
             let _ = engine.execute_variable_script(&wrapped);
         }
     }
 
-    /// Recursively collect both <script> and <text> content from <variables> elements
-    fn collect_variable_items(
+    /// Recursively collect <script> content from <variables> elements.
+    fn collect_variable_scripts(
         nodes: &[XfaNode],
         scripts: &mut Vec<(String, String)>,
-        text_vars: &mut Vec<(String, String)>,
     ) {
         for node in nodes {
             if let XfaNodeKind::Element { tag_name, .. } = &node.kind
@@ -850,34 +832,29 @@ impl ScriptExecutor {
                         text_content,
                         ..
                     } = &child.kind
+                        && child_tag == "script"
                         && let Some(name) =
                             child.name.as_ref().or_else(|| child.attributes.get("name"))
                     {
-                        if child_tag == "script" {
-                            // Handle <script> - may have content directly or in children
-                            if let Some(content) = text_content
+                        // Handle <script> - may have content directly or in children
+                        if let Some(content) = text_content
+                            && !content.is_empty()
+                        {
+                            scripts.push((name.clone(), content.clone()));
+                        }
+                        // Also check for content in child nodes
+                        for script_child in &child.children {
+                            if let XfaNodeKind::Text { content } = &script_child.kind
                                 && !content.is_empty()
                             {
                                 scripts.push((name.clone(), content.clone()));
                             }
-                            // Also check for content in child nodes
-                            for script_child in &child.children {
-                                if let XfaNodeKind::Text { content } = &script_child.kind
-                                    && !content.is_empty()
-                                {
-                                    scripts.push((name.clone(), content.clone()));
-                                }
-                            }
-                        } else if child_tag == "text" {
-                            // Handle <text> variables - these are simple string values
-                            let value = text_content.clone().unwrap_or_default();
-                            text_vars.push((name.clone(), value));
                         }
                     }
                 }
             }
 
-            Self::collect_variable_items(&node.children, scripts, text_vars);
+            Self::collect_variable_scripts(&node.children, scripts);
         }
     }
 }
