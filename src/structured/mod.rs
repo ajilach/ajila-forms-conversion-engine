@@ -8,9 +8,69 @@ pub use translation_merger::{MergeError, merge_translations};
 
 use rust_decimal::Decimal;
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::context::Context;
 use crate::xfa::scripting::SomPath;
+
+// ============================================================================
+// FieldId — deterministic UUID derived from SOM path
+// ============================================================================
+
+/// Namespace UUID used for deterministic FieldId generation (UUID v5).
+const NAMESPACE_FIELD_ID: Uuid = Uuid::from_bytes([
+    0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x47, 0x89, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78,
+]);
+
+/// A deterministic field identifier derived from a SOM path.
+///
+/// `FieldId` wraps a UUID v5 that is computed from the field's SOM path using
+/// a fixed namespace. Two fields with the same SOM path always produce the
+/// same `FieldId`, making output reproducible across runs.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FieldId(Uuid);
+
+impl FieldId {
+    /// Create a `FieldId` by hashing a `SomPath` into a deterministic UUID v5.
+    pub fn from_som_path(path: &SomPath) -> Self {
+        Self(Uuid::new_v5(&NAMESPACE_FIELD_ID, path.as_str().as_bytes()))
+    }
+
+    /// Get the underlying UUID.
+    pub fn uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for FieldId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for FieldId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl From<&SomPath> for FieldId {
+    fn from(path: &SomPath) -> Self {
+        Self::from_som_path(path)
+    }
+}
+
+impl From<SomPath> for FieldId {
+    fn from(path: SomPath) -> Self {
+        Self::from_som_path(&path)
+    }
+}
+
+impl From<&str> for FieldId {
+    fn from(s: &str) -> Self {
+        Self::from_som_path(&SomPath::new(s))
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -103,7 +163,7 @@ pub struct ConditionalNode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
-    pub field_name: SomPath,
+    pub field_name: FieldId,
     pub value: InputValue,
 }
 
@@ -223,7 +283,9 @@ impl From<&str> for TranslatableString {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldNode {
-    pub name: String,
+    pub name: FieldId,
+    #[serde(skip)]
+    pub som_path: Option<SomPath>,
     pub label: Option<InlineText>,
     pub input_type: FieldType,
     pub value: Option<InputValue>,
@@ -550,6 +612,11 @@ impl InlineText {
 }
 
 impl FieldNode {
+    /// Returns the SOM path string of this field, or an empty string if unavailable.
+    pub fn som_path_str(&self) -> &str {
+        self.som_path.as_ref().map(|p| p.as_str()).unwrap_or("")
+    }
+
     /// Check if two fields are structurally equal.
     /// Compares name and input type structure, but NOT label text or value.
     /// Labels may differ across languages, so we ignore them.

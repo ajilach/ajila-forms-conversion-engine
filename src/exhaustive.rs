@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::flattened::Flattened;
-use crate::structured::{Selection, SelectionKind};
+use crate::structured::{FieldId, Selection, SelectionKind};
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
@@ -186,14 +186,14 @@ pub fn collect_states(
 fn apply_selection(form: &mut XfaForm, sel: &Selection) {
     match sel.kind {
         SelectionKind::Radio => {
-            let _ = form.select_radio_button(sel.field_path.as_str());
+            let _ = form.select_radio_button(sel.som_path.as_str());
         }
         SelectionKind::Checkbox => {
             let raw_value = if sel.value == "checked" { "1" } else { "0" };
-            let _ = form.set_value_as_user(sel.field_path.as_str(), raw_value);
+            let _ = form.set_value_as_user(sel.som_path.as_str(), raw_value);
         }
         SelectionKind::Dropdown => {
-            let _ = form.set_value_as_user(sel.field_path.as_str(), &sel.value);
+            let _ = form.set_value_as_user(sel.som_path.as_str(), &sel.value);
         }
     }
 }
@@ -235,12 +235,12 @@ fn collect_states_linear(
                 .selections
                 .iter()
                 .map(|sel| match sel.kind {
-                    SelectionKind::Radio => sel.field_path.name().to_string(),
+                    SelectionKind::Radio => sel.som_path.name().to_string(),
                     SelectionKind::Checkbox => {
-                        format!("{}_{}", sel.field_path.name(), sel.value)
+                        format!("{}_{}", sel.som_path.name(), sel.value)
                     }
                     SelectionKind::Dropdown => {
-                        format!("{}_{}", sel.field_path.name(), sel.value)
+                        format!("{}_{}", sel.som_path.name(), sel.value)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -444,11 +444,11 @@ fn explore_radio(
                         if f.is_radio()
                             && let Some(fg) =
                                 new_form.find_excl_group_for_field(f.path.as_str())
-                            && Some(&fg)
-                                == state
+                            && state
                                     .selections
                                     .last()
                                     .and_then(|s| s.group_path.as_ref())
+                                    == Some(&FieldId::from_som_path(&fg))
                         {
                             state.field_actions[idx] =
                                 if f.path == radio_field.path {
@@ -594,7 +594,7 @@ fn can_select_field(
     // Check if already selected
     if current_selections
         .iter()
-        .any(|s| s.field_path == field.path)
+        .any(|s| s.field_path == FieldId::from_som_path(&field.path))
     {
         return false;
     }
@@ -603,10 +603,9 @@ fn can_select_field(
     if field.is_radio()
         && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str())
     {
+        let excl_group_id = FieldId::from_som_path(&excl_group);
         let group_already_has_selection = current_selections.iter().any(|sel| {
-            form.find_excl_group_for_field(sel.field_path.as_str())
-                .map(|g| g == excl_group)
-                .unwrap_or(false)
+            sel.group_path.as_ref() == Some(&excl_group_id)
         });
         if group_already_has_selection {
             return false;

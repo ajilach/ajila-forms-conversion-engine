@@ -381,7 +381,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     state
                         .selections
                         .iter()
-                        .map(|sel| sel.field_path.as_str())
+                        .map(|sel| sel.som_path.as_str())
                         .collect::<Vec<_>>()
                 );
             }

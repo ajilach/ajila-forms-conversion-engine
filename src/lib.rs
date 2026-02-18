@@ -91,8 +91,8 @@ pub use document::{Document, Group, GroupKind, GroupSource};
 
 // Structured output
 pub use structured::{
-    DocumentEnvelope, FieldNode, FieldType, HeadingLevel, HeadingNode, InlineNode, InlineText,
-    MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, SelectionKind,
+    DocumentEnvelope, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode, InlineNode,
+    InlineText, MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, SelectionKind,
     StructuredNode, TranslatableString,
 };
 

@@ -12,7 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::structured::{ConditionalNode, FieldCondition, GroupNode, InputValue, StructuredNode};
+use crate::structured::{
+    ConditionalNode, FieldCondition, FieldId, GroupNode, InputValue, StructuredNode,
+};
 use crate::xfa::scripting::SomPath;
 
 /// Represents a group with divergent content, paired with its selection condition.
@@ -37,16 +39,20 @@ pub enum SelectionKind {
     Dropdown,
 }
 
-/// A field selection with both the specific field path and optional container/group path.
-/// For radio buttons in an exclGroup, the group_path is the exclGroup's SOM path.
-/// For standalone fields, group_path is None.
+/// A field selection with both the specific field ID and optional container/group ID.
+/// For radio buttons in an exclGroup, the group_id is the exclGroup's field ID.
+/// For standalone fields, group_id is None.
 #[derive(Debug, Clone)]
 pub struct Selection {
-    /// The SOM path of the specific field that was selected
-    pub field_path: SomPath,
-    /// The SOM path of the containing group (e.g., exclGroup for radio buttons)
+    /// The field ID of the specific field that was selected
+    pub field_path: FieldId,
+    /// The field ID of the containing group (e.g., exclGroup for radio buttons)
     /// If None, the field is standalone and field_path is used for conditionals
-    pub group_path: Option<SomPath>,
+    pub group_path: Option<FieldId>,
+    /// The original SOM path of the field (retained for XFA form interactions)
+    pub som_path: SomPath,
+    /// The original SOM path of the containing group (retained for XFA form interactions)
+    pub group_som_path: Option<SomPath>,
     /// The value that was set for this selection (e.g., radio name, "1"/"0" for checkbox, save value for dropdown)
     pub value: String,
     /// The kind of selection (radio, checkbox, or dropdown)
@@ -54,7 +60,8 @@ pub struct Selection {
 }
 
 impl Selection {
-    /// Create a new selection with field path, group path, value, and kind
+    /// Create a new selection with field path, group path, value, and kind.
+    /// Converts SOM paths to deterministic FieldIds while retaining originals.
     pub fn new(
         field_path: SomPath,
         group_path: Option<SomPath>,
@@ -62,37 +69,38 @@ impl Selection {
         kind: SelectionKind,
     ) -> Self {
         Self {
-            field_path,
-            group_path,
+            field_path: FieldId::from_som_path(&field_path),
+            group_path: group_path.as_ref().map(FieldId::from_som_path),
+            som_path: field_path,
+            group_som_path: group_path,
             value,
             kind,
         }
     }
 
-    /// Create a selection for a standalone field (no containing group)
+    /// Create a selection for a standalone field (no containing group).
+    /// Converts the SOM path to a deterministic FieldId while retaining the original.
     pub fn standalone(field_path: SomPath, value: String, kind: SelectionKind) -> Self {
         Self {
-            field_path,
+            field_path: FieldId::from_som_path(&field_path),
             group_path: None,
+            som_path: field_path,
+            group_som_path: None,
             value,
             kind,
         }
     }
 
-    /// Get the path to use for conditional field_name.
+    /// Get the FieldId to use for conditional field_name.
     /// Returns group_path if present, otherwise field_path.
-    pub fn condition_path(&self) -> &SomPath {
+    pub fn condition_path(&self) -> &FieldId {
         self.group_path.as_ref().unwrap_or(&self.field_path)
     }
 
     /// Get the value name for this selection.
-    /// For radio buttons, returns the last component of field_path (the button name).
-    /// For checkboxes and dropdowns, returns the stored value.
+    /// Returns the stored value for all selection kinds.
     pub fn value_name(&self) -> &str {
-        match self.kind {
-            SelectionKind::Radio => self.field_path.name(),
-            SelectionKind::Checkbox | SelectionKind::Dropdown => &self.value,
-        }
+        &self.value
     }
 }
 
@@ -110,14 +118,6 @@ impl MergeInput {
         Self { selections, nodes }
     }
 
-    /// Get the maximum selection depth (number of components in the longest SOM path)
-    pub fn max_selection_depth(&self) -> usize {
-        self.selections
-            .iter()
-            .map(|s| s.field_path.components().count())
-            .max()
-            .unwrap_or(0)
-    }
 }
 
 /// Recursive merger for combining multiple form states
@@ -276,7 +276,7 @@ impl RecursiveMerger {
                     }
                 } else {
                     FieldCondition {
-                        field_name: SomPath::new("unknown"),
+                        field_name: FieldId::from_som_path(&SomPath::new("unknown")),
                         value: InputValue::Text("default".to_string()),
                     }
                 };

@@ -24,9 +24,11 @@ use crate::flattened::{
     Bounds, FlattenedNode, FlattenedNodeKind, Hint, RichRun, RichText, WidgetKind,
 };
 use crate::structured::{
-    FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
-    ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
+    FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText,
+    InputValue, ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode,
+    TranslatableString,
 };
+use crate::xfa::scripting::SomPath;
 
 /// Check if a StructuredNode contains any fields (recursively).
 fn contains_fields(node: &StructuredNode) -> bool {
@@ -526,7 +528,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let mut options = Vec::new();
         let mut field_names = Vec::new();
         let mut selected_value: Option<String> = None;
-        let mut excl_group_som_path: Option<String> = None;
+        let mut excl_group_som_path: Option<SomPath> = None;
 
         for &child_idx in &group.children {
             if let Some(child_group) = self.doc.get_group(child_idx)
@@ -568,8 +570,9 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
 
         // Use the exclGroup's SOM path as the field name, panic if missing
-        let name = excl_group_som_path
+        let som_path = excl_group_som_path
             .expect("Radio button field must have ExclGroupSomPath hint. Field names found: {:?}");
+        let name = FieldId::from_som_path(&som_path);
 
         // Build NameValue options from field_names and options (labels)
         let name_values: Vec<NameValue> = field_names
@@ -583,6 +586,7 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         Some(StructuredNode::Field(FieldNode {
             name,
+            som_path: Some(som_path),
             label: None, // Radio groups typically have options as labels
             input_type: FieldType::Radio {
                 options: name_values,
@@ -627,7 +631,8 @@ impl<'a, 'b> Converter<'a, 'b> {
             .collect();
 
         Some(StructuredNode::Field(FieldNode {
-            name: self.get_field_name(field_node),
+            name: self.get_field_id(field_node),
+            som_path: self.get_som_path(field_node).cloned(),
             label: None,
             input_type: FieldType::Radio {
                 options: name_values,
@@ -664,7 +669,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         };
 
         Some(StructuredNode::Field(FieldNode {
-            name: self.get_field_name(first_field),
+            name: self.get_field_id(first_field),
+            som_path: self.get_som_path(first_field).cloned(),
             label: None, // Label typically attached by LabeledField wrapper
             input_type: FieldType::Date,
             value,
@@ -680,8 +686,10 @@ impl<'a, 'b> Converter<'a, 'b> {
         suffix_text: &Option<String>,
         generated_name: &str,
     ) -> Option<StructuredNode> {
+        let som_path = SomPath::new(generated_name);
         let field_node = StructuredNode::Field(FieldNode {
-            name: generated_name.to_string(),
+            name: FieldId::from_som_path(&som_path),
+            som_path: Some(som_path),
             label: Some(InlineText::plain(label_text.to_string())),
             input_type: FieldType::Date,
             value: None,
@@ -719,10 +727,13 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Use the full SOM path as the field name so it matches the condition
         // field_name in conditionals (consistent with radio buttons which use
         // the ExclGroupSomPath).
-        let field_name = self.get_som_path(node).unwrap_or_else(|| name.clone());
+        let field_som_path = self.get_som_path(node)
+            .cloned()
+            .unwrap_or_else(|| SomPath::new(name.clone()));
 
         Some(StructuredNode::Field(FieldNode {
-            name: field_name,
+            name: FieldId::from_som_path(&field_som_path),
+            som_path: Some(field_som_path),
             label,
             input_type: field_type,
             value: input_value,
@@ -867,20 +878,23 @@ impl<'a, 'b> Converter<'a, 'b> {
     }
 
     /// Extract the SOM path from a field's hints.
-    fn get_som_path(&self, node: &FlattenedNode) -> Option<String> {
+    fn get_som_path<'n>(&self, node: &'n FlattenedNode) -> Option<&'n SomPath> {
         for hint in &node.hints {
             if let Hint::SomPath(path) = hint {
-                return Some(path.clone());
+                return Some(path);
             }
         }
         None
     }
 
-    fn get_field_name(&self, node: &FlattenedNode) -> String {
-        if let FlattenedNodeKind::Field { name, .. } = &node.kind {
-            name.clone()
+    /// Get a FieldId from a FlattenedNode's SOM path hint, falling back to node name.
+    fn get_field_id(&self, node: &FlattenedNode) -> FieldId {
+        if let Some(som_path) = self.get_som_path(node) {
+            FieldId::from_som_path(som_path)
+        } else if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+            FieldId::from_som_path(&SomPath::new(name.clone()))
         } else {
-            String::new()
+            FieldId::from_som_path(&SomPath::new(""))
         }
     }
 

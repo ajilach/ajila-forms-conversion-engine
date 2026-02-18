@@ -405,12 +405,12 @@ pub enum Hint {
     /// SOM (Scripting Object Model) path for this field
     /// The full hierarchical path in the XFA form tree (e.g., "Form.Page.Subform.Field")
     /// Used to uniquely identify fields and for radio button group naming.
-    SomPath(String),
+    SomPath(SomPath),
 
     /// SOM path of the parent exclGroup (for radio buttons)
     /// When a field is inside an exclGroup, this stores the exclGroup's full SOM path.
     /// Used by the radio button grouper to name the group correctly.
-    ExclGroupSomPath(String),
+    ExclGroupSomPath(SomPath),
 
     /// Dropdown options extracted from XFA <items> elements.
     /// Each pair is (display_value, save_value) per XFA spec.
@@ -1356,7 +1356,7 @@ pub struct FlattenContext<'a> {
     pub parent_exclgroup_value: Option<String>,
     /// For fields inside an exclGroup: the parent exclGroup's SOM path
     /// Used for radio button group naming in the structured output
-    pub parent_exclgroup_som_path: Option<String>,
+    pub parent_exclgroup_som_path: Option<SomPath>,
     /// Current SOM path - tracks the path as we descend into the tree
     /// Used for path-based lookups in computed_values
     pub current_path: String,
@@ -1466,7 +1466,7 @@ impl<'a> FlattenContext<'a> {
 
     /// Create a child context with the parent exclGroup's SOM path
     /// Used when recursing into exclGroup children to track the group's path
-    pub fn with_exclgroup_som_path(&self, som_path: String) -> FlattenContext<'a> {
+    pub fn with_exclgroup_som_path(&self, som_path: SomPath) -> FlattenContext<'a> {
         let mut ctx = self.derive();
         ctx.parent_exclgroup_som_path = Some(som_path);
         ctx
@@ -2592,7 +2592,7 @@ impl Flattened {
                 // In flatten_single_node, the ctx was NOT extended with the field's name,
                 // so we need to append it here
                 let som_path = ctx.get_full_path(&field_name);
-                field_node.add_hint(Hint::SomPath(som_path));
+                field_node.add_hint(Hint::SomPath(SomPath::new(som_path)));
                 // Add ExclGroupSomPath hint if inside an exclGroup
                 if let Some(ref exclgroup_path) = ctx.parent_exclgroup_som_path {
                     field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));
@@ -3369,7 +3369,7 @@ impl Flattened {
                         // Add SomPath hint with full XFA path
                         // The context path already includes this field's name (via with_path_segment)
                         let som_path = child_ctx.current_path.clone();
-                        field_node.add_hint(Hint::SomPath(som_path));
+                        field_node.add_hint(Hint::SomPath(SomPath::new(som_path)));
                         // Add ExclGroupSomPath hint if inside an exclGroup
                         if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
                             field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));
@@ -3545,7 +3545,7 @@ impl Flattened {
                     let exclgroup_som_path = child_ctx.current_path.clone();
                     let exclgroup_ctx = {
                         let ctx_with_path =
-                            child_ctx.with_exclgroup_som_path(exclgroup_som_path);
+                            child_ctx.with_exclgroup_som_path(SomPath::new(exclgroup_som_path));
                         if let Some(value) = exclgroup_value.filter(|v| !v.is_empty()) {
                             ctx_with_path.with_exclgroup_value(value)
                         } else {
@@ -3711,7 +3711,7 @@ impl Flattened {
                                 // Add SomPath hint with full XFA path
                                 // The context path already includes this field's name (via with_path_segment)
                                 let som_path = child_ctx.current_path.clone();
-                                field_node.add_hint(Hint::SomPath(som_path));
+                                field_node.add_hint(Hint::SomPath(SomPath::new(som_path)));
                                 // Add ExclGroupSomPath hint if inside an exclGroup
                                 if let Some(ref exclgroup_path) = child_ctx.parent_exclgroup_som_path {
                                     field_node.add_hint(Hint::ExclGroupSomPath(exclgroup_path.clone()));

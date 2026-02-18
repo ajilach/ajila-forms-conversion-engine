@@ -6,6 +6,7 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::{Bounds, Hint};
+use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -41,7 +42,7 @@ impl RadioButtonGrouper {
     }
 
     /// Get the exclGroup SOM path for a radio button, if it has one.
-    fn get_excl_group_path(&self, doc: &Document, rb_idx: usize) -> Option<String> {
+    fn get_excl_group_path(&self, doc: &Document, rb_idx: usize) -> Option<SomPath> {
         let group = doc.get_group(rb_idx)?;
         if let GroupKind::RadioButton { field, .. } = &group.kind {
             // 'field' is an index into the children vec
@@ -315,7 +316,7 @@ impl RadioButtonGrouper {
     /// All radio buttons in the same exclGroup are grouped together regardless of position.
     fn group_by_excl_group(&self, doc: &mut Document, radio_buttons: &[usize]) {
         // Build a map of exclGroup path to radio button indices
-        let mut excl_groups: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut excl_groups: HashMap<SomPath, Vec<usize>> = HashMap::new();
 
         for &rb_idx in radio_buttons {
             if let Some(path) = self.get_excl_group_path(doc, rb_idx) {

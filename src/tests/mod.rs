@@ -3937,7 +3937,7 @@
 
         fn is_signature_date_field(node: &StructuredNode) -> bool {
             if let StructuredNode::Field(field) = node {
-                field.name.ends_with("Global_SignatureDate")
+                field.som_path_str().ends_with("Global_SignatureDate")
             } else {
                 false
             }
@@ -3945,7 +3945,7 @@
 
         fn is_fullname_field(node: &StructuredNode) -> bool {
             if let StructuredNode::Field(field) = node {
-                field.name.ends_with("FullName")
+                field.som_path_str().ends_with("FullName")
             } else {
                 false
             }
@@ -4785,7 +4785,7 @@
             for node in nodes {
                 match node {
                     StructuredNode::Field(f) => {
-                        names.push(f.name.clone());
+                        names.push(f.som_path_str().to_string());
                     }
                     StructuredNode::Group(g) => {
                         collect_field_names(&g.children, names);
@@ -4810,7 +4810,7 @@
         let forbidden_fields = ["Button_Add", "Button_Minus"];
 
         for forbidden in forbidden_fields {
-            let found = field_names.iter().any(|name| name == forbidden);
+            let found = field_names.iter().any(|name| name.ends_with(forbidden));
             assert!(
                 !found,
                 "Found forbidden field '{}' in structured output.\n\
@@ -4964,7 +4964,8 @@
 
         // Helper to check if a field has ISIN in name OR label
         fn is_isin_field(field: &FieldNode) -> bool {
-            field.name == "ISIN" || field.name.contains("ISIN")
+            let path = field.som_path_str();
+            path == "ISIN" || path.contains("ISIN")
         }
 
         // Helper to check if a field has ISIN as its label
@@ -5246,7 +5247,7 @@
             for node in nodes {
                 match node {
                     StructuredNode::Field(field) => {
-                        if field.name.contains(target_name) {
+                        if field.som_path_str().contains(target_name) {
                             return Some(field.clone());
                         }
                     }
@@ -5885,7 +5886,7 @@
         fn collect_field_names(node: &StructuredNode, names: &mut Vec<String>) {
             match node {
                 StructuredNode::Field(field) => {
-                    names.push(field.name.clone());
+                    names.push(field.som_path_str().to_string());
                 }
                 StructuredNode::Group(group) => {
                     for child in &group.children {
@@ -6397,7 +6398,7 @@
         // Find the "Firma" / "Company" field
         let firma_field = fields
             .iter()
-            .find(|f| f.name.ends_with("Firma"))
+            .find(|f| f.som_path_str().ends_with("Firma"))
             .expect("Should find field named 'Firma'");
 
         let firma_label = firma_field
@@ -6859,33 +6860,79 @@
             nodes: &[StructuredNode],
             field_suffix: &str,
         ) -> Vec<String> {
-            let mut found = Vec::new();
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(cond) => {
-                        if cond.condition.field_name.as_str().ends_with(field_suffix) {
-                            if let crate::structured::InputValue::Text(v) = &cond.condition.value {
-                                found.push(v.clone());
+            // First, find the FieldId for the field matching the suffix
+            fn find_field_id_by_suffix(
+                nodes: &[StructuredNode],
+                suffix: &str,
+            ) -> Option<crate::structured::FieldId> {
+                for node in nodes {
+                    match node {
+                        StructuredNode::Field(f) => {
+                            if f.som_path_str().ends_with(suffix) {
+                                return Some(f.name.clone());
                             }
                         }
-                        // Also recurse into conditionals
-                        found.extend(find_conditional_values_for_field(
-                            &[(*cond.content).clone()],
-                            field_suffix,
-                        ));
+                        StructuredNode::Group(g) => {
+                            if let Some(id) = find_field_id_by_suffix(&g.children, suffix) {
+                                return Some(id);
+                            }
+                        }
+                        StructuredNode::Conditional(c) => {
+                            if let Some(id) = find_field_id_by_suffix(&[(*c.content).clone()], suffix) {
+                                return Some(id);
+                            }
+                        }
+                        StructuredNode::Repeatable(r) => {
+                            if let Some(id) = find_field_id_by_suffix(&[(*r.item).clone()], suffix) {
+                                return Some(id);
+                            }
+                        }
+                        _ => {}
                     }
-                    StructuredNode::Group(group) => {
-                        found.extend(find_conditional_values_for_field(&group.children, field_suffix));
+                }
+                None
+            }
+
+            fn collect_conditional_values(
+                nodes: &[StructuredNode],
+                field_id: &crate::structured::FieldId,
+                found: &mut Vec<String>,
+            ) {
+                for node in nodes {
+                    match node {
+                        StructuredNode::Conditional(cond) => {
+                            if cond.condition.field_name == *field_id {
+                                if let crate::structured::InputValue::Text(v) = &cond.condition.value {
+                                    found.push(v.clone());
+                                }
+                            }
+                            collect_conditional_values(
+                                &[(*cond.content).clone()],
+                                field_id,
+                                found,
+                            );
+                        }
+                        StructuredNode::Group(group) => {
+                            collect_conditional_values(&group.children, field_id, found);
+                        }
+                        StructuredNode::Repeatable(rep) => {
+                            collect_conditional_values(
+                                &[(*rep.item).clone()],
+                                field_id,
+                                found,
+                            );
+                        }
+                        _ => {}
                     }
-                    StructuredNode::Repeatable(rep) => {
-                        found.extend(find_conditional_values_for_field(
-                            &[(*rep.item).clone()],
-                            field_suffix,
-                        ));
-                    }
-                    _ => {}
                 }
             }
+
+            let field_id = match find_field_id_by_suffix(nodes, field_suffix) {
+                Some(id) => id,
+                None => return Vec::new(),
+            };
+            let mut found = Vec::new();
+            collect_conditional_values(nodes, &field_id, &mut found);
             found
         }
 
@@ -6925,7 +6972,7 @@
         // The conditional fieldName must match the name of an actual field in the structured output.
         // This ensures that the HTML converter's JS can find the <select> element by name
         // and evaluate the condition correctly.
-        fn collect_all_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
+        fn collect_all_field_names(nodes: &[StructuredNode], names: &mut Vec<crate::structured::FieldId>) {
             for node in nodes {
                 match node {
                     StructuredNode::Field(f) => names.push(f.name.clone()),
@@ -6947,11 +6994,11 @@
             }
         }
 
-        fn collect_all_condition_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
+        fn collect_all_condition_field_names(nodes: &[StructuredNode], names: &mut Vec<crate::structured::FieldId>) {
             for node in nodes {
                 match node {
                     StructuredNode::Conditional(cond) => {
-                        names.push(cond.condition.field_name.as_str().to_string());
+                        names.push(cond.condition.field_name.clone());
                         collect_all_condition_field_names(&[(*cond.content).clone()], names);
                     }
                     StructuredNode::Group(group) => {

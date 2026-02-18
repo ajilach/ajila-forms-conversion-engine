@@ -1566,7 +1566,10 @@ mod tests {
         }
 
         // The two fields should have distinct IDs (based on the FieldId UUID)
-        let field_ids: Vec<&&str> = ids.iter().filter(|id| id.starts_with(&field_id_str)).collect();
+        let field_ids: Vec<&&str> = ids
+            .iter()
+            .filter(|id| id.starts_with(&field_id_str))
+            .collect();
         assert_eq!(
             field_ids.len(),
             2,
@@ -1574,10 +1577,7 @@ mod tests {
             field_id_str,
             field_ids
         );
-        assert_ne!(
-            field_ids[0], field_ids[1],
-            "Field IDs should differ"
-        );
+        assert_ne!(field_ids[0], field_ids[1], "Field IDs should differ");
 
         // label for= should match the corresponding input id=
         let id_1 = format!("{}_1", field_id_str);
