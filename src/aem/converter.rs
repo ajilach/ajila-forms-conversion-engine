@@ -22,9 +22,17 @@ const NAMESPACE_AEM: Uuid = Uuid::from_bytes([
     0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
 ]);
 
+/// Maximum number of characters for the CamelCase identifier portion of a
+/// generated name (before prefix and short-UUID suffix are added).
+const MAX_CAMEL_CASE_LEN: usize = 30;
+
+/// Number of hex characters to take from the UUID for the short suffix.
+const SHORT_UUID_LEN: usize = 8;
+
 /// Internal state carried through the conversion.
 struct ConversionContext {
-    /// Counter for generating unique names when the source node has no name.
+    /// Counter for generating unique seeds (avoids UUID collisions when two
+    /// elements share the same source text).
     counter: u32,
     /// Whether to produce deterministic UUIDs.
     deterministic: bool,
@@ -53,11 +61,126 @@ impl ConversionContext {
         }
     }
 
-    /// Generate a unique name with the given prefix.
-    fn next_name(&mut self, prefix: &str) -> String {
+    /// Build a meaningful name from a `prefix` and human-readable `source_text`.
+    ///
+    /// The result has the form `PREFIX_CamelCaseIdentifier_abcd1234` where:
+    /// - `PREFIX` is the component-type prefix (e.g. `TXT`, `PN`, `ST`, …)
+    /// - `CamelCaseIdentifier` is derived from `source_text`, truncated to
+    ///   [`MAX_CAMEL_CASE_LEN`] characters at a word boundary.
+    /// - `abcd1234` is the first [`SHORT_UUID_LEN`] hex characters of a
+    ///   deterministic UUID v5 (or random v4).
+    ///
+    /// If `source_text` yields an empty CamelCase part the name degrades to
+    /// `PREFIX_abcd1234`.
+    fn make_name(&mut self, prefix: &str, source_text: &str) -> String {
         self.counter += 1;
-        format!("{}_{}", prefix, self.counter)
+        let camel = to_camel_case(source_text);
+        // Seed includes counter so that identical labels still produce
+        // distinct UUIDs.
+        let seed = format!("{}_{}_{}", prefix, camel, self.counter);
+        let uuid = self.uuid(&seed);
+        let short = short_uuid(&uuid);
+        if camel.is_empty() {
+            format!("{}_{}", prefix, short)
+        } else {
+            format!("{}_{}_{}", prefix, camel, short)
+        }
     }
+}
+
+// ============================================================================
+// Naming helpers
+// ============================================================================
+
+/// Convert an arbitrary human-readable string to UpperCamelCase, truncated to
+/// [`MAX_CAMEL_CASE_LEN`] characters at a word boundary.
+///
+/// The function:
+/// 1. Strips HTML tags.
+/// 2. Replaces any non-alphanumeric / non-whitespace character with a space.
+/// 3. Splits on whitespace, capitalises each word's first letter.
+/// 4. Joins without separator.
+/// 5. Truncates to `MAX_CAMEL_CASE_LEN` at a word boundary (i.e. at an
+///    uppercase letter that starts a new word).
+fn to_camel_case(input: &str) -> String {
+    // 1. Strip HTML tags
+    let no_tags = strip_html_tags(input);
+
+    // 2. Replace non-ASCII and non-alphanumeric chars with space
+    //    (JCR/AEM node names must be ASCII-safe)
+    let cleaned: String = no_tags
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || (c.is_ascii_whitespace()) {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect();
+
+    // 3. Split on whitespace, capitalise first letter of each word
+    let words: Vec<String> = cleaned
+        .split_whitespace()
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(first) => {
+                    let upper: String = first.to_uppercase().collect();
+                    let rest: String = chars.collect();
+                    format!("{}{}", upper, rest.to_lowercase())
+                }
+                None => String::new(),
+            }
+        })
+        .collect();
+
+    // 4. Join
+    let joined = words.join("");
+
+    // 5. Truncate at MAX_CAMEL_CASE_LEN on a word boundary
+    truncate_camel_case(&joined, MAX_CAMEL_CASE_LEN)
+}
+
+/// Truncate a CamelCase string to at most `max_len` characters, cutting at a
+/// word boundary (uppercase letter) when possible.
+fn truncate_camel_case(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    // Walk backwards from max_len to find an uppercase letter boundary
+    let bytes = s.as_bytes();
+    for i in (1..max_len).rev() {
+        if bytes[i].is_ascii_uppercase() {
+            return s[..i].to_string();
+        }
+    }
+    // No good boundary found — hard truncate
+    s[..max_len].to_string()
+}
+
+/// Strip HTML tags from a string (simple regex-free approach).
+fn strip_html_tags(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut inside_tag = false;
+    for ch in input.chars() {
+        if ch == '<' {
+            inside_tag = true;
+        } else if ch == '>' {
+            inside_tag = false;
+            result.push(' '); // replace tag with space
+        } else if !inside_tag {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Return the first [`SHORT_UUID_LEN`] hex characters of a UUID.
+fn short_uuid(uuid: &Uuid) -> String {
+    let hex = uuid.as_simple().to_string();
+    hex[..SHORT_UUID_LEN].to_string()
 }
 
 // ============================================================================
@@ -107,7 +230,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
         if let Some(title) = title {
             // H2 section → wrap in a Panel
-            let name = ctx.next_name("PN");
+            let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
             children.push(AemNode::Panel {
                 uuid,
@@ -120,7 +243,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         } else {
             // Preamble (before first H2) → also wrap in a Panel
             if !converted.is_empty() {
-                let name = ctx.next_name("PN");
+                let name = ctx.make_name("PN", "");
                 let uuid = ctx.uuid(&name);
                 children.push(AemNode::Panel {
                     uuid,
@@ -192,7 +315,8 @@ fn convert_heading(
     };
     let plain = inline_text_to_html(&h.content, &ctx.language);
     let content = format!("<{tag}>{plain}</{tag}>");
-    let name = ctx.next_name("ST");
+    let source_text = h.content.as_plain_text();
+    let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
         uuid,
@@ -211,7 +335,8 @@ fn convert_paragraph(
 ) -> AemNode {
     let html = inline_text_to_html(&p.content, &ctx.language);
     let content = format!("<p>{html}</p>");
-    let name = ctx.next_name("ST");
+    let source_text = p.content.as_plain_text();
+    let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
         uuid,
@@ -238,7 +363,12 @@ fn convert_list(
         })
         .collect();
     let content = format!("<{tag}>{items_html}</{tag}>");
-    let name = ctx.next_name("ST");
+    let first_item_text = list
+        .items
+        .first()
+        .map(|i| i.as_plain_text())
+        .unwrap_or_default();
+    let name = ctx.make_name("ST", &first_item_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
         uuid,
@@ -262,7 +392,7 @@ fn convert_image(
         let b64 = base64_encode(&img.content);
         format!("<p><img src=\"data:image/png;base64,{b64}\" alt=\"{alt}\" /></p>")
     };
-    let name = ctx.next_name("IMG");
+    let name = ctx.make_name("IMG", alt);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
         uuid,
@@ -281,7 +411,12 @@ fn convert_table(
 ) -> AemNode {
     // Convert the table into a panel with child rows.
     // Each row becomes a sub-panel with cells distributed across the grid.
-    let name = ctx.next_name("TBL");
+    let caption_text = table
+        .caption
+        .as_ref()
+        .map(|c| c.as_plain_text())
+        .unwrap_or_default();
+    let name = ctx.make_name("TBL", &caption_text);
     let uuid = ctx.uuid(&name);
     let title = table
         .caption
@@ -295,7 +430,7 @@ fn convert_table(
     if let Some(header) = &table.header {
         let cols = header.cells.len().max(1) as u32;
         let col_span = ctx.grid_columns / cols;
-        let row_name = ctx.next_name("TBLHDR");
+        let row_name = ctx.make_name("TBLHDR", "");
         let row_uuid = ctx.uuid(&row_name);
         let cells: Vec<AemNode> = header
             .cells
@@ -316,7 +451,7 @@ fn convert_table(
     for row in &table.rows {
         let cols = row.cells.len().max(1) as u32;
         let col_span = ctx.grid_columns / cols;
-        let row_name = ctx.next_name("TBLROW");
+        let row_name = ctx.make_name("TBLROW", "");
         let row_uuid = ctx.uuid(&row_name);
         let cells: Vec<AemNode> = row
             .cells
@@ -355,9 +490,26 @@ fn convert_field(
         .map(|l| inline_text_to_html(l, &ctx.language))
         .unwrap_or_default();
 
+    // Extract source text for the name heuristic:
+    // 1. Field label (if available)
+    // 2. Last SOM path segment (if available)
+    // 3. Empty string (fallback)
+    let source_text = f
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            f.som_path
+                .as_ref()
+                .and_then(|p| p.as_str().rsplit('.').next())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+
     match &f.input_type {
         FieldType::Text { max_length, .. } => {
-            let name = format!("TF_{}", &f.name);
+            let name = ctx.make_name("TXT", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
                 uuid,
@@ -371,7 +523,7 @@ fn convert_field(
         }
 
         FieldType::Number { .. } => {
-            let name = format!("NF_{}", &f.name);
+            let name = ctx.make_name("NB", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::NumberField {
                 uuid,
@@ -384,7 +536,7 @@ fn convert_field(
         }
 
         FieldType::Date => {
-            let name = format!("DATE_{}", &f.name);
+            let name = ctx.make_name("DATE", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::DatePicker {
                 uuid,
@@ -396,9 +548,22 @@ fn convert_field(
             }
         }
 
-        FieldType::Email | FieldType::Tel => {
-            // Map to a text field with appropriate CSS hint
-            let name = format!("TF_{}", &f.name);
+        FieldType::Email => {
+            let name = ctx.make_name("EML", &source_text);
+            let uuid = ctx.uuid(&name);
+            AemNode::TextField {
+                uuid,
+                name,
+                label,
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan,
+            }
+        }
+
+        FieldType::Tel => {
+            let name = ctx.make_name("TEL", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
                 uuid,
@@ -412,7 +577,7 @@ fn convert_field(
         }
 
         FieldType::Bool => {
-            let name = format!("CB_{}", &f.name);
+            let name = ctx.make_name("CB", &source_text);
             let uuid = ctx.uuid(&name);
             let option_label = label.clone();
             AemNode::Checkbox {
@@ -429,7 +594,7 @@ fn convert_field(
         }
 
         FieldType::Radio { options } => {
-            let name = format!("RB_{}", &f.name);
+            let name = ctx.make_name("RB", &source_text);
             let uuid = ctx.uuid(&name);
             let aem_options = convert_name_values(options, &ctx.language);
             AemNode::RadioButton {
@@ -445,7 +610,7 @@ fn convert_field(
         }
 
         FieldType::Select { options } => {
-            let name = format!("DD_{}", &f.name);
+            let name = ctx.make_name("DD", &source_text);
             let uuid = ctx.uuid(&name);
             let aem_options = convert_name_values(options, &ctx.language);
             AemNode::Dropdown {
@@ -466,7 +631,7 @@ fn convert_repeatable(
     config: &AemConfig,
     ctx: &mut ConversionContext,
 ) -> AemNode {
-    let name = ctx.next_name("RPT");
+    let name = ctx.make_name("RPT", "");
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&r.item, config, ctx, config.grid_columns);
     let children = inner.into_iter().collect();
@@ -481,7 +646,7 @@ fn convert_repeatable(
 }
 
 fn convert_group(g: &GroupNode, config: &AemConfig, ctx: &mut ConversionContext) -> AemNode {
-    let name = ctx.next_name("PN");
+    let name = ctx.make_name("PN", "");
     let uuid = ctx.uuid(&name);
     let children: Vec<AemNode> = g
         .children
@@ -503,7 +668,7 @@ fn convert_conditional(
     config: &AemConfig,
     ctx: &mut ConversionContext,
 ) -> AemNode {
-    let name = ctx.next_name("COND");
+    let name = ctx.make_name("COND", "");
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&c.content, config, ctx, config.grid_columns);
     let children: Vec<AemNode> = inner.into_iter().collect();
@@ -530,7 +695,7 @@ fn convert_grid_layout(
     config: &AemConfig,
     ctx: &mut ConversionContext,
 ) -> AemNode {
-    let name = ctx.next_name("GRID");
+    let name = ctx.make_name("GRID", "");
     let uuid = ctx.uuid(&name);
     let total = gl.columns as u32;
     let children: Vec<AemNode> = gl
@@ -650,6 +815,41 @@ mod tests {
         AemConfig {
             deterministic_uuids: true,
             ..Default::default()
+        }
+    }
+
+    /// Assert that an AEM name matches the pattern `PREFIX_CamelCase_hexhexhex`
+    /// or `PREFIX_hexhexhex` (when no CamelCase part is available).
+    fn assert_name_pattern(name: &str, expected_prefix: &str, expected_camel_contains: &str) {
+        assert!(
+            name.starts_with(&format!("{}_", expected_prefix)),
+            "Name '{}' should start with '{}_'",
+            name,
+            expected_prefix
+        );
+        // Last segment (after final _) must be an 8-char hex string
+        let last_underscore = name.rfind('_').expect("Name should contain _");
+        let suffix = &name[last_underscore + 1..];
+        assert_eq!(
+            suffix.len(),
+            8,
+            "Short UUID suffix '{}' should be 8 chars in '{}'",
+            suffix,
+            name
+        );
+        assert!(
+            suffix.chars().all(|c| c.is_ascii_hexdigit()),
+            "Suffix '{}' should be hex digits in '{}'",
+            suffix,
+            name
+        );
+        if !expected_camel_contains.is_empty() {
+            assert!(
+                name.contains(expected_camel_contains),
+                "Name '{}' should contain '{}'",
+                name,
+                expected_camel_contains
+            );
         }
     }
 
@@ -881,8 +1081,7 @@ mod tests {
                 max_chars,
                 ..
             } => {
-                let expected_id: crate::structured::FieldId = "firstName".into();
-                assert_eq!(name, &format!("TF_{}", expected_id));
+                assert_name_pattern(name, "TXT", "FirstName");
                 assert_eq!(label, "First Name");
                 assert_eq!(*max_chars, Some(50));
             }
@@ -916,8 +1115,7 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::RadioButton { name, options, .. } => {
-                let expected_id: crate::structured::FieldId = "gender".into();
-                assert_eq!(name, &format!("RB_{}", expected_id));
+                assert_name_pattern(name, "RB", "Gender");
                 assert_eq!(options.len(), 2);
                 assert_eq!(options[0].label, "Male");
                 assert_eq!(options[0].value, "M");
@@ -952,8 +1150,7 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::Dropdown { name, options, .. } => {
-                let expected_id: crate::structured::FieldId = "country".into();
-                assert_eq!(name, &format!("DD_{}", expected_id));
+                assert_name_pattern(name, "DD", "Country");
                 assert_eq!(options.len(), 2);
             }
             other => panic!("Expected Dropdown, got {:?}", other),
@@ -975,8 +1172,7 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::Checkbox { name, options, .. } => {
-                let expected_id: crate::structured::FieldId = "agreeTerms".into();
-                assert_eq!(name, &format!("CB_{}", expected_id));
+                assert_name_pattern(name, "CB", "IAgreeToTheTerms");
                 assert_eq!(options.len(), 1);
                 assert_eq!(options[0].value, "true");
             }
@@ -999,8 +1195,7 @@ mod tests {
         assert_eq!(children.len(), 1);
         match &children[0] {
             AemNode::DatePicker { name, label, .. } => {
-                let expected_id: crate::structured::FieldId = "birthDate".into();
-                assert_eq!(name, &format!("DATE_{}", expected_id));
+                assert_name_pattern(name, "DATE", "DateOfBirth");
                 assert_eq!(label, "Date of Birth");
             }
             other => panic!("Expected DatePicker, got {:?}", other),
@@ -1165,6 +1360,287 @@ mod tests {
                 }
             }
             other => panic!("Expected Panel, got {:?}", other),
+        }
+    }
+
+    // ========================================================================
+    // Naming heuristic tests
+    // ========================================================================
+
+    #[test]
+    fn to_camel_case_basic() {
+        assert_eq!(to_camel_case("First Name"), "FirstName");
+        assert_eq!(to_camel_case("Date of Birth"), "DateOfBirth");
+        assert_eq!(to_camel_case("hello world"), "HelloWorld");
+    }
+
+    #[test]
+    fn to_camel_case_strips_html() {
+        assert_eq!(to_camel_case("<b>bold text</b>"), "BoldText");
+        assert_eq!(to_camel_case("<h3>Sub Title</h3>"), "SubTitle");
+    }
+
+    #[test]
+    fn to_camel_case_strips_special_chars() {
+        assert_eq!(
+            to_camel_case("I agree to the terms & conditions!"),
+            "IAgreeToTheTermsConditions"
+        );
+        assert_eq!(to_camel_case("field-name_here"), "FieldNameHere");
+        assert_eq!(to_camel_case("hello/world"), "HelloWorld");
+    }
+
+    #[test]
+    fn to_camel_case_truncates_at_word_boundary() {
+        // "ThisIsAVeryLongFieldLabelThatExceedsTheMaximumLength" > 30 chars
+        let long = "this is a very long field label that exceeds the maximum length";
+        let result = to_camel_case(long);
+        assert!(
+            result.len() <= MAX_CAMEL_CASE_LEN,
+            "CamelCase '{}' (len {}) should be <= {}",
+            result,
+            result.len(),
+            MAX_CAMEL_CASE_LEN
+        );
+        // Should start with the first words
+        assert!(result.starts_with("ThisIsAVeryLong"));
+    }
+
+    #[test]
+    fn to_camel_case_empty_input() {
+        assert_eq!(to_camel_case(""), "");
+        assert_eq!(to_camel_case("   "), "");
+        assert_eq!(to_camel_case("!!!"), "");
+    }
+
+    #[test]
+    fn to_camel_case_numeric_input() {
+        assert_eq!(to_camel_case("123 abc"), "123Abc");
+        assert_eq!(to_camel_case("42"), "42");
+    }
+
+    #[test]
+    fn short_uuid_returns_8_hex_chars() {
+        let uuid = Uuid::new_v5(&NAMESPACE_AEM, b"test");
+        let short = short_uuid(&uuid);
+        assert_eq!(short.len(), 8);
+        assert!(short.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn make_name_with_text_produces_prefix_camel_uuid() {
+        let config = default_config();
+        let mut ctx = ConversionContext::new(&config);
+        let name = ctx.make_name("TXT", "First Name");
+        assert_name_pattern(&name, "TXT", "FirstName");
+    }
+
+    #[test]
+    fn make_name_without_text_produces_prefix_uuid() {
+        let config = default_config();
+        let mut ctx = ConversionContext::new(&config);
+        let name = ctx.make_name("PN", "");
+        assert_name_pattern(&name, "PN", "");
+        // Should be PREFIX_shortUuid (no CamelCase middle part)
+        let parts: Vec<&str> = name.splitn(2, '_').collect();
+        assert_eq!(parts[0], "PN");
+        assert_eq!(parts[1].len(), 8, "Should be just the short UUID");
+    }
+
+    #[test]
+    fn make_name_unique_for_identical_labels() {
+        let config = default_config();
+        let mut ctx = ConversionContext::new(&config);
+        let name1 = ctx.make_name("TXT", "Same Label");
+        let name2 = ctx.make_name("TXT", "Same Label");
+        assert_ne!(
+            name1, name2,
+            "Identical labels should produce different names"
+        );
+        // Both should follow the correct pattern
+        assert_name_pattern(&name1, "TXT", "SameLabel");
+        assert_name_pattern(&name2, "TXT", "SameLabel");
+    }
+
+    #[test]
+    fn make_name_deterministic_across_runs() {
+        let config = default_config();
+        let mut ctx1 = ConversionContext::new(&config);
+        let mut ctx2 = ConversionContext::new(&config);
+        let name1 = ctx1.make_name("ST", "Hello World");
+        let name2 = ctx2.make_name("ST", "Hello World");
+        assert_eq!(name1, name2, "Deterministic mode should produce same names");
+    }
+
+    #[test]
+    fn field_name_uses_label_text() {
+        let nodes = vec![StructuredNode::Field(FieldNode {
+            name: "some_uuid_path".into(),
+            som_path: None,
+            label: Some(InlineText::plain("Account Number")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextField { name, .. } => {
+                assert_name_pattern(name, "TXT", "AccountNumber");
+            }
+            other => panic!("Expected TextField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn field_name_falls_back_to_som_path() {
+        use crate::xfa::scripting::SomPath;
+        let nodes = vec![StructuredNode::Field(FieldNode {
+            name: "some_path".into(),
+            som_path: Some(SomPath::new("UBSForms.Page.Details.TF_FamilyName")),
+            label: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextField { name, .. } => {
+                // Should use the last SOM path segment
+                assert_name_pattern(name, "TXT", "TfFamilyname");
+            }
+            other => panic!("Expected TextField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn email_field_uses_eml_prefix() {
+        let nodes = vec![StructuredNode::Field(FieldNode {
+            name: "email".into(),
+            som_path: None,
+            label: Some(InlineText::plain("Email Address")),
+            input_type: FieldType::Email,
+            value: None,
+            placeholder: None,
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextField { name, .. } => {
+                assert_name_pattern(name, "EML", "EmailAddress");
+            }
+            other => panic!("Expected TextField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tel_field_uses_tel_prefix() {
+        let nodes = vec![StructuredNode::Field(FieldNode {
+            name: "phone".into(),
+            som_path: None,
+            label: Some(InlineText::plain("Mobile Phone")),
+            input_type: FieldType::Tel,
+            value: None,
+            placeholder: None,
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextField { name, .. } => {
+                assert_name_pattern(name, "TEL", "MobilePhone");
+            }
+            other => panic!("Expected TextField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn number_field_uses_nb_prefix() {
+        let nodes = vec![StructuredNode::Field(FieldNode {
+            name: "amount".into(),
+            som_path: None,
+            label: Some(InlineText::plain("Amount")),
+            input_type: FieldType::Number {
+                min: None,
+                max: None,
+                step: None,
+            },
+            value: None,
+            placeholder: None,
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::NumberField { name, .. } => {
+                assert_name_pattern(name, "NB", "Amount");
+            }
+            other => panic!("Expected NumberField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn heading_name_uses_text_content() {
+        let nodes = vec![StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H3,
+            content: InlineText::plain("Client Details"),
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextDraw { name, .. } => {
+                assert_name_pattern(name, "ST", "ClientDetails");
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn paragraph_name_uses_text_content() {
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("Please fill in the form below."),
+        })];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        match &children[0] {
+            AemNode::TextDraw { name, .. } => {
+                assert_name_pattern(name, "ST", "PleaseFillInTheFormBelow");
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn h2_section_panel_name_uses_title() {
+        let nodes = vec![
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H2,
+                content: InlineText::plain("Personal Information"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("details"),
+            }),
+        ];
+        let root = convert_to_aem(&nodes, &default_config());
+        match &root {
+            AemNode::Root { children, .. } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    AemNode::Panel { name, title, .. } => {
+                        assert_name_pattern(name, "PN", "PersonalInformation");
+                        assert_eq!(title, "Personal Information");
+                    }
+                    other => panic!("Expected Panel, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Root, got {:?}", other),
         }
     }
 }

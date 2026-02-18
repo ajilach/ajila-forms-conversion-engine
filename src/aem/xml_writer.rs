@@ -1028,7 +1028,7 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
         write_items_start(w, config);
 
         // Remove button
-        write_repeatable_remove_button(w, config);
+        write_repeatable_remove_button(w, config, &panel_name);
 
         // Children wrapper panel (panel_copy_copy)
         {
@@ -1070,7 +1070,7 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     }
 
     // Add button (tertiarybutton)
-    write_repeatable_add_button(w, config);
+    write_repeatable_add_button(w, config, &panel_name, *max_occur);
 
     write_items_end(w); // outer items
 
@@ -1286,7 +1286,11 @@ fn write_toolbar(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
 }
 
 /// Write the remove button inside a repeatable panel's items.
-fn write_repeatable_remove_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+fn write_repeatable_remove_button(
+    w: &mut Writer<&mut Cursor<Vec<u8>>>,
+    config: &AemConfig,
+    panel_name: &str,
+) {
     let mut btn = BytesStart::new("removebutton");
     push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
@@ -1307,12 +1311,37 @@ fn write_repeatable_remove_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: 
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
 
+    // <fd:scripts> with click handler to remove the current instance
+    let remove_script = format!(
+        "{pn}.instanceManager.removeInstance(this.parent.index);\\\
+\
+\
+var len = {pn}.instanceManager.instances.length;\\\
+for (var i = 0; i < len; i++) {{\\\
+  {pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
+}}",
+        pn = panel_name
+    );
+    let click_json = format!(
+        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Click\"\\,\"field\":\"BT_Remove\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
+        script = remove_script
+    );
+    let mut scripts = BytesStart::new("fd:scripts");
+    scripts.push_attribute(("fd:click", click_json.as_str()));
+    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(scripts)).unwrap();
+
     w.write_event(Event::End(BytesEnd::new("removebutton")))
         .unwrap();
 }
 
 /// Write the Add button for a repeatable section.
-fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+fn write_repeatable_add_button(
+    w: &mut Writer<&mut Cursor<Vec<u8>>>,
+    config: &AemConfig,
+    panel_name: &str,
+    max_occur: u32,
+) {
     let mut btn = BytesStart::new("tertiarybutton");
     push_jcr_timestamps(&mut btn, config);
     btn.push_attribute(("jcr:primaryType", "nt:unstructured"));
@@ -1332,6 +1361,46 @@ fn write_repeatable_add_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &Ae
     // <fd:rules>
     let rules = BytesStart::new("fd:rules");
     w.write_event(Event::Empty(rules)).unwrap();
+
+    // <fd:scripts> with click and init handlers
+    let add_click_script = format!(
+        "{pn}.instanceManager.addInstance();\\\
+\
+\
+var len = {pn}.instanceManager.instances.length;\\\
+for (var i = 0; i < len; i++) {{\\\
+  {pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
+}}\\\
+if (len >= {max}) {{\\\
+  this.visible = false;\\\
+}}",
+        pn = panel_name,
+        max = max_occur
+    );
+    let add_init_script = format!(
+        "var len = {pn}.instanceManager.instances.length;\\\
+for (var i = 0; i < len; i++) {{\\\
+  {pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
+}}\\\
+if (len >= {max}) {{\\\
+  this.visible = false;\\\
+}}",
+        pn = panel_name,
+        max = max_occur
+    );
+    let click_json = format!(
+        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Click\"\\,\"field\":\"BT_Add\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
+        script = add_click_script
+    );
+    let init_json = format!(
+        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Initialize\"\\,\"field\":\"BT_Add\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
+        script = add_init_script
+    );
+    let mut scripts = BytesStart::new("fd:scripts");
+    scripts.push_attribute(("fd:click", click_json.as_str()));
+    scripts.push_attribute(("fd:init", init_json.as_str()));
+    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(scripts)).unwrap();
 
     w.write_event(Event::End(BytesEnd::new("tertiarybutton")))
         .unwrap();

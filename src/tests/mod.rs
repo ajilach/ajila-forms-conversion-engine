@@ -7250,3 +7250,61 @@
             );
         }
     }
+
+    #[test]
+    fn test_aaei_repeatable_buttons_have_scripts() {
+        // Test that the AEM output for AAEI has proper add/remove button scripts
+        // on the repeatable section.
+        use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+        let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = crate::document::Document::from_flattened(&flattened);
+        crate::document::modules::run_analysis_pipeline(&mut doc);
+
+        let structured_nodes = crate::structured::convert(&doc);
+
+        let config = AemConfig {
+            form_title: "AAEI Test".into(),
+            form_code: "AAEI_019_DE".into(),
+            ..Default::default()
+        };
+
+        let root = convert_to_aem(&structured_nodes, &config);
+        let xml = generate_aem_xml(&root, &config);
+
+        // The inner repeatable panel name is PN_<repeatable_name>
+        // (the converter prefixes with PN_ — find it in the output)
+        // Look for instanceManager references in button scripts
+        assert!(
+            xml.contains("instanceManager.removeInstance("),
+            "BT_Remove should have a removeInstance script"
+        );
+        assert!(
+            xml.contains("instanceManager.addInstance()"),
+            "BT_Add should have an addInstance script"
+        );
+
+        // Verify BT_Remove click script structure
+        assert!(
+            xml.contains("fd:click=") && xml.contains("BT_Remove"),
+            "BT_Remove should have an fd:click handler"
+        );
+
+        // Verify BT_Add has both click and init handlers
+        assert!(
+            xml.contains("fd:init="),
+            "BT_Add should have an fd:init handler for initial visibility"
+        );
+
+        // Verify the scripts reference BT_Remove visibility logic
+        assert!(
+            xml.contains("BT_Remove.visible"),
+            "Button scripts should manage BT_Remove visibility"
+        );
+    }
