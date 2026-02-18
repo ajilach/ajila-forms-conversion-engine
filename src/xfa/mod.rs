@@ -980,8 +980,7 @@ impl XfaNode {
         let pts_per_cm = Decimal::from_str("28.34645669291339").unwrap(); // 72 / 2.54 with high precision
 
         if let Some(val) = s.strip_suffix("pt") {
-            Decimal::from_str(val.trim())
-                .map_err(|e| format!("Failed to parse dimension: {}", e))
+            Decimal::from_str(val.trim()).map_err(|e| format!("Failed to parse dimension: {}", e))
         } else if let Some(val) = s.strip_suffix("in") {
             Decimal::from_str(val.trim())
                 .map(|v| v * pts_per_inch)
@@ -1478,10 +1477,7 @@ pub fn collect_text_variables(nodes: &[XfaNode]) -> HashMap<String, String> {
     text_vars.into_iter().collect()
 }
 
-fn collect_text_variables_recursive(
-    nodes: &[XfaNode],
-    text_vars: &mut Vec<(String, String)>,
-) {
+fn collect_text_variables_recursive(nodes: &[XfaNode], text_vars: &mut Vec<(String, String)>) {
     for node in nodes {
         if let XfaNodeKind::Element { tag_name, .. } = &node.kind
             && tag_name == "variables"
@@ -1493,8 +1489,7 @@ fn collect_text_variables_recursive(
                     ..
                 } = &child.kind
                     && child_tag == "text"
-                    && let Some(name) =
-                        child.name.as_ref().or_else(|| child.attributes.get("name"))
+                    && let Some(name) = child.name.as_ref().or_else(|| child.attributes.get("name"))
                 {
                     let value = text_content.clone().unwrap_or_default();
                     text_vars.push((name.clone(), value));
@@ -1542,12 +1537,23 @@ mod context_extraction_tests {
     fn bare_node(kind: XfaNodeKind) -> XfaNode {
         XfaNode {
             kind,
-            x: None, y: None, w: None, h: None,
-            min_w: None, min_h: None, max_w: None, max_h: None,
-            layout: None, rotate: 0,
-            margin_top: None, margin_bottom: None,
-            margin_left: None, margin_right: None,
-            border: None, font: None, para: None,
+            x: None,
+            y: None,
+            w: None,
+            h: None,
+            min_w: None,
+            min_h: None,
+            max_w: None,
+            max_h: None,
+            layout: None,
+            rotate: 0,
+            margin_top: None,
+            margin_bottom: None,
+            margin_left: None,
+            margin_right: None,
+            border: None,
+            font: None,
+            para: None,
             name: None,
             presence: Presence::Visible,
             attributes: HashMap::new(),
@@ -1584,7 +1590,8 @@ mod context_extraction_tests {
         root.name = Some("RootForm".to_string());
         root.children = subform_children;
         if let Some(loc) = locale {
-            root.attributes.insert("locale".to_string(), loc.to_string());
+            root.attributes
+                .insert("locale".to_string(), loc.to_string());
         }
 
         vec![root]
@@ -1659,7 +1666,8 @@ mod context_extraction_tests {
 
         let mut root = bare_node(XfaNodeKind::Subform);
         root.name = Some("RootForm".to_string());
-        root.attributes.insert("locale".to_string(), "en_US".to_string());
+        root.attributes
+            .insert("locale".to_string(), "en_US".to_string());
 
         let nodes = vec![page_set, root];
         let found = find_root_subform(&nodes).unwrap();

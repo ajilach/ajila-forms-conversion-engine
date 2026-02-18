@@ -250,8 +250,6 @@ pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, E
     Ok(None)
 }
 
-
-
 // ============================================================================
 // FormState — a single snapshot of the form
 // ============================================================================
@@ -651,8 +649,5 @@ pub fn run_exhaustive_to_envelope(
     // Override language if caller provides one (e.g. for translation merging)
     context.set_language(language.to_string());
     let content = merge_form_states(&form_states, context.clone());
-    Ok(DocumentEnvelope {
-        context,
-        content,
-    })
+    Ok(DocumentEnvelope { context, content })
 }
