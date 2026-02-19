@@ -6,12 +6,12 @@
 use uuid::Uuid;
 
 use crate::structured::{
-    ConditionalNode, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel, HeadingNode,
-    ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel,
+    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
-use super::{AemConfig, AemNode, AemOption, OptionAlignment};
+use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
 
 // ============================================================================
 // Conversion context
@@ -29,6 +29,17 @@ const MAX_CAMEL_CASE_LEN: usize = 30;
 /// Number of hex characters to take from the UUID for the short suffix.
 const SHORT_UUID_LEN: usize = 8;
 
+/// A collected conditional: maps a trigger field’s `FieldId` to a conditional
+/// panel name and the value that should make it visible.
+struct CollectedCondition {
+    /// The `FieldId` of the field whose value triggers visibility.
+    field_id: FieldId,
+    /// AEM `name` of the conditional panel.
+    panel_name: String,
+    /// The value that makes the panel visible.
+    value: InputValue,
+}
+
 /// Internal state carried through the conversion.
 struct ConversionContext {
     /// Counter for generating unique seeds (avoids UUID collisions when two
@@ -40,6 +51,8 @@ struct ConversionContext {
     language: String,
     /// Default grid column span (total columns).
     grid_columns: u32,
+    /// Conditions collected during the first pass.
+    collected_conditions: Vec<CollectedCondition>,
 }
 
 impl ConversionContext {
@@ -49,6 +62,7 @@ impl ConversionContext {
             deterministic: config.deterministic_uuids,
             language: config.master_language.clone(),
             grid_columns: config.grid_columns,
+            collected_conditions: Vec::new(),
         }
     }
 
@@ -239,6 +253,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 children: converted,
                 is_page: true,
                 dor_exclude: false,
+                visible: true,
             });
         } else {
             // Preamble (before first H2) → also wrap in a Panel
@@ -252,9 +267,16 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     children: converted,
                     is_page: true,
                     dor_exclude: false,
+                    visible: true,
                 });
             }
         }
+    }
+
+    // --- Second pass: wire conditions onto trigger fields ---
+    let conditions = std::mem::take(&mut ctx.collected_conditions);
+    if !conditions.is_empty() {
+        wire_conditions(&mut children, &conditions);
     }
 
     AemNode::Root {
@@ -444,6 +466,7 @@ fn convert_table(
             children: cells,
             is_page: false,
             dor_exclude: false,
+            visible: true,
         });
     }
 
@@ -465,6 +488,7 @@ fn convert_table(
             children: cells,
             is_page: false,
             dor_exclude: false,
+            visible: true,
         });
     }
 
@@ -475,6 +499,7 @@ fn convert_table(
         children,
         is_page: false,
         dor_exclude: false,
+        visible: true,
     }
 }
 
@@ -590,6 +615,8 @@ fn convert_field(
                 alignment: OptionAlignment::Horizontal,
                 visible: true,
                 colspan,
+                field_id: Some(f.name.clone()),
+                conditions: Vec::new(),
             }
         }
 
@@ -606,6 +633,8 @@ fn convert_field(
                 mandatory: true,
                 visible: true,
                 colspan,
+                field_id: Some(f.name.clone()),
+                conditions: Vec::new(),
             }
         }
 
@@ -621,6 +650,8 @@ fn convert_field(
                 mandatory: false,
                 visible: true,
                 colspan,
+                field_id: Some(f.name.clone()),
+                conditions: Vec::new(),
             }
         }
     }
@@ -660,6 +691,7 @@ fn convert_group(g: &GroupNode, config: &AemConfig, ctx: &mut ConversionContext)
         children,
         is_page: false,
         dor_exclude: false,
+        visible: true,
     }
 }
 
@@ -672,21 +704,29 @@ fn convert_conditional(
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&c.content, config, ctx, config.grid_columns);
     let children: Vec<AemNode> = inner.into_iter().collect();
-    // The condition is stored as the panel title for traceability.
-    // Proper fd:rules / visibility expressions would be generated in a future
-    // iteration.
     let title = format!(
         "Condition: {} = {}",
         c.condition.field_name,
         format_input_value(&c.condition.value)
     );
+
+    // Record the condition so the second pass can wire it to the trigger field.
+    ctx.collected_conditions.push(CollectedCondition {
+        field_id: c.condition.field_name.clone(),
+        panel_name: name.clone(),
+        value: c.condition.value.clone(),
+    });
+
+    // Conditional panels start hidden; the trigger field’s valueCommit script
+    // will show them when the value matches.
     AemNode::Panel {
         uuid,
         name,
         title,
         children,
         is_page: false,
-        dor_exclude: false,
+        dor_exclude: true,
+        visible: false,
     }
 }
 
@@ -713,6 +753,78 @@ fn convert_grid_layout(
         children,
         is_page: false,
         dor_exclude: false,
+        visible: true,
+    }
+}
+
+// ============================================================================
+// Two-pass condition wiring
+// ============================================================================
+
+/// Wire collected conditions onto their trigger field nodes.
+///
+/// Groups conditions by `FieldId`, then walks the tree to find the trigger
+/// field (RadioButton, Checkbox, or Dropdown) whose `field_id` matches.
+/// Each matching condition becomes one `ConditionRule` on the trigger.
+fn wire_conditions(nodes: &mut [AemNode], conditions: &[CollectedCondition]) {
+    use std::collections::HashMap;
+
+    // Group conditions by trigger FieldId.
+    let mut by_field: HashMap<&FieldId, Vec<&CollectedCondition>> = HashMap::new();
+    for cond in conditions {
+        by_field.entry(&cond.field_id).or_default().push(cond);
+    }
+
+    if by_field.is_empty() {
+        return;
+    }
+
+    // Walk the tree and annotate matching trigger fields.
+    for node in nodes.iter_mut() {
+        wire_conditions_recursive(node, &by_field);
+    }
+}
+
+fn wire_conditions_recursive(
+    node: &mut AemNode,
+    by_field: &std::collections::HashMap<&FieldId, Vec<&CollectedCondition>>,
+) {
+    match node {
+        AemNode::RadioButton {
+            field_id,
+            conditions,
+            ..
+        }
+        | AemNode::Checkbox {
+            field_id,
+            conditions,
+            ..
+        }
+        | AemNode::Dropdown {
+            field_id,
+            conditions,
+            ..
+        } => {
+            if let Some(fid) = field_id {
+                if let Some(conds) = by_field.get(fid) {
+                    for c in conds {
+                        conditions.push(ConditionRule {
+                            target_panel_name: c.panel_name.clone(),
+                            value: c.value.clone(),
+                            show: true,
+                        });
+                    }
+                }
+            }
+        }
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => {
+            for child in children.iter_mut() {
+                wire_conditions_recursive(child, by_field);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1641,6 +1753,180 @@ mod tests {
                 }
             }
             other => panic!("Expected Root, got {:?}", other),
+        }
+    }
+
+    // ========================================================================
+    // Conditional visibility tests
+    // ========================================================================
+
+    #[test]
+    fn conditional_produces_hidden_panel_and_wires_trigger() {
+        // A radio field + conditional node should produce:
+        // 1. The radio button with conditions wired
+        // 2. A hidden panel wrapping the conditional content
+        let field_id: FieldId = "form.page.radioField".into();
+
+        let nodes = vec![
+            StructuredNode::Field(FieldNode {
+                name: field_id.clone(),
+                som_path: None,
+                label: Some(InlineText::plain("Pick")),
+                input_type: FieldType::Radio {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("Yes".into()),
+                            value: InputValue::Text("yes".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("No".into()),
+                            value: InputValue::Text("no".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            }),
+            StructuredNode::Conditional(ConditionalNode {
+                condition: FieldCondition {
+                    field_name: field_id.clone(),
+                    value: InputValue::Text("yes".into()),
+                },
+                content: Box::new(StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Shown when yes"),
+                })),
+            }),
+        ];
+
+        let config = default_config();
+        let root = convert_to_aem(&nodes, &config);
+
+        // Unwrap root → single preamble panel → children
+        let children = unwrap_preamble(&root);
+        assert_eq!(
+            children.len(),
+            2,
+            "Should have radio button and conditional panel"
+        );
+
+        // The first child should be a RadioButton with conditions wired
+        match &children[0] {
+            AemNode::RadioButton {
+                conditions,
+                field_id,
+                ..
+            } => {
+                assert!(field_id.is_some(), "RadioButton should have a field_id set");
+                assert_eq!(
+                    conditions.len(),
+                    1,
+                    "RadioButton should have exactly one condition rule"
+                );
+                assert!(conditions[0].show, "Condition rule should have show=true");
+                assert_eq!(
+                    conditions[0].value,
+                    InputValue::Text("yes".into()),
+                    "Condition should trigger on 'yes'"
+                );
+            }
+            other => panic!("Expected RadioButton, got {:?}", other),
+        }
+
+        // The second child should be a hidden Panel
+        match &children[1] {
+            AemNode::Panel {
+                visible,
+                dor_exclude,
+                title,
+                ..
+            } => {
+                assert!(!visible, "Conditional panel should start hidden");
+                assert!(*dor_exclude, "Conditional panel should exclude from DOR");
+                assert!(
+                    title.contains("Condition"),
+                    "Conditional panel title should mention 'Condition'. Got: {}",
+                    title
+                );
+            }
+            other => panic!("Expected Panel, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multiple_conditions_same_trigger_grouped() {
+        // Two conditionals referencing the same field should both wire to that field
+        let field_id: FieldId = "form.page.dropdown".into();
+
+        let nodes = vec![
+            StructuredNode::Field(FieldNode {
+                name: field_id.clone(),
+                som_path: None,
+                label: Some(InlineText::plain("Type")),
+                input_type: FieldType::Select {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("A".into()),
+                            value: InputValue::Text("a".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("B".into()),
+                            value: InputValue::Text("b".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            }),
+            StructuredNode::Conditional(ConditionalNode {
+                condition: FieldCondition {
+                    field_name: field_id.clone(),
+                    value: InputValue::Text("a".into()),
+                },
+                content: Box::new(StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Content A"),
+                })),
+            }),
+            StructuredNode::Conditional(ConditionalNode {
+                condition: FieldCondition {
+                    field_name: field_id.clone(),
+                    value: InputValue::Text("b".into()),
+                },
+                content: Box::new(StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Content B"),
+                })),
+            }),
+        ];
+
+        let config = default_config();
+        let root = convert_to_aem(&nodes, &config);
+        let children = unwrap_preamble(&root);
+
+        assert_eq!(
+            children.len(),
+            3,
+            "Should have dropdown + 2 conditional panels"
+        );
+
+        // Dropdown should have 2 condition rules
+        match &children[0] {
+            AemNode::Dropdown { conditions, .. } => {
+                assert_eq!(
+                    conditions.len(),
+                    2,
+                    "Dropdown should have 2 condition rules"
+                );
+            }
+            other => panic!("Expected Dropdown, got {:?}", other),
+        }
+
+        // Both panels should be hidden
+        for i in 1..3 {
+            match &children[i] {
+                AemNode::Panel { visible, .. } => {
+                    assert!(!visible, "Conditional panel {} should be hidden", i);
+                }
+                other => panic!("Expected Panel at index {}, got {:?}", i, other),
+            }
         }
     }
 }

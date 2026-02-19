@@ -533,6 +533,7 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
         children,
         is_page,
         dor_exclude,
+        visible,
     } = node
     else {
         return;
@@ -552,6 +553,9 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
         elem.push_attribute(("jcr:title", title.as_str()));
     }
     elem.push_attribute(("textIsRich", "true"));
+    if !visible {
+        elem.push_attribute(("visible", "{Boolean}false"));
+    }
     elem.push_attribute(("dorExclusion", bool_str(*dor_exclude)));
     if config.dor_exclude_description {
         elem.push_attribute(("dorExcludeDescription", "true"));
@@ -734,6 +738,8 @@ fn write_dropdown(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
         mandatory,
         visible,
         colspan,
+        conditions,
+        ..
     } = node
     else {
         return;
@@ -762,6 +768,8 @@ fn write_dropdown(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
 
     write_responsive(w, *colspan);
 
+    write_value_commit_scripts(w, name, conditions);
+
     w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
 }
 
@@ -777,6 +785,8 @@ fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
         alignment,
         visible,
         colspan,
+        conditions,
+        ..
     } = node
     else {
         return;
@@ -812,6 +822,8 @@ fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
 
     write_responsive(w, *colspan);
 
+    write_value_commit_scripts(w, name, conditions);
+
     w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
 }
 
@@ -829,6 +841,8 @@ fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
         mandatory,
         visible,
         colspan,
+        conditions,
+        ..
     } = node
     else {
         return;
@@ -864,6 +878,8 @@ fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
     w.write_event(Event::Start(elem)).unwrap();
 
     write_responsive(w, *colspan);
+
+    write_value_commit_scripts(w, name, conditions);
 
     w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
 }
@@ -1075,6 +1091,98 @@ fn write_repeatable(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     write_items_end(w); // outer items
 
     w.write_event(Event::End(BytesEnd::new(outer_tag))).unwrap();
+}
+
+// ============================================================================
+// Conditional visibility scripts (fd:scripts fd:valueCommit)
+// ============================================================================
+
+use super::ConditionRule;
+use crate::structured::InputValue;
+
+/// Generate the JavaScript if-else chain for a `fd:valueCommit` script.
+///
+/// Groups conditions by target panel. For each panel, builds an
+/// `if (this.value === 'X') { panel.visible = true; ... } else { ... }` block.
+///
+/// The returned string uses JCR/JSON escaping conventions:
+/// - `\\n` for newlines (JCR `\\` → `\`, then JSON `\n` → newline)
+/// - Single quotes in JS to avoid nested double-quote escaping
+fn generate_value_commit_script(conditions: &[ConditionRule]) -> String {
+    use std::collections::HashMap;
+
+    // Group conditions by target panel name. For each panel we collect the
+    // values that should make it visible.
+    let mut by_panel: HashMap<&str, Vec<&InputValue>> = HashMap::new();
+    for rule in conditions {
+        if rule.show {
+            by_panel
+                .entry(&rule.target_panel_name)
+                .or_default()
+                .push(&rule.value);
+        }
+    }
+
+    let mut script = String::new();
+
+    for (panel_name, values) in &by_panel {
+        // Build the condition: this.value === 'val1' || this.value === 'val2'
+        // Uses single quotes in JS to avoid escaping issues within JSON strings.
+        let cond_parts: Vec<String> = values
+            .iter()
+            .map(|v| {
+                let val_str = match v {
+                    InputValue::Text(s) => s.to_string(),
+                    InputValue::Number(n) => n.to_string(),
+                    InputValue::Bool(b) => b.to_string(),
+                };
+                // Use single quotes for string comparison in JS:
+                // this.value === 'someValue'
+                format!("this.value === '{}'", val_str)
+            })
+            .collect();
+        let condition = cond_parts.join(" || ");
+
+        // \\\\n in Rust source → \\n in Rust string → \\n in XML output
+        // → JCR decodes \\ to \ giving \n → JSON decodes \n to newline
+        script.push_str(&format!(
+            "if ({}) {{\\\\n    {}.visible = true;\\\\n    {}.dorExclusion = false;\\\\n}} else {{\\\\n    {}.visible = false;\\\\n    {}.dorExclusion = true;\\\\n}}\\\\n",
+            condition, panel_name, panel_name, panel_name, panel_name
+        ));
+    }
+
+    script
+}
+
+/// Generate the escaped JSON string for the `fd:valueCommit` attribute.
+///
+/// The format is the `SCRIPTMODEL` pattern used throughout AEM Forms XML.
+fn generate_value_commit_json(field_name: &str, conditions: &[ConditionRule]) -> String {
+    let script_content = generate_value_commit_script(conditions);
+
+    format!(
+        "[{{\"script\":{{\"field\":\"{}\"\\,\"event\":\"Value Commit\"\\,\"model\":{{\"nodeName\":\"EVENT_SCRIPTS\"}}\\,\"content\":\"{}\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
+        field_name, script_content,
+    )
+}
+
+/// Write `<fd:scripts fd:valueCommit="...">` for trigger field conditions.
+///
+/// Only emits the element if `conditions` is non-empty.
+fn write_value_commit_scripts(
+    w: &mut Writer<&mut Cursor<Vec<u8>>>,
+    field_name: &str,
+    conditions: &[ConditionRule],
+) {
+    if conditions.is_empty() {
+        return;
+    }
+
+    let json = generate_value_commit_json(field_name, conditions);
+    let mut scripts = BytesStart::new("fd:scripts");
+    scripts.push_attribute(("fd:valueCommit", json.as_str()));
+    scripts.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    w.write_event(Event::Empty(scripts)).unwrap();
 }
 
 // ============================================================================
@@ -1594,7 +1702,7 @@ fn parse_attributes(s: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aem::{AemConfig, AemNode, AemOption, OptionAlignment};
+    use crate::aem::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
     use uuid::Uuid;
 
     fn test_config() -> AemConfig {
@@ -1747,6 +1855,8 @@ mod tests {
                 alignment: OptionAlignment::Horizontal,
                 visible: true,
                 colspan: 12,
+                field_id: None,
+                conditions: vec![],
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1883,6 +1993,8 @@ mod tests {
                 mandatory: true,
                 visible: true,
                 colspan: 12,
+                field_id: None,
+                conditions: vec![],
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1911,6 +2023,266 @@ mod tests {
             xml.contains("&lt;h1&gt;Title&lt;/h1&gt;"),
             "quick_xml should escape > to &gt; in attributes. Got: {}",
             xml
+        );
+    }
+
+    // ========================================================================
+    // Conditional visibility tests
+    // ========================================================================
+
+    #[test]
+    fn hidden_panel_emits_visible_false() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Panel {
+                uuid: fixed_uuid(),
+                name: "COND_Panel".into(),
+                title: "Hidden Panel".into(),
+                children: vec![],
+                is_page: false,
+                dor_exclude: true,
+                visible: false,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains("visible=\"{Boolean}false\""),
+            "Hidden panel should have visible={{Boolean}}false. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("dorExclusion=\"true\""),
+            "Hidden panel should have dorExclusion=true. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn radio_button_with_conditions_emits_scripts() {
+        use crate::structured::InputValue;
+
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::RadioButton {
+                uuid: fixed_uuid(),
+                name: "RB_TriggerField".into(),
+                label: "Choose".into(),
+                options: vec![
+                    AemOption {
+                        label: "Yes".into(),
+                        value: "yes".into(),
+                    },
+                    AemOption {
+                        label: "No".into(),
+                        value: "no".into(),
+                    },
+                ],
+                alignment: OptionAlignment::Vertical,
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                field_id: None,
+                conditions: vec![ConditionRule {
+                    target_panel_name: "COND_TargetPanel".into(),
+                    value: InputValue::Text("yes".into()),
+                    show: true,
+                }],
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains("fd:scripts"),
+            "Radio with conditions should emit fd:scripts. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("fd:valueCommit"),
+            "Radio with conditions should emit fd:valueCommit. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("Value Commit"),
+            "Script JSON should contain 'Value Commit' event. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("COND_TargetPanel.visible"),
+            "Script content should reference target panel. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn radio_without_conditions_has_no_scripts() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::RadioButton {
+                uuid: fixed_uuid(),
+                name: "RB_Simple".into(),
+                label: "Choose".into(),
+                options: vec![AemOption {
+                    label: "A".into(),
+                    value: "a".into(),
+                }],
+                alignment: OptionAlignment::Vertical,
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                field_id: None,
+                conditions: vec![],
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            !xml.contains("fd:scripts"),
+            "Radio without conditions should NOT emit fd:scripts. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn dropdown_with_conditions_emits_scripts() {
+        use crate::structured::InputValue;
+
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Dropdown {
+                uuid: fixed_uuid(),
+                name: "DD_Trigger".into(),
+                label: "Select".into(),
+                options: vec![
+                    AemOption {
+                        label: "Option A".into(),
+                        value: "a".into(),
+                    },
+                    AemOption {
+                        label: "Option B".into(),
+                        value: "b".into(),
+                    },
+                ],
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                field_id: None,
+                conditions: vec![ConditionRule {
+                    target_panel_name: "COND_PanelA".into(),
+                    value: InputValue::Text("a".into()),
+                    show: true,
+                }],
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains("fd:scripts"),
+            "Dropdown with conditions should emit fd:scripts. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("COND_PanelA.visible"),
+            "Script content should reference COND_PanelA. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn checkbox_with_conditions_emits_scripts() {
+        use crate::structured::InputValue;
+
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Checkbox {
+                uuid: fixed_uuid(),
+                name: "CB_Trigger".into(),
+                options: vec![AemOption {
+                    label: "Accept".into(),
+                    value: "true".into(),
+                }],
+                alignment: OptionAlignment::Horizontal,
+                visible: true,
+                colspan: 12,
+                field_id: None,
+                conditions: vec![ConditionRule {
+                    target_panel_name: "COND_AcceptPanel".into(),
+                    value: InputValue::Bool(true),
+                    show: true,
+                }],
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains("fd:scripts"),
+            "Checkbox with conditions should emit fd:scripts. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("COND_AcceptPanel.visible"),
+            "Script content should reference COND_AcceptPanel. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn value_commit_script_uses_single_quotes() {
+        use crate::structured::InputValue;
+
+        let conditions = vec![ConditionRule {
+            target_panel_name: "COND_Panel1".into(),
+            value: InputValue::Text("option_a".into()),
+            show: true,
+        }];
+        let script = generate_value_commit_script(&conditions);
+        assert!(
+            script.contains("this.value === 'option_a'"),
+            "Script should use single quotes for value comparison. Got: {}",
+            script
+        );
+        assert!(
+            script.contains("COND_Panel1.visible = true"),
+            "Script should set panel visible. Got: {}",
+            script
+        );
+        assert!(
+            script.contains("COND_Panel1.dorExclusion = false"),
+            "Script should set dorExclusion to false when visible. Got: {}",
+            script
+        );
+    }
+
+    #[test]
+    fn value_commit_json_has_correct_structure() {
+        use crate::structured::InputValue;
+
+        let conditions = vec![ConditionRule {
+            target_panel_name: "COND_Test".into(),
+            value: InputValue::Text("val".into()),
+            show: true,
+        }];
+        let json = generate_value_commit_json("RB_Field", &conditions);
+        // Verify JSON structure with JCR escaping
+        assert!(
+            json.starts_with("[{"),
+            "JSON should start with array+object. Got: {}",
+            json
+        );
+        assert!(
+            json.contains("\"script\""),
+            "JSON should contain \"script\" key. Got: {}",
+            json
+        );
+        assert!(
+            json.contains("\"field\":\"RB_Field\""),
+            "JSON should contain field name. Got: {}",
+            json
+        );
+        assert!(
+            json.contains("\"event\":\"Value Commit\""),
+            "JSON should contain Value Commit event. Got: {}",
+            json
+        );
+        assert!(
+            json.contains("SCRIPTMODEL"),
+            "JSON should contain SCRIPTMODEL. Got: {}",
+            json
         );
     }
 }

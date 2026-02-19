@@ -36,6 +36,8 @@ pub use xml_writer::generate_aem_xml;
 
 use uuid::Uuid;
 
+use crate::structured::{FieldId, InputValue};
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -347,6 +349,21 @@ pub struct AemOption {
     pub value: String,
 }
 
+/// A visibility condition rule that links a trigger field value to a
+/// conditional panel.
+///
+/// When the trigger field's value matches `value`, the target panel's
+/// visibility is set to the `show` value.
+#[derive(Debug, Clone)]
+pub struct ConditionRule {
+    /// AEM `name` of the conditional panel to show/hide.
+    pub target_panel_name: String,
+    /// The value that, when matched, triggers the show/hide.
+    pub value: InputValue,
+    /// `true` → show panel when matched; `false` → hide.
+    pub show: bool,
+}
+
 /// The intermediate AEM node tree.
 ///
 /// Each variant maps to a specific AEM Adaptive Forms component and carries
@@ -369,6 +386,8 @@ pub enum AemNode {
         is_page: bool,
         /// Exclude from Document of Record.
         dor_exclude: bool,
+        /// Whether the panel is visible. Default `true`.
+        visible: bool,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -411,6 +430,10 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// The `FieldId` of the original structured field (for condition wiring).
+        field_id: Option<FieldId>,
+        /// Visibility condition rules populated during the second pass.
+        conditions: Vec<ConditionRule>,
     },
 
     /// Checkbox group (`guideCheckBox`).
@@ -421,6 +444,10 @@ pub enum AemNode {
         alignment: OptionAlignment,
         visible: bool,
         colspan: u32,
+        /// The `FieldId` of the original structured field (for condition wiring).
+        field_id: Option<FieldId>,
+        /// Visibility condition rules populated during the second pass.
+        conditions: Vec<ConditionRule>,
     },
 
     /// Radio button group (`guideRadioButton`).
@@ -433,6 +460,10 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// The `FieldId` of the original structured field (for condition wiring).
+        field_id: Option<FieldId>,
+        /// Visibility condition rules populated during the second pass.
+        conditions: Vec<ConditionRule>,
     },
 
     /// Static text / heading (`guideTextDraw`).
