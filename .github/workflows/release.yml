@@ -230,5 +230,7 @@ jobs:
             ghcr.io/ajilach/blueprint-app:latest
             ghcr.io/ajilach/blueprint-app:v${{ needs.create-release.outputs.version }}
           ssh: default
-
+          labels: |
+            org.opencontainers.image.source=https://github.com/ajilach/blueprint-app
+            org.opencontainers.image.description=Blueprint App
 

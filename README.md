@@ -9,6 +9,7 @@ The app is built for Windows, Linux, MacOS, as well as for the web using WASM. T
 The web app is published as a Docker image on GitHub Container Registry with every release.
 
 ```sh
+echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
 docker pull ghcr.io/ajilach/blueprint-app:latest
 docker run -p 8080:8080 ghcr.io/ajilach/blueprint-app:latest
 ```
