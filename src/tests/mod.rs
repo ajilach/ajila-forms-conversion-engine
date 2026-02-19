@@ -7361,3 +7361,107 @@
         assert!(json.contains("\"variables\""), "JSON should contain variables");
         assert!(json.contains("\"formrange_code\": \"AAEI\""), "JSON should contain formrange_code");
     }
+
+    #[test]
+    fn test_aaoe_h2_sections() {
+        // Verify that the AAOE_033_IT merged structured tree contains the expected
+        // top-level H2 sections in document order.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
+
+        let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+            .expect("Failed to run exhaustive merge on AAOE");
+
+        // Helper to extract plain text from a HeadingNode
+        fn get_heading_text(heading: &crate::structured::HeadingNode) -> String {
+            heading
+                .content
+                .0
+                .iter()
+                .filter_map(|inline| match inline {
+                    InlineNode::Text(t) => Some(t.as_str()),
+                    InlineNode::TranslatedText(map) => {
+                        // Prefer Italian, fall back to first available
+                        map.get("it")
+                            .or_else(|| map.values().next())
+                            .map(|s| s.as_str())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        }
+
+        // Recursively collect all H2 headings from the structured tree
+        fn collect_h2_headings(nodes: &[StructuredNode], out: &mut Vec<(String, String)>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(heading) => {
+                        let level = format!("{:?}", heading.level);
+                        out.push((level, get_heading_text(heading)));
+                    }
+                    StructuredNode::Group(group) => {
+                        collect_h2_headings(&group.children, out);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        collect_h2_headings(
+                            std::slice::from_ref(cond.content.as_ref()),
+                            out,
+                        );
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        collect_h2_headings(
+                            std::slice::from_ref(rep.item.as_ref()),
+                            out,
+                        );
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> =
+                            grid.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_h2_headings(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut h2_headings: Vec<(String, String)> = Vec::new();
+        collect_h2_headings(&merged, &mut h2_headings);
+
+        println!("Found headings in AAOE: {:?}", h2_headings);
+        println!("Top-level node count: {}", merged.len());
+        // Debug: print top-level node types
+        for (i, node) in merged.iter().enumerate() {
+            let ty = match node {
+                StructuredNode::Heading(_) => "Heading",
+                StructuredNode::Group(_) => "Group",
+                StructuredNode::Conditional(_) => "Conditional",
+                StructuredNode::Field(_) => "Field",
+                StructuredNode::Paragraph(_) => "Paragraph",
+                StructuredNode::Table(_) => "Table",
+                StructuredNode::Repeatable(_) => "Repeatable",
+                StructuredNode::Image(_) => "Image",
+                StructuredNode::Empty => "Empty",
+                StructuredNode::GridLayout(_) => "GridLayout",
+                StructuredNode::List(_) => "List",
+            };
+            println!("  [{}] {}", i, ty);
+        }
+
+        let expected = [
+            "Form configurator",
+            "Dati del titolare del conto",
+            "Dichiarazione",
+            "Firma/e",
+        ];
+
+        for expected_text in &expected {
+            assert!(
+                h2_headings.iter().any(|h| h.1.contains(expected_text)),
+                "Expected H2 heading containing '{}' but it was not found.\n\
+                Found H2 headings: {:?}",
+                expected_text,
+                h2_headings
+            );
+        }
+    }
