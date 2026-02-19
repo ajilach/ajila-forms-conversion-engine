@@ -267,8 +267,7 @@ impl FieldTableDetectorVertical {
             }
 
             // Try to match all fields in this column with labels to the left
-            let Some(matches) =
-                self.match_column_with_labels(doc, &column, &candidate_labels)
+            let Some(matches) = self.match_column_with_labels(doc, &column, &candidate_labels)
             else {
                 continue;
             };
@@ -287,10 +286,7 @@ impl FieldTableDetectorVertical {
 
             doc.merge(
                 labeled_field_indices,
-                GroupKind::GridLayout {
-                    columns: 1,
-                    spans,
-                },
+                GroupKind::GridLayout { columns: 1, spans },
                 GroupSource::Inferred {
                     module: self.name().to_string(),
                 },
@@ -317,10 +313,7 @@ mod tests {
     fn test_default_configuration() {
         let detector = FieldTableDetectorVertical::new();
         assert_eq!(detector.min_fields_per_column, 2);
-        assert_eq!(
-            detector.column_tolerance,
-            Decimal::from_str("5.0").unwrap()
-        );
+        assert_eq!(detector.column_tolerance, Decimal::from_str("5.0").unwrap());
         assert_eq!(
             detector.label_gap_threshold,
             Decimal::from_str("120.0").unwrap()
