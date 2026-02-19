@@ -132,13 +132,14 @@ impl GlobalFontStats {
 
     /// Compute global heading style buckets from all flattened states.
     /// This should be called after `from_flattened_iter` to fill in heading_buckets.
-    /// Analyzes potential headings and groups them into style buckets sorted by priority.
+    ///
+    /// A heading candidate is bold OR has font size larger than body text.
+    /// Buckets are sorted by priority: size desc → has_line first.
     pub fn compute_heading_buckets<'a>(
         &mut self,
         flattened_iter: impl Iterator<Item = &'a Flattened>,
     ) {
         let body_size = self.body_size;
-        let most_common_style = self.most_common_style;
         let mut bucket_set: HashSet<(u32, bool, bool)> = HashSet::new();
 
         for flattened in flattened_iter {
@@ -163,28 +164,9 @@ impl GlobalFontStats {
                         .map(|f| f.weight == FontWeight::Bold)
                         .unwrap_or(false);
 
-                    // Skip body text style: only non-bold text at the most common size
-                    let body_is_non_bold = most_common_style.map(|(_s, b)| !b).unwrap_or(false);
-                    if !is_bold && body_is_non_bold {
-                        let body_size_bits = most_common_style.map(|(s, _)| s);
-                        if body_size_bits == Some(size_bits) {
-                            continue;
-                        }
-                    }
-
-                    // Check if this is a bold section header (bold at body size)
-                    let is_body_size = (size - body_size).abs() < 0.5;
-                    let body_is_non_bold = most_common_style
-                        .map(|(s, b)| f32::from_bits(s) == body_size && !b)
-                        .unwrap_or(false);
-                    let is_bold_section_header = is_bold && is_body_size && body_is_non_bold;
-
-                    // Check if this is a size-based heading (larger than body)
-                    let ratio = size / body_size;
-                    let size_diff = size - body_size;
-                    let is_size_based_heading = ratio >= 1.35 || size_diff >= 3.5;
-
-                    if !is_bold_section_header && !is_size_based_heading {
+                    // Core criterion: bold OR larger than body text
+                    let is_larger_than_body = size > body_size + 0.5;
+                    if !is_bold && !is_larger_than_body {
                         continue;
                     }
 
@@ -454,7 +436,15 @@ impl HeadingDetector {
     }
 
     /// Check if a text group is a heading candidate based on font properties.
+    ///
+    /// A text block is a heading candidate if it is:
+    /// - Bold, OR larger than body text size
+    /// - Short (≤ 200 chars, ≥ 2 chars)
+    /// - A single sentence (no multi-sentence text)
+    ///
     /// Returns (HeadingStyleBucket, is_bold_section_header) if it qualifies.
+    /// `is_bold_section_header` is true when the candidate is bold at body size
+    /// (as opposed to being larger than body size).
     fn is_heading_candidate(
         &self,
         props: &TextProperties,
@@ -481,9 +471,25 @@ impl HeadingDetector {
         }
 
         let body_size = stats.body_size;
-        let ratio = size / body_size;
 
-        // Check if this font style is the most common (body text)
+        // Core criterion: bold OR larger than body text
+        let is_larger_than_body = size > body_size + 0.5;
+        let is_bold_section_header = is_bold && !is_larger_than_body;
+
+        if !is_bold && !is_larger_than_body {
+            return None;
+        }
+
+        // Headings should not end with a colon (those are field labels)
+        if text_content.ends_with(':') {
+            return None;
+        }
+
+        // Light frequency guard: if this exact style (size + bold) accounts
+        // for too much of the document's text, it's body text rather than a
+        // heading style.  Size-based headings (larger than body) use a tighter
+        // cap because they rely solely on size, while bold-at-body-size
+        // headings get more room since there are usually many section headers.
         let rounded_size = OrderedFloat((size * 2.0).round() / 2.0);
         let style_key = FontStyleKey {
             size: rounded_size,
@@ -495,100 +501,10 @@ impl HeadingDetector {
             .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
             .unwrap_or(0.0);
 
-        // Also check the frequency of this SIZE regardless of bold status
-        let size_frequency = stats
-            .size_distribution
-            .get(&rounded_size)
-            .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
-            .unwrap_or(0.0);
-
-        // CRITICAL: Headings must be DISTINCT from normal text.
-        // Non-bold text at body size is body text (never a heading), regardless
-        // of whether most_common_style is bold or non-bold. When bold and non-bold
-        // are nearly tied, both participate in body text, so non-bold should not
-        // be promoted to heading.
-        let body_size_bits = OrderedFloat((body_size * 2.0).round() / 2.0);
-        let is_body_text = !is_bold
-            && rounded_size == body_size_bits
-            && (stats
-                .most_common_style
-                .map(|common| common.size == rounded_size && !common.is_bold)
-                .unwrap_or(false)
-                || {
-                    // Even if most_common_style is bold, non-bold text at body size
-                    // with substantial frequency is still body text.
-                    let non_bold_key = FontStyleKey {
-                        size: body_size_bits,
-                        is_bold: false,
-                    };
-                    let non_bold_freq = stats
-                        .style_distribution
-                        .get(&non_bold_key)
-                        .map(|&c| c as f32 / stats.total_text_nodes.max(1) as f32)
-                        .unwrap_or(0.0);
-                    non_bold_freq >= 0.15
-                });
-
-        if is_body_text {
+        let max_freq = if is_bold_section_header { 0.40 } else { 0.25 };
+        if style_frequency > max_freq {
             return None;
         }
-
-        // Check if there is substantial non-bold text at body size.
-        // This determines whether bold text at body size can be a section header.
-        // We check BOTH whether most_common_style is non-bold at this size, AND
-        // whether a significant amount of non-bold text exists at this size even
-        // if the most common style happens to be bold. This makes the detector
-        // robust when bold and non-bold counts are nearly tied.
-        let non_bold_at_body_key = FontStyleKey {
-            size: OrderedFloat((body_size * 2.0).round() / 2.0),
-            is_bold: false,
-        };
-        let non_bold_body_count = stats
-            .style_distribution
-            .get(&non_bold_at_body_key)
-            .copied()
-            .unwrap_or(0);
-        let non_bold_body_ratio = non_bold_body_count as f32 / stats.total_text_nodes.max(1) as f32;
-
-        let body_has_substantial_non_bold = stats
-            .most_common_style
-            .map(|common| common.size == rounded_size && !common.is_bold)
-            .unwrap_or(false)
-            || (non_bold_body_ratio >= 0.15 && (size - body_size).abs() < 0.5);
-
-        // Bold text at body size is a valid heading if there is significant
-        // non-bold text at the same size (making bold visually distinct).
-        let is_bold_section_header =
-            is_bold && body_has_substantial_non_bold && (size - body_size).abs() < 0.5;
-
-        // For bold section headers, allow higher frequency (up to 40%)
-        let max_style_frequency = if is_bold_section_header { 0.40 } else { 0.25 };
-
-        // If this style appears too frequently, it's body/label text
-        if style_frequency > max_style_frequency {
-            return None;
-        }
-
-        // For non-bold text or bold text larger than body, require size distinction
-        if !is_bold_section_header {
-            let size_diff = size - body_size;
-            let min_ratio = 1.35f32;
-            let min_diff = 3.5f32;
-
-            let passes_ratio = ratio >= min_ratio;
-            let passes_diff = size_diff >= min_diff;
-
-            if !passes_ratio && !passes_diff {
-                return None;
-            }
-
-            // Additional frequency check for common sizes
-            if size_frequency > 0.30 && ratio < 1.5 && size_diff < 5.0 {
-                return None;
-            }
-        }
-
-        // Compute the style bucket
         let has_line = props.has_top_border || props.has_bottom_border || props.has_font_underline;
 
         let bucket = HeadingStyleBucket {
@@ -711,7 +627,8 @@ impl HeadingDetector {
     /// - Same level can repeat: h1, h2, h2, h3, h2 is valid
     /// - Cannot skip levels: h1, h3 is invalid and becomes h1, h2
     /// - When going deeper, can only increase by 1
-    /// - When going back up, can jump to any previously seen level
+    /// - When going back up, can jump to any previously seen (normalized) level
+    /// - The same original level always maps to the same normalized level
     fn normalize_heading_levels(
         mut headings: Vec<(usize, u8, f32, bool)>,
     ) -> Vec<(usize, u8, f32, bool)> {
@@ -719,13 +636,14 @@ impl HeadingDetector {
             return headings;
         }
 
-        // Track the maximum level we've seen so far at each depth
-        // This allows us to know which levels are "valid" to return to
         let mut max_level_seen: u8 = 0;
         let mut current_level: u8 = 0;
 
+        // Track how each original level was mapped to a normalized level.
+        // When the same original level reappears, reuse the same normalized level.
+        let mut level_map: HashMap<u8, u8> = HashMap::new();
+
         // Find the minimum (highest priority) level in the original headings
-        // This ensures actual H1 candidates (large text) become H1
         let min_original_level = headings
             .iter()
             .map(|(_, level, _, _)| *level)
@@ -733,37 +651,39 @@ impl HeadingDetector {
             .unwrap_or(1);
 
         for (_group_idx, level, _y, _is_bold_section_header) in headings.iter_mut() {
+            let original_level = *level;
+
             if current_level == 0 {
-                // First heading - preserve its relative level
-                // If original min was 2 (bold section headers), keep them as H2
-                // Only if original min was 1 (true titles), make it H1
-                if min_original_level == 1 && *level == 1 {
+                // First heading
+                if min_original_level == 1 && original_level == 1 {
                     *level = 1;
-                } else if min_original_level == 1 && *level > 1 {
-                    // First heading is not the true H1, start from its level
-                    *level = (*level).clamp(2, 6);
+                } else if min_original_level == 1 && original_level > 1 {
+                    *level = original_level.clamp(2, 6);
                 } else {
-                    // No true H1 in document, start from detected level
-                    *level = (*level).clamp(1, 6);
+                    *level = original_level.clamp(1, 6);
                 }
                 current_level = *level;
                 max_level_seen = current_level;
+                level_map.insert(original_level, *level);
+            } else if let Some(&mapped) = level_map.get(&original_level) {
+                // We've seen this original level before — reuse the same
+                // normalized level to keep the hierarchy consistent.
+                *level = mapped;
+                current_level = *level;
             } else {
-                // Calculate the proposed level based on original detection
-                let original_level = *level;
-
+                // New original level we haven't seen before
                 if original_level <= current_level {
                     // Going back up or staying at same level
-                    // This is always valid, but clamp to max_level_seen or 1
                     *level = original_level.max(1).min(max_level_seen);
                 } else {
-                    // Going deeper - can only increase by 1 at a time
+                    // Going deeper — can only increase by 1 at a time
                     let new_level = current_level + 1;
                     *level = new_level;
                     max_level_seen = max_level_seen.max(new_level);
                 }
 
                 current_level = *level;
+                level_map.insert(original_level, *level);
             }
         }
 
@@ -881,6 +801,9 @@ impl HeadingDetector {
     /// Core processing logic using provided font statistics.
     /// If `global_heading_buckets` is Some, uses global bucket ranking for consistent
     /// heading level detection across form states. Otherwise computes local bucket ranking.
+    ///
+    /// Applies per-level x-alignment filtering: within each heading level
+    /// (style bucket), candidates must share the dominant left-edge x-coordinate.
     fn process_with_stats(
         &self,
         doc: &mut Document,
@@ -892,7 +815,7 @@ impl HeadingDetector {
             return;
         }
 
-        // Find all unclaimed text groups (roots that are text)
+        // ── 1. Collect all root text groups ────────────────────────────────
         let roots = doc.roots();
         let text_groups: Vec<usize> = roots
             .iter()
@@ -900,31 +823,120 @@ impl HeadingDetector {
             .copied()
             .collect();
 
-        // Collect heading candidates with their style buckets
-        let mut candidates: Vec<(usize, HeadingStyleBucket, f32, bool)> = Vec::new();
+        // ── 2. Collect heading candidates ──────────────────────────────────
+        struct CandidateInfo {
+            group_idx: usize,
+            bucket: HeadingStyleBucket,
+            y_coord: f32,
+            x_coord: f32,
+            is_bold_section_header: bool,
+        }
+
+        let mut candidates: Vec<CandidateInfo> = Vec::new();
 
         for &group_idx in &text_groups {
             if let Some(props) = self.get_text_properties(doc, group_idx)
                 && let Some((bucket, is_bold_section_header)) =
                     self.is_heading_candidate(&props, stats)
             {
-                let y_coord = doc
-                    .compute_group_bounds(group_idx)
-                    .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                candidates.push((group_idx, bucket, y_coord, is_bold_section_header));
+                if let Some(bounds) = doc.get_bounds(group_idx) {
+                    let y_coord = bounds.y.to_f32().unwrap_or(0.0);
+                    let x_coord = bounds.x.to_f32().unwrap_or(0.0);
+
+                    candidates.push(CandidateInfo {
+                        group_idx,
+                        bucket,
+                        y_coord,
+                        x_coord,
+                        is_bold_section_header,
+                    });
+                }
             }
         }
 
-        // Determine unique style buckets and sort by priority:
-        // 1. Font size descending (largest first)
-        // 2. Bold first (if same size)
-        // 3. Has line (underline/overline/border) first (if same size and weight)
+        // ── 3. Per-level x-alignment filter ────────────────────────────────
+        // Group candidates by their style bucket and find the dominant x for each bucket.
+        // Candidates whose x doesn't match the bucket's dominant x (±tolerance) are removed.
+        let x_tolerance = 3.0f32; // points
+
+        // Compute dominant x per bucket
+        let mut bucket_x_votes: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
+        for c in &candidates {
+            bucket_x_votes
+                .entry(c.bucket.clone())
+                .or_default()
+                .push(c.x_coord);
+        }
+
+        let mut bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
+        for (bucket, xs) in &bucket_x_votes {
+            // Find the x value with the most candidates within tolerance
+            let mut best_x = xs[0];
+            let mut best_count = 0usize;
+            for &x in xs {
+                let count = xs
+                    .iter()
+                    .filter(|&&other| (other - x).abs() <= x_tolerance)
+                    .count();
+                if count > best_count {
+                    best_count = count;
+                    best_x = x;
+                }
+            }
+            bucket_dominant_x.insert(bucket.clone(), best_x);
+        }
+
+        // Compute the global dominant heading x: the x-position where the most
+        // heading candidates across ALL buckets cluster.  Used as a fallback
+        // when a candidate's own bucket has a different dominant x.
+        let global_dominant_x: Option<f32> = {
+            let all_xs: Vec<f32> = candidates.iter().map(|c| c.x_coord).collect();
+            if all_xs.is_empty() {
+                None
+            } else {
+                let mut best_x = all_xs[0];
+                let mut best_count = 0usize;
+                for &x in &all_xs {
+                    let count = all_xs
+                        .iter()
+                        .filter(|&&other| (other - x).abs() <= x_tolerance)
+                        .count();
+                    if count > best_count {
+                        best_count = count;
+                        best_x = x;
+                    }
+                }
+                Some(best_x)
+            }
+        };
+
+        // Filter candidates that don't match their bucket's dominant x.
+        // A candidate is kept if its x matches its own bucket's dominant x,
+        // OR if it matches the global dominant heading x. This prevents a
+        // candidate from being rejected when its small bucket is dominated by
+        // outlier positions, while the candidate itself aligns with the main
+        // heading column used by other heading styles.
+        candidates.retain(|c| {
+            // Check alignment with own bucket
+            if let Some(&dom_x) = bucket_dominant_x.get(&c.bucket) {
+                if (c.x_coord - dom_x).abs() <= x_tolerance {
+                    return true;
+                }
+            }
+            // Fall back: check alignment with the global dominant heading x
+            if let Some(global_x) = global_dominant_x {
+                (c.x_coord - global_x).abs() <= x_tolerance
+            } else {
+                false
+            }
+        });
+
+        // ── 4. Bucket → level assignment ───────────────────────────────────
         let sorted_buckets: Vec<HeadingStyleBucket> = if let Some(global) = global_heading_buckets {
             global.to_vec()
         } else {
             let bucket_set: HashSet<HeadingStyleBucket> =
-                candidates.iter().map(|(_, b, _, _)| b.clone()).collect();
+                candidates.iter().map(|c| c.bucket.clone()).collect();
             let mut buckets: Vec<_> = bucket_set.into_iter().collect();
             buckets.sort_by(|a, b| {
                 b.size
@@ -937,7 +949,6 @@ impl HeadingDetector {
             buckets
         };
 
-        // Map each bucket to a heading level (position in sorted list + 1, capped at 6)
         let bucket_to_level: HashMap<&HeadingStyleBucket, u8> = sorted_buckets
             .iter()
             .enumerate()
@@ -947,18 +958,16 @@ impl HeadingDetector {
         // Build heading list with assigned levels
         let mut headings: Vec<(usize, u8, f32, bool)> = candidates
             .iter()
-            .map(|(group_idx, bucket, y_coord, is_bold_section_header)| {
-                let level = bucket_to_level.get(bucket).copied().unwrap_or(6);
-                (*group_idx, level, *y_coord, *is_bold_section_header)
+            .map(|c| {
+                let level = bucket_to_level.get(&c.bucket).copied().unwrap_or(6);
+                (c.group_idx, level, c.y_coord, c.is_bold_section_header)
             })
             .collect();
 
         // Sort headings by y-coordinate (top to bottom)
         headings.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Filter out bold section headers that appear before the first true heading.
-        // Bold section headers (bold at body size) before a title are likely branding/company names,
-        // not actual section headings. The first true heading (larger font) establishes H1.
+        // ── 5. Filter bold section headers before the first true heading ───
         let first_true_heading_idx = headings
             .iter()
             .position(|(_, _, _, is_bold_section_header)| !*is_bold_section_header);
@@ -977,10 +986,9 @@ impl HeadingDetector {
                 headings
             };
 
-        // Normalize heading levels
+        // ── 6. Normalize and create heading groups ─────────────────────────
         let headings = Self::normalize_heading_levels(filtered_headings);
 
-        // Create Heading groups
         for (group_idx, level, _, _) in headings {
             doc.merge(
                 vec![group_idx],
@@ -1139,24 +1147,25 @@ mod tests {
             vec![
                 // Large heading (should be h1 or h2)
                 make_text_node("Main Title", 24.0, 10.0, 10.0),
-                // Medium heading (should be h3 or h4)
-                make_text_node("Section Title", 16.0, 10.0, 50.0),
                 // Body text (10pt) - multiple to establish baseline
                 make_text_node(
                     "This is body text paragraph one with some content.",
                     10.0,
                     10.0,
-                    80.0,
+                    60.0,
                 ),
                 make_text_node(
                     "This is body text paragraph two with more content.",
                     10.0,
                     10.0,
-                    100.0,
+                    75.0,
                 ),
-                make_text_node("This is body text paragraph three.", 10.0, 10.0, 120.0),
-                make_text_node("Another paragraph of body text here.", 10.0, 10.0, 140.0),
-                make_text_node("And more body text content.", 10.0, 10.0, 160.0),
+                make_text_node("This is body text paragraph three.", 10.0, 10.0, 90.0),
+                // Medium heading with extra whitespace above
+                make_text_node("Section Title", 16.0, 10.0, 140.0),
+                // More body text
+                make_text_node("Another paragraph of body text here.", 10.0, 10.0, 180.0),
+                make_text_node("And more body text content.", 10.0, 10.0, 195.0),
             ],
         );
 
