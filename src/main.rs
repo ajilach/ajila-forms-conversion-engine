@@ -282,34 +282,55 @@ fn App() -> Element {
         });
 
         spawn(async move {
-            match start_processing(file_data).await {
-                Ok(session_id) => {
-                    loop {
-                        async_sleep_ms(200).await;
-                        match poll_progress(session_id.clone()).await {
-                            Ok(state) => {
-                                let done = state.step == ProcessingStep::Complete
-                                    || state.error.is_some();
-                                processing_state.set(state);
-                                if done {
+            #[cfg(feature = "desktop")]
+            {
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ProcessingState>();
+                tokio::task::spawn_blocking(move || {
+                    run_blueprint_pipeline(&file_data, |state| {
+                        let _ = tx.send(state.clone());
+                    })
+                });
+                while let Some(state) = rx.recv().await {
+                    let done =
+                        state.step == ProcessingStep::Complete || state.error.is_some();
+                    processing_state.set(state);
+                    if done {
+                        break;
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "desktop"))]
+            {
+                match start_processing(file_data).await {
+                    Ok(session_id) => {
+                        loop {
+                            async_sleep_ms(200).await;
+                            match poll_progress(session_id.clone()).await {
+                                Ok(state) => {
+                                    let done = state.step == ProcessingStep::Complete
+                                        || state.error.is_some();
+                                    processing_state.set(state);
+                                    if done {
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    processing_state.set(ProcessingState {
+                                        error: Some(format!("{e}")),
+                                        ..ProcessingState::new()
+                                    });
                                     break;
                                 }
                             }
-                            Err(e) => {
-                                processing_state.set(ProcessingState {
-                                    error: Some(format!("{e}")),
-                                    ..ProcessingState::new()
-                                });
-                                break;
-                            }
                         }
                     }
-                }
-                Err(e) => {
-                    processing_state.set(ProcessingState {
-                        error: Some(format!("{e}")),
-                        ..ProcessingState::new()
-                    });
+                    Err(e) => {
+                        processing_state.set(ProcessingState {
+                            error: Some(format!("{e}")),
+                            ..ProcessingState::new()
+                        });
+                    }
                 }
             }
             is_processing.set(false);
