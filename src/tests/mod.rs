@@ -7467,6 +7467,292 @@
     }
 
     #[test]
+    fn test_aaoe_headings_consistent_across_states() {
+        // Verify that headings shared between all AAOE form states are detected
+        // at the same level. State-dependent x-alignment used to cause the same
+        // heading to be detected at different levels (or not at all) depending on
+        // which sections were visible, making the merge order-sensitive and flaky.
+        use crate::structured::{HeadingLevel, StructuredNode};
+        use crate::context::Context;
+
+        let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to create Blueprint from AAOE PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
+
+        // Extract headings from structured output for each state
+        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => {
+                        let level = match h.level {
+                            HeadingLevel::H1 => 1,
+                            HeadingLevel::H2 => 2,
+                            HeadingLevel::H3 => 3,
+                            HeadingLevel::H4 => 4,
+                            HeadingLevel::H5 => 5,
+                            HeadingLevel::H6 => 6,
+                        };
+                        let text = h.content.as_plain_text();
+                        out.push((level, text));
+                    }
+                    StructuredNode::Group(g) => collect_headings(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_headings(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let context = Context::new("it".to_string(), HashMap::new());
+        let mut all_state_headings: Vec<Vec<(u8, String)>> = Vec::new();
+
+        for state in form_states.iter() {
+            let envelope = state.structured(context.clone());
+            let mut headings = Vec::new();
+            collect_headings(&envelope.content, &mut headings);
+            all_state_headings.push(headings);
+        }
+
+        // For every heading text that appears in multiple states, verify it has
+        // the same heading level in all of them.
+        let state0 = &all_state_headings[0];
+        let state1 = &all_state_headings[1];
+
+        let mut mismatches: Vec<String> = Vec::new();
+        for (level0, text0) in state0 {
+            if let Some((level1, _)) = state1.iter().find(|(_, t)| t == text0) {
+                if level0 != level1 {
+                    mismatches.push(format!(
+                        "'{}': h{} in state 0, h{} in state 1",
+                        text0, level0, level1
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            mismatches.is_empty(),
+            "Headings detected at different levels across states:\n{}",
+            mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn test_aaoe_dichiarazione_and_firme_in_all_states() {
+        // "Dichiarazione" and "Firma/e" must appear as headings in the
+        // structured output of EVERY form state. If a heading is missing
+        // in one state but present in another, the merge becomes
+        // order-dependent and the test_aaoe_h2_sections test flakes.
+        use crate::structured::{HeadingLevel, StructuredNode};
+        use crate::context::Context;
+
+        let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to create Blueprint from AAOE PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
+
+        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => {
+                        let level = match h.level {
+                            HeadingLevel::H1 => 1,
+                            HeadingLevel::H2 => 2,
+                            HeadingLevel::H3 => 3,
+                            HeadingLevel::H4 => 4,
+                            HeadingLevel::H5 => 5,
+                            HeadingLevel::H6 => 6,
+                        };
+                        let text = h.content.as_plain_text();
+                        out.push((level, text));
+                    }
+                    StructuredNode::Group(g) => collect_headings(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_headings(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let context = Context::new("it".to_string(), HashMap::new());
+        let required_headings = ["Dichiarazione", "Firma/e"];
+
+        for (state_idx, state) in form_states.iter().enumerate() {
+            let envelope = state.structured(context.clone());
+            let mut headings: Vec<(u8, String)> = Vec::new();
+            collect_headings(&envelope.content, &mut headings);
+
+            println!(
+                "\n=== State {} ({}) headings ===",
+                state_idx, state.label
+            );
+            for (level, text) in &headings {
+                println!("  h{}: {}", level, text);
+            }
+
+            for required in &required_headings {
+                assert!(
+                    headings.iter().any(|(_, text)| text.contains(required)),
+                    "State {} ({}) is missing required heading containing '{}'\n\
+                     Found headings: {:?}",
+                    state_idx,
+                    state.label,
+                    required,
+                    headings,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_aaoe_debug_dichiarazione_firme_detection() {
+        // Diagnostic test: check whether "Dichiarazione" and "Firma/e" text is
+        // present in the flattened output of each state and whether the heading
+        // detector classifies them consistently.
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper,
+            TextBlockMerger, OverlappingTextBlockMerger, run_analysis_pipeline_with_context,
+            GlobalContext};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::FlattenedNodeKind;
+
+        let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to create Blueprint from AAOE PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
+
+        for (state_idx, state) in form_states.iter().enumerate() {
+            println!("\n========== State {} ({}) ==========", state_idx, state.label);
+
+            // Step 1: Check raw flattened text nodes
+            println!("\n--- Flattened text nodes containing 'Dichiarazione' or 'Firma' ---");
+            for node in state.flattened.iter_nodes() {
+                if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+                    if content.contains("Dichiarazione") || content.contains("Firma") {
+                        let size = font_size.to_f32().unwrap_or(0.0);
+                        let is_bold = node.style.font.as_ref()
+                            .map(|f| f.weight == crate::xfa::FontWeight::Bold)
+                            .unwrap_or(false);
+                        let x = node.x.to_f32().unwrap_or(0.0);
+                        let y = node.y.to_f32().unwrap_or(0.0);
+                        println!("  text='{}' source={:?} size={:.1} bold={} x={:.1} y={:.1}",
+                            content.trim(), source_name, size, is_bold, x, y);
+                    }
+                }
+            }
+
+            // Step 2: Run analysis pipeline and check heading detection
+            let mut doc = Document::from_flattened(&state.flattened);
+            let all_flattened: Vec<_> = form_states.iter().map(|s| s.flattened.clone()).collect();
+            let ctx = GlobalContext::new(all_flattened);
+            run_analysis_pipeline_with_context(&mut doc, &ctx);
+
+            let headings = doc.headings();
+            println!("\n--- Detected headings ---");
+            for &idx in &headings {
+                if let Some(group) = doc.get_group(idx) {
+                    if let GroupKind::Heading { level } = &group.kind {
+                        let text = doc.get_text_content(idx);
+                        if text.contains("Dichiarazione") || text.contains("Firma") {
+                            let bounds = doc.get_bounds(idx);
+                            println!("  h{}: '{}' bounds={:?}", level, text, bounds);
+                        }
+                    }
+                }
+            }
+
+            // Step 3: Check all text groups (pre-heading detection) that contain these words
+            println!("\n--- All root text blocks containing target words ---");
+            let roots = doc.roots();
+            for &idx in &roots {
+                let text = doc.get_text_content(idx);
+                if text.contains("Dichiarazione") || text.contains("Firma") {
+                    let group = doc.get_group(idx);
+                    let bounds = doc.get_bounds(idx);
+                    let kind = group.map(|g| format!("{:?}", g.kind)).unwrap_or_default();
+                    println!("  idx={} kind={} text='{}' bounds={:?}",
+                        idx, kind, text.trim(), bounds);
+                }
+            }
+        }
+
+        // This test is diagnostic-only; see output above.
+        // The actual assertion is in test_aaoe_dichiarazione_and_firme_in_all_states.
+    }
+
+    #[test]
+    fn test_aaoe_debug_all_section_titles_in_flattened() {
+        // Diagnostic: dump ALL Text_SectionTitle draw elements in each state's
+        // flattened output to understand why "Dichiarazione" and "Firma/e"
+        // aren't both present in every state.
+        use crate::flattened::FlattenedNodeKind;
+
+        let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+            .expect("Failed to create Blueprint from AAOE PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        for (state_idx, state) in form_states.iter().enumerate() {
+            println!("\n========== State {} ({}) ==========", state_idx, state.label);
+
+            // Show ALL Text_SectionTitle nodes
+            println!("\n--- ALL Text_SectionTitle nodes ---");
+            let mut count = 0;
+            for node in state.flattened.iter_nodes() {
+                if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+                    if source_name.as_deref() == Some("Text_SectionTitle") {
+                        let size = font_size.to_f32().unwrap_or(0.0);
+                        let is_bold = node.style.font.as_ref()
+                            .map(|f| f.weight == crate::xfa::FontWeight::Bold)
+                            .unwrap_or(false);
+                        let x = node.x.to_f32().unwrap_or(0.0);
+                        let y = node.y.to_f32().unwrap_or(0.0);
+                        println!("  [{}] text='{}' size={:.1} bold={} x={:.1} y={:.1}",
+                            count, content.trim(), size, is_bold, x, y);
+                        count += 1;
+                    }
+                }
+            }
+            println!("  Total Text_SectionTitle nodes: {}", count);
+
+            // Also show all bold text with size 8.0 (the section title style)
+            println!("\n--- ALL bold 8pt text nodes ---");
+            for node in state.flattened.iter_nodes() {
+                if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+                    let size = font_size.to_f32().unwrap_or(0.0);
+                    let is_bold = node.style.font.as_ref()
+                        .map(|f| f.weight == crate::xfa::FontWeight::Bold)
+                        .unwrap_or(false);
+                    if is_bold && (size - 8.0).abs() < 0.5 && !content.trim().is_empty() {
+                        let x = node.x.to_f32().unwrap_or(0.0);
+                        let y = node.y.to_f32().unwrap_or(0.0);
+                        println!("  text='{}' source={:?} size={:.1} x={:.1} y={:.1}",
+                            content.trim(), source_name, size, x, y);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_acav_has_vertical_field_table() {
         use crate::run_exhaustive_to_merged;
         use crate::structured::StructuredNode;

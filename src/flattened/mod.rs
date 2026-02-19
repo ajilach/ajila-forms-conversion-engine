@@ -1940,22 +1940,61 @@ impl Flattened {
         Self::from_xfa(xfa_nodes, &HashMap::new())
     }
 
-    /// Build a map from element ID to field name (for resolving xfa:embed references)
+    /// Build a map from element ID to full SOM path (for resolving xfa:embed references)
+    ///
+    /// Per XFA spec, `xfa:embed` with `embedType="uri"` uses unique element IDs
+    /// (e.g. `#floatingField006334`) to reference specific field instances.
+    /// We map these IDs to full SOM paths so that `resolve_embed_reference` can
+    /// look up the correct per-field computed value even when multiple fields
+    /// share the same short name.
     fn build_id_to_field_map(xfa_nodes: &[XfaNode]) -> HashMap<String, String> {
         let mut id_map = HashMap::new();
-        Self::collect_ids_recursive(xfa_nodes, &mut id_map);
+        Self::collect_ids_recursive(xfa_nodes, &mut id_map, None);
         id_map
     }
 
-    /// Recursively collect ID attributes and map them to field names
-    fn collect_ids_recursive(nodes: &[XfaNode], id_map: &mut HashMap<String, String>) {
+    /// Recursively collect ID attributes and map them to full SOM paths.
+    ///
+    /// Path-building mirrors the script executor's rules:
+    /// - Only Subform and ExclGroup nodes contribute to the parent path prefix
+    /// - Fields and Draws get a full path but don't extend the parent prefix
+    fn collect_ids_recursive(
+        nodes: &[XfaNode],
+        id_map: &mut HashMap<String, String>,
+        parent_path: Option<&str>,
+    ) {
         for node in nodes {
-            // Check if this node has both an id and a name
-            if let (Some(id), Some(name)) = (node.attributes.get("id"), &node.name) {
-                id_map.insert(id.clone(), name.clone());
+            let name = node.name.as_deref().unwrap_or("");
+
+            let is_subform = matches!(node.kind, XfaNodeKind::Subform)
+                || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+            let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
+
+            // Build the full SOM path for this node
+            let full_path = if !name.is_empty() {
+                match parent_path {
+                    Some(p) => format!("{}.{}", p, name),
+                    None => name.to_string(),
+                }
+            } else {
+                parent_path.unwrap_or("").to_string()
+            };
+
+            // Store ID -> full SOM path
+            if let Some(id) = node.attributes.get("id") {
+                if !full_path.is_empty() {
+                    id_map.insert(id.clone(), full_path.clone());
+                }
             }
-            // Recurse into children
-            Self::collect_ids_recursive(&node.children, id_map);
+
+            // Only subforms and exclGroups extend the parent path
+            let next_parent = if !name.is_empty() && (is_subform || is_exclgroup) {
+                Some(full_path.as_str())
+            } else {
+                parent_path
+            };
+
+            Self::collect_ids_recursive(&node.children, id_map, next_parent);
         }
     }
 

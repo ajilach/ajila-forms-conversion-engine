@@ -33,6 +33,10 @@ pub struct GlobalFontStats {
     /// Global heading style buckets sorted by priority: size desc, bold first, has_line first.
     /// Each entry is (size_bits, is_bold, has_line).
     pub heading_buckets: Vec<(u32, bool, bool)>,
+    /// X-positions of heading candidates per bucket, collected from all flattened states.
+    /// Used to compute global x-alignment for consistent heading detection.
+    /// Key: (size_bits, is_bold, has_line), Value: list of x-coordinates.
+    pub heading_bucket_x_positions: HashMap<(u32, bool, bool), Vec<f32>>,
 }
 
 /// Kept for backward compatibility. No longer used for heading level detection.
@@ -129,6 +133,7 @@ impl GlobalFontStats {
             most_common_style,
             common_style_ratio,
             heading_buckets: Vec::new(),
+            heading_bucket_x_positions: HashMap::new(),
         }
     }
 
@@ -198,6 +203,13 @@ impl GlobalFontStats {
 
                     let has_line = has_font_underline || has_top_border || has_bottom_border;
                     bucket_set.insert((size_bits, is_bold, has_line));
+
+                    // Collect x-position for global x-alignment computation
+                    let x = node.x.to_f32().unwrap_or(0.0);
+                    self.heading_bucket_x_positions
+                        .entry((size_bits, is_bold, has_line))
+                        .or_default()
+                        .push(x);
                 }
             }
         }
@@ -215,6 +227,69 @@ impl GlobalFontStats {
         });
 
         self.heading_buckets = buckets;
+    }
+
+    /// Compute global x-alignment data from the collected heading bucket x-positions.
+    ///
+    /// Returns a `GlobalXAlignment` that can be passed to `HeadingDetector::process_with_stats`
+    /// to ensure consistent x-alignment filtering across all form states.
+    fn compute_global_x_alignment(&self) -> GlobalXAlignment {
+        let x_tolerance = 3.0f32;
+
+        let mut bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
+        for ((size_bits, is_bold, has_line), xs) in &self.heading_bucket_x_positions {
+            let bucket = HeadingStyleBucket {
+                size: OrderedFloat(f32::from_bits(*size_bits)),
+                is_bold: *is_bold,
+                has_line: *has_line,
+            };
+            if xs.is_empty() {
+                continue;
+            }
+            let mut best_x = xs[0];
+            let mut best_count = 0usize;
+            for &x in xs {
+                let count = xs
+                    .iter()
+                    .filter(|&&other| (other - x).abs() <= x_tolerance)
+                    .count();
+                if count > best_count {
+                    best_count = count;
+                    best_x = x;
+                }
+            }
+            bucket_dominant_x.insert(bucket, best_x);
+        }
+
+        let global_dominant_x = {
+            let all_xs: Vec<f32> = self
+                .heading_bucket_x_positions
+                .values()
+                .flat_map(|v| v.iter().copied())
+                .collect();
+            if all_xs.is_empty() {
+                None
+            } else {
+                let mut best_x = all_xs[0];
+                let mut best_count = 0usize;
+                for &x in &all_xs {
+                    let count = all_xs
+                        .iter()
+                        .filter(|&&other| (other - x).abs() <= x_tolerance)
+                        .count();
+                    if count > best_count {
+                        best_count = count;
+                        best_x = x;
+                    }
+                }
+                Some(best_x)
+            }
+        };
+
+        GlobalXAlignment {
+            bucket_dominant_x,
+            global_dominant_x,
+        }
     }
 
     /// Backward-compatible alias for compute_heading_buckets.
@@ -746,6 +821,20 @@ struct HeadingStyleBucket {
     has_line: bool,
 }
 
+/// Precomputed global x-alignment data for heading detection.
+///
+/// Ensures consistent heading detection across all form states by using
+/// the same dominant x-positions (computed from ALL states) for filtering.
+/// Without this, each state computes its own dominant x from only its
+/// visible candidates, which can vary with dropdown/radio selections.
+#[derive(Debug, Clone)]
+struct GlobalXAlignment {
+    /// Dominant x-position per heading style bucket, computed from all states
+    bucket_dominant_x: HashMap<HeadingStyleBucket, f32>,
+    /// Overall dominant x-position across all buckets, computed from all states
+    global_dominant_x: Option<f32>,
+}
+
 /// Wrapper for f32 that implements Hash and Eq.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
@@ -766,12 +855,12 @@ impl AnalysisModule for HeadingDetector {
     fn process(&self, doc: &mut Document) {
         // Collect font statistics from this document only
         let stats = self.collect_font_stats(doc);
-        self.process_with_stats(doc, &stats, None);
+        self.process_with_stats(doc, &stats, None, None);
     }
 
     fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
         // Compute global stats from all flattened data in the context
-        let (stats, global_buckets) = if !ctx.all_flattened.is_empty() {
+        let (stats, global_buckets, global_x_alignment) = if !ctx.all_flattened.is_empty() {
             let mut global_stats = GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter());
             global_stats.compute_heading_buckets(ctx.all_flattened.iter());
             let buckets = if !global_stats.heading_buckets.is_empty() {
@@ -789,12 +878,18 @@ impl AnalysisModule for HeadingDetector {
             } else {
                 None
             };
-            (global_stats.to_font_stats(), buckets)
+            let x_alignment = global_stats.compute_global_x_alignment();
+            (global_stats.to_font_stats(), buckets, Some(x_alignment))
         } else {
             // Fallback to local stats
-            (self.collect_font_stats(doc), None)
+            (self.collect_font_stats(doc), None, None)
         };
-        self.process_with_stats(doc, &stats, global_buckets.as_deref());
+        self.process_with_stats(
+            doc,
+            &stats,
+            global_buckets.as_deref(),
+            global_x_alignment.as_ref(),
+        );
     }
 }
 
@@ -803,6 +898,11 @@ impl HeadingDetector {
     /// If `global_heading_buckets` is Some, uses global bucket ranking for consistent
     /// heading level detection across form states. Otherwise computes local bucket ranking.
     ///
+    /// If `global_x_alignment` is Some, uses precomputed x-alignment data from all form
+    /// states for filtering. This prevents different states from computing different
+    /// dominant x-positions (which would cause the same heading to be detected in one
+    /// state but not another).
+    ///
     /// Applies per-level x-alignment filtering: within each heading level
     /// (style bucket), candidates must share the dominant left-edge x-coordinate.
     fn process_with_stats(
@@ -810,6 +910,7 @@ impl HeadingDetector {
         doc: &mut Document,
         stats: &FontStats,
         global_heading_buckets: Option<&[HeadingStyleBucket]>,
+        global_x_alignment: Option<&GlobalXAlignment>,
     ) {
         // Need enough samples for meaningful analysis
         if stats.sample_count < self.min_samples {
@@ -858,47 +959,32 @@ impl HeadingDetector {
         // ── 3. Per-level x-alignment filter ────────────────────────────────
         // Group candidates by their style bucket and find the dominant x for each bucket.
         // Candidates whose x doesn't match the bucket's dominant x (±tolerance) are removed.
+        //
+        // When global_x_alignment is available (exhaustive/multi-state mode), we use
+        // precomputed dominant x-positions from ALL states. This ensures the same
+        // heading candidate is kept/removed consistently across states, preventing
+        // flaky merges caused by state-dependent dominant x values.
         let x_tolerance = 3.0f32; // points
 
-        // Compute dominant x per bucket
-        let mut bucket_x_votes: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
-        for c in &candidates {
-            bucket_x_votes
-                .entry(c.bucket.clone())
-                .or_default()
-                .push(c.x_coord);
-        }
-
-        let mut bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
-        for (bucket, xs) in &bucket_x_votes {
-            // Find the x value with the most candidates within tolerance
-            let mut best_x = xs[0];
-            let mut best_count = 0usize;
-            for &x in xs {
-                let count = xs
-                    .iter()
-                    .filter(|&&other| (other - x).abs() <= x_tolerance)
-                    .count();
-                if count > best_count {
-                    best_count = count;
-                    best_x = x;
-                }
+        let (bucket_dominant_x, global_dominant_x) = if let Some(gxa) = global_x_alignment {
+            // Use globally precomputed x-alignment
+            (gxa.bucket_dominant_x.clone(), gxa.global_dominant_x)
+        } else {
+            // Compute from this state's candidates only (single-state mode)
+            let mut bucket_x_votes: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
+            for c in &candidates {
+                bucket_x_votes
+                    .entry(c.bucket.clone())
+                    .or_default()
+                    .push(c.x_coord);
             }
-            bucket_dominant_x.insert(bucket.clone(), best_x);
-        }
 
-        // Compute the global dominant heading x: the x-position where the most
-        // heading candidates across ALL buckets cluster.  Used as a fallback
-        // when a candidate's own bucket has a different dominant x.
-        let global_dominant_x: Option<f32> = {
-            let all_xs: Vec<f32> = candidates.iter().map(|c| c.x_coord).collect();
-            if all_xs.is_empty() {
-                None
-            } else {
-                let mut best_x = all_xs[0];
+            let mut local_bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
+            for (bucket, xs) in &bucket_x_votes {
+                let mut best_x = xs[0];
                 let mut best_count = 0usize;
-                for &x in &all_xs {
-                    let count = all_xs
+                for &x in xs {
+                    let count = xs
                         .iter()
                         .filter(|&&other| (other - x).abs() <= x_tolerance)
                         .count();
@@ -907,8 +993,31 @@ impl HeadingDetector {
                         best_x = x;
                     }
                 }
-                Some(best_x)
+                local_bucket_dominant_x.insert(bucket.clone(), best_x);
             }
+
+            let local_global_dominant_x: Option<f32> = {
+                let all_xs: Vec<f32> = candidates.iter().map(|c| c.x_coord).collect();
+                if all_xs.is_empty() {
+                    None
+                } else {
+                    let mut best_x = all_xs[0];
+                    let mut best_count = 0usize;
+                    for &x in &all_xs {
+                        let count = all_xs
+                            .iter()
+                            .filter(|&&other| (other - x).abs() <= x_tolerance)
+                            .count();
+                        if count > best_count {
+                            best_count = count;
+                            best_x = x;
+                        }
+                    }
+                    Some(best_x)
+                }
+            };
+
+            (local_bucket_dominant_x, local_global_dominant_x)
         };
 
         // Filter candidates that don't match their bucket's dominant x.

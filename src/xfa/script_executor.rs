@@ -447,6 +447,17 @@ impl ScriptExecutor {
                 .or_insert(value);
         }
 
+        // Also store values keyed by full SOM path to avoid collisions
+        // between fields with the same short name in different subforms.
+        // This is needed for xfa:embed URI resolution (id_to_field now maps
+        // element IDs to full SOM paths).
+        let som_values_by_path = engine.get_all_som_field_values_by_path();
+        for (full_path, value) in som_values_by_path {
+            computed_values
+                .entry(SomPath::new(full_path))
+                .or_insert(value);
+        }
+
         Ok(ScriptExecutionResult {
             computed_values,
             presence_changes,
@@ -818,10 +829,7 @@ impl ScriptExecutor {
     }
 
     /// Recursively collect <script> content from <variables> elements.
-    fn collect_variable_scripts(
-        nodes: &[XfaNode],
-        scripts: &mut Vec<(String, String)>,
-    ) {
+    fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
         for node in nodes {
             if let XfaNodeKind::Element { tag_name, .. } = &node.kind
                 && tag_name == "variables"
