@@ -7367,7 +7367,7 @@
         // Verify that the AAOE_033_IT merged structured tree contains the expected
         // top-level H2 sections in document order.
         use crate::run_exhaustive_to_merged;
-        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
+        use crate::structured::{InlineNode, StructuredNode};
 
         let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
             .expect("Failed to run exhaustive merge on AAOE");
@@ -7464,4 +7464,142 @@
                 h2_headings
             );
         }
+    }
+
+    #[test]
+    fn test_acav_has_vertical_field_table() {
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        fn count_single_column_grid_layouts(nodes: &[StructuredNode]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(grid) => {
+                        if grid.columns == 1 {
+                            count += 1;
+                        }
+                        for element in &grid.elements {
+                            count += count_single_column_grid_layouts(
+                                std::slice::from_ref(&element.node),
+                            );
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        count += count_single_column_grid_layouts(&group.children);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
+                    }
+                    _ => {}
+                }
+            }
+            count
+        }
+
+        let merged =
+            run_exhaustive_to_merged("input/ACAV_001_DE.pdf").expect("Failed to process ACAV PDF");
+        let count = count_single_column_grid_layouts(&merged);
+        assert!(
+            count >= 1,
+            "Expected at least one 1-column GridLayout (vertical field table) in ACAV, found {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_aaab_has_no_vertical_field_table() {
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        fn count_single_column_grid_layouts(nodes: &[StructuredNode]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(grid) => {
+                        if grid.columns == 1 {
+                            count += 1;
+                        }
+                        for element in &grid.elements {
+                            count += count_single_column_grid_layouts(
+                                std::slice::from_ref(&element.node),
+                            );
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        count += count_single_column_grid_layouts(&group.children);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
+                    }
+                    _ => {}
+                }
+            }
+            count
+        }
+
+        let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to process AAAB PDF");
+        let count = count_single_column_grid_layouts(&merged);
+        assert_eq!(
+            count, 0,
+            "Expected no 1-column GridLayout (vertical field table) in AAAB, found {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_aaai_has_no_vertical_field_table() {
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        fn count_single_column_grid_layouts(nodes: &[StructuredNode]) -> usize {
+            let mut count = 0;
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(grid) => {
+                        if grid.columns == 1 {
+                            count += 1;
+                        }
+                        for element in &grid.elements {
+                            count += count_single_column_grid_layouts(
+                                std::slice::from_ref(&element.node),
+                            );
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        count += count_single_column_grid_layouts(&group.children);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
+                    }
+                    _ => {}
+                }
+            }
+            count
+        }
+
+        let merged = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+            .expect("Failed to process AAAI PDF");
+        let count = count_single_column_grid_layouts(&merged);
+        assert_eq!(
+            count, 0,
+            "Expected no 1-column GridLayout (vertical field table) in AAAI, found {}",
+            count
+        );
     }

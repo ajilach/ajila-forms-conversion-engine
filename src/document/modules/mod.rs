@@ -45,6 +45,9 @@
 //! FieldTableDetector          ─── detects field tables with bold headers
 //!     │
 //!     ▼
+//! FieldTableDetectorVertical  ─── detects vertical field tables with bold labels to the left
+//!     │
+//!     ▼
 //! HeadingDetector             ─── identifies headings (must run BEFORE LabelAttacher)
 //!     │
 //!     ▼
@@ -80,6 +83,7 @@ mod checkbox_detector;
 mod date_field_detector;
 mod field_grouper;
 mod field_table_detector;
+mod field_table_detector_vertical;
 mod grid_template;
 mod heading_detector;
 mod inline_field_date_picker;
@@ -99,6 +103,7 @@ pub use checkbox_detector::CheckboxDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
+pub use field_table_detector_vertical::FieldTableDetectorVertical;
 pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalBorderStats, GlobalFontStats, HeadingDetector};
 pub use inline_field_date_picker::InlineFieldDatePicker;
@@ -183,6 +188,7 @@ pub fn run_analysis_pipeline_with_context(
     ListDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);
     FieldTableDetector::new().process_with_context(doc, ctx);
+    FieldTableDetectorVertical::new().process_with_context(doc, ctx);
     HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
