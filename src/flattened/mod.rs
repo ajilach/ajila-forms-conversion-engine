@@ -494,6 +494,10 @@ pub struct RichParagraph {
     pub space_below: Option<f32>,
     /// Whether this is an empty paragraph (just whitespace/separator)
     pub is_empty: bool,
+    /// Per-paragraph font size override (from CSS font-size on `<p>` style)
+    pub font_size: Option<f32>,
+    /// Per-paragraph line height override (from CSS line-height on `<p>` style)
+    pub line_height: Option<f32>,
 }
 
 /// A run of text with uniform styling.
@@ -5993,6 +5997,12 @@ impl Flattened {
                             // Parse paragraph styles from style attribute
                             let para_bold = if let Some(style) = child.attributes.get("style") {
                                 para.text_indent = Self::parse_css_dimension(style, "text-indent");
+                                para.font_size = Self::parse_css_dimension(style, "font-size");
+                                para.line_height = Self::parse_css_dimension(style, "line-height");
+                                // Parse margin-top as space_above
+                                if let Some(mt) = Self::parse_css_dimension(style, "margin-top") {
+                                    para.space_above = Some(mt);
+                                }
                                 // Only override h_align if CSS specifies it
                                 let css_align = Self::parse_css_alignment_optional(style);
                                 if let Some(align) = css_align {
@@ -6850,20 +6860,24 @@ impl Flattened {
         let mut paragraph_heights: Vec<Num> = Vec::with_capacity(rich_text.paragraphs.len());
 
         for para in &rich_text.paragraphs {
+            // Use per-paragraph font size override if available
+            let para_font_size = para.font_size.map(|s| num(s as f64)).unwrap_or(base_font_size);
+            let mut para_xfa_font = xfa_font.clone();
+            para_xfa_font.size = para_font_size;
+
             if para.is_empty {
                 // Empty paragraph: height is one line (derived spacing) per AXTE,
                 // plus any spaceAbove/spaceBelow from the paragraph itself.
-                let line_height = default_para
-                    .as_ref()
-                    .and_then(|p| p.line_height)
+                let line_height = para.line_height.map(|lh| num(lh as f64))
+                    .or_else(|| default_para.as_ref().and_then(|p| p.line_height))
                     .unwrap_or_else(|| {
                         // Use AXTE derived spacing: TH + LG
                         // For the base font: ascent + descent + 20% of font_size
-                        if let Ok(metrics) = measurer.get_metrics_for_style(&xfa_font) {
+                        if let Ok(metrics) = measurer.get_metrics_for_style(&para_xfa_font) {
                             metrics.derived_line_spacing()
                         } else {
                             // Fallback: font_size * 1.2
-                            base_font_size * num(1.2)
+                            para_font_size * num(1.2)
                         }
                     });
                 let space_above = para.space_above.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
@@ -6882,11 +6896,11 @@ impl Flattened {
 
             if plain_text.trim().is_empty() {
                 // Paragraph with only whitespace runs — treat like empty
-                let metrics_result = measurer.get_metrics_for_style(&xfa_font);
+                let metrics_result = measurer.get_metrics_for_style(&para_xfa_font);
                 let line_height = if let Ok(metrics) = metrics_result {
                     metrics.derived_line_spacing()
                 } else {
-                    base_font_size * num(1.2)
+                    para_font_size * num(1.2)
                 };
                 paragraph_heights.push(line_height);
                 continue;
@@ -6899,7 +6913,9 @@ impl Flattened {
                     .as_ref()
                     .map(|p| p.v_align)
                     .unwrap_or(VAlign::Top),
-                line_height: default_para.as_ref().and_then(|p| p.line_height),
+                line_height: para.line_height.map(|lh| num(lh as f64)).or_else(|| {
+                    default_para.as_ref().and_then(|p| p.line_height)
+                }),
                 space_above: para.space_above.map(|s| num(s as f64)).or_else(|| {
                     default_para.as_ref().and_then(|p| p.space_above)
                 }),
@@ -6914,20 +6930,20 @@ impl Flattened {
             });
 
             // Measure the paragraph text block
-            match measurer.measure_text_block(&plain_text, &Some(xfa_font.clone()), &para_props, max_width) {
+            match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props, max_width) {
                 Ok(block_metrics) => {
                     paragraph_heights.push(block_metrics.total_height);
                 }
                 Err(_) => {
                     // Fallback: estimate with line count * line height
-                    let estimated_chars_per_line = max_width / (base_font_size * num(0.5));
+                    let estimated_chars_per_line = max_width / (para_font_size * num(0.5));
                     let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
                         let text_len = num(plain_text.len() as f64);
                         (text_len / estimated_chars_per_line).ceil()
                     } else {
                         Decimal::ONE
                     };
-                    let line_height = base_font_size * num(1.2);
+                    let line_height = para_font_size * num(1.2);
                     paragraph_heights.push(estimated_lines * line_height);
                 }
             }
@@ -6939,6 +6955,9 @@ impl Flattened {
 
         for (i, para) in rich_text.paragraphs.iter().enumerate() {
             let para_height = paragraph_heights[i];
+
+            // Use per-paragraph font size override if available
+            let para_font_size = para.font_size.map(|s| num(s as f64)).unwrap_or(base_font_size);
 
             // Build the plain text for this paragraph
             let para_text: String = para
@@ -6953,15 +6972,23 @@ impl Flattened {
                 paragraphs: vec![para.clone()],
             };
 
+            // Build per-paragraph style with font size override if needed
+            let mut para_style = node.style.clone();
+            if para.font_size.is_some() {
+                if let Some(ref mut font) = para_style.font {
+                    font.size = para_font_size;
+                }
+            }
+
             let para_node = FlattenedNode::new_text_with_rich_text(
                 para_text,
-                base_font_size,
+                para_font_size,
                 base_font_name.clone(),
                 node.x,
                 current_y,
                 node.width,
                 para_height,
-                node.style.clone(),
+                para_style,
                 node.rotate,
                 source_name.clone(),
                 Some(single_rich_text),

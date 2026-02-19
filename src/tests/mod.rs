@@ -7889,3 +7889,83 @@
             count
         );
     }
+
+    #[test]
+    fn test_aaoe_title_does_not_include_subtitle() {
+        // The AAOE form title (Text_FormTitle) contains 3 <p> paragraphs:
+        //   1. "Valori patrimoniali e redditi assoggettati all'imposta di" (18pt)
+        //   2. "fonte statunitense" (18pt)
+        //   3. "Dichiarazione per l'esenzione da imposta alla fonte ..." (8pt)
+        //
+        // Paragraphs 1+2 share the same font size (18pt) and should be merged
+        // into a single heading. Paragraph 3 has a different font size (8pt)
+        // and must NOT be merged into the title heading.
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::document::GroupKind;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Find the H1 heading
+        let h1_headings: Vec<_> = doc
+            .headings()
+            .into_iter()
+            .filter(|&idx| {
+                matches!(
+                    doc.get_group(idx).map(|g| &g.kind),
+                    Some(GroupKind::Heading { level: 1 })
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            h1_headings.len(),
+            1,
+            "AAOE should have exactly 1 H1 heading, found {}",
+            h1_headings.len()
+        );
+
+        let h1_text = doc.get_text_content(h1_headings[0]);
+
+        // The H1 title text should NOT contain the subtitle
+        assert!(
+            !h1_text.contains("Dichiarazione"),
+            "H1 heading should not contain the subtitle 'Dichiarazione ...', \
+             but got: {:?}",
+            h1_text
+        );
+
+        // The H1 title should contain the actual title text
+        assert!(
+            h1_text.contains("Valori patrimoniali"),
+            "H1 heading should contain the title text, got: {:?}",
+            h1_text
+        );
+        assert!(
+            h1_text.contains("fonte statunitense"),
+            "H1 heading should contain 'fonte statunitense', got: {:?}",
+            h1_text
+        );
+
+        // The subtitle should exist as a separate text block (not in the heading)
+        let root_text_blocks = doc.root_text_blocks();
+        let subtitle_exists = root_text_blocks.iter().any(|&idx| {
+            let text = doc.get_text_content(idx);
+            text.contains("Dichiarazione per l'esenzione")
+        });
+        assert!(
+            subtitle_exists,
+            "The subtitle 'Dichiarazione per l'esenzione ...' should exist as a \
+             separate text block outside the H1 heading"
+        );
+    }
