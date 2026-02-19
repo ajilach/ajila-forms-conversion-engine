@@ -7969,3 +7969,77 @@
              separate text block outside the H1 heading"
         );
     }
+
+    #[test]
+    fn test_aaoe_individual_street_row_below_name_row() {
+        // Regression test: In AAOE with CL_ClientType = "Individual", the
+        // FamilyName/FirstName row and Street/StreetNumber row are sibling
+        // subforms inside an lr-tb container. Both subforms lack an explicit `h`
+        // attribute (they are growable). When placed in lr-tb layout, each wraps
+        // to its own line. The bug was that the first subform's grown height was
+        // not fed back into max_height_in_row, so the second row was placed at
+        // the same y-coordinate, causing overlap.
+        //
+        // The saved form state already has CL_ClientType = "Individual".
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Collect field positions by name
+        let mut field_positions: HashMap<String, (rust_decimal::Decimal, rust_decimal::Decimal)> =
+            HashMap::new();
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+                field_positions.insert(name.clone(), (node.x, node.y));
+            }
+        }
+
+        let (fam_x, fam_y) = field_positions
+            .get("TF_FamilyName")
+            .expect("TF_FamilyName should exist in flattened output");
+        let (first_x, first_y) = field_positions
+            .get("TF_FirstName")
+            .expect("TF_FirstName should exist in flattened output");
+        let (street_x, street_y) = field_positions
+            .get("TF_Street")
+            .expect("TF_Street should exist in flattened output");
+        let (streetnum_x, streetnum_y) = field_positions
+            .get("TF_StreetNumber")
+            .expect("TF_StreetNumber should exist in flattened output");
+
+        // FamilyName and FirstName should be in the same row (same y, different x)
+        assert_eq!(
+            fam_y, first_y,
+            "TF_FamilyName and TF_FirstName should share the same y (same row), \
+             got y={} vs y={}",
+            fam_y, first_y
+        );
+        assert!(
+            first_x > fam_x,
+            "TF_FirstName should be to the right of TF_FamilyName"
+        );
+
+        // Street and StreetNumber should be in the same row (same y, different x)
+        assert_eq!(
+            street_y, streetnum_y,
+            "TF_Street and TF_StreetNumber should share the same y (same row), \
+             got y={} vs y={}",
+            street_y, streetnum_y
+        );
+        assert!(
+            streetnum_x > street_x,
+            "TF_StreetNumber should be to the right of TF_Street"
+        );
+
+        // Street row must be BELOW the name row (greater y)
+        assert!(
+            street_y > fam_y,
+            "TF_Street row (y={}) must be below TF_FamilyName row (y={}), \
+             but they overlap at the same height",
+            street_y, fam_y
+        );
+    }
