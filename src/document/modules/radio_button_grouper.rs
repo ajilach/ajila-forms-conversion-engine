@@ -324,8 +324,13 @@ impl RadioButtonGrouper {
             }
         }
 
+        // Sort by key (SOM path) to ensure deterministic group ordering —
+        // HashMap iteration order is non-deterministic.
+        let mut sorted_groups: Vec<_> = excl_groups.into_iter().collect();
+        sorted_groups.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
+
         // Create RadioButtonGroup for each exclGroup with more than one radio button
-        for (_path, group) in excl_groups {
+        for (_path, group) in sorted_groups {
             if group.len() > 1 {
                 doc.merge(
                     group,

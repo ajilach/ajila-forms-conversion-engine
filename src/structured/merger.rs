@@ -117,7 +117,6 @@ impl MergeInput {
     pub fn new(selections: Vec<Selection>, nodes: Vec<StructuredNode>) -> Self {
         Self { selections, nodes }
     }
-
 }
 
 /// Recursive merger for combining multiple form states
@@ -204,8 +203,13 @@ impl RecursiveMerger {
             groups.entry(key).or_default().push(input.clone());
         }
 
-        // Convert to Vec, preserving the full Selection
-        groups
+        // Convert to Vec, preserving the full Selection.
+        // Sort by key to ensure deterministic group ordering — HashMap iteration
+        // order is non-deterministic, and the order affects prefix/suffix extraction.
+        let mut sorted: Vec<_> = groups.into_iter().collect();
+        sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        sorted
             .into_iter()
             .map(|(key, inputs)| {
                 let selection = key.and_then(|_| {

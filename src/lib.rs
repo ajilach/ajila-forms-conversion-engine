@@ -2,6 +2,8 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::needless_range_loop)]
+#![deny(unsafe_code)]
+
 //! Blueprint - XFA PDF document analysis library.
 //!
 //! This library provides a high-level API for processing XFA PDF documents.
@@ -116,6 +118,7 @@ use pdf::file::FileOptions;
 use pdf::object::*;
 use pdf::primitive::Primitive;
 use std::path::Path;
+use std::sync::Arc;
 
 // ============================================================================
 // Render mode
@@ -260,7 +263,7 @@ pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, E
 /// radio buttons and checkboxes selected. It holds the flattened layout and
 /// a shared reference to the `GlobalContext` (computed from *all* states) so
 /// that analysis modules produce consistent results across states.
-pub struct FormState<'a> {
+pub struct FormState {
     /// The flattened layout for this state.
     pub flattened: Flattened,
     /// Which controls were toggled to reach this state.
@@ -268,10 +271,10 @@ pub struct FormState<'a> {
     /// Human-readable label (e.g. `"default"`, `"RB_1_CB_2"`).
     pub label: String,
     /// Shared global context computed from all sibling states.
-    global_ctx: &'a GlobalContext<'a>,
+    global_ctx: Arc<GlobalContext>,
 }
 
-impl<'a> FormState<'a> {
+impl FormState {
     /// Convert this state to a [`DocumentEnvelope`] containing the structured
     /// representation of the form.
     ///
@@ -280,7 +283,7 @@ impl<'a> FormState<'a> {
     /// structured node tree.
     pub fn structured(&self, context: Context) -> DocumentEnvelope {
         let mut doc = Document::from_flattened(&self.flattened);
-        run_analysis_pipeline_with_context(&mut doc, self.global_ctx);
+        run_analysis_pipeline_with_context(&mut doc, &self.global_ctx);
         structured::convert_with_context(&doc, context)
     }
 
@@ -304,7 +307,7 @@ impl<'a> FormState<'a> {
     /// boxes and labels on top of the rendered content.
     pub fn render_labelled(&self, scale: f32) -> Result<RgbaImage, Error> {
         let mut doc = Document::from_flattened(&self.flattened);
-        run_analysis_pipeline_with_context(&mut doc, self.global_ctx);
+        run_analysis_pipeline_with_context(&mut doc, &self.global_ctx);
         doc.render_to_image_buffer(scale).map_err(Error::Render)
     }
 }
@@ -445,22 +448,22 @@ impl Blueprint {
 
 /// Owns the collected states and the `GlobalContext` computed from them.
 ///
-/// Individual [`FormState`] values borrow from this container.
+/// Individual [`FormState`] values share the context via `Arc`.
 pub struct FormStates {
     /// Raw collected data (flattened + selections + label).
     collected: Vec<exhaustive::CollectedState>,
-    /// Flattened references for GlobalContext (kept in sync with `collected`).
-    flattened_refs: Vec<Flattened>,
+    /// Shared global context built once from all flattened states.
+    global_ctx: Arc<GlobalContext>,
 }
 
 impl FormStates {
     fn new(collected: Vec<exhaustive::CollectedState>) -> Self {
-        // Extract flattened clones for the GlobalContext reference slice.
-        let flattened_refs: Vec<Flattened> =
-            collected.iter().map(|s| s.flattened.clone()).collect();
+        // Build owned GlobalContext from cloned flattened states.
+        let all_flattened: Vec<Flattened> = collected.iter().map(|s| s.flattened.clone()).collect();
+        let global_ctx = Arc::new(GlobalContext::new(all_flattened));
         FormStates {
             collected,
-            flattened_refs,
+            global_ctx,
         }
     }
 
@@ -476,27 +479,10 @@ impl FormStates {
 
     /// Iterate over all form states.
     ///
-    /// Each [`FormState`] borrows from this `FormStates` container (for the
-    /// shared `GlobalContext`).
-    ///
-    /// Note: This method leaks a small amount of memory (the `GlobalContext` for
-    /// this iteration) to satisfy lifetime requirements. For most use cases, this
-    /// is negligible. If you need to avoid this, use [`for_each`](Self::for_each)
-    /// instead.
+    /// Each [`FormState`] shares the `GlobalContext` via `Arc`.
     pub fn iter(&self) -> FormStatesIter<'_> {
-        let refs: Vec<&Flattened> = self.flattened_refs.iter().collect();
-        let refs_box: Box<[&Flattened]> = refs.into_boxed_slice();
-        let refs_static = unsafe {
-            // SAFETY: We're converting the box into a raw pointer and then
-            // dereferencing it. This leaks the allocation, but ensures the
-            // slice lives long enough for the iterator.
-            &*(Box::into_raw(refs_box) as *const [&Flattened])
-        };
-        let global_ctx = Box::leak(Box::new(GlobalContext::new(refs_static)));
-
         FormStatesIter {
             owner: self,
-            global_ctx,
             index: 0,
         }
     }
@@ -505,12 +491,11 @@ impl FormStates {
 /// Iterator over [`FormState`] values.
 pub struct FormStatesIter<'a> {
     owner: &'a FormStates,
-    global_ctx: &'a GlobalContext<'a>,
     index: usize,
 }
 
 impl<'a> Iterator for FormStatesIter<'a> {
-    type Item = FormState<'a>;
+    type Item = FormState;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.owner.collected.len() {
@@ -524,7 +509,7 @@ impl<'a> Iterator for FormStatesIter<'a> {
             flattened: state.flattened.clone(),
             selections: state.selections.clone(),
             label: state.label.clone(),
-            global_ctx: self.global_ctx,
+            global_ctx: Arc::clone(&self.owner.global_ctx),
         })
     }
 

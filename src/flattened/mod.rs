@@ -125,11 +125,6 @@ impl FlattenedKind {
         FlattenedNodeIter::new(std::slice::from_ref(self))
     }
 
-    /// Iterate over all leaf nodes mutably
-    pub fn iter_nodes_mut(&mut self) -> FlattenedNodeIterMut<'_> {
-        FlattenedNodeIterMut::new(std::slice::from_mut(self))
-    }
-
     /// Count all leaf nodes recursively
     pub fn node_count(&self) -> usize {
         match self {
@@ -161,42 +156,6 @@ impl<'a> Iterator for FlattenedNodeIter<'a> {
                 Some(FlattenedKind::Node(node)) => return Some(node),
                 Some(FlattenedKind::Group { children, .. }) => {
                     self.stack.push(children.iter());
-                }
-                None => {
-                    self.stack.pop();
-                }
-            }
-        }
-        None
-    }
-}
-
-/// Mutable iterator over all leaf nodes in a FlattenedKind tree
-pub struct FlattenedNodeIterMut<'a> {
-    stack: Vec<std::slice::IterMut<'a, FlattenedKind>>,
-}
-
-impl<'a> FlattenedNodeIterMut<'a> {
-    fn new(children: &'a mut [FlattenedKind]) -> Self {
-        FlattenedNodeIterMut {
-            stack: vec![children.iter_mut()],
-        }
-    }
-}
-
-impl<'a> Iterator for FlattenedNodeIterMut<'a> {
-    type Item = &'a mut FlattenedNode;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(iter) = self.stack.last_mut() {
-            match iter.next() {
-                Some(FlattenedKind::Node(node)) => return Some(node),
-                Some(FlattenedKind::Group { children, .. }) => {
-                    // SAFETY: We need to extend the lifetime here because we're
-                    // pushing to a stack that outlives this loop iteration.
-                    // This is safe because we only access each element once.
-                    let children_ptr = children as *mut Vec<FlattenedKind>;
-                    self.stack.push(unsafe { (*children_ptr).iter_mut() });
                 }
                 None => {
                     self.stack.pop();
@@ -1613,11 +1572,6 @@ impl Flattened {
     /// Iterate over all leaf nodes recursively
     pub fn iter_nodes(&self) -> FlattenedNodeIter<'_> {
         FlattenedNodeIter::new(&self.children)
-    }
-
-    /// Iterate over all leaf nodes mutably
-    pub fn iter_nodes_mut(&mut self) -> FlattenedNodeIterMut<'_> {
-        FlattenedNodeIterMut::new(&mut self.children)
     }
 
     /// Count all leaf nodes

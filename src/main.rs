@@ -80,7 +80,7 @@ struct Args {
 
 /// Render a form state to disk using the specified render mode.
 fn render_state(
-    state: &blueprint::FormState<'_>,
+    state: &blueprint::FormState,
     doc_name: &str,
     scale: f32,
     mode: RenderMode,

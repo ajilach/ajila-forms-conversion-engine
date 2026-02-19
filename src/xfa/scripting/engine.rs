@@ -19,30 +19,8 @@ use boa_engine::{
     object::{JsObject, ObjectInitializer},
     property::{Attribute, PropertyKey},
 };
-use boa_gc::{Finalize, GcRefCell, Trace};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-
-/// XFA Field object exposed to JavaScript
-#[derive(Debug, Clone, Trace, Finalize)]
-pub struct XfaFieldObject {
-    #[unsafe_ignore_trace]
-    pub name: String,
-    #[unsafe_ignore_trace]
-    pub path: SomPath,
-    #[unsafe_ignore_trace]
-    pub raw_value: GcRefCell<String>,
-}
-
-impl XfaFieldObject {
-    pub fn new(name: String, path: SomPath, initial_value: String) -> Self {
-        XfaFieldObject {
-            name,
-            path,
-            raw_value: GcRefCell::new(initial_value),
-        }
-    }
-}
 
 /// XFA Scripting Engine with XFA 3.3 spec compliance
 pub struct XfaScriptEngine {

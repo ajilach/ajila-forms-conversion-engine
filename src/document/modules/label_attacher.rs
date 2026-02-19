@@ -14,7 +14,7 @@ use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
 /// The position of a label relative to its field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LabelPosition {
     Above,
     Below,
@@ -139,10 +139,13 @@ impl LabelAttacher {
             }
         }
 
-        // Find the dominant position (most votes)
+        // Find the dominant position (most votes).
+        // Break ties by variant order for deterministic results.
         position_votes
             .into_iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by(|(pos1, count1), (pos2, count2)| {
+                count1.cmp(count2).then_with(|| pos1.cmp(pos2))
+            })
             .map(|(pos, _)| pos)
     }
 

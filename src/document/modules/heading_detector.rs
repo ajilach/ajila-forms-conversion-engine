@@ -99,17 +99,19 @@ impl GlobalFontStats {
             sizes[len / 2]
         };
 
-        // Find the most common font size (body text)
+        // Find the most common font size (body text).
+        // Break ties by key to ensure deterministic results across HashMap orderings.
         let body_size = size_counts
             .iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by(|(k1, c1), (k2, c2)| c1.cmp(c2).then_with(|| k1.cmp(k2)))
             .map(|(size_bits, _)| f32::from_bits(*size_bits))
             .unwrap_or(median);
 
-        // Find the most common font style
+        // Find the most common font style.
+        // Break ties by key to ensure deterministic results across HashMap orderings.
         let most_common_style = style_counts
             .iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by(|(k1, c1), (k2, c2)| c1.cmp(c2).then_with(|| k1.cmp(k2)))
             .map(|(key, _)| *key);
 
         // Calculate common style ratio
@@ -485,25 +487,25 @@ impl HeadingDetector {
             return None;
         }
 
-        // Light frequency guard: if this exact style (size + bold) accounts
-        // for too much of the document's text, it's body text rather than a
-        // heading style.  Size-based headings (larger than body) use a tighter
-        // cap because they rely solely on size, while bold-at-body-size
-        // headings get more room since there are usually many section headers.
+        // Light frequency guard for size-based headings only: if this exact
+        // style accounts for too much of the document's text, it's body text.
+        // Bold section headers (bold at body size) are exempt — the x-alignment
+        // filter handles false positives for those.
         let rounded_size = OrderedFloat((size * 2.0).round() / 2.0);
-        let style_key = FontStyleKey {
-            size: rounded_size,
-            is_bold,
-        };
-        let style_frequency = stats
-            .style_distribution
-            .get(&style_key)
-            .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
-            .unwrap_or(0.0);
+        if !is_bold_section_header {
+            let style_key = FontStyleKey {
+                size: rounded_size,
+                is_bold,
+            };
+            let style_frequency = stats
+                .style_distribution
+                .get(&style_key)
+                .map(|&count| count as f32 / stats.total_text_nodes.max(1) as f32)
+                .unwrap_or(0.0);
 
-        let max_freq = if is_bold_section_header { 0.40 } else { 0.25 };
-        if style_frequency > max_freq {
-            return None;
+            if style_frequency > 0.25 {
+                return None;
+            }
         }
         let has_line = props.has_top_border || props.has_bottom_border || props.has_font_underline;
 
@@ -770,9 +772,8 @@ impl AnalysisModule for HeadingDetector {
     fn process_with_context(&self, doc: &mut Document, ctx: &super::GlobalContext) {
         // Compute global stats from all flattened data in the context
         let (stats, global_buckets) = if !ctx.all_flattened.is_empty() {
-            let mut global_stats =
-                GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter().copied());
-            global_stats.compute_heading_buckets(ctx.all_flattened.iter().copied());
+            let mut global_stats = GlobalFontStats::from_flattened_iter(ctx.all_flattened.iter());
+            global_stats.compute_heading_buckets(ctx.all_flattened.iter());
             let buckets = if !global_stats.heading_buckets.is_empty() {
                 Some(
                     global_stats

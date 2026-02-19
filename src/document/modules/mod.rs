@@ -118,16 +118,16 @@ use crate::flattened::Flattened;
 
 /// Global context for analysis modules when running in exhaustive mode.
 ///
-/// This struct holds references to all flattened form states, allowing modules
+/// This struct holds all flattened form states, allowing modules
 /// to compute global statistics that are consistent across all states.
-pub struct GlobalContext<'a> {
+pub struct GlobalContext {
     /// All flattened form states collected during exhaustive exploration
-    pub all_flattened: &'a [&'a Flattened],
+    pub all_flattened: Vec<Flattened>,
 }
 
-impl<'a> GlobalContext<'a> {
-    /// Create a new global context from a slice of flattened references.
-    pub fn new(all_flattened: &'a [&'a Flattened]) -> Self {
+impl GlobalContext {
+    /// Create a new global context from a vec of flattened values.
+    pub fn new(all_flattened: Vec<Flattened>) -> Self {
         Self { all_flattened }
     }
 }
@@ -156,7 +156,7 @@ pub trait AnalysisModule {
 /// use `run_analysis_pipeline_with_context` directly with a `GlobalContext`
 /// containing all flattened states.
 pub fn run_analysis_pipeline(doc: &mut crate::document::Document) {
-    let single: &[&Flattened] = &[doc.source];
+    let single = vec![doc.source.clone()];
     let ctx = GlobalContext::new(single);
     run_analysis_pipeline_with_context(doc, &ctx);
 }
