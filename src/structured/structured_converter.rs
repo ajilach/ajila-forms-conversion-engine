@@ -24,9 +24,9 @@ use crate::flattened::{
     Bounds, FlattenedNode, FlattenedNodeKind, Hint, RichRun, RichText, WidgetKind,
 };
 use crate::structured::{
-    FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText,
-    InputValue, ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode,
-    TranslatableString,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
+    HeadingNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
 
@@ -386,6 +386,29 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     Some(StructuredNode::Group(GroupNode { children }))
                 }
+            }
+
+            // RadioButtonContent → ConditionalNode wrapping the child content
+            GroupKind::RadioButtonContent {
+                excl_group_som_path,
+                option_field_name,
+            } => {
+                let children = self.convert_children(group_idx);
+                if children.is_empty() {
+                    return None;
+                }
+                let content = if children.len() == 1 {
+                    children.into_iter().next().unwrap()
+                } else {
+                    StructuredNode::Group(GroupNode { children })
+                };
+                Some(StructuredNode::Conditional(ConditionalNode {
+                    condition: FieldCondition {
+                        field_name: FieldId::from_som_path(excl_group_som_path),
+                        value: InputValue::Text(option_field_name.clone()),
+                    },
+                    content: Box::new(content),
+                }))
             }
 
             // List → ListNode

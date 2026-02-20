@@ -8028,6 +8028,137 @@
     }
 
     #[test]
+    fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
+        // "Vollsaldierung" and "Übertrag/Mutation" are vertical radio buttons.
+        // The inset content below each button must be detected and wrapped in a
+        // ConditionalNode keyed to that option's value.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{
+            ConditionalNode, FieldNode, FieldType, StructuredNode,
+        };
+
+        fn find_radio_fields(nodes: &[StructuredNode], out: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if matches!(f.input_type, FieldType::Radio { .. }) {
+                            out.push(f.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => find_radio_fields(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        find_radio_fields(std::slice::from_ref(&c.content), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        find_radio_fields(std::slice::from_ref(&r.item), out);
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fn collect_conditionals(nodes: &[StructuredNode], out: &mut Vec<ConditionalNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c) => {
+                        out.push(c.clone());
+                        collect_conditionals(std::slice::from_ref(&c.content), out);
+                    }
+                    StructuredNode::Group(g) => collect_conditionals(&g.children, out),
+                    StructuredNode::Repeatable(r) => {
+                        collect_conditionals(std::slice::from_ref(&r.item), out);
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_conditionals(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+            .expect("Failed to process ACAV PDF");
+
+        // Find the radio group that contains both "Vollsaldierung" and "Übertrag/Mutation"
+        let mut radio_fields: Vec<FieldNode> = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        println!("\n=== All radio fields for content test ===");
+        for f in &radio_fields {
+            if let FieldType::Radio { options } = &f.input_type {
+                println!("  Field: {} ({} opts)", f.name, options.len());
+                for o in options {
+                    println!("    - name='{}' value={:?}", o.name, o.value);
+                }
+            }
+        }
+
+        let radio_group = radio_fields
+            .iter()
+            .find(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    options.iter().any(|o| o.name.contains("Vollsaldierung"))
+                        && options
+                            .iter()
+                            .any(|o| o.name.contains("Übertrag") || o.name.contains("Mutation"))
+                } else {
+                    false
+                }
+            })
+            .expect("Expected a radio group with 'Vollsaldierung' and 'Übertrag/Mutation' options");
+
+        let FieldType::Radio { options } = &radio_group.input_type else {
+            unreachable!()
+        };
+
+        let voll_value = options
+            .iter()
+            .find(|o| o.name.contains("Vollsaldierung"))
+            .map(|o| o.value.clone())
+            .unwrap();
+
+        let ueb_value = options
+            .iter()
+            .find(|o| o.name.contains("Übertrag") || o.name.contains("Mutation"))
+            .map(|o| o.value.clone())
+            .unwrap();
+
+        // Collect all ConditionalNodes in the whole structured tree
+        let mut conditionals: Vec<ConditionalNode> = Vec::new();
+        collect_conditionals(&structured, &mut conditionals);
+
+        println!("\n=== All conditionals ===");
+        for c in &conditionals {
+            println!("  field={} value={:?}", c.condition.field_name, c.condition.value);
+        }
+
+        // There must be a ConditionalNode for "Vollsaldierung" content
+        assert!(
+            conditionals.iter().any(|c| {
+                c.condition.field_name == radio_group.name && c.condition.value == voll_value
+            }),
+            "Expected a ConditionalNode for 'Vollsaldierung' content (field={}, value={:?})",
+            radio_group.name,
+            voll_value,
+        );
+
+        // There must be a ConditionalNode for "Übertrag/Mutation" content
+        assert!(
+            conditionals.iter().any(|c| {
+                c.condition.field_name == radio_group.name && c.condition.value == ueb_value
+            }),
+            "Expected a ConditionalNode for 'Übertrag/Mutation' content (field={}, value={:?})",
+            radio_group.name,
+            ueb_value,
+        );
+    }
+
+    #[test]
     fn test_aaab_has_no_vertical_field_table() {
         use crate::run_exhaustive_to_merged;
         use crate::structured::StructuredNode;

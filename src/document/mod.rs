@@ -34,6 +34,7 @@ pub mod modules;
 
 use crate::flattened::{Bounds, Flattened, FlattenedNode, FlattenedNodeKind};
 use crate::xfa::num;
+use crate::xfa::scripting::SomPath;
 use ab_glyph::PxScale;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
@@ -195,6 +196,18 @@ pub enum GroupKind {
     List {
         /// Whether the list is ordered (numbered) or unordered (bulleted)
         ordered: bool,
+    },
+
+    /// Inset content that belongs to a specific radio button option.
+    ///
+    /// Created by `RadioButtonContentDetector` for content appearing between/after
+    /// vertical radio buttons. Converted to `ConditionalNode` in the structured output.
+    RadioButtonContent {
+        /// SOM path of the parent exclGroup field (used to derive FieldId for the condition).
+        excl_group_som_path: SomPath,
+        /// XFA `name` attribute of the individual radio-button field whose selection
+        /// triggers this content (matches the `value` stored in `NameValue`).
+        option_field_name: String,
     },
 }
 
@@ -751,6 +764,9 @@ impl<'a> Document<'a> {
                 } else {
                     "UnorderedList".to_string()
                 }
+            }
+            GroupKind::RadioButtonContent { option_field_name, .. } => {
+                format!("RadioButtonContent[{}]", option_field_name)
             }
         }
     }
