@@ -510,6 +510,12 @@ fn write_root_panel(
     for child in children {
         write_node(w, child, config);
     }
+
+    // Preview panel (with metadata, message boxes, carousel, etc.)
+    if config.include_preview_panel {
+        write_preview_panel(w, config);
+    }
+
     write_items_end(w);
 
     // Toolbar (optional)
@@ -1242,6 +1248,272 @@ fn write_responsive(w: &mut Writer<&mut Cursor<Vec<u8>>>, width: u32) {
 
     w.write_event(Event::End(BytesEnd::new("cq:responsive")))
         .unwrap();
+}
+
+/// Write the preview panel (`previewpanel_copy`) containing message boxes,
+/// carousel, DOR options, and metadata element.
+///
+/// This panel is the last page in the rootPanel items and is excluded from DOR.
+fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    // <previewpanel_copy>
+    let mut panel = BytesStart::new("previewpanel_copy");
+    push_jcr_timestamps(&mut panel, config);
+    panel.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    panel.push_attribute(("jcr:title", "Preview"));
+    panel.push_attribute(("sling:resourceType", config.panel_resource_type().as_str()));
+    panel.push_attribute(("dorExclusion", "true"));
+    panel.push_attribute(("guideNodeClass", "guidePanel"));
+    panel.push_attribute(("name", "preview"));
+    panel.push_attribute(("textIsRich", "true"));
+    panel.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
+    w.write_event(Event::Start(panel)).unwrap();
+
+    // <items>
+    write_items_start(w, config);
+
+    // messagebox_ElsigCheck
+    {
+        let mut elem = BytesStart::new("messagebox_ElsigCheck");
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("messagebox").as_str(),
+        ));
+        elem.push_attribute(("css", "messagebox-ElsigCheck ubs-margin-10"));
+        elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+        elem.push_attribute(("hideTitle", "{Boolean}true"));
+        elem.push_attribute(("i18nBodyId", "ajila-forms-ubs-signature-level-error"));
+        elem.push_attribute(("name", "messagebox_ElsigCheck"));
+        elem.push_attribute(("visible", "{Boolean}true"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // messagebox_SubmissionInfo
+    {
+        let mut elem = BytesStart::new("messagebox_SubmissionInfo");
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("messagebox").as_str(),
+        ));
+        elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+        elem.push_attribute(("hideTitle", "{Boolean}true"));
+        elem.push_attribute(("messageboxBody", "&lt;p>By clicking on &quot;Preview&quot;, you can review your document before submission.&lt;/p>&lt;p>After clicking &quot;Submit&quot;, you will no longer be able to edit the document and the PDF will be created for signing.&lt;/p>"));
+        elem.push_attribute(("name", "previewInformation"));
+        elem.push_attribute(("visible", "{Boolean}true"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // carousel (preview carousel)
+    {
+        let mut elem = BytesStart::new("carousel");
+        push_jcr_timestamps(&mut elem, config);
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute(("jcr:title", "Preview Carousel"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("carousel").as_str(),
+        ));
+        elem.push_attribute(("arrows", "true"));
+        elem.push_attribute(("autofillFieldKeyword", "name"));
+        elem.push_attribute(("css", "widget_ajila_forms_carousel"));
+        elem.push_attribute(("displayPatternType", "custom"));
+        elem.push_attribute(("displayPictureClause", "\\[0-9]"));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideTextBox"));
+        elem.push_attribute(("initScript", "com.ajila.forms.control.carousel.initialize(this)"));
+        elem.push_attribute(("lazyLoadingStrategy", "ondemand"));
+        elem.push_attribute(("name", "carouselPreview"));
+        elem.push_attribute(("placeholderText", "Message"));
+        elem.push_attribute(("showDots", "true"));
+        elem.push_attribute(("slidesToScroll", "1"));
+        elem.push_attribute(("slidesToShow", "1"));
+        elem.push_attribute(("textIsRich", "[true,true,true]"));
+        elem.push_attribute(("visible", "{Boolean}false"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // messagebox_CarouselPreview (error message with retry button)
+    {
+        let mut elem = BytesStart::new("messagebox_CarouselPreview");
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config
+                .control_resource_type("messagebox-CarouselPreviewError")
+                .as_str(),
+        ));
+        elem.push_attribute(("buttonAction", "window.com.ajila.forms.control.messagebox_carouselpreview_error.initCarouselPreview()"));
+        elem.push_attribute(("css", "ubs-margin-10"));
+        elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+        elem.push_attribute((
+            "i18nBodyId",
+            "ajila-forms-ubs-errorbox-carousel-message",
+        ));
+        elem.push_attribute((
+            "i18nButtonLabelId",
+            "ajila-forms-ubs-errorbox-carousel-button-label",
+        ));
+        elem.push_attribute(("i18nTitleId", "ajila-forms-ubs-errorbox-carousel-title"));
+        elem.push_attribute(("messageboxType", "{Long}4"));
+        elem.push_attribute(("name", "previewErrorMessage"));
+        elem.push_attribute(("showButton", "{Boolean}true"));
+        elem.push_attribute(("visible", "{Boolean}false"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // messagebox_SubmissionError
+    {
+        let mut elem = BytesStart::new("messagebox_SubmissionError");
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("messagebox").as_str(),
+        ));
+        elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+        elem.push_attribute(("messageboxBody", "&lt;p>The form could not be sent. Please try again later.&lt;/p>"));
+        elem.push_attribute(("messageboxTitle", "Submission failed"));
+        elem.push_attribute(("messageboxType", "{Long}4"));
+        elem.push_attribute(("name", "submitErrorMessage"));
+        elem.push_attribute(("visible", "{Boolean}false"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // doroptionsubs
+    {
+        let mut elem = BytesStart::new("doroptionsubs");
+        push_jcr_timestamps(&mut elem, config);
+        elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        elem.push_attribute((
+            "sling:resourceType",
+            config.control_resource_type("dorOptionsUBS").as_str(),
+        ));
+        elem.push_attribute((
+            "_value",
+            "Further configurations for the document of record",
+        ));
+        elem.push_attribute(("dorExclusion", "true"));
+        elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+        elem.push_attribute(("name", "doroptionsubs"));
+        elem.push_attribute(("visible", "false"));
+        w.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    // metadata
+    write_metadata(w, config);
+
+    // </items>
+    write_items_end(w);
+
+    // <layout>
+    {
+        let mut layout = BytesStart::new("layout");
+        layout.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        layout.push_attribute(("sling:resourceType", config.default_layout.as_str()));
+        layout.push_attribute(("columns", "1"));
+        layout.push_attribute(("dorLayoutType", "columnar"));
+        layout.push_attribute(("dorNumCols", "1"));
+        layout.push_attribute(("nonNavigable", "{Boolean}true"));
+        layout.push_attribute(("toolbarPosition", "Bottom"));
+        w.write_event(Event::Empty(layout)).unwrap();
+    }
+
+    // </previewpanel_copy>
+    w.write_event(Event::End(BytesEnd::new("previewpanel_copy")))
+        .unwrap();
+}
+
+/// Write the `<metadata>` element inside the preview panel.
+///
+/// The metadata element contains FormRange attributes (form code, entity,
+/// language, CDOK info, etc.) that are read by the AEM runtime.
+fn write_metadata(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
+    let master_lang_upper = config.master_language.to_uppercase();
+
+    // Build language list: master language first, then remaining languages
+    let mut lang_list: Vec<String> = vec![master_lang_upper.clone()];
+    for lang in &config.languages {
+        let upper = lang.to_uppercase();
+        if upper != master_lang_upper {
+            lang_list.push(upper);
+        }
+    }
+    let languages_joined = lang_list.join(",");
+
+    let mut elem = BytesStart::new("metadata");
+    push_jcr_timestamps(&mut elem, config);
+    elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    elem.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("metadata").as_str(),
+    ));
+    elem.push_attribute(("_value", "Metadata"));
+    elem.push_attribute(("dorExclusion", "true"));
+    elem.push_attribute(("formrange_afmasterlanguage", master_lang_upper.as_str()));
+    elem.push_attribute(("formrange_aftype", "Single"));
+    elem.push_attribute(("formrange_code", config.form_code.as_str()));
+    elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+    elem.push_attribute(("name", "metadata"));
+    elem.push_attribute(("visible", "false"));
+    w.write_event(Event::Start(elem)).unwrap();
+
+    // <entities>
+    {
+        let mut entities = BytesStart::new("entities");
+        entities.push_attribute(("jcr:primaryType", "nt:unstructured"));
+        w.write_event(Event::Start(entities)).unwrap();
+
+        // <item0> — entity-level attributes
+        {
+            let mut item0 = BytesStart::new("item0");
+            item0.push_attribute(("jcr:primaryType", "nt:unstructured"));
+            item0.push_attribute(("formrange_clpmandatory", config.metadata_clpmandatory.as_str()));
+            item0.push_attribute(("formrange_entity", config.metadata_entity.as_str()));
+            item0.push_attribute(("formrange_language", languages_joined.as_str()));
+            w.write_event(Event::Start(item0)).unwrap();
+
+            // <cdoks>
+            {
+                let mut cdoks = BytesStart::new("cdoks");
+                cdoks.push_attribute(("jcr:primaryType", "nt:unstructured"));
+                w.write_event(Event::Start(cdoks)).unwrap();
+
+                // <item0> — CDOK-level attributes
+                {
+                    let mut cdok_item = BytesStart::new("item0");
+                    cdok_item.push_attribute(("jcr:primaryType", "nt:unstructured"));
+                    cdok_item.push_attribute((
+                        "formrange_cdokinfo",
+                        config.metadata_cdokinfo.as_str(),
+                    ));
+                    cdok_item.push_attribute((
+                        "formrange_partnerlevel",
+                        config.metadata_partnerlevel.as_str(),
+                    ));
+                    cdok_item.push_attribute((
+                        "formrange_releasedate",
+                        config.metadata_releasedate.as_str(),
+                    ));
+                    cdok_item
+                        .push_attribute(("formrange_version", config.metadata_version.as_str()));
+                    w.write_event(Event::Empty(cdok_item)).unwrap();
+                }
+
+                // </cdoks>
+                w.write_event(Event::End(BytesEnd::new("cdoks"))).unwrap();
+            }
+
+            // </item0>
+            w.write_event(Event::End(BytesEnd::new("item0"))).unwrap();
+        }
+
+        // </entities>
+        w.write_event(Event::End(BytesEnd::new("entities")))
+            .unwrap();
+    }
+
+    // </metadata>
+    w.write_event(Event::End(BytesEnd::new("metadata"))).unwrap();
 }
 
 /// Write the standard toolbar with prev/next/submit buttons.

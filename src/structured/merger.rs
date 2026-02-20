@@ -276,9 +276,7 @@ impl RecursiveMerger {
                     let a = &w[0].1;
                     let b = &w[1].1;
                     a.len() == b.len()
-                        && a.iter()
-                            .zip(b.iter())
-                            .all(|(na, nb)| na.structural_eq(nb))
+                        && a.iter().zip(b.iter()).all(|(na, nb)| na.structural_eq(nb))
                 });
 
             if all_identical {

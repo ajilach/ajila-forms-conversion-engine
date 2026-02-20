@@ -191,6 +191,25 @@ pub struct AemConfig {
     ///
     /// Default: `"ajila-forms-ubs/output/Germany_Tranch_1"`.
     pub form_path: String,
+
+    // -- Metadata (populated from XFA context) --------------------------------
+    /// When `true`, the preview panel (with metadata, message boxes, carousel,
+    /// etc.) is emitted as the last page in the root panel items.
+    /// Automatically set to `true` by `populate_from_context()`.
+    pub include_preview_panel: bool,
+
+    /// FormRange entity code (e.g. `"019"`).
+    pub metadata_entity: String,
+    /// FormRange CDOK info (e.g. `"61137"`).
+    pub metadata_cdokinfo: String,
+    /// FormRange release date (e.g. `"31.10.2019"`).
+    pub metadata_releasedate: String,
+    /// FormRange version (e.g. `"V0"`).
+    pub metadata_version: String,
+    /// FormRange partner level (e.g. `"false"`).
+    pub metadata_partnerlevel: String,
+    /// FormRange CLP mandatory flag (e.g. `"false"`).
+    pub metadata_clpmandatory: String,
 }
 
 impl Default for AemConfig {
@@ -240,6 +259,14 @@ impl Default for AemConfig {
             meta_template_ref: "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp".into(),
 
             form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
+
+            include_preview_panel: false,
+            metadata_entity: String::new(),
+            metadata_cdokinfo: String::new(),
+            metadata_releasedate: String::new(),
+            metadata_version: String::new(),
+            metadata_partnerlevel: "false".into(),
+            metadata_clpmandatory: "false".into(),
         }
     }
 }
@@ -326,6 +353,38 @@ impl AemConfig {
 
         // Compute dor_template_ref from form_path and form_code
         self.dor_template_ref = self.compute_dor_template_ref();
+    }
+
+    /// Populate metadata fields from a `Context` (XFA text variables).
+    ///
+    /// This enables the preview panel in the AEM output which contains
+    /// the metadata element with FormRange attributes.
+    pub fn populate_from_context(&mut self, ctx: &crate::Context) {
+        self.include_preview_panel = true;
+
+        if let Some(v) = ctx.get_variable("formrange_entity") {
+            self.metadata_entity = v.to_string();
+        }
+        if let Some(v) = ctx.get_variable("formrange_version") {
+            self.metadata_version = v.to_string();
+        }
+        // Try formrange_cdokinfo first, fall back to Footer_Line_txtformid
+        if let Some(v) = ctx.get_variable("formrange_cdokinfo") {
+            self.metadata_cdokinfo = v.to_string();
+        } else if let Some(v) = ctx.get_variable("Footer_Line_txtformid") {
+            self.metadata_cdokinfo = v.to_string();
+        }
+        if let Some(v) = ctx.get_variable("formrange_releasedate") {
+            self.metadata_releasedate = v.to_string();
+        } else if let Some(v) = ctx.get_variable("Footer_Line_txtversiondate") {
+            self.metadata_releasedate = v.to_string();
+        }
+        if let Some(v) = ctx.get_variable("formrange_partnerlevel") {
+            self.metadata_partnerlevel = v.to_string();
+        }
+        if let Some(v) = ctx.get_variable("formrange_clpmandatory") {
+            self.metadata_clpmandatory = v.to_string();
+        }
     }
 }
 

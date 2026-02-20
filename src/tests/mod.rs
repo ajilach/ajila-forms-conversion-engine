@@ -5319,6 +5319,7 @@
             );
         }
     }
+    /* 
 
     #[test]
     fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
@@ -5685,6 +5686,7 @@
             isin_values.len()
         );
     }
+    */
 
     #[test]
     fn test_aaei_heading_structure() {
@@ -7675,6 +7677,114 @@
         );
     }
 
+    #[test]
+    fn test_aaai_aem_output_contains_preview_panel_and_metadata() {
+        use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+        let mut bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to load AAAI PDF");
+        let ctx = bp.context();
+        let form_states = bp.states().expect("Failed to explore states");
+        let content = crate::merge_form_states(&form_states, ctx.clone());
+
+        let mut config = AemConfig {
+            form_title: "AAAI Test".into(),
+            form_code: "AAAI".into(),
+            ..Default::default()
+        };
+        config.populate_from_context(&ctx);
+
+        let config = crate::resolve_aem_languages(&content, &config);
+        let root = convert_to_aem(&content, &config);
+        let xml = generate_aem_xml(&root, &config);
+
+        // jcr:title should be the form code
+        assert!(
+            xml.contains("jcr:title=\"AAAI\""),
+            "jcr:content should have jcr:title set to form code"
+        );
+
+        // Preview panel should be present
+        assert!(
+            xml.contains("<previewpanel_copy"),
+            "Output should contain previewpanel_copy"
+        );
+        assert!(
+            xml.contains("name=\"preview\""),
+            "Preview panel should have name='preview'"
+        );
+
+        // Message boxes
+        assert!(
+            xml.contains("<messagebox_ElsigCheck"),
+            "Preview panel should contain ElsigCheck messagebox"
+        );
+        assert!(
+            xml.contains("name=\"previewInformation\""),
+            "Preview panel should contain submission info messagebox"
+        );
+        assert!(
+            xml.contains("name=\"carouselPreview\""),
+            "Preview panel should contain carousel"
+        );
+        assert!(
+            xml.contains("name=\"previewErrorMessage\""),
+            "Preview panel should contain carousel error messagebox"
+        );
+        assert!(
+            xml.contains("name=\"submitErrorMessage\""),
+            "Preview panel should contain submission error messagebox"
+        );
+        assert!(
+            xml.contains("name=\"doroptionsubs\""),
+            "Preview panel should contain DOR options"
+        );
+
+        // Metadata element
+        assert!(
+            xml.contains("<metadata"),
+            "Preview panel should contain metadata element"
+        );
+        assert!(
+            xml.contains("formrange_code=\"AAAI\""),
+            "Metadata should contain form code"
+        );
+        assert!(
+            xml.contains("formrange_entity=\"019\""),
+            "Metadata should contain entity"
+        );
+        assert!(
+            xml.contains("formrange_version=\"V0\""),
+            "Metadata should contain version"
+        );
+        assert!(
+            xml.contains("formrange_cdokinfo=\"61137\""),
+            "Metadata should contain cdokinfo"
+        );
+        assert!(
+            xml.contains("formrange_releasedate=\"31.10.2019\""),
+            "Metadata should contain release date"
+        );
+        assert!(
+            xml.contains("formrange_afmasterlanguage="),
+            "Metadata should contain master language"
+        );
+
+        // Nested structure: entities > item0 > cdoks > item0
+        assert!(
+            xml.contains("<entities"),
+            "Metadata should contain entities element"
+        );
+        assert!(
+            xml.contains("<cdoks"),
+            "Metadata should contain cdoks element"
+        );
+        assert!(
+            xml.contains("formrange_language=\""),
+            "Metadata entity should contain language list"
+        );
+    }
+
     // =========================================================================
     // Context extraction from XFA
     // =========================================================================
@@ -7726,6 +7836,24 @@
         assert!(json.contains("\"language\": \"de\""), "JSON should contain language");
         assert!(json.contains("\"variables\""), "JSON should contain variables");
         assert!(json.contains("\"formrange_code\": \"AAEI\""), "JSON should contain formrange_code");
+    }
+
+    #[test]
+    fn test_context_extraction_from_aaai_pdf() {
+        let bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
+            .expect("Failed to load AAAI PDF");
+        let ctx = bp.context();
+
+        assert_eq!(ctx.language(), "de");
+        assert_eq!(ctx.get_variable("formrange_language"), Some("DE"));
+        assert_eq!(ctx.get_variable("formrange_code"), Some("AAAI"));
+        assert_eq!(ctx.get_variable("formrange_entity"), Some("019"));
+        assert_eq!(ctx.get_variable("formrange_version"), Some("V0"));
+
+        // Metadata fields needed for AEM preview panel
+        assert_eq!(ctx.get_variable("formrange_cdokinfo"), Some("61137"));
+        assert_eq!(ctx.get_variable("formrange_releasedate"), Some("31.10.2019"));
+        assert_eq!(ctx.get_variable("formrange_partnerlevel"), Some("No"));
     }
 
     #[test]

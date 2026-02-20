@@ -589,7 +589,7 @@ pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8>
 
 /// Auto-detect master language and available languages from content,
 /// applying them to a clone of the provided config.
-fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
+pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
     let detected_langs = collect_languages(content);
     if detected_langs.is_empty() {
         return config.clone();
