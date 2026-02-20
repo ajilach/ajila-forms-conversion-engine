@@ -70,15 +70,7 @@ fn run_blueprint_pipeline(
         state.step = ProcessingStep::Parsing;
         on_progress(&state);
 
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(filename);
-        if let Err(e) = std::fs::write(&temp_path, bytes) {
-            state.error = Some(format!("Failed to write temp file: {e}"));
-            on_progress(&state);
-            return state;
-        }
-
-        let mut bp = match Blueprint::from_pdf(&temp_path) {
+        let mut bp = match Blueprint::from_pdf_bytes(bytes) {
             Ok(bp) => bp,
             Err(e) => {
                 state.error = Some(format!("Failed to parse {filename}: {e}"));
