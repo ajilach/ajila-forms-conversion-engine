@@ -149,7 +149,10 @@ impl AnalysisModule for RadioButtonContentDetector {
                 };
 
                 let content_indices: Vec<usize> = if !is_last {
-                    // Non-last: collect all inset roots whose top is in [rb_top, next_rb_top)
+                    // Non-last: collect all roots whose top is in [rb_top, next_rb_top) and
+                    // whose left is at or to the right of the radio button circles.
+                    // We don't require an inset here because the Y bounds already precisely
+                    // define which option the content belongs to.
                     let y_end = rb_with_tops[i + 1].1;
                     let mut collected = doc
                         .roots()
@@ -159,9 +162,7 @@ impl AnalysisModule for RadioButtonContentDetector {
                             let Some(b) = doc.get_bounds(root_idx) else {
                                 return false;
                             };
-                            b.top() >= rb_top
-                                && b.top() < y_end
-                                && b.left() >= rb_left + inset_threshold
+                            b.top() >= rb_top && b.top() < y_end && b.left() >= rb_left
                         })
                         .collect::<Vec<_>>();
                     // Sort by vertical position for deterministic ordering

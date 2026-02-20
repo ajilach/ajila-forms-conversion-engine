@@ -5319,7 +5319,6 @@
             );
         }
     }
-    /* 
 
     #[test]
     fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
@@ -5686,7 +5685,185 @@
             isin_values.len()
         );
     }
-    */
+
+    #[test]
+    fn test_aaab_fim3_text_inside_rb2_conditional() {
+        // The "FIM3 Weder FIM noch Endkunde4" text should be wrapped in a
+        // Conditional(RB_Group_Retro=RB_2) node, because it appears between
+        // the second and third radio button options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, InputValue, StructuredNode};
+
+        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
+                        return Some(f.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_radio_field(&g.children, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&c.content), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&r.item), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let child_nodes: Vec<_> =
+                            g.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        /// Check if FIM3 text appears unconditionally (not inside an RB_Group_Retro conditional)
+        fn has_unconditional_fim3_text(
+            nodes: &[StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+        ) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Paragraph(p) => {
+                        let text = p.content.as_plain_text();
+                        if text.contains("FIM") && text.contains("Endkunde") {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if has_unconditional_fim3_text(&g.children, retro_field_name) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c)
+                        if c.condition.field_name == *retro_field_name =>
+                    {
+                        // Skip: FIM3 inside a Retro conditional is expected
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if has_unconditional_fim3_text(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                        ) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        /// Find the condition value of the RB_Group_Retro conditional that contains FIM3 text.
+        fn find_fim3_conditional_value(
+            nodes: &[StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+        ) -> Option<InputValue> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c)
+                        if c.condition.field_name == *retro_field_name =>
+                    {
+                        if contains_fim3_text(std::slice::from_ref(&c.content)) {
+                            return Some(c.condition.value.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) =
+                            find_fim3_conditional_value(&g.children, retro_field_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) = find_fim3_conditional_value(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                        ) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        fn contains_fim3_text(nodes: &[StructuredNode]) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Paragraph(p) => {
+                        let text = p.content.as_plain_text();
+                        if text.contains("FIM") && text.contains("Endkunde") {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if contains_fim3_text(&g.children) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if contains_fim3_text(std::slice::from_ref(&c.content)) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+            .expect("Expected to find radio field 'RB_Group_Retro'");
+
+        let FieldType::Radio { options } = &retro_field.input_type else {
+            panic!("RB_Group_Retro should be a radio field");
+        };
+
+        // 1) FIM3 text must NOT appear unconditionally
+        assert!(
+            !has_unconditional_fim3_text(&structured, &retro_field.name),
+            "'FIM3 Weder FIM noch Endkunde4' must NOT appear unconditionally — \
+             it should be inside a Conditional(RB_Group_Retro=RB_2) node"
+        );
+
+        // 2) FIM3 text must be inside the RB_2 conditional
+        let fim3_value = find_fim3_conditional_value(&structured, &retro_field.name)
+            .expect("Expected to find FIM3 text inside an RB_Group_Retro conditional");
+
+        // Find the expected RB_2 value
+        let rb2_value = options
+            .iter()
+            .find(|o| o.name.contains("Änderung Zahlungsempfänger"))
+            .map(|o| o.value.clone())
+            .expect("Expected to find option 'Änderung Zahlungsempfänger' in RB_Group_Retro");
+
+        assert_eq!(
+            fim3_value, rb2_value,
+            "'FIM3 Weder FIM noch Endkunde4' should be inside Conditional(RB_Group_Retro=RB_2), \
+             but found it in {:?}",
+            fim3_value
+        );
+    }
 
     #[test]
     fn test_aaei_heading_structure() {
