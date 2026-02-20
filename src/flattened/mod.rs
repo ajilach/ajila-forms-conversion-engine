@@ -4021,29 +4021,44 @@ impl Flattened {
             // The natural height must include space for margins + content
             match &node.kind {
                 XfaNodeKind::Draw => {
-                    // Calculate natural height for draw element based on text content
-                    // Per XFA AXTE spec
-                    // Use context to resolve xfa:embed references for accurate height
+                    // Calculate natural height for draw element based on text content.
+                    // Per XFA AXTE spec: each paragraph's height is measured individually.
+                    //
+                    // For rich-text draws (HTML exData with multiple <p> paragraphs),
+                    // use per-paragraph measurement so the height accurately reflects
+                    // different font sizes and CSS space_above/space_below per paragraph.
                     let natural_content_height =
-                        if let Some(text) = ctx.extract_text(&node.children) {
-                            // Check if this is HTML content with multiple paragraphs
-                            let paragraph_count = if Self::has_html_exdata(&node.children) {
-                                Self::count_html_paragraphs(&node.children)
-                            } else {
-                                0
-                            };
-
-                            Self::calculate_natural_text_height_with_paragraphs(
-                                &text,
+                        if Self::has_html_exdata(&node.children) {
+                            Self::calculate_rich_text_draw_height(
+                                &node.children,
                                 &node.font,
                                 &node.para,
                                 width,
-                                paragraph_count,
+                                ctx.computed_values,
+                                ctx.id_to_field,
                             )
                         } else {
-                            // No text content, use default line height
-                            num(12.0)
-                        };
+                            None
+                        }
+                        .unwrap_or_else(|| {
+                            // Fallback for non-rich-text draws or single-paragraph
+                            if let Some(text) = ctx.extract_text(&node.children) {
+                                let paragraph_count = if Self::has_html_exdata(&node.children) {
+                                    Self::count_html_paragraphs(&node.children)
+                                } else {
+                                    0
+                                };
+                                Self::calculate_natural_text_height_with_paragraphs(
+                                    &text,
+                                    &node.font,
+                                    &node.para,
+                                    width,
+                                    paragraph_count,
+                                )
+                            } else {
+                                num(12.0)
+                            }
+                        });
                     // Total height = content + margins
                     let total_height = natural_content_height + margin_top + margin_bottom;
                     total_height.max(min_height)
@@ -4064,27 +4079,40 @@ impl Flattened {
                 XfaNodeKind::Element { tag_name, .. } => {
                     match tag_name.as_str() {
                         "draw" => {
-                            // Calculate natural height for draw element
-                            // Use context to resolve xfa:embed references for accurate height
+                            // Calculate natural height for draw element.
+                            // Per XFA AXTE spec: use per-paragraph measurement for
+                            // rich-text draws with multiple <p> paragraphs.
                             let natural_content_height =
-                                if let Some(text) = ctx.extract_text(&node.children) {
-                                    // Check if this is HTML content with multiple paragraphs
-                                    let paragraph_count = if Self::has_html_exdata(&node.children) {
-                                        Self::count_html_paragraphs(&node.children)
-                                    } else {
-                                        0
-                                    };
-
-                                    Self::calculate_natural_text_height_with_paragraphs(
-                                        &text,
+                                if Self::has_html_exdata(&node.children) {
+                                    Self::calculate_rich_text_draw_height(
+                                        &node.children,
                                         &node.font,
                                         &node.para,
                                         width,
-                                        paragraph_count,
+                                        ctx.computed_values,
+                                        ctx.id_to_field,
                                     )
                                 } else {
-                                    num(12.0)
-                                };
+                                    None
+                                }
+                                .unwrap_or_else(|| {
+                                    if let Some(text) = ctx.extract_text(&node.children) {
+                                        let paragraph_count = if Self::has_html_exdata(&node.children) {
+                                            Self::count_html_paragraphs(&node.children)
+                                        } else {
+                                            0
+                                        };
+                                        Self::calculate_natural_text_height_with_paragraphs(
+                                            &text,
+                                            &node.font,
+                                            &node.para,
+                                            width,
+                                            paragraph_count,
+                                        )
+                                    } else {
+                                        num(12.0)
+                                    }
+                                });
                             // Total height = content + margins
                             let total_height = natural_content_height + margin_top + margin_bottom;
                             total_height.max(min_height)
@@ -4422,6 +4450,128 @@ impl Flattened {
         max_width: Num,
     ) -> Num {
         Self::calculate_natural_text_height_with_paragraphs(text, font, para, max_width, 0)
+    }
+
+    /// Calculate the natural content height for a draw element that has rich text
+    /// (HTML exData with multiple `<p>` paragraphs at potentially different font sizes).
+    ///
+    /// Per XFA spec (AXTE appendix): each paragraph's height is computed individually
+    /// using its own font size, line height, and space_above/space_below. The total
+    /// height is the sum of all paragraph heights.
+    ///
+    /// This replaces the cruder `calculate_natural_text_height_with_paragraphs` heuristic
+    /// for rich-text draws, which incorrectly treated all paragraphs as having the same
+    /// font size and ignored per-paragraph CSS margins (space_above).
+    fn calculate_rich_text_draw_height(
+        children: &[XfaNode],
+        node_font: &Option<Font>,
+        node_para: &Option<Para>,
+        max_width: Num,
+        computed_values: &HashMap<SomPath, String>,
+        id_to_field: &HashMap<String, String>,
+    ) -> Option<Num> {
+        // Extract the default h_align and then parse rich text
+        let default_h_align = node_para
+            .as_ref()
+            .map(|p| p.h_align)
+            .unwrap_or(HAlign::Left);
+
+        let rich_text = Self::extract_rich_text_from_node(
+            children,
+            default_h_align,
+            Some(computed_values),
+            Some(id_to_field),
+        )?;
+
+        if rich_text.paragraphs.len() <= 1 {
+            return None; // Single paragraph — fall back to the standard heuristic
+        }
+
+        let base_font_size = node_font.as_ref().map(|f| f.size).unwrap_or_else(|| num(10.0));
+        let base_font_name = node_font
+            .as_ref()
+            .map(|f| f.typeface.clone())
+            .unwrap_or_default();
+
+        let xfa_font = node_font.clone().unwrap_or_else(|| {
+            Font {
+                typeface: base_font_name.clone(),
+                size: base_font_size,
+                ..Font::default()
+            }
+        });
+
+        let mut measurer = TextMeasurer::new();
+        let mut total_height = Decimal::ZERO;
+
+        for para in &rich_text.paragraphs {
+            let para_font_size = para.font_size.map(|s| num(s as f64)).unwrap_or(base_font_size);
+            let mut para_xfa_font = xfa_font.clone();
+            para_xfa_font.size = para_font_size;
+
+            if para.is_empty {
+                let line_height = para.line_height.map(|lh| num(lh as f64))
+                    .or_else(|| node_para.as_ref().and_then(|p| p.line_height))
+                    .unwrap_or_else(|| {
+                        if let Ok(metrics) = measurer.get_metrics_for_style(&para_xfa_font) {
+                            metrics.derived_line_spacing()
+                        } else {
+                            para_font_size * num(1.2)
+                        }
+                    });
+                let space_above = para.space_above.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
+                let space_below = para.space_below.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
+                total_height += line_height + space_above + space_below;
+                continue;
+            }
+
+            let plain_text: String = para.runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("");
+
+            if plain_text.trim().is_empty() {
+                let line_height = if let Ok(metrics) = measurer.get_metrics_for_style(&para_xfa_font) {
+                    metrics.derived_line_spacing()
+                } else {
+                    para_font_size * num(1.2)
+                };
+                total_height += line_height;
+                continue;
+            }
+
+            let para_props = Some(Para {
+                h_align: para.h_align,
+                v_align: node_para.as_ref().map(|p| p.v_align).unwrap_or(VAlign::Top),
+                line_height: para.line_height.map(|lh| num(lh as f64))
+                    .or_else(|| node_para.as_ref().and_then(|p| p.line_height)),
+                space_above: para.space_above.map(|s| num(s as f64))
+                    .or_else(|| node_para.as_ref().and_then(|p| p.space_above)),
+                space_below: para.space_below.map(|s| num(s as f64))
+                    .or_else(|| node_para.as_ref().and_then(|p| p.space_below)),
+                text_indent: para.text_indent.map(|s| num(s as f64))
+                    .or_else(|| node_para.as_ref().and_then(|p| p.text_indent)),
+                margin_left: node_para.as_ref().and_then(|p| p.margin_left),
+                margin_right: node_para.as_ref().and_then(|p| p.margin_right),
+            });
+
+            match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props, max_width) {
+                Ok(block_metrics) => {
+                    total_height += block_metrics.total_height;
+                }
+                Err(_) => {
+                    // Fallback: estimate with line count × line height
+                    let estimated_chars_per_line = max_width / (para_font_size * num(0.5));
+                    let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
+                        let text_len = num(plain_text.len() as f64);
+                        (text_len / estimated_chars_per_line).ceil()
+                    } else {
+                        Decimal::ONE
+                    };
+                    let line_height = para_font_size * num(1.2);
+                    total_height += estimated_lines * line_height;
+                }
+            }
+        }
+
+        Some(total_height)
     }
 
     fn parse_dimension(s: &str) -> Result<Num, String> {

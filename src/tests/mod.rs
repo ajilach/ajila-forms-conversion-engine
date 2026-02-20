@@ -8043,3 +8043,156 @@
             street_y, fam_y
         );
     }
+
+    #[test]
+    fn test_aaoe_no_extra_spacing_above_h2_headings() {
+        // The AAOE form has section title draws ("Form Configurator", "Dichiarazione")
+        // that are detected as H2 headings. The spacing above those headings in the
+        // flattened output should match the XFA-prescribed margins (topInset /
+        // bottomInset) — no more, no less.
+        //
+        // Root cause being tested: `calculate_natural_text_height_with_paragraphs`
+        // was using a crude heuristic for rich-text draw height that ignores
+        // per-paragraph font sizes and CSS space_above. This overestimated the
+        // draw's natural height, causing the parent TB layout to reserve too much
+        // space and push subsequent elements further down than warranted.
+        //
+        // XFA margin chain above "Form configurator":
+        //   Text_FormTitle  bottomInset = 8 mm
+        //   T_FormConfigurator  topInset = 1 mm
+        //   => expected gap from last title content to "Form configurator" ≈ 9 mm
+        //   = 9 × 2.8346 pt ≈ 25.5 pt
+        //
+        // We measure the gap between the bottom of the subtitle node
+        // ("Dichiarazione per l'esenzione…") and the top of "Form configurator"
+        // and assert it is within a reasonable tolerance of the expected 9 mm.
+
+        use crate::flattened::{Bounds, FlattenedNodeKind};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the subtitle node (last paragraph of Text_FormTitle, 8pt)
+        let subtitle_node = flattened.iter_nodes().find(|n| {
+            if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
+                source_name.as_deref() == Some("Text_FormTitle")
+                    && content.contains("Dichiarazione per l'esenzione")
+            } else {
+                false
+            }
+        }).expect("Subtitle node 'Dichiarazione per l'esenzione...' not found");
+
+        // Find the "Form configurator" node
+        let form_conf_node = flattened.iter_nodes().find(|n| {
+            if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
+                source_name.as_deref() == Some("T_FormConfigurator")
+                    && content.contains("Form configurator")
+            } else {
+                false
+            }
+        }).expect("'Form configurator' node not found");
+
+        let subtitle_bounds = subtitle_node.bounds();
+        let form_conf_bounds = form_conf_node.bounds();
+
+        let gap = subtitle_bounds.vertical_gap_to(&form_conf_bounds)
+            .expect("Form configurator should be below subtitle");
+
+        // Expected gap: bottomInset(8mm) + topInset(1mm) = 9mm = ~25.5pt
+        // 1 mm = 72/25.4 pt ≈ 2.8346 pt
+        let expected_gap_pt = 9.0 * 72.0 / 25.4; // ≈ 25.51 pt
+        let gap_f64 = gap.to_f64().unwrap_or(0.0);
+
+        println!(
+            "Subtitle bottom: {:.1}, Form configurator top: {:.1}, gap: {:.1} pt (expected ~{:.1} pt)",
+            subtitle_bounds.bottom().to_f64().unwrap_or(0.0),
+            form_conf_bounds.y.to_f64().unwrap_or(0.0),
+            gap_f64,
+            expected_gap_pt
+        );
+
+        // Allow tolerance of ±3pt to account for border thickness (0.375mm ≈ 1.06pt)
+        // and minor measurement differences
+        let tolerance = 3.0;
+        assert!(
+            (gap_f64 - expected_gap_pt).abs() < tolerance,
+            "Gap above 'Form configurator' should be ~{:.1}pt (9mm of XFA margins), \
+             but was {:.1}pt. Difference: {:.1}pt exceeds tolerance of {:.1}pt.",
+            expected_gap_pt,
+            gap_f64,
+            (gap_f64 - expected_gap_pt).abs(),
+            tolerance
+        );
+
+        // Similarly check gap above "Dichiarazione" section heading.
+        // The last visible content above "Dichiarazione" varies by state, but
+        // the Section subform's bottomInset is 0mm and Agreement's topInset is 0mm,
+        // and Text_SectionTitle's topInset is 1mm.
+        // We check that the gap from the element immediately above is not excessive.
+        let dichiarazione_node = flattened.iter_nodes().find(|n| {
+            if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
+                source_name.as_deref() == Some("Text_SectionTitle")
+                    && content.contains("Dichiarazione")
+                    && !content.contains("esenzione")
+            } else {
+                false
+            }
+        }).expect("'Dichiarazione' section title not found");
+
+        let dich_bounds = dichiarazione_node.bounds();
+
+        // Find the node immediately above Dichiarazione (closest bottom edge < dich_bounds.y)
+        let mut closest: Option<(Bounds, String)> = None;
+        for n in flattened.iter_nodes() {
+            let b = n.bounds();
+            if b.bottom() <= dich_bounds.y {
+                let content_str = match &n.kind {
+                    FlattenedNodeKind::Text { content, .. } => content.clone(),
+                    _ => String::new(),
+                };
+                if let Some((ref prev_b, _)) = closest {
+                    if b.bottom() > prev_b.bottom() {
+                        closest = Some((b, content_str));
+                    }
+                } else {
+                    closest = Some((b, content_str));
+                }
+            }
+        }
+
+        if let Some((prev_bounds, prev_text)) = closest {
+            let dich_gap = prev_bounds.vertical_gap_to(&dich_bounds)
+                .expect("Dichiarazione should be below previous content");
+            let dich_gap_f64 = dich_gap.to_f64().unwrap_or(0.0);
+            let dich_gap_mm = dich_gap_f64 * 25.4 / 72.0;
+
+            println!(
+                "Node above Dichiarazione: '{}' (bottom={:.1}), Dichiarazione top: {:.1}, gap: {:.1} pt ({:.1} mm)",
+                &prev_text[..prev_text.len().min(50)],
+                prev_bounds.bottom().to_f64().unwrap_or(0.0),
+                dich_bounds.y.to_f64().unwrap_or(0.0),
+                dich_gap_f64,
+                dich_gap_mm
+            );
+
+            // The gap should not exceed 20mm (≈57pt) — anything more suggests
+            // an overestimated draw height in the layout chain.
+            let max_reasonable_gap_mm = 20.0;
+            let max_reasonable_gap_pt = max_reasonable_gap_mm * 72.0 / 25.4;
+            assert!(
+                dich_gap_f64 < max_reasonable_gap_pt,
+                "Gap above 'Dichiarazione' is {:.1}pt ({:.1}mm) which exceeds the \
+                 reasonable maximum of {:.1}mm. This suggests excessive spacing from \
+                 overestimated draw height in the layout chain.",
+                dich_gap_f64,
+                dich_gap_mm,
+                max_reasonable_gap_mm
+            );
+        }
+    }
