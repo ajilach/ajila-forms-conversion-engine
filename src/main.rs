@@ -145,8 +145,6 @@ fn run_blueprint_pipeline(
             };
             all_envelopes.push(merged_envelope);
         }
-
-        let _ = std::fs::remove_file(&temp_path);
     }
 
     // Merging
