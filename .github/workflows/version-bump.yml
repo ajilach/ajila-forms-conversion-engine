@@ -51,10 +51,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Install cargo-edit
-        run: |
-          curl -L https://github.com/killercup/cargo-edit/releases/latest/download/cargo-edit-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv cargo-set-version /usr/local/bin/
+        run: cargo install cargo-edit
 
       - name: Configure Git
         run: |
