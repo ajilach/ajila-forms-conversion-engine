@@ -5321,6 +5321,275 @@
     }
 
     #[test]
+    fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
+        // The "Löschung Retro Rückvergütung" option of the RB_Group_Retro radio field
+        // must have its own ConditionalNode wrapping the content that belongs to it.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
+
+        fn collect_conditionals(nodes: &[StructuredNode], out: &mut Vec<ConditionalNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c) => {
+                        out.push(c.clone());
+                        collect_conditionals(std::slice::from_ref(&c.content), out);
+                    }
+                    StructuredNode::Group(g) => collect_conditionals(&g.children, out),
+                    StructuredNode::Repeatable(r) => {
+                        collect_conditionals(std::slice::from_ref(&r.item), out);
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_conditionals(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
+                        return Some(f.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_radio_field(&g.children, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&c.content), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&r.item), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let child_nodes: Vec<_> =
+                            g.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        // Locate the RB_Group_Retro radio field and find the value for
+        // "Löschung Retro Rückvergütung".
+        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+            .expect("Expected to find radio field 'RB_Group_Retro' in structured output");
+
+        let FieldType::Radio { options } = &retro_field.input_type else {
+            panic!("RB_Group_Retro should be a radio field");
+        };
+
+        let retro_rueck_value = options
+            .iter()
+            .find(|o| o.name.contains("Löschung Retro Rückvergütung"))
+            .map(|o| o.value.clone())
+            .expect("Expected to find option 'Löschung Retro Rückvergütung' in RB_Group_Retro");
+
+        // Collect all ConditionalNodes and assert exactly one is keyed to this option.
+        let mut conditionals: Vec<ConditionalNode> = Vec::new();
+        collect_conditionals(&structured, &mut conditionals);
+
+        println!("\n=== All conditionals on RB_Group_Retro ===");
+        for c in &conditionals {
+            if c.condition.field_name == retro_field.name {
+                println!("  value={:?}", c.condition.value);
+            }
+        }
+
+        let matching: Vec<_> = conditionals
+            .iter()
+            .filter(|c| {
+                c.condition.field_name == retro_field.name
+                    && c.condition.value == retro_rueck_value
+            })
+            .collect();
+
+        assert_eq!(
+            matching.len(),
+            1,
+            "Expected exactly 1 ConditionalNode for 'Löschung Retro Rückvergütung' \
+             (field={}, value={:?}), found {}",
+            retro_field.name,
+            retro_rueck_value,
+            matching.len()
+        );
+    }
+
+    #[test]
+    fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
+        // The "ISIN / Satz in % / Ab" repeatable table appears in all radio button
+        // states (RB_1, RB_2, RB_3) except RB_4. Since the content is structurally
+        // identical across all states where it appears, it should NOT be wrapped in
+        // per-option ConditionalNodes keyed on RB_Group_Retro. Instead it should
+        // appear as a direct child (sibling of the radio field), not nested inside
+        // a Conditional(RB_Group_Retro=...) node.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{
+            ConditionalNode, FieldNode, FieldType, RepeatableNode, StructuredNode,
+        };
+
+        /// Recursively search for Repeatable nodes that contain a field whose label
+        /// contains "ISIN" — return true if any is found inside a ConditionalNode
+        /// whose condition matches the given radio field.
+        fn has_isin_repeatable_inside_retro_conditional(
+            nodes: &[StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+        ) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
+                        // Inside a RB_Group_Retro conditional — check if ISIN repeatable is here
+                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
+                            return true;
+                        }
+                    }
+                    // Recurse into non-Retro containers to find nested Retro conditionals
+                    StructuredNode::Group(g) => {
+                        if has_isin_repeatable_inside_retro_conditional(&g.children, retro_field_name) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if has_isin_repeatable_inside_retro_conditional(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                        ) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        fn contains_isin_repeatable(nodes: &[StructuredNode]) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) => {
+                        if repeatable_has_isin_field(r) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if contains_isin_repeatable(&g.children) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        fn repeatable_has_isin_field(rep: &RepeatableNode) -> bool {
+            has_field_with_label(&[rep.item.as_ref().clone()], "ISIN")
+        }
+
+        fn has_field_with_label(nodes: &[StructuredNode], needle: &str) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let text = label.as_plain_text();
+                            if text.contains(needle) {
+                                return true;
+                            }
+                        }
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let child_nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                        if has_field_with_label(&child_nodes, needle) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if has_field_with_label(&g.children, needle) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
+                        return Some(f.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_radio_field(&g.children, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&c.content), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(found) =
+                            find_radio_field(std::slice::from_ref(&r.item), target_name)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        let child_nodes: Vec<_> =
+                            g.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+            .expect("Failed to run exhaustive merge");
+
+        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+            .expect("Expected to find radio field 'RB_Group_Retro'");
+
+        assert!(
+            !has_isin_repeatable_inside_retro_conditional(&structured, &retro_field.name),
+            "The ISIN/Satz in %/Ab repeatable should NOT be inside a \
+             Conditional(RB_Group_Retro=...) node — it should appear as a \
+             direct sibling after the radio buttons"
+        );
+    }
+
+    #[test]
     fn test_aaei_heading_structure() {
         // Test that the AAEI document has the expected heading structure:
         // - h1: Investmentvermögen: Erklärung zur Inanspruchnahme des

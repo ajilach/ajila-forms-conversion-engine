@@ -263,47 +263,162 @@ impl RecursiveMerger {
 
         // Create conditionals for each divergent group (only if there's actual divergent content)
         if !all_empty_middle {
-            for (selection, remaining_nodes) in divergent_groups {
-                if remaining_nodes.is_empty() {
-                    continue;
-                }
+            // Optimisation: when all non-empty divergent groups contain structurally
+            // identical content, emit it once as common content rather than wrapping
+            // each copy in a separate ConditionalNode. This avoids redundant
+            // conditionals for content shared across multiple radio-button states.
+            let non_empty: Vec<&Vec<StructuredNode>> = divergent_groups
+                .iter()
+                .filter(|(_, nodes)| !nodes.is_empty())
+                .map(|(_, nodes)| nodes)
+                .collect();
 
-                let condition = if let Some(sel) = selection {
-                    // Use group_path (if present) for field_name, value for the condition
-                    let value = match sel.kind {
-                        SelectionKind::Checkbox => InputValue::Bool(sel.value == "checked"),
-                        _ => InputValue::Text(sel.value_name().to_string()),
+            let all_identical = non_empty.len() >= 2
+                && non_empty.windows(2).all(|w| {
+                    w[0].len() == w[1].len()
+                        && w[0]
+                            .iter()
+                            .zip(w[1].iter())
+                            .all(|(a, b)| a.structural_eq(b))
+                });
+
+            if all_identical {
+                // All non-empty groups share the same content — emit it once.
+                result.extend(non_empty[0].clone());
+            } else {
+                for (selection, remaining_nodes) in divergent_groups {
+                    if remaining_nodes.is_empty() {
+                        continue;
+                    }
+
+                    let condition = if let Some(sel) = selection {
+                        // Use group_path (if present) for field_name, value for the condition
+                        let value = match sel.kind {
+                            SelectionKind::Checkbox => InputValue::Bool(sel.value == "checked"),
+                            _ => InputValue::Text(sel.value_name().to_string()),
+                        };
+                        FieldCondition {
+                            field_name: sel.condition_path().clone(),
+                            value,
+                        }
+                    } else {
+                        FieldCondition {
+                            field_name: FieldId::from_som_path(&SomPath::new("unknown")),
+                            value: InputValue::Text("default".to_string()),
+                        }
                     };
-                    FieldCondition {
-                        field_name: sel.condition_path().clone(),
-                        value,
-                    }
-                } else {
-                    FieldCondition {
-                        field_name: FieldId::from_som_path(&SomPath::new("unknown")),
-                        value: InputValue::Text("default".to_string()),
-                    }
-                };
 
-                let content = if remaining_nodes.len() == 1 {
-                    remaining_nodes.into_iter().next().unwrap()
-                } else {
-                    StructuredNode::Group(GroupNode {
-                        children: remaining_nodes,
-                    })
-                };
+                    let content = if remaining_nodes.len() == 1 {
+                        remaining_nodes.into_iter().next().unwrap()
+                    } else {
+                        StructuredNode::Group(GroupNode {
+                            children: remaining_nodes,
+                        })
+                    };
 
-                result.push(StructuredNode::Conditional(ConditionalNode {
-                    condition,
-                    content: Box::new(content),
-                }));
+                    result.push(StructuredNode::Conditional(ConditionalNode {
+                        condition,
+                        content: Box::new(content),
+                    }));
+                }
             }
         }
 
         // Add common suffix to result (appears after all conditionals)
         result.extend(common_suffix);
 
+        // Merge duplicate ConditionalNodes that share the same condition.
+        // This can happen when RadioButtonContentDetector creates a ConditionalNode for
+        // inset content and the merger creates another ConditionalNode for the same
+        // field+value pair. Both should be combined into a single ConditionalNode.
+        result = Self::merge_duplicate_conditionals(result);
+
         result
+    }
+
+    /// Merge any ConditionalNodes in `nodes` that have the same `condition`
+    /// (same `field_name` and `value`) into a single ConditionalNode whose
+    /// content is the union of all their individual contents.
+    fn merge_duplicate_conditionals(nodes: Vec<StructuredNode>) -> Vec<StructuredNode> {
+        // Fast path: nothing to merge if fewer than 2 nodes.
+        if nodes.len() < 2 {
+            return nodes;
+        }
+
+        // Detect whether any deduplication is needed at all.
+        let has_dup = {
+            let mut found = false;
+            'outer: for (i, ni) in nodes.iter().enumerate() {
+                if let StructuredNode::Conditional(ci) = ni {
+                    for nj in nodes[i + 1..].iter() {
+                        if let StructuredNode::Conditional(cj) = nj {
+                            if ci.condition == cj.condition {
+                                found = true;
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            }
+            found
+        };
+        if !has_dup {
+            return nodes;
+        }
+
+        // Build merged output, combining duplicate conditionals.
+        // A "representative" is the first occurrence of each condition; subsequent
+        // occurrences are marked as duplicates and their content is folded in.
+        let mut skip = vec![false; nodes.len()];
+        // Collect contents to add to each representative (by index).
+        let mut extra: Vec<Vec<StructuredNode>> = nodes.iter().map(|_| Vec::new()).collect();
+
+        for j in 1..nodes.len() {
+            if let StructuredNode::Conditional(cj) = &nodes[j] {
+                // Look for an earlier representative with the same condition.
+                for i in 0..j {
+                    if skip[i] {
+                        continue;
+                    }
+                    if let StructuredNode::Conditional(ci) = &nodes[i] {
+                        if ci.condition == cj.condition {
+                            // j is a duplicate of i; fold j's content into i.
+                            skip[j] = true;
+                            match cj.content.as_ref() {
+                                StructuredNode::Group(g) => extra[i].extend(g.children.clone()),
+                                other => extra[i].push(other.clone()),
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rebuild the list, expanding kept ConditionalNodes with their extra content.
+        nodes
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !skip[*i])
+            .map(|(i, node)| {
+                if extra[i].is_empty() {
+                    return node;
+                }
+                if let StructuredNode::Conditional(c) = node {
+                    let mut children = match *c.content {
+                        StructuredNode::Group(g) => g.children,
+                        other => vec![other],
+                    };
+                    children.extend(extra[i].drain(..));
+                    StructuredNode::Conditional(ConditionalNode {
+                        condition: c.condition,
+                        content: Box::new(StructuredNode::Group(GroupNode { children })),
+                    })
+                } else {
+                    node
+                }
+            })
+            .collect()
     }
 
     /// Extract common structural prefix AND suffix from all groups.

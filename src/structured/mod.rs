@@ -160,7 +160,7 @@ pub struct ConditionalNode {
     pub content: Box<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
     pub field_name: FieldId,
