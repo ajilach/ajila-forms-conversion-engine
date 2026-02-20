@@ -5435,75 +5435,12 @@
 
     #[test]
     fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
-        // The "ISIN / Satz in % / Ab" repeatable table appears in all radio button
-        // states (RB_1, RB_2, RB_3) except RB_4. Since the content is structurally
-        // identical across all states where it appears, it should NOT be wrapped in
-        // per-option ConditionalNodes keyed on RB_Group_Retro. Instead it should
-        // appear as a direct child (sibling of the radio field), not nested inside
-        // a Conditional(RB_Group_Retro=...) node.
+        // The "ISIN / Satz in % / Ab" repeatable table appears in radio button
+        // states RB_1, RB_2, RB_3 — but NOT RB_4.  The merger must wrap it in
+        // per-state ConditionalNodes keyed on RB_Group_Retro so it is NOT
+        // shown unconditionally (it must not appear when RB_4 is selected).
         use crate::run_exhaustive_to_merged;
-        use crate::structured::{
-            ConditionalNode, FieldNode, FieldType, RepeatableNode, StructuredNode,
-        };
-
-        /// Recursively search for Repeatable nodes that contain a field whose label
-        /// contains "ISIN" — return true if any is found inside a ConditionalNode
-        /// whose condition matches the given radio field.
-        fn has_isin_repeatable_inside_retro_conditional(
-            nodes: &[StructuredNode],
-            retro_field_name: &crate::structured::FieldId,
-        ) -> bool {
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
-                        // Inside a RB_Group_Retro conditional — check if ISIN repeatable is here
-                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
-                            return true;
-                        }
-                    }
-                    // Recurse into non-Retro containers to find nested Retro conditionals
-                    StructuredNode::Group(g) => {
-                        if has_isin_repeatable_inside_retro_conditional(&g.children, retro_field_name) {
-                            return true;
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if has_isin_repeatable_inside_retro_conditional(
-                            std::slice::from_ref(&c.content),
-                            retro_field_name,
-                        ) {
-                            return true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            false
-        }
-
-        fn contains_isin_repeatable(nodes: &[StructuredNode]) -> bool {
-            for node in nodes {
-                match node {
-                    StructuredNode::Repeatable(r) => {
-                        if repeatable_has_isin_field(r) {
-                            return true;
-                        }
-                    }
-                    StructuredNode::Group(g) => {
-                        if contains_isin_repeatable(&g.children) {
-                            return true;
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
-                            return true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            false
-        }
+        use crate::structured::{FieldNode, FieldType, InputValue, RepeatableNode, StructuredNode};
 
         fn repeatable_has_isin_field(rep: &RepeatableNode) -> bool {
             has_field_with_label(&[rep.item.as_ref().clone()], "ISIN")
@@ -5521,13 +5458,101 @@
                         }
                     }
                     StructuredNode::GridLayout(g) => {
-                        let child_nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                        let child_nodes: Vec<_> =
+                            g.elements.iter().map(|e| e.node.clone()).collect();
                         if has_field_with_label(&child_nodes, needle) {
                             return true;
                         }
                     }
                     StructuredNode::Group(g) => {
                         if has_field_with_label(&g.children, needle) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        /// Check whether an ISIN repeatable appears as a direct (unconditional) child
+        /// anywhere in the tree (not inside a Conditional on the retro field).
+        fn has_unconditional_isin_repeatable(
+            nodes: &[StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+        ) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) if repeatable_has_isin_field(r) => {
+                        return true; // found ISIN repeatable NOT inside a retro conditional
+                    }
+                    StructuredNode::Group(g) => {
+                        if has_unconditional_isin_repeatable(&g.children, retro_field_name) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c)
+                        if c.condition.field_name == *retro_field_name =>
+                    {
+                        // Skip: ISIN inside a Retro conditional is expected
+                    }
+                    StructuredNode::Conditional(c) => {
+                        // Recurse into non-retro conditionals
+                        if has_unconditional_isin_repeatable(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                        ) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        /// Collect the condition values of all RB_Group_Retro conditionals that
+        /// contain an ISIN repeatable.
+        fn collect_retro_isin_condition_values(
+            nodes: &[StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+            out: &mut Vec<InputValue>,
+        ) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c)
+                        if c.condition.field_name == *retro_field_name =>
+                    {
+                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
+                            out.push(c.condition.value.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        collect_retro_isin_condition_values(&g.children, retro_field_name, out);
+                    }
+                    StructuredNode::Conditional(c) => {
+                        collect_retro_isin_condition_values(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                            out,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fn contains_isin_repeatable(nodes: &[StructuredNode]) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) if repeatable_has_isin_field(r) => return true,
+                    StructuredNode::Group(g) => {
+                        if contains_isin_repeatable(&g.children) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
                             return true;
                         }
                     }
@@ -5581,11 +5606,83 @@
         let retro_field = find_radio_field(&structured, "RB_Group_Retro")
             .expect("Expected to find radio field 'RB_Group_Retro'");
 
+        let FieldType::Radio { options } = &retro_field.input_type else {
+            panic!("RB_Group_Retro should be a radio field");
+        };
+
+        // Narrow scope: find the Conditional whose subtree contains RB_Group_Retro,
+        // which is the Löschung section.  Only check within that subtree.
+        fn find_subtree_containing_retro_field<'a>(
+            nodes: &'a [StructuredNode],
+            retro_field_name: &crate::structured::FieldId,
+        ) -> Option<&'a [StructuredNode]> {
+            // Check if retro field is a direct child
+            for node in nodes {
+                if let StructuredNode::Field(f) = node {
+                    if f.name == *retro_field_name {
+                        return Some(nodes);
+                    }
+                }
+            }
+            // Recurse into containers
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) = find_subtree_containing_retro_field(
+                            std::slice::from_ref(&c.content),
+                            retro_field_name,
+                        ) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_subtree_containing_retro_field(
+                            &g.children,
+                            retro_field_name,
+                        ) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let loeschung_nodes = find_subtree_containing_retro_field(&structured, &retro_field.name)
+            .expect("Expected to find the Löschung subtree containing RB_Group_Retro");
+
+        // 1) ISIN must NOT appear unconditionally (outside RB_Group_Retro conditionals)
         assert!(
-            !has_isin_repeatable_inside_retro_conditional(&structured, &retro_field.name),
-            "The ISIN/Satz in %/Ab repeatable should NOT be inside a \
-             Conditional(RB_Group_Retro=...) node — it should appear as a \
-             direct sibling after the radio buttons"
+            !has_unconditional_isin_repeatable(loeschung_nodes, &retro_field.name),
+            "The ISIN/Satz in %/Ab repeatable must NOT appear unconditionally — \
+             it should only be inside Conditional(RB_Group_Retro=...) nodes"
+        );
+
+        // 2) ISIN must appear in conditionals for RB_1, RB_2, RB_3 — but NOT RB_4
+        let mut isin_values: Vec<InputValue> = Vec::new();
+        collect_retro_isin_condition_values(loeschung_nodes, &retro_field.name, &mut isin_values);
+
+        // Find the value for the fourth option (Löschung Direktvereinbarung / RB_4)
+        let rb4_value = options
+            .iter()
+            .find(|o| o.name.contains("Löschung Direktvereinbarung"))
+            .map(|o| o.value.clone())
+            .expect("Expected to find option 'Löschung Direktvereinbarung' in RB_Group_Retro");
+
+        assert!(
+            !isin_values.contains(&rb4_value),
+            "ISIN repeatable must NOT appear in a Conditional for the fourth radio option \
+             (Löschung Direktvereinbarung)"
+        );
+
+        // We expect exactly 3 conditionals with ISIN (one per RB_1, RB_2, RB_3)
+        assert_eq!(
+            isin_values.len(),
+            3,
+            "Expected ISIN repeatable to appear in exactly 3 Conditional(RB_Group_Retro=...) \
+             nodes (RB_1, RB_2, RB_3), found {}",
+            isin_values.len()
         );
     }
 

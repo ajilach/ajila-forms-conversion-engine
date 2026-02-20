@@ -263,28 +263,27 @@ impl RecursiveMerger {
 
         // Create conditionals for each divergent group (only if there's actual divergent content)
         if !all_empty_middle {
-            // Optimisation: when all non-empty divergent groups contain structurally
-            // identical content, emit it once as common content rather than wrapping
-            // each copy in a separate ConditionalNode. This avoids redundant
-            // conditionals for content shared across multiple radio-button states.
-            let non_empty: Vec<&Vec<StructuredNode>> = divergent_groups
-                .iter()
-                .filter(|(_, nodes)| !nodes.is_empty())
-                .map(|(_, nodes)| nodes)
-                .collect();
+            // Optimisation: when ALL divergent groups are non-empty and contain
+            // structurally identical content, emit it once as common content rather
+            // than wrapping each copy in a separate ConditionalNode.
+            // Important: only apply when every group has content, because empty
+            // groups represent states where the content should NOT appear.
+            let all_non_empty = divergent_groups.iter().all(|(_, nodes)| !nodes.is_empty());
 
-            let all_identical = non_empty.len() >= 2
-                && non_empty.windows(2).all(|w| {
-                    w[0].len() == w[1].len()
-                        && w[0]
-                            .iter()
-                            .zip(w[1].iter())
-                            .all(|(a, b)| a.structural_eq(b))
+            let all_identical = all_non_empty
+                && divergent_groups.len() >= 2
+                && divergent_groups.windows(2).all(|w| {
+                    let a = &w[0].1;
+                    let b = &w[1].1;
+                    a.len() == b.len()
+                        && a.iter()
+                            .zip(b.iter())
+                            .all(|(na, nb)| na.structural_eq(nb))
                 });
 
             if all_identical {
-                // All non-empty groups share the same content — emit it once.
-                result.extend(non_empty[0].clone());
+                // All groups share the same content — emit it once.
+                result.extend(divergent_groups[0].1.clone());
             } else {
                 for (selection, remaining_nodes) in divergent_groups {
                     if remaining_nodes.is_empty() {
