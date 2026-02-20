@@ -7799,6 +7799,235 @@
     }
 
     #[test]
+    fn test_acav_vollsaldierung_uebertrag_are_grouped() {
+        // The vertical radio button group "Vollsaldierung" / "Übertrag/Mutation"
+        // must be detected and grouped into a single FieldType::Radio with ≥2 options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, StructuredNode};
+
+        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, FieldType::Radio { .. }) {
+                            radio_fields.push(field.clone());
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        find_radio_fields(&group.children, radio_fields);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, radio_fields);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+            .expect("Failed to process ACAV PDF");
+
+        let mut radio_fields: Vec<FieldNode> = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        println!("\n=== All radio fields in ACAV ===");
+        for field in &radio_fields {
+            if let FieldType::Radio { options } = &field.input_type {
+                println!("  Field: {} ({} options)", field.name, options.len());
+                for opt in options {
+                    println!("    - {}", opt.name);
+                }
+            }
+        }
+
+        let group = radio_fields.iter().find(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_vollsaldierung = options.iter().any(|o| o.name.contains("Vollsaldierung"));
+                let has_uebertrag = options.iter().any(|o| o.name.contains("Übertrag") || o.name.contains("Mutation"));
+                has_vollsaldierung && has_uebertrag
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            group.is_some(),
+            "Expected a radio group with options 'Vollsaldierung' and 'Übertrag/Mutation'"
+        );
+    }
+
+    #[test]
+    fn test_acav_gesamtbetrag_teilzahlung_are_grouped() {
+        // The vertical radio button group "Gesamtbetrag inkl. Zinsen ..." / "Teilzahlung von CHF"
+        // must be detected and grouped into a single FieldType::Radio with ≥2 options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, StructuredNode};
+
+        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, FieldType::Radio { .. }) {
+                            radio_fields.push(field.clone());
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        find_radio_fields(&group.children, radio_fields);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, radio_fields);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+            .expect("Failed to process ACAV PDF");
+
+        let mut radio_fields: Vec<FieldNode> = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        let group = radio_fields.iter().find(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_gesamtbetrag = options.iter().any(|o| o.name.contains("Gesamtbetrag"));
+                let has_teilzahlung = options.iter().any(|o| o.name.contains("Teilzahlung"));
+                has_gesamtbetrag && has_teilzahlung
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            group.is_some(),
+            "Expected a radio group with options 'Gesamtbetrag inkl. Zinsen' and 'Teilzahlung von CHF'"
+        );
+    }
+
+    #[test]
+    fn test_acav_freigabe_restbetrag_are_grouped() {
+        // The vertical radio button group "Freigabe der Kaution inkl. Zinsen zugunsten Mieter" /
+        // "Restbetrag der Kaution inkl. Zinsen zugunsten Mieter" must be detected and grouped.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, StructuredNode};
+
+        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, FieldType::Radio { .. }) {
+                            radio_fields.push(field.clone());
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        find_radio_fields(&group.children, radio_fields);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, radio_fields);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+            .expect("Failed to process ACAV PDF");
+
+        let mut radio_fields: Vec<FieldNode> = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        let group = radio_fields.iter().find(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_freigabe = options.iter().any(|o| o.name.contains("Freigabe der Kaution"));
+                let has_restbetrag = options.iter().any(|o| o.name.contains("Restbetrag der Kaution"));
+                has_freigabe && has_restbetrag
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            group.is_some(),
+            "Expected a radio group with options 'Freigabe der Kaution inkl. Zinsen zugunsten Mieter' and 'Restbetrag der Kaution inkl. Zinsen zugunsten Mieter'"
+        );
+    }
+
+    #[test]
+    fn test_acav_vermieter_mieter_are_grouped() {
+        // The horizontal radio button group "Vermieter" / "Mieter" must be detected and grouped.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, StructuredNode};
+
+        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, FieldType::Radio { .. }) {
+                            radio_fields.push(field.clone());
+                        }
+                    }
+                    StructuredNode::Group(group) => {
+                        find_radio_fields(&group.children, radio_fields);
+                    }
+                    StructuredNode::Conditional(cond) => {
+                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
+                    }
+                    StructuredNode::Repeatable(rep) => {
+                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, radio_fields);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+            .expect("Failed to process ACAV PDF");
+
+        let mut radio_fields: Vec<FieldNode> = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        let group = radio_fields.iter().find(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_vermieter = options.iter().any(|o| o.name.contains("Vermieter"));
+                let has_mieter = options.iter().any(|o| o.name.contains("Mieter"));
+                has_vermieter && has_mieter
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            group.is_some(),
+            "Expected a radio group with options 'Vermieter' and 'Mieter'"
+        );
+    }
+
+    #[test]
     fn test_aaab_has_no_vertical_field_table() {
         use crate::run_exhaustive_to_merged;
         use crate::structured::StructuredNode;

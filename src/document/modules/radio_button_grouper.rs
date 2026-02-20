@@ -60,6 +60,18 @@ impl RadioButtonGrouper {
         None
     }
 
+    /// Get the bounds of just the *field* (radio-button circle) part of a RadioButton group,
+    /// ignoring the label.  Used for alignment checks where the whole-group bounds —
+    /// which include the potentially wide label text — would give misleading results.
+    fn get_field_bounds(&self, doc: &Document, rb_idx: usize) -> Option<Bounds> {
+        let group = doc.get_group(rb_idx)?;
+        if let GroupKind::RadioButton { field, .. } = &group.kind {
+            let field_group_idx = *group.children.get(*field)?;
+            return doc.get_bounds(field_group_idx);
+        }
+        None
+    }
+
     /// Check if two radio buttons are horizontally aligned.
     fn are_horizontally_aligned(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
         bounds1.is_horizontally_aligned(bounds2, self.alignment_tolerance)
@@ -312,6 +324,12 @@ impl RadioButtonGrouper {
         }
     }
 
+    /// Return the last segment of an ExclGroupSomPath (the group name itself, without the
+    /// subform/chapter prefix).  E.g. `"Form.Page1.Ch2.RB_Group_Foo"` → `"RB_Group_Foo"`.
+    fn excl_group_name(path: &SomPath) -> &str {
+        path.as_str().rsplit('.').next().unwrap_or(path.as_str())
+    }
+
     /// Group radio buttons by their exclGroup SOM path.
     /// All radio buttons in the same exclGroup are grouped together regardless of position.
     fn group_by_excl_group(&self, doc: &mut Document, radio_buttons: &[usize]) {
@@ -332,6 +350,86 @@ impl RadioButtonGrouper {
         // Create RadioButtonGroup for each exclGroup with more than one radio button
         for (_path, group) in sorted_groups {
             if group.len() > 1 {
+                doc.merge(
+                    group,
+                    GroupKind::RadioButtonGroup,
+                    GroupSource::Inferred {
+                        module: self.name().to_string(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// Fallback grouping: group radio buttons that share the same ExclGroup *name*
+    /// (last segment of their ExclGroupSomPath) and are spatially aligned.
+    ///
+    /// This handles XFA forms where the same logical radio group is split across
+    /// separate subforms/chapters (each with its own full SOM path but the same
+    /// group name).  We require spatial alignment as a safety guard against
+    /// accidentally merging unrelated groups from different form pages.
+    fn group_by_excl_group_name(&self, doc: &mut Document, radio_buttons: &[usize]) {
+        // Build a map of group name → radio button indices
+        let mut name_groups: HashMap<String, Vec<usize>> = HashMap::new();
+
+        for &rb_idx in radio_buttons {
+            if let Some(path) = self.get_excl_group_path(doc, rb_idx) {
+                let name = Self::excl_group_name(&path).to_string();
+                name_groups.entry(name).or_default().push(rb_idx);
+            }
+        }
+
+        // Sort deterministically
+        let mut sorted: Vec<_> = name_groups.into_iter().collect();
+        sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        for (_name, candidates) in sorted {
+            if candidates.len() < 2 {
+                continue;
+            }
+
+            // Among the candidates, find pairs that are spatially aligned.
+            // We use a simple greedy union-find: any two buttons that are
+            // vertically or horizontally aligned (within tolerance) go into the
+            // same group.
+            let mut assigned: HashSet<usize> = HashSet::new();
+            let mut groups: Vec<Vec<usize>> = Vec::new();
+
+            for &rb_idx in &candidates {
+                if assigned.contains(&rb_idx) {
+                    continue;
+                }
+                // Use the field (circle) bounds for alignment, not the full group bounds
+                // (which include the label and would skew horizontal-center comparisons).
+                let Some(rb_field_bounds) = self.get_field_bounds(doc, rb_idx) else {
+                    continue;
+                };
+
+                let mut group = vec![rb_idx];
+                assigned.insert(rb_idx);
+
+                for &other_idx in &candidates {
+                    if assigned.contains(&other_idx) {
+                        continue;
+                    }
+                    let Some(other_field_bounds) = self.get_field_bounds(doc, other_idx) else {
+                        continue;
+                    };
+
+                    if self.are_vertically_aligned(&rb_field_bounds, &other_field_bounds)
+                        || self.are_horizontally_aligned(&rb_field_bounds, &other_field_bounds)
+                    {
+                        group.push(other_idx);
+                        assigned.insert(other_idx);
+                    }
+                }
+
+                if group.len() > 1 {
+                    groups.push(group);
+                }
+            }
+
+            for group in groups {
                 doc.merge(
                     group,
                     GroupKind::RadioButtonGroup,
@@ -385,6 +483,25 @@ impl AnalysisModule for RadioButtonGrouper {
 
         if !remaining_radio_buttons.is_empty() {
             self.group_aligned_radio_buttons(doc, &remaining_radio_buttons);
+        }
+
+        // Finally, group any still-ungrouped radio buttons by ExclGroup NAME (last path segment).
+        // This handles forms where the same logical radio group spans multiple XFA subforms/chapters,
+        // giving each button a different full SOM path but the same group name.
+        let roots = doc.roots();
+        let still_remaining: Vec<usize> = roots
+            .iter()
+            .filter(|&&idx| {
+                matches!(
+                    doc.get_group(idx).map(|g| &g.kind),
+                    Some(GroupKind::RadioButton { .. })
+                )
+            })
+            .copied()
+            .collect();
+
+        if !still_remaining.is_empty() {
+            self.group_by_excl_group_name(doc, &still_remaining);
         }
     }
 }

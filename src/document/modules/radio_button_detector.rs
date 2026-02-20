@@ -27,6 +27,11 @@ pub struct RadioButtonDetector {
     pub max_label_distance: Decimal,
     /// Vertical tolerance for "same line" detection
     pub line_tolerance: Decimal,
+    /// How far the label may start inside the field's right edge (in points).
+    /// XFA forms sometimes position the caption text slightly overlapping the
+    /// radio-button circle widget.  A small positive tolerance (default 5 pt)
+    /// handles such cases without being overly permissive.
+    pub label_overlap_tolerance: Decimal,
 }
 
 impl Default for RadioButtonDetector {
@@ -42,6 +47,7 @@ impl RadioButtonDetector {
             square_tolerance: Decimal::from_str("0.1").unwrap(), // 10% tolerance
             max_label_distance: Decimal::from_str("150.0").unwrap(),
             line_tolerance: Decimal::from_str("8.0").unwrap(),
+            label_overlap_tolerance: Decimal::from_str("5.0").unwrap(),
         }
     }
 
@@ -79,6 +85,22 @@ impl RadioButtonDetector {
         width <= self.max_size && height <= self.max_size
     }
 
+    /// Check if a field has an EXPLICIT `WidgetType(Radio)` hint.
+    /// Returns true only when the hint is present; false when absent or Checkbox.
+    fn has_explicit_radio_hint(&self, doc: &Document, field_idx: usize) -> bool {
+        let node_indices = doc.collect_node_indices(field_idx);
+        for &node_idx in &node_indices {
+            if let Some(node) = doc.get_node(node_idx) {
+                for hint in &node.hints {
+                    if let Hint::WidgetType(WidgetKind::Radio) = hint {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a field has a Radio widget type hint (and NOT Checkbox).
     /// If no widget hint is present, assume it could be a radio button (legacy behavior).
     /// But explicitly reject fields with Checkbox widget hint.
@@ -111,8 +133,20 @@ impl RadioButtonDetector {
 
     /// Check if text is to the right of the field and on the same line.
     fn is_label_on_right(&self, field_bounds: &Bounds, text_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be to the right of field
-        let gap = field_bounds.horizontal_gap_to(text_bounds)?;
+        // Text must be to the right of field (allowing a small overlap for XFA forms
+        // that position the caption text slightly inside the button widget's right edge).
+        let gap = if text_bounds.x >= field_bounds.right() - self.label_overlap_tolerance {
+            // Gap is positive when text is clear of the field; negative means slight overlap.
+            // We normalise to 0 when within tolerance so the sorting still works.
+            let raw = text_bounds.x - field_bounds.right();
+            if raw < Decimal::ZERO {
+                Decimal::ZERO
+            } else {
+                raw
+            }
+        } else {
+            return None;
+        };
 
         if gap > self.max_label_distance {
             return None;
@@ -189,11 +223,18 @@ impl AnalysisModule for RadioButtonDetector {
                 continue;
             };
 
-            // Must be square and small
-            if !self.is_square(bounds.width, bounds.height)
-                || !self.is_radio_size(bounds.width, bounds.height)
-            {
-                continue;
+            // If the field has an explicit WidgetType(Radio) hint we trust the form
+            // author's intent and skip the heuristic square/size checks.  Only for
+            // fields without an explicit hint do we fall back to shape-based detection.
+            let is_explicit_radio = self.has_explicit_radio_hint(doc, field_idx);
+
+            if !is_explicit_radio {
+                // Must be square and small for heuristic detection
+                if !self.is_square(bounds.width, bounds.height)
+                    || !self.is_radio_size(bounds.width, bounds.height)
+                {
+                    continue;
+                }
             }
 
             // Must be a radio button (not a checkbox) based on widget type hint
