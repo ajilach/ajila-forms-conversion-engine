@@ -5741,8 +5741,16 @@
                 match node {
                     StructuredNode::Paragraph(p) => {
                         let text = p.content.as_plain_text();
-                        if text.contains("FIM") && text.contains("Endkunde") {
+                        if text.contains("FIM3") || text.contains("Weder FIM noch Endkunde") {
                             return true;
+                        }
+                    }
+                    StructuredNode::List(l) => {
+                        for item in &l.items {
+                            let text = item.as_plain_text();
+                            if text.contains("FIM3") || text.contains("Weder FIM noch Endkunde") {
+                                return true;
+                            }
                         }
                     }
                     StructuredNode::Group(g) => {
@@ -5809,8 +5817,16 @@
                 match node {
                     StructuredNode::Paragraph(p) => {
                         let text = p.content.as_plain_text();
-                        if text.contains("FIM") && text.contains("Endkunde") {
+                        if text.contains("FIM3") || text.contains("Weder FIM noch Endkunde") {
                             return true;
+                        }
+                    }
+                    StructuredNode::List(l) => {
+                        for item in &l.items {
+                            let text = item.as_plain_text();
+                            if text.contains("FIM3") || text.contains("Weder FIM noch Endkunde") {
+                                return true;
+                            }
                         }
                     }
                     StructuredNode::Group(g) => {
