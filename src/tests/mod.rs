@@ -9250,3 +9250,239 @@
             );
         }
     }
+
+    #[test]
+    fn test_aacj_dropdown_has_expected_client_type_options() {
+        // Test that the AACJ document has a dropdown field (CL_ClientType) with
+        // "Private Person", "Minderjährige", "Firma", and "GbR" as options.
+        use crate::flattened::Hint;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AACJ_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the CL_ClientType dropdown and verify its options
+        let mut found_options: Option<Vec<(String, String)>> = None;
+
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+                if name == "CL_ClientType" {
+                    for hint in &node.hints {
+                        if let Hint::Dropdown { options, .. } = hint {
+                            found_options = Some(options.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        let options = found_options.expect("CL_ClientType should have a Hint::Dropdown");
+        let display_values: Vec<&str> = options.iter().map(|(d, _)| d.as_str()).collect();
+
+        let expected = ["Private Person", "Minderjährige", "Firma", "GbR"];
+        for expected_value in &expected {
+            assert!(
+                display_values.contains(expected_value),
+                "Expected '{}' in dropdown options, got: {:?}",
+                expected_value,
+                display_values
+            );
+        }
+    }
+
+    #[test]
+    fn test_aacj_heading_structure() {
+        // Test that the AACJ document has the expected heading structure:
+        // - h1: Automatischer Informationsaustausch
+        //       (AEI Automatic Exchange of Information)
+        // - h2: Form Configurator
+        // - h2: Kundendaten
+        // - h2: Steuerdomizil(e)
+        // - h2: Zustimmung
+        // - h2: Unterschrift(en)
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::{Document, GroupKind};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AACJ_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        // Collect all headings with their levels and text
+        let mut heading_info: Vec<(u8, String, f32)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
+                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                        .unwrap_or(0.0);
+                    heading_info.push((level, text, y_coord));
+                }
+            }
+        }
+
+        // Sort by y-coordinate for document order
+        heading_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+        println!("\n=== AACJ Heading Structure ===");
+        for (level, text, y) in &heading_info {
+            println!("H{} (y={}): {}", level, y, text);
+        }
+
+        let expected_headings: Vec<(u8, &str)> = vec![
+            (1, "Automatischer Informationsaustausch"),
+            (2, "Form configurator"),
+            (2, "Kundendaten"),
+            (2, "Steuerdomizil(e)"),
+            (2, "Zustimmung"),
+            (2, "Unterschrift(en)"),
+        ];
+
+        // Verify each expected heading exists with the correct level
+        for (expected_level, expected_text) in &expected_headings {
+            let found = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            });
+
+            assert!(
+                found.is_some(),
+                "Expected to find H{} heading containing '{}', but it was not found.\n\
+                Found headings:\n{}",
+                expected_level,
+                expected_text,
+                heading_info
+                    .iter()
+                    .map(|(l, t, _)| format!("  H{}: {}", l, t))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+
+        // Verify the order matches (headings appear in expected sequence)
+        let mut last_y = f32::NEG_INFINITY;
+        for (expected_level, expected_text) in &expected_headings {
+            if let Some((_, _, y)) = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            }) {
+                assert!(
+                    *y >= last_y,
+                    "Heading '{}' (y={}) should appear after previous heading (y={})",
+                    expected_text,
+                    y,
+                    last_y
+                );
+                last_y = *y;
+            }
+        }
+
+        println!("\n✓ AACJ heading structure test passed!");
+        println!(
+            "✓ All {} expected headings found with correct levels",
+            expected_headings.len()
+        );
+    }
+
+    #[test]
+    fn test_aacj_multilingual_merge_de_en_sp() {
+        // Test that merging the three AACJ language versions (DE, EN, SP)
+        // produces a StructuredNode tree with TranslatedText nodes containing
+        // all three language keys.
+        use crate::run_exhaustive_to_envelope;
+        use crate::structured::{self, InlineNode, StructuredNode};
+
+        // Build envelopes for all three languages
+        let de_envelope = run_exhaustive_to_envelope("input/AACJ_019_DE.pdf", "de")
+            .expect("Failed to process AACJ_019_DE");
+        let en_envelope = run_exhaustive_to_envelope("input/AACJ_019_EN.pdf", "en")
+            .expect("Failed to process AACJ_019_EN");
+        let sp_envelope = run_exhaustive_to_envelope("input/AACJ_019_SP.pdf", "sp")
+            .expect("Failed to process AACJ_019_SP");
+
+        assert_eq!(de_envelope.context.language(), "de");
+        assert_eq!(en_envelope.context.language(), "en");
+        assert_eq!(sp_envelope.context.language(), "sp");
+
+        // Merge translations
+        let merged =
+            structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+
+        // The merged context should mention all three languages
+        let lang = merged.context.language();
+        assert!(lang.contains("de"), "Merged language should contain 'de', got: {}", lang);
+        assert!(lang.contains("en"), "Merged language should contain 'en', got: {}", lang);
+        assert!(lang.contains("sp"), "Merged language should contain 'sp', got: {}", lang);
+        assert!(!merged.content.is_empty(), "Merged content should not be empty");
+
+        // Helper: collect all InlineNodes from the tree
+        fn collect_inline_nodes(nodes: &[StructuredNode], out: &mut Vec<InlineNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => out.extend(h.content.0.iter().cloned()),
+                    StructuredNode::Paragraph(p) => out.extend(p.content.0.iter().cloned()),
+                    StructuredNode::Group(g) => collect_inline_nodes(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_inline_nodes(&[(*c.content).clone()], out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_inline_nodes(&[(*r.item).clone()], out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Collect all inline nodes
+        let mut inline_nodes = Vec::new();
+        collect_inline_nodes(&merged.content, &mut inline_nodes);
+
+        // Check: TranslatedText nodes exist with all three language keys
+        let translated_texts: Vec<_> = inline_nodes
+            .iter()
+            .filter_map(|n| match n {
+                InlineNode::TranslatedText(map) => Some(map),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            !translated_texts.is_empty(),
+            "Merged tree should contain TranslatedText nodes, but found none"
+        );
+
+        let all_three_langs: Vec<_> = translated_texts
+            .iter()
+            .filter(|map| map.contains_key("de") && map.contains_key("en") && map.contains_key("sp"))
+            .collect();
+
+        println!(
+            "TranslatedText nodes: {} total, {} with all three languages (de+en+sp)",
+            translated_texts.len(),
+            all_three_langs.len()
+        );
+
+        assert!(
+            !all_three_langs.is_empty(),
+            "At least some TranslatedText nodes should have all three language entries (de, en, sp)"
+        );
+
+        println!("\n✓ AACJ multilingual merge produces correct trilingual (de+en+sp) tree");
+    }
