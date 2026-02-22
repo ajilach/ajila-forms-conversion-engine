@@ -2209,10 +2209,7 @@ _xfa_tmp_im_.removeInstance = function() {};
 
             // Get the length of the _instances array
             let length = instances_obj
-                .get(
-                    PropertyKey::from(js_string!("length")),
-                    &mut self.context,
-                )
+                .get(PropertyKey::from(js_string!("length")), &mut self.context)
                 .ok()
                 .and_then(|v| v.to_number(&mut self.context).ok())
                 .unwrap_or(0.0) as usize;
@@ -2259,9 +2256,10 @@ _xfa_tmp_im_.removeInstance = function() {};
         }
 
         // Check if this object has _rawValue (i.e. it's a field)
-        if let Ok(raw_val) =
-            obj.get(PropertyKey::from(js_string!("_rawValue")), &mut self.context)
-            && !raw_val.is_undefined()
+        if let Ok(raw_val) = obj.get(
+            PropertyKey::from(js_string!("_rawValue")),
+            &mut self.context,
+        ) && !raw_val.is_undefined()
             && !raw_val.is_null()
             && let Ok(val_str) = raw_val.to_string(&mut self.context)
         {
