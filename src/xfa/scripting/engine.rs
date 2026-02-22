@@ -90,6 +90,60 @@ impl XfaScriptEngine {
         self.setup_shortcuts();
         self.setup_field_registry();
         self.setup_som_fallback();
+        self.setup_instance_helpers();
+    }
+
+    /// Register global JavaScript helpers for XFA dynamic subform instantiation.
+    ///
+    /// Per XFA 3.3 §6.16, `instanceManager.setInstances(N)` creates N instances
+    /// of a dynamic subform.  `.all` returns a collection of those instances.
+    fn setup_instance_helpers(&mut self) {
+        let _ = self.context.eval(Source::from_bytes(
+            r#"
+// Deep-clone a subform JS object's property tree for a new instance.
+// Each clone gets its own independent rawValue storage.
+function _xfa_cloneSubform(original, depth) {
+    if (depth === undefined) depth = 0;
+    if (depth > 20) return {};                // safety guard
+    var clone = {};
+    var keys = Object.getOwnPropertyNames(original);
+    for (var ki = 0; ki < keys.length; ki++) {
+        var key = keys[ki];
+        // Skip internal / circular properties
+        if (key === 'instanceManager' || key === '_exclGroupParent' ||
+            key === 'parent' || key === '_initialPresence' || key === 'all' ||
+            key === '_instances' || key === 'rawValue') continue;
+        var desc = Object.getOwnPropertyDescriptor(original, key);
+        if (!desc) continue;
+        if (desc.get || desc.set) continue;  // skip accessor properties
+        var val = desc.value;
+        if (typeof val === 'object' && val !== null && typeof val !== 'function') {
+            clone[key] = _xfa_cloneSubform(val, depth + 1);
+        } else {
+            clone[key] = val;
+        }
+    }
+    // Replicate rawValue backing field + accessor
+    if ('_rawValue' in original) {
+        clone._rawValue = original._rawValue;
+        Object.defineProperty(clone, 'rawValue', {
+            get: function() { return this._rawValue || ''; },
+            set: function(v) { this._rawValue = v; },
+            configurable: true, enumerable: true
+        });
+    }
+    // .all on clones returns single-element collection pointing to clone itself
+    Object.defineProperty(clone, 'all', {
+        get: function() {
+            var self = this;
+            return { length: 1, item: function(i) { return self; } };
+        },
+        configurable: true, enumerable: true
+    });
+    return clone;
+}
+"#,
+        ));
     }
 
     /// Get the rawValue of a specific field by its SOM path.
@@ -1276,34 +1330,115 @@ impl XfaScriptEngine {
         // Add execEvent() method (XFA 3.3 §10 pp.407-409)
         self.add_exec_event_method(&field);
 
+        // instanceIndex: 0-based index among same-named sibling instances.
+        // Initially 0 for a single instance.
+        field
+            .set(
+                PropertyKey::from(js_string!("instanceIndex")),
+                JsValue::from(0),
+                false,
+                &mut self.context,
+            )
+            .ok();
+
         // XFA 3.3 §6.16: instanceManager is only for dynamic subforms.
         // One instance manager is placed in the Form DOM for each dynamic
         // subform. Fields do NOT get an instanceManager.
         if is_subform {
-            let set_instances =
-                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
-            let add_instance =
-                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
-            let remove_instance =
-                NativeFunction::from_fn_ptr(|_this, _args, _context| Ok(JsValue::undefined()));
             let instance_manager = ObjectInitializer::new(&mut self.context)
-                .function(set_instances, js_string!("setInstances"), 1)
-                .function(add_instance, js_string!("addInstance"), 1)
-                .function(remove_instance, js_string!("removeInstance"), 1)
                 .property(js_string!("count"), JsValue::from(1), Attribute::all())
                 .property(js_string!("max"), JsValue::from(-1), Attribute::all())
                 .build();
+
+            // Link instanceManager ↔ parent subform
+            instance_manager
+                .set(
+                    PropertyKey::from(js_string!("_parent")),
+                    JsValue::from(field.clone()),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+
+            // Define setInstances via eval so it can call _xfa_cloneSubform
+            self.context
+                .global_object()
+                .set(
+                    PropertyKey::from(js_string!("_xfa_tmp_im_")),
+                    JsValue::from(instance_manager.clone()),
+                    false,
+                    &mut self.context,
+                )
+                .ok();
+            let _ = self.context.eval(Source::from_bytes(
+                r#"
+_xfa_tmp_im_.setInstances = function(n) {
+    var parent = this._parent;
+    if (!parent) return;
+    parent._instances = [parent];
+    parent.instanceIndex = 0;
+    for (var i = 1; i < n; i++) {
+        var clone = _xfa_cloneSubform(parent);
+        clone.instanceIndex = i;
+        // Give clone its own instanceManager stub with correct count
+        clone.instanceManager = { count: n, _parent: clone,
+            setInstances: function(){}, addInstance: function(){}, removeInstance: function(){} };
+        parent._instances.push(clone);
+    }
+    this.count = n;
+};
+_xfa_tmp_im_.addInstance = function() {};
+_xfa_tmp_im_.removeInstance = function() {};
+"#,
+            ));
+
             field
                 .set(
                     PropertyKey::from(js_string!("instanceManager")),
-                    instance_manager,
+                    JsValue::from(instance_manager),
                     false,
                     &mut self.context,
                 )
                 .ok();
         }
 
+        // XFA 3.3 §6.16: `.all` returns a collection of all instances with
+        // the same name in the same scope.  When `setInstances(N)` has been
+        // called, `_instances` holds the N objects; otherwise fall back
+        // to a single-element collection.
+        self.add_all_property(&field);
+
         field
+    }
+
+    /// Add XFA `.all` collection property to a JS object (XFA 3.3 §6.16).
+    ///
+    /// `.all` returns a collection `{length: N, item(i)}` of all instances
+    /// sharing the same name in the same scope.  If `_instances` has been
+    /// populated by `setInstances(N)`, the collection reflects those instances.
+    fn add_all_property(&mut self, obj: &JsObject) {
+        self.context
+            .global_object()
+            .set(
+                PropertyKey::from(js_string!("_xfa_tmp_")),
+                JsValue::from(obj.clone()),
+                false,
+                &mut self.context,
+            )
+            .ok();
+        let _ = self.context.eval(Source::from_bytes(
+            r#"Object.defineProperty(_xfa_tmp_, 'all', {
+                get: function() {
+                    var instances = this._instances || [this];
+                    return {
+                        length: instances.length,
+                        item: function(i) { return instances[i]; }
+                    };
+                },
+                configurable: true,
+                enumerable: true
+            });"#,
+        ));
     }
 
     /// Register a path on a JS object, creating intermediate objects as needed.
@@ -1389,6 +1524,9 @@ impl XfaScriptEngine {
                                     Attribute::all(),
                                 )
                                 .build();
+
+                            // XFA 3.3 §6.16: `.all` on intermediates as well
+                            self.add_all_property(&new_obj);
 
                             self.field_objects.insert(som_path.clone(), new_obj.clone());
                             self.initial_presence
@@ -2030,6 +2168,145 @@ impl XfaScriptEngine {
     pub fn update_initial_presence(&mut self, path: &SomPath, presence: &str) {
         self.initial_presence
             .insert(path.clone(), presence.to_string());
+    }
+
+    /// Get all subforms where `setInstances(N)` was called with N > 1.
+    ///
+    /// Returns a list of `(subform_som_path, instance_count,
+    ///                       Vec<instance_field_values>)`.
+    /// Each `instance_field_values` is a map from relative field name to value
+    /// for that instance (set by scripts via the cloned objects).
+    ///
+    /// This allows the form layer to duplicate XFA nodes and set per-instance
+    /// values after script execution.
+    pub fn get_dynamic_instances(&mut self) -> Vec<(String, usize, Vec<HashMap<String, String>>)> {
+        let mut results = Vec::new();
+
+        // Walk all registered field_objects looking for subforms with _instances
+        let field_objs: Vec<(SomPath, JsObject)> = self
+            .field_objects
+            .iter()
+            .map(|(p, o)| (p.clone(), o.clone()))
+            .collect();
+
+        for (path, obj) in field_objs {
+            // Check if this object has _instances
+            let instances_val = obj
+                .get(
+                    PropertyKey::from(js_string!("_instances")),
+                    &mut self.context,
+                )
+                .ok()
+                .unwrap_or(JsValue::undefined());
+
+            if instances_val.is_undefined() || instances_val.is_null() {
+                continue;
+            }
+
+            let Some(instances_obj) = instances_val.as_object() else {
+                continue;
+            };
+
+            // Get the length of the _instances array
+            let length = instances_obj
+                .get(
+                    PropertyKey::from(js_string!("length")),
+                    &mut self.context,
+                )
+                .ok()
+                .and_then(|v| v.to_number(&mut self.context).ok())
+                .unwrap_or(0.0) as usize;
+
+            if length <= 1 {
+                continue;
+            }
+
+            // Collect per-instance field values by walking each clone's
+            // property tree.
+            let mut all_instance_values = Vec::new();
+            for i in 0..length {
+                let instance = instances_obj
+                    .get(PropertyKey::from(i as u32), &mut self.context)
+                    .ok()
+                    .unwrap_or(JsValue::undefined());
+
+                let Some(instance_obj) = instance.as_object() else {
+                    all_instance_values.push(HashMap::new());
+                    continue;
+                };
+
+                let mut values = HashMap::new();
+                self.collect_instance_values(&instance_obj, "", &mut values, 0);
+                all_instance_values.push(values);
+            }
+
+            results.push((path.to_string(), length, all_instance_values));
+        }
+
+        results
+    }
+
+    /// Recursively collect rawValue fields from a JS object tree.
+    fn collect_instance_values(
+        &mut self,
+        obj: &JsObject,
+        prefix: &str,
+        values: &mut HashMap<String, String>,
+        depth: usize,
+    ) {
+        if depth > 20 {
+            return; // safety guard against circular references
+        }
+
+        // Check if this object has _rawValue (i.e. it's a field)
+        if let Ok(raw_val) =
+            obj.get(PropertyKey::from(js_string!("_rawValue")), &mut self.context)
+            && !raw_val.is_undefined()
+            && !raw_val.is_null()
+            && let Ok(val_str) = raw_val.to_string(&mut self.context)
+        {
+            let val = val_str.to_std_string_escaped();
+            if !prefix.is_empty() {
+                values.insert(prefix.to_string(), val);
+            }
+        }
+
+        // Walk named child properties
+        if let Ok(keys) = obj.own_property_keys(&mut self.context) {
+            for key in keys {
+                let key_str = match &key {
+                    PropertyKey::String(s) => s.to_std_string_escaped(),
+                    _ => continue,
+                };
+                // Skip internal/known non-child properties
+                if key_str.starts_with('_')
+                    || key_str == "rawValue"
+                    || key_str == "presence"
+                    || key_str == "name"
+                    || key_str == "somExpression"
+                    || key_str == "value"
+                    || key_str == "instanceManager"
+                    || key_str == "instanceIndex"
+                    || key_str == "border"
+                    || key_str == "font"
+                    || key_str == "caption"
+                    || key_str == "assist"
+                    || key_str == "all"
+                {
+                    continue;
+                }
+                if let Ok(child_val) = obj.get(key.clone(), &mut self.context)
+                    && let Some(child_obj) = child_val.as_object()
+                {
+                    let child_prefix = if prefix.is_empty() {
+                        key_str
+                    } else {
+                        format!("{}.{}", prefix, key_str)
+                    };
+                    self.collect_instance_values(child_obj, &child_prefix, values, depth + 1);
+                }
+            }
+        }
     }
 
     /// Update initial_presence baseline and form_state value for an

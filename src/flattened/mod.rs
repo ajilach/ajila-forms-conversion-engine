@@ -4808,6 +4808,11 @@ impl Flattened {
                     let trimmed = content.trim();
                     if !trimmed.is_empty() {
                         text_parts.push(trimmed.to_string());
+                    } else if content.contains(' ') && !text_parts.is_empty() {
+                        // Preserve a single space between inline elements
+                        // (e.g., between xfa:embed spans in draw node HTML).
+                        // Pure indentation (only newlines/tabs) is still dropped.
+                        text_parts.push(" ".to_string());
                     }
                 }
                 XfaNodeKind::Element {
@@ -4830,6 +4835,9 @@ impl Flattened {
                         let trimmed = text.trim();
                         if !trimmed.is_empty() {
                             text_parts.push(trimmed.to_string());
+                        } else if text.contains(' ') && !text_parts.is_empty() {
+                            // Preserve a single space between inline elements
+                            text_parts.push(" ".to_string());
                         }
                     }
                     // Add space/newline for paragraph breaks

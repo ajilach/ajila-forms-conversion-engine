@@ -9486,3 +9486,191 @@
 
         println!("\n✓ AACJ multilingual merge produces correct trilingual (de+en+sp) tree");
     }
+
+    #[test]
+    fn test_aacj_dropdown_conditional_field_visibility() {
+        // When the CL_ClientType dropdown in AACJ is set to a particular value,
+        // certain fields should become visible (wrapped in a Conditional for
+        // that value in the merged tree):
+        //
+        //   "Private Person"  -> "Name des Kontoinhabers"
+        //   "Minderjährige"   -> "Name des gesetzlichen Vertreters 1",
+        //                        "Name des gesetzlichen Vertreters 2"
+        //   "Firma"           -> "Name des Vertretungsberechtigten"
+        //   "GbR"             -> "Name des Vertretungsberechtigten"
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldId, InputValue, StructuredNode};
+
+        let merged = run_exhaustive_to_merged("input/AACJ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge on AACJ");
+
+        // --- helpers ---
+
+        fn find_field_id_by_suffix(nodes: &[StructuredNode], suffix: &str) -> Option<FieldId> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if f.som_path_str().ends_with(suffix) {
+                            return Some(f.name.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(id) = find_field_id_by_suffix(&g.children, suffix) {
+                            return Some(id);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(id) =
+                            find_field_id_by_suffix(&[(*c.content).clone()], suffix)
+                        {
+                            return Some(id);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(id) =
+                            find_field_id_by_suffix(&[(*r.item).clone()], suffix)
+                        {
+                            return Some(id);
+                        }
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let children: Vec<_> =
+                            grid.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(id) = find_field_id_by_suffix(&children, suffix) {
+                            return Some(id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        /// Collect all field labels and text content inside a subtree.
+        fn collect_labels(nodes: &[StructuredNode], out: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let t = label.as_plain_text();
+                            if !t.is_empty() {
+                                out.push(t);
+                            }
+                        }
+                    }
+                    StructuredNode::Paragraph(p) => {
+                        let t = p.content.as_plain_text();
+                        if !t.is_empty() {
+                            out.push(t);
+                        }
+                    }
+                    StructuredNode::Group(g) => collect_labels(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_labels(&[(*c.content).clone()], out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_labels(&[(*r.item).clone()], out);
+                    }
+                    StructuredNode::GridLayout(grid) => {
+                        let children: Vec<_> =
+                            grid.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_labels(&children, out);
+                    }
+                    StructuredNode::Table(t) => {
+                        for row in &t.rows {
+                            collect_labels(&row.cells, out);
+                        }
+                        if let Some(h) = &t.header {
+                            collect_labels(&h.cells, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// For a given controlling field, collect (condition_value, labels_inside).
+        fn conditional_labels_by_value(
+            nodes: &[StructuredNode],
+            field_id: &FieldId,
+        ) -> Vec<(String, Vec<String>)> {
+            let mut result = Vec::new();
+            fn walk(
+                nodes: &[StructuredNode],
+                field_id: &FieldId,
+                result: &mut Vec<(String, Vec<String>)>,
+            ) {
+                for node in nodes {
+                    match node {
+                        StructuredNode::Conditional(c) => {
+                            if c.condition.field_name == *field_id {
+                                if let InputValue::Text(v) = &c.condition.value {
+                                    let mut labels = Vec::new();
+                                    collect_labels(&[(*c.content).clone()], &mut labels);
+                                    result.push((v.clone(), labels));
+                                }
+                            }
+                            walk(&[(*c.content).clone()], field_id, result);
+                        }
+                        StructuredNode::Group(g) => walk(&g.children, field_id, result),
+                        StructuredNode::Repeatable(r) => {
+                            walk(&[(*r.item).clone()], field_id, result);
+                        }
+                        StructuredNode::GridLayout(grid) => {
+                            let children: Vec<_> =
+                                grid.elements.iter().map(|e| e.node.clone()).collect();
+                            walk(&children, field_id, result);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            walk(nodes, field_id, &mut result);
+            result
+        }
+
+        // --- assertions ---
+
+        let client_type_id = find_field_id_by_suffix(&merged, "CL_ClientType")
+            .expect("CL_ClientType field must exist in the merged tree");
+
+        let cond_labels = conditional_labels_by_value(&merged, &client_type_id);
+
+        // Gather all labels for a given condition value (may span multiple
+        // ConditionalNodes with the same value).
+        let labels_for = |condition_value: &str| -> Vec<String> {
+            cond_labels
+                .iter()
+                .filter(|(v, _)| v == condition_value)
+                .flat_map(|(_, labels)| labels.clone())
+                .collect()
+        };
+
+        let assert_has = |condition_value: &str, expected: &[&str]| {
+            let all = labels_for(condition_value);
+            assert!(
+                !all.is_empty(),
+                "No conditional found for '{condition_value}'. \
+                 Available: {:?}",
+                cond_labels.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>()
+            );
+            for needle in expected {
+                assert!(
+                    all.iter().any(|l| l.contains(needle)),
+                    "Conditional '{condition_value}' should contain a label with \
+                     '{needle}', but labels are: {all:?}"
+                );
+            }
+        };
+
+        assert_has("Private Person", &["Name des Kontoinhabers"]);
+        assert_has(
+            "Minderjährige",
+            &[
+                "Name des gesetzlichen Vertreters 1",
+                "Name des gesetzlichen Vertreters 2",
+            ],
+        );
+        assert_has("Firma", &["Name des Vertretungsberechtigten"]);
+        assert_has("GbR", &["Name des Vertretungsberechtigten"]);
+    }

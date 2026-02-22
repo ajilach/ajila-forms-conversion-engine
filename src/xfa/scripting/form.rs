@@ -635,12 +635,22 @@ impl XfaForm {
                 .update_initial_presence(&SomPath::new(som_path), presence_str);
         }
 
-        // Detect side-effect value changes by comparing with pre-execution snapshot
+        // Detect side-effect value changes by comparing with pre-execution snapshot.
+        // Per XFA 3.3 §10: when a script sets rawValue on another field, that
+        // assignment updates the Form DOM.  We must propagate these side-effect
+        // changes back into the XFA node tree so that subsequent reflattening
+        // picks them up (mirroring the write-back already done for presence).
         let post_values = self.script_engine.get_all_som_field_values();
         for (field_name, new_value) in &post_values {
             let field_som_path = SomPath::new(field_name);
             if pre_values.get(field_name) != Some(new_value) {
-                changed_fields.push(field_som_path);
+                changed_fields.push(field_som_path.clone());
+                // Write the updated value back to the XFA node tree
+                if let Some(node) =
+                    Self::find_xfa_node_by_path_mut(&mut self.nodes, &field_som_path)
+                {
+                    XfaNodeRefMut::set_node_value(node, new_value);
+                }
             }
         }
 
@@ -718,12 +728,376 @@ impl XfaForm {
 
     /// Re-flatten the form to reflect any changes
     pub fn refresh(&mut self) -> Result<(), String> {
+        // Duplicate XFA nodes for dynamic subform instances (setInstances(N))
+        // before reflattening so each instance produces its own flattened output.
+        self.apply_dynamic_instances();
+
         let values = self.script_engine.get_all_field_values_for_flattening();
         self.flattened = Flattened::reflatten(&self.nodes, &values)?;
         self.som_resolver = SomResolver::from_nodes(&self.nodes);
         self.field_index_cache = Self::build_field_index_cache(&self.flattened);
         self.dirty = false;
         Ok(())
+    }
+
+    /// Apply dynamic subform instances to the XFA node tree.
+    ///
+    /// When scripts call `instanceManager.setInstances(N)`, the JS engine creates
+    /// N clones of a subform with independent state.  This method:
+    ///
+    /// 1. Resolves xfa:embed references on the original subform with instance 0 values
+    /// 2. For instances 1..N, finds embed-containing draws within the subform tree
+    ///    and creates additional draw nodes with per-instance resolved text
+    ///
+    /// This avoids the complexities of full subform cloning (SOM path conflicts,
+    /// overlapping content merging) by only duplicating the visible draw elements.
+    fn apply_dynamic_instances(&mut self) {
+        let instances = self.script_engine.get_dynamic_instances();
+
+        for (subform_path, count, instance_values) in instances {
+            if count <= 1 || instance_values.len() < count {
+                continue;
+            }
+
+            let Some(subform) = Self::find_xfa_node_by_path_mut(&mut self.nodes, &subform_path)
+            else {
+                continue;
+            };
+
+            // Deduplicate: skip if we already processed this subform
+            let already_processed = subform.children.iter().any(|c| {
+                c.name
+                    .as_deref()
+                    .map(|n| n.contains("_inst"))
+                    .unwrap_or(false)
+            });
+            if already_processed {
+                continue;
+            }
+
+            let id_map = Self::build_subform_id_map(subform);
+
+            // Pass 1: Create copies for instances 1..N from the UNMODIFIED draws
+            // (before resolving instance 0 values on the original).
+            for i in 1..count {
+                Self::insert_instance_draws(subform, &id_map, &instance_values[i], i);
+            }
+
+            // Pass 2: Resolve embeds on the ORIGINAL with instance 0 values.
+            // This must happen AFTER creating copies so they start from the
+            // unmodified template with intact xfa:embed references.
+            Self::write_instance_values(subform, &instance_values[0]);
+            Self::resolve_embeds_in_subtree(subform, &id_map, &instance_values[0]);
+        }
+    }
+
+    /// Insert additional draw nodes into a subform for a specific instance.
+    ///
+    /// Walks the subform tree to find draws (and fields used as labels) and creates
+    /// copies with per-instance resolved text.  Each copy gets a unique name suffix
+    /// and a vertical offset so it doesn't overlap with the original.
+    fn insert_instance_draws(
+        node: &mut XfaNode,
+        id_map: &HashMap<String, String>,
+        values: &HashMap<String, String>,
+        instance_idx: usize,
+    ) {
+        // Collect draw/field nodes to duplicate (we can't modify children while iterating)
+        let mut inserts: Vec<(usize, XfaNode)> = Vec::new();
+
+        for (idx, child) in node.children.iter().enumerate() {
+            let is_draw = matches!(child.kind, XfaNodeKind::Draw);
+            let is_field = matches!(child.kind, XfaNodeKind::Field);
+
+            if is_draw || is_field {
+                // Check if this node (or its descendants) has xfa:embed refs
+                // For instance 0 those are already resolved — but for clones,
+                // we start from the resolved-for-instance-0 text.
+                // Instead, check if there's a name that matches the per-instance
+                // values (meaning the script sets different values per instance).
+                if let Some(name) = &child.name {
+                    // Check if any value key references this node
+                    let has_instance_specific = values
+                        .keys()
+                        .any(|k| k == name || k.starts_with(&format!("{}.", name)));
+
+                    if has_instance_specific || Self::node_has_embeds(child) {
+                        let mut clone = child.clone();
+                        // Give unique name
+                        if let Some(ref mut n) = clone.name {
+                            *n = format!("{}_inst{}", n, instance_idx);
+                        }
+                        // Offset y position
+                        let h = child.h.unwrap_or_else(|| crate::xfa::num(20.0));
+                        let original_y = child.y.unwrap_or(rust_decimal::Decimal::ZERO);
+                        clone.y =
+                            Some(original_y + h * rust_decimal::Decimal::from(instance_idx as u32));
+                        // Write instance values and resolve any remaining embeds
+                        Self::write_instance_values(&mut clone, values);
+                        Self::resolve_embeds_in_subtree(&mut clone, id_map, values);
+                        inserts.push((idx, clone));
+                    }
+                }
+            }
+        }
+
+        // Insert clones right after their originals (process in reverse to keep indices valid)
+        for (idx, clone) in inserts.into_iter().rev() {
+            node.children.insert(idx + 1, clone);
+        }
+
+        // Recurse into child subforms (which may also contain draws)
+        for child in &mut node.children {
+            if matches!(child.kind, XfaNodeKind::Subform)
+                && !child
+                    .name
+                    .as_deref()
+                    .map(|n| n.contains("_inst"))
+                    .unwrap_or(false)
+            {
+                Self::insert_instance_draws(child, id_map, values, instance_idx);
+            }
+        }
+    }
+
+    /// Check if a node or any of its descendants has xfa:embed attributes
+    fn node_has_embeds(node: &XfaNode) -> bool {
+        if node.attributes.contains_key("xfa:embed") {
+            return true;
+        }
+        node.children.iter().any(|c| Self::node_has_embeds(c))
+    }
+
+    /// Build a mapping from element ID to relative field path within a subform.
+    ///
+    /// Mirrors the SOM path construction rules: only subform and exclGroup names
+    /// extend the parent path prefix.  This produces keys compatible with
+    /// `collect_instance_values` in the script engine.
+    fn build_subform_id_map(node: &XfaNode) -> HashMap<String, String> {
+        fn collect(node: &XfaNode, prefix: &str, map: &mut HashMap<String, String>) {
+            for child in &node.children {
+                let name = child.name.as_deref().unwrap_or("");
+                let is_container = matches!(
+                    child.kind,
+                    XfaNodeKind::Subform | XfaNodeKind::ExclGroup
+                );
+
+                let child_path = if !name.is_empty() {
+                    if prefix.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{}.{}", prefix, name)
+                    }
+                } else {
+                    prefix.to_string()
+                };
+
+                if let Some(id) = child.attributes.get("id") {
+                    if !child_path.is_empty() {
+                        map.insert(id.clone(), child_path.clone());
+                    }
+                }
+
+                // Only container nodes extend the parent path for their children
+                let next_prefix = if !name.is_empty() && is_container {
+                    child_path.as_str()
+                } else {
+                    prefix
+                };
+                collect(child, next_prefix, map);
+            }
+        }
+
+        let mut map = HashMap::new();
+        collect(node, "", &mut map);
+        map
+    }
+
+    /// Write per-instance field values into an XFA subform node tree.
+    fn write_instance_values(node: &mut XfaNode, values: &HashMap<String, String>) {
+        fn walk(node: &mut XfaNode, values: &HashMap<String, String>, prefix: &str) {
+            for child in &mut node.children {
+                let name = child.name.clone().unwrap_or_default();
+                let is_container = matches!(
+                    child.kind,
+                    XfaNodeKind::Subform | XfaNodeKind::ExclGroup
+                );
+
+                let child_path = if !name.is_empty() {
+                    if prefix.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}.{}", prefix, name)
+                    }
+                } else {
+                    prefix.to_string()
+                };
+
+                // Set value on field nodes that have a matching entry
+                if matches!(child.kind, XfaNodeKind::Field) {
+                    if let Some(value) = values.get(&child_path) {
+                        XfaNodeRefMut::set_node_value(child, value);
+                    }
+                }
+
+                let next_prefix = if !name.is_empty() && is_container {
+                    child_path.as_str()
+                } else {
+                    prefix
+                };
+                walk(child, values, next_prefix);
+            }
+        }
+        walk(node, values, "");
+    }
+
+    /// Resolve xfa:embed references on draws/fields in a subform by computing
+    /// the full text string from all embedded values and replacing the value
+    /// subtree with plain text.
+    ///
+    /// This avoids whitespace issues from modifying individual embed spans.
+    fn resolve_embeds_in_subtree(
+        node: &mut XfaNode,
+        id_map: &HashMap<String, String>,
+        values: &HashMap<String, String>,
+    ) {
+        // If this node is a draw/field with embeds, resolve it directly
+        let is_draw_or_field =
+            matches!(node.kind, XfaNodeKind::Draw | XfaNodeKind::Field);
+        if is_draw_or_field && Self::node_has_embeds(node) {
+            if let Some(text) = Self::compute_resolved_text(node, id_map, values) {
+                Self::set_draw_value_text(node, &text);
+            }
+            return; // No need to recurse further into draw/field internals
+        }
+
+        // Process all children: resolve embeds on draws/fields, recurse into subforms
+        for child in &mut node.children {
+            Self::resolve_embeds_in_subtree(child, id_map, values);
+        }
+    }
+
+    /// Compute the full resolved text from a draw/field node's value subtree.
+    /// Walks body > p > span children, resolving xfa:embed references and
+    /// preserving inter-span spacing.
+    fn compute_resolved_text(
+        node: &XfaNode,
+        id_map: &HashMap<String, String>,
+        values: &HashMap<String, String>,
+    ) -> Option<String> {
+        // Find the value > exData > body > p structure
+        fn find_paragraph(node: &XfaNode) -> Option<&XfaNode> {
+            for child in &node.children {
+                match &child.kind {
+                    XfaNodeKind::Value => return find_paragraph(child),
+                    XfaNodeKind::Element { tag_name, .. }
+                        if matches!(
+                            tag_name.as_str(),
+                            "value" | "exData" | "body"
+                        ) =>
+                    {
+                        return find_paragraph(child);
+                    }
+                    XfaNodeKind::Element { tag_name, .. } if tag_name == "p" => {
+                        return Some(child);
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let p = find_paragraph(node)?;
+        let mut parts = Vec::new();
+        for child in &p.children {
+            match &child.kind {
+                XfaNodeKind::Element { tag_name, text_content }
+                    if tag_name == "span" =>
+                {
+                    if let Some(embed_ref) = child.attributes.get("xfa:embed") {
+                        let id = embed_ref.strip_prefix('#').unwrap_or(embed_ref);
+                        if let Some(rel_path) = id_map.get(id) {
+                            parts.push(
+                                values.get(rel_path).cloned().unwrap_or_default(),
+                            );
+                        }
+                    } else {
+                        // Non-embed span: use text_content or child text; treat
+                        // empty spans between text-producing siblings as space.
+                        let text = text_content
+                            .as_deref()
+                            .or_else(|| {
+                                child.children.iter().find_map(|c| {
+                                    if let XfaNodeKind::Text { content } = &c.kind {
+                                        Some(content.as_str())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            })
+                            .unwrap_or("");
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() {
+                            parts.push(trimmed.to_string());
+                        } else if !parts.is_empty() {
+                            // Empty span between other content → space
+                            parts.push(" ".to_string());
+                        }
+                    }
+                }
+                XfaNodeKind::Text { content } => {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() {
+                        parts.push(trimmed.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(""))
+        }
+    }
+
+    /// Replace a draw/field node's value subtree with a plain text value.
+    fn set_draw_value_text(node: &mut XfaNode, text: &str) {
+        // Find or create the value child
+        if let Some(value_child) = node.children.iter_mut().find(|c| {
+            matches!(c.kind, XfaNodeKind::Value)
+                || matches!(&c.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "value")
+        }) {
+            // Replace entire value subtree with a single text node
+            value_child.children.clear();
+            value_child.children.push(XfaNode {
+                kind: XfaNodeKind::Text {
+                    content: text.to_string(),
+                },
+                name: None,
+                children: Vec::new(),
+                attributes: HashMap::new(),
+                x: None,
+                y: None,
+                w: None,
+                h: None,
+                min_w: None,
+                min_h: None,
+                max_w: None,
+                max_h: None,
+                layout: None,
+                rotate: 0,
+                margin_top: None,
+                margin_bottom: None,
+                margin_left: None,
+                margin_right: None,
+                border: None,
+                font: None,
+                para: None,
+                presence: crate::xfa::Presence::Visible,
+            });
+        }
     }
 
     /// Return all SOM presence changes detected by the script engine.
