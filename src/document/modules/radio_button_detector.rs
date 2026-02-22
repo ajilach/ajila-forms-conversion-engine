@@ -63,28 +63,6 @@ impl RadioButtonDetector {
         self
     }
 
-    /// Check if a field is square (width ≈ height).
-    fn is_square(&self, width: Decimal, height: Decimal) -> bool {
-        if width.is_zero() || height.is_zero() {
-            return false;
-        }
-
-        let ratio = if width > height {
-            width / height
-        } else {
-            height / width
-        };
-
-        // ratio should be close to 1.0
-        let diff = (ratio - Decimal::ONE).abs();
-        diff <= self.square_tolerance
-    }
-
-    /// Check if a field is small enough to be a radio button.
-    fn is_radio_size(&self, width: Decimal, height: Decimal) -> bool {
-        width <= self.max_size && height <= self.max_size
-    }
-
     /// Check if a field has an EXPLICIT `WidgetType(Radio)` hint.
     /// Returns true only when the hint is present; false when absent or Checkbox.
     fn has_explicit_radio_hint(&self, doc: &Document, field_idx: usize) -> bool {
@@ -230,8 +208,8 @@ impl AnalysisModule for RadioButtonDetector {
 
             if !is_explicit_radio {
                 // Must be square and small for heuristic detection
-                if !self.is_square(bounds.width, bounds.height)
-                    || !self.is_radio_size(bounds.width, bounds.height)
+                if !bounds.is_square(self.square_tolerance)
+                    || !bounds.fits_within_size(self.max_size)
                 {
                     continue;
                 }
@@ -272,7 +250,7 @@ impl AnalysisModule for RadioButtonDetector {
 mod tests {
     use super::*;
     use crate::document::{Document, GroupKind};
-    use crate::flattened::{Flattened, FlattenedNode, Page};
+    use crate::flattened::{Bounds, Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 
     #[test]
@@ -280,15 +258,15 @@ mod tests {
         let detector = RadioButtonDetector::new();
 
         // Perfect square
-        assert!(detector.is_square(num(10.0), num(10.0)));
+        assert!(Bounds::new(num(0.0), num(0.0), num(10.0), num(10.0)).is_square(detector.square_tolerance));
 
         // Within tolerance (10%)
-        assert!(detector.is_square(num(10.0), num(10.5)));
-        assert!(detector.is_square(num(10.5), num(10.0)));
+        assert!(Bounds::new(num(0.0), num(0.0), num(10.0), num(10.5)).is_square(detector.square_tolerance));
+        assert!(Bounds::new(num(0.0), num(0.0), num(10.5), num(10.0)).is_square(detector.square_tolerance));
 
         // Outside tolerance
-        assert!(!detector.is_square(num(10.0), num(12.0)));
-        assert!(!detector.is_square(num(10.0), num(20.0)));
+        assert!(!Bounds::new(num(0.0), num(0.0), num(10.0), num(12.0)).is_square(detector.square_tolerance));
+        assert!(!Bounds::new(num(0.0), num(0.0), num(10.0), num(20.0)).is_square(detector.square_tolerance));
     }
 
     #[test]

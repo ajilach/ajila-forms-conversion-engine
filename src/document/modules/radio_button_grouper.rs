@@ -72,26 +72,6 @@ impl RadioButtonGrouper {
         None
     }
 
-    /// Check if two radio buttons are horizontally aligned.
-    fn are_horizontally_aligned(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
-        bounds1.is_horizontally_aligned(bounds2, self.alignment_tolerance)
-    }
-
-    /// Check if two radio buttons are vertically aligned.
-    fn are_vertically_aligned(&self, bounds1: &Bounds, bounds2: &Bounds) -> bool {
-        bounds1.is_vertically_aligned(bounds2, self.alignment_tolerance)
-    }
-
-    /// Calculate horizontal distance between two radio buttons.
-    fn horizontal_distance(&self, bounds1: &Bounds, bounds2: &Bounds) -> Decimal {
-        bounds1.horizontal_gap_to(bounds2).unwrap_or(Decimal::MAX)
-    }
-
-    /// Calculate vertical distance between two radio buttons.
-    fn vertical_distance(&self, bounds1: &Bounds, bounds2: &Bounds) -> Decimal {
-        bounds1.vertical_gap_to(bounds2).unwrap_or(Decimal::MAX)
-    }
-
     /// Check if there are any elements between two radio buttons.
     fn has_elements_between(
         &self,
@@ -239,8 +219,8 @@ impl RadioButtonGrouper {
                     };
 
                     // Check if horizontally aligned and close
-                    if self.are_horizontally_aligned(&last_bounds, &candidate_bounds) {
-                        let distance = self.horizontal_distance(&last_bounds, &candidate_bounds);
+                    if last_bounds.is_horizontally_aligned(&candidate_bounds, self.alignment_tolerance) {
+                        let distance = last_bounds.horizontal_gap_to(&candidate_bounds).unwrap_or(Decimal::MAX);
 
                         if distance <= self.max_horizontal_gap
                             && !self.has_elements_between(
@@ -278,8 +258,8 @@ impl RadioButtonGrouper {
                     };
 
                     // Check if vertically aligned
-                    if self.are_vertically_aligned(&last_bounds, &candidate_bounds) {
-                        let distance = self.vertical_distance(&last_bounds, &candidate_bounds);
+                    if last_bounds.is_vertically_aligned(&candidate_bounds, self.alignment_tolerance) {
+                        let distance = last_bounds.vertical_gap_to(&candidate_bounds).unwrap_or(Decimal::MAX);
                         let inset_threshold = Decimal::from_str("10.0").unwrap();
 
                         // Check if there's only inset content between (no blocking elements)
@@ -416,8 +396,8 @@ impl RadioButtonGrouper {
                         continue;
                     };
 
-                    if self.are_vertically_aligned(&rb_field_bounds, &other_field_bounds)
-                        || self.are_horizontally_aligned(&rb_field_bounds, &other_field_bounds)
+                    if rb_field_bounds.is_vertically_aligned(&other_field_bounds, self.alignment_tolerance)
+                        || rb_field_bounds.is_horizontally_aligned(&other_field_bounds, self.alignment_tolerance)
                     {
                         group.push(other_idx);
                         assigned.insert(other_idx);

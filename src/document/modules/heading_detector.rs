@@ -6,7 +6,6 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::{Flattened, FlattenedNodeKind};
-use crate::xfa::FontWeight;
 use rust_decimal::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -78,12 +77,7 @@ impl GlobalFontStats {
                     *size_counts.entry(size_bits).or_insert(0) += 1;
 
                     // Track font style (size + bold) for frequency analysis
-                    let is_bold = node
-                        .style
-                        .font
-                        .as_ref()
-                        .map(|f| f.weight == FontWeight::Bold)
-                        .unwrap_or(false);
+                    let is_bold = node.is_bold();
                     let style_key = (size_bits, is_bold);
                     *style_counts.entry(style_key).or_insert(0) += 1;
                 }
@@ -164,12 +158,7 @@ impl GlobalFontStats {
                     let rounded = (size * 2.0).round() / 2.0;
                     let size_bits = rounded.to_bits();
 
-                    let is_bold = node
-                        .style
-                        .font
-                        .as_ref()
-                        .map(|f| f.weight == FontWeight::Bold)
-                        .unwrap_or(false);
+                    let is_bold = node.is_bold();
 
                     // Core criterion: bold OR larger than body text
                     let is_larger_than_body = size > body_size + 0.5;
@@ -178,12 +167,7 @@ impl GlobalFontStats {
                     }
 
                     // Determine has_line (underline, overline, or visible top/bottom border)
-                    let has_font_underline = node
-                        .style
-                        .font
-                        .as_ref()
-                        .map(|f| f.underline)
-                        .unwrap_or(false);
+                    let has_font_underline = node.is_underline();
 
                     let has_top_border = node
                         .style
@@ -622,14 +606,12 @@ impl HeadingDetector {
                 text_content.push(' ');
 
                 // Count bold nodes
-                if let Some(font) = &node.style.font {
-                    if font.weight == FontWeight::Bold {
-                        bold_count += 1;
-                    }
-                    // Check font underline property
-                    if font.underline {
-                        font_underline_count += 1;
-                    }
+                if node.is_bold() {
+                    bold_count += 1;
+                }
+                // Check font underline property
+                if node.is_underline() {
+                    font_underline_count += 1;
                 }
 
                 // Check for visible borders (top and bottom edges)

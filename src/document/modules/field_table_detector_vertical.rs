@@ -92,31 +92,6 @@ impl FieldTableDetectorVertical {
         self
     }
 
-    /// Check if a group is inside a repeatable section (has Occurrence hint).
-    fn is_inside_repeatable(&self, doc: &Document, group_idx: usize) -> bool {
-        let nodes = doc.collect_nodes(group_idx);
-        nodes.iter().any(|node| {
-            node.hints
-                .iter()
-                .any(|hint| matches!(hint, crate::flattened::Hint::Occurrence { .. }))
-        })
-    }
-
-    /// Find all unclaimed Field groups (not yet part of LabeledField, etc.)
-    /// Excludes fields that are inside repeatable sections.
-    fn find_unclaimed_fields(&self, doc: &Document) -> Vec<usize> {
-        let roots = doc.roots();
-        roots
-            .into_iter()
-            .filter(|&idx| {
-                matches!(
-                    doc.get_group(idx).map(|g| &g.kind),
-                    Some(GroupKind::Field) | Some(GroupKind::DateField { .. })
-                ) && !self.is_inside_repeatable(doc, idx)
-            })
-            .collect()
-    }
-
     /// Find all unclaimed TextBlock groups that could be labels (not headings).
     fn find_candidate_labels(&self, doc: &Document) -> Vec<usize> {
         let roots = doc.roots();
@@ -241,7 +216,7 @@ impl FieldTableDetectorVertical {
     /// Process the document to detect vertical field tables.
     fn detect_field_tables_vertical(&self, doc: &mut Document) {
         // Step 1: Find unclaimed fields
-        let unclaimed_fields = self.find_unclaimed_fields(doc);
+        let unclaimed_fields = doc.unclaimed_fields_outside_repeatables();
         if unclaimed_fields.len() < self.min_fields_per_column {
             return;
         }

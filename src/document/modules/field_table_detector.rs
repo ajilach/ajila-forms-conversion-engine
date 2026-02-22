@@ -14,7 +14,6 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::Bounds;
-use crate::xfa::FontWeight;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -83,40 +82,7 @@ impl FieldTableDetector {
 
     /// Check if a group contains bold text.
     fn is_bold_text(&self, doc: &Document, group_idx: usize) -> bool {
-        let nodes = doc.collect_nodes(group_idx);
-        nodes.iter().any(|node| {
-            node.style
-                .font
-                .as_ref()
-                .map(|f| f.weight == FontWeight::Bold)
-                .unwrap_or(false)
-        })
-    }
-
-    /// Check if a group is inside a repeatable section (has Occurrence hint).
-    /// Fields inside repeatable sections should not be claimed by FieldTableDetector.
-    fn is_inside_repeatable(&self, doc: &Document, group_idx: usize) -> bool {
-        let nodes = doc.collect_nodes(group_idx);
-        nodes.iter().any(|node| {
-            node.hints
-                .iter()
-                .any(|hint| matches!(hint, crate::flattened::Hint::Occurrence { .. }))
-        })
-    }
-
-    /// Find all unclaimed Field groups (not yet part of LabeledField, etc.)
-    /// Excludes fields that are inside repeatable sections.
-    fn find_unclaimed_fields(&self, doc: &Document) -> Vec<usize> {
-        let roots = doc.roots();
-        roots
-            .into_iter()
-            .filter(|&idx| {
-                matches!(
-                    doc.get_group(idx).map(|g| &g.kind),
-                    Some(GroupKind::Field) | Some(GroupKind::DateField { .. })
-                ) && !self.is_inside_repeatable(doc, idx)
-            })
-            .collect()
+        doc.collect_nodes(group_idx).iter().any(|n| n.is_bold())
     }
 
     /// Find all unclaimed TextBlock groups that could be headers.
@@ -231,7 +197,7 @@ impl FieldTableDetector {
     /// Process the document to detect field tables.
     fn detect_field_tables(&self, doc: &mut Document) {
         // Step 1: Find unclaimed fields
-        let unclaimed_fields = self.find_unclaimed_fields(doc);
+        let unclaimed_fields = doc.unclaimed_fields_outside_repeatables();
         if unclaimed_fields.len() < self.min_fields_per_row {
             return;
         }

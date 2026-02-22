@@ -1,7 +1,7 @@
 use crate::xfa::font_manager::get_font_manager;
 use crate::xfa::scripting::{Presence, SomPath};
 use crate::xfa::text_metrics::TextMeasurer;
-use crate::xfa::{Border, Font, HAlign, Num, Para, StrokeStyle, VAlign, XfaNode, XfaNodeKind, num};
+use crate::xfa::{Border, Font, FontPosture, FontWeight, HAlign, Num, Para, StrokeStyle, VAlign, XfaNode, XfaNodeKind, num};
 use ab_glyph::{Font as AbGlyphFont, FontRef, PxScale, ScaleFont};
 use image::{ImageBuffer, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
@@ -901,6 +901,42 @@ impl FlattenedNode {
             .unwrap_or(true) // Default to interactive if no hint
     }
 
+    // ========================================================================
+    // Font property helpers
+    // ========================================================================
+
+    /// Returns `true` if the node's font weight is Bold.
+    pub fn is_bold(&self) -> bool {
+        self.style
+            .font
+            .as_ref()
+            .map(|f| f.weight == FontWeight::Bold)
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if the node's font posture is Italic.
+    pub fn is_italic(&self) -> bool {
+        self.style
+            .font
+            .as_ref()
+            .map(|f| f.posture == FontPosture::Italic)
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if the node's font has underline set.
+    pub fn is_underline(&self) -> bool {
+        self.style
+            .font
+            .as_ref()
+            .map(|f| f.underline)
+            .unwrap_or(false)
+    }
+
+    /// Returns the font size as `f32`, or `None` if no font is set.
+    pub fn font_size_f32(&self) -> Option<f32> {
+        self.style.font.as_ref().and_then(|f| f.size.to_f32())
+    }
+
     /// Add a hint to this node, deduplicating by discriminant
     pub fn add_hint(&mut self, hint: Hint) {
         let discriminant = hint.discriminant();
@@ -1239,6 +1275,31 @@ impl Bounds {
         let max_x = self.right().max(other.right());
         let max_y = self.bottom().max(other.bottom());
         Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+
+    // ========================================================================
+    // Shape helpers
+    // ========================================================================
+
+    /// Returns `true` if the bounding box is approximately square.
+    ///
+    /// Computes the ratio `max(w, h) / min(w, h)` and checks that it is
+    /// within `tolerance` of 1.0.  Returns `false` for zero-sized boxes.
+    pub fn is_square(&self, tolerance: Num) -> bool {
+        if self.width.is_zero() || self.height.is_zero() {
+            return false;
+        }
+        let ratio = if self.width > self.height {
+            self.width / self.height
+        } else {
+            self.height / self.width
+        };
+        (ratio - Num::ONE).abs() <= tolerance
+    }
+
+    /// Returns `true` if both width and height are at most `max`.
+    pub fn fits_within_size(&self, max: Num) -> bool {
+        self.width <= max && self.height <= max
     }
 }
 

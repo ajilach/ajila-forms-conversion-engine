@@ -426,6 +426,29 @@ impl<'a> Document<'a> {
             .collect()
     }
 
+    /// Check if a group is inside a repeatable section (has an `Occurrence` hint on any node).
+    pub fn is_inside_repeatable(&self, group_idx: usize) -> bool {
+        let nodes = self.collect_nodes(group_idx);
+        nodes.iter().any(|node| {
+            node.hints
+                .iter()
+                .any(|hint| matches!(hint, crate::flattened::Hint::Occurrence { .. }))
+        })
+    }
+
+    /// Find all root Field/DateField groups that are not inside a repeatable section.
+    pub fn unclaimed_fields_outside_repeatables(&self) -> Vec<usize> {
+        self.roots()
+            .into_iter()
+            .filter(|&idx| {
+                matches!(
+                    self.get_group(idx).map(|g| &g.kind),
+                    Some(GroupKind::Field) | Some(GroupKind::DateField { .. })
+                ) && !self.is_inside_repeatable(idx)
+            })
+            .collect()
+    }
+
     // ========================================================================
     // Finding groups by kind
     // ========================================================================
@@ -765,7 +788,9 @@ impl<'a> Document<'a> {
                     "UnorderedList".to_string()
                 }
             }
-            GroupKind::RadioButtonContent { option_field_name, .. } => {
+            GroupKind::RadioButtonContent {
+                option_field_name, ..
+            } => {
                 format!("RadioButtonContent[{}]", option_field_name)
             }
         }

@@ -9,7 +9,6 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::FlattenedNodeKind;
-use crate::xfa::FontWeight;
 use rust_decimal::prelude::*;
 
 /// Merges vertically adjacent TextBlocks that share the same font properties.
@@ -65,12 +64,7 @@ impl TextBlockMerger {
 
                 let size = fs.to_f32().unwrap_or(10.0);
                 let rounded = (size * 2.0).round() / 2.0;
-                let bold = node
-                    .style
-                    .font
-                    .as_ref()
-                    .map(|f| f.weight == FontWeight::Bold)
-                    .unwrap_or(false);
+                let bold = node.is_bold();
 
                 match (font_size, is_bold) {
                     (None, None) => {
