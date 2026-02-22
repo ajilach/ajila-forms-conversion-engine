@@ -96,53 +96,6 @@ impl FieldTableDetector {
             .collect()
     }
 
-    /// Group fields into rows based on y-coordinate alignment.
-    fn group_fields_into_rows(
-        &self,
-        doc: &Document,
-        fields: &[usize],
-    ) -> Vec<Vec<(usize, Bounds)>> {
-        // Collect fields with their bounds
-        let mut bounded_fields: Vec<(usize, Bounds)> = fields
-            .iter()
-            .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
-            .collect();
-
-        if bounded_fields.is_empty() {
-            return Vec::new();
-        }
-
-        // Sort by y-coordinate (top to bottom)
-        bounded_fields.sort_by(|a, b| a.1.y.cmp(&b.1.y));
-
-        // Group into rows
-        let mut rows: Vec<Vec<(usize, Bounds)>> = Vec::new();
-
-        for (idx, bounds) in bounded_fields {
-            // Try to find an existing row with similar y-coordinate
-            let mut found_row = false;
-            for row in &mut rows {
-                let row_y = row[0].1.y;
-                if (bounds.y - row_y).abs() <= self.row_tolerance {
-                    row.push((idx, bounds));
-                    found_row = true;
-                    break;
-                }
-            }
-
-            if !found_row {
-                rows.push(vec![(idx, bounds)]);
-            }
-        }
-
-        // Sort each row by x-coordinate (left to right)
-        for row in &mut rows {
-            row.sort_by(|a, b| a.1.x.cmp(&b.1.x));
-        }
-
-        rows
-    }
-
     /// Try to match all fields in a row with headers above.
     /// Returns None if any field does not have a matching header.
     /// Returns Some(vec of (header_idx, field_idx) pairs) if all match.
@@ -214,7 +167,8 @@ impl FieldTableDetector {
         }
 
         // Step 3: Group fields into rows
-        let rows = self.group_fields_into_rows(doc, &unclaimed_fields);
+        let rows =
+            doc.group_fields_by_axis(&unclaimed_fields, |b| b.y, |b| b.x, self.row_tolerance);
 
         // Step 4: For each row, try to match with headers
         for row in rows {

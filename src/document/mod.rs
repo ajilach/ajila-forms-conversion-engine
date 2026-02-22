@@ -744,6 +744,57 @@ impl<'a> Document<'a> {
         Some(Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y))
     }
 
+    /// Group fields by a primary axis coordinate, then sort each group by a secondary axis.
+    ///
+    /// This is a generic spatial grouping utility used by table detectors.
+    /// Fields whose primary coordinate differs by at most `tolerance` are placed
+    /// in the same group. Groups are returned sorted by primary coordinate,
+    /// and items within each group are sorted by secondary coordinate.
+    pub fn group_fields_by_axis(
+        &self,
+        fields: &[usize],
+        primary_coord: impl Fn(&Bounds) -> crate::xfa::Num,
+        secondary_coord: impl Fn(&Bounds) -> crate::xfa::Num,
+        tolerance: crate::xfa::Num,
+    ) -> Vec<Vec<(usize, Bounds)>> {
+        let mut bounded_fields: Vec<(usize, Bounds)> = fields
+            .iter()
+            .filter_map(|&idx| self.get_bounds(idx).map(|b| (idx, b)))
+            .collect();
+
+        if bounded_fields.is_empty() {
+            return Vec::new();
+        }
+
+        // Sort by primary coordinate
+        bounded_fields.sort_by(|a, b| primary_coord(&a.1).cmp(&primary_coord(&b.1)));
+
+        // Group items whose primary coordinate is within tolerance of the first item in the group
+        let mut groups: Vec<Vec<(usize, Bounds)>> = Vec::new();
+
+        for (idx, bounds) in bounded_fields {
+            let mut found = false;
+            for group in &mut groups {
+                let group_coord = primary_coord(&group[0].1);
+                if (primary_coord(&bounds) - group_coord).abs() <= tolerance {
+                    group.push((idx, bounds));
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                groups.push(vec![(idx, bounds)]);
+            }
+        }
+
+        // Sort each group by secondary coordinate
+        for group in &mut groups {
+            group.sort_by(|a, b| secondary_coord(&a.1).cmp(&secondary_coord(&b.1)));
+        }
+
+        groups
+    }
+
     /// Get a human-readable label for a group kind.
     fn group_type_label(&self, kind: &GroupKind) -> String {
         match kind {

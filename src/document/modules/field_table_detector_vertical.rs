@@ -101,53 +101,6 @@ impl FieldTableDetectorVertical {
             .collect()
     }
 
-    /// Group fields into columns based on x-coordinate alignment.
-    fn group_fields_into_columns(
-        &self,
-        doc: &Document,
-        fields: &[usize],
-    ) -> Vec<Vec<(usize, Bounds)>> {
-        // Collect fields with their bounds
-        let mut bounded_fields: Vec<(usize, Bounds)> = fields
-            .iter()
-            .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
-            .collect();
-
-        if bounded_fields.is_empty() {
-            return Vec::new();
-        }
-
-        // Sort by x-coordinate (left to right)
-        bounded_fields.sort_by(|a, b| a.1.x.cmp(&b.1.x));
-
-        // Group into columns
-        let mut columns: Vec<Vec<(usize, Bounds)>> = Vec::new();
-
-        for (idx, bounds) in bounded_fields {
-            // Try to find an existing column with similar x-coordinate
-            let mut found_column = false;
-            for column in &mut columns {
-                let col_x = column[0].1.x;
-                if (bounds.x - col_x).abs() <= self.column_tolerance {
-                    column.push((idx, bounds));
-                    found_column = true;
-                    break;
-                }
-            }
-
-            if !found_column {
-                columns.push(vec![(idx, bounds)]);
-            }
-        }
-
-        // Sort each column by y-coordinate (top to bottom)
-        for column in &mut columns {
-            column.sort_by(|a, b| a.1.y.cmp(&b.1.y));
-        }
-
-        columns
-    }
-
     /// Try to match all fields in a column with labels to their left.
     /// Returns None if any field does not have a matching label,
     /// or if labels are not horizontally aligned with each other.
@@ -233,7 +186,8 @@ impl FieldTableDetectorVertical {
         }
 
         // Step 3: Group fields into columns
-        let columns = self.group_fields_into_columns(doc, &unclaimed_fields);
+        let columns =
+            doc.group_fields_by_axis(&unclaimed_fields, |b| b.x, |b| b.y, self.column_tolerance);
 
         // Step 4: For each column, try to match with labels
         for column in columns {
