@@ -83,6 +83,9 @@ fn App() -> Element {
                     on_close: move |_| enlarged_image.set(None),
                 }
             }
+
+            // Version footer
+            footer { class: "app-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
         }
     }
 }

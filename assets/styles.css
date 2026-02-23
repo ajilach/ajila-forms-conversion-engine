@@ -292,3 +292,13 @@
     gap: var(--space-md);
     flex-wrap: wrap;
 }
+
+/* ---- Version footer ---- */
+
+.app-version {
+    margin-top: var(--space-xl);
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    opacity: 0.6;
+}
