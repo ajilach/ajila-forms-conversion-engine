@@ -924,10 +924,9 @@ mod tests {
     use crate::structured::*;
 
     fn default_config() -> AemConfig {
-        AemConfig {
-            deterministic_uuids: true,
-            ..Default::default()
-        }
+        let mut config = AemConfig::test_default("TEST", "019");
+        config.deterministic_uuids = true;
+        config
     }
 
     /// Assert that an AEM name matches the pattern `PREFIX_CamelCase_hexhexhex`

@@ -7830,11 +7830,7 @@
 
         let structured_nodes = crate::structured::convert(&doc);
 
-        let config = AemConfig {
-            form_title: "AAEI Test".into(),
-            form_code: "AAEI_019_DE".into(),
-            ..Default::default()
-        };
+        let config = AemConfig::test_default("AAEI", "019");
 
         let root = convert_to_aem(&structured_nodes, &config);
         let xml = generate_aem_xml(&root, &config);
@@ -7880,12 +7876,7 @@
         let form_states = bp.states().expect("Failed to explore states");
         let content = crate::merge_form_states(&form_states, ctx.clone());
 
-        let mut config = AemConfig {
-            form_title: "AAAI Test".into(),
-            form_code: "AAAI".into(),
-            ..Default::default()
-        };
-        config.populate_from_context(&ctx);
+        let config = AemConfig::new(&ctx).expect("Failed to create AemConfig");
 
         let config = crate::resolve_aem_languages(&content, &config);
         let root = convert_to_aem(&content, &config);
@@ -9903,8 +9894,11 @@
     fn test_aaab_aem_config_form_path_title_code() {
         use crate::aem::AemConfig;
 
-        let mut config = AemConfig::default();
-        config.populate_from_document("AAAB_019_DE", &[]);
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("formrange_code".to_string(), "AAAB".to_string());
+        variables.insert("formrange_entity".to_string(), "019".to_string());
+        let ctx = crate::Context::new("de".to_string(), variables);
+        let config = AemConfig::new(&ctx).expect("Failed to create AemConfig");
 
         // form_code should be the raw code (first segment)
         assert_eq!(config.form_code, "AAAB", "form_code should be 'AAAB'");

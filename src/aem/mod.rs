@@ -16,12 +16,7 @@
 //! ```rust,ignore
 //! use blueprint::aem::{AemConfig, convert_to_aem, generate_aem_xml};
 //!
-//! let config = AemConfig {
-//!     form_title: "My Form".into(),
-//!     form_code: "MYFORM_001".into(),
-//!     ..Default::default()
-//! };
-//!
+//! let config = AemConfig::new(&context)?;
 //! let root = convert_to_aem(&structured_nodes, &config);
 //! let xml = generate_aem_xml(&root, &config);
 //! ```
@@ -212,11 +207,44 @@ pub struct AemConfig {
     pub metadata_clpmandatory: String,
 }
 
-impl Default for AemConfig {
-    fn default() -> Self {
-        Self {
-            form_title: "Untitled Form".into(),
-            form_code: "FORM_001".into(),
+impl AemConfig {
+    /// Create a new `AemConfig` from a [`Context`](crate::Context).
+    ///
+    /// The context **must** contain the following XFA variables
+    /// (extracted from `<variables><text>` in the XFA template):
+    ///
+    /// | Variable             | Maps to             |
+    /// |----------------------|---------------------|
+    /// | `formrange_code`     | `form_code` / `form_title` |
+    /// | `formrange_entity`   | `metadata_entity` / `form_path` |
+    ///
+    /// Returns an error if either required variable is missing.
+    pub fn new(ctx: &crate::Context) -> Result<Self, crate::Error> {
+        let form_code = ctx
+            .get_variable("formrange_code")
+            .ok_or_else(|| {
+                crate::Error::AemConfig("missing required XFA variable 'formrange_code'".into())
+            })?
+            .to_string();
+
+        let entity_code = ctx
+            .get_variable("formrange_entity")
+            .ok_or_else(|| {
+                crate::Error::AemConfig("missing required XFA variable 'formrange_entity'".into())
+            })?
+            .to_string();
+
+        // Derive form_path from entity code and form code prefix
+        let entity_dir = entity_folder_name(&entity_code);
+        let prefix_dir = format!(
+            "af_{}",
+            form_code.chars().take(2).collect::<String>().to_lowercase()
+        );
+        let form_path = format!("{}/{}", entity_dir, prefix_dir);
+
+        let mut config = Self {
+            form_title: form_code.clone(),
+            form_code,
             languages: vec!["en".into()],
             master_language: "en".into(),
 
@@ -247,10 +275,11 @@ impl Default for AemConfig {
                 "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
                     .into(),
             template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic".into(),
-            theme_ref: "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme".into(),
-            dor_template_ref: String::new(),
-            redirect_url: "/content/forms/af/afforms_global_common/confirm-successful-submission"
+            theme_ref: "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
                 .into(),
+            dor_template_ref: String::new(),
+            redirect_url:
+                "/content/forms/af/afforms_global_common/confirm-successful-submission".into(),
 
             action_type: "ajila-forms-customers/ajila-forms-ubs/components/actions/submit".into(),
             client_lib_ref: "ajila-forms-ubs".into(),
@@ -258,20 +287,39 @@ impl Default for AemConfig {
             form_type: " ".into(),
             meta_template_ref: "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp".into(),
 
-            form_path: "ajila-forms-ubs/output/Germany_Tranch_1".into(),
+            form_path,
 
-            include_preview_panel: false,
-            metadata_entity: String::new(),
-            metadata_cdokinfo: String::new(),
-            metadata_releasedate: String::new(),
-            metadata_version: String::new(),
-            metadata_partnerlevel: "false".into(),
-            metadata_clpmandatory: "false".into(),
-        }
+            include_preview_panel: true,
+            metadata_entity: entity_code,
+            metadata_cdokinfo: ctx
+                .get_variable("formrange_cdokinfo")
+                .or_else(|| ctx.get_variable("Footer_Line_txtformid"))
+                .unwrap_or("")
+                .to_string(),
+            metadata_releasedate: ctx
+                .get_variable("formrange_releasedate")
+                .or_else(|| ctx.get_variable("Footer_Line_txtversiondate"))
+                .unwrap_or("")
+                .to_string(),
+            metadata_version: ctx
+                .get_variable("formrange_version")
+                .unwrap_or("")
+                .to_string(),
+            metadata_partnerlevel: ctx
+                .get_variable("formrange_partnerlevel")
+                .unwrap_or("false")
+                .to_string(),
+            metadata_clpmandatory: ctx
+                .get_variable("formrange_clpmandatory")
+                .unwrap_or("false")
+                .to_string(),
+        };
+
+        config.dor_template_ref = config.compute_dor_template_ref();
+
+        Ok(config)
     }
-}
 
-impl AemConfig {
     /// Resolve the sling resource type for a control component.
     ///
     /// If `custom_resource_type_base` is set, produces
@@ -338,79 +386,80 @@ impl AemConfig {
             self.form_dir()
         )
     }
+}
 
-    /// Populate `form_code`, `form_title`, `form_path`, and `dor_template_ref`
-    /// from a document filename.
+#[cfg(test)]
+impl AemConfig {
+    /// Create an `AemConfig` for testing without requiring a real `Context`.
     ///
-    /// `doc_name` is the filename stem (e.g. `"AAEI_019_DE"`).
-    ///
-    /// The form code is the first segment (e.g. `"AAEI"`), the entity code
-    /// is the second segment (e.g. `"019"`).  From these two values the
-    /// method derives:
-    ///
-    /// | Field        | Example                        |
-    /// |--------------|--------------------------------|
-    /// | `form_code`  | `"AAEI"`                       |
-    /// | `form_title` | `"AAEI"` (same as form code)   |
-    /// | `form_path`  | `"afforms_germany_all/af_aa"`  |
-    ///
-    /// The JCR folder name used in package paths is
-    /// [`form_dir()`](Self::form_dir) → `"AF_AAEI"`.
-    pub fn populate_from_document(&mut self, doc_name: &str, _content: &[crate::StructuredNode]) {
-        let parts: Vec<&str> = doc_name.split('_').collect();
-
-        // Form code: first segment
-        let form_code = parts.first().copied().unwrap_or(doc_name).to_string();
-        self.form_code = form_code.clone();
-
-        // Form title matches form code (Java: DAM title = formCode)
-        self.form_title = form_code.clone();
-
-        // Entity code: second segment (e.g. "019")
-        let entity_code = parts.get(1).copied().unwrap_or("");
-
-        // Derive entityDir and prefixDir, then assemble form_path
+    /// The caller provides the form code and entity code directly.
+    /// All other fields use the same hard-coded values as [`AemConfig::new`].
+    pub fn test_default(form_code: &str, entity_code: &str) -> Self {
         let entity_dir = entity_folder_name(entity_code);
         let prefix_dir = format!(
             "af_{}",
             form_code.chars().take(2).collect::<String>().to_lowercase()
         );
-        self.form_path = format!("{}/{}", entity_dir, prefix_dir);
+        let form_path = format!("{}/{}", entity_dir, prefix_dir);
 
-        // Compute dor_template_ref from form_path and form_dir()
-        self.dor_template_ref = self.compute_dor_template_ref();
-    }
+        let mut config = Self {
+            form_title: form_code.into(),
+            form_code: form_code.into(),
+            languages: vec!["en".into()],
+            master_language: "en".into(),
 
-    /// Populate metadata fields from a `Context` (XFA text variables).
-    ///
-    /// This enables the preview panel in the AEM output which contains
-    /// the metadata element with FormRange attributes.
-    pub fn populate_from_context(&mut self, ctx: &crate::Context) {
-        self.include_preview_panel = true;
+            resource_type_base: "fd/af/components".into(),
+            custom_resource_type_base: Some(
+                "ajila-forms-customers/ajila-forms-ubs/components".into(),
+            ),
 
-        if let Some(v) = ctx.get_variable("formrange_entity") {
-            self.metadata_entity = v.to_string();
-        }
-        if let Some(v) = ctx.get_variable("formrange_version") {
-            self.metadata_version = v.to_string();
-        }
-        // Try formrange_cdokinfo first, fall back to Footer_Line_txtformid
-        if let Some(v) = ctx.get_variable("formrange_cdokinfo") {
-            self.metadata_cdokinfo = v.to_string();
-        } else if let Some(v) = ctx.get_variable("Footer_Line_txtformid") {
-            self.metadata_cdokinfo = v.to_string();
-        }
-        if let Some(v) = ctx.get_variable("formrange_releasedate") {
-            self.metadata_releasedate = v.to_string();
-        } else if let Some(v) = ctx.get_variable("Footer_Line_txtversiondate") {
-            self.metadata_releasedate = v.to_string();
-        }
-        if let Some(v) = ctx.get_variable("formrange_partnerlevel") {
-            self.metadata_partnerlevel = v.to_string();
-        }
-        if let Some(v) = ctx.get_variable("formrange_clpmandatory") {
-            self.metadata_clpmandatory = v.to_string();
-        }
+            default_layout: "fd/af/layouts/gridFluidLayout2".into(),
+            grid_columns: 12,
+            enable_layout_optimization: true,
+
+            dor_field_styling: "Default".into(),
+            dor_exclude_description: true,
+            dor_type: "generate".into(),
+
+            include_toolbar: true,
+            include_page_wrapper: true,
+
+            css_prefix: "widget_".into(),
+            author: "blueprint".into(),
+            deterministic_uuids: false,
+
+            repeatable_min_occur: 1,
+            repeatable_max_occur: 20,
+
+            page_resource_type:
+                "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
+                    .into(),
+            template_path: "/conf/ajila-forms-ubs/settings/wcm/templates/basic".into(),
+            theme_ref: "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
+                .into(),
+            dor_template_ref: String::new(),
+            redirect_url:
+                "/content/forms/af/afforms_global_common/confirm-successful-submission".into(),
+
+            action_type: "ajila-forms-customers/ajila-forms-ubs/components/actions/submit".into(),
+            client_lib_ref: "ajila-forms-ubs".into(),
+            wizard_layout: "ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard".into(),
+            form_type: " ".into(),
+            meta_template_ref: "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp".into(),
+
+            form_path,
+
+            include_preview_panel: false,
+            metadata_entity: entity_code.into(),
+            metadata_cdokinfo: String::new(),
+            metadata_releasedate: String::new(),
+            metadata_version: String::new(),
+            metadata_partnerlevel: "false".into(),
+            metadata_clpmandatory: "false".into(),
+        };
+
+        config.dor_template_ref = config.compute_dor_template_ref();
+        config
     }
 }
 

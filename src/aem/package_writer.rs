@@ -971,11 +971,8 @@ mod tests {
 
     #[test]
     fn dam_asset_xml_has_correct_resource_type() {
-        let config = AemConfig {
-            form_title: "TEST_FORM".into(),
-            form_code: "TEST_FORM".into(),
-            ..Default::default()
-        };
+        let mut config = AemConfig::test_default("TEST_FORM", "019");
+        config.form_title = "TEST_FORM".into();
         let xml = generate_dam_asset_xml(&config);
         assert!(
             xml.contains("jcr:primaryType=\"dam:Asset\""),
@@ -1011,11 +1008,7 @@ mod tests {
 
     #[test]
     fn package_contains_dam_and_form_content() {
-        let config = AemConfig {
-            form_title: "TEST".into(),
-            form_code: "TEST".into(),
-            ..Default::default()
-        };
+        let config = AemConfig::test_default("TEST", "019");
         let root = AemNode::Root {
             title: "TEST".into(),
             children: vec![],
@@ -1039,7 +1032,7 @@ mod tests {
             {
                 found_dam = true;
             }
-            if name.contains("content/dam/formsanddocuments/ajila-forms-ubs/.content.xml") {
+            if name.contains("content/dam/formsanddocuments/afforms_germany_all/.content.xml") {
                 found_dam_folder = true;
             }
         }
@@ -1053,7 +1046,7 @@ mod tests {
 
         // Verify DAM intermediate folder uses sling:Folder
         let mut dam_folder = archive
-            .by_name("jcr_root/content/dam/formsanddocuments/ajila-forms-ubs/.content.xml")
+            .by_name("jcr_root/content/dam/formsanddocuments/afforms_germany_all/.content.xml")
             .expect("DAM folder entry");
         let mut dam_folder_xml = String::new();
         dam_folder.read_to_string(&mut dam_folder_xml).unwrap();

@@ -1321,7 +1321,10 @@ fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig)
         elem.push_attribute(("displayPictureClause", "\\[0-9]"));
         elem.push_attribute(("dorExclusion", "true"));
         elem.push_attribute(("guideNodeClass", "guideTextBox"));
-        elem.push_attribute(("initScript", "com.ajila.forms.control.carousel.initialize(this)"));
+        elem.push_attribute((
+            "initScript",
+            "com.ajila.forms.control.carousel.initialize(this)",
+        ));
         elem.push_attribute(("lazyLoadingStrategy", "ondemand"));
         elem.push_attribute(("name", "carouselPreview"));
         elem.push_attribute(("placeholderText", "Message"));
@@ -1343,13 +1346,13 @@ fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig)
                 .control_resource_type("messagebox-CarouselPreviewError")
                 .as_str(),
         ));
-        elem.push_attribute(("buttonAction", "window.com.ajila.forms.control.messagebox_carouselpreview_error.initCarouselPreview()"));
+        elem.push_attribute((
+            "buttonAction",
+            "window.com.ajila.forms.control.messagebox_carouselpreview_error.initCarouselPreview()",
+        ));
         elem.push_attribute(("css", "ubs-margin-10"));
         elem.push_attribute(("guideNodeClass", "guideTextDraw"));
-        elem.push_attribute((
-            "i18nBodyId",
-            "ajila-forms-ubs-errorbox-carousel-message",
-        ));
+        elem.push_attribute(("i18nBodyId", "ajila-forms-ubs-errorbox-carousel-message"));
         elem.push_attribute((
             "i18nButtonLabelId",
             "ajila-forms-ubs-errorbox-carousel-button-label",
@@ -1371,7 +1374,10 @@ fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig)
             config.control_resource_type("messagebox").as_str(),
         ));
         elem.push_attribute(("guideNodeClass", "guideTextDraw"));
-        elem.push_attribute(("messageboxBody", "&lt;p>The form could not be sent. Please try again later.&lt;/p>"));
+        elem.push_attribute((
+            "messageboxBody",
+            "&lt;p>The form could not be sent. Please try again later.&lt;/p>",
+        ));
         elem.push_attribute(("messageboxTitle", "Submission failed"));
         elem.push_attribute(("messageboxType", "{Long}4"));
         elem.push_attribute(("name", "submitErrorMessage"));
@@ -1467,7 +1473,10 @@ fn write_metadata(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
         {
             let mut item0 = BytesStart::new("item0");
             item0.push_attribute(("jcr:primaryType", "nt:unstructured"));
-            item0.push_attribute(("formrange_clpmandatory", config.metadata_clpmandatory.as_str()));
+            item0.push_attribute((
+                "formrange_clpmandatory",
+                config.metadata_clpmandatory.as_str(),
+            ));
             item0.push_attribute(("formrange_entity", config.metadata_entity.as_str()));
             item0.push_attribute(("formrange_language", languages_joined.as_str()));
             w.write_event(Event::Start(item0)).unwrap();
@@ -1482,10 +1491,8 @@ fn write_metadata(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
                 {
                     let mut cdok_item = BytesStart::new("item0");
                     cdok_item.push_attribute(("jcr:primaryType", "nt:unstructured"));
-                    cdok_item.push_attribute((
-                        "formrange_cdokinfo",
-                        config.metadata_cdokinfo.as_str(),
-                    ));
+                    cdok_item
+                        .push_attribute(("formrange_cdokinfo", config.metadata_cdokinfo.as_str()));
                     cdok_item.push_attribute((
                         "formrange_partnerlevel",
                         config.metadata_partnerlevel.as_str(),
@@ -1513,7 +1520,8 @@ fn write_metadata(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     }
 
     // </metadata>
-    w.write_event(Event::End(BytesEnd::new("metadata"))).unwrap();
+    w.write_event(Event::End(BytesEnd::new("metadata")))
+        .unwrap();
 }
 
 /// Write the standard toolbar with prev/next/submit buttons.
@@ -1978,12 +1986,11 @@ mod tests {
     use uuid::Uuid;
 
     fn test_config() -> AemConfig {
-        AemConfig {
-            deterministic_uuids: true,
-            include_page_wrapper: false,
-            include_toolbar: false,
-            ..Default::default()
-        }
+        let mut config = AemConfig::test_default("TEST", "019");
+        config.deterministic_uuids = true;
+        config.include_page_wrapper = false;
+        config.include_toolbar = false;
+        config
     }
 
     fn fixed_uuid() -> Uuid {

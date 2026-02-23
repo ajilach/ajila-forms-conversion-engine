@@ -156,6 +156,8 @@ pub enum Error {
     Render(String),
     /// Structured conversion failed.
     Conversion(String),
+    /// AEM configuration could not be constructed (missing XFA variables).
+    AemConfig(String),
     /// Generic I/O error (e.g. file not found).
     Io(std::io::Error),
 }
@@ -170,6 +172,7 @@ impl std::fmt::Display for Error {
             Error::StateExploration(msg) => write!(f, "State exploration error: {}", msg),
             Error::Render(msg) => write!(f, "Render error: {}", msg),
             Error::Conversion(msg) => write!(f, "Conversion error: {}", msg),
+            Error::AemConfig(msg) => write!(f, "AEM config error: {}", msg),
             Error::Io(err) => write!(f, "I/O error: {}", err),
         }
     }
