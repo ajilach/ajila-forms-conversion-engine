@@ -25,7 +25,7 @@ COPY . .
 RUN --mount=type=ssh \
     mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts && \
     cargo fetch
-RUN dx build --release --platform web
+RUN dx build --release --platform web --fullstack
 
 # ── Runtime stage ─────────────────────────────────────────
 FROM --platform=linux/amd64 ubuntu:24.04

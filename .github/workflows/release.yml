@@ -120,7 +120,13 @@ jobs:
         shell: bash
 
       - name: Build with Dioxus CLI
-        run: dx build --release --platform ${{ matrix.platform }}
+        run: |
+          if [ "${{ matrix.platform }}" == "desktop" ]; then
+            dx build --release --platform desktop
+          else
+            dx build --release --platform ${{ matrix.platform }} --fullstack
+          fi
+        shell: bash
 
       - name: Sign macOS app (ad-hoc)
         if: startsWith(matrix.os, 'macos')

@@ -4,6 +4,7 @@ mod models;
 mod pipeline;
 mod platform;
 mod processing;
+#[cfg(any(feature = "web", feature = "server"))]
 mod server;
 
 use dioxus::prelude::*;

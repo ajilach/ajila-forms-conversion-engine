@@ -37,7 +37,7 @@ pub async fn run_and_track(
         }
     }
 
-    #[cfg(not(feature = "desktop"))]
+    #[cfg(feature = "web")]
     {
         use crate::platform::async_sleep_ms;
         use crate::server::{poll_progress, start_processing};
