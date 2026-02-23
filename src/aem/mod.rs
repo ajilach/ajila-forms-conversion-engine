@@ -319,39 +319,65 @@ impl AemConfig {
         }
     }
 
-    /// Compute the DOR template ref from `form_path` and `form_code`.
+    /// The JCR folder name for this form: `"AF_" + form_code`.
+    ///
+    /// Matches the Java convention where the terminal folder is
+    /// `AF_AAAI`, `AF_AAEI`, etc.
+    pub fn form_dir(&self) -> String {
+        format!("AF_{}", self.form_code)
+    }
+
+    /// Compute the DOR template ref from `form_path` and `form_dir()`.
     ///
     /// Produces a path like:
-    /// `/content/dam/formsanddocuments/{form_path}/{form_code}/jcr:content/renditions/dorTemplate`
+    /// `/content/dam/formsanddocuments/{form_path}/{form_dir}/jcr:content/renditions/dorTemplate`
     pub fn compute_dor_template_ref(&self) -> String {
         format!(
             "/content/dam/formsanddocuments/{}/{}/jcr:content/renditions/dorTemplate",
-            self.form_path, self.form_code
+            self.form_path,
+            self.form_dir()
         )
     }
 
-    /// Populate `form_code`, `form_title`, and `dor_template_ref` from a
-    /// document filename and structured content.
+    /// Populate `form_code`, `form_title`, `form_path`, and `dor_template_ref`
+    /// from a document filename.
     ///
     /// `doc_name` is the filename stem (e.g. `"AAEI_019_DE"`).
-    /// The form code is extracted as the part before the first `_`.
-    /// The form title is extracted from the first H1 heading in the content.
-    pub fn populate_from_document(&mut self, doc_name: &str, content: &[crate::StructuredNode]) {
-        // Extract form code: everything before the first '_'
-        let form_code = doc_name.split('_').next().unwrap_or(doc_name).to_string();
-        self.form_code = form_code;
+    ///
+    /// The form code is the first segment (e.g. `"AAEI"`), the entity code
+    /// is the second segment (e.g. `"019"`).  From these two values the
+    /// method derives:
+    ///
+    /// | Field        | Example                        |
+    /// |--------------|--------------------------------|
+    /// | `form_code`  | `"AAEI"`                       |
+    /// | `form_title` | `"AAEI"` (same as form code)   |
+    /// | `form_path`  | `"afforms_germany_all/af_aa"`  |
+    ///
+    /// The JCR folder name used in package paths is
+    /// [`form_dir()`](Self::form_dir) → `"AF_AAEI"`.
+    pub fn populate_from_document(&mut self, doc_name: &str, _content: &[crate::StructuredNode]) {
+        let parts: Vec<&str> = doc_name.split('_').collect();
 
-        // Extract form title from first H1 heading
-        for node in content {
-            if let crate::StructuredNode::Heading(h) = node {
-                if matches!(h.level, crate::HeadingLevel::H1) {
-                    self.form_title = h.content.as_plain_text().trim().to_string();
-                    break;
-                }
-            }
-        }
+        // Form code: first segment
+        let form_code = parts.first().copied().unwrap_or(doc_name).to_string();
+        self.form_code = form_code.clone();
 
-        // Compute dor_template_ref from form_path and form_code
+        // Form title matches form code (Java: DAM title = formCode)
+        self.form_title = form_code.clone();
+
+        // Entity code: second segment (e.g. "019")
+        let entity_code = parts.get(1).copied().unwrap_or("");
+
+        // Derive entityDir and prefixDir, then assemble form_path
+        let entity_dir = entity_folder_name(entity_code);
+        let prefix_dir = format!(
+            "af_{}",
+            form_code.chars().take(2).collect::<String>().to_lowercase()
+        );
+        self.form_path = format!("{}/{}", entity_dir, prefix_dir);
+
+        // Compute dor_template_ref from form_path and form_dir()
         self.dor_template_ref = self.compute_dor_template_ref();
     }
 
@@ -553,6 +579,21 @@ pub enum AemNode {
         min_occur: u32,
         max_occur: u32,
     },
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Map an entity code (the second segment of the PDF filename) to the AEM
+/// folder name, mirroring the Java `getEntityFolderName` method.
+fn entity_folder_name(entity_code: &str) -> &'static str {
+    match entity_code {
+        "019" => "afforms_germany_all",
+        "033" => "afforms_italy_all",
+        "001" => "afforms_ch_all",
+        _ => "afforms_global_all",
+    }
 }
 
 impl AemNode {

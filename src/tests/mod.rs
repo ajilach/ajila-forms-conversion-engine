@@ -9899,4 +9899,36 @@
         );
     }
 
+    #[test]
+    fn test_aaab_aem_config_form_path_title_code() {
+        use crate::aem::AemConfig;
+
+        let mut config = AemConfig::default();
+        config.populate_from_document("AAAB_019_DE", &[]);
+
+        // form_code should be the raw code (first segment)
+        assert_eq!(config.form_code, "AAAB", "form_code should be 'AAAB'");
+
+        // form_title should equal form_code (matching Java DAM title behavior)
+        assert_eq!(
+            config.form_title, "AAAB",
+            "form_title should equal form_code"
+        );
+
+        // form_path: entityDir/prefixDir
+        //   entity "019" -> "afforms_germany_all"
+        //   prefix "AAAB"[..2].lower -> "af_aa"
+        assert_eq!(
+            config.form_path, "afforms_germany_all/af_aa",
+            "form_path should be 'afforms_germany_all/af_aa'"
+        );
+
+        // form_dir() should be "AF_AAAB"
+        assert_eq!(
+            config.form_dir(),
+            "AF_AAAB",
+            "form_dir() should be 'AF_AAAB'"
+        );
+    }
+
 

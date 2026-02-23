@@ -17,9 +17,7 @@ use zip::write::SimpleFileOptions;
 use super::{AemConfig, AemNode};
 use crate::aem::generate_aem_xml;
 use crate::aem::xml_writer::reformat_attributes;
-use crate::structured::{
-    FieldType, InlineNode, InlineText, StructuredNode, TranslatableString,
-};
+use crate::structured::{FieldType, InlineNode, InlineText, StructuredNode, TranslatableString};
 
 // ============================================================================
 // Public API
@@ -43,13 +41,11 @@ pub fn generate_aem_package(
         .unwrap_or(0);
     let package_name = format!("BlueprintFormsPackage_{}", timestamp);
 
-    let form_jcr_path = format!(
-        "/content/forms/af/{}/{}",
-        config.form_path, config.form_code
-    );
+    let form_dir = config.form_dir();
+    let form_jcr_path = format!("/content/forms/af/{}/{}", config.form_path, form_dir);
     let dam_jcr_path = format!(
         "/content/dam/formsanddocuments/{}/{}",
-        config.form_path, config.form_code
+        config.form_path, form_dir
     );
 
     let filter_roots = vec![form_jcr_path.clone(), dam_jcr_path.clone()];
@@ -127,7 +123,13 @@ pub fn generate_aem_package(
     // ── Intermediate folder .content.xml files ──────────────────────────
     let path_segments: Vec<&str> = config.form_path.split('/').collect();
     // content/forms/af/<seg1>/<seg2>/.../<form_code>
-    write_intermediate_folders(&mut zip, &opts, "jcr_root/content/forms/af", &path_segments, false);
+    write_intermediate_folders(
+        &mut zip,
+        &opts,
+        "jcr_root/content/forms/af",
+        &path_segments,
+        false,
+    );
     // content/dam/formsanddocuments/<seg1>/<seg2>/.../<form_code>
     write_intermediate_folders(
         &mut zip,
@@ -140,14 +142,14 @@ pub fn generate_aem_package(
     // ── Form content .content.xml ───────────────────────────────────────
     let form_content_path = format!(
         "jcr_root/content/forms/af/{}/{}/.content.xml",
-        config.form_path, config.form_code
+        config.form_path, form_dir
     );
     write_entry(&mut zip, &opts, &form_content_path, &form_xml);
 
     // ── DAM asset .content.xml ──────────────────────────────────────────
     let dam_content_path = format!(
         "jcr_root/content/dam/formsanddocuments/{}/{}/.content.xml",
-        config.form_path, config.form_code
+        config.form_path, form_dir
     );
     write_entry(&mut zip, &opts, &dam_content_path, &dam_xml);
 
@@ -156,11 +158,11 @@ pub fn generate_aem_package(
     if !translations.is_empty() {
         let dict_base = format!(
             "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
-            config.form_path, config.form_code
+            config.form_path, form_dir
         );
         let basename = format!(
             "/content/forms/af/{}/{}/jcr:content/guideContainer/assets/dictionary",
-            config.form_path, config.form_code
+            config.form_path, form_dir
         );
 
         // Collect all languages that have translations
@@ -745,7 +747,8 @@ fn generate_dictionary_xml(locale: &str, entries: &[(String, String)], basename:
             w.write_event(Event::Empty(entry)).unwrap();
         }
 
-        w.write_event(Event::End(BytesEnd::new("jcr:root"))).unwrap();
+        w.write_event(Event::End(BytesEnd::new("jcr:root")))
+            .unwrap();
     }
 
     let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 dictionary xml");
@@ -1031,7 +1034,9 @@ mod tests {
             if name.contains("content/forms/af/") && name.ends_with("TEST/.content.xml") {
                 found_form = true;
             }
-            if name.contains("content/dam/formsanddocuments/") && name.ends_with("TEST/.content.xml") {
+            if name.contains("content/dam/formsanddocuments/")
+                && name.ends_with("TEST/.content.xml")
+            {
                 found_dam = true;
             }
             if name.contains("content/dam/formsanddocuments/ajila-forms-ubs/.content.xml") {
@@ -1041,7 +1046,10 @@ mod tests {
 
         assert!(found_form, "package must contain form .content.xml");
         assert!(found_dam, "package must contain DAM .content.xml");
-        assert!(found_dam_folder, "package must contain DAM intermediate folder");
+        assert!(
+            found_dam_folder,
+            "package must contain DAM intermediate folder"
+        );
 
         // Verify DAM intermediate folder uses sling:Folder
         let mut dam_folder = archive
