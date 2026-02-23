@@ -51,7 +51,18 @@ impl ListDetector {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MarkerKind {
     Unordered,
-    Ordered,
+    /// Ordered with a specific sub-kind so that numeric (1. 2.) and letter
+    /// (a. b.) markers are not mixed into the same list.
+    Ordered(OrderedSubKind),
+}
+
+/// Sub-classification of ordered list markers.  Items with different
+/// sub-kinds must not be merged into the same list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrderedSubKind {
+    Numeric,
+    Letter,
+    Roman,
 }
 
 /// A detected list marker with its kind and the byte length of the marker
@@ -110,7 +121,7 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
     // Check ordered markers: <digits>. or <digits>)
     if let Some(marker) = detect_numeric_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered,
+            kind: MarkerKind::Ordered(OrderedSubKind::Numeric),
             prefix_len: leading_ws + marker,
         });
     }
@@ -118,7 +129,7 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
     // Check ordered markers: <letter>. or <letter>)
     if let Some(marker) = detect_letter_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered,
+            kind: MarkerKind::Ordered(OrderedSubKind::Letter),
             prefix_len: leading_ws + marker,
         });
     }
@@ -126,7 +137,7 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
     // Check ordered markers: <roman>. or <roman>)
     if let Some(marker) = detect_roman_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered,
+            kind: MarkerKind::Ordered(OrderedSubKind::Roman),
             prefix_len: leading_ws + marker,
         });
     }
@@ -251,68 +262,73 @@ impl AnalysisModule for ListDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        // Collect root TextBlock groups with their text content and bounds
+        // Walk root groups in document order.  For each TextBlock that starts
+        // with a list marker we record it as a candidate.  Any non-TextBlock
+        // root (field, checkbox, heading, …) or a TextBlock without a marker
+        // acts as a separator that breaks the current run of list items.
         let roots = doc.roots();
-        let mut candidates: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
+        let x_tol = Decimal::from_f64(X_TOLERANCE).unwrap_or(Decimal::new(50, 1));
+
+        // Each entry: (group_idx, text, bounds, marker)
+        let mut current_run: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        let mut group_kinds: Vec<MarkerKind> = Vec::new();
+
+        let flush = |run: &mut Vec<(usize, String, Bounds, DetectedMarker)>,
+                     groups: &mut Vec<Vec<usize>>,
+                     group_kinds: &mut Vec<MarkerKind>| {
+            if run.len() >= 2 {
+                let child_indices: Vec<usize> = run.iter().map(|(idx, _, _, _)| *idx).collect();
+                let kind = run[0].3.kind;
+                groups.push(child_indices);
+                group_kinds.push(kind);
+            }
+            run.clear();
+        };
 
         for &idx in &roots {
+            // Only TextBlock groups can be list items
             if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                // Non-TextBlock root breaks any ongoing list run
+                flush(&mut current_run, &mut groups, &mut group_kinds);
                 continue;
             }
+
             let text = doc.get_text_content(idx);
             let bounds = match doc.get_bounds(idx) {
                 Some(b) => b,
-                None => continue,
-            };
-            if let Some(marker) = detect_marker(&text) {
-                candidates.push((idx, text, bounds, marker));
-            }
-        }
-
-        if candidates.is_empty() {
-            return;
-        }
-
-        // Sort candidates by y position, then x
-        candidates.sort_by(|a, b| a.2.y.cmp(&b.2.y).then(a.2.x.cmp(&b.2.x)));
-
-        // Group consecutive candidates with the same marker kind and similar x position
-        let x_tol = Decimal::from_f64(X_TOLERANCE).unwrap_or(Decimal::new(50, 1));
-        let mut groups: Vec<Vec<usize>> = Vec::new();
-        let mut group_kinds: Vec<MarkerKind> = Vec::new();
-        let mut current_group: Vec<usize> = vec![0]; // indices into candidates
-        let mut current_kind = candidates[0].3.kind;
-        let mut current_x = candidates[0].2.x;
-
-        for i in 1..candidates.len() {
-            let (_, _, ref bounds, ref marker) = candidates[i];
-            let same_kind = marker.kind == current_kind;
-            let similar_x = (bounds.x - current_x).abs() <= x_tol;
-
-            if same_kind && similar_x {
-                current_group.push(i);
-            } else {
-                if current_group.len() >= 2 {
-                    groups.push(current_group);
-                    group_kinds.push(current_kind);
+                None => {
+                    flush(&mut current_run, &mut groups, &mut group_kinds);
+                    continue;
                 }
-                current_group = vec![i];
-                current_kind = marker.kind;
-                current_x = bounds.x;
+            };
+
+            if let Some(marker) = detect_marker(&text) {
+                if let Some(last) = current_run.last() {
+                    let same_kind = marker.kind == last.3.kind;
+                    let similar_x = (bounds.x - last.2.x).abs() <= x_tol;
+                    if same_kind && similar_x {
+                        current_run.push((idx, text, bounds, marker));
+                    } else {
+                        flush(&mut current_run, &mut groups, &mut group_kinds);
+                        current_run.push((idx, text, bounds, marker));
+                    }
+                } else {
+                    current_run.push((idx, text, bounds, marker));
+                }
+            } else {
+                // TextBlock without a marker also breaks the run
+                flush(&mut current_run, &mut groups, &mut group_kinds);
             }
         }
 
-        // Don't forget the last group
-        if current_group.len() >= 2 {
-            groups.push(current_group);
-            group_kinds.push(current_kind);
-        }
+        // Flush the final run
+        flush(&mut current_run, &mut groups, &mut group_kinds);
 
         // For each list group, merge into a List group
         for (group_indices, kind) in groups.into_iter().zip(group_kinds) {
-            let ordered = kind == MarkerKind::Ordered;
-            let child_group_indices: Vec<usize> =
-                group_indices.iter().map(|&ci| candidates[ci].0).collect();
+            let ordered = matches!(kind, MarkerKind::Ordered(_));
+            let child_group_indices = group_indices;
 
             doc.merge(
                 child_group_indices,
@@ -356,35 +372,35 @@ mod tests {
     #[test]
     fn test_detect_ordered_number() {
         let m = detect_marker("1. First item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered);
+        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Numeric));
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_number_paren() {
         let m = detect_marker("2) Second item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered);
+        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Numeric));
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_letter() {
         let m = detect_marker("a. First sub-item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered);
+        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Letter));
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_letter_upper() {
         let m = detect_marker("A) First sub-item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered);
+        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Letter));
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_roman() {
         let m = detect_marker("ii. Second roman item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered);
+        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Roman));
         assert_eq!(m.prefix_len, 4);
     }
 

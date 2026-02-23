@@ -184,9 +184,9 @@ pub fn run_analysis_pipeline_with_context(
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
     OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
-    ListDetector::new().process_with_context(doc, ctx);
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);
+    ListDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);

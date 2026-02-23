@@ -9925,4 +9925,562 @@
         );
     }
 
+    #[test]
+    fn test_aaks_radio_button_has_three_options() {
+        // The AAKS form has one radio group with 3 options about the Vertragspartner type:
+        // - natürliche Person(en)
+        // - Aktiengesellschaft (börsennotiert)
+        // - öffentlich-rechtliche Anstalt oder Körperschaft
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, FieldType, StructuredNode};
 
+        let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAKS");
+
+        fn find_radio_fields(nodes: &[StructuredNode], out: &mut Vec<FieldNode>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, FieldType::Radio { .. }) {
+                            out.push(field.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => find_radio_fields(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        find_radio_fields(std::slice::from_ref(&c.content), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        find_radio_fields(std::slice::from_ref(&r.item), out);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        find_radio_fields(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut radio_fields = Vec::new();
+        find_radio_fields(&structured, &mut radio_fields);
+
+        // Find the radio group whose options mention "natürliche Person" (the Vertragspartner radio)
+        let field = radio_fields
+            .iter()
+            .find(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    options.iter().any(|o| o.name.contains("natürliche Person"))
+                } else {
+                    false
+                }
+            })
+            .expect("Expected to find the Vertragspartner radio group in AAKS");
+
+        let options = match &field.input_type {
+            FieldType::Radio { options } => options,
+            _ => unreachable!(),
+        };
+
+        assert_eq!(
+            options.len(),
+            3,
+            "Expected 3 radio options, found {}",
+            options.len()
+        );
+
+        let option_names: Vec<&str> = options.iter().map(|o| o.name.as_str()).collect();
+
+        let expected_substrings = [
+            "natürliche Person",
+            "Aktiengesellschaft",
+            "öffentlich-rechtliche Anstalt",
+        ];
+
+        for expected in &expected_substrings {
+            assert!(
+                option_names.iter().any(|name| name.contains(expected)),
+                "Expected a radio option containing '{}'\nFound options: {:?}",
+                expected,
+                option_names
+            );
+        }
+    }
+
+    #[test]
+    fn test_aaks_checkboxes() {
+        // The AAKS form has several checkboxes with specific labels.
+        // We verify the key checkboxes are detected.
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::document::{Document, GroupKind};
+        use crate::structured::{FieldNode, StructuredNode};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAKS_019_DE.pdf").expect("Failed to read AAKS PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        // Find all checkbox groups
+        let checkboxes = doc.find_groups(|k| matches!(k, GroupKind::Checkbox { .. }));
+
+        // Collect checkbox label text
+        let mut checkbox_labels: Vec<String> = Vec::new();
+        for &idx in &checkboxes {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Checkbox { label, .. } = group.kind {
+                    let label_idx = group.children.get(label).copied();
+                    let label_text = if let Some(li) = label_idx {
+                        doc.get_text_content(li)
+                    } else {
+                        String::new()
+                    };
+                    if !label_text.is_empty() {
+                        checkbox_labels.push(label_text);
+                    }
+                }
+            }
+        }
+
+        println!("\n=== AAKS checkbox labels ===");
+        for label in &checkbox_labels {
+            println!("  - '{}'", label);
+        }
+
+        // Also check structured output for checkbox labels
+        let structured_nodes = crate::structured::convert(&doc);
+
+        fn collect_bool_field_labels(nodes: &[StructuredNode], out: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if matches!(field.input_type, crate::structured::FieldType::Bool) {
+                            if let Some(label) = &field.label {
+                                let text = label.as_plain_text();
+                                if !text.trim().is_empty() {
+                                    out.push(text.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => collect_bool_field_labels(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_bool_field_labels(std::slice::from_ref(&c.content), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_bool_field_labels(std::slice::from_ref(&r.item), out);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_bool_field_labels(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut bool_labels = Vec::new();
+        collect_bool_field_labels(&structured_nodes, &mut bool_labels);
+
+        println!("\n=== AAKS bool field labels (structured) ===");
+        for label in &bool_labels {
+            println!("  - '{}'", label);
+        }
+
+        // Combine all labels for matching
+        let all_labels: Vec<&str> = checkbox_labels
+            .iter()
+            .chain(bool_labels.iter())
+            .map(|s| s.as_str())
+            .collect();
+
+        // The AAKS form has checkboxes with these labels:
+        // - "Der Vertragspartner begründet die Geschäftsbeziehung ..."
+        // - (a) "unmittelbar oder mittelbar mehr als 25% der Kapitalanteile"
+        // - (b) "Private Investment Companies" (PICs)
+        // - (c) "auf vergleichbare Weise" (Kontrolle ausüben)
+        // - (d) "gesetzliche Vertreter, geschäftsführende Gesellschafter"
+        let expected_checkbox_substrings = [
+            "Geschäftsbeziehung",
+            "unmittelbar oder mittelbar mehr als 25%",
+            "Private Investment Companies",
+            "auf vergleichbare Weise",
+            "gesetzliche Vertreter, geschäftsführende Gesellschafter",
+        ];
+
+        for expected in &expected_checkbox_substrings {
+            assert!(
+                all_labels.iter().any(|label| label.contains(expected)),
+                "Expected a checkbox with label containing '{}'\nFound labels: {:?}",
+                expected,
+                all_labels
+            );
+        }
+    }
+
+    #[test]
+    fn test_aaks_heading_structure() {
+        // Test that AAKS has the expected heading structure:
+        // - h1: Erhebungsbogen "Wirtschaftlich Berechtigter gemäß Geldwäschegesetz (GwG)"
+        // - h2: Vertragspartner, Identifikation, Unterschrift(en), Ergänzende Erläuterungen
+        use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
+        use crate::document::{Document, GroupKind};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAKS_019_DE.pdf").expect("Failed to read AAKS PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        HeadingDetector::new().process(&mut doc);
+
+        let headings = doc.headings();
+
+        let mut heading_info: Vec<(u8, String, f32)> = Vec::new();
+        for &idx in &headings {
+            if let Some(group) = doc.get_group(idx) {
+                if let GroupKind::Heading { level } = group.kind {
+                    let text = doc.get_text_content(idx);
+                    let y_coord = doc
+                        .compute_group_bounds(idx)
+                        .map(|(_, y, _, _)| y.to_f32().unwrap_or(0.0))
+                        .unwrap_or(0.0);
+                    heading_info.push((level, text, y_coord));
+                }
+            }
+        }
+
+        heading_info.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+        println!("\n=== AAKS Heading Structure ===");
+        for (level, text, y) in &heading_info {
+            println!("H{} (y={}): {}", level, y, text);
+        }
+
+        let expected_headings: Vec<(u8, &str)> = vec![
+            (1, "Erhebungsbogen"),
+            (2, "Vertragspartner"),
+            (2, "Identifikation"),
+            (2, "Unterschrift(en)"),
+            (2, "Ergänzende Erläuterungen"),
+        ];
+
+        for (expected_level, expected_text) in &expected_headings {
+            let found = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            });
+
+            assert!(
+                found.is_some(),
+                "Expected to find H{} heading containing '{}', but it was not found.\n\
+                Found headings:\n{}",
+                expected_level,
+                expected_text,
+                heading_info
+                    .iter()
+                    .map(|(l, t, _)| format!("  H{}: {}", l, t))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+
+        // Verify order
+        let mut last_y = f32::NEG_INFINITY;
+        for (expected_level, expected_text) in &expected_headings {
+            if let Some((_, _, y)) = heading_info.iter().find(|(level, text, _)| {
+                level == expected_level && text.contains(expected_text)
+            }) {
+                assert!(
+                    *y >= last_y,
+                    "Heading '{}' (y={}) should appear after previous heading (y={})",
+                    expected_text,
+                    y,
+                    last_y
+                );
+                last_y = *y;
+            }
+        }
+    }
+
+    
+    #[test]
+    fn test_aaks_nachname_vorname_firma_on_single_row() {
+        // The field "Nachname, Vorname(n) / Firma" should appear as a standalone field
+        // NOT inside a multi-column GridLayout (i.e., it occupies its own full row).
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldNode, StructuredNode};
+
+        let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAKS");
+
+        // Check that the field exists somewhere in the tree but is NOT a direct child of
+        // a multi-column GridLayout element.
+        fn find_field_context(
+            nodes: &[StructuredNode],
+            in_grid: bool,
+            grid_cols: usize,
+        ) -> Option<(bool, usize)> {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if let Some(label) = &field.label {
+                            if label.as_plain_text().contains("Nachname, Vorname(n) / Firma") {
+                                return Some((in_grid, grid_cols));
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(result) =
+                            find_field_context(&g.children, in_grid, grid_cols)
+                        {
+                            return Some(result);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(result) = find_field_context(
+                            std::slice::from_ref(&c.content),
+                            in_grid,
+                            grid_cols,
+                        ) {
+                            return Some(result);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(result) = find_field_context(
+                            std::slice::from_ref(&r.item),
+                            in_grid,
+                            grid_cols,
+                        ) {
+                            return Some(result);
+                        }
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        for element in &gl.elements {
+                            if let Some(result) = find_field_context(
+                                std::slice::from_ref(&element.node),
+                                true,
+                                gl.columns,
+                            ) {
+                                return Some(result);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let result = find_field_context(&structured, false, 0)
+            .expect("Expected to find field 'Nachname, Vorname(n) / Firma' in AAKS");
+
+        let (in_grid, grid_cols) = result;
+        assert!(
+            !in_grid || grid_cols <= 1,
+            "'Nachname, Vorname(n) / Firma' should be on its own row, but found in a {}-column grid",
+            grid_cols
+        );
+    }
+
+    #[test]
+    fn test_aaks_strasse_nr_share_row() {
+        // The fields "Straße" and "Nr." should share a 2-column GridLayout row.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAKS");
+
+        fn find_grid_with_fields(
+            nodes: &[StructuredNode],
+            labels: &[&str],
+            expected_cols: usize,
+        ) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(gl) => {
+                        if gl.columns == expected_cols {
+                            let grid_labels = collect_field_labels_flat(&gl
+                                .elements
+                                .iter()
+                                .map(|e| e.node.clone())
+                                .collect::<Vec<_>>());
+                            if labels
+                                .iter()
+                                .all(|l| grid_labels.iter().any(|gl| gl.contains(l)))
+                            {
+                                return true;
+                            }
+                        }
+                        // Also recurse into grid elements
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        if find_grid_with_fields(&child_nodes, labels, expected_cols) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if find_grid_with_fields(&g.children, labels, expected_cols) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if find_grid_with_fields(
+                            std::slice::from_ref(&c.content),
+                            labels,
+                            expected_cols,
+                        ) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if find_grid_with_fields(
+                            std::slice::from_ref(&r.item),
+                            labels,
+                            expected_cols,
+                        ) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        fn collect_field_labels_flat(nodes: &[StructuredNode]) -> Vec<String> {
+            let mut labels = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let text = label.as_plain_text();
+                            if !text.trim().is_empty() {
+                                labels.push(text.trim().to_string());
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        labels.extend(collect_field_labels_flat(&g.children));
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        labels.extend(collect_field_labels_flat(&child_nodes));
+                    }
+                    _ => {}
+                }
+            }
+            labels
+        }
+
+        assert!(
+            find_grid_with_fields(&structured, &["Straße", "Nr."], 2),
+            "Expected to find a 2-column GridLayout containing 'Straße' and 'Nr.' in AAKS"
+        );
+    }
+
+    #[test]
+    fn test_aaks_plz_stadt_land_share_row() {
+        // The fields "PLZ", "Stadt", and "Land" should share a 3-column GridLayout row.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAKS");
+
+        fn find_grid_with_fields(
+            nodes: &[StructuredNode],
+            labels: &[&str],
+            expected_cols: usize,
+        ) -> bool {
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(gl) => {
+                        if gl.columns == expected_cols {
+                            let grid_labels = collect_field_labels_flat(&gl
+                                .elements
+                                .iter()
+                                .map(|e| e.node.clone())
+                                .collect::<Vec<_>>());
+                            if labels
+                                .iter()
+                                .all(|l| grid_labels.iter().any(|gl| gl.contains(l)))
+                            {
+                                return true;
+                            }
+                        }
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        if find_grid_with_fields(&child_nodes, labels, expected_cols) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if find_grid_with_fields(&g.children, labels, expected_cols) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if find_grid_with_fields(
+                            std::slice::from_ref(&c.content),
+                            labels,
+                            expected_cols,
+                        ) {
+                            return true;
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if find_grid_with_fields(
+                            std::slice::from_ref(&r.item),
+                            labels,
+                            expected_cols,
+                        ) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+
+        fn collect_field_labels_flat(nodes: &[StructuredNode]) -> Vec<String> {
+            let mut labels = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let text = label.as_plain_text();
+                            if !text.trim().is_empty() {
+                                labels.push(text.trim().to_string());
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        labels.extend(collect_field_labels_flat(&g.children));
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        labels.extend(collect_field_labels_flat(&child_nodes));
+                    }
+                    _ => {}
+                }
+            }
+            labels
+        }
+
+        assert!(
+            find_grid_with_fields(&structured, &["PLZ", "Stadt", "Land"], 3),
+            "Expected to find a 3-column GridLayout containing 'PLZ', 'Stadt', and 'Land' in AAKS"
+        );
+    }
