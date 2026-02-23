@@ -2,24 +2,6 @@
    Blueprint UI — External Stylesheet
    ========================================== */
 
-/* ---- Fonts ---- */
-
-@font-face {
-    font-family: 'Montserrat';
-    src: url('./montserrat-regular.woff2') format('woff2');
-    font-weight: 400;
-    font-style: normal;
-    font-display: swap;
-}
-
-@font-face {
-    font-family: 'Montserrat';
-    src: url('./montserrat-bold.woff2') format('woff2');
-    font-weight: 700;
-    font-style: normal;
-    font-display: swap;
-}
-
 /* ---- Design Tokens ---- */
 
 :root {
@@ -111,7 +93,7 @@
     --color-bg-results:    rgba(61, 204, 121, 0.08);
 
     /* Typography */
-    --font-family:         'Montserrat', system-ui, -apple-system, sans-serif;
+    --font-family:         system-ui, -apple-system, sans-serif;
     --font-size-sm:        11px;
     --font-size-base:      16px;
     --font-size-lg:        20px;
