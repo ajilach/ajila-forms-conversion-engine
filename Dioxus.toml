@@ -3,7 +3,7 @@ name = "blueprint-app"
 default_platform = "web"
 
 [web.app]
-title = "Blueprint"
+title = "Ajila Forms Conversion Engine"
 
 [web.watcher]
 reload_html = true

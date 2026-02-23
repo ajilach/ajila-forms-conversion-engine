@@ -13,7 +13,11 @@ pub fn FileUploadSection(
             h2 { "Upload PDF Files" }
             p { class: "upload-hint", "Select multiple PDF files in different languages" }
 
+            label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose PDF Files" }
+
             input {
+                id: "file-input",
+                class: "upload-input-hidden",
                 r#type: "file",
                 multiple: true,
                 accept: ".pdf",

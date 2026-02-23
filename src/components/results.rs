@@ -29,7 +29,7 @@ pub fn ResultsSection(state: ProcessingState) -> Element {
                 // Download JSON button
                 if let Some(ref json_data) = state.merged_json {
                     button {
-                        class: "btn btn-success btn-lg",
+                        class: "btn btn-primary btn-lg",
                         onclick: {
                             let json_data = json_data.clone();
                             move |_| {
@@ -47,7 +47,7 @@ pub fn ResultsSection(state: ProcessingState) -> Element {
                 // AEM Package Download button
                 if let Some(ref aem_data) = state.aem_package {
                     button {
-                        class: "btn btn-success btn-lg",
+                        class: "btn btn-primary btn-lg",
                         onclick: {
                             let aem_data = aem_data.clone();
                             move |_| {

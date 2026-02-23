@@ -18,7 +18,7 @@ fn main() {
         dioxus::LaunchBuilder::desktop()
             .with_cfg(
                 dioxus::desktop::Config::new().with_window(
-                    dioxus::desktop::WindowBuilder::new().with_title("Blueprint"),
+                    dioxus::desktop::WindowBuilder::new().with_title("Ajila Forms Conversion Engine"),
                 ),
             )
             .launch(App);
@@ -52,6 +52,17 @@ fn App() -> Element {
     rsx! {
         document::Stylesheet { href: asset!("./assets/styles.css") }
 
+        // App Header
+        header { class: "app-header",
+            img {
+                class: "app-header-logo",
+                src: asset!("./assets/company-logo.webp"),
+                alt: "Company Logo",
+            }
+            h1 { class: "app-header-title", "Forms Conversion Engine" }
+            span { class: "app-header-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
+        }
+
         div { class: "app-container",
 
             // File Upload Section
@@ -83,9 +94,6 @@ fn App() -> Element {
                     on_close: move |_| enlarged_image.set(None),
                 }
             }
-
-            // Version footer
-            footer { class: "app-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
         }
     }
 }

@@ -2,35 +2,116 @@
    Blueprint UI — External Stylesheet
    ========================================== */
 
+/* ---- Fonts ---- */
+
+@font-face {
+    font-family: 'Montserrat';
+    src: url('./montserrat-regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Montserrat';
+    src: url('./montserrat-bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 /* ---- Design Tokens ---- */
 
 :root {
-    /* Colors — Brand */
-    --color-primary:       #007bff;
-    --color-success:       #28a745;
-    --color-danger:        #dc3545;
-    --color-info:          #17a2b8;
-    --color-secondary:     #6c757d;
+    /* Colors — Brand Primary (gold) */
+    --primary:             #dc9e26;
+    --primary100:          #fffffe;
+    --primary200:          #ffffbc;
+    --primary300:          #ffff8a;
+    --primary400:          #ffd058;
+    --primary500:          #dc9e26;
+    --primary600:          #aa6c00;
+    --primary700:          #783a00;
+    --primary800:          #460800;
+    --primary900:          #140000;
 
-    /* Colors — Neutral */
-    --color-white:         #fff;
-    --color-text:          #333;
-    --color-text-muted:    #666;
-    --color-border:        #ddd;
-    --color-border-light:  #ccc;
+    /* Colors — Brand Secondary (navy) */
+    --secondary:           #062544;
+    --secondary100:        #ceedff;
+    --secondary200:        #9cbbda;
+    --secondary300:        #6a89a8;
+    --secondary400:        #385776;
+    --secondary500:        #062544;
+    --secondary600:        #000012;
+    --secondary700:        #000;
+    --secondary800:        #000;
+    --secondary900:        #000;
+
+    /* Colors — Dark scale */
+    --dark:                #000;
+    --dark100:             #505050;
+    --dark200:             #3c3c3c;
+    --dark300:             #282828;
+    --dark400:             #141414;
+    --dark500:             #000;
+    --dark600:             #000;
+    --dark700:             #000;
+    --dark800:             #000;
+    --dark900:             #000;
+
+    /* Colors — Gray scale */
+    --gray:                #7e7e7e;
+    --gray100:             #fff;
+    --gray200:             #fff;
+    --gray300:             #e2e2e2;
+    --gray400:             #b0b0b0;
+    --gray500:             #7e7e7e;
+    --gray600:             #4c4c4c;
+    --gray700:             #1a1a1a;
+    --gray800:             #000;
+    --gray900:             #000;
+
+    /* Colors — Semantic */
+    --success:             #3dcc79;
+    --warning:             #dc9e26;
+    --danger:              #c2185b;
+    --light:               #fff;
+    --lightgray:           #e7e7e7;
+    --base:                #454545;
+    --border-radius:       100px;
+
+    /* Heading colors (inherit by default) */
+    --h1-color:            inherit;
+    --h2-color:            inherit;
+    --h3-color:            inherit;
+    --h4-color:            inherit;
+    --h5-color:            inherit;
+    --h6-color:            inherit;
+
+    /* Mapped color aliases used throughout the stylesheet */
+    --color-primary:       var(--primary);
+    --color-success:       var(--success);
+    --color-danger:        var(--danger);
+    --color-info:          var(--secondary300);
+    --color-secondary:     var(--secondary);
+
+    --color-text:          var(--dark100);
+    --color-text-muted:    var(--gray500);
+    --color-border:        var(--gray300);
+    --color-border-light:  var(--gray400);
     --color-bg-light:      #f5f5f5;
-    --color-bg-neutral:    #e9ecef;
+    --color-bg-neutral:    var(--lightgray);
+    --color-app-bg:        #f8f9fb;
 
-    /* Colors — Semantic backgrounds */
-    --color-bg-success:    #d4edda;
-    --color-bg-info:       #d1ecf1;
-    --color-bg-results:    #e7f4e7;
-    --color-bg-error:      #fee;
-    --color-border-error:  #fcc;
-    --color-text-error:    #c00;
+    /* Semantic state backgrounds / borders */
+    --color-bg-error:      rgba(194, 24, 91, 0.08);
+    --color-border-error:  rgba(194, 24, 91, 0.3);
+    --color-text-error:    var(--danger);
+    --color-bg-success:    rgba(61, 204, 121, 0.12);
+    --color-bg-results:    rgba(61, 204, 121, 0.08);
 
     /* Typography */
-    --font-family:         system-ui, -apple-system, sans-serif;
+    --font-family:         'Montserrat', system-ui, -apple-system, sans-serif;
     --font-size-sm:        11px;
     --font-size-base:      16px;
     --font-size-lg:        20px;
@@ -61,10 +142,59 @@
     --z-modal-close:       1001;
 }
 
+/* ---- Global Reset ---- */
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-family);
+    background-color: var(--color-app-bg);
+    color: var(--color-text);
+}
+
+/* ---- App Header ---- */
+
+.app-header {
+    background-color: var(--secondary);
+    padding: 0 var(--space-xl);
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    min-height: 64px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.app-header-logo {
+    height: 40px;
+    width: auto;
+    flex-shrink: 0;
+}
+
+.app-header-title {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 35px;
+    color: var(--light);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.app-header-version {
+    margin-left: auto;
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    color: var(--secondary300);
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
 /* ---- App Layout ---- */
 
 .app-container {
-    padding: var(--space-lg);
+    padding: var(--space-lg) var(--space-xl);
     font-family: var(--font-family);
     max-width: var(--max-width-app);
     margin: 0 auto;
@@ -76,19 +206,25 @@
     border: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    color: var(--color-white);
+    color: var(--light);
 }
 
 .btn-primary {
-    background-color: var(--color-primary);
+    background-color: var(--primary);
+    color: var(--secondary);
+    font-weight: 700;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary400);
 }
 
 .btn-success {
-    background-color: var(--color-success);
+    background-color: var(--success);
 }
 
 .btn-danger {
-    background-color: var(--color-danger);
+    background-color: var(--danger);
 }
 
 .btn-sm {
@@ -104,10 +240,16 @@
 /* ---- File Upload ---- */
 
 .upload-dropzone {
-    border: 2px dashed var(--color-border-light);
+    border: 2px dashed var(--secondary300);
     padding: var(--space-xl);
     margin-bottom: var(--space-lg);
     border-radius: var(--radius-md);
+    background-color: var(--light);
+    transition: border-color var(--transition-fast);
+}
+
+.upload-input-hidden {
+    display: none;
 }
 
 .upload-hint {
@@ -136,7 +278,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: var(--space-sm);
-    background-color: var(--color-white);
+    background-color: var(--light);
     width: 150px;
     max-width: 150px;
     flex-shrink: 0;
@@ -186,7 +328,7 @@
     position: relative;
     max-width: 95vw;
     max-height: 95vh;
-    background-color: var(--color-white);
+    background-color: var(--light);
     border-radius: var(--radius-md);
     padding: var(--space-lg);
     box-shadow: var(--shadow-modal);
@@ -196,8 +338,8 @@
     position: absolute;
     top: var(--space-sm);
     right: var(--space-sm);
-    background-color: var(--color-danger);
-    color: var(--color-white);
+    background-color: var(--danger);
+    color: var(--light);
     border: none;
     border-radius: var(--radius-round);
     width: 32px;
@@ -258,18 +400,18 @@
 
 .step-complete {
     background-color: var(--color-bg-success);
-    border-left: 4px solid var(--color-success);
+    border-left: 4px solid var(--success);
 }
 
 .step-current {
-    background-color: var(--color-bg-info);
-    border-left: 4px solid var(--color-info);
+    background-color: var(--secondary100);
+    border-left: 4px solid var(--secondary);
     font-weight: bold;
 }
 
 .step-pending {
     background-color: var(--color-bg-neutral);
-    border-left: 4px solid var(--color-secondary);
+    border-left: 4px solid var(--gray400);
     color: var(--color-text-muted);
 }
 
@@ -293,12 +435,3 @@
     flex-wrap: wrap;
 }
 
-/* ---- Version footer ---- */
-
-.app-version {
-    margin-top: var(--space-xl);
-    text-align: center;
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-    opacity: 0.6;
-}
