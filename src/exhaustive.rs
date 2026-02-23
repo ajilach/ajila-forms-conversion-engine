@@ -29,7 +29,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::flattened::Flattened;
+use crate::flattened::{Flattened, FlattenedKey};
 use crate::structured::{FieldId, Selection, SelectionKind};
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
@@ -129,6 +129,8 @@ pub struct CollectedState {
     pub selections: Vec<Selection>,
     /// State suffix / human-readable label for this state
     pub label: String,
+    /// Complete field actions for dedup bookkeeping (not used outside exhaustive)
+    field_actions: Vec<Option<FieldAction>>,
 }
 
 // ============================================================================
@@ -228,24 +230,7 @@ fn collect_states_linear(
         }
 
         // Generate a human-readable label based on selections
-        let label = if exploration_state.selections.is_empty() {
-            "default".to_string()
-        } else {
-            exploration_state
-                .selections
-                .iter()
-                .map(|sel| match sel.kind {
-                    SelectionKind::Radio => sel.som_path.name().to_string(),
-                    SelectionKind::Checkbox => {
-                        format!("{}_{}", sel.som_path.name(), sel.value)
-                    }
-                    SelectionKind::Dropdown => {
-                        format!("{}_{}", sel.som_path.name(), sel.value)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("_")
-        };
+        let label = generate_label(&exploration_state.selections);
 
         // Get flattened data for this state (but don't analyze yet)
         let flattened = form.flattened().clone();
@@ -255,6 +240,7 @@ fn collect_states_linear(
             flattened,
             selections: exploration_state.selections.clone(),
             label,
+            field_actions: exploration_state.field_actions.clone(),
         });
 
         return Ok(());
@@ -344,30 +330,41 @@ fn collect_states_linear(
     Ok(())
 }
 
-/// Spawn an exploration branch in a new thread.
+// ============================================================================
+// Branch preparation (Phase A)
+// ============================================================================
+
+/// A prepared branch: the result of applying a mutation and refreshing the form,
+/// before any further recursive exploration.
 ///
-/// This is the shared helper used by `explore_radio`, `explore_checkbox`,
-/// and `explore_dropdown`. It:
-/// 1. Clones the base XFA nodes and creates a fresh form
-/// 2. Replays all accumulated selections
-/// 3. Calls the provided `setup` closure to apply the branch-specific mutation
-///    and update the exploration state
-/// 4. Refreshes the form and recurses via `collect_states_linear`
-///
-/// Returns the `JoinHandle` for the spawned thread.
-fn spawn_exploration(
+/// Stores the post-refresh XFA node snapshot (which is `Send`) instead of the
+/// full `XfaForm` (which contains a Boa JS engine and is not `Send`).
+/// The `XfaForm` is recreated from the snapshot only for the representative
+/// branch during Phase B recursion.
+struct PreparedBranch {
+    /// Structural key of the flattened layout after refresh — used for deduplication.
+    /// Captures position, dimensions, text content, and field names/labels while
+    /// excluding field values and checked state.
+    flattened_key: Vec<FlattenedKey>,
+    /// The exploration state at this point (selections, field_actions, etc.)
+    state: ExplorationState,
+}
+
+/// Spawn a thread that creates a fresh form, replays previous selections,
+/// applies a branch-specific mutation via `setup`, refreshes the form, and
+/// returns the prepared branch (XFA snapshot + state + hash) instead of
+/// immediately recursing.
+fn spawn_branch(
     base_nodes: Arc<Vec<XfaNode>>,
-    mut state: ExplorationState,
-    global_field_order: Vec<SelectableField>,
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    state: ExplorationState,
     setup: impl FnOnce(&mut XfaForm, &mut ExplorationState) + Send + 'static,
-) -> thread::JoinHandle<Result<(), crate::Error>> {
-    thread::spawn(move || -> Result<(), crate::Error> {
+) -> thread::JoinHandle<Result<PreparedBranch, crate::Error>> {
+    thread::spawn(move || -> Result<PreparedBranch, crate::Error> {
         let nodes_reset = base_nodes.as_ref().clone();
         let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+        let mut state = state;
 
-        // Apply all current selections
+        // Replay all current selections
         for sel in &state.selections {
             apply_selection(&mut new_form, sel);
         }
@@ -377,19 +374,254 @@ fn spawn_exploration(
 
         new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-        collect_states_linear(
-            &mut new_form,
+        // Build a structural key from the flattened layout for deduplication.
+        // This captures JS-driven label/presence changes that only appear
+        // after reflattening, while ignoring field values and checked state.
+        let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+
+        Ok(PreparedBranch {
+            flattened_key,
             state,
-            &global_field_order,
-            rendered_states,
-            collected_states,
-            base_nodes,
-        )
+        })
     })
+}
+// ============================================================================
+// Dedup-aware exploration (Phase B)
+// ============================================================================
+
+/// Recreate an `XfaForm` from the cached base nodes and replay the given
+/// selections so that the form is in the correct state for further exploration.
+fn recreate_form(
+    base_nodes: &[XfaNode],
+    selections: &[Selection],
+) -> Result<XfaForm, crate::Error> {
+    let nodes = base_nodes.to_vec();
+    let mut form = XfaForm::new(nodes).map_err(crate::Error::FormCreation)?;
+    for sel in selections {
+        apply_selection(&mut form, sel);
+    }
+    form.refresh().map_err(crate::Error::FormCreation)?;
+    Ok(form)
+}
+
+/// Given a set of prepared branches, group them by identical XFA state
+/// (using hash + PartialEq), then recurse only once per unique state.
+/// The collected states from the representative are cloned for each duplicate
+/// with the duplicate's own selection/field-actions patched in.
+fn explore_with_dedup(
+    branches: Vec<PreparedBranch>,
+    global_field_order: &[SelectableField],
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+    base_nodes: Arc<Vec<XfaNode>>,
+) -> Result<(), crate::Error> {
+    // Group branches by xfa_hash, then verify equality with PartialEq.
+    // Each group is a vec of branches that are truly identical in XFA state.
+    let groups = group_branches_by_flattened_state(branches);
+
+    for mut group in groups {
+        if group.len() == 1 {
+            // No duplicates — just recurse directly.
+            // Recreate form from base_nodes and replay selections.
+            let branch = group.remove(0);
+            let mut form = recreate_form(&base_nodes, &branch.state.selections)?;
+            collect_states_linear(
+                &mut form,
+                branch.state,
+                global_field_order,
+                rendered_states.clone(),
+                collected_states.clone(),
+                base_nodes.clone(),
+            )?;
+        } else {
+            // Pop the representative (first element) by value.
+            let representative = group.remove(0);
+            // The rest are duplicates.
+            let duplicates = group; // Vec<PreparedBranch>, consumed by value
+
+            // Record the current number of collected states so we know which
+            // new states were produced by the representative's recursion.
+            let before_len = collected_states.lock().unwrap().len();
+
+            let rep_state = representative.state;
+            let mut form = recreate_form(&base_nodes, &rep_state.selections)?;
+
+            collect_states_linear(
+                &mut form,
+                rep_state.clone(),
+                global_field_order,
+                rendered_states.clone(),
+                collected_states.clone(),
+                base_nodes.clone(),
+            )?;
+
+            // Determine which new states were added by the representative.
+            let locked = collected_states.lock().unwrap();
+            let new_states: Vec<CollectedState> = locked[before_len..].to_vec();
+            drop(locked);
+
+            // For each duplicate, clone the representative's results with
+            // the duplicate's selections/field_actions patched in at the
+            // current branching depth.
+            for dup in &duplicates {
+                let dup_state = &dup.state;
+                for rep_collected in &new_states {
+                    let mut cloned = rep_collected.clone();
+
+                    // Patch selections: replace the selection that differs.
+                    patch_selections(
+                        &mut cloned.selections,
+                        &rep_state.selections,
+                        &dup_state.selections,
+                    );
+
+                    // Regenerate the label from the patched selections
+                    cloned.label = generate_label(&cloned.selections);
+
+                    // Compute the proper state key for this duplicate and
+                    // also update the stored field_actions on the clone.
+                    let dup_key = compute_state_key(
+                        rep_collected,
+                        dup_state,
+                    );
+                    cloned.field_actions = dup_key.clone();
+                    {
+                        let mut states = rendered_states.lock().unwrap();
+                        if states.contains(&dup_key) {
+                            continue;
+                        }
+                        states.insert(dup_key);
+                    }
+
+                    collected_states.lock().unwrap().push(cloned);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Group prepared branches by identical flattened layout.
+///
+/// Uses `FlattenedKey` (which derives `Eq + Hash`) for grouping.
+/// Branches whose flattened output has the same structure (positions,
+/// text content, field names/labels) but differ only in field values
+/// are placed in the same group.
+fn group_branches_by_flattened_state(
+    branches: Vec<PreparedBranch>,
+) -> Vec<Vec<PreparedBranch>> {
+    use std::collections::HashMap;
+
+    let mut key_to_group: HashMap<Vec<FlattenedKey>, Vec<usize>> = HashMap::new();
+    for (i, branch) in branches.iter().enumerate() {
+        key_to_group
+            .entry(branch.flattened_key.clone())
+            .or_default()
+            .push(i);
+    }
+
+    // Convert index groups → branch groups (consuming the vec)
+    let mut branches: Vec<Option<PreparedBranch>> = branches.into_iter().map(Some).collect();
+    let mut groups: Vec<Vec<PreparedBranch>> = Vec::new();
+    for (_key, indices) in key_to_group {
+        let mut group = Vec::with_capacity(indices.len());
+        for i in indices {
+            if let Some(b) = branches[i].take() {
+                group.push(b);
+            }
+        }
+        groups.push(group);
+    }
+
+    groups
+}
+
+/// Patch the selections of a cloned collected state: replace the
+/// representative's branching selection(s) with the duplicate's.
+///
+/// The representative and duplicate share a common prefix of selections
+/// (from replay of previous choices). The divergence starts where the
+/// duplicate's selections list differs from the representative's.
+fn patch_selections(
+    target: &mut Vec<Selection>,
+    rep_selections: &[Selection],
+    dup_selections: &[Selection],
+) {
+    // The branching selections are those present in rep_selections / dup_selections
+    // that differ. They appear at the same indices in target.
+    //
+    // rep_selections and dup_selections have the same length (same branching depth).
+    // Everything before the divergence point is identical.
+    // At the divergence point, we replace the representative's selection with the
+    // duplicate's.
+    debug_assert_eq!(rep_selections.len(), dup_selections.len());
+
+    for i in 0..rep_selections.len() {
+        if rep_selections[i].som_path != dup_selections[i].som_path
+            || rep_selections[i].value != dup_selections[i].value
+        {
+            // This is a divergence — replace in target.
+            // In `target`, find the selection matching rep_selections[i] and swap it.
+            for sel in target.iter_mut() {
+                if sel.som_path == rep_selections[i].som_path
+                    && sel.value == rep_selections[i].value
+                    && sel.kind == rep_selections[i].kind
+                {
+                    *sel = dup_selections[i].clone();
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Compute a state key for a duplicate by taking the representative's
+/// collected state's complete field_actions and patching in the
+/// duplicate's branching field actions.
+fn compute_state_key(
+    rep_collected: &CollectedState,
+    dup_state: &ExplorationState,
+) -> Vec<Option<FieldAction>> {
+    // Start from the representative's complete field_actions (captured
+    // when the state was collected) and patch in the duplicate's
+    // branching field actions (which differ at the current branch point).
+    let mut key = rep_collected.field_actions.clone();
+
+    // Overwrite with the duplicate's actions at positions where they
+    // are filled in (i.e., the branching prefix).
+    for i in 0..dup_state.field_actions.len() {
+        if let Some(action) = &dup_state.field_actions[i] {
+            key[i] = Some(action.clone());
+        }
+    }
+
+    key
+}
+
+/// Generate a human-readable label from a list of selections.
+fn generate_label(selections: &[Selection]) -> String {
+    if selections.is_empty() {
+        "default".to_string()
+    } else {
+        selections
+            .iter()
+            .map(|sel| match sel.kind {
+                SelectionKind::Radio => sel.som_path.name().to_string(),
+                SelectionKind::Checkbox => {
+                    format!("{}_{}", sel.som_path.name(), sel.value)
+                }
+                SelectionKind::Dropdown => {
+                    format!("{}_{}", sel.som_path.name(), sel.value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("_")
+    }
 }
 
 /// Explore all options of a radio button group.
-/// Spawns one thread per radio option in the exclGroup.
+/// Phase A: prepares one branch per radio option. Phase B: dedup + recurse.
 fn explore_radio(
     form: &mut XfaForm,
     exploration_state: ExplorationState,
@@ -412,20 +644,14 @@ fn explore_radio(
             .cloned()
             .collect();
 
+        // Phase A: spawn branch-preparation threads
         let mut handles = Vec::new();
-
-        // Try selecting each radio button in the group
         for radio_field in group_fields {
-            let global_order_clone = global_field_order.to_vec();
-            let global_order_for_closure = global_order_clone.clone();
-            let new_state = exploration_state.clone();
+            let global_order_for_closure = global_field_order.to_vec();
 
-            let handle = spawn_exploration(
+            let handle = spawn_branch(
                 base_nodes.clone(),
-                new_state,
-                global_order_clone,
-                rendered_states.clone(),
-                collected_states.clone(),
+                exploration_state.clone(),
                 move |new_form, state| {
                     // Select the radio button
                     let _ = new_form.select_radio_button(radio_field.path.as_str());
@@ -467,17 +693,27 @@ fn explore_radio(
             handles.push(handle);
         }
 
-        // Wait for all threads
+        // Collect prepared branches
+        let mut branches = Vec::new();
         for handle in handles {
-            handle.join().unwrap()?;
+            branches.push(handle.join().unwrap()?);
         }
+
+        // Phase B: group by identical XFA state and recurse
+        explore_with_dedup(
+            branches,
+            global_field_order,
+            rendered_states,
+            collected_states,
+            base_nodes,
+        )?;
     }
 
     Ok(())
 }
 
 /// Explore both checked and unchecked states of a checkbox.
-/// Spawns two threads: one for checked (value="1"), one for unchecked (value="0").
+/// Phase A: prepares two branches (checked/unchecked). Phase B: dedup + recurse.
 fn explore_checkbox(
     exploration_state: ExplorationState,
     field_index: usize,
@@ -488,19 +724,17 @@ fn explore_checkbox(
     base_nodes: Arc<Vec<XfaNode>>,
 ) -> Result<(), crate::Error> {
     let checkbox_values = [("1", "checked"), ("0", "unchecked")];
-    let mut handles = Vec::new();
 
+    // Phase A: spawn branch-preparation threads
+    let mut handles = Vec::new();
     for (raw_value, label) in checkbox_values {
         let field = field.clone();
         let raw_value = raw_value.to_string();
         let label = label.to_string();
 
-        let handle = spawn_exploration(
+        let handle = spawn_branch(
             base_nodes.clone(),
             exploration_state.clone(),
-            global_field_order.to_vec(),
-            rendered_states.clone(),
-            collected_states.clone(),
             move |new_form, state| {
                 // Set the checkbox value and fire change event
                 let _ = new_form.set_value_as_user(field.path.as_str(), &raw_value);
@@ -518,16 +752,26 @@ fn explore_checkbox(
         handles.push(handle);
     }
 
-    // Wait for all threads
+    // Collect prepared branches
+    let mut branches = Vec::new();
     for handle in handles {
-        handle.join().unwrap()?;
+        branches.push(handle.join().unwrap()?);
     }
+
+    // Phase B: group by identical XFA state and recurse
+    explore_with_dedup(
+        branches,
+        global_field_order,
+        rendered_states,
+        collected_states,
+        base_nodes,
+    )?;
 
     Ok(())
 }
 
 /// Explore all options of a dropdown field.
-/// Spawns one thread per dropdown option.
+/// Phase A: prepares one branch per option. Phase B: dedup + recurse.
 fn explore_dropdown(
     exploration_state: ExplorationState,
     field_index: usize,
@@ -538,19 +782,16 @@ fn explore_dropdown(
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
     base_nodes: Arc<Vec<XfaNode>>,
 ) -> Result<(), crate::Error> {
+    // Phase A: spawn branch-preparation threads
     let mut handles = Vec::new();
-
     for (display_value, save_value) in options {
         let field = field.clone();
         let save_value = save_value.clone();
         let display_value = display_value.clone();
 
-        let handle = spawn_exploration(
+        let handle = spawn_branch(
             base_nodes.clone(),
             exploration_state.clone(),
-            global_field_order.to_vec(),
-            rendered_states.clone(),
-            collected_states.clone(),
             move |new_form, state| {
                 // Set the dropdown value and fire change event
                 let _ = new_form.set_value_as_user(field.path.as_str(), &save_value);
@@ -568,10 +809,20 @@ fn explore_dropdown(
         handles.push(handle);
     }
 
-    // Wait for all threads
+    // Collect prepared branches
+    let mut branches = Vec::new();
     for handle in handles {
-        handle.join().unwrap()?;
+        branches.push(handle.join().unwrap()?);
     }
+
+    // Phase B: group by identical XFA state and recurse
+    explore_with_dedup(
+        branches,
+        global_field_order,
+        rendered_states,
+        collected_states,
+        base_nodes,
+    )?;
 
     Ok(())
 }

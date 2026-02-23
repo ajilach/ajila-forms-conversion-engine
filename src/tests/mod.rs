@@ -9674,3 +9674,257 @@
         assert_has("Firma", &["Name des Vertretungsberechtigten"]);
         assert_has("GbR", &["Name des Vertretungsberechtigten"]);
     }
+
+    // ========================================================================
+    // Flattened dedup key tests
+    // ========================================================================
+
+    #[test]
+    fn test_flattened_key_ignores_field_values() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle};
+        use crate::xfa::num;
+
+        let make_node = |value: &str| FlattenedNode {
+            kind: FlattenedNodeKind::Field {
+                name: "myField".to_string(),
+                value: value.to_string(),
+                label: "My Label".to_string(),
+                is_checked: None,
+            },
+            x: num(10.0),
+            y: num(20.0),
+            width: num(100.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+        };
+
+        let key_a = FlattenedKey::from_node(&make_node("value_a"));
+        let key_b = FlattenedKey::from_node(&make_node("value_b"));
+        assert_eq!(key_a, key_b, "Nodes differing only in field value should have equal keys");
+    }
+
+    #[test]
+    fn test_flattened_key_ignores_checked_state() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle};
+        use crate::xfa::num;
+
+        let make_node = |checked: Option<bool>| FlattenedNode {
+            kind: FlattenedNodeKind::Field {
+                name: "cb".to_string(),
+                value: "1".to_string(),
+                label: "Checkbox".to_string(),
+                is_checked: checked,
+            },
+            x: num(10.0),
+            y: num(20.0),
+            width: num(50.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+        };
+
+        let key_checked = FlattenedKey::from_node(&make_node(Some(true)));
+        let key_unchecked = FlattenedKey::from_node(&make_node(Some(false)));
+        assert_eq!(key_checked, key_unchecked, "Nodes differing only in checked state should have equal keys");
+    }
+
+    #[test]
+    fn test_flattened_key_different_labels() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle};
+        use crate::xfa::num;
+
+        let make_node = |label: &str| FlattenedNode {
+            kind: FlattenedNodeKind::Field {
+                name: "field".to_string(),
+                value: "".to_string(),
+                label: label.to_string(),
+                is_checked: None,
+            },
+            x: num(10.0),
+            y: num(20.0),
+            width: num(100.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+        };
+
+        let key_a = FlattenedKey::from_node(&make_node("Label A"));
+        let key_b = FlattenedKey::from_node(&make_node("Label B"));
+        assert_ne!(key_a, key_b, "Nodes with different labels should have different keys");
+    }
+
+    #[test]
+    fn test_flattened_key_different_text_content() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle};
+        use crate::xfa::num;
+
+        let make_node = |text: &str| FlattenedNode {
+            kind: FlattenedNodeKind::Text {
+                content: text.to_string(),
+                font_size: num(10.0),
+                font_name: "Arial".to_string(),
+                source_name: None,
+            },
+            x: num(10.0),
+            y: num(20.0),
+            width: num(100.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+        };
+
+        let key_a = FlattenedKey::from_node(&make_node("Hello"));
+        let key_b = FlattenedKey::from_node(&make_node("World"));
+        assert_ne!(key_a, key_b, "Text nodes with different content should have different keys");
+    }
+
+    #[test]
+    fn test_flattened_key_hashing() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle, Flattened, FlattenedKind, Page};
+        use crate::xfa::num;
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let make_flattened = |value: &str| {
+            Flattened {
+                page: Page { width: num(210.0), height: num(297.0) },
+                children: vec![FlattenedKind::Node(FlattenedNode {
+                    kind: FlattenedNodeKind::Field {
+                        name: "f".to_string(),
+                        value: value.to_string(),
+                        label: "Label".to_string(),
+                        is_checked: None,
+                    },
+                    x: num(10.0),
+                    y: num(20.0),
+                    width: num(100.0),
+                    height: num(25.0),
+                    rotate: 0,
+                    style: RenderStyle::default(),
+                    hints: vec![],
+                })],
+            }
+        };
+
+        let hash_key = |key: &[FlattenedKey]| {
+            let mut hasher = DefaultHasher::new();
+            key.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        // Same structure, different field values → same key → same hash
+        let k1 = FlattenedKey::from_flattened(&make_flattened("hello"));
+        let k2 = FlattenedKey::from_flattened(&make_flattened("world"));
+        assert_eq!(k1, k2, "Keys should be equal for structurally identical layouts");
+        assert_eq!(hash_key(&k1), hash_key(&k2), "Hashes should match for equal keys");
+    }
+
+    #[test]
+    fn test_flattened_key_different_position() {
+        use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle};
+        use crate::xfa::num;
+
+        let make_node = |x: f64| FlattenedNode {
+            kind: FlattenedNodeKind::Field {
+                name: "f".to_string(),
+                value: "".to_string(),
+                label: "L".to_string(),
+                is_checked: None,
+            },
+            x: num(x),
+            y: num(20.0),
+            width: num(100.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+        };
+
+        let key_a = FlattenedKey::from_node(&make_node(10.0));
+        let key_b = FlattenedKey::from_node(&make_node(50.0));
+        assert_ne!(key_a, key_b, "Nodes at different positions should have different keys");
+    }
+
+    #[test]
+    fn test_aaab_exhaustive_produces_expected_states() {
+        // The AAAB form has:
+        // - 1 radio group at top level with 3 options (RB_1, RB_2, RB_3)
+        // - when RB_3 is selected: 1 checkbox + 1 nested radio group with 4 options
+        //
+        // Expected states:
+        //   RB_1                                → 1
+        //   RB_2                                → 1
+        //   RB_3 × CB_checked × RB_{1,2,3,4}   → 4
+        //   RB_3 × CB_unchecked × RB_{1,2,3,4} → 4
+        //                                Total: 10
+        let mut bp = Blueprint::from_pdf("input/AAAB_019_DE.pdf")
+            .expect("Failed to create Blueprint from AAAB PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        let mut labels: Vec<String> = form_states.iter().map(|s| s.label.clone()).collect();
+        labels.sort();
+
+        assert_eq!(
+            form_states.len(),
+            10,
+            "AAAB should produce 10 exhaustive states, got {}: {:?}",
+            form_states.len(),
+            labels
+        );
+
+        // Verify all expected labels are present
+        let expected_labels = vec![
+            "RB_1",
+            "RB_2",
+            "RB_3_CB_Daily_Statement_checked_RB_1",
+            "RB_3_CB_Daily_Statement_checked_RB_2",
+            "RB_3_CB_Daily_Statement_checked_RB_3",
+            "RB_3_CB_Daily_Statement_checked_RB_4",
+            "RB_3_CB_Daily_Statement_unchecked_RB_1",
+            "RB_3_CB_Daily_Statement_unchecked_RB_2",
+            "RB_3_CB_Daily_Statement_unchecked_RB_3",
+            "RB_3_CB_Daily_Statement_unchecked_RB_4",
+        ];
+
+        for expected in &expected_labels {
+            assert!(
+                labels.contains(&expected.to_string()),
+                "Missing expected label '{}' from exhaustive states. Got: {:?}",
+                expected,
+                labels
+            );
+        }
+    }
+
+    #[test]
+    fn test_acav_exhaustive_dedup_reduces_states() {
+        // ACAV has multiple radio groups/checkboxes. Without dedup the
+        // exhaustive search would produce 2×2×2×2×2×2×2 = 128 states (for
+        // 7 binary branching points). With structural dedup, many of those
+        // are recognized as identical and collapsed.
+        //
+        // The remaining 8 unique structural states come from 3 branching
+        // points that genuinely change the XFA structure (presence/layout):
+        //   - RB_Partial_Payment_Of_CHF vs RB_Total_Amount (2)
+        //   - CB_Trasfer_To_New_UBS_Rental checked vs unchecked (2)
+        //   - RB_Transfer_Modification Lessee vs Lessor (2)
+        //                                                      Total: 2×2×2 = 8
+        let mut bp = Blueprint::from_pdf("input/ACAV_001_DE.pdf")
+            .expect("Failed to create Blueprint from ACAV PDF");
+        let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+        let labels: Vec<String> = form_states.iter().map(|s| s.label.clone()).collect();
+
+        assert_eq!(
+            form_states.len(),
+            8,
+            "ACAV should produce 8 exhaustive states after dedup, got {}: {:?}",
+            form_states.len(),
+            labels
+        );
+    }

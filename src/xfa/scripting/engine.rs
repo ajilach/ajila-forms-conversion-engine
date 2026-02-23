@@ -2170,6 +2170,8 @@ _xfa_tmp_im_.removeInstance = function() {};
             .insert(path.clone(), presence.to_string());
     }
 
+    /// Get all non-empty caption values from field JS objects.
+    ///
     /// Get all subforms where `setInstances(N)` was called with N > 1.
     ///
     /// Returns a list of `(subform_som_path, instance_count,

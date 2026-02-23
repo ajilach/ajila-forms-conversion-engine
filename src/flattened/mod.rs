@@ -172,6 +172,81 @@ pub struct Page {
     pub height: Num,
 }
 
+// ============================================================================
+// Lightweight structural key for deduplication
+// ============================================================================
+
+/// A lightweight structural key for a flattened form layout.
+///
+/// Built from the already-computed `Flattened` output (after `XfaForm::refresh()`),
+/// this captures position, dimensions, text content, and field names/labels while
+/// **excluding** field values and checked state (which change with user interaction
+/// but don't affect the form's visual structure).
+///
+/// Because flattening incorporates JS-driven changes (e.g. scripts setting
+/// `this.caption.value` or toggling visibility), a `FlattenedKey` correctly
+/// distinguishes states that look identical at the XFA node level but produce
+/// different visual output.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FlattenedKey {
+    kind: FlattenedKeyKind,
+    x: Num,
+    y: Num,
+    width: Num,
+    height: Num,
+    rotate: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum FlattenedKeyKind {
+    Text {
+        content: String,
+        font_name: String,
+        font_size: Num,
+    },
+    Field {
+        name: String,
+        label: String,
+        // `value` and `is_checked` are intentionally excluded
+    },
+}
+
+impl FlattenedKey {
+    /// Build a structural key from a single flattened node.
+    pub fn from_node(node: &FlattenedNode) -> Self {
+        let kind = match &node.kind {
+            FlattenedNodeKind::Text { content, font_name, font_size, .. } => {
+                FlattenedKeyKind::Text {
+                    content: content.clone(),
+                    font_name: font_name.clone(),
+                    font_size: *font_size,
+                }
+            }
+            FlattenedNodeKind::Field { name, label, .. } => {
+                FlattenedKeyKind::Field {
+                    name: name.clone(),
+                    label: label.clone(),
+                }
+            }
+        };
+        FlattenedKey {
+            kind,
+            x: node.x,
+            y: node.y,
+            width: node.width,
+            height: node.height,
+            rotate: node.rotate,
+        }
+    }
+
+    /// Build a vec of structural keys from a `Flattened` layout.
+    ///
+    /// Iterates all leaf nodes depth-first, producing one key per node.
+    pub fn from_flattened(flattened: &Flattened) -> Vec<Self> {
+        flattened.iter_nodes().map(Self::from_node).collect()
+    }
+}
+
 /// Rendering style information
 #[derive(Debug, Clone, Default)]
 pub struct RenderStyle {

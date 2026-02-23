@@ -71,7 +71,7 @@ impl FromStr for JoinStyle {
 }
 
 /// Border edge properties
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Edge {
     pub thickness: Option<Num>,
     pub stroke: StrokeStyle,
@@ -80,7 +80,7 @@ pub struct Edge {
 }
 
 /// Border corner properties
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Corner {
     pub thickness: Option<Num>,
     pub join: JoinStyle,
@@ -91,7 +91,7 @@ pub struct Corner {
 /// Border properties
 /// Per XFA spec: border has up to 4 edges (top, right, bottom, left) and 4 corners (top-left, top-right, bottom-right, bottom-left)
 /// If fewer than 4 are specified, the last one is reused
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Border {
     pub edges: Vec<Edge>,
     pub corners: Vec<Corner>,
@@ -131,7 +131,7 @@ impl Border {
 }
 
 /// Fill properties for backgrounds
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Fill {
     pub color: Option<(u8, u8, u8)>,
     pub presence: String,
@@ -184,7 +184,7 @@ impl GenericFamily {
 
 /// Font properties
 /// Per XFA spec section 17 (Template Reference - font element)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Font {
     pub typeface: String,
     pub size: Num,
@@ -366,7 +366,7 @@ impl FromStr for FontPosture {
 }
 
 /// Paragraph properties for text alignment and spacing
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Para {
     pub h_align: HAlign,
     pub v_align: VAlign,
@@ -545,7 +545,7 @@ pub struct XfaNode {
 }
 
 /// Enum representing the specific kind/type of XFA node
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum XfaNodeKind {
     /// Template node (root of form template)
     Template,
