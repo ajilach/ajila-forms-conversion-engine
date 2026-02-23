@@ -82,5 +82,6 @@ jobs:
           git push origin v${{ steps.bump.outputs.new_version }}
 
       - name: Trigger release workflow
-        run: |
-          echo "Release workflow will be triggered automatically by the new tag"
+        run: gh workflow run release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
