@@ -14,13 +14,13 @@ pub fn run_blueprint_pipeline(
     use blueprint::{Blueprint, HtmlConfig, AemConfig, MergeInput, RecursiveMerger};
 
     let mut state = ProcessingState::new();
-    let mut all_envelopes = Vec::new();
 
+    // ── Phase 1: Parsing all files ──────────────────────────────────
+    state.step = ProcessingStep::Parsing;
+    on_progress(&state);
+
+    let mut parsed = Vec::new();
     for (filename, bytes) in files {
-        // Parsing
-        state.step = ProcessingStep::Parsing;
-        on_progress(&state);
-
         let mut bp = match Blueprint::from_pdf_bytes(bytes) {
             Ok(bp) => bp,
             Err(e) => {
@@ -32,25 +32,31 @@ pub fn run_blueprint_pipeline(
 
         let language = bp.language().to_string();
 
-        // Exhaustive Searching
-        state.step = ProcessingStep::ExhaustiveSearching;
-        on_progress(&state);
-
+        // Exhaustive Searching is tightly coupled to parsing, so we
+        // do it here but only advance the UI step once *all* files
+        // have been parsed.
         let form_states = match bp.states() {
             Ok(s) => s,
             Err(e) => {
-                state.error = Some(format!("Failed to explore states: {e}"));
+                state.error = Some(format!("Failed to explore states for {filename}: {e}"));
                 on_progress(&state);
                 return state;
             }
         };
 
         let context = bp.context();
+        parsed.push((language, form_states, context));
+    }
 
-        // Flattening – render plain images
-        state.step = ProcessingStep::Flattening;
-        on_progress(&state);
+    // ── Phase 2: Exhaustive Searching (completed during parsing) ────
+    state.step = ProcessingStep::ExhaustiveSearching;
+    on_progress(&state);
 
+    // ── Phase 3: Flattening – render plain images for all files ─────
+    state.step = ProcessingStep::Flattening;
+    on_progress(&state);
+
+    for (language, form_states, _) in &parsed {
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let state_name = format!("{language}_{state_idx}");
             if let Ok(img) = form_state.render_plain(1.5) {
@@ -60,12 +66,15 @@ pub fn run_blueprint_pipeline(
                 }
             }
         }
-        on_progress(&state);
+    }
+    on_progress(&state);
 
-        // Structuring – render labelled images & extract structured data
-        state.step = ProcessingStep::Structuring;
-        on_progress(&state);
+    // ── Phase 4: Structuring – labelled images & structured data ────
+    state.step = ProcessingStep::Structuring;
+    on_progress(&state);
 
+    let mut all_envelopes = Vec::new();
+    for (language, form_states, context) in &parsed {
         let mut structured_outputs = Vec::new();
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let state_name = format!("{language}_{state_idx}");
@@ -78,7 +87,6 @@ pub fn run_blueprint_pipeline(
             let envelope = form_state.structured(context.clone());
             structured_outputs.push((form_state.selections.clone(), envelope.content));
         }
-        on_progress(&state);
 
         // Merge exhaustive states for this document
         if !structured_outputs.is_empty() {
@@ -97,8 +105,9 @@ pub fn run_blueprint_pipeline(
             all_envelopes.push(merged_envelope);
         }
     }
+    on_progress(&state);
 
-    // Merging
+    // ── Phase 5: Merging ────────────────────────────────────────────
     state.step = ProcessingStep::Merging;
     on_progress(&state);
 
