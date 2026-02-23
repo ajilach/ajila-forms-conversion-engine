@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., 0.2.0)'
-        required: true
-        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,14 +28,12 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.BLUEPRINT_DEPLOY_KEY }}
 
-      - name: Get version
+      - name: Get version from Cargo.toml
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          fi
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version from Cargo.toml: $VERSION"
 
       - name: Create Release
         id: create_release
@@ -112,12 +104,6 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Update version in Cargo.toml
-        run: |
-          sed -i.bak 's/^version = ".*"/version = "${{ needs.create-release.outputs.version }}"/' Cargo.toml
-          rm -f Cargo.toml.bak
-        shell: bash
 
       - name: Build with Dioxus CLI
         run: |
@@ -197,10 +183,6 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.BLUEPRINT_DEPLOY_KEY }}
-
-      - name: Update version in Cargo.toml
-        run: |
-          sed -i 's/^version = ".*"/version = "${{ needs.create-release.outputs.version }}"/' Cargo.toml
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
