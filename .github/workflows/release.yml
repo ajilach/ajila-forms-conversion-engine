@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ "master" ]
   workflow_dispatch:
 
 env:
@@ -14,27 +13,84 @@ permissions:
   packages: write
 
 jobs:
-  create-release:
-    name: Create Release
+  check-version:
+    name: Check for version change
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+
+      - name: Compare Cargo.toml version to latest release
+        id: check
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Cargo.toml version: $VERSION"
+
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -1 || true)
+          echo "Latest release tag: $LATEST_TAG"
+
+          if [ "v$VERSION" != "$LATEST_TAG" ]; then
+            echo "Version changed — will release v$VERSION"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version unchanged — skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Test
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup SSH for private git dependencies
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.BLUEPRINT_DEPLOY_KEY }}
 
-      - name: Get version from Cargo.toml
-        id: get_version
+      - name: Install Linux dependencies (cached)
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+          version: 1.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (desktop)
+        run: cargo build --features desktop --verbose
+      - name: Build (server)
+        run: cargo build --features server --verbose
+      - name: Run tests
+        run: cargo test --features server --verbose
+
+  create-release:
+    name: Create Release
+    needs: [check-version, test]
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ needs.check-version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create tag
         run: |
-          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version from Cargo.toml: $VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag v${{ needs.check-version.outputs.version }}
+          git push origin v${{ needs.check-version.outputs.version }}
 
       - name: Create Release
         id: create_release
@@ -42,8 +98,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          release_name: Release v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ needs.check-version.outputs.version }}
+          release_name: Release v${{ needs.check-version.outputs.version }}
           draft: false
           prerelease: false
 
@@ -97,11 +153,12 @@ jobs:
           fi
         shell: bash
 
-      - name: Install Linux dependencies
+      - name: Install Linux dependencies (cached)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+          version: 1.0
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
