@@ -191,11 +191,11 @@ fn apply_selection(form: &mut XfaForm, sel: &Selection) {
             let _ = form.select_radio_button(sel.som_path.as_str());
         }
         SelectionKind::Checkbox => {
-            let raw_value = if sel.value == "checked" { "1" } else { "0" };
+            let raw_value = if sel.primary_value() == "checked" { "1" } else { "0" };
             let _ = form.set_value_as_user(sel.som_path.as_str(), raw_value);
         }
         SelectionKind::Dropdown => {
-            let _ = form.set_value_as_user(sel.som_path.as_str(), &sel.value);
+            let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
         }
     }
 }
@@ -415,88 +415,45 @@ fn explore_with_dedup(
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
     base_nodes: Arc<Vec<XfaNode>>,
 ) -> Result<(), crate::Error> {
-    // Group branches by xfa_hash, then verify equality with PartialEq.
-    // Each group is a vec of branches that are truly identical in XFA state.
+    // Group branches by identical flattened layout.
+    // Each group is a vec of branches whose flattened output is structurally
+    // identical (same positions, text content, field names/labels).
     let groups = group_branches_by_flattened_state(branches);
 
     for mut group in groups {
-        if group.len() == 1 {
-            // No duplicates — just recurse directly.
-            // Recreate form from base_nodes and replay selections.
-            let branch = group.remove(0);
-            let mut form = recreate_form(&base_nodes, &branch.state.selections)?;
-            collect_states_linear(
-                &mut form,
-                branch.state,
-                global_field_order,
-                rendered_states.clone(),
-                collected_states.clone(),
-                base_nodes.clone(),
-            )?;
-        } else {
-            // Pop the representative (first element) by value.
-            let representative = group.remove(0);
-            // The rest are duplicates.
-            let duplicates = group; // Vec<PreparedBranch>, consumed by value
+        // Only recurse the representative of each group.
+        // Duplicates within the same group have identical flattened output,
+        // so they would produce the same visual result — skip them entirely.
+        let mut representative = group.remove(0);
 
-            // Record the current number of collected states so we know which
-            // new states were produced by the representative's recursion.
-            let before_len = collected_states.lock().unwrap().len();
-
-            let rep_state = representative.state;
-            let mut form = recreate_form(&base_nodes, &rep_state.selections)?;
-
-            collect_states_linear(
-                &mut form,
-                rep_state.clone(),
-                global_field_order,
-                rendered_states.clone(),
-                collected_states.clone(),
-                base_nodes.clone(),
-            )?;
-
-            // Determine which new states were added by the representative.
-            let locked = collected_states.lock().unwrap();
-            let new_states: Vec<CollectedState> = locked[before_len..].to_vec();
-            drop(locked);
-
-            // For each duplicate, clone the representative's results with
-            // the duplicate's selections/field_actions patched in at the
-            // current branching depth.
-            for dup in &duplicates {
-                let dup_state = &dup.state;
-                for rep_collected in &new_states {
-                    let mut cloned = rep_collected.clone();
-
-                    // Patch selections: replace the selection that differs.
-                    patch_selections(
-                        &mut cloned.selections,
-                        &rep_state.selections,
-                        &dup_state.selections,
-                    );
-
-                    // Regenerate the label from the patched selections
-                    cloned.label = generate_label(&cloned.selections);
-
-                    // Compute the proper state key for this duplicate and
-                    // also update the stored field_actions on the clone.
-                    let dup_key = compute_state_key(
-                        rep_collected,
-                        dup_state,
-                    );
-                    cloned.field_actions = dup_key.clone();
-                    {
-                        let mut states = rendered_states.lock().unwrap();
-                        if states.contains(&dup_key) {
-                            continue;
+        // Record the values from duplicate branches on the representative's
+        // last selection so the merger can later emit one conditional per value.
+        if !group.is_empty() {
+            if let Some(rep_sel) = representative.state.selections.last_mut() {
+                for dup in &group {
+                    if let Some(dup_sel) = dup.state.selections.last() {
+                        // Only merge values for the same selection depth/field
+                        if dup_sel.field_path == rep_sel.field_path
+                            || dup_sel.group_path == rep_sel.group_path
+                        {
+                            for v in &dup_sel.values {
+                                rep_sel.add_value(v.clone());
+                            }
                         }
-                        states.insert(dup_key);
                     }
-
-                    collected_states.lock().unwrap().push(cloned);
                 }
             }
         }
+
+        let mut form = recreate_form(&base_nodes, &representative.state.selections)?;
+        collect_states_linear(
+            &mut form,
+            representative.state,
+            global_field_order,
+            rendered_states.clone(),
+            collected_states.clone(),
+            base_nodes.clone(),
+        )?;
     }
 
     Ok(())
@@ -540,65 +497,6 @@ fn group_branches_by_flattened_state(
 /// Patch the selections of a cloned collected state: replace the
 /// representative's branching selection(s) with the duplicate's.
 ///
-/// The representative and duplicate share a common prefix of selections
-/// (from replay of previous choices). The divergence starts where the
-/// duplicate's selections list differs from the representative's.
-fn patch_selections(
-    target: &mut Vec<Selection>,
-    rep_selections: &[Selection],
-    dup_selections: &[Selection],
-) {
-    // The branching selections are those present in rep_selections / dup_selections
-    // that differ. They appear at the same indices in target.
-    //
-    // rep_selections and dup_selections have the same length (same branching depth).
-    // Everything before the divergence point is identical.
-    // At the divergence point, we replace the representative's selection with the
-    // duplicate's.
-    debug_assert_eq!(rep_selections.len(), dup_selections.len());
-
-    for i in 0..rep_selections.len() {
-        if rep_selections[i].som_path != dup_selections[i].som_path
-            || rep_selections[i].value != dup_selections[i].value
-        {
-            // This is a divergence — replace in target.
-            // In `target`, find the selection matching rep_selections[i] and swap it.
-            for sel in target.iter_mut() {
-                if sel.som_path == rep_selections[i].som_path
-                    && sel.value == rep_selections[i].value
-                    && sel.kind == rep_selections[i].kind
-                {
-                    *sel = dup_selections[i].clone();
-                    break;
-                }
-            }
-        }
-    }
-}
-
-/// Compute a state key for a duplicate by taking the representative's
-/// collected state's complete field_actions and patching in the
-/// duplicate's branching field actions.
-fn compute_state_key(
-    rep_collected: &CollectedState,
-    dup_state: &ExplorationState,
-) -> Vec<Option<FieldAction>> {
-    // Start from the representative's complete field_actions (captured
-    // when the state was collected) and patch in the duplicate's
-    // branching field actions (which differ at the current branch point).
-    let mut key = rep_collected.field_actions.clone();
-
-    // Overwrite with the duplicate's actions at positions where they
-    // are filled in (i.e., the branching prefix).
-    for i in 0..dup_state.field_actions.len() {
-        if let Some(action) = &dup_state.field_actions[i] {
-            key[i] = Some(action.clone());
-        }
-    }
-
-    key
-}
-
 /// Generate a human-readable label from a list of selections.
 fn generate_label(selections: &[Selection]) -> String {
     if selections.is_empty() {
@@ -609,10 +507,10 @@ fn generate_label(selections: &[Selection]) -> String {
             .map(|sel| match sel.kind {
                 SelectionKind::Radio => sel.som_path.name().to_string(),
                 SelectionKind::Checkbox => {
-                    format!("{}_{}", sel.som_path.name(), sel.value)
+                    format!("{}_{}", sel.som_path.name(), sel.primary_value())
                 }
                 SelectionKind::Dropdown => {
-                    format!("{}_{}", sel.som_path.name(), sel.value)
+                    format!("{}_{}", sel.som_path.name(), sel.primary_value())
                 }
             })
             .collect::<Vec<_>>()

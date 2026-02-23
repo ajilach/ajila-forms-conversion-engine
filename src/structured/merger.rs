@@ -42,6 +42,11 @@ pub enum SelectionKind {
 /// A field selection with both the specific field ID and optional container/group ID.
 /// For radio buttons in an exclGroup, the group_id is the exclGroup's field ID.
 /// For standalone fields, group_id is None.
+///
+/// A selection may carry multiple values when structurally identical branches
+/// have been deduplicated.  For example, nested radio buttons RB_1, RB_2, RB_3
+/// that produce the same visible output are collapsed into a single
+/// representative whose `values` list contains all three names.
 #[derive(Debug, Clone)]
 pub struct Selection {
     /// The field ID of the specific field that was selected
@@ -53,8 +58,10 @@ pub struct Selection {
     pub som_path: SomPath,
     /// The original SOM path of the containing group (retained for XFA form interactions)
     pub group_som_path: Option<SomPath>,
-    /// The value that was set for this selection (e.g., radio name, "1"/"0" for checkbox, save value for dropdown)
-    pub value: String,
+    /// The values that were set for this selection.  Normally contains a single
+    /// entry, but may contain multiple entries when structurally identical
+    /// branches have been merged (e.g., `["RB_1", "RB_2", "RB_3"]`).
+    pub values: Vec<String>,
     /// The kind of selection (radio, checkbox, or dropdown)
     pub kind: SelectionKind,
 }
@@ -73,7 +80,7 @@ impl Selection {
             group_path: group_path.as_ref().map(FieldId::from_som_path),
             som_path: field_path,
             group_som_path: group_path,
-            value,
+            values: vec![value],
             kind,
         }
     }
@@ -86,7 +93,7 @@ impl Selection {
             group_path: None,
             som_path: field_path,
             group_som_path: None,
-            value,
+            values: vec![value],
             kind,
         }
     }
@@ -97,10 +104,23 @@ impl Selection {
         self.group_path.as_ref().unwrap_or(&self.field_path)
     }
 
-    /// Get the value name for this selection.
-    /// Returns the stored value for all selection kinds.
-    pub fn value_name(&self) -> &str {
-        &self.value
+    /// The primary (first) value for this selection.
+    ///
+    /// For replay purposes (applying the selection to a form) the first value
+    /// is always the representative that was actually explored.
+    pub fn primary_value(&self) -> &str {
+        &self.values[0]
+    }
+
+    /// Add an additional equivalent value to this selection.
+    ///
+    /// Used by the deduplication logic when structurally identical branches
+    /// are collapsed: the duplicate branch's value is recorded here so that
+    /// the merger can later emit one conditional per value.
+    pub fn add_value(&mut self, value: String) {
+        if !self.values.contains(&value) {
+            self.values.push(value);
+        }
     }
 }
 
@@ -194,12 +214,12 @@ impl RecursiveMerger {
         let mut groups: HashMap<Option<String>, Vec<MergeInput>> = HashMap::new();
 
         for input in inputs {
-            // Use field_path + value for grouping to distinguish different values
+            // Use field_path + primary value for grouping to distinguish different values
             // of the same field (e.g., checkbox checked vs unchecked)
             let key = input
                 .selections
                 .get(depth)
-                .map(|s| format!("{}={}", s.field_path, s.value));
+                .map(|s| format!("{}={}", s.field_path, s.primary_value()));
             groups.entry(key).or_default().push(input.clone());
         }
 
@@ -288,35 +308,49 @@ impl RecursiveMerger {
                         continue;
                     }
 
-                    let condition = if let Some(sel) = selection {
-                        // Use group_path (if present) for field_name, value for the condition
-                        let value = match sel.kind {
-                            SelectionKind::Checkbox => InputValue::Bool(sel.value == "checked"),
-                            _ => InputValue::Text(sel.value_name().to_string()),
+                    if let Some(sel) = selection {
+                        // Build the content node once (shared for all values).
+                        let content = if remaining_nodes.len() == 1 {
+                            remaining_nodes.into_iter().next().unwrap()
+                        } else {
+                            StructuredNode::Group(GroupNode {
+                                children: remaining_nodes,
+                            })
                         };
-                        FieldCondition {
-                            field_name: sel.condition_path().clone(),
-                            value,
+
+                        // Emit one ConditionalNode per value.  When branches
+                        // have been deduplicated, `sel.values` may contain
+                        // multiple entries (e.g., ["RB_1", "RB_2", "RB_3"]).
+                        for v in &sel.values {
+                            let value = match sel.kind {
+                                SelectionKind::Checkbox => InputValue::Bool(v == "checked"),
+                                _ => InputValue::Text(v.clone()),
+                            };
+                            result.push(StructuredNode::Conditional(ConditionalNode {
+                                condition: FieldCondition {
+                                    field_name: sel.condition_path().clone(),
+                                    value,
+                                },
+                                content: Box::new(content.clone()),
+                            }));
                         }
                     } else {
-                        FieldCondition {
-                            field_name: FieldId::from_som_path(&SomPath::new("unknown")),
-                            value: InputValue::Text("default".to_string()),
-                        }
-                    };
+                        let content = if remaining_nodes.len() == 1 {
+                            remaining_nodes.into_iter().next().unwrap()
+                        } else {
+                            StructuredNode::Group(GroupNode {
+                                children: remaining_nodes,
+                            })
+                        };
 
-                    let content = if remaining_nodes.len() == 1 {
-                        remaining_nodes.into_iter().next().unwrap()
-                    } else {
-                        StructuredNode::Group(GroupNode {
-                            children: remaining_nodes,
-                        })
-                    };
-
-                    result.push(StructuredNode::Conditional(ConditionalNode {
-                        condition,
-                        content: Box::new(content),
-                    }));
+                        result.push(StructuredNode::Conditional(ConditionalNode {
+                            condition: FieldCondition {
+                                field_name: FieldId::from_som_path(&SomPath::new("unknown")),
+                                value: InputValue::Text("default".to_string()),
+                            },
+                            content: Box::new(content),
+                        }));
+                    }
                 }
             }
         }
