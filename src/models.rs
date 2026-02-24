@@ -18,6 +18,7 @@ pub struct ProcessingState {
     pub available_states: Vec<String>,
     pub plain_images: HashMap<String, Vec<u8>>,
     pub labelled_images: HashMap<String, Vec<u8>>,
+    pub form_code: Option<String>,
     pub merged_json: Option<String>,
     pub html_preview: Option<String>,
     pub aem_package: Option<Vec<u8>>,

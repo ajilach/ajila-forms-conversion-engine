@@ -65,12 +65,12 @@ pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
 // ── HTML preview ─────────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
-pub fn show_html_preview(html: String) {
-    download_file(html.as_bytes(), "form_preview.html", "text/html");
+pub fn show_html_preview(html: String, filename: &str) {
+    download_file(html.as_bytes(), filename, "text/html");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn show_html_preview(html: String) {
+pub fn show_html_preview(html: String, filename: &str) {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
@@ -79,7 +79,7 @@ pub fn show_html_preview(html: String) {
         }
     };
 
-    let preview_path = home.join("Downloads").join("form_preview.html");
+    let preview_path = home.join("Downloads").join(filename);
     if let Err(e) = std::fs::write(&preview_path, &html) {
         eprintln!(
             "✗ Failed to save preview to {}: {}",

@@ -137,9 +137,18 @@ pub fn run_blueprint_pipeline(
         }
     };
     let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
-    let aem_zip = blueprint::to_aem_package(&merged.content, &AemConfig::default());
+    let aem_config = match AemConfig::new(&merged.context) {
+        Ok(c) => c,
+        Err(e) => {
+            state.error = Some(format!("Failed to create AEM config: {e}"));
+            on_progress(&state);
+            return state;
+        }
+    };
+    let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
 
     state.step = ProcessingStep::Complete;
+    state.form_code = Some(aem_config.form_code.clone());
     state.merged_json = Some(json);
     state.html_preview = Some(html);
     state.aem_package = Some(aem_zip);
