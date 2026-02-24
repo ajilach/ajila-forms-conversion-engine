@@ -7388,6 +7388,24 @@ impl Flattened {
                 }
             }
 
+            // Per XFA spec, the border is a rectangle around the *entire* draw
+            // element. When we split into separate paragraph nodes, each node
+            // must only keep the border edges that correspond to its position:
+            //   - First paragraph:  keep top, hide bottom
+            //   - Middle paragraphs: hide top and bottom
+            //   - Last paragraph:   hide top, keep bottom
+            // Left and right edges are preserved on all paragraphs.
+            let last_idx = rich_text.paragraphs.len() - 1;
+            if let Some(ref border) = para_style.border {
+                let adjusted = match i {
+                    0 if last_idx > 0 => border.with_edges_hidden(&[2]),        // first: hide bottom
+                    _ if i == last_idx && i > 0 => border.with_edges_hidden(&[0]), // last: hide top
+                    _ if i > 0 => border.with_edges_hidden(&[0, 2]),            // middle: hide both
+                    _ => border.clone(),                                         // single (shouldn't happen, but safe)
+                };
+                para_style.border = Some(adjusted);
+            }
+
             let para_node = FlattenedNode::new_text_with_rich_text(
                 para_text,
                 para_font_size,

@@ -128,6 +128,36 @@ impl Border {
     pub fn is_visible(&self) -> bool {
         self.presence != "hidden" && self.presence != "inactive" && !self.edges.is_empty()
     }
+
+    /// Create a new Border with the specified edge indices hidden.
+    ///
+    /// Per XFA spec: "If fewer than four edge or corner elements are supplied
+    /// the last element is reused for the remaining edges or corners."
+    /// This method materialises all 4 edges (applying the reuse rule) and then
+    /// sets the requested edges to `presence = "hidden"`.
+    pub fn with_edges_hidden(&self, indices: &[usize]) -> Border {
+        // Materialise all 4 edges using the XFA reuse rule
+        let mut edges: Vec<Edge> = (0..4)
+            .map(|i| self.get_edge(i).cloned().unwrap_or_default())
+            .collect();
+
+        for &idx in indices {
+            if idx < 4 {
+                edges[idx].presence = "hidden".to_string();
+            }
+        }
+
+        Border {
+            edges,
+            corners: self.corners.clone(),
+            fill: self.fill.clone(),
+            presence: self.presence.clone(),
+            margin_left: self.margin_left,
+            margin_top: self.margin_top,
+            margin_right: self.margin_right,
+            margin_bottom: self.margin_bottom,
+        }
+    }
 }
 
 /// Fill properties for backgrounds

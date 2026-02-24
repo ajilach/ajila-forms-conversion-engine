@@ -10669,3 +10669,75 @@
 
         println!("\n✓ All numbered list items vertically aligned!");
     }
+
+    /// When a multi-paragraph draw element with a top-only border is split into
+    /// individual paragraph nodes, only the *first* paragraph should keep the
+    /// visible top edge. The remaining paragraphs must not inherit that border.
+    ///
+    /// In AAOE the "Firma/e" section title draw has:
+    ///   edge[0] = visible 0.375mm (top)
+    ///   edge[1..3] = hidden
+    /// After splitting into 3 paragraphs ("Firma/e", " ", "Letto, confermato e
+    /// sottoscritto."), only "Firma/e" should have a visible top border.
+    #[test]
+    fn test_aaoe_split_paragraph_border_not_propagated() {
+        use crate::flattened::FlattenedNodeKind;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Helper: check if a node has a visible top border
+        let has_visible_top_border = |node: &crate::flattened::FlattenedNode| -> bool {
+            node.style.border.as_ref().map_or(false, |b| {
+                b.get_edge(0)
+                    .map_or(false, |e| e.presence == "visible" && e.thickness.is_some())
+            })
+        };
+
+        // Helper: check if a node has a visible bottom border
+        let has_visible_bottom_border = |node: &crate::flattened::FlattenedNode| -> bool {
+            node.style.border.as_ref().map_or(false, |b| {
+                b.get_edge(2)
+                    .map_or(false, |e| e.presence == "visible" && e.thickness.is_some())
+            })
+        };
+
+        // Find the flattened node whose text contains "Firma/e"
+        let firma_node = flattened.iter_nodes().find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains("Firma"))
+        });
+        assert!(firma_node.is_some(), "Should find a node containing 'Firma/e'");
+        let firma_node = firma_node.unwrap();
+
+        // Find the node with "Letto, confermato e sottoscritto."
+        let letto_node = flattened.iter_nodes().find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains("Letto, confermato"))
+        });
+        assert!(letto_node.is_some(), "Should find a node containing 'Letto, confermato e sottoscritto.'");
+        let letto_node = letto_node.unwrap();
+
+        // "Firma/e" is the first paragraph of the draw — it SHOULD have a visible top border
+        assert!(
+            has_visible_top_border(firma_node),
+            "'Firma/e' (first paragraph) should have a visible top border"
+        );
+
+        // "Firma/e" is NOT the last paragraph — it should NOT have a visible bottom border
+        assert!(
+            !has_visible_bottom_border(firma_node),
+            "'Firma/e' should NOT have a visible bottom border (line below)"
+        );
+
+        // "Letto, confermato e sottoscritto." is the last paragraph — it should NOT have
+        // a visible top border (the user-reported bug: spurious line above)
+        assert!(
+            !has_visible_top_border(letto_node),
+            "'Letto, confermato e sottoscritto.' should NOT have a visible top border"
+        );
+    }
