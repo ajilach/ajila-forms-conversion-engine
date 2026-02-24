@@ -10484,3 +10484,134 @@
             "Expected to find a 3-column GridLayout containing 'PLZ', 'Stadt', and 'Land' in AAKS"
         );
     }
+
+    #[test]
+    fn test_aaai_numbered_list_vertical_alignment() {
+        // Test that T_LeftIndent's numbered paragraphs ("1.", "2.", ..., "8.") are
+        // vertically aligned with the corresponding content paragraphs in T_Left.
+        //
+        // The XFA form uses two overlapping draw elements:
+        // - T_Left: rich text with text-indent:25.512pt for numbered paragraphs
+        // - T_LeftIndent: plain text with U+2029 paragraph separators creating
+        //   blank paragraphs for vertical alignment
+        //
+        // The key bug: measure_text_block ignores text-indent when computing
+        // heights/wrapping, so T_Left paragraph heights are miscalculated,
+        // causing T_LeftIndent numbers to misalign.
+        use crate::flattened::FlattenedNodeKind;
+
+        let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Collect all T_Left text nodes with y-positions, filtering to content paragraphs
+        let t_left_paragraphs: Vec<(&str, rust_decimal::Decimal)> = flattened
+            .iter_nodes()
+            .filter_map(|n| {
+                if let FlattenedNodeKind::Text {
+                    source_name,
+                    content,
+                    ..
+                } = &n.kind
+                {
+                    if source_name.as_ref().map(|s| s == "T_Left").unwrap_or(false) {
+                        let trimmed = content.trim();
+                        if !trimmed.is_empty() {
+                            return Some((trimmed, n.y));
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+
+        // Collect all T_LeftIndent text nodes with y-positions, filtering to numbered ones
+        let t_left_indent_paragraphs: Vec<(&str, rust_decimal::Decimal)> = flattened
+            .iter_nodes()
+            .filter_map(|n| {
+                if let FlattenedNodeKind::Text {
+                    source_name,
+                    content,
+                    ..
+                } = &n.kind
+                {
+                    if source_name
+                        .as_ref()
+                        .map(|s| s == "T_LeftIndent")
+                        .unwrap_or(false)
+                    {
+                        let trimmed = content.trim();
+                        if !trimmed.is_empty() {
+                            return Some((trimmed, n.y));
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+
+        println!("\nT_Left content paragraphs:");
+        for (text, y) in &t_left_paragraphs {
+            let preview: String = text.chars().take(60).collect();
+            println!("  y={:.3}: '{}'", y, preview);
+        }
+
+        println!("\nT_LeftIndent numbered paragraphs:");
+        for (text, y) in &t_left_indent_paragraphs {
+            println!("  y={:.3}: '{}'", y, text);
+        }
+
+        // The T_Left content paragraphs that have text-indent (the numbered items)
+        // should match the expected paragraph beginnings.
+        let expected_alignments: Vec<(&str, &str)> = vec![
+            ("1.", "Die Bearbeitung der seitens"),
+            ("2.", "UBS ist berechtigt"),
+            ("3.", "Der Widerruf eines"),
+            ("4.", "Die Kommunikation zwischen"),
+            ("5.", "Sofern für die Erbringung"),
+            ("6.", "Die Gebühren richten sich"),
+            ("7.", "Diese Vereinbarung kann jederzeit"),
+            ("8.", "Diese Vereinbarung unterliegt"),
+        ];
+
+        for (number, text_start) in &expected_alignments {
+            // Find the T_LeftIndent paragraph for this number
+            let indent_entry = t_left_indent_paragraphs
+                .iter()
+                .find(|(text, _)| text == number);
+            assert!(
+                indent_entry.is_some(),
+                "T_LeftIndent should have a paragraph with '{}'",
+                number
+            );
+            let (_, indent_y) = indent_entry.unwrap();
+
+            // Find the T_Left paragraph for this text
+            let left_entry = t_left_paragraphs
+                .iter()
+                .find(|(text, _)| text.starts_with(text_start));
+            assert!(
+                left_entry.is_some(),
+                "T_Left should have a paragraph starting with '{}'",
+                text_start
+            );
+            let (_, left_y) = left_entry.unwrap();
+
+            // They should be at the same y-position (within 0.1pt tolerance for rounding)
+            let diff = (*indent_y - *left_y).abs();
+            assert!(
+                diff < rust_decimal::Decimal::from_str("0.1").unwrap(),
+                "Number '{}' (y={:.3}) should be vertically aligned with '{}' (y={:.3}), diff={:.3}pt",
+                number, indent_y, text_start, left_y, diff
+            );
+            println!(
+                "  ✓ '{}' aligned with '{}...' at y={:.3}",
+                number, text_start, left_y
+            );
+        }
+
+        println!("\n✓ All numbered list items vertically aligned!");
+    }

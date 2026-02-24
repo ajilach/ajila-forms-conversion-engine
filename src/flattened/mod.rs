@@ -1,6 +1,6 @@
 use crate::xfa::font_manager::get_font_manager;
 use crate::xfa::scripting::{Presence, SomPath};
-use crate::xfa::text_metrics::TextMeasurer;
+use crate::xfa::text_metrics::{TextMeasurer, xfa_px_scale};
 use crate::xfa::{Border, Font, FontPosture, FontWeight, HAlign, Num, Para, StrokeStyle, VAlign, XfaNode, XfaNodeKind, num};
 use ab_glyph::{Font as AbGlyphFont, FontRef, PxScale, ScaleFont};
 use image::{ImageBuffer, Rgba, RgbaImage};
@@ -4155,6 +4155,9 @@ impl Flattened {
         let height = explicit_height.unwrap_or_else(|| {
             // For leaf nodes (field/draw), calculate natural height based on content
             // The natural height must include space for margins + content
+            eprintln!("TRACE height_calc: kind={:?}, name={:?}, explicit_h=None", 
+                std::mem::discriminant(&node.kind), 
+                node.name.as_deref().unwrap_or("?"));
             match &node.kind {
                 XfaNodeKind::Draw => {
                     // Calculate natural height for draw element based on text content.
@@ -4165,14 +4168,20 @@ impl Flattened {
                     // different font sizes and CSS space_above/space_below per paragraph.
                     let natural_content_height =
                         if Self::has_html_exdata(&node.children) {
-                            Self::calculate_rich_text_draw_height(
+                            let result = Self::calculate_rich_text_draw_height(
                                 &node.children,
                                 &node.font,
                                 &node.para,
                                 width,
                                 ctx.computed_values,
                                 ctx.id_to_field,
-                            )
+                            );
+                            if result.is_none() {
+                                eprintln!("TRACE: calculate_rich_text_draw_height returned None for draw w={}", width);
+                            } else {
+                                eprintln!("TRACE: calculate_rich_text_draw_height returned {:?}", result);
+                            }
+                            result
                         } else {
                             None
                         }
@@ -4541,23 +4550,40 @@ impl Flattened {
             .and_then(|p| p.line_height)
             .unwrap_or(font_size * num(1.2));
 
-        // Use a more accurate character width estimate based on typical font metrics
-        // Average character width is typically 40-50% of font size for proportional fonts
-        let char_width = font_size_f32 * 0.45;
-        let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
-        let chars_per_line = (max_width_f32 / char_width).max(1.0) as usize;
-
-        // Estimate lines from text wrapping
-        let mut num_lines = Self::estimate_line_count(text, chars_per_line);
-
-        // Add extra lines for paragraph breaks from HTML <p> elements
-        if paragraph_count > 1 {
-            num_lines += paragraph_count - 1;
-        }
-
-        // Add lines for inline paragraph breaks (\n and U+2029)
-        let inline_breaks = text.matches('\n').count() + text.matches('\u{2029}').count();
-        num_lines += inline_breaks;
+        // Try font-based measurement first for accurate text wrapping.
+        // This ensures consistency with paragraph splitting which also uses
+        // font-based measurement (xfa_px_scale-corrected glyph advances).
+        let xfa_font = font.clone().unwrap_or_default();
+        let mut measurer = TextMeasurer::new();
+        let num_lines = match measurer.measure_text_block(text, &Some(xfa_font), para, max_width) {
+            Ok(block_metrics) => {
+                let font_lines = block_metrics.lines.len();
+                eprintln!("TRACE natural_height: font-based OK, lines={}, text={:.40}", font_lines, text);
+                let mut total = font_lines;
+                // Add extra lines for paragraph breaks from HTML <p> elements
+                if paragraph_count > 1 {
+                    total += paragraph_count - 1;
+                }
+                // Add lines for inline paragraph breaks (\n and U+2029)
+                let inline_breaks = text.matches('\n').count() + text.matches('\u{2029}').count();
+                total += inline_breaks;
+                total
+            }
+            Err(_) => {
+                // Fallback: crude character-width estimate (used when font is unavailable)
+                eprintln!("TRACE natural_height: font-based FAILED, using crude heuristic, text={:.40}", text);
+                let char_width = font_size_f32 * 0.45;
+                let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
+                let chars_per_line = (max_width_f32 / char_width).max(1.0) as usize;
+                let mut est = Self::estimate_line_count(text, chars_per_line);
+                if paragraph_count > 1 {
+                    est += paragraph_count - 1;
+                }
+                let inline_breaks = text.matches('\n').count() + text.matches('\u{2029}').count();
+                est += inline_breaks;
+                est
+            }
+        };
 
         // Paragraph margins
         let margin_top = para
@@ -4617,9 +4643,17 @@ impl Flattened {
             default_h_align,
             Some(computed_values),
             Some(id_to_field),
-        )?;
+        );
+        let rich_text = match rich_text {
+            Some(rt) => rt,
+            None => {
+                eprintln!("TRACE rich_text_draw_height: extract_rich_text_from_node returned None");
+                return None;
+            }
+        };
 
         if rich_text.paragraphs.len() <= 1 {
+            eprintln!("TRACE rich_text_draw_height: single paragraph (len={}), returning None", rich_text.paragraphs.len());
             return None; // Single paragraph — fall back to the standard heuristic
         }
 
@@ -5882,7 +5916,7 @@ impl Flattened {
         let h_align = para.as_ref().map(|p| p.h_align).unwrap_or(HAlign::Left);
 
         // Measure actual text width using font metrics
-        let scale = PxScale::from(font_size);
+        let scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(scale);
         let mut text_width: f32 = 0.0;
         for ch in text.chars() {
@@ -5947,7 +5981,7 @@ impl Flattened {
             .map(|lh| lh.to_f32().unwrap_or(0.0) * render_scale);
 
         // Get font metrics (for glyph scaling, not render scaling)
-        let scale = PxScale::from(font_size);
+        let scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(scale);
         let ascent = scaled_font.ascent();
         let descent = scaled_font.descent().abs();
@@ -6015,7 +6049,7 @@ impl Flattened {
             return vec![text.to_string()];
         }
 
-        let scale = PxScale::from(font_size);
+        let scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(scale);
 
         // Get space width (also affected by letter spacing per XFA spec)
@@ -6091,7 +6125,7 @@ impl Flattened {
         }
 
         // Get font metrics
-        let scale = PxScale::from(font_size);
+        let scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(scale);
         let ascent = scaled_font.ascent();
         let descent = scaled_font.descent().abs();
@@ -6873,7 +6907,7 @@ impl Flattened {
         letter_spacing: f32,
     ) -> Vec<RenderedLine> {
         let mut lines = Vec::new();
-        let px_scale = PxScale::from(font_size);
+        let px_scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(px_scale);
 
         // Get space width (also affected by letter spacing per XFA spec)
@@ -6973,7 +7007,7 @@ impl Flattened {
         font: &FontRef<'_>,
         letter_spacing: f32,
     ) -> Vec<LayoutToken> {
-        let px_scale = PxScale::from(font_size);
+        let px_scale = xfa_px_scale(font, font_size);
         let _scaled_font = font.as_scaled(px_scale);
 
         let mut tokens = Vec::new();
@@ -7103,7 +7137,7 @@ impl Flattened {
         font: &FontRef<'_>,
         letter_spacing: f32,
     ) -> f32 {
-        let px_scale = PxScale::from(font_size);
+        let px_scale = xfa_px_scale(font, font_size);
         let scaled_font = font.as_scaled(px_scale);
 
         let mut width: f32 = 0.0;
@@ -7183,30 +7217,52 @@ impl Flattened {
         // Measure each paragraph's height
         let mut paragraph_heights: Vec<Num> = Vec::with_capacity(rich_text.paragraphs.len());
 
-        for para in &rich_text.paragraphs {
+        for (para_idx, para) in rich_text.paragraphs.iter().enumerate() {
             // Use per-paragraph font size override if available
             let para_font_size = para.font_size.map(|s| num(s as f64)).unwrap_or(base_font_size);
             let mut para_xfa_font = xfa_font.clone();
             para_xfa_font.size = para_font_size;
 
+            // Override font weight/posture based on HTML CSS properties in the
+            // paragraph's runs. The XFA <font> element may specify weight="bold",
+            // but the rich text HTML CSS can override this
+            // (e.g. <p style="font-weight:normal">). Since layout_rich_text uses
+            // a single font for all tokens, we use the dominant run style to
+            // select the correct font variant for measurement.
+            if !para.runs.is_empty() {
+                let has_bold = para.runs.iter().any(|r| !r.text.trim().is_empty() && r.bold);
+                let has_normal = para.runs.iter().any(|r| !r.text.trim().is_empty() && !r.bold);
+                if has_normal && !has_bold {
+                    // All content runs are non-bold: CSS overrides XFA bold to normal
+                    para_xfa_font.weight = FontWeight::Normal;
+                }
+                let has_italic = para.runs.iter().any(|r| !r.text.trim().is_empty() && r.italic);
+                let has_upright = para.runs.iter().any(|r| !r.text.trim().is_empty() && !r.italic);
+                if has_upright && !has_italic {
+                    para_xfa_font.posture = FontPosture::Normal;
+                }
+            }
+
+            // Resolve the effective line height for this paragraph.
+            // Per XFA spec §17: lineHeight is the vertical distance between successive
+            // baselines. When splitting multi-paragraph draws, each line should occupy
+            // exactly lineHeight of vertical space for consistent alignment between
+            // overlapping draw elements (e.g. T_Left / T_LeftIndent in AAAI).
+            let effective_line_height = para.line_height.map(|lh| num(lh as f64))
+                .or_else(|| default_para.as_ref().and_then(|p| p.line_height))
+                .unwrap_or_else(|| {
+                    if let Ok(metrics) = measurer.get_metrics_for_style(&para_xfa_font) {
+                        metrics.derived_line_spacing()
+                    } else {
+                        para_font_size * num(1.2)
+                    }
+                });
+
             if para.is_empty {
-                // Empty paragraph: height is one line (derived spacing) per AXTE,
-                // plus any spaceAbove/spaceBelow from the paragraph itself.
-                let line_height = para.line_height.map(|lh| num(lh as f64))
-                    .or_else(|| default_para.as_ref().and_then(|p| p.line_height))
-                    .unwrap_or_else(|| {
-                        // Use AXTE derived spacing: TH + LG
-                        // For the base font: ascent + descent + 20% of font_size
-                        if let Ok(metrics) = measurer.get_metrics_for_style(&para_xfa_font) {
-                            metrics.derived_line_spacing()
-                        } else {
-                            // Fallback: font_size * 1.2
-                            para_font_size * num(1.2)
-                        }
-                    });
+                // Empty paragraph: height is one line
                 let space_above = para.space_above.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
                 let space_below = para.space_below.map(|s| num(s as f64)).unwrap_or(Decimal::ZERO);
-                paragraph_heights.push(line_height + space_above + space_below);
+                paragraph_heights.push(effective_line_height + space_above + space_below);
                 continue;
             }
 
@@ -7219,14 +7275,9 @@ impl Flattened {
                 .join("");
 
             if plain_text.trim().is_empty() {
-                // Paragraph with only whitespace runs — treat like empty
-                let metrics_result = measurer.get_metrics_for_style(&para_xfa_font);
-                let line_height = if let Ok(metrics) = metrics_result {
-                    metrics.derived_line_spacing()
-                } else {
-                    para_font_size * num(1.2)
-                };
-                paragraph_heights.push(line_height);
+                // Paragraph with only whitespace runs — treat like empty,
+                // using the same line_height as empty paragraphs for consistency.
+                paragraph_heights.push(effective_line_height);
                 continue;
             }
 
@@ -7253,22 +7304,55 @@ impl Flattened {
                 margin_right: default_para.as_ref().and_then(|p| p.margin_right),
             });
 
-            // Measure the paragraph text block
-            match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props, max_width) {
-                Ok(block_metrics) => {
-                    paragraph_heights.push(block_metrics.total_height);
-                }
-                Err(_) => {
-                    // Fallback: estimate with line count * line height
-                    let estimated_chars_per_line = max_width / (para_font_size * num(0.5));
-                    let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
-                        let text_len = num(plain_text.len() as f64);
-                        (text_len / estimated_chars_per_line).ceil()
-                    } else {
-                        Decimal::ONE
-                    };
-                    let line_height = para_font_size * num(1.2);
-                    paragraph_heights.push(estimated_lines * line_height);
+            // Use layout_rich_text for line counting instead of measure_text_block.
+            // This ensures the same wrapping logic (tokenization, text width
+            // measurement) is used for both height calculation and rendering,
+            // preventing misalignment between overlapping draw elements.
+            let space_above = para_props.as_ref()
+                .and_then(|p| p.space_above)
+                .unwrap_or(Decimal::ZERO);
+            let space_below = para_props.as_ref()
+                .and_then(|p| p.space_below)
+                .unwrap_or(Decimal::ZERO);
+
+            // Get the font for layout_rich_text
+            let font_for_layout = measurer.get_font_for_style(&para_xfa_font)
+                .ok()
+                .cloned();
+
+            if let Some(layout_font) = &font_for_layout {
+                let single_rt = RichText { paragraphs: vec![para.clone()] };
+                let rendered_lines = Self::layout_rich_text(
+                    &single_rt,
+                    max_width.to_f32().unwrap_or(500.0),
+                    para_font_size.to_f32().unwrap_or(10.0),
+                    layout_font,
+                    1.0,  // scale=1.0 for measurement in pt units
+                    para_xfa_font.letter_spacing
+                        .and_then(|ls| ls.to_f32())
+                        .unwrap_or(0.0),
+                );
+                let num_lines = num(rendered_lines.len().max(1) as f64);
+                let height = num_lines * effective_line_height + space_above + space_below;
+                paragraph_heights.push(height);
+            } else {
+                // Fallback to measure_text_block if font is unavailable
+                match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props, max_width) {
+                    Ok(block_metrics) => {
+                        let num_lines = num(block_metrics.lines.len() as f64);
+                        let height = num_lines * effective_line_height + space_above + space_below;
+                        paragraph_heights.push(height);
+                    }
+                    Err(_) => {
+                        let estimated_chars_per_line = max_width / (para_font_size * num(0.5));
+                        let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
+                            let text_len = num(plain_text.len() as f64);
+                            (text_len / estimated_chars_per_line).ceil()
+                        } else {
+                            Decimal::ONE
+                        };
+                        paragraph_heights.push(estimated_lines * effective_line_height + space_above + space_below);
+                    }
                 }
             }
         }
@@ -7363,7 +7447,7 @@ impl Flattened {
         scale: f32,
         letter_spacing: f32,
     ) {
-        let px_scale = PxScale::from(font_size);
+        let px_scale = xfa_px_scale(base_font, font_size);
         let scaled_font = base_font.as_scaled(px_scale);
 
         // Get space width and font metrics (space width affected by letter spacing)
@@ -7523,7 +7607,7 @@ impl Flattened {
         color: Rgba<u8>,
         letter_spacing: f32,
     ) {
-        let px_scale = PxScale::from(font_size);
+        let px_scale = xfa_px_scale(font, font_size);
 
         // If no letter spacing, use the fast path
         if letter_spacing.abs() < 0.001 {

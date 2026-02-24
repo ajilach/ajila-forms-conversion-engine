@@ -24,6 +24,35 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
+/// Computes the correct PxScale for XFA/PDF text measurement at the given font size.
+///
+/// ab_glyph uses `(hhea.ascent - hhea.descent)` as the PxScale scaling denominator,
+/// but XFA/PDF (and Adobe products) use `head.unitsPerEm` for horizontal advances.
+/// For fonts where these differ (e.g. Frutiger: height=2308 vs unitsPerEm=2048),
+/// glyph advances are scaled incorrectly by a factor of `unitsPerEm / height`.
+///
+/// This function corrects only the horizontal axis (PxScale.x) so that:
+///   h_advance = advance_units * corrected_x / height = advance_units * font_size / units_per_em
+///
+/// The vertical axis (PxScale.y) is kept at the original `font_size` so that
+/// ascent, descent, and line_gap remain unchanged — these feed into AXTE height
+/// calculations that were calibrated against ab_glyph's native scaling.
+pub fn xfa_px_scale(font: &impl AbGlyphFont, font_size: f32) -> PxScale {
+    if let Some(units_per_em) = font.units_per_em() {
+        let height = font.height_unscaled();
+        if units_per_em > 0.0 && height > 0.0 {
+            PxScale {
+                x: font_size * height / units_per_em,
+                y: font_size,
+            }
+        } else {
+            PxScale::from(font_size)
+        }
+    } else {
+        PxScale::from(font_size)
+    }
+}
+
 /// Constants for text measurement fallback values per AXTE spec
 /// These are used when font metrics are unavailable
 mod constants {
@@ -63,7 +92,7 @@ impl FontMetrics {
     /// Per AXTE spec: line gap is always 20% of font size
     pub fn from_font(font: &FontRef<'_>, font_size_pt: Num) -> Self {
         let size_f32 = font_size_pt.to_f32().unwrap_or(10.0);
-        let scale = PxScale::from(size_f32);
+        let scale = xfa_px_scale(font, size_f32);
         let scaled_font = font.as_scaled(scale);
 
         // Get metrics from font (these are in pixels at the given scale)
@@ -509,7 +538,7 @@ impl TextMeasurer {
             .map(|s| s / 100.0)
             .unwrap_or(1.0);
 
-        let scale = PxScale::from(size_f32);
+        let scale = xfa_px_scale(&font, size_f32);
         let scaled_font = font.as_scaled(scale);
 
         // Per XFA spec: letterSpacing affects inter-character spacing
@@ -548,7 +577,7 @@ impl TextMeasurer {
     pub fn measure_text_width(&mut self, text: &str, font_size: Num) -> Result<Num, String> {
         let font = self.get_current_font()?;
         let size_f32 = font_size.to_f32().unwrap_or(10.0);
-        let scale = PxScale::from(size_f32);
+        let scale = xfa_px_scale(&font, size_f32);
         let scaled_font = font.as_scaled(scale);
 
         let mut width: f32 = 0.0;
@@ -566,6 +595,19 @@ impl TextMeasurer {
         text: &str,
         max_width: Num,
         xfa_font: &Font,
+    ) -> Result<Vec<String>, String> {
+        self.wrap_text_styled_with_indent(text, max_width, xfa_font, 0.0)
+    }
+
+    /// Wrap text to fit within a maximum width using specified font style,
+    /// with a first-line indent that reduces available width on the first line.
+    /// Per XFA spec §2: first line starts at marginLeft + textIndent.
+    pub fn wrap_text_styled_with_indent(
+        &mut self,
+        text: &str,
+        max_width: Num,
+        xfa_font: &Font,
+        first_line_indent: f32,
     ) -> Result<Vec<String>, String> {
         let font = self.get_font_for_style(xfa_font)?.clone();
         let size_f32 = xfa_font.size.to_f32().unwrap_or(10.0);
@@ -586,6 +628,7 @@ impl TextMeasurer {
             letter_spacing,
             h_scale,
             xfa_font.kerning_mode,
+            first_line_indent,
         )
     }
 
@@ -607,11 +650,13 @@ impl TextMeasurer {
             0.0,
             1.0,
             KerningMode::None,
+            0.0,
         )
     }
 
     /// Internal text wrapping implementation
-    /// Supports letter spacing, horizontal scale, and kerning per XFA spec
+    /// Supports letter spacing, horizontal scale, and kerning per XFA spec.
+    /// `first_line_indent` reduces available width on the first line (per XFA §2 textIndent).
     fn wrap_text_internal(
         font: &FontRef<'_>,
         text: &str,
@@ -620,8 +665,9 @@ impl TextMeasurer {
         letter_spacing: f32,
         h_scale: f32,
         kerning_mode: KerningMode,
+        first_line_indent: f32,
     ) -> Result<Vec<String>, String> {
-        let scale = PxScale::from(size_f32);
+        let scale = xfa_px_scale(font, size_f32);
         let scaled_font = font.as_scaled(scale);
         let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
 
@@ -680,6 +726,8 @@ impl TextMeasurer {
             width
         }
 
+        let mut is_first_line = true;
+
         for word in text.split_whitespace() {
             // Measure word width with all XFA text properties
             let word_width = measure_word_width(
@@ -693,11 +741,18 @@ impl TextMeasurer {
                 kerning_mode,
             );
 
+            // Per XFA spec §2: first line effective width = max_width - textIndent
+            let effective_max = if is_first_line {
+                max_width_f32 - first_line_indent
+            } else {
+                max_width_f32
+            };
+
             if current_line.is_empty() {
                 // First word on line
                 current_line = word.to_string();
                 current_width = word_width;
-            } else if current_width + space_width + word_width <= max_width_f32 {
+            } else if current_width + space_width + word_width <= effective_max {
                 // Word fits on current line
                 current_line.push(' ');
                 current_line.push_str(word);
@@ -707,6 +762,7 @@ impl TextMeasurer {
                 lines.push(current_line);
                 current_line = word.to_string();
                 current_width = word_width;
+                is_first_line = false;
             }
         }
 
@@ -749,8 +805,25 @@ impl TextMeasurer {
             .unwrap_or(Decimal::ZERO);
         let line_height_override = para.as_ref().and_then(|p| p.line_height);
 
-        // Wrap text using the styled font
-        let wrapped_lines = self.wrap_text_styled(text, max_width, &xfa_font)?;
+        // Per XFA spec §2: textIndent adjusts the first line's left margin.
+        // margin_left/margin_right reduce available width for all lines.
+        let margin_left = para
+            .as_ref()
+            .and_then(|p| p.margin_left)
+            .unwrap_or(Decimal::ZERO);
+        let margin_right = para
+            .as_ref()
+            .and_then(|p| p.margin_right)
+            .unwrap_or(Decimal::ZERO);
+        let text_indent = para
+            .as_ref()
+            .and_then(|p| p.text_indent)
+            .unwrap_or(Decimal::ZERO);
+        let effective_width = max_width - margin_left - margin_right;
+        let first_line_indent = text_indent.to_f32().unwrap_or(0.0);
+
+        // Wrap text using the styled font, accounting for text-indent on first line
+        let wrapped_lines = self.wrap_text_styled_with_indent(text, effective_width, &xfa_font, first_line_indent)?;
         let num_lines = wrapped_lines.len();
 
         // Get base font metrics for this style

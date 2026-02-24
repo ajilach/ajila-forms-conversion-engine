@@ -784,7 +784,18 @@ impl FontManager {
             .next();
 
         // Prefer typographic family (cleaner name) over font family
-        let family = typographic_family.or(font_family)?.to_lowercase();
+        let raw_family = typographic_family.or(font_family)?;
+        // Normalize family name using the same logic as XFA font resolution.
+        // This ensures fonts like "Frutiger 45 Light" (name ID 1) get
+        // registered under the base family "frutiger", matching lookups from
+        // XFA <font typeface="Frutiger 45 Light"> which also normalizes to
+        // "frutiger".
+        let (family, _weight_hint) = normalize_typeface(&raw_family);
+        let family = if family.is_empty() {
+            raw_family.to_lowercase()
+        } else {
+            family
+        };
 
         // Get weight from OS/2 table
         let weight = FontWeight::from_numeric(face.weight().to_number());
