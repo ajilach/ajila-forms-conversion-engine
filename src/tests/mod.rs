@@ -3819,12 +3819,10 @@
         fn is_h2_with_prefix(node: &StructuredNode, prefix: &str) -> bool {
             if let StructuredNode::Heading(heading) = node {
                 if matches!(heading.level, HeadingLevel::H2) {
-                    for inline in &heading.content.0 {
-                        if let InlineNode::Text(text) = inline {
-                            if text.starts_with(prefix) {
-                                return true;
-                            }
-                        }
+                    // Use as_plain_text to handle both plain Text and Strong(Text(...))
+                    let text = heading.content.as_plain_text();
+                    if text.starts_with(prefix) {
+                        return true;
                     }
                 }
             }
@@ -4953,13 +4951,7 @@
 
         // Helper to check if a heading contains specific text
         fn heading_contains(heading: &HeadingNode, text: &str) -> bool {
-            heading.content.0.iter().any(|inline| {
-                if let InlineNode::Text(t) = inline {
-                    t.contains(text)
-                } else {
-                    false
-                }
-            })
+            heading.content.as_plain_text().contains(text)
         }
 
         // Helper to check if a field has ISIN in name OR label
@@ -4971,13 +4963,7 @@
         // Helper to check if a field has ISIN as its label
         fn has_isin_label(field: &FieldNode) -> bool {
             field.label.as_ref().is_some_and(|label_nodes| {
-                label_nodes.0.iter().any(|inline| {
-                    if let InlineNode::Text(t) = inline {
-                        t.trim() == "ISIN"
-                    } else {
-                        false
-                    }
-                })
+                label_nodes.as_plain_text().trim() == "ISIN"
             })
         }
 
@@ -5013,13 +4999,7 @@
                         }
                         if *after_direktvereinbarung2 && heading_contains(heading, "ISIN") {
                             // Check if it's an exact "ISIN" heading (column header)
-                            let is_exact_isin = heading.content.0.iter().any(|inline| {
-                                if let InlineNode::Text(t) = inline {
-                                    t.trim() == "ISIN"
-                                } else {
-                                    false
-                                }
-                            });
+                            let is_exact_isin = heading.content.as_plain_text().trim() == "ISIN";
                             if is_exact_isin {
                                 *isin_heading_count += 1;
                                 println!("Found ISIN heading at index {}", i);
@@ -5131,19 +5111,7 @@
 
         // Helper to extract heading text
         fn get_heading_text(heading: &HeadingNode) -> String {
-            heading
-                .content
-                .0
-                .iter()
-                .filter_map(|inline| {
-                    if let InlineNode::Text(t) = inline {
-                        Some(t.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("")
+            heading.content.as_plain_text()
         }
 
         // Recursive search through the tree
@@ -8052,20 +8020,26 @@
 
         // Helper to extract plain text from a HeadingNode
         fn get_heading_text(heading: &crate::structured::HeadingNode) -> String {
-            heading
-                .content
-                .0
-                .iter()
-                .filter_map(|inline| match inline {
-                    InlineNode::Text(t) => Some(t.as_str()),
+            fn extract_text(inline: &InlineNode) -> Option<String> {
+                match inline {
+                    InlineNode::Text(t) => Some(t.clone()),
                     InlineNode::TranslatedText(map) => {
                         // Prefer Italian, fall back to first available
                         map.get("it")
                             .or_else(|| map.values().next())
-                            .map(|s| s.as_str())
+                            .cloned()
+                    }
+                    InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                        extract_text(inner)
                     }
                     _ => None,
-                })
+                }
+            }
+            heading
+                .content
+                .0
+                .iter()
+                .filter_map(|inline| extract_text(inline))
                 .collect::<Vec<_>>()
                 .join("")
         }
@@ -10740,4 +10714,137 @@
             !has_visible_top_border(letto_node),
             "'Letto, confermato e sottoscritto.' should NOT have a visible top border"
         );
+    }
+
+    #[test]
+    fn test_aaoe_dichiarazione_is_bold() {
+        // "Dichiarazione" is a section heading (H2) and should have bold content
+        // (wrapped in InlineNode::Strong). The XFA source has <font weight="bold">
+        // on the draw element, which must propagate into the rich text runs.
+        //
+        // Additionally, "Diritto all'applicabilità della convenzione" should be bold
+        // (inherits from XFA <font weight="bold">), but "In relazione al rapporto
+        // in essere presso UBS Europe..." should NOT be bold (its <p> has
+        // font-weight:normal in CSS, overriding the XFA default).
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
+
+        let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+            .expect("Failed to run exhaustive merge on AAOE");
+
+        // Recursively search for structured nodes matching a predicate
+        fn find_node<'a, F: Fn(&StructuredNode) -> bool>(
+            nodes: &'a [StructuredNode],
+            pred: &F,
+        ) -> Option<&'a StructuredNode> {
+            for node in nodes {
+                if pred(node) {
+                    return Some(node);
+                }
+                match node {
+                    StructuredNode::Group(g) => {
+                        if let Some(v) = find_node(&g.children, pred) {
+                            return Some(v);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(v) =
+                            find_node(std::slice::from_ref(c.content.as_ref()), pred)
+                        {
+                            return Some(v);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(v) =
+                            find_node(std::slice::from_ref(r.item.as_ref()), pred)
+                        {
+                            return Some(v);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        // Helper: check if any inline node is Strong containing given text
+        fn has_strong_with(nodes: &[InlineNode], text: &str) -> bool {
+            nodes.iter().any(|n| match n {
+                InlineNode::Strong(inner) => match inner.as_ref() {
+                    InlineNode::Text(t) => t.contains(text),
+                    _ => false,
+                },
+                _ => false,
+            })
+        }
+
+        // Helper: check if any inline node is plain Text containing given text (not wrapped in Strong)
+        fn has_plain_text_with(nodes: &[InlineNode], text: &str) -> bool {
+            nodes.iter().any(|n| match n {
+                InlineNode::Text(t) => t.contains(text),
+                _ => false,
+            })
+        }
+
+        // 1. "Dichiarazione" heading should be bold
+        let dichiarazione = find_node(&merged, &|n| {
+            if let StructuredNode::Heading(h) = n {
+                matches!(h.level, HeadingLevel::H2)
+                    && h.content.as_plain_text().contains("Dichiarazione")
+            } else {
+                false
+            }
+        })
+        .expect("Should find H2 heading containing 'Dichiarazione'");
+
+        if let StructuredNode::Heading(h) = dichiarazione {
+            assert!(
+                has_strong_with(&h.content.0, "Dichiarazione"),
+                "'Dichiarazione' heading should be bold (Strong), got: {:?}",
+                h.content.0
+            );
+        }
+
+        // 2. "Diritto all'applicabilità della convenzione" should be bold
+        //    (list item in draw with <font weight="bold">, no CSS font-weight override)
+        let diritto_list = find_node(&merged, &|n| {
+            if let StructuredNode::List(list) = n {
+                list.items.iter().any(|item| {
+                    item.as_plain_text().contains("Diritto all")
+                })
+            } else {
+                false
+            }
+        })
+        .expect("Should find list containing 'Diritto all'applicabilità'");
+
+        if let StructuredNode::List(list) = diritto_list {
+            let diritto_item = list.items.iter().find(|item| {
+                item.as_plain_text().contains("Diritto all")
+            }).expect("Should find list item with 'Diritto all'");
+            assert!(
+                has_strong_with(&diritto_item.0, "Diritto all"),
+                "'Diritto all'applicabilità' list item should be bold (Strong), got: {:?}",
+                diritto_item.0
+            );
+        }
+
+        // 3. "In relazione al rapporto in essere presso UBS Europe" should NOT be bold
+        //    (second <p> has font-weight:normal in CSS, overriding the XFA default)
+        let in_relazione = find_node(&merged, &|n| {
+            if let StructuredNode::Paragraph(p) = n {
+                p.content.as_plain_text().contains("In relazione al rapporto")
+            } else {
+                false
+            }
+        })
+        .expect("Should find paragraph containing 'In relazione al rapporto'");
+
+        if let StructuredNode::Paragraph(p) = in_relazione {
+            assert!(
+                has_plain_text_with(&p.content.0, "In relazione al rapporto"),
+                "'In relazione al rapporto...' should NOT be bold, got: {:?}",
+                p.content.0
+            );
+        }
     }

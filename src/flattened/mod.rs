@@ -2671,11 +2671,16 @@ impl Flattened {
                     .unwrap_or(HAlign::Left);
 
                 // Extract rich text if this is HTML content (exData with contentType="text/html")
+                // Pass XFA font bold/italic as defaults for rich text runs
+                let default_bold = style.font.as_ref().map(|f| f.weight == crate::xfa::FontWeight::Bold).unwrap_or(false);
+                let default_italic = style.font.as_ref().map(|f| f.posture == crate::xfa::FontPosture::Italic).unwrap_or(false);
                 let rich_text = Self::extract_rich_text_from_node(
                     &node.children,
                     default_h_align,
                     Some(ctx.computed_values),
                     Some(ctx.id_to_field),
+                    default_bold,
+                    default_italic,
                 );
 
                 let draw_node = FlattenedNode::new_text_with_rich_text(
@@ -3167,6 +3172,8 @@ impl Flattened {
         default_h_align: HAlign,
         computed_values: Option<&HashMap<SomPath, String>>,
         id_to_field: Option<&HashMap<String, String>>,
+        default_bold: bool,
+        default_italic: bool,
     ) -> Option<RichText> {
         for child in children {
             // Check for XfaNodeKind::Value
@@ -3204,6 +3211,8 @@ impl Flattened {
                                         default_h_align,
                                         computed_values,
                                         id_to_field,
+                                        default_bold,
+                                        default_italic,
                                     ));
                                 }
                             }
@@ -3244,6 +3253,8 @@ impl Flattened {
                                         default_h_align,
                                         computed_values,
                                         id_to_field,
+                                        default_bold,
+                                        default_italic,
                                     ));
                                 }
                             }
@@ -3613,12 +3624,17 @@ impl Flattened {
 
                         // Extract rich text if this is HTML content (exData with contentType="text/html")
                         // This preserves paragraph structure, text-indent, and xfa-spacerun spacing
+                        // Pass XFA font bold/italic as defaults for rich text runs
+                        let default_bold = style.font.as_ref().map(|f| f.weight == crate::xfa::FontWeight::Bold).unwrap_or(false);
+                        let default_italic = style.font.as_ref().map(|f| f.posture == crate::xfa::FontPosture::Italic).unwrap_or(false);
                         let rich_text =
                             Self::extract_rich_text_from_node(
                                 &node.children,
                                 default_h_align,
                                 Some(ctx.computed_values),
                                 Some(ctx.id_to_field),
+                                default_bold,
+                                default_italic,
                             );
 
                         let draw_node = FlattenedNode::new_text_with_rich_text(
@@ -3969,11 +3985,16 @@ impl Flattened {
                                     .unwrap_or(HAlign::Left);
 
                                 // Extract rich text if this is HTML content (exData with contentType="text/html")
+                                // Pass XFA font bold/italic as defaults for rich text runs
+                                let default_bold = style.font.as_ref().map(|f| f.weight == crate::xfa::FontWeight::Bold).unwrap_or(false);
+                                let default_italic = style.font.as_ref().map(|f| f.posture == crate::xfa::FontPosture::Italic).unwrap_or(false);
                                 let rich_text = Self::extract_rich_text_from_node(
                                     &node.children,
                                     default_h_align,
                                     Some(ctx.computed_values),
                                     Some(ctx.id_to_field),
+                                    default_bold,
+                                    default_italic,
                                 );
 
                                 let draw_node = FlattenedNode::new_text_with_rich_text(
@@ -4638,11 +4659,15 @@ impl Flattened {
             .map(|p| p.h_align)
             .unwrap_or(HAlign::Left);
 
+        let default_bold = node_font.as_ref().map(|f| f.weight == crate::xfa::FontWeight::Bold).unwrap_or(false);
+        let default_italic = node_font.as_ref().map(|f| f.posture == crate::xfa::FontPosture::Italic).unwrap_or(false);
         let rich_text = Self::extract_rich_text_from_node(
             children,
             default_h_align,
             Some(computed_values),
             Some(id_to_field),
+            default_bold,
+            default_italic,
         );
         let rich_text = match rich_text {
             Some(rt) => rt,
@@ -6246,14 +6271,16 @@ impl Flattened {
         default_h_align: HAlign,
         computed_values: Option<&std::collections::HashMap<SomPath, String>>,
         id_to_field: Option<&std::collections::HashMap<String, String>>,
+        default_bold: bool,
+        default_italic: bool,
     ) -> RichText {
         let mut paragraphs = Vec::new();
         Self::parse_html_nodes_to_rich_text(
             children,
             &mut paragraphs,
             false,
-            false,
-            false,
+            default_bold,
+            default_italic,
             default_h_align,
             computed_values,
             id_to_field,
@@ -6367,12 +6394,25 @@ impl Flattened {
                                     para.h_align = align;
                                 }
 
-                                // Check for font-weight:bold in paragraph style
-                                style.contains("font-weight:bold")
-                                    || style.contains("font-weight: bold")
+                                // Check for font-weight in paragraph style
+                                // font-weight:bold sets bold, font-weight:normal resets it
+                                let has_bold = style.contains("font-weight:bold")
+                                    || style.contains("font-weight: bold");
+                                let has_normal = style.contains("font-weight:normal")
+                                    || style.contains("font-weight: normal");
+                                if has_bold {
+                                    Some(true)
+                                } else if has_normal {
+                                    Some(false)
+                                } else {
+                                    None
+                                }
                             } else {
-                                false
+                                None
                             };
+
+                            // Compute effective bold: CSS overrides inherited, otherwise inherit
+                            let effective_bold = para_bold.unwrap_or(bold);
 
                             // Add paragraph to list
                             paragraphs.push(para);
@@ -6384,7 +6424,7 @@ impl Flattened {
                                     text,
                                     paragraphs,
                                     preserve_spaces,
-                                    bold || para_bold,
+                                    effective_bold,
                                     italic,
                                     default_h_align,
                                 );
@@ -6395,7 +6435,7 @@ impl Flattened {
                                 &child.children,
                                 paragraphs,
                                 preserve_spaces,
-                                bold || para_bold,
+                                effective_bold,
                                 italic,
                                 default_h_align,
                                 computed_values,
@@ -7677,6 +7717,8 @@ impl Flattened {
                     default_h_align,
                     None,
                     None,
+                    false,
+                    false,
                 ));
             }
             // Recurse into children
