@@ -213,6 +213,20 @@ fn short_uuid(uuid: &Uuid) -> String {
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
 
+    // Extract the H1 heading text to use as the form display title.
+    // Falls back to the form code if no H1 is found.
+    let form_display_title = nodes
+        .iter()
+        .find_map(|n| {
+            if let StructuredNode::Heading(h) = n {
+                if matches!(h.level, HeadingLevel::H1) {
+                    return Some(h.content.as_plain_text().trim().to_string());
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| config.form_title.clone());
+
     // First pass: split StructuredNodes into sections by H2.
     // Each section is (Option<heading_text>, nodes_in_section).
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
@@ -280,7 +294,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     }
 
     AemNode::Root {
-        title: config.form_title.clone(),
+        title: form_display_title,
         children,
     }
 }
@@ -1926,6 +1940,48 @@ mod tests {
                 }
                 other => panic!("Expected Panel at index {}, got {:?}", i, other),
             }
+        }
+    }
+
+    #[test]
+    fn h1_heading_becomes_root_title() {
+        let nodes = vec![
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H1,
+                content: InlineText::plain("My Form Display Title"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Some text"),
+            }),
+        ];
+        let config = default_config(); // form_title == "TEST" (form code)
+        let root = convert_to_aem(&nodes, &config);
+        match &root {
+            AemNode::Root { title, .. } => {
+                assert_eq!(
+                    title, "My Form Display Title",
+                    "Root title should come from H1, not form code"
+                );
+            }
+            other => panic!("Expected Root, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn root_title_falls_back_to_form_code_without_h1() {
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("No heading here"),
+        })];
+        let config = default_config();
+        let root = convert_to_aem(&nodes, &config);
+        match &root {
+            AemNode::Root { title, .. } => {
+                assert_eq!(
+                    title, "TEST",
+                    "Root title should fall back to form_title (form code) when no H1"
+                );
+            }
+            other => panic!("Expected Root, got {:?}", other),
         }
     }
 }

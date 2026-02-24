@@ -1298,7 +1298,7 @@ fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig)
         ));
         elem.push_attribute(("guideNodeClass", "guideTextDraw"));
         elem.push_attribute(("hideTitle", "{Boolean}true"));
-        elem.push_attribute(("messageboxBody", "&lt;p>By clicking on &quot;Preview&quot;, you can review your document before submission.&lt;/p>&lt;p>After clicking &quot;Submit&quot;, you will no longer be able to edit the document and the PDF will be created for signing.&lt;/p>"));
+        elem.push_attribute(("messageboxBody", "<p>By clicking on \"Preview\", you can review your document before submission.</p><p>After clicking \"Submit\", you will no longer be able to edit the document and the PDF will be created for signing.</p>"));
         elem.push_attribute(("name", "previewInformation"));
         elem.push_attribute(("visible", "{Boolean}true"));
         w.write_event(Event::Empty(elem)).unwrap();
@@ -1376,7 +1376,7 @@ fn write_preview_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig)
         elem.push_attribute(("guideNodeClass", "guideTextDraw"));
         elem.push_attribute((
             "messageboxBody",
-            "&lt;p>The form could not be sent. Please try again later.&lt;/p>",
+            "<p>The form could not be sent. Please try again later.</p>",
         ));
         elem.push_attribute(("messageboxTitle", "Submission failed"));
         elem.push_attribute(("messageboxType", "{Long}4"));
@@ -2524,6 +2524,52 @@ mod tests {
             script.contains("COND_Panel1.dorExclusion = false"),
             "Script should set dorExclusion to false when visible. Got: {}",
             script
+        );
+    }
+
+    #[test]
+    fn guideformtitle_uses_root_title_and_jcr_title_uses_form_code() {
+        let config = AemConfig {
+            include_page_wrapper: true,
+            include_toolbar: false,
+            form_code: "AAAI".into(),
+            form_title: "AAAI".into(),
+            ..test_config()
+        };
+        let root = AemNode::Root {
+            title: "EFT Agreement for UBS Europe SE".into(),
+            children: vec![],
+        };
+        let xml = generate_aem_xml(&root, &config);
+
+        // jcr:title on jcr:content should be the form code
+        assert!(
+            xml.contains("jcr:title=\"AAAI\""),
+            "jcr:title should be the form code. XML:\n{}",
+            xml
+        );
+
+        // guideformtitle _value should contain the display title from H1, not the form code
+        assert!(
+            xml.contains("_value=\"&lt;p&gt;EFT Agreement for UBS Europe SE&lt;/p&gt;\""),
+            "guideformtitle _value should wrap the H1 title in <p> tags. XML:\n{}",
+            xml
+        );
+
+        // guideformtitle _value must NOT contain the form code
+        // (the form code only appears in jcr:title)
+        let formtitle_start = xml
+            .find("guideformtitle")
+            .expect("should have guideformtitle");
+        let formtitle_end = xml[formtitle_start..]
+            .find("/>")
+            .map(|i| formtitle_start + i)
+            .expect("guideformtitle should be self-closing");
+        let formtitle_snippet = &xml[formtitle_start..formtitle_end];
+        assert!(
+            !formtitle_snippet.contains("_value=\"&lt;p&gt;AAAI&lt;/p&gt;\""),
+            "guideformtitle _value should NOT be the form code. Snippet:\n{}",
+            formtitle_snippet
         );
     }
 
