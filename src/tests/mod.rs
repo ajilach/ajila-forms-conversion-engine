@@ -9211,14 +9211,11 @@
                 dich_gap_mm
             );
 
-            // The gap above Dichiarazione is mostly from the Nationality subform's
-            // minH="53.262mm" (≈151pt). The expected gap includes:
-            //   Nationality minH padding + Individual bottomInset(3.2mm) +
-            //   Section bottomInset(0) + Text_SectionTitle topInset(1mm).
-            // We allow up to 55mm to cover the minH + margins without flagging
-            // a false positive, but catch genuine layout overestimates (>55mm
-            // would suggest a rich-text height bug or similar).
-            let max_reasonable_gap_mm = 55.0;
+            // The gap above Dichiarazione includes margins from the Nationality
+            // subform's bottomInset, Individual's bottomInset, and Section margins.
+            // With the minH fix (container subforms in lr-tb no longer inflate
+            // row height), the gap should be modest — well under 15mm.
+            let max_reasonable_gap_mm = 15.0;
             let max_reasonable_gap_pt = max_reasonable_gap_mm * 72.0 / 25.4;
             assert!(
                 dich_gap_f64 < max_reasonable_gap_pt,
@@ -9230,6 +9227,73 @@
                 max_reasonable_gap_mm
             );
         }
+    }
+
+    #[test]
+    fn test_aaoe_nazionalita_dichiarazione_gap_not_too_large() {
+        // The AAOE form (Individual variant) has "Nazionalità" (the Nationality
+        // description label) followed by the "Dichiarazione" section heading.
+        // In between sits the hidden Company subform (hidden when CL_ClientType =
+        // "Individual").  The Nationality subform has minH="53.262mm" which is a
+        // fixed-layout alignment property — it should NOT inflate the row height
+        // in the flowable lr-tb layout used by Individual_DYN.
+        //
+        // Expected gap: between 10pt and 50pt (content margins only).
+        // Bug symptom: gap ≈ 128pt due to minH inflating the lr-tb row.
+
+        use crate::flattened::FlattenedNodeKind;
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes =
+            XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        // Find the "Nazionalità" label (DES_Nationality draw)
+        let nazionalita_node = flattened.iter_nodes().find(|n| {
+            if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
+                source_name.as_deref() == Some("DES_Nationality")
+                    || content.contains("Nazionalità")
+            } else {
+                false
+            }
+        }).expect("'Nazionalità' label node not found");
+
+        // Find the "Dichiarazione" section title (Text_SectionTitle, not the subtitle)
+        let dichiarazione_node = flattened.iter_nodes().find(|n| {
+            if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
+                source_name.as_deref() == Some("Text_SectionTitle")
+                    && content.contains("Dichiarazione")
+                    && !content.contains("esenzione")
+            } else {
+                false
+            }
+        }).expect("'Dichiarazione' section title not found");
+
+        let naz_bounds = nazionalita_node.bounds();
+        let dich_bounds = dichiarazione_node.bounds();
+
+        let gap = naz_bounds.vertical_gap_to(&dich_bounds)
+            .expect("Dichiarazione should be below Nazionalità");
+        let gap_f64 = gap.to_f64().unwrap_or(0.0);
+
+        println!(
+            "Nazionalità bottom: {:.1}pt, Dichiarazione top: {:.1}pt, gap: {:.1}pt",
+            naz_bounds.bottom().to_f64().unwrap_or(0.0),
+            dich_bounds.y.to_f64().unwrap_or(0.0),
+            gap_f64,
+        );
+
+        assert!(
+            gap_f64 >= 10.0 && gap_f64 <= 50.0,
+            "Gap between Nazionalità and Dichiarazione should be 10–50pt, \
+             but was {:.1}pt. A large gap indicates that the Nationality subform's \
+             minH is incorrectly inflating the lr-tb row height.",
+            gap_f64,
+        );
     }
 
     #[test]

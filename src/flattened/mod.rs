@@ -3466,8 +3466,10 @@ impl Flattened {
                         let actual_height = children_height
                             + node.margin_top.unwrap_or(Decimal::ZERO)
                             + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                        let min_h = node.min_h.unwrap_or(Decimal::ZERO);
-                        let effective_height = actual_height.max(min_h).max(consumed_height);
+                        // Skip .max(min_h) — minH on container subforms in lr-tb
+                        // is a fixed-layout alignment property that shouldn't
+                        // inflate the row height in a flowable web layout.
+                        let effective_height = actual_height.max(consumed_height);
                         max_height_in_row = max_height_in_row.max(effective_height);
                     }
                 }
@@ -3820,9 +3822,9 @@ impl Flattened {
                                 let actual_height = children_height
                                     + node.margin_top.unwrap_or(Decimal::ZERO)
                                     + node.margin_bottom.unwrap_or(Decimal::ZERO);
-                                let min_h = node.min_h.unwrap_or(Decimal::ZERO);
+                                // Skip .max(min_h) — see comment above for Subform.
                                 let effective_height =
-                                    actual_height.max(min_h).max(consumed_height);
+                                    actual_height.max(consumed_height);
                                 max_height_in_row = max_height_in_row.max(effective_height);
                             }
                         }
@@ -4273,22 +4275,20 @@ impl Flattened {
                             total_height.max(min_height)
                         }
                         _ => {
-                            // Containers: if min_height is set, use it; else 0 (children determine)
-                            if min_height > Decimal::ZERO {
-                                min_height
-                            } else {
-                                Decimal::ZERO
-                            }
+                            // Containers: children determine height. Don't apply
+                            // minH here — the parent-layout-specific branches
+                            // handle it (tb/position apply .max(min_height) but
+                            // lr-tb intentionally does not, since minH on container
+                            // subforms is a fixed-layout alignment property that
+                            // shouldn't inflate row height in flowable web layout).
+                            Decimal::ZERO
                         }
                     }
                 }
                 _ => {
-                    // Other containers: if min_height is set, use it; else 0
-                    if min_height > Decimal::ZERO {
-                        min_height
-                    } else {
-                        Decimal::ZERO
-                    }
+                    // Containers: children determine height. Don't apply
+                    // minH here — see comment above for Element containers.
+                    Decimal::ZERO
                 }
             }
         });
