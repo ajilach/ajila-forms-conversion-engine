@@ -268,6 +268,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 is_page: true,
                 dor_exclude: false,
                 visible: true,
+                dor_num_cols: None,
             });
         } else {
             // Preamble (before first H2) → also wrap in a Panel
@@ -282,6 +283,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     is_page: true,
                     dor_exclude: false,
                     visible: true,
+                    dor_num_cols: None,
                 });
             }
         }
@@ -481,6 +483,7 @@ fn convert_table(
             is_page: false,
             dor_exclude: false,
             visible: true,
+            dor_num_cols: None,
         });
     }
 
@@ -503,6 +506,7 @@ fn convert_table(
             is_page: false,
             dor_exclude: false,
             visible: true,
+            dor_num_cols: None,
         });
     }
 
@@ -514,6 +518,7 @@ fn convert_table(
         is_page: false,
         dor_exclude: false,
         visible: true,
+        dor_num_cols: None,
     }
 }
 
@@ -706,6 +711,7 @@ fn convert_group(g: &GroupNode, config: &AemConfig, ctx: &mut ConversionContext)
         is_page: false,
         dor_exclude: false,
         visible: true,
+        dor_num_cols: None,
     }
 }
 
@@ -741,6 +747,7 @@ fn convert_conditional(
         is_page: false,
         dor_exclude: true,
         visible: false,
+        dor_num_cols: None,
     }
 }
 
@@ -768,6 +775,7 @@ fn convert_grid_layout(
         is_page: false,
         dor_exclude: false,
         visible: true,
+        dor_num_cols: Some(gl.columns as u32),
     }
 }
 

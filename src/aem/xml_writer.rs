@@ -540,6 +540,7 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
         is_page,
         dor_exclude,
         visible,
+        dor_num_cols,
     } = node
     else {
         return;
@@ -581,7 +582,7 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
     write_items_end(w);
 
     // <layout>
-    write_layout(w, config, true);
+    write_layout(w, config, true, *dor_num_cols);
 
     w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
 }
@@ -1208,12 +1209,21 @@ fn write_items_end(w: &mut Writer<&mut Cursor<Vec<u8>>>) {
 }
 
 /// Write `<layout>` element.
-fn write_layout(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig, non_navigable: bool) {
+fn write_layout(
+    w: &mut Writer<&mut Cursor<Vec<u8>>>,
+    config: &AemConfig,
+    non_navigable: bool,
+    dor_num_cols: Option<u32>,
+) {
     let mut elem = BytesStart::new("layout");
     elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
     elem.push_attribute(("sling:resourceType", config.default_layout.as_str()));
     elem.push_attribute(("columns", "1"));
     elem.push_attribute(("dorLayoutType", "columnar"));
+    if let Some(cols) = dor_num_cols {
+        let cols_str = cols.to_string();
+        elem.push_attribute(("dorNumCols", cols_str.as_str()));
+    }
     if non_navigable {
         elem.push_attribute(("nonNavigable", "{Boolean}true"));
     }
@@ -2321,6 +2331,7 @@ mod tests {
                 is_page: false,
                 dor_exclude: true,
                 visible: false,
+                dor_num_cols: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
