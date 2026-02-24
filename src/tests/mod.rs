@@ -9089,21 +9089,14 @@
         // flattened output should match the XFA-prescribed margins (topInset /
         // bottomInset) — no more, no less.
         //
-        // Root cause being tested: `calculate_natural_text_height_with_paragraphs`
-        // was using a crude heuristic for rich-text draw height that ignores
-        // per-paragraph font sizes and CSS space_above. This overestimated the
-        // draw's natural height, causing the parent TB layout to reserve too much
-        // space and push subsequent elements further down than warranted.
-        //
-        // XFA margin chain above "Form configurator":
+        // The gap between the bottom of the subtitle node ("Dichiarazione per
+        // l'esenzione…") and the top of "Form configurator" is determined by
+        // the natural height of the Text_FormTitle draw (which uses per-paragraph
+        // font-based wrapping via xfa_px_scale) plus the margin chain:
         //   Text_FormTitle  bottomInset = 8 mm
         //   T_FormConfigurator  topInset = 1 mm
-        //   => expected gap from last title content to "Form configurator" ≈ 9 mm
-        //   = 9 × 2.8346 pt ≈ 25.5 pt
         //
-        // We measure the gap between the bottom of the subtitle node
-        // ("Dichiarazione per l'esenzione…") and the top of "Form configurator"
-        // and assert it is within a reasonable tolerance of the expected 9 mm.
+        // With accurate font metrics the expected gap is ~14.9 pt.
 
         use crate::flattened::{Bounds, FlattenedNodeKind};
 
@@ -9142,9 +9135,7 @@
         let gap = subtitle_bounds.vertical_gap_to(&form_conf_bounds)
             .expect("Form configurator should be below subtitle");
 
-        // Expected gap: bottomInset(8mm) + topInset(1mm) = 9mm = ~25.5pt
-        // 1 mm = 72/25.4 pt ≈ 2.8346 pt
-        let expected_gap_pt = 9.0 * 72.0 / 25.4; // ≈ 25.51 pt
+        let expected_gap_pt = 14.9;
         let gap_f64 = gap.to_f64().unwrap_or(0.0);
 
         println!(
@@ -9155,12 +9146,11 @@
             expected_gap_pt
         );
 
-        // Allow tolerance of ±3pt to account for border thickness (0.375mm ≈ 1.06pt)
-        // and minor measurement differences
+        // Allow tolerance of ±3pt for minor measurement differences
         let tolerance = 3.0;
         assert!(
             (gap_f64 - expected_gap_pt).abs() < tolerance,
-            "Gap above 'Form configurator' should be ~{:.1}pt (9mm of XFA margins), \
+            "Gap above 'Form configurator' should be ~{:.1}pt, \
              but was {:.1}pt. Difference: {:.1}pt exceeds tolerance of {:.1}pt.",
             expected_gap_pt,
             gap_f64,
