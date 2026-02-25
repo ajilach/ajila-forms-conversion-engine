@@ -1,4 +1,6 @@
 
+    pub mod helpers;
+
     use crate::xfa::script_executor::ScriptExecutor;
 
     use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
@@ -11353,3 +11355,126 @@
             span_nachname, span_vorname
         );
     }
+
+    #[test]
+    fn test_antrag_sozialhilfe_structured_headings_and_fields() {
+        // Test that the non-XFA PDF "antrag_wirtschaftliche_sozialhilfe.pdf"
+        // produces the expected headings and field labels in its structured output.
+        use crate::structured::{HeadingLevel, StructuredNode, FieldNode, HeadingNode, InlineText};
+        use crate::context::Context;
+
+        let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+            .expect("Failed to load antrag_wirtschaftliche_sozialhilfe PDF");
+
+        assert!(bp.is_acroform(), "PDF should be detected as AcroForm (non-XFA)");
+
+        let ctx = bp.context();
+        let form_states = bp.states().expect("Failed to get form states");
+
+        assert!(!form_states.is_empty(), "Should have at least one form state");
+
+        let envelope = form_states.iter().next().unwrap().structured(ctx);
+
+        // --- Collect headings recursively ---
+        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => {
+                        let level = h.level.as_u8();
+                        let text = h.content.as_plain_text();
+                        out.push((level, text));
+                    }
+                    StructuredNode::Group(g) => collect_headings(&g.children, out),
+                    StructuredNode::Conditional(c) => {
+                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_headings(&nodes, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut headings: Vec<(u8, String)> = Vec::new();
+        collect_headings(&envelope.content, &mut headings);
+
+        println!("\n=== Headings found ===");
+        for (level, text) in &headings {
+            println!("  H{}: '{}'", level, text);
+        }
+
+        // Assert H1 heading
+        assert!(
+            headings.iter().any(|(level, text)| *level == 1 && text.contains("Antrag auf Wirtschaftliche Sozialhilfe")),
+            "Expected H1 heading 'Antrag auf Wirtschaftliche Sozialhilfe' not found.\nFound headings: {:?}",
+            headings
+        );
+
+        // Assert H2 heading
+        assert!(
+            headings.iter().any(|(level, text)| *level == 2 && text.contains("Personalien Antragssteller/in")),
+            "Expected H2 heading 'Personalien Antragssteller/in' not found.\nFound headings: {:?}",
+            headings
+        );
+
+        // --- Collect field labels recursively ---
+        fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(field) => {
+                        if let Some(label) = &field.label {
+                            let text = label.as_plain_text().trim().to_string();
+                            if !text.is_empty() {
+                                labels.push(text);
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => collect_field_labels(&g.children, labels),
+                    StructuredNode::Conditional(c) => {
+                        collect_field_labels(std::slice::from_ref(c.content.as_ref()), labels);
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_field_labels(std::slice::from_ref(r.item.as_ref()), labels);
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                        collect_field_labels(&nodes, labels);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut field_labels: Vec<String> = Vec::new();
+        collect_field_labels(&envelope.content, &mut field_labels);
+
+        println!("\n=== Field labels found ===");
+        for label in &field_labels {
+            println!("  - '{}'", label);
+        }
+
+        let expected_labels = [
+            "Name",
+            "Vorname",
+            "Geburtsdatum",
+            "Nationalität",
+            "Strasse, Nr.",
+            "Postleitzahl",
+            "Ort",
+        ];
+
+        for expected in expected_labels {
+            let found = field_labels.iter().any(|label| label.contains(expected));
+            assert!(
+                found,
+                "Expected field label containing '{}' not found.\nFound labels: {:?}",
+                expected, field_labels
+            );
+        }
+    }
+

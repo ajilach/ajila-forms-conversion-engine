@@ -39,6 +39,13 @@ impl Default for InlineFieldDetector {
 }
 
 impl InlineFieldDetector {
+    /// Minimum number of characters of adjacent text on the same line for a
+    /// field to be considered "inline".  If the total adjacent text is shorter
+    /// than this, the text is likely a simple label (e.g. "Name", "Vorname")
+    /// rather than flowing prose, and the field should be left for the
+    /// LabelAttacher instead.
+    const MIN_INLINE_TEXT_CHARS: usize = 20;
+
     pub fn new() -> Self {
         InlineFieldDetector {
             line_tolerance: Decimal::from_str("8.0").unwrap(),
@@ -98,6 +105,7 @@ impl InlineFieldDetector {
     /// Returns true if:
     /// - Field has text directly before or after on the same line
     /// - Field does NOT have a text block aligned above or below
+    /// - The adjacent text is long enough to look like flowing text (not just a label)
     fn is_inline_by_adjacency(
         &self,
         doc: &Document,
@@ -110,14 +118,18 @@ impl InlineFieldDetector {
 
         let mut has_adjacent_text = false;
         let mut has_label_above_or_below = false;
+        let mut adjacent_char_count: usize = 0;
 
         for &text_idx in text_groups {
             let Some(text_bounds) = doc.get_bounds(text_idx) else {
                 continue;
             };
 
+            let text_content = doc.get_text_content(text_idx);
+            let trimmed = text_content.trim();
+
             // Skip empty text
-            if doc.get_text_content(text_idx).trim().is_empty() {
+            if trimmed.is_empty() {
                 continue;
             }
 
@@ -126,6 +138,7 @@ impl InlineFieldDetector {
                 || self.has_text_right(&text_bounds, &field_bounds)
             {
                 has_adjacent_text = true;
+                adjacent_char_count += trimmed.chars().count();
             }
 
             // Check for text above or below (potential label)
@@ -136,8 +149,14 @@ impl InlineFieldDetector {
             }
         }
 
-        // Inline field: has adjacent text but NO label above/below
-        has_adjacent_text && !has_label_above_or_below
+        // Inline field: has adjacent text, the adjacent text is long enough
+        // to look like flowing text (not just a short label like "Name" or
+        // "Vorname"), and no label above/below.
+        // Short adjacent text (< MIN_INLINE_TEXT_CHARS chars) is likely a label
+        // intended for the LabelAttacher, not inline field context.
+        has_adjacent_text
+            && !has_label_above_or_below
+            && adjacent_char_count >= Self::MIN_INLINE_TEXT_CHARS
     }
 
     /// Check if a field is contained within a TextBlock's bounds,

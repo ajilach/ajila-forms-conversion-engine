@@ -24,6 +24,9 @@
 //! TextBlockGrouper            ─── wraps each text node in a TextBlock
 //!     │
 //!     ▼
+//! PlaceholderFilter           ─── claims placeholder text ("...", "___")
+//!     │
+//!     ▼
 //! FieldGrouper                ─── wraps fields in Field groups
 //!     │
 //!     ▼
@@ -93,6 +96,7 @@ mod list_detector;
 mod master_page_detector;
 mod no_print_detector;
 mod overlapping_text_block_merger;
+mod placeholder_filter;
 mod radio_button_content;
 mod radio_button_detector;
 mod radio_button_grouper;
@@ -114,6 +118,7 @@ pub use list_detector::ListDetector;
 pub use master_page_detector::MasterPageDetector;
 pub use no_print_detector::NoPrintDetector;
 pub use overlapping_text_block_merger::OverlappingTextBlockMerger;
+pub use placeholder_filter::PlaceholderFilter;
 pub use radio_button_content::RadioButtonContentDetector;
 pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
@@ -180,6 +185,7 @@ pub fn run_analysis_pipeline_with_context(
     NoPrintDetector::new().process_with_context(doc, ctx);
     MasterPageDetector::new().process_with_context(doc, ctx);
     TextBlockGrouper::new().process_with_context(doc, ctx);
+    PlaceholderFilter::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
