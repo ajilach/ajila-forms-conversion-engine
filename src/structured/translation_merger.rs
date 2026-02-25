@@ -1258,13 +1258,7 @@ mod tests {
 
         let merged = merge_translations(vec![de, en]).unwrap();
         assert_eq!(merged.context.language(), "de,en");
-        assert_eq!(
-            merged.context.get_variable("formrange_code"),
-            Some("AAAI")
-        );
-        assert_eq!(
-            merged.context.get_variable("formrange_entity"),
-            Some("019")
-        );
+        assert_eq!(merged.context.get_variable("formrange_code"), Some("AAAI"));
+        assert_eq!(merged.context.get_variable("formrange_entity"), Some("019"));
     }
 }
