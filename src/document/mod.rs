@@ -39,7 +39,65 @@ use ab_glyph::PxScale;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rust_decimal::prelude::*;
+use serde::Serialize;
 use std::collections::HashSet;
+
+/// The CSS `list-style-type` for a list, preserved from the detected marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ListStyleType {
+    // Unordered
+    Disc,
+    Circle,
+    Square,
+    /// Dash marker (`-`, `*`, `–`, `—`).  Rendered as `"\2013"` (en-dash).
+    Dash,
+    // Ordered
+    Decimal,
+    LowerAlpha,
+    UpperAlpha,
+    LowerRoman,
+    UpperRoman,
+}
+
+impl ListStyleType {
+    /// Whether this style represents an ordered (numbered) list.
+    pub fn is_ordered(self) -> bool {
+        matches!(
+            self,
+            ListStyleType::Decimal
+                | ListStyleType::LowerAlpha
+                | ListStyleType::UpperAlpha
+                | ListStyleType::LowerRoman
+                | ListStyleType::UpperRoman
+        )
+    }
+
+    /// The CSS `list-style-type` value string.
+    pub fn css_value(self) -> &'static str {
+        match self {
+            ListStyleType::Disc => "disc",
+            ListStyleType::Circle => "circle",
+            ListStyleType::Square => "square",
+            ListStyleType::Dash => "\"\\2013\"",
+            ListStyleType::Decimal => "decimal",
+            ListStyleType::LowerAlpha => "lower-alpha",
+            ListStyleType::UpperAlpha => "upper-alpha",
+            ListStyleType::LowerRoman => "lower-roman",
+            ListStyleType::UpperRoman => "upper-roman",
+        }
+    }
+
+    /// Whether emitting `list-style-type` CSS is necessary (i.e. not the
+    /// default for the corresponding `<ol>` or `<ul>` element).
+    pub fn needs_css(self) -> bool {
+        match self {
+            ListStyleType::Disc => false,    // default for <ul>
+            ListStyleType::Decimal => false, // default for <ol>
+            _ => true,
+        }
+    }
+}
 use std::path::Path;
 
 /// A Document wraps a Flattened representation and accumulates analysis results as Groups.
@@ -194,8 +252,8 @@ pub enum GroupKind {
     /// A list of items (ordered or unordered)
     /// Children are TextBlock groups, one per list item.
     List {
-        /// Whether the list is ordered (numbered) or unordered (bulleted)
-        ordered: bool,
+        /// The list style type detected from the marker characters.
+        list_style: ListStyleType,
     },
 
     /// Inset content that belongs to a specific radio button option.
@@ -832,11 +890,11 @@ impl<'a> Document<'a> {
             }
             GroupKind::NoPrint => "NoPrint".to_string(),
             GroupKind::GridLayout { columns, .. } => format!("GridLayout[{}cols]", columns),
-            GroupKind::List { ordered } => {
-                if *ordered {
-                    "OrderedList".to_string()
+            GroupKind::List { list_style } => {
+                if list_style.is_ordered() {
+                    format!("OrderedList[{}]", list_style.css_value())
                 } else {
-                    "UnorderedList".to_string()
+                    format!("UnorderedList[{}]", list_style.css_value())
                 }
             }
             GroupKind::RadioButtonContent {

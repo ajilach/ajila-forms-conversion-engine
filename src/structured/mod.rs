@@ -93,7 +93,7 @@ pub enum StructuredNode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListNode {
-    pub ordered: bool,
+    pub list_style: crate::document::ListStyleType,
     pub items: Vec<InlineText>,
 }
 
@@ -571,7 +571,7 @@ impl StructuredNode {
                     })
             }
             (StructuredNode::List(a), StructuredNode::List(b)) => {
-                a.ordered == b.ordered
+                a.list_style == b.list_style
                     && a.items.len() == b.items.len()
                     && (mode == CompareMode::IgnoreText
                         || a.items

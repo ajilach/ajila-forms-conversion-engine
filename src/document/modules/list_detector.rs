@@ -24,7 +24,7 @@
 //! so the structured converter receives clean item text.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind, GroupSource, ListStyleType};
 use crate::flattened::Bounds;
 use rust_decimal::prelude::*;
 
@@ -47,29 +47,11 @@ impl ListDetector {
     }
 }
 
-/// The type of list marker detected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MarkerKind {
-    Unordered,
-    /// Ordered with a specific sub-kind so that numeric (1. 2.) and letter
-    /// (a. b.) markers are not mixed into the same list.
-    Ordered(OrderedSubKind),
-}
-
-/// Sub-classification of ordered list markers.  Items with different
-/// sub-kinds must not be merged into the same list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OrderedSubKind {
-    Numeric,
-    Letter,
-    Roman,
-}
-
 /// A detected list marker with its kind and the byte length of the marker
 /// prefix (including trailing whitespace) to strip.
 #[derive(Debug, Clone)]
 struct DetectedMarker {
-    kind: MarkerKind,
+    kind: ListStyleType,
     /// Number of bytes to strip from the start of the text content.
     #[allow(dead_code)] // used in tests
     prefix_len: usize,
@@ -91,27 +73,62 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
     // Check unordered markers: single characters
     // For non-ambiguous bullet chars (–, —, •, ◦, ▪), space after is optional.
     // For ambiguous chars (-, *), space after is required.
-    let unordered_no_space = ['\u{2013}', '\u{2014}', '\u{2022}', '\u{25E6}', '\u{25AA}'];
-    let unordered_need_space = ['-', '*'];
 
-    for &ch in &unordered_no_space {
+    // Disc: • (bullet)
+    if trimmed.starts_with('\u{2022}') {
+        let ch = '\u{2022}';
+        let after = &trimmed[ch.len_utf8()..];
+        let ws_after = after.len() - after.trim_start().len();
+        return Some(DetectedMarker {
+            kind: ListStyleType::Disc,
+            prefix_len: leading_ws + ch.len_utf8() + ws_after,
+        });
+    }
+
+    // Circle: ◦ (white bullet)
+    if trimmed.starts_with('\u{25E6}') {
+        let ch = '\u{25E6}';
+        let after = &trimmed[ch.len_utf8()..];
+        let ws_after = after.len() - after.trim_start().len();
+        return Some(DetectedMarker {
+            kind: ListStyleType::Circle,
+            prefix_len: leading_ws + ch.len_utf8() + ws_after,
+        });
+    }
+
+    // Square: ▪ (black small square)
+    if trimmed.starts_with('\u{25AA}') {
+        let ch = '\u{25AA}';
+        let after = &trimmed[ch.len_utf8()..];
+        let ws_after = after.len() - after.trim_start().len();
+        return Some(DetectedMarker {
+            kind: ListStyleType::Square,
+            prefix_len: leading_ws + ch.len_utf8() + ws_after,
+        });
+    }
+
+    // Dash markers: – (en-dash), — (em-dash) — space optional
+    let dash_no_space = ['\u{2013}', '\u{2014}'];
+    for &ch in &dash_no_space {
         if trimmed.starts_with(ch) {
             let after = &trimmed[ch.len_utf8()..];
             let ws_after = after.len() - after.trim_start().len();
             return Some(DetectedMarker {
-                kind: MarkerKind::Unordered,
+                kind: ListStyleType::Dash,
                 prefix_len: leading_ws + ch.len_utf8() + ws_after,
             });
         }
     }
 
-    for &ch in &unordered_need_space {
+    // Dash markers: -, * — space required
+    let dash_need_space = ['-', '*'];
+    for &ch in &dash_need_space {
         if trimmed.starts_with(ch) {
             let after = &trimmed[ch.len_utf8()..];
             if after.is_empty() || after.starts_with(char::is_whitespace) {
                 let ws_after = after.len() - after.trim_start().len();
                 return Some(DetectedMarker {
-                    kind: MarkerKind::Unordered,
+                    kind: ListStyleType::Dash,
                     prefix_len: leading_ws + ch.len_utf8() + ws_after,
                 });
             }
@@ -121,23 +138,31 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
     // Check ordered markers: <digits>. or <digits>)
     if let Some(marker) = detect_numeric_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered(OrderedSubKind::Numeric),
+            kind: ListStyleType::Decimal,
             prefix_len: leading_ws + marker,
         });
     }
 
     // Check ordered markers: <letter>. or <letter>)
-    if let Some(marker) = detect_letter_marker(trimmed) {
+    if let Some((marker, is_upper)) = detect_letter_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered(OrderedSubKind::Letter),
+            kind: if is_upper {
+                ListStyleType::UpperAlpha
+            } else {
+                ListStyleType::LowerAlpha
+            },
             prefix_len: leading_ws + marker,
         });
     }
 
     // Check ordered markers: <roman>. or <roman>)
-    if let Some(marker) = detect_roman_marker(trimmed) {
+    if let Some((marker, is_upper)) = detect_roman_marker(trimmed) {
         return Some(DetectedMarker {
-            kind: MarkerKind::Ordered(OrderedSubKind::Roman),
+            kind: if is_upper {
+                ListStyleType::UpperRoman
+            } else {
+                ListStyleType::LowerRoman
+            },
             prefix_len: leading_ws + marker,
         });
     }
@@ -179,8 +204,8 @@ fn detect_numeric_marker(text: &str) -> Option<usize> {
 
 /// Detect a letter marker like "a.", "b)", "A." at the start of text.
 /// Single letter only (not multi-letter like "aa.").
-/// Returns the byte length of the marker + trailing whitespace.
-fn detect_letter_marker(text: &str) -> Option<usize> {
+/// Returns the byte length of the marker + trailing whitespace, and whether uppercase.
+fn detect_letter_marker(text: &str) -> Option<(usize, bool)> {
     let bytes = text.as_bytes();
 
     // Must be exactly one ASCII letter
@@ -204,12 +229,13 @@ fn detect_letter_marker(text: &str) -> Option<usize> {
     // are valid letter markers too, so we keep them)
 
     let ws_after = after.len() - after.trim_start().len();
-    Some(2 + ws_after)
+    let is_upper = bytes[0].is_ascii_uppercase();
+    Some((2 + ws_after, is_upper))
 }
 
 /// Detect a roman numeral marker like "i.", "ii.", "iv.", "xi)" at the start of text.
-/// Returns the byte length of the marker + trailing whitespace.
-fn detect_roman_marker(text: &str) -> Option<usize> {
+/// Returns the byte length of the marker + trailing whitespace, and whether uppercase.
+fn detect_roman_marker(text: &str) -> Option<(usize, bool)> {
     let bytes = text.as_bytes();
     let mut i = 0;
 
@@ -253,7 +279,7 @@ fn detect_roman_marker(text: &str) -> Option<usize> {
     }
 
     let ws_after = after.len() - after.trim_start().len();
-    Some(i + ws_after)
+    Some((i + ws_after, is_upper))
 }
 
 impl AnalysisModule for ListDetector {
@@ -272,16 +298,16 @@ impl AnalysisModule for ListDetector {
         // Each entry: (group_idx, text, bounds, marker)
         let mut current_run: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
         let mut groups: Vec<Vec<usize>> = Vec::new();
-        let mut group_kinds: Vec<MarkerKind> = Vec::new();
+        let mut group_styles: Vec<ListStyleType> = Vec::new();
 
         let flush = |run: &mut Vec<(usize, String, Bounds, DetectedMarker)>,
                      groups: &mut Vec<Vec<usize>>,
-                     group_kinds: &mut Vec<MarkerKind>| {
+                     group_styles: &mut Vec<ListStyleType>| {
             if run.len() >= 2 {
                 let child_indices: Vec<usize> = run.iter().map(|(idx, _, _, _)| *idx).collect();
                 let kind = run[0].3.kind;
                 groups.push(child_indices);
-                group_kinds.push(kind);
+                group_styles.push(kind);
             }
             run.clear();
         };
@@ -290,7 +316,7 @@ impl AnalysisModule for ListDetector {
             // Only TextBlock groups can be list items
             if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
                 // Non-TextBlock root breaks any ongoing list run
-                flush(&mut current_run, &mut groups, &mut group_kinds);
+                flush(&mut current_run, &mut groups, &mut group_styles);
                 continue;
             }
 
@@ -298,7 +324,7 @@ impl AnalysisModule for ListDetector {
             let bounds = match doc.get_bounds(idx) {
                 Some(b) => b,
                 None => {
-                    flush(&mut current_run, &mut groups, &mut group_kinds);
+                    flush(&mut current_run, &mut groups, &mut group_styles);
                     continue;
                 }
             };
@@ -310,7 +336,7 @@ impl AnalysisModule for ListDetector {
                     if same_kind && similar_x {
                         current_run.push((idx, text, bounds, marker));
                     } else {
-                        flush(&mut current_run, &mut groups, &mut group_kinds);
+                        flush(&mut current_run, &mut groups, &mut group_styles);
                         current_run.push((idx, text, bounds, marker));
                     }
                 } else {
@@ -318,21 +344,20 @@ impl AnalysisModule for ListDetector {
                 }
             } else {
                 // TextBlock without a marker also breaks the run
-                flush(&mut current_run, &mut groups, &mut group_kinds);
+                flush(&mut current_run, &mut groups, &mut group_styles);
             }
         }
 
         // Flush the final run
-        flush(&mut current_run, &mut groups, &mut group_kinds);
+        flush(&mut current_run, &mut groups, &mut group_styles);
 
         // For each list group, merge into a List group
-        for (group_indices, kind) in groups.into_iter().zip(group_kinds) {
-            let ordered = matches!(kind, MarkerKind::Ordered(_));
+        for (group_indices, list_style) in groups.into_iter().zip(group_styles) {
             let child_group_indices = group_indices;
 
             doc.merge(
                 child_group_indices,
-                GroupKind::List { ordered },
+                GroupKind::List { list_style },
                 GroupSource::Inferred {
                     module: self.name().to_string(),
                 },
@@ -345,62 +370,62 @@ impl AnalysisModule for ListDetector {
 mod tests {
     use super::*;
     use crate::document::modules::TextBlockGrouper;
-    use crate::document::{Document, GroupKind};
+    use crate::document::{Document, GroupKind, ListStyleType};
     use crate::flattened::{Flattened, FlattenedNode, Page};
     use crate::xfa::num;
 
     #[test]
     fn test_detect_unordered_dash() {
         let m = detect_marker("- Item one").unwrap();
-        assert_eq!(m.kind, MarkerKind::Unordered);
+        assert_eq!(m.kind, ListStyleType::Dash);
         assert_eq!(m.prefix_len, 2);
     }
 
     #[test]
     fn test_detect_unordered_bullet() {
         let m = detect_marker("• Bullet item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Unordered);
+        assert_eq!(m.kind, ListStyleType::Disc);
         assert_eq!(m.prefix_len, "• ".len());
     }
 
     #[test]
     fn test_detect_unordered_endash() {
         let m = detect_marker("– Item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Unordered);
+        assert_eq!(m.kind, ListStyleType::Dash);
     }
 
     #[test]
     fn test_detect_ordered_number() {
         let m = detect_marker("1. First item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Numeric));
+        assert_eq!(m.kind, ListStyleType::Decimal);
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_number_paren() {
         let m = detect_marker("2) Second item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Numeric));
+        assert_eq!(m.kind, ListStyleType::Decimal);
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_letter() {
         let m = detect_marker("a. First sub-item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Letter));
+        assert_eq!(m.kind, ListStyleType::LowerAlpha);
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_letter_upper() {
         let m = detect_marker("A) First sub-item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Letter));
+        assert_eq!(m.kind, ListStyleType::UpperAlpha);
         assert_eq!(m.prefix_len, 3);
     }
 
     #[test]
     fn test_detect_ordered_roman() {
         let m = detect_marker("ii. Second roman item").unwrap();
-        assert_eq!(m.kind, MarkerKind::Ordered(OrderedSubKind::Roman));
+        assert_eq!(m.kind, ListStyleType::LowerRoman);
         assert_eq!(m.prefix_len, 4);
     }
 
@@ -465,8 +490,9 @@ mod tests {
         let list_group = doc.get_group(lists[0]).unwrap();
         assert_eq!(list_group.children.len(), 3, "List should have 3 items");
 
-        if let GroupKind::List { ordered } = &list_group.kind {
-            assert!(!ordered, "Should be an unordered list");
+        if let GroupKind::List { list_style } = &list_group.kind {
+            assert!(!list_style.is_ordered(), "Should be an unordered list");
+            assert_eq!(*list_style, ListStyleType::Dash);
         } else {
             panic!("Expected List group kind");
         }
@@ -509,8 +535,9 @@ mod tests {
         assert_eq!(lists.len(), 1, "Should detect one ordered list");
 
         let list_group = doc.get_group(lists[0]).unwrap();
-        if let GroupKind::List { ordered } = &list_group.kind {
-            assert!(ordered, "Should be an ordered list");
+        if let GroupKind::List { list_style } = &list_group.kind {
+            assert!(list_style.is_ordered(), "Should be an ordered list");
+            assert_eq!(*list_style, ListStyleType::Decimal);
         } else {
             panic!("Expected List group kind");
         }

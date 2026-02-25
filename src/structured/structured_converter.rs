@@ -412,7 +412,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
 
             // List → ListNode
-            GroupKind::List { ordered } => {
+            GroupKind::List { list_style } => {
                 let group = self.doc.get_group(group_idx)?;
                 let mut items = Vec::new();
                 // Sort children by reading order
@@ -434,7 +434,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     None
                 } else {
                     Some(StructuredNode::List(ListNode {
-                        ordered: *ordered,
+                        list_style: *list_style,
                         items,
                     }))
                 }

@@ -7680,7 +7680,7 @@
 
         let list = &lists[0];
         assert!(
-            !list.ordered,
+            !list.list_style.is_ordered(),
             "AAEI list should be unordered (bullet list)"
         );
         assert_eq!(
@@ -7760,7 +7760,7 @@
         );
 
         let list = &lists[0];
-        assert!(list.ordered, "AAOE list should be ordered (numbered list)");
+        assert!(list.list_style.is_ordered(), "AAOE list should be ordered (numbered list)");
         assert_eq!(
             list.items.len(),
             3,

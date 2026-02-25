@@ -383,7 +383,12 @@ fn convert_list(
     ctx: &mut ConversionContext,
     colspan: u32,
 ) -> AemNode {
-    let tag = if list.ordered { "ol" } else { "ul" };
+    let tag = if list.list_style.is_ordered() { "ol" } else { "ul" };
+    let style_attr = if list.list_style.needs_css() {
+        format!(" style=\"list-style-type: {};\"", list.list_style.css_value())
+    } else {
+        String::new()
+    };
     let items_html: String = list
         .items
         .iter()
@@ -392,7 +397,7 @@ fn convert_list(
             format!("<li>{html}</li>")
         })
         .collect();
-    let content = format!("<{tag}>{items_html}</{tag}>");
+    let content = format!("<{tag}{style_attr}>{items_html}</{tag}>");
     let first_item_text = list
         .items
         .first()
@@ -1028,7 +1033,7 @@ mod tests {
     #[test]
     fn convert_unordered_list_produces_textdraw() {
         let nodes = vec![StructuredNode::List(ListNode {
-            ordered: false,
+            list_style: crate::document::ListStyleType::Disc,
             items: vec![
                 InlineText::plain("First item"),
                 InlineText::plain("Second item"),
@@ -1052,7 +1057,7 @@ mod tests {
     #[test]
     fn convert_ordered_list_produces_textdraw() {
         let nodes = vec![StructuredNode::List(ListNode {
-            ordered: true,
+            list_style: crate::document::ListStyleType::Decimal,
             items: vec![InlineText::plain("Step one"), InlineText::plain("Step two")],
         })];
         let root = convert_to_aem(&nodes, &default_config());

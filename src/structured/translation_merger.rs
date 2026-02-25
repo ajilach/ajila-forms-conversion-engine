@@ -345,7 +345,7 @@ fn merge_node(
                 .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
                 .collect();
             StructuredNode::List(ListNode {
-                ordered: a.ordered,
+                list_style: a.list_style,
                 items,
             })
         }

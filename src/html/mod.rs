@@ -157,16 +157,24 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
 }
 
 fn generate_list(l: &ListNode, ind: &str) -> String {
-    let tag = if l.ordered { "ol" } else { "ul" };
-    let mut html = format!("{}<{} class=\"form-list\">\n", ind, tag);
+    let tag = if l.list_style.is_ordered() { "ol" } else { "ul" };
+    let style_attr = if l.list_style.needs_css() {
+        format!(" style=\"list-style-type: {};\"" , l.list_style.css_value())
+    } else {
+        String::new()
+    };
+    let mut html = format!("{}<{} class=\"form-list\"{}>
+", ind, tag, style_attr);
     for item in &l.items {
         html.push_str(&format!(
-            "{}  <li>{}</li>\n",
+            "{}  <li>{}</li>
+",
             ind,
             generate_inline_text(item)
         ));
     }
-    html.push_str(&format!("{}</{}>\n", ind, tag));
+    html.push_str(&format!("{}</{}>
+", ind, tag));
     html
 }
 
