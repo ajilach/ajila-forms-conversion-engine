@@ -91,6 +91,65 @@ impl GridTemplateDetector {
         clusters
     }
 
+    /// Compute proportional column spans for elements based on their widths.
+    ///
+    /// Uses a 12-column grid. If all widths are roughly equal (max/min ratio < 1.2),
+    /// returns `None` to signal that equal spacing should be used.
+    /// Otherwise, distributes 12 columns proportionally using the largest-remainder method.
+    fn compute_spans(widths: &[Decimal]) -> Option<(usize, Vec<usize>)> {
+        if widths.len() < 2 {
+            return None;
+        }
+
+        let min_w = widths.iter().copied().min().unwrap();
+        let max_w = widths.iter().copied().max().unwrap();
+
+        // If widths are roughly equal, keep default equal spacing
+        if min_w > Decimal::ZERO && max_w * Decimal::from(10) < min_w * Decimal::from(12) {
+            return None; // max/min < 1.2
+        }
+
+        let total_width: Decimal = widths.iter().copied().sum();
+        if total_width <= Decimal::ZERO {
+            return None;
+        }
+
+        let grid_cols = Decimal::from(12);
+
+        // Compute fractional spans and integer floors
+        let fractional: Vec<Decimal> = widths
+            .iter()
+            .map(|w| (*w * grid_cols) / total_width)
+            .collect();
+        let mut spans: Vec<usize> = fractional
+            .iter()
+            .map(|f| f.floor().to_usize().unwrap_or(1).max(1))
+            .collect();
+
+        // Distribute remainder using largest-remainder method
+        let assigned: usize = spans.iter().sum();
+        let mut remainder = 12usize.saturating_sub(assigned);
+
+        if remainder > 0 {
+            // Sort indices by fractional part (descending) to assign leftover columns
+            let mut indices: Vec<usize> = (0..widths.len()).collect();
+            indices.sort_by(|&a, &b| {
+                let frac_a = fractional[a] - Decimal::from(spans[a] as u64);
+                let frac_b = fractional[b] - Decimal::from(spans[b] as u64);
+                frac_b.cmp(&frac_a)
+            });
+            for &i in &indices {
+                if remainder == 0 {
+                    break;
+                }
+                spans[i] += 1;
+                remainder -= 1;
+            }
+        }
+
+        Some((12, spans))
+    }
+
     /// Detect grid patterns in a set of groups (single row only).
     fn detect_grid(&self, doc: &Document, group_indices: &[usize]) -> Option<GridCandidate> {
         // For single-row grids, we need at least min_columns elements
@@ -121,19 +180,26 @@ impl GridTemplateDetector {
         // Sort by x coordinate (left to right)
         bounded_groups.sort_by(|a, b| a.1.x.cmp(&b.1.x));
 
-        // Build the grid elements in order (single row)
-        let mut elements = Vec::new();
-        for (group_idx, _) in bounded_groups {
-            elements.push(GridElement {
-                group_idx,
-                span: 1, // All elements have span 1 for now
-            });
-        }
+        // Derive proportional colspans from field widths
+        let widths: Vec<Decimal> = bounded_groups.iter().map(|(_, b)| b.width).collect();
 
-        Some(GridCandidate {
-            columns: elements.len(),
-            elements,
-        })
+        let (columns, spans) = match Self::compute_spans(&widths) {
+            Some((cols, spans)) => (cols, spans),
+            None => {
+                // Equal widths — use span 1 for all, columns = element count
+                let n = bounded_groups.len();
+                (n, vec![1; n])
+            }
+        };
+
+        // Build the grid elements in order (single row)
+        let elements: Vec<GridElement> = bounded_groups
+            .into_iter()
+            .zip(spans)
+            .map(|((group_idx, _), span)| GridElement { group_idx, span })
+            .collect();
+
+        Some(GridCandidate { columns, elements })
     }
 
     /// Find all potential grid groups among unclaimed groups.
@@ -244,4 +310,97 @@ struct GridElement {
     group_idx: usize,
     /// Column span for this element (default 1)
     span: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(val: &str) -> Decimal {
+        Decimal::from_str(val).unwrap()
+    }
+
+    #[test]
+    fn equal_widths_returns_none() {
+        // Three fields of identical width → equal spacing
+        let widths = vec![d("100"), d("100"), d("100")];
+        assert!(GridTemplateDetector::compute_spans(&widths).is_none());
+    }
+
+    #[test]
+    fn nearly_equal_widths_returns_none() {
+        // max/min = 119/100 = 1.19 < 1.2 → equal spacing
+        let widths = vec![d("100"), d("110"), d("119")];
+        assert!(GridTemplateDetector::compute_spans(&widths).is_none());
+    }
+
+    #[test]
+    fn ratio_1_2() {
+        // 100 + 200 = 300. Fractions: 4.0, 8.0 → spans [4, 8]
+        let widths = vec![d("100"), d("200")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans, vec![4, 8]);
+    }
+
+    #[test]
+    fn ratio_1_1_2() {
+        // 100 + 100 + 200 = 400. Fractions: 3.0, 3.0, 6.0 → spans [3, 3, 6]
+        let widths = vec![d("100"), d("100"), d("200")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans, vec![3, 3, 6]);
+    }
+
+    #[test]
+    fn ratio_1_3() {
+        // 50 + 150 = 200. Fractions: 3.0, 9.0 → spans [3, 9]
+        let widths = vec![d("50"), d("150")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans, vec![3, 9]);
+    }
+
+    #[test]
+    fn remainder_distributed_by_largest_fraction() {
+        // Widths: 100, 100, 130 = 330 total
+        // Fractions: 3.636, 3.636, 4.727
+        // Floors: 3, 3, 4 = 10, remainder = 2
+        // Fractional parts: 0.636, 0.636, 0.727 → assign +1 to idx 2, then idx 0 (or 1)
+        let widths = vec![d("100"), d("100"), d("130")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans.iter().sum::<usize>(), 12);
+        // The wider field should get the largest span
+        assert!(spans[2] >= spans[0]);
+        assert!(spans[2] >= spans[1]);
+    }
+
+    #[test]
+    fn four_fields_varying() {
+        // 100, 100, 100, 300 = 600 total
+        // Fractions: 2.0, 2.0, 2.0, 6.0 → spans [2, 2, 2, 6]
+        let widths = vec![d("100"), d("100"), d("100"), d("300")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans, vec![2, 2, 2, 6]);
+    }
+
+    #[test]
+    fn single_element_returns_none() {
+        let widths = vec![d("100")];
+        assert!(GridTemplateDetector::compute_spans(&widths).is_none());
+    }
+
+    #[test]
+    fn minimum_span_is_one() {
+        // Very skewed: 10, 590 = 600 total
+        // Fractions: 0.2, 11.8 → floor gives 0, 11
+        // But min is clamped to 1, so: [1, 11]
+        let widths = vec![d("10"), d("590")];
+        let (cols, spans) = GridTemplateDetector::compute_spans(&widths).unwrap();
+        assert_eq!(cols, 12);
+        assert_eq!(spans, vec![1, 11]);
+        assert!(spans.iter().all(|&s| s >= 1));
+    }
 }

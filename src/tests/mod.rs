@@ -10420,7 +10420,7 @@
 
     #[test]
     fn test_aaks_strasse_nr_share_row() {
-        // The fields "Straße" and "Nr." should share a 2-column GridLayout row.
+        // The fields "Straße" and "Nr." should share a GridLayout row with 2 elements.
         use crate::run_exhaustive_to_merged;
         use crate::structured::StructuredNode;
 
@@ -10430,12 +10430,12 @@
         fn find_grid_with_fields(
             nodes: &[StructuredNode],
             labels: &[&str],
-            expected_cols: usize,
+            expected_elements: usize,
         ) -> bool {
             for node in nodes {
                 match node {
                     StructuredNode::GridLayout(gl) => {
-                        if gl.columns == expected_cols {
+                        if gl.elements.len() == expected_elements {
                             let grid_labels = collect_field_labels_flat(&gl
                                 .elements
                                 .iter()
@@ -10451,12 +10451,12 @@
                         // Also recurse into grid elements
                         let child_nodes: Vec<_> =
                             gl.elements.iter().map(|e| e.node.clone()).collect();
-                        if find_grid_with_fields(&child_nodes, labels, expected_cols) {
+                        if find_grid_with_fields(&child_nodes, labels, expected_elements) {
                             return true;
                         }
                     }
                     StructuredNode::Group(g) => {
-                        if find_grid_with_fields(&g.children, labels, expected_cols) {
+                        if find_grid_with_fields(&g.children, labels, expected_elements) {
                             return true;
                         }
                     }
@@ -10464,7 +10464,7 @@
                         if find_grid_with_fields(
                             std::slice::from_ref(&c.content),
                             labels,
-                            expected_cols,
+                            expected_elements,
                         ) {
                             return true;
                         }
@@ -10473,7 +10473,7 @@
                         if find_grid_with_fields(
                             std::slice::from_ref(&r.item),
                             labels,
-                            expected_cols,
+                            expected_elements,
                         ) {
                             return true;
                         }
@@ -10512,13 +10512,13 @@
 
         assert!(
             find_grid_with_fields(&structured, &["Straße", "Nr."], 2),
-            "Expected to find a 2-column GridLayout containing 'Straße' and 'Nr.' in AAKS"
+            "Expected to find a GridLayout with 2 elements containing 'Straße' and 'Nr.' in AAKS"
         );
     }
 
     #[test]
     fn test_aaks_plz_stadt_land_share_row() {
-        // The fields "PLZ", "Stadt", and "Land" should share a 3-column GridLayout row.
+        // The fields "PLZ", "Stadt", and "Land" should share a GridLayout row with 3 elements.
         use crate::run_exhaustive_to_merged;
         use crate::structured::StructuredNode;
 
@@ -10528,12 +10528,12 @@
         fn find_grid_with_fields(
             nodes: &[StructuredNode],
             labels: &[&str],
-            expected_cols: usize,
+            expected_elements: usize,
         ) -> bool {
             for node in nodes {
                 match node {
                     StructuredNode::GridLayout(gl) => {
-                        if gl.columns == expected_cols {
+                        if gl.elements.len() == expected_elements {
                             let grid_labels = collect_field_labels_flat(&gl
                                 .elements
                                 .iter()
@@ -10548,12 +10548,12 @@
                         }
                         let child_nodes: Vec<_> =
                             gl.elements.iter().map(|e| e.node.clone()).collect();
-                        if find_grid_with_fields(&child_nodes, labels, expected_cols) {
+                        if find_grid_with_fields(&child_nodes, labels, expected_elements) {
                             return true;
                         }
                     }
                     StructuredNode::Group(g) => {
-                        if find_grid_with_fields(&g.children, labels, expected_cols) {
+                        if find_grid_with_fields(&g.children, labels, expected_elements) {
                             return true;
                         }
                     }
@@ -10561,7 +10561,7 @@
                         if find_grid_with_fields(
                             std::slice::from_ref(&c.content),
                             labels,
-                            expected_cols,
+                            expected_elements,
                         ) {
                             return true;
                         }
@@ -10570,7 +10570,7 @@
                         if find_grid_with_fields(
                             std::slice::from_ref(&r.item),
                             labels,
-                            expected_cols,
+                            expected_elements,
                         ) {
                             return true;
                         }
@@ -10609,7 +10609,7 @@
 
         assert!(
             find_grid_with_fields(&structured, &["PLZ", "Stadt", "Land"], 3),
-            "Expected to find a 3-column GridLayout containing 'PLZ', 'Stadt', and 'Land' in AAKS"
+            "Expected to find a GridLayout with 3 elements containing 'PLZ', 'Stadt', and 'Land' in AAKS"
         );
     }
 
@@ -10947,4 +10947,409 @@
                 p.content.0
             );
         }
+    }
+
+    // ========================================================================
+    // GridTemplateDetector — proportional colspan tests
+    // ========================================================================
+
+    #[test]
+    fn test_grid_layout_proportional_colspan_1_to_2() {
+        use crate::document::modules::{AnalysisModule, FieldGrouper, GridTemplateDetector};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::{FlattenedNode, Page};
+        use crate::xfa::num;
+
+        // Two fields on the same row: width 100 and width 200
+        // Expected: columns=12, spans=[4, 8]
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                FlattenedNode::new_field(
+                    "A".into(),
+                    "".into(),
+                    "A".into(),
+                    num(10.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+                FlattenedNode::new_field(
+                    "B".into(),
+                    "".into(),
+                    "B".into(),
+                    num(120.0),
+                    num(50.0),
+                    num(200.0),
+                    num(20.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        FieldGrouper::new().process(&mut doc);
+        GridTemplateDetector::new()
+            .with_min_size(1, 2)
+            .process(&mut doc);
+
+        let grids: Vec<usize> =
+            doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+        assert_eq!(grids.len(), 1, "Expected exactly one GridLayout");
+
+        if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
+            assert_eq!(*columns, 12);
+            assert_eq!(spans, &[4, 8]);
+        } else {
+            panic!("Expected GridLayout");
+        }
+    }
+
+    #[test]
+    fn test_grid_layout_equal_widths_use_span_1() {
+        use crate::document::modules::{AnalysisModule, FieldGrouper, GridTemplateDetector};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::{FlattenedNode, Page};
+        use crate::xfa::num;
+
+        // Three fields of identical width → should keep span=1 each, columns=3
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                FlattenedNode::new_field(
+                    "A".into(),
+                    "".into(),
+                    "A".into(),
+                    num(10.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+                FlattenedNode::new_field(
+                    "B".into(),
+                    "".into(),
+                    "B".into(),
+                    num(120.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+                FlattenedNode::new_field(
+                    "C".into(),
+                    "".into(),
+                    "C".into(),
+                    num(230.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        FieldGrouper::new().process(&mut doc);
+        GridTemplateDetector::new()
+            .with_min_size(1, 2)
+            .process(&mut doc);
+
+        let grids: Vec<usize> =
+            doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+        assert_eq!(grids.len(), 1);
+
+        if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
+            assert_eq!(*columns, 3);
+            assert_eq!(spans, &[1, 1, 1]);
+        } else {
+            panic!("Expected GridLayout");
+        }
+    }
+
+    #[test]
+    fn test_grid_layout_proportional_colspan_1_1_2() {
+        use crate::document::modules::{AnalysisModule, FieldGrouper, GridTemplateDetector};
+        use crate::document::{Document, GroupKind};
+        use crate::flattened::{FlattenedNode, Page};
+        use crate::xfa::num;
+
+        // Three fields: width 100, 100, 200 → columns=12, spans=[3, 3, 6]
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                FlattenedNode::new_field(
+                    "A".into(),
+                    "".into(),
+                    "A".into(),
+                    num(10.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+                FlattenedNode::new_field(
+                    "B".into(),
+                    "".into(),
+                    "B".into(),
+                    num(120.0),
+                    num(50.0),
+                    num(100.0),
+                    num(20.0),
+                ),
+                FlattenedNode::new_field(
+                    "C".into(),
+                    "".into(),
+                    "C".into(),
+                    num(230.0),
+                    num(50.0),
+                    num(200.0),
+                    num(20.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        FieldGrouper::new().process(&mut doc);
+        GridTemplateDetector::new()
+            .with_min_size(1, 2)
+            .process(&mut doc);
+
+        let grids: Vec<usize> =
+            doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+        assert_eq!(grids.len(), 1);
+
+        if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
+            assert_eq!(*columns, 12);
+            assert_eq!(spans, &[3, 3, 6]);
+        } else {
+            panic!("Expected GridLayout");
+        }
+    }
+
+    #[test]
+    fn test_aaai_plz_stadt_land_colspan_ordering() {
+        // In AAAI the grid row containing PLZ, Stadt, Land should have
+        // proportional colspans where PLZ < Stadt < Land.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        let structured = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAAI");
+
+        /// Recursively search for a GridLayout whose elements contain all of the
+        /// given labels. Returns the matching GridLayout's (columns, per-element spans).
+        fn find_grid_spans(
+            nodes: &[StructuredNode],
+            labels: &[&str],
+        ) -> Option<(usize, Vec<(String, usize)>)> {
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(gl) => {
+                        let elem_labels: Vec<(String, usize)> = gl
+                            .elements
+                            .iter()
+                            .filter_map(|e| {
+                                first_field_label(&e.node).map(|l| (l, e.span))
+                            })
+                            .collect();
+                        if labels
+                            .iter()
+                            .all(|l| elem_labels.iter().any(|(el, _)| el.contains(l)))
+                        {
+                            return Some((gl.columns, elem_labels));
+                        }
+                        // Recurse into grid elements
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_grid_spans(&child_nodes, labels) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_grid_spans(&g.children, labels) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) =
+                            find_grid_spans(std::slice::from_ref(&c.content), labels)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(found) =
+                            find_grid_spans(std::slice::from_ref(&r.item), labels)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        /// Return the label text of the first field found inside a node tree.
+        fn first_field_label(node: &StructuredNode) -> Option<String> {
+            match node {
+                StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().trim().to_string()),
+                StructuredNode::Group(g) => {
+                    g.children.iter().find_map(|c| first_field_label(c))
+                }
+                StructuredNode::GridLayout(gl) => gl
+                    .elements
+                    .iter()
+                    .find_map(|e| first_field_label(&e.node)),
+                _ => None,
+            }
+        }
+
+        let (columns, elem_labels) =
+            find_grid_spans(&structured, &["PLZ", "Stadt", "Land"])
+                .expect("Expected a GridLayout containing PLZ, Stadt, and Land in AAAI");
+
+        assert_eq!(columns, 12, "Grid should use 12-column layout");
+
+        let span_plz = elem_labels
+            .iter()
+            .find(|(l, _)| l.contains("PLZ"))
+            .map(|(_, s)| *s)
+            .unwrap();
+        let span_stadt = elem_labels
+            .iter()
+            .find(|(l, _)| l.contains("Stadt"))
+            .map(|(_, s)| *s)
+            .unwrap();
+        let span_land = elem_labels
+            .iter()
+            .find(|(l, _)| l.contains("Land"))
+            .map(|(_, s)| *s)
+            .unwrap();
+
+        assert!(
+            span_plz < span_stadt,
+            "PLZ (span={}) should have a smaller colspan than Stadt (span={})",
+            span_plz,
+            span_stadt
+        );
+        assert!(
+            span_stadt < span_land,
+            "Stadt (span={}) should have a smaller colspan than Land (span={})",
+            span_stadt,
+            span_land
+        );
+        assert_eq!(
+            span_plz + span_stadt + span_land,
+            12,
+            "Spans should sum to 12"
+        );
+    }
+
+    #[test]
+    fn test_aaai_nachname_vorname_equal_colspan() {
+        // In AAAI the fields "Nachname" and "Vorname(n)" share a grid row
+        // and should have the same colspan since they have equal width.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        let structured = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAAI");
+
+        fn find_grid_spans(
+            nodes: &[StructuredNode],
+            labels: &[&str],
+        ) -> Option<Vec<(String, usize)>> {
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(gl) => {
+                        let elem_labels: Vec<(String, usize)> = gl
+                            .elements
+                            .iter()
+                            .filter_map(|e| {
+                                first_field_label(&e.node).map(|l| (l, e.span))
+                            })
+                            .collect();
+                        if labels
+                            .iter()
+                            .all(|l| elem_labels.iter().any(|(el, _)| el.contains(l)))
+                        {
+                            return Some(elem_labels);
+                        }
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        if let Some(found) = find_grid_spans(&child_nodes, labels) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(found) = find_grid_spans(&g.children, labels) {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(found) =
+                            find_grid_spans(std::slice::from_ref(&c.content), labels)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(found) =
+                            find_grid_spans(std::slice::from_ref(&r.item), labels)
+                        {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        fn first_field_label(node: &StructuredNode) -> Option<String> {
+            match node {
+                StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().trim().to_string()),
+                StructuredNode::Group(g) => {
+                    g.children.iter().find_map(|c| first_field_label(c))
+                }
+                StructuredNode::GridLayout(gl) => gl
+                    .elements
+                    .iter()
+                    .find_map(|e| first_field_label(&e.node)),
+                _ => None,
+            }
+        }
+
+        let elem_labels =
+            find_grid_spans(&structured, &["Nachname", "Vorname"])
+                .expect("Expected a GridLayout containing Nachname and Vorname(n) in AAAI");
+
+        let span_nachname = elem_labels
+            .iter()
+            .find(|(l, _)| l.contains("Nachname"))
+            .map(|(_, s)| *s)
+            .unwrap();
+        let span_vorname = elem_labels
+            .iter()
+            .find(|(l, _)| l.contains("Vorname"))
+            .map(|(_, s)| *s)
+            .unwrap();
+
+        assert_eq!(
+            span_nachname, span_vorname,
+            "Nachname (span={}) and Vorname(n) (span={}) should have the same colspan",
+            span_nachname, span_vorname
+        );
     }
