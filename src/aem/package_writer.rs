@@ -35,11 +35,7 @@ pub fn generate_aem_package(
     let form_xml = generate_aem_xml(root, config);
     let dam_xml = generate_dam_asset_xml(config);
 
-    let timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let package_name = format!("BlueprintFormsPackage_{}", timestamp);
+    let package_name = format!("BlueprintFormsPackage_{}", config.form_code);
 
     let form_dir = config.form_dir();
     let form_jcr_path = format!("/content/forms/af/{}/{}", config.form_path, form_dir);
