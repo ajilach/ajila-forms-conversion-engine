@@ -51,6 +51,7 @@ fn write_node(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Aem
         AemNode::Checkbox { .. } => write_checkbox(w, node, config),
         AemNode::RadioButton { .. } => write_radio_button(w, node, config),
         AemNode::TextDraw { .. } => write_text_draw(w, node, config),
+        AemNode::TitleDraw { .. } => write_title_draw(w, node, config),
         AemNode::TextBoxMultiline { .. } => write_text_box_multiline(w, node, config),
         AemNode::Repeatable { .. } => write_repeatable(w, node, config),
     }
@@ -930,6 +931,43 @@ fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config:
     let mut rules = BytesStart::new("fd:rules");
     rules.push_attribute(("jcr:primaryType", "nt:unstructured"));
     w.write_event(Event::Empty(rules)).unwrap();
+
+    write_responsive(w, *colspan);
+
+    w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
+}
+
+// ============================================================================
+// Title Draw (h3–h6 headings)
+// ============================================================================
+
+fn write_title_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &AemConfig) {
+    let AemNode::TitleDraw {
+        uuid,
+        name,
+        content,
+        heading_level,
+        colspan,
+    } = node
+    else {
+        return;
+    };
+
+    let tag = format!("titledraw_{}", uuid.as_simple());
+    let mut elem = BytesStart::new(tag.clone());
+    push_jcr_timestamps(&mut elem, config);
+    elem.push_attribute(("jcr:primaryType", "nt:unstructured"));
+    elem.push_attribute((
+        "sling:resourceType",
+        config.control_resource_type("titledraw").as_str(),
+    ));
+    elem.push_attribute(("_value", content.as_str()));
+    elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
+    elem.push_attribute(("guideNodeClass", "guideTextDraw"));
+    elem.push_attribute(("headingLevel", heading_level.to_string().as_str()));
+    elem.push_attribute(("name", name.as_str()));
+    elem.push_attribute(("textIsRich", "true"));
+    w.write_event(Event::Start(elem)).unwrap();
 
     write_responsive(w, *colspan);
 

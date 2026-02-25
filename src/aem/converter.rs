@@ -343,24 +343,16 @@ fn convert_heading(
     ctx: &mut ConversionContext,
     colspan: u32,
 ) -> AemNode {
-    let tag = match h.level {
-        HeadingLevel::H1 => "h1",
-        HeadingLevel::H2 => "h2",
-        HeadingLevel::H3 => "h3",
-        HeadingLevel::H4 => "h4",
-        HeadingLevel::H5 => "h5",
-        HeadingLevel::H6 => "h6",
-    };
     let plain = inline_text_to_html(&h.content, &ctx.language);
-    let content = format!("<{tag}>{plain}</{tag}>");
+    let content = format!("<p>{plain}</p>");
     let source_text = h.content.as_plain_text();
-    let name = ctx.make_name("ST", &source_text);
+    let name = ctx.make_name("TTL", &source_text);
     let uuid = ctx.uuid(&name);
-    AemNode::TextDraw {
+    AemNode::TitleDraw {
         uuid,
         name,
         content,
-        dor_exclude: false,
+        heading_level: 4,
         colspan,
     }
 }
@@ -1007,8 +999,8 @@ mod tests {
     }
 
     #[test]
-    fn convert_heading_produces_textdraw() {
-        // H3 headings are NOT used for sectioning — they stay inline
+    fn convert_heading_produces_titledraw() {
+        // H3 headings are NOT used for sectioning — they become titledraws
         let nodes = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
             content: InlineText::plain("Sub Title"),
@@ -1017,11 +1009,19 @@ mod tests {
         let children = unwrap_preamble(&root);
         assert_eq!(children.len(), 1);
         match &children[0] {
-            AemNode::TextDraw { content, .. } => {
-                assert!(content.contains("<h3>"));
+            AemNode::TitleDraw {
+                content,
+                heading_level,
+                name,
+                ..
+            } => {
+                assert!(content.contains("<p>"), "content should use <p> not <h3>");
+                assert!(!content.contains("<h3>"), "content must not contain <h3>");
                 assert!(content.contains("Sub Title"));
+                assert_eq!(*heading_level, 4);
+                assert!(name.starts_with("TTL_"), "name should start with TTL_");
             }
-            other => panic!("Expected TextDraw, got {:?}", other),
+            other => panic!("Expected TitleDraw, got {:?}", other),
         }
     }
 
@@ -1728,10 +1728,10 @@ mod tests {
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
         match &children[0] {
-            AemNode::TextDraw { name, .. } => {
-                assert_name_pattern(name, "ST", "ClientDetails");
+            AemNode::TitleDraw { name, .. } => {
+                assert_name_pattern(name, "TTL", "ClientDetails");
             }
-            other => panic!("Expected TextDraw, got {:?}", other),
+            other => panic!("Expected TitleDraw, got {:?}", other),
         }
     }
 

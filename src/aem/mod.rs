@@ -612,6 +612,15 @@ pub enum AemNode {
         colspan: u32,
     },
 
+    /// Title draw for h3–h6 headings (`guideTextDraw` with `headingLevel`).
+    TitleDraw {
+        uuid: Uuid,
+        name: String,
+        content: String,
+        heading_level: u8,
+        colspan: u32,
+    },
+
     /// Multi-line text area (`guideTextBox` with `multiLine`).
     TextBoxMultiline {
         uuid: Uuid,
@@ -661,6 +670,7 @@ impl AemNode {
             AemNode::Checkbox { uuid, .. } => format!("checkbox_{}", uuid.as_simple()),
             AemNode::RadioButton { uuid, .. } => format!("radiobutton_{}", uuid.as_simple()),
             AemNode::TextDraw { uuid, .. } => format!("textdraw_{}", uuid.as_simple()),
+            AemNode::TitleDraw { uuid, .. } => format!("titledraw_{}", uuid.as_simple()),
             AemNode::TextBoxMultiline { uuid, .. } => {
                 format!("textboxmultiline_{}", uuid.as_simple())
             }
