@@ -112,7 +112,8 @@ pub fn merge_translations(
         }
     }
 
-    // Start with the first envelope as the base
+    // Start with the first envelope as the base, preserving its context
+    // (which contains XFA variables, modules, etc.).
     let mut iter = envelopes.into_iter();
     let base = iter.next().unwrap();
     let base_lang = base.context.language().to_string();
@@ -125,8 +126,10 @@ pub fn merge_translations(
             merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
     }
 
-    // Create merged context
-    let context = Context::with_language(languages.join(","));
+    // Create merged context — start from the base context to preserve variables
+    // and modules, then update the language to the combined list.
+    let mut context = base.context;
+    context.set_language(languages.join(","));
 
     Ok(DocumentEnvelope {
         context,
@@ -668,6 +671,17 @@ mod tests {
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
         DocumentEnvelope {
             context: Context::with_language(lang),
+            content,
+        }
+    }
+
+    fn make_envelope_with_variables(
+        lang: &str,
+        variables: HashMap<String, String>,
+        content: Vec<StructuredNode>,
+    ) -> DocumentEnvelope {
+        DocumentEnvelope {
+            context: Context::new(lang.to_string(), variables),
             content,
         }
     }
@@ -1216,5 +1230,41 @@ mod tests {
         } else {
             panic!("Expected DuplicateLanguage error");
         }
+    }
+
+    #[test]
+    fn test_merge_preserves_context_variables() {
+        let vars: HashMap<String, String> = [
+            ("formrange_code".to_string(), "AAAI".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let de = make_envelope_with_variables(
+            "de",
+            vars.clone(),
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Hallo"),
+            })],
+        );
+        let en = make_envelope_with_variables(
+            "en",
+            vars.clone(),
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Hello"),
+            })],
+        );
+
+        let merged = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(merged.context.language(), "de,en");
+        assert_eq!(
+            merged.context.get_variable("formrange_code"),
+            Some("AAAI")
+        );
+        assert_eq!(
+            merged.context.get_variable("formrange_entity"),
+            Some("019")
+        );
     }
 }
