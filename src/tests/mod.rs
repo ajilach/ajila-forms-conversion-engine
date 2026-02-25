@@ -7781,6 +7781,106 @@
     }
 
     #[test]
+    fn test_aapr_has_decimal_and_dash_lists() {
+        use crate::document::Document;
+        use crate::document::modules::run_analysis_pipeline;
+        use crate::document::ListStyleType;
+        use crate::structured::{ListNode, StructuredNode};
+
+        let xfa_data =
+            extract_xfa_from_pdf("input/AAPR_033_IT.pdf").expect("Failed to read AAPR PDF");
+        assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+        let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+        let flattened =
+            flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+        let mut doc = Document::from_flattened(&flattened);
+        run_analysis_pipeline(&mut doc);
+
+        let structured_nodes = crate::structured::convert(&doc);
+
+        fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+            let mut lists = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::List(l) => lists.push(l.clone()),
+                    StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                    StructuredNode::Repeatable(r) => {
+                        lists.extend(collect_lists(&[(*r.item).clone()]));
+                    }
+                    StructuredNode::Conditional(c) => {
+                        lists.extend(collect_lists(&[(*c.content).clone()]));
+                    }
+                    StructuredNode::GridLayout(gl) => {
+                        let child_nodes: Vec<_> =
+                            gl.elements.iter().map(|e| e.node.clone()).collect();
+                        lists.extend(collect_lists(&child_nodes));
+                    }
+                    _ => {}
+                }
+            }
+            lists
+        }
+
+        let lists = collect_lists(&structured_nodes);
+
+        assert!(
+            lists.len() >= 2,
+            "AAPR should have at least 2 lists, found {}",
+            lists.len()
+        );
+
+        // Find the decimal (numbered) list with 5 items: Sommario, Valutazione, ...
+        let decimal_list = lists
+            .iter()
+            .find(|l| l.list_style == ListStyleType::Decimal && l.items.len() == 5)
+            .expect("AAPR should have a decimal list with 5 items");
+
+        let expected_decimal = [
+            "Sommario",
+            "Valutazione",
+            "Posizioni dettagliate",
+            "Transazioni",
+            "Informazioni supplementari",
+        ];
+        for (i, expected) in expected_decimal.iter().enumerate() {
+            let text = decimal_list.items[i].as_plain_text();
+            assert!(
+                text.contains(expected),
+                "Decimal list item {} should contain '{}', got: {}",
+                i,
+                expected,
+                text
+            );
+        }
+
+        // Find the dash list with 4 items about columns
+        let dash_list = lists
+            .iter()
+            .find(|l| l.list_style == ListStyleType::Dash && l.items.len() == 4)
+            .expect("AAPR should have a dash list with 4 items");
+
+        let expected_dash = [
+            "quantit",
+            "descrizione",
+            "corso di mercato",
+            "valore di mercato",
+        ];
+        for (i, expected) in expected_dash.iter().enumerate() {
+            let text = dash_list.items[i].as_plain_text();
+            assert!(
+                text.contains(expected),
+                "Dash list item {} should contain '{}', got: {}",
+                i,
+                expected,
+                text
+            );
+        }
+    }
+
+    #[test]
     fn test_aaei_repeatable_buttons_have_scripts() {
         // Test that the AEM output for AAEI has proper add/remove button scripts
         // on the repeatable section.
