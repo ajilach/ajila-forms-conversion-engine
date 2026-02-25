@@ -133,6 +133,20 @@ pub struct CollectedState {
     field_actions: Vec<Option<FieldAction>>,
 }
 
+impl CollectedState {
+    /// Create a new `CollectedState` without field actions.
+    ///
+    /// Used by non-XFA (AcroForm) PDFs where no exhaustive exploration occurs.
+    pub fn new_simple(flattened: Flattened, selections: Vec<Selection>, label: String) -> Self {
+        CollectedState {
+            flattened,
+            selections,
+            label,
+            field_actions: Vec::new(),
+        }
+    }
+}
+
 // ============================================================================
 // Pure library API — no I/O, no printing
 // ============================================================================
@@ -191,7 +205,11 @@ fn apply_selection(form: &mut XfaForm, sel: &Selection) {
             let _ = form.select_radio_button(sel.som_path.as_str());
         }
         SelectionKind::Checkbox => {
-            let raw_value = if sel.primary_value() == "checked" { "1" } else { "0" };
+            let raw_value = if sel.primary_value() == "checked" {
+                "1"
+            } else {
+                "0"
+            };
             let _ = form.set_value_as_user(sel.som_path.as_str(), raw_value);
         }
         SelectionKind::Dropdown => {
@@ -465,9 +483,7 @@ fn explore_with_dedup(
 /// Branches whose flattened output has the same structure (positions,
 /// text content, field names/labels) but differ only in field values
 /// are placed in the same group.
-fn group_branches_by_flattened_state(
-    branches: Vec<PreparedBranch>,
-) -> Vec<Vec<PreparedBranch>> {
+fn group_branches_by_flattened_state(branches: Vec<PreparedBranch>) -> Vec<Vec<PreparedBranch>> {
     use std::collections::HashMap;
 
     let mut key_to_group: HashMap<Vec<FlattenedKey>, Vec<usize>> = HashMap::new();
@@ -554,8 +570,7 @@ fn explore_radio(
                     // Select the radio button
                     let _ = new_form.select_radio_button(radio_field.path.as_str());
 
-                    let group_path =
-                        new_form.find_excl_group_for_field(radio_field.path.as_str());
+                    let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
                     state.selections.push(Selection::new(
                         radio_field.path.clone(),
                         group_path.clone(),
@@ -566,22 +581,15 @@ fn explore_radio(
                     // Mark all fields in this radio group as processed
                     for (idx, f) in global_order_for_closure.iter().enumerate() {
                         if f.is_radio()
-                            && let Some(fg) =
-                                new_form.find_excl_group_for_field(f.path.as_str())
-                            && state
-                                    .selections
-                                    .last()
-                                    .and_then(|s| s.group_path.as_ref())
-                                    == Some(&FieldId::from_som_path(&fg))
+                            && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
+                            && state.selections.last().and_then(|s| s.group_path.as_ref())
+                                == Some(&FieldId::from_som_path(&fg))
                         {
-                            state.field_actions[idx] =
-                                if f.path == radio_field.path {
-                                    Some(FieldAction::Selected(
-                                        radio_field.path.name().to_string(),
-                                    ))
-                                } else {
-                                    Some(FieldAction::Skipped)
-                                };
+                            state.field_actions[idx] = if f.path == radio_field.path {
+                                Some(FieldAction::Selected(radio_field.path.name().to_string()))
+                            } else {
+                                Some(FieldAction::Skipped)
+                            };
                             state.next_field_index = idx + 1;
                         }
                     }
@@ -753,9 +761,9 @@ fn can_select_field(
         && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str())
     {
         let excl_group_id = FieldId::from_som_path(&excl_group);
-        let group_already_has_selection = current_selections.iter().any(|sel| {
-            sel.group_path.as_ref() == Some(&excl_group_id)
-        });
+        let group_already_has_selection = current_selections
+            .iter()
+            .any(|sel| sel.group_path.as_ref() == Some(&excl_group_id));
         if group_already_has_selection {
             return false;
         }

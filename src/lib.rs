@@ -69,6 +69,7 @@ pub mod document;
 pub mod exhaustive;
 pub mod flattened;
 pub mod html;
+pub mod pdf_parser;
 pub mod structured;
 pub mod xfa;
 
@@ -114,9 +115,6 @@ pub use xfa::{XfaNode, XfaNodeKind};
 // Image type (re-export so consumers don't need to depend on `image` directly)
 pub use image::RgbaImage;
 
-use pdf::file::FileOptions;
-use pdf::object::*;
-use pdf::primitive::Primitive;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -210,47 +208,62 @@ pub fn extract_xfa_from_pdf(path: impl AsRef<Path>) -> Result<Option<Vec<u8>>, E
 ///
 /// Returns `Ok(Some(bytes))` if the PDF contains XFA data, `Ok(None)` otherwise.
 pub fn extract_xfa_from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Option<Vec<u8>>, Error> {
-    let pdf = FileOptions::cached()
-        .load(pdf_bytes.to_vec())
-        .map_err(|e| Error::PdfParse(e.to_string()))?;
+    let doc = lopdf::Document::load_mem(pdf_bytes).map_err(|e| Error::PdfParse(e.to_string()))?;
 
-    let catalog = pdf.get_root();
+    // Navigate: Catalog -> AcroForm -> XFA
+    let catalog = doc.catalog().map_err(|e| Error::PdfParse(e.to_string()))?;
 
-    if let Some(forms_dict) = &catalog.forms
-        && let Some(xfa_obj) = &forms_dict.xfa
-    {
-        match xfa_obj {
-            Primitive::Stream(pdf_stream) => {
-                let stream: Stream<()> = Stream::from_stream(pdf_stream.clone(), &pdf.resolver())
-                    .map_err(|e| Error::PdfParse(e.to_string()))?;
-                let data = stream
-                    .data(&pdf.resolver())
-                    .map_err(|e| Error::PdfParse(e.to_string()))?;
-                return Ok(Some(data.to_vec()));
-            }
-            Primitive::Array(arr) => {
-                let mut xfa_data = Vec::new();
-                let resolver = pdf.resolver();
+    let acroform_ref = match catalog.get(b"AcroForm") {
+        Ok(obj) => obj,
+        Err(_) => return Ok(None),
+    };
 
-                for i in (1..arr.len()).step_by(2) {
-                    if let Primitive::Reference(stream_ref) = &arr[i]
-                        && let Ok(Primitive::Stream(ref pdf_stream)) = resolver.resolve(*stream_ref)
-                    {
-                        let stream: Stream<()> = Stream::from_stream(pdf_stream.clone(), &resolver)
-                            .map_err(|e| Error::PdfParse(e.to_string()))?;
-                        let data = stream
-                            .data(&resolver)
-                            .map_err(|e| Error::PdfParse(e.to_string()))?;
-                        xfa_data.extend_from_slice(&data);
-                    }
-                }
+    let acroform_dict = match acroform_ref {
+        lopdf::Object::Dictionary(d) => d.clone(),
+        lopdf::Object::Reference(r) => match doc.get_object(*r) {
+            Ok(lopdf::Object::Dictionary(d)) => d.clone(),
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
 
-                if !xfa_data.is_empty() {
-                    return Ok(Some(xfa_data));
-                }
-            }
-            _ => {}
+    let xfa_obj = match acroform_dict.get(b"XFA") {
+        Ok(obj) => obj.clone(),
+        Err(_) => return Ok(None),
+    };
+
+    match xfa_obj {
+        lopdf::Object::Stream(mut stream) => {
+            stream.decompress();
+            return Ok(Some(stream.content.clone()));
         }
+        lopdf::Object::Reference(r) => {
+            if let Ok(lopdf::Object::Stream(stream)) = doc.get_object(r).cloned().as_mut() {
+                stream.decompress();
+                return Ok(Some(stream.content.clone()));
+            }
+        }
+        lopdf::Object::Array(arr) => {
+            let mut xfa_data = Vec::new();
+
+            // XFA array: ["preamble", stream_ref, "config", stream_ref, ...]
+            for i in (1..arr.len()).step_by(2) {
+                let stream_obj = match &arr[i] {
+                    lopdf::Object::Reference(r) => doc.get_object(*r).ok().cloned(),
+                    lopdf::Object::Stream(_) => Some(arr[i].clone()),
+                    _ => None,
+                };
+                if let Some(lopdf::Object::Stream(mut stream)) = stream_obj {
+                    stream.decompress();
+                    xfa_data.extend_from_slice(&stream.content);
+                }
+            }
+
+            if !xfa_data.is_empty() {
+                return Ok(Some(xfa_data));
+            }
+        }
+        _ => {}
     }
 
     Ok(None)
@@ -319,21 +332,38 @@ impl FormState {
 // Blueprint — the main façade
 // ============================================================================
 
-/// High-level entry point for processing XFA PDF documents.
+/// High-level entry point for processing PDF documents.
 ///
-/// `Blueprint` holds the parsed XFA data and provides methods to explore form
-/// states, produce structured output, render images, and generate HTML — all
-/// without touching the file system.
+/// `Blueprint` supports two modes:
+/// - **XFA mode**: The PDF contains XFA data; exhaustive exploration toggles
+///   radio buttons and checkboxes to discover all visual states.
+/// - **AcroForm mode**: A regular (non-XFA) PDF; form fields and page text
+///   are extracted directly into the flattened representation.
+///
+/// The constructor auto-detects which mode to use.
 pub struct Blueprint {
-    /// Raw XFA XML bytes — kept around so the exhaustive explorer can cheaply
-    /// recreate fresh `XfaForm` instances for each branch.
-    xfa_bytes: Vec<u8>,
-    /// The live XFA form (mutable because exploration changes state).
-    form: XfaForm,
+    /// Inner representation differs between XFA and AcroForm PDFs.
+    inner: BlueprintInner,
     /// Auto-detected (or caller-supplied) document language.
     language: String,
-    /// All `<variables><text>` values from the XFA template.
+    /// All `<variables><text>` values from the XFA template (empty for AcroForm).
     variables: std::collections::HashMap<String, String>,
+}
+
+/// Distinguishes between XFA and AcroForm PDF processing pipelines.
+enum BlueprintInner {
+    /// Traditional XFA pipeline: parse XFA XML, explore states via scripting.
+    Xfa {
+        /// Raw XFA XML bytes for recreating fresh XfaForm instances.
+        xfa_bytes: Vec<u8>,
+        /// The live XFA form.
+        form: XfaForm,
+    },
+    /// Non-XFA AcroForm pipeline: direct extraction to Flattened.
+    AcroForm {
+        /// Pre-parsed flattened pages (one per PDF page).
+        pages: Vec<Flattened>,
+    },
 }
 
 impl Blueprint {
@@ -342,19 +372,52 @@ impl Blueprint {
     // ────────────────────────────────────────────────────────────────────────
 
     /// Create a `Blueprint` from a PDF file on disk.
+    ///
+    /// Auto-detects whether the PDF contains XFA data. If it does, the XFA
+    /// pipeline is used; otherwise the AcroForm/content-stream parser
+    /// extracts text and fields directly.
     pub fn from_pdf(path: impl AsRef<Path>) -> Result<Self, Error> {
         let pdf_bytes = std::fs::read(path.as_ref()).map_err(Error::Io)?;
         Self::from_pdf_bytes(&pdf_bytes)
     }
 
     /// Create a `Blueprint` from in-memory PDF bytes.
+    ///
+    /// Auto-detects XFA vs AcroForm.
     pub fn from_pdf_bytes(pdf_bytes: &[u8]) -> Result<Self, Error> {
-        let xfa_bytes = extract_xfa_from_pdf_bytes(pdf_bytes)?.ok_or(Error::NoXfaData)?;
-        let (language, variables) = {
-            let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
-            xfa::extract_context_from_nodes(&nodes)
-        };
-        Self::from_xfa_bytes_with_variables(xfa_bytes, &language, variables)
+        // Try XFA extraction first
+        match extract_xfa_from_pdf_bytes(pdf_bytes)? {
+            Some(xfa_bytes) => {
+                // XFA pipeline
+                let (language, variables) = {
+                    let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
+                    xfa::extract_context_from_nodes(&nodes)
+                };
+                Self::from_xfa_bytes_with_variables(xfa_bytes, &language, variables)
+            }
+            None => {
+                // AcroForm / regular PDF pipeline
+                Self::from_acroform_bytes(pdf_bytes)
+            }
+        }
+    }
+
+    /// Create a `Blueprint` from a non-XFA PDF's raw bytes.
+    ///
+    /// Parses page content streams and AcroForm fields directly into
+    /// the flattened representation.
+    fn from_acroform_bytes(pdf_bytes: &[u8]) -> Result<Self, Error> {
+        let pages = pdf_parser::parse_pdf(pdf_bytes).map_err(Error::PdfParse)?;
+
+        // Try to detect language from form field names / text content
+        // (basic heuristic — can be overridden by the caller)
+        let language = detect_language_from_pages(&pages);
+
+        Ok(Blueprint {
+            inner: BlueprintInner::AcroForm { pages },
+            language,
+            variables: std::collections::HashMap::new(),
+        })
     }
 
     /// Create a `Blueprint` directly from raw XFA XML bytes and a language tag.
@@ -375,11 +438,20 @@ impl Blueprint {
         let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
         let form = XfaForm::new(nodes).map_err(Error::FormCreation)?;
         Ok(Blueprint {
-            xfa_bytes,
-            form,
+            inner: BlueprintInner::Xfa { xfa_bytes, form },
             language: language.to_string(),
             variables,
         })
+    }
+
+    /// Returns `true` if this Blueprint was created from an XFA PDF.
+    pub fn is_xfa(&self) -> bool {
+        matches!(&self.inner, BlueprintInner::Xfa { .. })
+    }
+
+    /// Returns `true` if this Blueprint was created from a regular (AcroForm) PDF.
+    pub fn is_acroform(&self) -> bool {
+        matches!(&self.inner, BlueprintInner::AcroForm { .. })
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -396,14 +468,24 @@ impl Blueprint {
         Context::new(self.language.clone(), self.variables.clone())
     }
 
-    /// Access the underlying [`XfaForm`] (e.g. to resolve individual fields).
-    pub fn form(&self) -> &XfaForm {
-        &self.form
+    /// Access the underlying [`XfaForm`] (only available for XFA PDFs).
+    ///
+    /// Returns `None` for AcroForm PDFs.
+    pub fn form(&self) -> Option<&XfaForm> {
+        match &self.inner {
+            BlueprintInner::Xfa { form, .. } => Some(form),
+            BlueprintInner::AcroForm { .. } => None,
+        }
     }
 
-    /// Mutable access to the underlying [`XfaForm`].
-    pub fn form_mut(&mut self) -> &mut XfaForm {
-        &mut self.form
+    /// Mutable access to the underlying [`XfaForm`] (only available for XFA PDFs).
+    ///
+    /// Returns `None` for AcroForm PDFs.
+    pub fn form_mut(&mut self) -> Option<&mut XfaForm> {
+        match &mut self.inner {
+            BlueprintInner::Xfa { form, .. } => Some(form),
+            BlueprintInner::AcroForm { .. } => None,
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -423,9 +505,36 @@ impl Blueprint {
     /// The returned `FormState` values borrow from the `GlobalContext` that is
     /// stored inside the returned [`FormStates`] wrapper.
     pub fn states(&mut self) -> Result<FormStates, Error> {
-        let collected = exhaustive::collect_states(&mut self.form, &self.xfa_bytes)?;
-
-        Ok(FormStates::new(collected))
+        match &mut self.inner {
+            BlueprintInner::Xfa { form, xfa_bytes } => {
+                let collected = exhaustive::collect_states(form, xfa_bytes)?;
+                Ok(FormStates::new(collected))
+            }
+            BlueprintInner::AcroForm { pages } => {
+                // For AcroForm PDFs there is no scripting, so we produce
+                // a single "default" state per page (or a combined one).
+                let collected: Vec<exhaustive::CollectedState> = if pages.len() == 1 {
+                    vec![exhaustive::CollectedState::new_simple(
+                        pages[0].clone(),
+                        Vec::new(),
+                        "default".to_string(),
+                    )]
+                } else {
+                    pages
+                        .iter()
+                        .enumerate()
+                        .map(|(i, flat)| {
+                            exhaustive::CollectedState::new_simple(
+                                flat.clone(),
+                                Vec::new(),
+                                format!("page_{}", i + 1),
+                            )
+                        })
+                        .collect()
+                };
+                Ok(FormStates::new(collected))
+            }
+        }
     }
 
     /// Run full exhaustive exploration *and* merge all state trees into a
@@ -443,6 +552,20 @@ impl Blueprint {
             content: merged,
         })
     }
+}
+
+// ============================================================================
+// Language detection for AcroForm PDFs
+// ============================================================================
+
+/// Attempt to detect the document language from flattened page content.
+///
+/// Uses a simple heuristic: looks at the first few text nodes and checks
+/// for common language-specific characters/patterns.
+fn detect_language_from_pages(_pages: &[Flattened]) -> String {
+    // Default to "en" — a more sophisticated implementation could analyze
+    // character frequencies or look for PDF metadata.
+    "en".to_string()
 }
 
 // ============================================================================

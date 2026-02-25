@@ -260,18 +260,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // PIPELINE STAGE 1: Extract XFA (optional dump) and build Blueprint
         // =====================================================================
         if args.dump_xfa {
-            let xfa_data = extract_xfa_from_pdf(doc_path)?
-                .ok_or_else(|| format!("No XFA data in PDF: {}", doc_path.display()))?;
-            let xml_path = std::path::PathBuf::from(format!("{}.xml", doc_name));
-            std::fs::write(&xml_path, &xfa_data)
-                .map_err(|e| format!("Failed to write XFA XML: {}", e))?;
-            println!("✓ XFA dumped to {}", xml_path.display());
+            match extract_xfa_from_pdf(doc_path)? {
+                Some(xfa_data) => {
+                    let xml_path = std::path::PathBuf::from(format!("{}.xml", doc_name));
+                    std::fs::write(&xml_path, &xfa_data)
+                        .map_err(|e| format!("Failed to write XFA XML: {}", e))?;
+                    println!("\u{2713} XFA dumped to {}", xml_path.display());
+                }
+                None => {
+                    eprintln!("Note: {} is not an XFA PDF (no XFA data to dump)", doc_path.display());
+                }
+            }
             continue;
         }
 
         let mut bp = Blueprint::from_pdf(doc_path)?;
-        vprintln!(quiet, "✓ XFA data extracted");
-        vprintln!(quiet, "✓ XFA structure parsed");
+
+        if bp.is_xfa() {
+            vprintln!(quiet, "\u{2713} XFA data extracted");
+            vprintln!(quiet, "\u{2713} XFA structure parsed");
+        } else {
+            vprintln!(quiet, "\u{2713} AcroForm PDF parsed (non-XFA)");
+        }
 
         // =====================================================================
         // PIPELINE STAGE 2: Extract language + build context
@@ -300,7 +310,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         if !quiet {
-            println!("\nExhaustive mode: recursively discovering all form states...");
+            if bp.is_xfa() {
+                println!("\nExhaustive mode: recursively discovering all form states...");
+            } else {
+                println!("\nAcroForm mode: extracting text and form fields...");
+            }
             if !args.render_modes.is_empty() {
                 println!("  Render modes: {:?}", args.render_modes);
             }
@@ -429,14 +443,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if args.aem && args.documents.len() <= 1 {
-                let aem_config = blueprint::AemConfig::new(&merged_envelope.context)?;
-                let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
+                if bp.is_xfa() {
+                    let aem_config = blueprint::AemConfig::new(&merged_envelope.context)?;
+                    let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
-                let aem_path = std::path::PathBuf::from(format!("{}_merged.zip", doc_name));
-                std::fs::write(&aem_path, aem_output)
-                    .map_err(|e| format!("Failed to write AEM package: {}", e))?;
+                    let aem_path = std::path::PathBuf::from(format!("{}_merged.zip", doc_name));
+                    std::fs::write(&aem_path, aem_output)
+                        .map_err(|e| format!("Failed to write AEM package: {}", e))?;
 
-                vprintln!(quiet, "    ✓ Merged AEM package: {}", aem_path.display());
+                    vprintln!(quiet, "    \u{2713} Merged AEM package: {}", aem_path.display());
+                } else {
+                    vprintln!(quiet, "    Note: AEM export skipped (requires XFA variables)");
+                }
             }
 
             if args.documents.len() > 1 {
