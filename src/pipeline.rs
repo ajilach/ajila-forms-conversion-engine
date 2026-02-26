@@ -20,6 +20,7 @@ pub fn run_blueprint_pipeline(
     on_progress(&state);
 
     let mut parsed = Vec::new();
+    let mut any_xfa = false;
     for (filename, bytes) in files {
         let mut bp = match Blueprint::from_pdf_bytes(bytes) {
             Ok(bp) => bp,
@@ -29,6 +30,10 @@ pub fn run_blueprint_pipeline(
                 return state;
             }
         };
+
+        if bp.is_xfa() {
+            any_xfa = true;
+        }
 
         let language = bp.language().to_string();
 
@@ -137,21 +142,24 @@ pub fn run_blueprint_pipeline(
         }
     };
     let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
-    let aem_config = match AemConfig::new(&merged.context) {
-        Ok(c) => c,
-        Err(e) => {
-            state.error = Some(format!("Failed to create AEM config: {e}"));
-            on_progress(&state);
-            return state;
+
+    // AEM package generation requires XFA variables; skip for non-XFA PDFs
+    if any_xfa {
+        match AemConfig::new(&merged.context) {
+            Ok(aem_config) => {
+                let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
+                state.form_code = Some(aem_config.form_code.clone());
+                state.aem_package = Some(aem_zip);
+            }
+            Err(_) => {
+                // AEM config not available (e.g. missing XFA variables) — skip
+            }
         }
-    };
-    let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
+    }
 
     state.step = ProcessingStep::Complete;
-    state.form_code = Some(aem_config.form_code.clone());
     state.merged_json = Some(json);
     state.html_preview = Some(html);
-    state.aem_package = Some(aem_zip);
     on_progress(&state);
 
     state

@@ -45,7 +45,7 @@ pub async fn run_and_track(
         match start_processing(files).await {
             Ok(session_id) => {
                 loop {
-                    async_sleep_ms(200).await;
+                    async_sleep_ms(500).await;
                     match poll_progress(session_id.clone()).await {
                         Ok(state) => {
                             let done = state.step == ProcessingStep::Complete

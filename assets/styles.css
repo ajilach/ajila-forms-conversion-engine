@@ -310,6 +310,7 @@ body {
     position: relative;
     max-width: 95vw;
     max-height: 95vh;
+    overflow-y: auto;
     background-color: var(--light);
     border-radius: var(--radius-md);
     padding: var(--space-lg);
@@ -317,9 +318,9 @@ body {
 }
 
 .modal-close-btn {
-    position: absolute;
-    top: var(--space-sm);
-    right: var(--space-sm);
+    position: sticky;
+    top: 0;
+    float: right;
     background-color: var(--danger);
     color: var(--light);
     border: none;
@@ -342,9 +343,7 @@ body {
 }
 
 .modal-image {
-    max-width: 100%;
-    max-height: calc(95vh - 100px);
-    width: auto;
+    width: 100%;
     height: auto;
     display: block;
     border-radius: var(--radius-sm);

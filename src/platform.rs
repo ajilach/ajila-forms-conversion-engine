@@ -65,8 +65,22 @@ pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
 // ── HTML preview ─────────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
-pub fn show_html_preview(html: String, filename: &str) {
-    download_file(html.as_bytes(), filename, "text/html");
+pub fn show_html_preview(html: String, _filename: &str) {
+    use js_sys::{Array, Uint8Array};
+    use web_sys::{Blob, BlobPropertyBag, Url};
+
+    let uint8_array = Uint8Array::from(html.as_bytes());
+    let array = Array::new();
+    array.push(&uint8_array.buffer());
+
+    let mut options = BlobPropertyBag::new();
+    options.set_type("text/html");
+
+    let blob = Blob::new_with_buffer_source_sequence_and_options(&array, &options).unwrap();
+    let url = Url::create_object_url_with_blob(&blob).unwrap();
+
+    let window = web_sys::window().unwrap();
+    let _ = window.open_with_url_and_target(&url, "_blank");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
