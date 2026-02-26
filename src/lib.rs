@@ -511,27 +511,21 @@ impl Blueprint {
                 Ok(FormStates::new(collected))
             }
             BlueprintInner::AcroForm { pages } => {
-                // For AcroForm PDFs there is no scripting, so we produce
-                // a single "default" state per page (or a combined one).
-                let collected: Vec<exhaustive::CollectedState> = if pages.len() == 1 {
-                    vec![exhaustive::CollectedState::new_simple(
-                        pages[0].clone(),
-                        Vec::new(),
-                        "default".to_string(),
-                    )]
-                } else {
-                    pages
-                        .iter()
-                        .enumerate()
-                        .map(|(i, flat)| {
-                            exhaustive::CollectedState::new_simple(
-                                flat.clone(),
-                                Vec::new(),
-                                format!("page_{}", i + 1),
-                            )
-                        })
-                        .collect()
-                };
+                // For AcroForm PDFs there is no scripting. After multi-page
+                // merging in parse_pdf(), `pages` always contains exactly one
+                // merged Flattened, so we produce a single "default" state.
+                let collected: Vec<exhaustive::CollectedState> = pages
+                    .iter()
+                    .enumerate()
+                    .map(|(i, flat)| {
+                        let label = if pages.len() == 1 {
+                            "default".to_string()
+                        } else {
+                            format!("page_{}", i + 1)
+                        };
+                        exhaustive::CollectedState::new_simple(flat.clone(), Vec::new(), label)
+                    })
+                    .collect();
                 Ok(FormStates::new(collected))
             }
         }

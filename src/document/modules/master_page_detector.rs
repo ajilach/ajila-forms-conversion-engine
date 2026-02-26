@@ -2,10 +2,13 @@
 //!
 //! Detects header and footer groups based on the MasterPage hint.
 //! Master page content is content that appears on the page background (outside
-//! the contentArea) in XFA forms - typically headers, footers, and background elements.
+//! the contentArea) in XFA forms, or is repeated across multiple pages in
+//! AcroForm PDFs — typically headers, footers, or background decorations.
 //!
-//! This module examines MasterPage hints on leaf nodes and creates Header/Footer
-//! groups for contiguous master page content.
+//! For multi-page merged documents, this module creates **separate** Header/Footer
+//! groups per page by clustering spatially adjacent master-page nodes. Nodes on
+//! different pages are far apart vertically (separated by at least a page height),
+//! so a simple gap-based clustering splits them correctly.
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
@@ -13,8 +16,8 @@ use crate::flattened::{Hint, MasterPageRegion};
 
 /// Detects header and footer groups based on MasterPage hints.
 ///
-/// Creates GroupKind::Header and GroupKind::Footer groups for leaf nodes
-/// that have MasterPage hints with Header or Footer regions respectively.
+/// Creates one `GroupKind::Header` and one `GroupKind::Footer` group **per page**
+/// by clustering master-page leaf nodes that are spatially adjacent.
 pub struct MasterPageDetector;
 
 impl Default for MasterPageDetector {
@@ -32,13 +35,14 @@ impl MasterPageDetector {
     fn get_master_page_region(&self, doc: &Document, group_idx: usize) -> Option<MasterPageRegion> {
         let group = doc.groups.get(group_idx)?;
         if let GroupKind::Leaf { node_index } = &group.kind
-            && let Some(node) = doc.get_node(*node_index) {
-                for hint in &node.hints {
-                    if let Hint::MasterPage { region } = hint {
-                        return Some(*region);
-                    }
+            && let Some(node) = doc.get_node(*node_index)
+        {
+            for hint in &node.hints {
+                if let Hint::MasterPage { region } = hint {
+                    return Some(*region);
                 }
             }
+        }
         None
     }
 
@@ -50,43 +54,103 @@ impl MasterPageDetector {
             // Only process leaf groups
             if let GroupKind::Leaf { .. } = &group.kind
                 && let Some(region) = self.get_master_page_region(doc, idx)
-                    && region == target_region {
-                        groups.push(idx);
-                    }
+                && region == target_region
+            {
+                groups.push(idx);
+            }
         }
 
         groups
+    }
+
+    /// Split a list of group indices into clusters of spatially adjacent groups.
+    ///
+    /// Groups are sorted by their Y coordinate, then split whenever the vertical
+    /// gap between consecutive groups exceeds `max_gap`. This separates nodes
+    /// from different pages in a merged multi-page document.
+    fn cluster_by_vertical_proximity(
+        &self,
+        doc: &Document,
+        group_indices: Vec<usize>,
+        max_gap: rust_decimal::Decimal,
+    ) -> Vec<Vec<usize>> {
+        if group_indices.is_empty() {
+            return Vec::new();
+        }
+
+        // Pair each index with its Y coordinate
+        let mut with_y: Vec<(usize, rust_decimal::Decimal)> = group_indices
+            .into_iter()
+            .filter_map(|idx| doc.get_bounds(idx).map(|b| (idx, b.y)))
+            .collect();
+
+        // Sort by Y
+        with_y.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Split into clusters at large gaps
+        let mut clusters: Vec<Vec<usize>> = Vec::new();
+        let mut current_cluster: Vec<usize> = vec![with_y[0].0];
+        let mut prev_bottom = {
+            let b = doc.get_bounds(with_y[0].0).unwrap();
+            b.y + b.height
+        };
+
+        for &(idx, y) in &with_y[1..] {
+            if y - prev_bottom > max_gap {
+                clusters.push(std::mem::take(&mut current_cluster));
+            }
+            current_cluster.push(idx);
+            let bottom = doc.get_bounds(idx).map(|b| b.y + b.height).unwrap_or(y);
+            if bottom > prev_bottom {
+                prev_bottom = bottom;
+            }
+        }
+        if !current_cluster.is_empty() {
+            clusters.push(current_cluster);
+        }
+
+        clusters
     }
 }
 
 impl AnalysisModule for MasterPageDetector {
     fn process(&self, doc: &mut Document) {
-        // Find all header region groups
+        // A gap larger than this means nodes are on different pages.
+        // Typical page height is ~842pt (A4); a gap of 200pt is well below
+        // that but large enough to never occur within a single header/footer
+        // region (which is typically 30-80pt tall).
+        let max_gap = rust_decimal::Decimal::from(200);
+
+        // Find all header region groups and cluster per page
         let header_groups = self.find_groups_by_region(doc, MasterPageRegion::Header);
+        let header_clusters = self.cluster_by_vertical_proximity(doc, header_groups, max_gap);
 
-        // Find all footer region groups
-        let footer_groups = self.find_groups_by_region(doc, MasterPageRegion::Footer);
-
-        // Create a Header group containing all header leaf groups
-        if !header_groups.is_empty() {
-            doc.merge(
-                header_groups,
-                GroupKind::Header,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
-            );
+        for cluster in header_clusters {
+            if !cluster.is_empty() {
+                doc.merge(
+                    cluster,
+                    GroupKind::Header,
+                    GroupSource::Inferred {
+                        module: self.name().to_string(),
+                    },
+                );
+            }
         }
 
-        // Create a Footer group containing all footer leaf groups
-        if !footer_groups.is_empty() {
-            doc.merge(
-                footer_groups,
-                GroupKind::Footer,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
-            );
+        // Find all footer region groups and cluster per page
+        let footer_groups = self.find_groups_by_region(doc, MasterPageRegion::Footer);
+        let footer_clusters = self.cluster_by_vertical_proximity(doc, footer_groups, max_gap);
+
+        for cluster in footer_clusters {
+            if !cluster.is_empty() {
+                doc.merge(
+                    cluster,
+                    GroupKind::Footer,
+                    GroupSource::Inferred {
+                        module: self.name().to_string(),
+                    },
+                );
+            }
         }
 
         // Note: Background region groups are not explicitly grouped.

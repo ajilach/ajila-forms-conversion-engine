@@ -11478,3 +11478,376 @@
         }
     }
 
+    // ========================================================================
+    // Multi-page PDF merge + header/footer detection tests
+    // ========================================================================
+
+    /// Helper: build a simple text FlattenedNode at given position.
+    fn make_text_node(content: &str, x: f64, y: f64, w: f64, h: f64, font_size: f64) -> crate::flattened::FlattenedNode {
+        use crate::flattened::FlattenedNodeBuilder;
+        use rust_decimal::Decimal;
+        use rust_decimal::prelude::FromPrimitive;
+
+        let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
+        FlattenedNodeBuilder::new()
+            .bounds(to(x), to(y), to(w), to(h))
+            .text(content.to_string(), to(font_size), "Helvetica".to_string())
+            .build()
+    }
+
+    /// Helper: build a simple field FlattenedNode at given position.
+    fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flattened::FlattenedNode {
+        use crate::flattened::FlattenedNodeBuilder;
+        use rust_decimal::Decimal;
+        use rust_decimal::prelude::FromPrimitive;
+
+        let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
+        FlattenedNodeBuilder::new()
+            .bounds(to(x), to(y), to(w), to(h))
+            .field(name.to_string(), String::new(), String::new())
+            .build()
+    }
+
+    /// Helper: build a Flattened page from nodes.
+    fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode>) -> Flattened {
+        use crate::flattened::{FlattenedKind, Page};
+        use rust_decimal::Decimal;
+        use rust_decimal::prelude::FromPrimitive;
+
+        let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
+        Flattened::new(
+            Page { width: to(width), height: to(height) },
+            nodes.into_iter().map(FlattenedKind::Node).collect(),
+        )
+    }
+
+    #[test]
+    fn test_merge_pages_single_page_passthrough() {
+        // A single page should pass through unchanged (no merging needed).
+        use crate::pdf_parser::merge_pages;
+        use rust_decimal::Decimal;
+        use rust_decimal::prelude::FromPrimitive;
+
+        let page = make_page(595.0, 842.0, vec![
+            make_text_node("Hello", 50.0, 100.0, 200.0, 20.0, 12.0),
+        ]);
+
+        let merged = merge_pages(vec![page]);
+
+        assert_eq!(merged.page.width, Decimal::from_f64(595.0).unwrap());
+        assert_eq!(merged.page.height, Decimal::from_f64(842.0).unwrap());
+        assert_eq!(merged.node_count(), 1);
+
+        let nodes: Vec<_> = merged.collect_nodes();
+        let node = nodes[0];
+        assert_eq!(node.y, Decimal::from_f64(100.0).unwrap());
+    }
+
+    #[test]
+    fn test_merge_pages_stacks_vertically() {
+        // Two pages should be stacked: second page nodes offset by first page height.
+        use crate::pdf_parser::merge_pages;
+        use rust_decimal::Decimal;
+        use rust_decimal::prelude::FromPrimitive;
+
+        let to = |v: f64| Decimal::from_f64(v).unwrap();
+
+        let page1 = make_page(595.0, 842.0, vec![
+            make_text_node("Page1 content", 50.0, 400.0, 200.0, 20.0, 12.0),
+        ]);
+        let page2 = make_page(595.0, 842.0, vec![
+            make_text_node("Page2 content", 50.0, 400.0, 200.0, 20.0, 12.0),
+        ]);
+
+        let merged = merge_pages(vec![page1, page2]);
+
+        // Merged dimensions: max width, sum of heights
+        assert_eq!(merged.page.width, to(595.0));
+        assert_eq!(merged.page.height, to(1684.0)); // 842 + 842
+
+        assert_eq!(merged.node_count(), 2);
+
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        // First page node: y unchanged
+        assert_eq!(nodes[0].y, to(400.0));
+
+        // Second page node: y offset by page1 height (842)
+        assert_eq!(nodes[1].y, to(400.0 + 842.0));
+    }
+
+    #[test]
+    fn test_merge_pages_header_detection() {
+        // Three pages each with the same text node at the top → header.
+        // The header boundary should be at the bottom of that repeated element.
+        // All elements in the header region get the MasterPage::Header hint.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let mut pages = Vec::new();
+        for i in 0..3 {
+            pages.push(make_page(595.0, 842.0, vec![
+                // Repeated header text at y=10, height=20 → bottom=30
+                make_text_node("Company Logo", 50.0, 10.0, 200.0, 20.0, 12.0),
+                // Unique body content
+                make_text_node(&format!("Body text page {}", i + 1), 50.0, 200.0, 400.0, 20.0, 10.0),
+            ]));
+        }
+
+        let merged = merge_pages(pages);
+
+        // Should have 6 nodes total (2 per page × 3 pages)
+        assert_eq!(merged.node_count(), 6);
+
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        // Check that repeated header nodes got the Header hint
+        let header_nodes: Vec<_> = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
+        }).collect();
+
+        // 3 pages × 1 header element = 3 header-tagged nodes
+        assert_eq!(header_nodes.len(), 3, "Expected 3 header-tagged nodes, found {}", header_nodes.len());
+
+        // Body nodes should NOT have header hints
+        let body_nodes: Vec<_> = nodes.iter().filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Body text")
+            } else { false }
+        }).collect();
+        for body in &body_nodes {
+            assert!(
+                !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+                "Body text should not have MasterPage hint"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_pages_footer_detection() {
+        // Three pages each with the same text node at the bottom → footer.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let page_height = 842.0;
+        let mut pages = Vec::new();
+        for i in 0..3 {
+            pages.push(make_page(595.0, page_height, vec![
+                // Unique body content in upper half
+                make_text_node(&format!("Content page {}", i + 1), 50.0, 200.0, 400.0, 20.0, 10.0),
+                // Repeated footer text near bottom: y=800, height=20
+                make_text_node("Page Footer", 50.0, 800.0, 200.0, 20.0, 8.0),
+            ]));
+        }
+
+        let merged = merge_pages(pages);
+
+        assert_eq!(merged.node_count(), 6);
+
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        let footer_nodes: Vec<_> = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Footer }))
+        }).collect();
+
+        assert_eq!(footer_nodes.len(), 3, "Expected 3 footer-tagged nodes, found {}", footer_nodes.len());
+
+        // Body nodes should NOT have footer hints
+        let body_nodes: Vec<_> = nodes.iter().filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Content page")
+            } else { false }
+        }).collect();
+        for body in &body_nodes {
+            assert!(
+                !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+                "Body content should not have MasterPage hint"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_pages_header_and_footer_together() {
+        // Three pages with both header and footer elements.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let page_height = 842.0;
+        let mut pages = Vec::new();
+        for i in 0..3 {
+            pages.push(make_page(595.0, page_height, vec![
+                // Header: y=5, height=15 → bottom=20
+                make_text_node("Header Line", 50.0, 5.0, 300.0, 15.0, 10.0),
+                // Body (unique per page so it's NOT a repeated candidate)
+                make_text_node(&format!("Body content {}", i), 50.0, 500.0, 400.0, 20.0, 10.0),
+                // Footer: y=810, height=20
+                make_text_node("Footer Line", 50.0, 810.0, 300.0, 20.0, 8.0),
+            ]));
+        }
+
+        let merged = merge_pages(pages);
+        assert_eq!(merged.node_count(), 9);
+
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        let header_count = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
+        }).count();
+
+        let footer_count = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Footer }))
+        }).count();
+
+        assert_eq!(header_count, 3, "Expected 3 header-tagged nodes");
+        assert_eq!(footer_count, 3, "Expected 3 footer-tagged nodes");
+
+        // Body nodes should have neither
+        let body_nodes: Vec<_> = nodes.iter().filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Body content")
+            } else { false }
+        }).collect();
+        assert_eq!(body_nodes.len(), 3);
+        for body in &body_nodes {
+            assert!(
+                !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+                "Body content should not have MasterPage hint"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_pages_no_repeated_elements_no_hints() {
+        // Three pages with NO repeated elements → no header/footer hints.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let mut pages = Vec::new();
+        for i in 0..3 {
+            pages.push(make_page(595.0, 842.0, vec![
+                make_text_node(&format!("Unique top {}", i), 50.0, 10.0, 200.0, 20.0, 12.0),
+                make_text_node(&format!("Unique bottom {}", i), 50.0, 800.0, 200.0, 20.0, 12.0),
+            ]));
+        }
+
+        let merged = merge_pages(pages);
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        for node in &nodes {
+            assert!(
+                !node.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+                "No element should have MasterPage hint when nothing is repeated"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_pages_50_percent_threshold() {
+        // 4 pages, element appears on 2 pages (50%) → should be detected.
+        // Element appears on 1 page (25%) → should NOT be detected.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let mut pages = Vec::new();
+
+        // Pages 0 and 1: have a repeated header
+        for i in 0..2 {
+            pages.push(make_page(595.0, 842.0, vec![
+                make_text_node("Repeated Header", 50.0, 10.0, 200.0, 20.0, 12.0),
+                make_text_node(&format!("Body A{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
+            ]));
+        }
+        // Pages 2 and 3: no repeated header
+        for i in 0..2 {
+            pages.push(make_page(595.0, 842.0, vec![
+                make_text_node(&format!("Different header {}", i), 50.0, 10.0, 200.0, 20.0, 12.0),
+                make_text_node(&format!("Body B{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
+            ]));
+        }
+
+        let merged = merge_pages(pages);
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        // "Repeated Header" appears on 2/4 pages = 50% → meets threshold
+        // The header boundary is at y=30 (bottom of "Repeated Header")
+        // So all elements with bottom ≤ 30 on every page should get tagged
+        let header_nodes: Vec<_> = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
+        }).collect();
+
+        // All 4 pages have an element at y=10, h=20 (within header boundary = 30)
+        // so all 4 top elements should be tagged as headers
+        assert_eq!(header_nodes.len(), 4,
+            "All elements within header boundary should be tagged, found {}",
+            header_nodes.len());
+    }
+
+    #[test]
+    fn test_merge_pages_header_boundary_includes_all_elements_in_region() {
+        // If the header candidate goes to y=50, then a non-repeated element
+        // at y=30 should also be tagged as header since it's within the boundary.
+        use crate::pdf_parser::merge_pages;
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let mut pages = Vec::new();
+        for i in 0..3 {
+            pages.push(make_page(595.0, 842.0, vec![
+                // Repeated element: y=10, h=15 → bottom=25
+                make_text_node("Logo", 50.0, 10.0, 100.0, 15.0, 12.0),
+                // Repeated element: y=30, h=20 → bottom=50
+                make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
+                // Non-repeated body (unique per page, in lower half)
+                make_text_node(&format!("Body {}", i), 50.0, 500.0, 400.0, 20.0, 10.0),
+            ]));
+        }
+        // Add a 4th page without "Logo" but with a unique element at y=15
+        pages.push(make_page(595.0, 842.0, vec![
+            make_text_node("Different top", 50.0, 15.0, 100.0, 10.0, 12.0),
+            make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
+            make_text_node("Body 3", 50.0, 500.0, 400.0, 20.0, 10.0),
+        ]));
+
+        let merged = merge_pages(pages);
+        let nodes: Vec<_> = merged.collect_nodes();
+
+        // Header boundary = bottom of lowest header candidate = 50
+        // (both "Logo" at bottom=25 and "Subtitle" at bottom=50 are header candidates)
+        // "Different top" at y=15, bottom=25 → within header boundary → tagged
+        let header_nodes: Vec<_> = nodes.iter().filter(|n| {
+            n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
+        }).collect();
+
+        // 3 pages × 2 header elements + 1 page × 2 header elements = 8
+        assert_eq!(header_nodes.len(), 8,
+            "Expected 8 header-tagged nodes, found {}",
+            header_nodes.len());
+    }
+
+    #[test]
+    fn test_antrag_sozialhilfe_multipage_merge() {
+        // Integration test: the antrag_wirtschaftliche_sozialhilfe.pdf should
+        // produce a single merged Flattened state with header/footer hints.
+        use crate::flattened::{Hint, MasterPageRegion};
+
+        let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+            .expect("Failed to load PDF");
+
+        assert!(bp.is_acroform(), "PDF should be AcroForm");
+
+        let form_states = bp.states().expect("Failed to get states");
+
+        // Should produce exactly one state (merged)
+        assert_eq!(form_states.len(), 1, "Expected 1 merged state, got {}", form_states.len());
+
+        let state = form_states.iter().next().unwrap();
+        assert_eq!(state.label, "default");
+
+        // The merged flattened should have nodes from all pages
+        let node_count = state.flattened.node_count();
+        assert!(node_count > 10, "Expected many nodes in merged output, got {}", node_count);
+
+        // Check total height is larger than a single page (842pt for A4)
+        let total_height = state.flattened.page.height;
+        assert!(total_height > rust_decimal::Decimal::from(842),
+            "Merged height {} should be larger than one A4 page", total_height);
+    }
