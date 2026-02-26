@@ -7421,7 +7421,14 @@ impl Flattened {
                 .cloned();
 
             if let Some(layout_font) = &font_for_layout {
-                let single_rt = RichText { paragraphs: vec![para.clone()] };
+                // Per XFA spec: text-indent shifts the first line's starting x position
+                // but does NOT reduce the available line width for wrapping purposes.
+                // Using text-indent in line-count measurement would cause extra line
+                // breaks compared to Adobe's XFA renderer, misaligning overlapping
+                // draw elements (e.g. T_Left / T_LeftIndent in AAAI).
+                let mut height_para = para.clone();
+                height_para.text_indent = None;
+                let single_rt = RichText { paragraphs: vec![height_para] };
                 let rendered_lines = Self::layout_rich_text(
                     &single_rt,
                     max_width.to_f32().unwrap_or(500.0),
@@ -7436,8 +7443,13 @@ impl Flattened {
                 let height = num_lines * effective_line_height + space_above + space_below;
                 paragraph_heights.push(height);
             } else {
-                // Fallback to measure_text_block if font is unavailable
-                match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props, max_width) {
+                // Fallback to measure_text_block if font is unavailable.
+                // Also clear text_indent here to stay consistent with the primary path.
+                let para_props_no_indent = para_props.as_ref().map(|p| Para {
+                    text_indent: None,
+                    ..p.clone()
+                });
+                match measurer.measure_text_block(&plain_text, &Some(para_xfa_font.clone()), &para_props_no_indent, max_width) {
                     Ok(block_metrics) => {
                         let num_lines = num(block_metrics.lines.len() as f64);
                         let height = num_lines * effective_line_height + space_above + space_below;
