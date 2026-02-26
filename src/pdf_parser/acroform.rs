@@ -106,8 +106,8 @@ pub fn extract_acroform_fields(
             doc,
             field_obj,
             &mut String::new(),
-            None,    // inherited /FT
-            0,       // inherited /Ff
+            None, // inherited /FT
+            0,    // inherited /Ff
             &mut fields,
             page_heights,
             page_id_to_index,
@@ -186,7 +186,7 @@ fn traverse_field(
 
     // Check for /Kids
     if let Ok(kids_obj) = field_dict.get(b"Kids") {
-        if let Some(Object::Array(kids)) = resolve(doc, kids_obj).map(|o| o.clone()) {
+        if let Some(Object::Array(kids)) = resolve(doc, kids_obj).cloned() {
             // Check if kids are widget annotations (have /Subtype /Widget) or intermediate nodes
             let mut has_widget_kids = false;
             let mut has_field_kids = false;
@@ -232,7 +232,8 @@ fn traverse_field(
                             let is_checked = extract_checked_state(kid_dict, &value, field_type);
 
                             // For radio buttons, get the appearance state name as the value
-                            let widget_value = extract_widget_value(kid_dict).unwrap_or_else(|| value.clone());
+                            let widget_value =
+                                extract_widget_value(kid_dict).unwrap_or_else(|| value.clone());
 
                             fields.push(AcroFormField {
                                 name: fq_name.clone(),

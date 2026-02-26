@@ -7317,7 +7317,7 @@ impl Flattened {
         // Measure each paragraph's height
         let mut paragraph_heights: Vec<Num> = Vec::with_capacity(rich_text.paragraphs.len());
 
-        for (para_idx, para) in rich_text.paragraphs.iter().enumerate() {
+        for para in rich_text.paragraphs.iter() {
             // Use per-paragraph font size override if available
             let para_font_size = para.font_size.map(|s| num(s as f64)).unwrap_or(base_font_size);
             let mut para_xfa_font = xfa_font.clone();

@@ -865,7 +865,7 @@ impl XfaForm {
         if node.attributes.contains_key("xfa:embed") {
             return true;
         }
-        node.children.iter().any(|c| Self::node_has_embeds(c))
+        node.children.iter().any(Self::node_has_embeds)
     }
 
     /// Build a mapping from element ID to relative field path within a subform.
@@ -877,10 +877,8 @@ impl XfaForm {
         fn collect(node: &XfaNode, prefix: &str, map: &mut HashMap<String, String>) {
             for child in &node.children {
                 let name = child.name.as_deref().unwrap_or("");
-                let is_container = matches!(
-                    child.kind,
-                    XfaNodeKind::Subform | XfaNodeKind::ExclGroup
-                );
+                let is_container =
+                    matches!(child.kind, XfaNodeKind::Subform | XfaNodeKind::ExclGroup);
 
                 let child_path = if !name.is_empty() {
                     if prefix.is_empty() {
@@ -918,10 +916,8 @@ impl XfaForm {
         fn walk(node: &mut XfaNode, values: &HashMap<String, String>, prefix: &str) {
             for child in &mut node.children {
                 let name = child.name.clone().unwrap_or_default();
-                let is_container = matches!(
-                    child.kind,
-                    XfaNodeKind::Subform | XfaNodeKind::ExclGroup
-                );
+                let is_container =
+                    matches!(child.kind, XfaNodeKind::Subform | XfaNodeKind::ExclGroup);
 
                 let child_path = if !name.is_empty() {
                     if prefix.is_empty() {
@@ -962,8 +958,7 @@ impl XfaForm {
         values: &HashMap<String, String>,
     ) {
         // If this node is a draw/field with embeds, resolve it directly
-        let is_draw_or_field =
-            matches!(node.kind, XfaNodeKind::Draw | XfaNodeKind::Field);
+        let is_draw_or_field = matches!(node.kind, XfaNodeKind::Draw | XfaNodeKind::Field);
         if is_draw_or_field && Self::node_has_embeds(node) {
             if let Some(text) = Self::compute_resolved_text(node, id_map, values) {
                 Self::set_draw_value_text(node, &text);
@@ -991,10 +986,7 @@ impl XfaForm {
                 match &child.kind {
                     XfaNodeKind::Value => return find_paragraph(child),
                     XfaNodeKind::Element { tag_name, .. }
-                        if matches!(
-                            tag_name.as_str(),
-                            "value" | "exData" | "body"
-                        ) =>
+                        if matches!(tag_name.as_str(), "value" | "exData" | "body") =>
                     {
                         return find_paragraph(child);
                     }
@@ -1011,15 +1003,14 @@ impl XfaForm {
         let mut parts = Vec::new();
         for child in &p.children {
             match &child.kind {
-                XfaNodeKind::Element { tag_name, text_content }
-                    if tag_name == "span" =>
-                {
+                XfaNodeKind::Element {
+                    tag_name,
+                    text_content,
+                } if tag_name == "span" => {
                     if let Some(embed_ref) = child.attributes.get("xfa:embed") {
                         let id = embed_ref.strip_prefix('#').unwrap_or(embed_ref);
                         if let Some(rel_path) = id_map.get(id) {
-                            parts.push(
-                                values.get(rel_path).cloned().unwrap_or_default(),
-                            );
+                            parts.push(values.get(rel_path).cloned().unwrap_or_default());
                         }
                     } else {
                         // Non-embed span: use text_content or child text; treat
@@ -1723,10 +1714,7 @@ impl XfaForm {
 
     fn extract_and_register_translations(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
         // Collect script variables (only scripts, not text)
-        fn collect_variable_scripts(
-            nodes: &[XfaNode],
-            scripts: &mut Vec<(String, String)>,
-        ) {
+        fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
             for node in nodes {
                 if let XfaNodeKind::Element { tag_name, .. } = &node.kind
                     && tag_name == "variables"

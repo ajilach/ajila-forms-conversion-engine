@@ -74,7 +74,7 @@ fn parse_to_unicode_cmap(data: &[u8]) -> ToUnicodeCMap {
 
         if line.ends_with("beginbfchar") {
             // Single character mappings
-            while let Some(mapping_line) = lines.next() {
+            for mapping_line in lines.by_ref() {
                 let mapping_line = mapping_line.trim();
                 if mapping_line.contains("endbfchar") {
                     break;
@@ -85,7 +85,7 @@ fn parse_to_unicode_cmap(data: &[u8]) -> ToUnicodeCMap {
             }
         } else if line.ends_with("beginbfrange") {
             // Range mappings
-            while let Some(range_line) = lines.next() {
+            for range_line in lines.by_ref() {
                 let range_line = range_line.trim();
                 if range_line.contains("endbfrange") {
                     break;
@@ -192,35 +192,35 @@ fn win_ansi_decode(code: u8) -> Option<char> {
     // 0x80–0x9F: Windows-1252 specials
     // 0xA0–0xFF: Latin-1 Supplement
     match code {
-        0x80 => Some('\u{20AC}'), // Euro sign
-        0x82 => Some('\u{201A}'), // Single low-9 quotation mark
-        0x83 => Some('\u{0192}'), // Latin small letter f with hook
-        0x84 => Some('\u{201E}'), // Double low-9 quotation mark
-        0x85 => Some('\u{2026}'), // Horizontal ellipsis
-        0x86 => Some('\u{2020}'), // Dagger
-        0x87 => Some('\u{2021}'), // Double dagger
-        0x88 => Some('\u{02C6}'), // Modifier letter circumflex accent
-        0x89 => Some('\u{2030}'), // Per mille sign
-        0x8A => Some('\u{0160}'), // Latin capital letter S with caron
-        0x8B => Some('\u{2039}'), // Single left-pointing angle quotation mark
-        0x8C => Some('\u{0152}'), // Latin capital ligature OE
-        0x8E => Some('\u{017D}'), // Latin capital letter Z with caron
-        0x91 => Some('\u{2018}'), // Left single quotation mark
-        0x92 => Some('\u{2019}'), // Right single quotation mark
-        0x93 => Some('\u{201C}'), // Left double quotation mark
-        0x94 => Some('\u{201D}'), // Right double quotation mark
-        0x95 => Some('\u{2022}'), // Bullet
-        0x96 => Some('\u{2013}'), // En dash
-        0x97 => Some('\u{2014}'), // Em dash
-        0x98 => Some('\u{02DC}'), // Small tilde
-        0x99 => Some('\u{2122}'), // Trade mark sign
-        0x9A => Some('\u{0161}'), // Latin small letter s with caron
-        0x9B => Some('\u{203A}'), // Single right-pointing angle quotation mark
-        0x9C => Some('\u{0153}'), // Latin small ligature oe
-        0x9E => Some('\u{017E}'), // Latin small letter z with caron
-        0x9F => Some('\u{0178}'), // Latin capital letter Y with diaeresis
+        0x80 => Some('\u{20AC}'),          // Euro sign
+        0x82 => Some('\u{201A}'),          // Single low-9 quotation mark
+        0x83 => Some('\u{0192}'),          // Latin small letter f with hook
+        0x84 => Some('\u{201E}'),          // Double low-9 quotation mark
+        0x85 => Some('\u{2026}'),          // Horizontal ellipsis
+        0x86 => Some('\u{2020}'),          // Dagger
+        0x87 => Some('\u{2021}'),          // Double dagger
+        0x88 => Some('\u{02C6}'),          // Modifier letter circumflex accent
+        0x89 => Some('\u{2030}'),          // Per mille sign
+        0x8A => Some('\u{0160}'),          // Latin capital letter S with caron
+        0x8B => Some('\u{2039}'),          // Single left-pointing angle quotation mark
+        0x8C => Some('\u{0152}'),          // Latin capital ligature OE
+        0x8E => Some('\u{017D}'),          // Latin capital letter Z with caron
+        0x91 => Some('\u{2018}'),          // Left single quotation mark
+        0x92 => Some('\u{2019}'),          // Right single quotation mark
+        0x93 => Some('\u{201C}'),          // Left double quotation mark
+        0x94 => Some('\u{201D}'),          // Right double quotation mark
+        0x95 => Some('\u{2022}'),          // Bullet
+        0x96 => Some('\u{2013}'),          // En dash
+        0x97 => Some('\u{2014}'),          // Em dash
+        0x98 => Some('\u{02DC}'),          // Small tilde
+        0x99 => Some('\u{2122}'),          // Trade mark sign
+        0x9A => Some('\u{0161}'),          // Latin small letter s with caron
+        0x9B => Some('\u{203A}'),          // Single right-pointing angle quotation mark
+        0x9C => Some('\u{0153}'),          // Latin small ligature oe
+        0x9E => Some('\u{017E}'),          // Latin small letter z with caron
+        0x9F => Some('\u{0178}'),          // Latin capital letter Y with diaeresis
         0x81 | 0x8D | 0x8F | 0x90 => None, // Undefined in Windows-1252
-        0xAD => Some('\u{00AD}'), // Soft hyphen
+        0xAD => Some('\u{00AD}'),          // Soft hyphen
         c if c >= 0x20 => char::from_u32(c as u32),
         _ => None,
     }
@@ -234,22 +234,18 @@ fn mac_roman_decode(code: u8) -> Option<char> {
     }
     // 0x80–0xFF: Mac-specific characters
     const MAC_HIGH: [u16; 128] = [
-        0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1,
-        0x00E0, 0x00E2, 0x00E4, 0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8,
-        0x00EA, 0x00EB, 0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3,
-        0x00F2, 0x00F4, 0x00F6, 0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC,
-        0x2020, 0x00B0, 0x00A2, 0x00A3, 0x00A7, 0x2022, 0x00B6, 0x00DF,
-        0x00AE, 0x00A9, 0x2122, 0x00B4, 0x00A8, 0x2260, 0x00C6, 0x00D8,
-        0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x00B5, 0x2202, 0x2211,
-        0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x2126, 0x00E6, 0x00F8,
-        0x00BF, 0x00A1, 0x00AC, 0x221A, 0x0192, 0x2248, 0x2206, 0x00AB,
-        0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3, 0x00D5, 0x0152, 0x0153,
-        0x2013, 0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25CA,
-        0x00FF, 0x0178, 0x2044, 0x20AC, 0x2039, 0x203A, 0xFB01, 0xFB02,
-        0x2021, 0x00B7, 0x201A, 0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1,
-        0x00CB, 0x00C8, 0x00CD, 0x00CE, 0x00CF, 0x00CC, 0x00D3, 0x00D4,
-        0xF8FF, 0x00D2, 0x00DA, 0x00DB, 0x00D9, 0x0131, 0x02C6, 0x02DC,
-        0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7,
+        0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1, 0x00E0, 0x00E2, 0x00E4,
+        0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8, 0x00EA, 0x00EB, 0x00ED, 0x00EC, 0x00EE, 0x00EF,
+        0x00F1, 0x00F3, 0x00F2, 0x00F4, 0x00F6, 0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC, 0x2020,
+        0x00B0, 0x00A2, 0x00A3, 0x00A7, 0x2022, 0x00B6, 0x00DF, 0x00AE, 0x00A9, 0x2122, 0x00B4,
+        0x00A8, 0x2260, 0x00C6, 0x00D8, 0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x00B5, 0x2202,
+        0x2211, 0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x2126, 0x00E6, 0x00F8, 0x00BF, 0x00A1,
+        0x00AC, 0x221A, 0x0192, 0x2248, 0x2206, 0x00AB, 0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3,
+        0x00D5, 0x0152, 0x0153, 0x2013, 0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25CA,
+        0x00FF, 0x0178, 0x2044, 0x20AC, 0x2039, 0x203A, 0xFB01, 0xFB02, 0x2021, 0x00B7, 0x201A,
+        0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1, 0x00CB, 0x00C8, 0x00CD, 0x00CE, 0x00CF, 0x00CC,
+        0x00D3, 0x00D4, 0xF8FF, 0x00D2, 0x00DA, 0x00DB, 0x00D9, 0x0131, 0x02C6, 0x02DC, 0x00AF,
+        0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7,
     ];
     char::from_u32(MAC_HIGH[(code - 0x80) as usize] as u32)
 }
@@ -257,7 +253,7 @@ fn mac_roman_decode(code: u8) -> Option<char> {
 /// Standard PDF encoding (Adobe Standard Encoding).
 fn standard_encoding_decode(code: u8) -> Option<char> {
     // Most of ASCII is the same
-    if code >= 0x20 && code <= 0x7E {
+    if (0x20..=0x7E).contains(&code) {
         return char::from_u32(code as u32);
     }
     // Notable differences from ASCII / Latin-1 for codes >= 0x80
@@ -508,13 +504,9 @@ fn glyph_name_to_unicode(name: &str) -> Option<char> {
         // If the name looks like "uniXXXX" or "uXXXX", parse the hex
         _ => {
             if let Some(hex) = name.strip_prefix("uni") {
-                u32::from_str_radix(hex, 16)
-                    .ok()
-                    .and_then(char::from_u32)
+                u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
             } else if let Some(hex) = name.strip_prefix("u") {
-                u32::from_str_radix(hex, 16)
-                    .ok()
-                    .and_then(char::from_u32)
+                u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
             } else {
                 None
             }
@@ -534,9 +526,7 @@ impl FontEntry {
     /// Decode a single character code to a Unicode string.
     pub fn decode_char(&self, code: u32) -> String {
         match &self.decoder {
-            CharDecoder::ToUnicode(cmap) => {
-                cmap.decode(code).unwrap_or_else(|| replacement(code))
-            }
+            CharDecoder::ToUnicode(cmap) => cmap.decode(code).unwrap_or_else(|| replacement(code)),
             CharDecoder::SingleByte(table) => {
                 if code < 256 {
                     table[code as usize]
@@ -546,11 +536,9 @@ impl FontEntry {
                     replacement(code)
                 }
             }
-            CharDecoder::Identity => {
-                char::from_u32(code)
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| replacement(code))
-            }
+            CharDecoder::Identity => char::from_u32(code)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| replacement(code)),
         }
     }
 
@@ -587,7 +575,10 @@ impl FontEntry {
 
     /// Get the width of a character code in text-space units (typically 1/1000 of text space).
     pub fn char_width(&self, code: u32) -> f64 {
-        self.widths.get(&code).copied().unwrap_or(self.default_width)
+        self.widths
+            .get(&code)
+            .copied()
+            .unwrap_or(self.default_width)
     }
 
     /// Whether this font uses 2-byte character codes (CIDFont).
@@ -599,8 +590,7 @@ impl FontEntry {
     fn is_two_byte(&self) -> bool {
         // Heuristic: if all width entries have codes > 255, it's likely CID
         // Also Identity decoder is always 2-byte
-        matches!(&self.decoder, CharDecoder::Identity)
-            || self.widths.keys().any(|&k| k > 255)
+        matches!(&self.decoder, CharDecoder::Identity) || self.widths.keys().any(|&k| k > 255)
     }
 }
 
@@ -651,7 +641,10 @@ pub fn build_font_map(doc: &Document, page_id: ObjectId) -> FontMap {
 
 /// Navigate from a page object to its /Resources /Font dictionary.
 /// Returns a Vec of (font_name, &Object) pairs.
-fn get_fonts_dict<'a>(doc: &'a Document, page_obj: &'a Object) -> Option<Vec<(String, &'a Object)>> {
+fn get_fonts_dict<'a>(
+    doc: &'a Document,
+    page_obj: &'a Object,
+) -> Option<Vec<(String, &'a Object)>> {
     let page_dict = page_obj.as_dict().ok()?;
 
     // Try /Resources directly on the page, or resolve a reference
@@ -818,27 +811,34 @@ fn extract_widths(doc: &Document, font_dict: &lopdf::Dictionary) -> (HashMap<u32
     let default_width = 600.0; // Reasonable default for monospaced-like fonts
 
     // Try /Widths array (for simple fonts)
-    if let (Ok(first_char), Ok(widths_obj)) = (
-        font_dict.get(b"FirstChar"),
-        font_dict.get(b"Widths"),
-    ) {
+    if let (Ok(first_char), Ok(widths_obj)) =
+        (font_dict.get(b"FirstChar"), font_dict.get(b"Widths"))
+    {
         let first = match first_char {
             Object::Integer(n) => *n as u32,
-            Object::Reference(r) => {
-                doc.get_object(*r)
-                    .ok()
-                    .and_then(|o| if let Object::Integer(n) = o { Some(*n as u32) } else { None })
-                    .unwrap_or(0)
-            }
+            Object::Reference(r) => doc
+                .get_object(*r)
+                .ok()
+                .and_then(|o| {
+                    if let Object::Integer(n) = o {
+                        Some(*n as u32)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0),
             _ => 0,
         };
 
         let width_array = match widths_obj {
             Object::Array(arr) => Some(arr),
-            Object::Reference(r) => doc
-                .get_object(*r)
-                .ok()
-                .and_then(|o| if let Object::Array(arr) = o { Some(arr) } else { None }),
+            Object::Reference(r) => doc.get_object(*r).ok().and_then(|o| {
+                if let Object::Array(arr) = o {
+                    Some(arr)
+                } else {
+                    None
+                }
+            }),
             _ => None,
         };
 
@@ -858,10 +858,13 @@ fn extract_widths(doc: &Document, font_dict: &lopdf::Dictionary) -> (HashMap<u32
     if let Ok(descendants) = font_dict.get(b"DescendantFonts") {
         let desc_array = match descendants {
             Object::Array(arr) => Some(arr),
-            Object::Reference(r) => doc
-                .get_object(*r)
-                .ok()
-                .and_then(|o| if let Object::Array(arr) = o { Some(arr) } else { None }),
+            Object::Reference(r) => doc.get_object(*r).ok().and_then(|o| {
+                if let Object::Array(arr) = o {
+                    Some(arr)
+                } else {
+                    None
+                }
+            }),
             _ => None,
         };
 
@@ -884,16 +887,13 @@ fn extract_widths(doc: &Document, font_dict: &lopdf::Dictionary) -> (HashMap<u32
                         if let Ok(w_obj) = cid_dict.get(b"W") {
                             let w_array = match w_obj {
                                 Object::Array(arr) => Some(arr),
-                                Object::Reference(r) => doc
-                                    .get_object(*r)
-                                    .ok()
-                                    .and_then(|o| {
-                                        if let Object::Array(arr) = o {
-                                            Some(arr)
-                                        } else {
-                                            None
-                                        }
-                                    }),
+                                Object::Reference(r) => doc.get_object(*r).ok().and_then(|o| {
+                                    if let Object::Array(arr) = o {
+                                        Some(arr)
+                                    } else {
+                                        None
+                                    }
+                                }),
                                 _ => None,
                             };
                             if let Some(w_arr) = w_array {

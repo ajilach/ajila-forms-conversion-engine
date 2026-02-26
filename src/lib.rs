@@ -1,6 +1,8 @@
 #![allow(clippy::large_enum_variant)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_else_if)]
+#![allow(clippy::collapsible_match)]
 #![allow(clippy::needless_range_loop)]
 #![deny(unsafe_code)]
 

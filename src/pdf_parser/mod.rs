@@ -509,7 +509,7 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
     }
 
     // Filter to those appearing on ≥50% of pages
-    let threshold = (num_pages + 1) / 2; // ceil(num_pages / 2)
+    let threshold = num_pages.div_ceil(2); // ceil(num_pages / 2)
     let repeated: Vec<&ElementFingerprint> = unique_fps
         .iter()
         .filter(|fc| fc.page_count >= threshold)
