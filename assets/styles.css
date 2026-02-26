@@ -89,6 +89,9 @@
     --color-bg-error:      rgba(194, 24, 91, 0.08);
     --color-border-error:  rgba(194, 24, 91, 0.3);
     --color-text-error:    var(--danger);
+    --color-bg-warning:    rgba(220, 158, 38, 0.08);
+    --color-border-warning: rgba(220, 158, 38, 0.3);
+    --color-text-warning:  var(--warning);
     --color-bg-success:    rgba(61, 204, 121, 0.12);
     --color-bg-results:    rgba(61, 204, 121, 0.08);
 
@@ -369,6 +372,15 @@ body {
     border: 1px solid var(--color-border-error);
     border-radius: var(--radius-sm);
     color: var(--color-text-error);
+}
+
+.progress-warnings {
+    margin-top: var(--space-lg);
+    padding: var(--space-md);
+    background-color: var(--color-bg-warning);
+    border: 1px solid var(--color-border-warning);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-warning);
 }
 
 /* ---- Step Indicator ---- */

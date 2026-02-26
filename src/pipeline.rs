@@ -66,11 +66,21 @@ pub fn run_blueprint_pipeline(
     for (language, form_states, _) in &parsed {
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let state_name = format!("{language}_{state_idx}");
-            if let Ok(img) = form_state.render_plain(1.5) {
-                let mut png_bytes = Vec::new();
-                if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                    let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                    state.plain_images.insert(state_name, b64);
+            match form_state.render_plain(1.5) {
+                Ok(img) => {
+                    let mut png_bytes = Vec::new();
+                    match encode_rgba_to_png(&img, &mut png_bytes) {
+                        Ok(()) => {
+                            let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                            state.plain_images.insert(state_name, b64);
+                        }
+                        Err(e) => {
+                            state.warnings.push(format!("PNG encode failed for {state_name}: {e}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    state.warnings.push(format!("render_plain failed for {state_name}: {e}"));
                 }
             }
         }
@@ -86,11 +96,21 @@ pub fn run_blueprint_pipeline(
         let mut structured_outputs = Vec::new();
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let state_name = format!("{language}_{state_idx}");
-            if let Ok(img) = form_state.render_labelled(1.5) {
-                let mut png_bytes = Vec::new();
-                if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                    let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                    state.labelled_images.insert(state_name, b64);
+            match form_state.render_labelled(1.5) {
+                Ok(img) => {
+                    let mut png_bytes = Vec::new();
+                    match encode_rgba_to_png(&img, &mut png_bytes) {
+                        Ok(()) => {
+                            let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                            state.labelled_images.insert(state_name.clone(), b64);
+                        }
+                        Err(e) => {
+                            state.warnings.push(format!("PNG encode failed for {state_name}: {e}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    state.warnings.push(format!("render_labelled failed for {state_name}: {e}"));
                 }
             }
             let envelope = form_state.structured(context.clone());

@@ -23,6 +23,8 @@ pub struct ProcessingState {
     pub html_preview: Option<String>,
     pub aem_package: Option<Vec<u8>>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 impl ProcessingState {

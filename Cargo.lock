@@ -600,6 +600,7 @@ dependencies = [
  "js-sys",
  "serde",
  "serde_json",
+ "server_fn",
  "tokio",
  "wasm-bindgen",
  "web-sys",
@@ -5906,6 +5907,7 @@ checksum = "4fae7a3038a32e5a34ba32c6c45eb4852f8affaf8b794ebfcd4b1099e2d62ebe"
 dependencies = [
  "axum",
  "bytes",
+ "ciborium",
  "const_format",
  "dashmap 5.5.3",
  "futures",
