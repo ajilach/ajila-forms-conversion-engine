@@ -83,7 +83,7 @@ mod tests;
 // ============================================================================
 
 // Context
-pub use context::{Context, ModuleData};
+pub use context::Context;
 
 // Flattened layer
 pub use flattened::{Flattened, FlattenedNode, FlattenedNodeKind};

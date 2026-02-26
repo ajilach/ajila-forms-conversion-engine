@@ -289,14 +289,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let language = bp.language().to_string();
         vprintln!(quiet, "✓ Detected language: {}", language);
 
-        let mut context = bp.context();
+        let context = bp.context();
 
-        // Store enabled modules in context
         if !args.modules.is_empty() {
             vprintln!(quiet, "✓ Enabled modules: {:?}", args.modules);
-            let modules_json =
-                serde_json::to_value(&args.modules).unwrap_or(serde_json::Value::Array(vec![]));
-            context.set_module_data("enabled_modules", blueprint::ModuleData::Json(modules_json));
         }
 
         // =====================================================================
