@@ -237,6 +237,13 @@ impl AnalysisModule for LabelAttacher {
             }
         });
 
+        // Define fallback order for each dominant position
+        let fallback_directions = match dominant_position {
+            LabelPosition::Above => vec![LabelPosition::Left, LabelPosition::Below],
+            LabelPosition::Below => vec![LabelPosition::Above, LabelPosition::Left],
+            LabelPosition::Left => vec![LabelPosition::Above, LabelPosition::Below],
+        };
+
         for field_idx in sorted_fields {
             // Filter out already-used labels
             let available_labels: Vec<_> = text_groups
@@ -245,9 +252,23 @@ impl AnalysisModule for LabelAttacher {
                 .copied()
                 .collect();
 
-            if let Some((label_idx, _gap)) =
-                self.find_label_at_position(doc, field_idx, &available_labels, dominant_position)
-            {
+            // Try dominant direction first
+            let mut matched =
+                self.find_label_at_position(doc, field_idx, &available_labels, dominant_position);
+
+            // If no match in dominant direction, try fallback directions
+            if matched.is_none() {
+                for &fallback_dir in &fallback_directions {
+                    if let Some(result) =
+                        self.find_label_at_position(doc, field_idx, &available_labels, fallback_dir)
+                    {
+                        matched = Some(result);
+                        break;
+                    }
+                }
+            }
+
+            if let Some((label_idx, _gap)) = matched {
                 pairs.push((label_idx, field_idx));
                 used_labels.insert(label_idx);
             }

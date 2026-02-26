@@ -1248,7 +1248,22 @@ impl Bounds {
         max_gap: Num,
         tolerance: Num,
     ) -> Option<Num> {
-        let gap = self.vertical_gap_to(other)?;
+        let gap = match self.vertical_gap_to(other) {
+            Some(g) => g,
+            None => {
+                // Allow small overlaps: if self's center is above other's center
+                // and the overlap is within tolerance, treat as gap=0
+                let overlap = self.bottom() - other.y;
+                if overlap > Decimal::ZERO
+                    && overlap <= tolerance
+                    && self.center_y() < other.center_y()
+                {
+                    Decimal::ZERO
+                } else {
+                    return None;
+                }
+            }
+        };
         if gap > max_gap {
             return None;
         }
@@ -1267,7 +1282,22 @@ impl Bounds {
         max_gap: Num,
         tolerance: Num,
     ) -> Option<Num> {
-        let gap = other.vertical_gap_to(self)?;
+        let gap = match other.vertical_gap_to(self) {
+            Some(g) => g,
+            None => {
+                // Allow small overlaps: if self's center is below other's center
+                // and the overlap is within tolerance, treat as gap=0
+                let overlap = other.bottom() - self.y;
+                if overlap > Decimal::ZERO
+                    && overlap <= tolerance
+                    && self.center_y() > other.center_y()
+                {
+                    Decimal::ZERO
+                } else {
+                    return None;
+                }
+            }
+        };
         if gap > max_gap {
             return None;
         }
@@ -1286,7 +1316,22 @@ impl Bounds {
         max_gap: Num,
         tolerance: Num,
     ) -> Option<Num> {
-        let gap = self.horizontal_gap_to(other)?;
+        let gap = match self.horizontal_gap_to(other) {
+            Some(g) => g,
+            None => {
+                // Allow small overlaps: if self's center is left of other's center
+                // and the overlap is within tolerance, treat as gap=0
+                let overlap = self.right() - other.x;
+                if overlap > Decimal::ZERO
+                    && overlap <= tolerance
+                    && self.center_x() < other.center_x()
+                {
+                    Decimal::ZERO
+                } else {
+                    return None;
+                }
+            }
+        };
         if gap > max_gap {
             return None;
         }
@@ -1305,7 +1350,22 @@ impl Bounds {
         max_gap: Num,
         tolerance: Num,
     ) -> Option<Num> {
-        let gap = other.horizontal_gap_to(self)?;
+        let gap = match other.horizontal_gap_to(self) {
+            Some(g) => g,
+            None => {
+                // Allow small overlaps: if self's center is right of other's center
+                // and the overlap is within tolerance, treat as gap=0
+                let overlap = other.right() - self.x;
+                if overlap > Decimal::ZERO
+                    && overlap <= tolerance
+                    && self.center_x() > other.center_x()
+                {
+                    Decimal::ZERO
+                } else {
+                    return None;
+                }
+            }
+        };
         if gap > max_gap {
             return None;
         }

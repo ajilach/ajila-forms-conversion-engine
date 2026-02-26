@@ -196,11 +196,15 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonGrouper::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);
+
     FieldTableDetector::new().process_with_context(doc, ctx);
-    FieldTableDetectorVertical::new().process_with_context(doc, ctx);
+
     HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
     GridTemplateDetector::new().process_with_context(doc, ctx);
+
+    //FieldTableDetectorVertical::new().process_with_context(doc, ctx);
+
     RepeatableDetector::new().process_with_context(doc, ctx);
 }
