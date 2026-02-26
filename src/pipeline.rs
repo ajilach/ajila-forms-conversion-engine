@@ -3,6 +3,8 @@
 use crate::models::{ProcessingState, ProcessingStep};
 
 #[cfg(not(target_arch = "wasm32"))]
+use base64::Engine;
+#[cfg(not(target_arch = "wasm32"))]
 use image::ImageEncoder;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,7 +69,8 @@ pub fn run_blueprint_pipeline(
             if let Ok(img) = form_state.render_plain(1.5) {
                 let mut png_bytes = Vec::new();
                 if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                    state.plain_images.insert(state_name, png_bytes);
+                    let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                    state.plain_images.insert(state_name, b64);
                 }
             }
         }
@@ -86,7 +89,8 @@ pub fn run_blueprint_pipeline(
             if let Ok(img) = form_state.render_labelled(1.5) {
                 let mut png_bytes = Vec::new();
                 if encode_rgba_to_png(&img, &mut png_bytes).is_ok() {
-                    state.labelled_images.insert(state_name, png_bytes);
+                    let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                    state.labelled_images.insert(state_name, b64);
                 }
             }
             let envelope = form_state.structured(context.clone());

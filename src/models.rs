@@ -16,8 +16,8 @@ pub enum ProcessingStep {
 pub struct ProcessingState {
     pub step: ProcessingStep,
     pub available_states: Vec<String>,
-    pub plain_images: HashMap<String, Vec<u8>>,
-    pub labelled_images: HashMap<String, Vec<u8>>,
+    pub plain_images: HashMap<String, String>,
+    pub labelled_images: HashMap<String, String>,
     pub form_code: Option<String>,
     pub merged_json: Option<String>,
     pub html_preview: Option<String>,

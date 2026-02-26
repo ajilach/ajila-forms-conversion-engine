@@ -1,28 +1,27 @@
 use std::collections::HashMap;
 
-use base64::Engine;
 use dioxus::prelude::*;
 
 #[component]
 pub fn ImageGrid(
     title: String,
-    images: HashMap<String, Vec<u8>>,
+    images: HashMap<String, String>,
     on_image_click: EventHandler<(String, String)>,
 ) -> Element {
     rsx! {
         div { class: "image-grid",
             h3 { "{title}" }
             div { class: "image-grid-scroll",
-                for (state_name , image_bytes) in images.iter() {
+                for (state_name , image_b64) in images.iter() {
                     div { class: "image-card",
                         div { class: "image-card-label", "{state_name}" }
                         img {
-                            src: "data:image/png;base64,{base64::prelude::BASE64_STANDARD.encode(image_bytes)}",
+                            src: "data:image/png;base64,{image_b64}",
                             class: "thumbnail-image",
                             alt: "{state_name}",
                             onclick: {
                                 let name = state_name.clone();
-                                let data = base64::prelude::BASE64_STANDARD.encode(image_bytes);
+                                let data = image_b64.clone();
                                 move |_| on_image_click.call((name.clone(), data.clone()))
                             },
                         }
