@@ -176,7 +176,8 @@ pub fn collect_states(
     let base_nodes = Arc::new(XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?);
 
     // Establish the global field ordering from the initial form state
-    let global_field_order = get_all_selectable_fields_ordered(form.xfa_nodes());
+    // Only includes fields with interactive scripts (change, click, calculate)
+    let global_field_order = get_all_selectable_fields_ordered(form);
 
     let initial_state = ExplorationState::new(global_field_order.len());
 
@@ -772,11 +773,33 @@ fn can_select_field(
     true
 }
 
-/// Get ALL selectable fields (radio buttons, checkboxes, dropdowns) in globally-defined order.
-/// This establishes the static ordering used throughout the exploration.
-fn get_all_selectable_fields_ordered(nodes: &[XfaNode]) -> Vec<SelectableField> {
+/// Get selectable fields (radio buttons, checkboxes, dropdowns) that have interactive scripts.
+/// Only fields with change, click, or calculate scripts on themselves or their parent exclGroup
+/// (for radios) are included. This establishes the static ordering used throughout the exploration.
+fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
     let mut results = Vec::new();
-    search_selectable_fields(nodes, "", &mut results);
+    search_selectable_fields(form.xfa_nodes(), "", &mut results);
+
+    // Filter to only include fields with interactive scripts
+    let registry = form.script_registry();
+    results.retain(|field| {
+        // Check if the field itself has interactive scripts
+        if registry.has_interactive_scripts(&field.path) {
+            return true;
+        }
+
+        // For radio buttons, also check the parent exclGroup
+        if field.is_radio() {
+            if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
+                if registry.has_interactive_scripts(&excl_group_path) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    });
+
     // Sort by SOM path to ensure consistent global ordering
     results.sort_by(|a, b| a.path.as_str().cmp(b.path.as_str()));
     results

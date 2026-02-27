@@ -153,4 +153,19 @@ impl ScriptRegistry {
             .map(|v| !v.is_empty())
             .unwrap_or(false)
     }
+
+    /// Check if the owner has any interactive scripts (change, click, or calculate).
+    /// These are the scripts that can affect form layout when a field value changes.
+    pub fn has_interactive_scripts(&self, owner_path: &SomPath) -> bool {
+        self.scripts_by_owner
+            .get(owner_path)
+            .is_some_and(|scripts| {
+                scripts.iter().any(|s| {
+                    matches!(
+                        s.script.activity,
+                        EventActivity::Change | EventActivity::Click | EventActivity::Calculate
+                    )
+                })
+            })
+    }
 }
