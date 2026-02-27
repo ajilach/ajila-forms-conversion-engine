@@ -29,6 +29,7 @@ pub use converter::convert_to_aem;
 pub use package_writer::{collect_languages, detect_master_language, generate_aem_package};
 pub use xml_writer::generate_aem_xml;
 
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{FieldId, InputValue};
@@ -55,6 +56,11 @@ pub struct AemConfig {
 
     /// Master / primary language code.
     pub master_language: String,
+
+    /// Language synonyms: maps a base language code to additional codes that
+    /// should receive the same translations (e.g. `"de" → ["de-ch"]`,
+    /// `"sp" → ["es"]`).
+    pub language_synonyms: HashMap<String, Vec<String>>,
 
     // -- Resource types ------------------------------------------------------
     /// Base path for standard AEM Forms components.
@@ -247,6 +253,7 @@ impl AemConfig {
             form_code,
             languages: vec!["en".into()],
             master_language: "en".into(),
+            language_synonyms: default_language_synonyms(),
 
             resource_type_base: "fd/af/components".into(),
             custom_resource_type_base: Some(
@@ -386,6 +393,40 @@ impl AemConfig {
             self.form_dir()
         )
     }
+
+    /// Expand `languages` to include synonyms.
+    ///
+    /// For each language in `self.languages`, if it has synonyms defined in
+    /// `language_synonyms`, those are added to the result. The result is
+    /// sorted alphabetically.
+    ///
+    /// Example: `["de", "en"]` with synonym `"de" → ["de-ch"]` produces
+    /// `["de", "de-ch", "en"]`.
+    pub fn expand_languages(&self) -> Vec<String> {
+        let mut expanded = self.languages.clone();
+        for lang in &self.languages {
+            if let Some(synonyms) = self.language_synonyms.get(lang) {
+                for syn in synonyms {
+                    if !expanded.contains(syn) {
+                        expanded.push(syn.clone());
+                    }
+                }
+            }
+        }
+        expanded.sort();
+        expanded
+    }
+}
+
+/// Returns the default language synonym mappings.
+///
+/// - `"de"` → `["de-ch"]` (Swiss German)
+/// - `"sp"` → `["es"]` (Spanish)
+fn default_language_synonyms() -> HashMap<String, Vec<String>> {
+    let mut map = HashMap::new();
+    map.insert("de".into(), vec!["de-ch".into()]);
+    map.insert("sp".into(), vec!["es".into()]);
+    map
 }
 
 #[cfg(test)]
@@ -407,6 +448,7 @@ impl AemConfig {
             form_code: form_code.into(),
             languages: vec!["en".into()],
             master_language: "en".into(),
+            language_synonyms: default_language_synonyms(),
 
             resource_type_base: "fd/af/components".into(),
             custom_resource_type_base: Some(

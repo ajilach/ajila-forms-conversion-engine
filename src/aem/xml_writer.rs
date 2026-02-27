@@ -454,6 +454,9 @@ fn write_branding(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
 }
 
 /// Write `<assets>` with language dictionary entries.
+///
+/// Uses `expand_languages()` to include synonyms (e.g., if "de" is present,
+/// "de-ch" is also emitted).
 fn write_assets(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     let mut assets = BytesStart::new("assets");
     assets.push_attribute(("jcr:primaryType", "nt:unstructured"));
@@ -463,7 +466,7 @@ fn write_assets(w: &mut Writer<&mut Cursor<Vec<u8>>>, config: &AemConfig) {
     dict.push_attribute(("jcr:primaryType", "nt:unstructured"));
     w.write_event(Event::Start(dict)).unwrap();
 
-    for lang in &config.languages {
+    for lang in config.expand_languages() {
         let lang_elem = BytesStart::new(lang.as_str());
         w.write_event(Event::Empty(lang_elem)).unwrap();
     }

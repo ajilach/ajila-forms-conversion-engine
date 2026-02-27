@@ -181,6 +181,15 @@ pub fn generate_aem_package(
                 let dict_xml = generate_dictionary_xml(lang, &entries, &basename);
                 let dict_path = format!("{}/{}.xml", dict_base, lang);
                 write_entry(&mut zip, &opts, &dict_path, &dict_xml);
+
+                // Generate dictionary files for language synonyms with the same translations
+                if let Some(synonyms) = config.language_synonyms.get(lang) {
+                    for synonym in synonyms {
+                        let syn_xml = generate_dictionary_xml(synonym, &entries, &basename);
+                        let syn_path = format!("{}/{}.xml", dict_base, synonym);
+                        write_entry(&mut zip, &opts, &syn_path, &syn_xml);
+                    }
+                }
             }
         }
     }
