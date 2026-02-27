@@ -528,6 +528,43 @@ impl XfaForm {
         })
     }
 
+    /// Create an XFA form from nodes that have already been through initial
+    /// script execution, presence changes, and form-DOM merges.
+    ///
+    /// This is significantly faster than [`new`] because it skips the
+    /// `ScriptExecutor::execute()` phase (which creates a throwaway Boa JS
+    /// engine and runs all init-time scripts). A persistent `XfaScriptEngine`
+    /// is still created for interactive events.
+    ///
+    /// Use this when you have cached post-init nodes and their computed values
+    /// from a previous `XfaForm::new()` call.
+    pub fn from_post_init(
+        nodes: Vec<XfaNode>,
+        init_values: &HashMap<SomPath, String>,
+    ) -> Result<Self, String> {
+        let script_registry = Self::build_script_registry(&nodes);
+        let dependency_tracker = DependencyTracker::new();
+
+        let flattened = Flattened::from_xfa(&nodes, init_values)?;
+        let som_resolver = SomResolver::from_nodes(&nodes);
+        let field_index_cache = Self::build_field_index_cache(&flattened);
+
+        let mut script_engine = XfaScriptEngine::new();
+        Self::extract_and_register_translations(&nodes, &mut script_engine);
+        Self::build_som_hierarchy_with_values(&nodes, init_values, &mut script_engine);
+
+        Ok(XfaForm {
+            nodes,
+            flattened,
+            som_resolver,
+            field_index_cache,
+            script_registry,
+            dependency_tracker,
+            dirty: false,
+            script_engine,
+        })
+    }
+
     /// Resolve a node by SOM expression (immutable)
     pub fn resolve(&self, som_expression: &str) -> Option<XfaNodeRef<'_>> {
         let resolved_path = self.som_resolver.resolve_node(som_expression, None)?;
@@ -1460,6 +1497,15 @@ impl XfaForm {
     /// Get access to the underlying XFA nodes (read-only)
     pub fn xfa_nodes(&self) -> &[XfaNode] {
         &self.nodes
+    }
+
+    /// Get the current field values from the persistent script engine.
+    ///
+    /// Returns the same map used by [`refresh`] for flattening. Useful for
+    /// snapshotting the form state after init or after applying selections so
+    /// that a subsequent [`from_post_init`] call can skip script execution.
+    pub fn current_field_values(&mut self) -> HashMap<SomPath, String> {
+        self.script_engine.get_all_field_values_for_flattening()
     }
 
     // ========================================================================

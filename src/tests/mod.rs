@@ -2,7 +2,7 @@
     pub mod helpers;
 
     use helpers::{
-        collect_conditionals, collect_field_labels, collect_headings, collect_radio_fields,
+        collect_conditionals, collect_field_labels, collect_fields, collect_headings, collect_radio_fields,
         count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
         flatten_with_scripts, parse_xfa_from_pdf,
     };
@@ -11298,4 +11298,584 @@
         let total_height = state.flattened.page.height;
         assert!(total_height > rust_decimal::Decimal::from(842),
             "Merged height {} should be larger than one A4 page", total_height);
+    }
+
+    // =========================================================================
+    // AAHQ_019_DE Tests
+    // =========================================================================
+
+    #[test]
+    fn test_aahq_has_neuanlage_aenderung_radio_button_group() {
+        // Test that the AAHQ document has a radio button group with "Neuanlage" and "Änderung" options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::FieldType;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let radio_fields = collect_radio_fields(&structured);
+
+        // Find the radio group with Neuanlage/Änderung options
+        let found = radio_fields.iter().any(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_neuanlage = options.iter().any(|o| o.name.contains("Neuanlage"));
+                let has_aenderung = options.iter().any(|o| o.name.contains("Änderung"));
+                has_neuanlage && has_aenderung
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            found,
+            "Expected to find a radio button group with 'Neuanlage' and 'Änderung' options"
+        );
+    }
+
+    #[test]
+    fn test_aahq_nachname_vorname_in_same_row() {
+        // Test that "Nachname" and "Vorname(n)" fields are in the same row
+        // and have the same width (in a GridLayout).
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{StructuredNode, GridLayout};
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        // Helper function to find GridLayout with both Nachname and Vorname fields
+        fn find_grid_with_nachname_vorname(nodes: &[StructuredNode]) -> Option<GridLayout> {
+            for node in nodes {
+                match node {
+                    StructuredNode::GridLayout(grid) => {
+                        let mut has_nachname = false;
+                        let mut has_vorname = false;
+                        for elem in &grid.elements {
+                            if let StructuredNode::Field(field) = &elem.node {
+                                if let Some(label) = &field.label {
+                                    let text = label.as_plain_text();
+                                    if text.contains("Nachname") {
+                                        has_nachname = true;
+                                    }
+                                    if text.contains("Vorname") {
+                                        has_vorname = true;
+                                    }
+                                }
+                            }
+                        }
+                        if has_nachname && has_vorname {
+                            return Some(grid.clone());
+                        }
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(grid) = find_grid_with_nachname_vorname(&g.children) {
+                            return Some(grid);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(grid) = find_grid_with_nachname_vorname(std::slice::from_ref(&c.content)) {
+                            return Some(grid);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if let Some(grid) = find_grid_with_nachname_vorname(std::slice::from_ref(&r.item)) {
+                            return Some(grid);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let grid = find_grid_with_nachname_vorname(&structured)
+            .expect("Expected to find a GridLayout containing Nachname and Vorname fields");
+
+        // Find the spans of both fields to verify same width
+        let mut nachname_span = None;
+        let mut vorname_span = None;
+        for elem in &grid.elements {
+            if let StructuredNode::Field(field) = &elem.node {
+                if let Some(label) = &field.label {
+                    let text = label.as_plain_text();
+                    if text.contains("Nachname") {
+                        nachname_span = Some(elem.span);
+                    }
+                    if text.contains("Vorname") {
+                        vorname_span = Some(elem.span);
+                    }
+                }
+            }
+        }
+
+        let nachname_span = nachname_span.expect("Expected to find Nachname span");
+        let vorname_span = vorname_span.expect("Expected to find Vorname span");
+
+        assert_eq!(
+            nachname_span, vorname_span,
+            "Nachname and Vorname(n) should have the same width (span), but got {} vs {}",
+            nachname_span, vorname_span
+        );
+    }
+
+    #[test]
+    fn test_aahq_endkunde_radio_bereits_vorhanden_anzulegen() {
+        // Test that under "Endkunde" heading there is a radio button group with
+        // "Bereits vorhanden" and "Anzulegen" options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::FieldType;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let radio_fields = collect_radio_fields(&structured);
+
+        let found = radio_fields.iter().any(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_already = options.iter().any(|o| o.name.contains("Bereits vorhanden"));
+                let has_new = options.iter().any(|o| o.name.contains("Anzulegen"));
+                has_already && has_new
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            found,
+            "Expected to find a radio button group with 'Bereits vorhanden' and 'Anzulegen' options"
+        );
+    }
+
+    #[test]
+    fn test_aahq_endkunde_conditional_fields_for_bereits_vorhanden() {
+        // Test that when "Bereits vorhanden" is selected under Endkunde,
+        // the fields "Nr. des Korrespondenzempfängers" and "Adress Nummer" are shown.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{ConditionalNode, FieldType, StructuredNode};
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let conditionals = collect_conditionals(&structured);
+
+        // Find a conditional that shows "Nr. des Korrespondenzempfängers" field
+        fn has_field_with_label_containing(node: &StructuredNode, needle: &str) -> bool {
+            match node {
+                StructuredNode::Field(f) => {
+                    f.label.as_ref().map(|l| l.as_plain_text().contains(needle)).unwrap_or(false)
+                }
+                StructuredNode::Group(g) => g.children.iter().any(|c| has_field_with_label_containing(c, needle)),
+                StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| has_field_with_label_containing(&e.node, needle)),
+                StructuredNode::Conditional(c) => has_field_with_label_containing(&c.content, needle),
+                StructuredNode::Repeatable(r) => has_field_with_label_containing(&r.item, needle),
+                _ => false,
+            }
+        }
+
+        let has_korrespondenzempfaenger = conditionals.iter().any(|c| {
+            has_field_with_label_containing(&c.content, "Nr. des Korrespondenzempfängers")
+        });
+
+        let has_adress_nummer = conditionals.iter().any(|c| {
+            has_field_with_label_containing(&c.content, "Adress Nummer")
+        });
+
+        assert!(
+            has_korrespondenzempfaenger || has_adress_nummer,
+            "Expected conditional fields for 'Nr. des Korrespondenzempfängers' or 'Adress Nummer'"
+        );
+    }
+
+    #[test]
+    fn test_aahq_endkunde_conditional_fields_for_anzulegen() {
+        // Test that when "Anzulegen" is selected under Endkunde,
+        // the specified fields are shown.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::StructuredNode;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        // List of fields that should appear in the "Anzulegen" state
+        let expected_fields = [
+            "Nachname",
+            "Vorname",
+            "Adresszusatz",
+            "Straße",
+            "Nr.",
+            "PLZ",
+            "Stadt",
+            "Land",
+        ];
+
+        let field_labels = collect_field_labels(&structured);
+
+        for expected in &expected_fields {
+            let found = field_labels.iter().any(|label| label.contains(expected));
+            assert!(
+                found,
+                "Expected to find field '{}' in AAHQ form. Found labels: {:?}",
+                expected,
+                field_labels.iter().filter(|l| !l.is_empty()).take(20).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn test_aahq_anredesprache_dropdown() {
+        // Test that there is a dropdown field "Anredesprache" with options
+        // Deutsch, Englisch, Spanisch.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::FieldType;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let fields = collect_fields(&structured);
+
+        // Find dropdown fields
+        let dropdown_fields: Vec<_> = fields.iter().filter(|f| {
+            matches!(f.input_type, FieldType::Select { .. })
+        }).collect();
+
+        // Find the Anredesprache dropdown
+        let anredesprache = dropdown_fields.iter().find(|f| {
+            f.label.as_ref().map(|l| l.as_plain_text().contains("Anrede")).unwrap_or(false)
+        });
+
+        assert!(
+            anredesprache.is_some(),
+            "Expected to find 'Anredesprache' dropdown. Found dropdowns: {:?}",
+            dropdown_fields.iter().filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text())).collect::<Vec<_>>()
+        );
+
+        if let Some(field) = anredesprache {
+            if let FieldType::Select { options } = &field.input_type {
+                let option_names: Vec<_> = options.iter().map(|o| o.name.as_str()).collect();
+                
+                assert!(
+                    option_names.iter().any(|n| n.contains("Deutsch")),
+                    "Expected 'Deutsch' in Anredesprache options. Found: {:?}",
+                    option_names
+                );
+                assert!(
+                    option_names.iter().any(|n| n.contains("Englisch")),
+                    "Expected 'Englisch' in Anredesprache options. Found: {:?}",
+                    option_names
+                );
+                assert!(
+                    option_names.iter().any(|n| n.contains("Spanisch")),
+                    "Expected 'Spanisch' in Anredesprache options. Found: {:?}",
+                    option_names
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_aahq_pvv_banklagernder_kunde_radio_group() {
+        // Test that there is a radio button group with "PVV Kunde" and "Banklagernder Kunde".
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::FieldType;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let radio_fields = collect_radio_fields(&structured);
+
+        let found = radio_fields.iter().any(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_pvv = options.iter().any(|o| o.name.contains("PVV"));
+                let has_banklagernd = options.iter().any(|o| o.name.contains("Banklagernd"));
+                has_pvv && has_banklagernd
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            found,
+            "Expected to find a radio button group with 'PVV Kunde' and 'Banklagernder Kunde' options"
+        );
+    }
+
+    #[test]
+    fn test_aahq_h1_heading() {
+        // Test that the H1 heading is "Hinterlegung von Versandinstruktionen eines Endkunden – EAM"
+        use crate::run_exhaustive_to_merged;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let headings = collect_headings(&structured);
+        
+        let h1_headings: Vec<_> = headings.iter()
+            .filter(|(level, _)| *level == 1)
+            .collect();
+
+        assert!(
+            !h1_headings.is_empty(),
+            "Expected at least one H1 heading"
+        );
+
+        let (_, h1_text) = &h1_headings[0];
+        assert!(
+            h1_text.contains("Hinterlegung von Versandinstruktionen"),
+            "Expected H1 to contain 'Hinterlegung von Versandinstruktionen', got: '{}'",
+            h1_text
+        );
+    }
+
+    #[test]
+    fn test_aahq_h2_headings() {
+        // Test that the expected H2 headings are present:
+        // - "Kundendaten"
+        // - "Endkunde"
+        // - "EAM"
+        use crate::run_exhaustive_to_merged;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let headings = collect_headings(&structured);
+        
+        let h2_texts: Vec<&str> = headings.iter()
+            .filter(|(level, _)| *level == 2)
+            .map(|(_, text)| text.as_str())
+            .collect();
+
+        let expected_h2 = ["Kundendaten", "Endkunde", "EAM"];
+        
+        for expected in &expected_h2 {
+            let found = h2_texts.iter().any(|t| t.contains(expected));
+            assert!(
+                found,
+                "Expected H2 heading containing '{}'. Found H2 headings: {:?}",
+                expected, h2_texts
+            );
+        }
+    }
+
+    #[test]
+    fn test_aahq_h3_headings() {
+        // Test that the expected H3 headings are present:
+        // - "Korrespondenzadresse"
+        // - "Korrespondenzempfänger"
+        // - "edoc-Korrespondenzempfänger (Connect)"
+        // - "edoc-Korrespondenzempfänger (Assetlink)"
+        use crate::run_exhaustive_to_merged;
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        let headings = collect_headings(&structured);
+        
+        let h3_texts: Vec<&str> = headings.iter()
+            .filter(|(level, _)| *level == 3)
+            .map(|(_, text)| text.as_str())
+            .collect();
+
+        let expected_h3 = [
+            "Korrespondenzadresse",
+            "Korrespondenzempfänger",
+            "edoc-Korrespondenzempfänger (Connect)",
+            "edoc-Korrespondenzempfänger (Assetlink)",
+        ];
+        
+        for expected in &expected_h3 {
+            let found = h3_texts.iter().any(|t| t.contains(expected));
+            assert!(
+                found,
+                "Expected H3 heading containing '{}'. Found H3 headings: {:?}",
+                expected, h3_texts
+            );
+        }
+    }
+
+    #[test]
+    fn test_aahq_dritte_partei_is_repeatable() {
+        // Test that "Dritte Partei" is a repeatable section.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{RepeatableNode, StructuredNode};
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        // Collect all repeatable nodes
+        fn collect_repeatables(nodes: &[StructuredNode]) -> Vec<RepeatableNode> {
+            let mut out = Vec::new();
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) => {
+                        out.push(r.clone());
+                        out.extend(collect_repeatables(std::slice::from_ref(&r.item)));
+                    }
+                    StructuredNode::Group(g) => {
+                        out.extend(collect_repeatables(&g.children));
+                    }
+                    StructuredNode::Conditional(c) => {
+                        out.extend(collect_repeatables(std::slice::from_ref(&c.content)));
+                    }
+                    _ => {}
+                }
+            }
+            out
+        }
+
+        // Check if a repeatable contains "Dritte Partei" text somewhere
+        fn contains_dritte_partei(node: &StructuredNode) -> bool {
+            match node {
+                StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
+                StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
+                StructuredNode::Field(f) => f.label.as_ref().map(|l| l.as_plain_text().contains("Dritte Partei")).unwrap_or(false),
+                StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
+                StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+                StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
+                StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
+                _ => false,
+            }
+        }
+
+        let repeatables = collect_repeatables(&structured);
+        
+        let dritte_partei_repeatable = repeatables.iter().find(|r| {
+            contains_dritte_partei(&r.item)
+        });
+
+        assert!(
+            dritte_partei_repeatable.is_some(),
+            "Expected to find a repeatable section for 'Dritte Partei'"
+        );
+    }
+
+    #[test]
+    fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
+        // Test that the "Dritte Partei" repeatable contains an H3 heading "Korrespondenzadresse".
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{RepeatableNode, StructuredNode, HeadingLevel};
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        // Find the Dritte Partei repeatable and check for Korrespondenzadresse H3
+        fn find_dritte_partei_repeatable(nodes: &[StructuredNode]) -> Option<RepeatableNode> {
+            fn contains_dritte_partei(node: &StructuredNode) -> bool {
+                match node {
+                    StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
+                    StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
+                    StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
+                    StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+                    StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
+                    StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
+                    _ => false,
+                }
+            }
+
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) if contains_dritte_partei(&r.item) => {
+                        return Some(r.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(r) = find_dritte_partei_repeatable(&g.children) {
+                            return Some(r);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content)) {
+                            return Some(r);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        fn has_korrespondenzadresse_h3(node: &StructuredNode) -> bool {
+            match node {
+                StructuredNode::Heading(h) => {
+                    matches!(h.level, HeadingLevel::H3) && h.content.as_plain_text().contains("Korrespondenzadresse")
+                }
+                StructuredNode::Group(g) => g.children.iter().any(|c| has_korrespondenzadresse_h3(c)),
+                StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| has_korrespondenzadresse_h3(&e.node)),
+                StructuredNode::Conditional(c) => has_korrespondenzadresse_h3(&c.content),
+                StructuredNode::Repeatable(r) => has_korrespondenzadresse_h3(&r.item),
+                _ => false,
+            }
+        }
+
+        let repeatable = find_dritte_partei_repeatable(&structured)
+            .expect("Expected to find 'Dritte Partei' repeatable");
+
+        assert!(
+            has_korrespondenzadresse_h3(&repeatable.item),
+            "Expected 'Dritte Partei' repeatable to contain H3 heading 'Korrespondenzadresse'"
+        );
+    }
+
+    #[test]
+    fn test_aahq_dritte_partei_has_radio_buttons() {
+        // Test that the "Dritte Partei" repeatable contains radio buttons
+        // with "Bereits vorhanden" and "Anzulegen" options.
+        use crate::run_exhaustive_to_merged;
+        use crate::structured::{FieldType, StructuredNode};
+
+        let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+            .expect("Failed to run exhaustive merge for AAHQ");
+
+        // Find the Dritte Partei repeatable
+        fn find_dritte_partei_repeatable(nodes: &[StructuredNode]) -> Option<Box<StructuredNode>> {
+            fn contains_dritte_partei(node: &StructuredNode) -> bool {
+                match node {
+                    StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
+                    StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
+                    StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
+                    StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+                    StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
+                    StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
+                    _ => false,
+                }
+            }
+
+            for node in nodes {
+                match node {
+                    StructuredNode::Repeatable(r) if contains_dritte_partei(&r.item) => {
+                        return Some(r.item.clone());
+                    }
+                    StructuredNode::Group(g) => {
+                        if let Some(r) = find_dritte_partei_repeatable(&g.children) {
+                            return Some(r);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content)) {
+                            return Some(r);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let repeatable_item = find_dritte_partei_repeatable(&structured)
+            .expect("Expected to find 'Dritte Partei' repeatable");
+
+        // Collect radio fields from within the repeatable
+        let radio_fields = collect_radio_fields(std::slice::from_ref(&repeatable_item));
+
+        let found_radio = radio_fields.iter().any(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                let has_already = options.iter().any(|o| o.name.contains("Bereits vorhanden"));
+                let has_new = options.iter().any(|o| o.name.contains("Anzulegen"));
+                has_already && has_new
+            } else {
+                false
+            }
+        });
+
+        assert!(
+            found_radio,
+            "Expected 'Dritte Partei' repeatable to contain radio buttons with 'Bereits vorhanden' and 'Anzulegen' options"
+        );
     }

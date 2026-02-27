@@ -25,11 +25,22 @@
 //!
 //! This ensures consistent heading detection and other statistics-based
 //! analysis across all form states.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::flattened::{Flattened, FlattenedKey};
+
+/// Global registry of seen (layout, field_index) pairs for cross-path deduplication.
+///
+/// Maps a composite key (flattened layout + next field index) to the selections
+/// that first reached that state. When another path reaches the same state at
+/// the same exploration depth, we skip redundant exploration.
+///
+/// The field index is included in the key to avoid incorrectly deduplicating
+/// states at different exploration depths that happen to have the same flattened
+/// layout (common in forms where selections don't change visibility).
+type SeenLayouts = Arc<Mutex<HashMap<(Vec<FlattenedKey>, usize), Vec<Selection>>>>;
 use crate::structured::{FieldId, Selection, SelectionKind};
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
@@ -166,14 +177,21 @@ impl CollectedState {
 /// cheaply recreate a fresh `XfaForm` for each branch.
 pub fn collect_states(
     form: &mut XfaForm,
-    xfa_bytes: &[u8],
+    _xfa_bytes: &[u8],
 ) -> Result<Vec<CollectedState>, crate::Error> {
     // Use Arc<Mutex<>> for thread-safe access to shared state
     let collected_states = Arc::new(Mutex::new(Vec::<CollectedState>::new()));
     let rendered_states = Arc::new(Mutex::new(HashSet::<Vec<Option<FieldAction>>>::new()));
 
-    // OPTIMIZATION: Parse XFA once and cache for cloning (much faster than re-parsing)
-    let base_nodes = Arc::new(XfaNode::parse(xfa_bytes).map_err(crate::Error::XfaParse)?);
+    // Cross-path deduplication: track seen flattened layouts globally
+    let seen_layouts: SeenLayouts = Arc::new(Mutex::new(HashMap::new()));
+
+    // OPTIMIZATION: Cache post-init nodes and computed values from the already-
+    // initialised form. Branches use `XfaForm::from_post_init` which skips the
+    // expensive `ScriptExecutor::execute()` phase (saves one Boa JS context
+    // creation + all init-script phases per branch).
+    let post_init_nodes = Arc::new(form.xfa_nodes().to_vec());
+    let init_values = Arc::new(form.current_field_values());
 
     // Establish the global field ordering from the initial form state
     // Only includes fields with interactive scripts (change, click, calculate)
@@ -187,7 +205,9 @@ pub fn collect_states(
         &global_field_order,
         rendered_states.clone(),
         collected_states.clone(),
-        base_nodes.clone(),
+        post_init_nodes.clone(),
+        init_values.clone(),
+        seen_layouts.clone(),
     )?;
 
     // Extract the final collected states
@@ -196,27 +216,6 @@ pub fn collect_states(
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
     Ok(states)
-}
-
-/// Apply a selection to a form (replay logic).
-/// Dispatches based on the selection kind to use the correct form mutation method.
-fn apply_selection(form: &mut XfaForm, sel: &Selection) {
-    match sel.kind {
-        SelectionKind::Radio => {
-            let _ = form.select_radio_button(sel.som_path.as_str());
-        }
-        SelectionKind::Checkbox => {
-            let raw_value = if sel.primary_value() == "checked" {
-                "1"
-            } else {
-                "0"
-            };
-            let _ = form.set_value_as_user(sel.som_path.as_str(), raw_value);
-        }
-        SelectionKind::Dropdown => {
-            let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
-        }
-    }
 }
 
 /// Pass 1 implementation: recursively collect all form states using linear field exploration.
@@ -232,7 +231,9 @@ fn collect_states_linear(
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    base_nodes: Arc<Vec<XfaNode>>,
+    post_init_nodes: Arc<Vec<XfaNode>>,
+    init_values: Arc<HashMap<SomPath, String>>,
+    seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
     // Check if this is a complete state (all fields processed)
     if exploration_state.is_complete() {
@@ -284,7 +285,9 @@ fn collect_states_linear(
             global_field_order,
             rendered_states,
             collected_states,
-            base_nodes,
+            post_init_nodes,
+            init_values,
+            seen_layouts,
         );
     }
 
@@ -298,7 +301,9 @@ fn collect_states_linear(
                 global_field_order,
                 rendered_states,
                 collected_states,
-                base_nodes,
+                post_init_nodes,
+                init_values,
+                seen_layouts,
             )?;
         }
         SelectableFieldKind::Checkbox => {
@@ -309,7 +314,9 @@ fn collect_states_linear(
                 global_field_order,
                 rendered_states,
                 collected_states,
-                base_nodes,
+                post_init_nodes,
+                init_values,
+                seen_layouts,
             )?;
         }
         SelectableFieldKind::Dropdown => {
@@ -330,7 +337,9 @@ fn collect_states_linear(
                     global_field_order,
                     rendered_states,
                     collected_states,
-                    base_nodes,
+                    post_init_nodes,
+                    init_values,
+                    seen_layouts,
                 );
             }
             explore_dropdown(
@@ -341,7 +350,9 @@ fn collect_states_linear(
                 global_field_order,
                 rendered_states,
                 collected_states,
-                base_nodes,
+                post_init_nodes,
+                init_values,
+                seen_layouts,
             )?;
         }
     }
@@ -356,39 +367,48 @@ fn collect_states_linear(
 /// A prepared branch: the result of applying a mutation and refreshing the form,
 /// before any further recursive exploration.
 ///
-/// Stores the post-refresh XFA node snapshot (which is `Send`) instead of the
-/// full `XfaForm` (which contains a Boa JS engine and is not `Send`).
-/// The `XfaForm` is recreated from the snapshot only for the representative
-/// branch during Phase B recursion.
+/// Stores the post-refresh XFA node snapshot and field values (which are `Send`)
+/// instead of the full `XfaForm` (which contains a Boa JS engine and is not
+/// `Send`). The `XfaForm` is recreated from the snapshot via `from_post_init`
+/// for the representative branch during Phase B — no selection replay needed.
 struct PreparedBranch {
     /// Structural key of the flattened layout after refresh — used for deduplication.
     /// Captures position, dimensions, text content, and field names/labels while
     /// excluding field values and checked state.
     flattened_key: Vec<FlattenedKey>,
+    /// Post-mutation XFA node snapshot — used to recreate the form without replay.
+    snapshot_nodes: Vec<XfaNode>,
+    /// Post-mutation field values — used together with snapshot_nodes.
+    snapshot_values: HashMap<SomPath, String>,
     /// The exploration state at this point (selections, field_actions, etc.)
     state: ExplorationState,
 }
 
-/// Spawn a thread that creates a fresh form, replays previous selections,
-/// applies a branch-specific mutation via `setup`, refreshes the form, and
-/// returns the prepared branch (XFA snapshot + state + hash) instead of
-/// immediately recursing.
+/// Spawn a thread that creates a fresh form from a snapshot (which already
+/// has all prior selections applied), applies a branch-specific mutation
+/// via `setup`, refreshes the form, and returns the prepared branch including
+/// a new snapshot for downstream recursion.
+///
+/// The `snapshot_nodes` and `snapshot_values` represent the form state at the
+/// current exploration depth — they already include all prior selections, so
+/// no replay is needed. Only the new branch mutation is applied.
 fn spawn_branch(
-    base_nodes: Arc<Vec<XfaNode>>,
+    snapshot_nodes: Arc<Vec<XfaNode>>,
+    snapshot_values: Arc<HashMap<SomPath, String>>,
     state: ExplorationState,
     setup: impl FnOnce(&mut XfaForm, &mut ExplorationState) + Send + 'static,
 ) -> thread::JoinHandle<Result<PreparedBranch, crate::Error>> {
     thread::spawn(move || -> Result<PreparedBranch, crate::Error> {
-        let nodes_reset = base_nodes.as_ref().clone();
-        let mut new_form = XfaForm::new(nodes_reset).map_err(crate::Error::FormCreation)?;
+        // OPTIMIZATION: Use from_post_init to skip ScriptExecutor::execute().
+        // The snapshot nodes already have presence changes, form-DOM merges,
+        // AND all prior selections applied — saving one Boa JS context creation,
+        // all init-script phases, and selection replay per branch.
+        let nodes = snapshot_nodes.as_ref().clone();
+        let mut new_form =
+            XfaForm::from_post_init(nodes, &snapshot_values).map_err(crate::Error::FormCreation)?;
         let mut state = state;
 
-        // Replay all current selections
-        for sel in &state.selections {
-            apply_selection(&mut new_form, sel);
-        }
-
-        // Apply branch-specific mutation
+        // Apply branch-specific mutation (no replay needed — snapshot is current)
         setup(&mut new_form, &mut state);
 
         new_form.refresh().map_err(crate::Error::FormCreation)?;
@@ -398,41 +418,35 @@ fn spawn_branch(
         // after reflattening, while ignoring field values and checked state.
         let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
 
+        // Capture the post-mutation snapshot so the representative can create
+        // a form via from_post_init without replaying any selections.
+        let snapshot_nodes = new_form.xfa_nodes().to_vec();
+        let snapshot_values = new_form.current_field_values();
+
         Ok(PreparedBranch {
             flattened_key,
+            snapshot_nodes,
+            snapshot_values,
             state,
         })
     })
-}
-// ============================================================================
-// Dedup-aware exploration (Phase B)
-// ============================================================================
-
-/// Recreate an `XfaForm` from the cached base nodes and replay the given
-/// selections so that the form is in the correct state for further exploration.
-fn recreate_form(
-    base_nodes: &[XfaNode],
-    selections: &[Selection],
-) -> Result<XfaForm, crate::Error> {
-    let nodes = base_nodes.to_vec();
-    let mut form = XfaForm::new(nodes).map_err(crate::Error::FormCreation)?;
-    for sel in selections {
-        apply_selection(&mut form, sel);
-    }
-    form.refresh().map_err(crate::Error::FormCreation)?;
-    Ok(form)
 }
 
 /// Given a set of prepared branches, group them by identical XFA state
 /// (using hash + PartialEq), then recurse only once per unique state.
 /// The collected states from the representative are cloned for each duplicate
 /// with the duplicate's own selection/field-actions patched in.
+///
+/// Cross-path deduplication: When branches from different fields converge to
+/// the same intermediate flattened layout, their subtrees would be identical.
+/// We track seen layouts to avoid redundant exploration, but only when the
+/// layout key is distinct enough (includes selection depth/field info).
 fn explore_with_dedup(
     branches: Vec<PreparedBranch>,
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    base_nodes: Arc<Vec<XfaNode>>,
+    seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
     // Group branches by identical flattened layout.
     // Each group is a vec of branches whose flattened output is structurally
@@ -464,14 +478,47 @@ fn explore_with_dedup(
             }
         }
 
-        let mut form = recreate_form(&base_nodes, &representative.state.selections)?;
+        // Cross-path deduplication: Build a composite key that includes both
+        // the flattened layout AND the current exploration progress (field index).
+        // This avoids the bug where forms with no conditional visibility would
+        // skip all exploration after the first branch because all intermediate
+        // states have the same flattened layout.
+        let composite_key = (
+            representative.flattened_key.clone(),
+            representative.state.next_field_index,
+        );
+
+        {
+            let mut seen = seen_layouts.lock().unwrap();
+            if seen.contains_key(&composite_key) {
+                // This exact (layout, field_index) combination was already explored.
+                // The subtree would be identical, so skip redundant exploration.
+                continue;
+            }
+            // Register this composite key as seen
+            seen.insert(composite_key, representative.state.selections.clone());
+        }
+
+        // Create form directly from the branch's post-mutation snapshot —
+        // no selection replay needed, no extra refresh.
+        let depth_snapshot_nodes = Arc::new(representative.snapshot_nodes);
+        let depth_snapshot_values = Arc::new(representative.snapshot_values);
+
+        let mut form = XfaForm::from_post_init(
+            depth_snapshot_nodes.as_ref().clone(),
+            &depth_snapshot_values,
+        )
+        .map_err(crate::Error::FormCreation)?;
+
         collect_states_linear(
             &mut form,
             representative.state,
             global_field_order,
             rendered_states.clone(),
             collected_states.clone(),
-            base_nodes.clone(),
+            depth_snapshot_nodes,
+            depth_snapshot_values,
+            seen_layouts.clone(),
         )?;
     }
 
@@ -545,7 +592,9 @@ fn explore_radio(
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    base_nodes: Arc<Vec<XfaNode>>,
+    post_init_nodes: Arc<Vec<XfaNode>>,
+    init_values: Arc<HashMap<SomPath, String>>,
+    seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
     if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
         // Find all radio buttons in this group
@@ -565,7 +614,8 @@ fn explore_radio(
             let global_order_for_closure = global_field_order.to_vec();
 
             let handle = spawn_branch(
-                base_nodes.clone(),
+                post_init_nodes.clone(),
+                init_values.clone(),
                 exploration_state.clone(),
                 move |new_form, state| {
                     // Select the radio button
@@ -612,7 +662,7 @@ fn explore_radio(
             global_field_order,
             rendered_states,
             collected_states,
-            base_nodes,
+            seen_layouts,
         )?;
     }
 
@@ -628,7 +678,9 @@ fn explore_checkbox(
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    base_nodes: Arc<Vec<XfaNode>>,
+    post_init_nodes: Arc<Vec<XfaNode>>,
+    init_values: Arc<HashMap<SomPath, String>>,
+    seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
     let checkbox_values = [("1", "checked"), ("0", "unchecked")];
 
@@ -640,7 +692,8 @@ fn explore_checkbox(
         let label = label.to_string();
 
         let handle = spawn_branch(
-            base_nodes.clone(),
+            post_init_nodes.clone(),
+            init_values.clone(),
             exploration_state.clone(),
             move |new_form, state| {
                 // Set the checkbox value and fire change event
@@ -671,7 +724,7 @@ fn explore_checkbox(
         global_field_order,
         rendered_states,
         collected_states,
-        base_nodes,
+        seen_layouts,
     )?;
 
     Ok(())
@@ -687,7 +740,9 @@ fn explore_dropdown(
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
     collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    base_nodes: Arc<Vec<XfaNode>>,
+    post_init_nodes: Arc<Vec<XfaNode>>,
+    init_values: Arc<HashMap<SomPath, String>>,
+    seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
     // Phase A: spawn branch-preparation threads
     let mut handles = Vec::new();
@@ -697,7 +752,8 @@ fn explore_dropdown(
         let display_value = display_value.clone();
 
         let handle = spawn_branch(
-            base_nodes.clone(),
+            post_init_nodes.clone(),
+            init_values.clone(),
             exploration_state.clone(),
             move |new_form, state| {
                 // Set the dropdown value and fire change event
@@ -728,7 +784,7 @@ fn explore_dropdown(
         global_field_order,
         rendered_states,
         collected_states,
-        base_nodes,
+        seen_layouts,
     )?;
 
     Ok(())
