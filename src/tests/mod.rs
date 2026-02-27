@@ -1,22 +1,16 @@
 
     pub mod helpers;
 
-    use crate::xfa::script_executor::ScriptExecutor;
+    use helpers::{
+        collect_conditionals, collect_field_labels, collect_headings, collect_radio_fields,
+        count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
+        flatten_with_scripts, parse_xfa_from_pdf,
+    };
 
     use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
     use rust_decimal::prelude::*;
     use std::collections::HashMap;
 
-
-    /// Helper function to flatten XFA with script execution using the new architecture.
-    /// This replaces the old `Flattened::from_xfa_with_scripts` API.
-    fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> {
-        let script_result = ScriptExecutor::execute(nodes);
-        ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
-        Flattened::merge_form_items_into_template(nodes);
-        Flattened::merge_form_presence_into_template(nodes, &script_result.presence_changes);
-        Flattened::from_xfa(nodes, &script_result.computed_values)
-    }
 
     #[test]
     fn test_parse_xfa_from_aaab_document() {
@@ -3791,32 +3785,6 @@
         let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
             .expect("Failed to run exhaustive merge");
 
-        // Helper to count conditionals recursively on StructuredNode
-        fn count_conditionals(nodes: &[StructuredNode]) -> usize {
-            let mut count = 0;
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(cond) => {
-                        count += 1;
-                        // Recurse into content
-                        count += count_conditionals(&[(*cond.content).clone()]);
-                    }
-                    StructuredNode::Group(group) => {
-                        count += count_conditionals(&group.children);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        count += count_conditionals(&[(*rep.item).clone()]);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        count += count_conditionals(&nodes);
-                    }
-                    _ => {}
-                }
-            }
-            count
-        }
-
         // Helper to check if a StructuredNode is an h2 heading with text starting with prefix
         fn is_h2_with_prefix(node: &StructuredNode, prefix: &str) -> bool {
             if let StructuredNode::Heading(heading) = node {
@@ -5212,43 +5180,7 @@
         let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
             .expect("Failed to run exhaustive merge");
 
-        // Helper to find a field by name pattern recursively (returns cloned field)
-        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if field.som_path_str().contains(target_name) {
-                            return Some(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        if let Some(found) = find_radio_field(&group.children, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        if let Some(found) = find_radio_field(&[(*cond.content).clone()], target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        if let Some(found) = find_radio_field(&[(*rep.item).clone()], target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        if let Some(found) = find_radio_field(&nodes, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
-        let radio_field = find_radio_field(&structured, "RB_Group_Retro")
+        let radio_field = find_field_by_name(&structured, "RB_Group_Retro")
             .expect("Expected to find radio field 'RB_Group_Retro' in structured output");
 
         // Verify it's a radio type
@@ -5297,70 +5229,12 @@
         use crate::run_exhaustive_to_merged;
         use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
 
-        fn collect_conditionals(nodes: &[StructuredNode], out: &mut Vec<ConditionalNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(c) => {
-                        out.push(c.clone());
-                        collect_conditionals(std::slice::from_ref(&c.content), out);
-                    }
-                    StructuredNode::Group(g) => collect_conditionals(&g.children, out),
-                    StructuredNode::Repeatable(r) => {
-                        collect_conditionals(std::slice::from_ref(&r.item), out);
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_conditionals(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
-                        return Some(f.clone());
-                    }
-                    StructuredNode::Group(g) => {
-                        if let Some(found) = find_radio_field(&g.children, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&c.content), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&r.item), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let child_nodes: Vec<_> =
-                            g.elements.iter().map(|e| e.node.clone()).collect();
-                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
         let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
             .expect("Failed to run exhaustive merge");
 
         // Locate the RB_Group_Retro radio field and find the value for
         // "Löschung Retro Rückvergütung".
-        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+        let retro_field = find_field_by_name(&structured, "RB_Group_Retro")
             .expect("Expected to find radio field 'RB_Group_Retro' in structured output");
 
         let FieldType::Radio { options } = &retro_field.input_type else {
@@ -5374,8 +5248,7 @@
             .expect("Expected to find option 'Löschung Retro Rückvergütung' in RB_Group_Retro");
 
         // Collect all ConditionalNodes and assert exactly one is keyed to this option.
-        let mut conditionals: Vec<ConditionalNode> = Vec::new();
-        collect_conditionals(&structured, &mut conditionals);
+        let conditionals = collect_conditionals(&structured);
 
         println!("\n=== All conditionals on RB_Group_Retro ===");
         for c in &conditionals {
@@ -5532,48 +5405,10 @@
             false
         }
 
-        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
-                        return Some(f.clone());
-                    }
-                    StructuredNode::Group(g) => {
-                        if let Some(found) = find_radio_field(&g.children, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&c.content), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&r.item), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let child_nodes: Vec<_> =
-                            g.elements.iter().map(|e| e.node.clone()).collect();
-                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
         let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
             .expect("Failed to run exhaustive merge");
 
-        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+        let retro_field = find_field_by_name(&structured, "RB_Group_Retro")
             .expect("Expected to find radio field 'RB_Group_Retro'");
 
         let FieldType::Radio { options } = &retro_field.input_type else {
@@ -5663,44 +5498,6 @@
         // the second and third radio button options.
         use crate::run_exhaustive_to_merged;
         use crate::structured::{FieldNode, FieldType, InputValue, StructuredNode};
-
-        fn find_radio_field(nodes: &[StructuredNode], target_name: &str) -> Option<FieldNode> {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(f) if f.som_path_str().contains(target_name) => {
-                        return Some(f.clone());
-                    }
-                    StructuredNode::Group(g) => {
-                        if let Some(found) = find_radio_field(&g.children, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&c.content), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        if let Some(found) =
-                            find_radio_field(std::slice::from_ref(&r.item), target_name)
-                        {
-                            return Some(found);
-                        }
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let child_nodes: Vec<_> =
-                            g.elements.iter().map(|e| e.node.clone()).collect();
-                        if let Some(found) = find_radio_field(&child_nodes, target_name) {
-                            return Some(found);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
 
         /// Check if FIM3 text appears unconditionally (not inside an RB_Group_Retro conditional)
         fn has_unconditional_fim3_text(
@@ -5818,7 +5615,7 @@
         let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
             .expect("Failed to run exhaustive merge");
 
-        let retro_field = find_radio_field(&structured, "RB_Group_Retro")
+        let retro_field = find_field_by_name(&structured, "RB_Group_Retro")
             .expect("Expected to find radio field 'RB_Group_Retro'");
 
         let FieldType::Radio { options } = &retro_field.input_type else {
@@ -6525,35 +6322,7 @@
         // Convert to structured form
         let structured_nodes = crate::structured::convert(&doc);
 
-        // Helper to find all radio fields recursively
-        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            radio_fields.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        find_radio_fields(&group.children, radio_fields);
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, radio_fields);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured_nodes, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured_nodes);
 
         println!("\n=== Radio fields found ===");
         for field in &radio_fields {
@@ -7361,69 +7130,11 @@
         let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
             .expect("Failed to run exhaustive merge on AAOE");
 
-        // Helper to count conditionals recursively
-        fn count_conditionals(nodes: &[StructuredNode]) -> usize {
-            let mut count = 0;
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(cond) => {
-                        count += 1;
-                        count += count_conditionals(&[(*cond.content).clone()]);
-                    }
-                    StructuredNode::Group(group) => {
-                        count += count_conditionals(&group.children);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        count += count_conditionals(&[(*rep.item).clone()]);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        count += count_conditionals(&nodes);
-                    }
-                    _ => {}
-                }
-            }
-            count
-        }
-
         // Helper to find conditionals on a specific field
         fn find_conditional_values_for_field(
             nodes: &[StructuredNode],
             field_suffix: &str,
         ) -> Vec<String> {
-            // First, find the FieldId for the field matching the suffix
-            fn find_field_id_by_suffix(
-                nodes: &[StructuredNode],
-                suffix: &str,
-            ) -> Option<crate::structured::FieldId> {
-                for node in nodes {
-                    match node {
-                        StructuredNode::Field(f) => {
-                            if f.som_path_str().ends_with(suffix) {
-                                return Some(f.name.clone());
-                            }
-                        }
-                        StructuredNode::Group(g) => {
-                            if let Some(id) = find_field_id_by_suffix(&g.children, suffix) {
-                                return Some(id);
-                            }
-                        }
-                        StructuredNode::Conditional(c) => {
-                            if let Some(id) = find_field_id_by_suffix(&[(*c.content).clone()], suffix) {
-                                return Some(id);
-                            }
-                        }
-                        StructuredNode::Repeatable(r) => {
-                            if let Some(id) = find_field_id_by_suffix(&[(*r.item).clone()], suffix) {
-                                return Some(id);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                None
-            }
-
             fn collect_conditional_values(
                 nodes: &[StructuredNode],
                 field_id: &crate::structured::FieldId,
@@ -8235,47 +7946,11 @@
 
         assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
 
-        // Extract headings from structured output for each state
-        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Heading(h) => {
-                        let level = match h.level {
-                            HeadingLevel::H1 => 1,
-                            HeadingLevel::H2 => 2,
-                            HeadingLevel::H3 => 3,
-                            HeadingLevel::H4 => 4,
-                            HeadingLevel::H5 => 5,
-                            HeadingLevel::H6 => 6,
-                        };
-                        let text = h.content.as_plain_text();
-                        out.push((level, text));
-                    }
-                    StructuredNode::Group(g) => collect_headings(&g.children, out),
-                    StructuredNode::Conditional(c) => {
-                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
-                    }
-                    StructuredNode::GridLayout(gl) => {
-                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_headings(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let context = Context::new("it".to_string(), HashMap::new());
-        let mut all_state_headings: Vec<Vec<(u8, String)>> = Vec::new();
-
-        for state in form_states.iter() {
-            let envelope = state.structured(context.clone());
-            let mut headings = Vec::new();
-            collect_headings(&envelope.content, &mut headings);
-            all_state_headings.push(headings);
-        }
+        let all_state_headings: Vec<Vec<(u8, String)>> = form_states
+            .iter()
+            .map(|state| collect_headings(&state.structured(context.clone()).content))
+            .collect();
 
         // For every heading text that appears in multiple states, verify it has
         // the same heading level in all of them.
@@ -8316,44 +7991,12 @@
 
         assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
 
-        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Heading(h) => {
-                        let level = match h.level {
-                            HeadingLevel::H1 => 1,
-                            HeadingLevel::H2 => 2,
-                            HeadingLevel::H3 => 3,
-                            HeadingLevel::H4 => 4,
-                            HeadingLevel::H5 => 5,
-                            HeadingLevel::H6 => 6,
-                        };
-                        let text = h.content.as_plain_text();
-                        out.push((level, text));
-                    }
-                    StructuredNode::Group(g) => collect_headings(&g.children, out),
-                    StructuredNode::Conditional(c) => {
-                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
-                    }
-                    StructuredNode::GridLayout(gl) => {
-                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_headings(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let context = Context::new("it".to_string(), HashMap::new());
         let required_headings = ["Dichiarazione", "Firma/e"];
 
         for (state_idx, state) in form_states.iter().enumerate() {
             let envelope = state.structured(context.clone());
-            let mut headings: Vec<(u8, String)> = Vec::new();
-            collect_headings(&envelope.content, &mut headings);
+            let headings = collect_headings(&envelope.content);
 
             println!(
                 "\n=== State {} ({}) headings ===",
@@ -8559,37 +8202,10 @@
         use crate::run_exhaustive_to_merged;
         use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            radio_fields.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        find_radio_fields(&group.children, radio_fields);
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, radio_fields);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
             .expect("Failed to process ACAV PDF");
 
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         println!("\n=== All radio fields in ACAV ===");
         for field in &radio_fields {
@@ -8624,37 +8240,10 @@
         use crate::run_exhaustive_to_merged;
         use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            radio_fields.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        find_radio_fields(&group.children, radio_fields);
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, radio_fields);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
             .expect("Failed to process ACAV PDF");
 
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         let group = radio_fields.iter().find(|field| {
             if let FieldType::Radio { options } = &field.input_type {
@@ -8679,37 +8268,10 @@
         use crate::run_exhaustive_to_merged;
         use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            radio_fields.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        find_radio_fields(&group.children, radio_fields);
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, radio_fields);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
             .expect("Failed to process ACAV PDF");
 
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         let group = radio_fields.iter().find(|field| {
             if let FieldType::Radio { options } = &field.input_type {
@@ -8733,37 +8295,10 @@
         use crate::run_exhaustive_to_merged;
         use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-        fn find_radio_fields(nodes: &[StructuredNode], radio_fields: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            radio_fields.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(group) => {
-                        find_radio_fields(&group.children, radio_fields);
-                    }
-                    StructuredNode::Conditional(cond) => {
-                        find_radio_fields(&[(*cond.content).clone()], radio_fields);
-                    }
-                    StructuredNode::Repeatable(rep) => {
-                        find_radio_fields(&[(*rep.item).clone()], radio_fields);
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, radio_fields);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
             .expect("Failed to process ACAV PDF");
 
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         let group = radio_fields.iter().find(|field| {
             if let FieldType::Radio { options } = &field.input_type {
@@ -8870,56 +8405,11 @@
             ConditionalNode, FieldNode, FieldType, StructuredNode,
         };
 
-        fn find_radio_fields(nodes: &[StructuredNode], out: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(f) => {
-                        if matches!(f.input_type, FieldType::Radio { .. }) {
-                            out.push(f.clone());
-                        }
-                    }
-                    StructuredNode::Group(g) => find_radio_fields(&g.children, out),
-                    StructuredNode::Conditional(c) => {
-                        find_radio_fields(std::slice::from_ref(&c.content), out);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        find_radio_fields(std::slice::from_ref(&r.item), out);
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        fn collect_conditionals(nodes: &[StructuredNode], out: &mut Vec<ConditionalNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Conditional(c) => {
-                        out.push(c.clone());
-                        collect_conditionals(std::slice::from_ref(&c.content), out);
-                    }
-                    StructuredNode::Group(g) => collect_conditionals(&g.children, out),
-                    StructuredNode::Repeatable(r) => {
-                        collect_conditionals(std::slice::from_ref(&r.item), out);
-                    }
-                    StructuredNode::GridLayout(g) => {
-                        let nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_conditionals(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
             .expect("Failed to process ACAV PDF");
 
         // Find the radio group that contains both "Vollsaldierung" and "Übertrag/Mutation"
-        let mut radio_fields: Vec<FieldNode> = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         println!("\n=== All radio fields for content test ===");
         for f in &radio_fields {
@@ -8962,8 +8452,7 @@
             .unwrap();
 
         // Collect all ConditionalNodes in the whole structured tree
-        let mut conditionals: Vec<ConditionalNode> = Vec::new();
-        collect_conditionals(&structured, &mut conditionals);
+        let conditionals = collect_conditionals(&structured);
 
         println!("\n=== All conditionals ===");
         for c in &conditionals {
@@ -9706,46 +9195,6 @@
 
         // --- helpers ---
 
-        fn find_field_id_by_suffix(nodes: &[StructuredNode], suffix: &str) -> Option<FieldId> {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(f) => {
-                        if f.som_path_str().ends_with(suffix) {
-                            return Some(f.name.clone());
-                        }
-                    }
-                    StructuredNode::Group(g) => {
-                        if let Some(id) = find_field_id_by_suffix(&g.children, suffix) {
-                            return Some(id);
-                        }
-                    }
-                    StructuredNode::Conditional(c) => {
-                        if let Some(id) =
-                            find_field_id_by_suffix(&[(*c.content).clone()], suffix)
-                        {
-                            return Some(id);
-                        }
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        if let Some(id) =
-                            find_field_id_by_suffix(&[(*r.item).clone()], suffix)
-                        {
-                            return Some(id);
-                        }
-                    }
-                    StructuredNode::GridLayout(grid) => {
-                        let children: Vec<_> =
-                            grid.elements.iter().map(|e| e.node.clone()).collect();
-                        if let Some(id) = find_field_id_by_suffix(&children, suffix) {
-                            return Some(id);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
         /// Collect all field labels and text content inside a subtree.
         fn collect_labels(nodes: &[StructuredNode], out: &mut Vec<String>) {
             for node in nodes {
@@ -10146,32 +9595,7 @@
         let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
             .expect("Failed to run exhaustive merge for AAKS");
 
-        fn find_radio_fields(nodes: &[StructuredNode], out: &mut Vec<FieldNode>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if matches!(field.input_type, FieldType::Radio { .. }) {
-                            out.push(field.clone());
-                        }
-                    }
-                    StructuredNode::Group(g) => find_radio_fields(&g.children, out),
-                    StructuredNode::Conditional(c) => {
-                        find_radio_fields(std::slice::from_ref(&c.content), out);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        find_radio_fields(std::slice::from_ref(&r.item), out);
-                    }
-                    StructuredNode::GridLayout(gl) => {
-                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
-                        find_radio_fields(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let mut radio_fields = Vec::new();
-        find_radio_fields(&structured, &mut radio_fields);
+        let radio_fields = collect_radio_fields(&structured);
 
         // Find the radio group whose options mention "natürliche Person" (the Vertragspartner radio)
         let field = radio_fields
@@ -11454,33 +10878,7 @@
 
         let envelope = form_states.iter().next().unwrap().structured(ctx);
 
-        // --- Collect headings recursively ---
-        fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Heading(h) => {
-                        let level = h.level.as_u8();
-                        let text = h.content.as_plain_text();
-                        out.push((level, text));
-                    }
-                    StructuredNode::Group(g) => collect_headings(&g.children, out),
-                    StructuredNode::Conditional(c) => {
-                        collect_headings(std::slice::from_ref(c.content.as_ref()), out);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        collect_headings(std::slice::from_ref(r.item.as_ref()), out);
-                    }
-                    StructuredNode::GridLayout(gl) => {
-                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_headings(&nodes, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let mut headings: Vec<(u8, String)> = Vec::new();
-        collect_headings(&envelope.content, &mut headings);
+        let headings = collect_headings(&envelope.content);
 
         println!("\n=== Headings found ===");
         for (level, text) in &headings {
@@ -11501,36 +10899,7 @@
             headings
         );
 
-        // --- Collect field labels recursively ---
-        fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
-            for node in nodes {
-                match node {
-                    StructuredNode::Field(field) => {
-                        if let Some(label) = &field.label {
-                            let text = label.as_plain_text().trim().to_string();
-                            if !text.is_empty() {
-                                labels.push(text);
-                            }
-                        }
-                    }
-                    StructuredNode::Group(g) => collect_field_labels(&g.children, labels),
-                    StructuredNode::Conditional(c) => {
-                        collect_field_labels(std::slice::from_ref(c.content.as_ref()), labels);
-                    }
-                    StructuredNode::Repeatable(r) => {
-                        collect_field_labels(std::slice::from_ref(r.item.as_ref()), labels);
-                    }
-                    StructuredNode::GridLayout(gl) => {
-                        let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
-                        collect_field_labels(&nodes, labels);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let mut field_labels: Vec<String> = Vec::new();
-        collect_field_labels(&envelope.content, &mut field_labels);
+        let field_labels = collect_field_labels(&envelope.content);
 
         println!("\n=== Field labels found ===");
         for label in &field_labels {
