@@ -54,7 +54,7 @@ pub struct RegisteredScript {
 /// Registry holding all scripts in the form, categorized by type.
 /// This enables selective execution: only initialize scripts at load,
 /// only change events on user interaction, etc.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ScriptRegistry {
     /// All scripts by owner path
     scripts_by_owner: HashMap<SomPath, Vec<RegisteredScript>>,

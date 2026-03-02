@@ -43,6 +43,7 @@ use crate::flattened::{Flattened, FlattenedKey};
 /// layout (common in forms where selections don't change visibility).
 type SeenLayouts = Arc<Mutex<HashMap<(Vec<FlattenedKey>, usize), Vec<Selection>>>>;
 use crate::structured::{FieldId, Selection, SelectionKind};
+use crate::xfa::scripting::registry::ScriptRegistry;
 use crate::xfa::scripting::{SomPath, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
@@ -129,6 +130,45 @@ fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
 }
 
 // ============================================================================
+// Exploration context — bundles all shared / precomputed state
+// ============================================================================
+
+/// Shared context for exhaustive exploration.
+///
+/// Groups all the precomputed maps, shared caches, and thread-safe state
+/// that was previously passed as 8–10 individual function parameters.
+struct ExplorationContext {
+    /// Static ordering of selectable fields (radio/checkbox/dropdown with scripts)
+    global_field_order: Vec<SelectableField>,
+
+    /// Precomputed excl-group lookup: field SOM path → parent exclGroup SOM path.
+    /// Avoids repeated `O(tree-depth)` walks during exploration.
+    excl_group_map: HashMap<SomPath, Option<SomPath>>,
+
+    /// Inverse index: exclGroup SOM path → indices into `global_field_order`.
+    /// Used to find all radio buttons in a group without filtering + re-walking.
+    radio_group_indices: HashMap<SomPath, Vec<usize>>,
+
+    /// Shared script registry (Arc) — reused across all `from_post_init_with_registry` calls.
+    script_registry: Arc<ScriptRegistry>,
+
+    /// Cached post-init XFA nodes from the initial form.
+    post_init_nodes: Arc<Vec<XfaNode>>,
+
+    /// Cached initial computed field values.
+    init_values: Arc<HashMap<SomPath, String>>,
+
+    /// Thread-safe set of already-collected state keys (for dedup).
+    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
+
+    /// Thread-safe vec of collected form states (output of Pass 1).
+    collected_states: Arc<Mutex<Vec<CollectedState>>>,
+
+    /// Cross-path deduplication: track seen (layout, field_index) pairs.
+    seen_layouts: SeenLayouts,
+}
+
+// ============================================================================
 // Public data types used by both the library facade and the CLI
 // ============================================================================
 
@@ -194,22 +234,43 @@ pub fn collect_states(
     let post_init_nodes = Arc::new(form.xfa_nodes().to_vec());
     let init_values = Arc::new(form.current_field_values());
 
+    // OPTIMIZATION (Step 2): Share the script registry across all branches via Arc.
+    // This avoids two full tree walks per `from_post_init` call.
+    let script_registry = form.script_registry_arc();
+
     // Establish the global field ordering from the initial form state
     // Only includes fields with interactive scripts (change, click, calculate)
     let global_field_order = get_all_selectable_fields_ordered(form);
 
-    let initial_state = ExplorationState::new(global_field_order.len());
+    // OPTIMIZATION (Step 1): Precompute excl-group lookups for every selectable field.
+    // `find_excl_group_for_field` does an O(tree-depth) walk each time — here we pay
+    // that cost once per field instead of O(N × options) times during exploration.
+    let mut excl_group_map: HashMap<SomPath, Option<SomPath>> = HashMap::new();
+    let mut radio_group_indices: HashMap<SomPath, Vec<usize>> = HashMap::new();
 
-    collect_states_linear(
-        form,
-        initial_state,
-        &global_field_order,
-        rendered_states.clone(),
-        collected_states.clone(),
-        post_init_nodes.clone(),
-        init_values.clone(),
-        seen_layouts.clone(),
-    )?;
+    for (idx, field) in global_field_order.iter().enumerate() {
+        let excl = form.find_excl_group_for_field(field.path.as_str());
+        if let Some(ref eg) = excl {
+            radio_group_indices.entry(eg.clone()).or_default().push(idx);
+        }
+        excl_group_map.insert(field.path.clone(), excl);
+    }
+
+    let ctx = ExplorationContext {
+        global_field_order,
+        excl_group_map,
+        radio_group_indices,
+        script_registry,
+        post_init_nodes,
+        init_values,
+        rendered_states,
+        collected_states: collected_states.clone(),
+        seen_layouts,
+    };
+
+    let initial_state = ExplorationState::new(ctx.global_field_order.len());
+
+    collect_states_linear(form, initial_state, &ctx)?;
 
     // Extract the final collected states
     let states = Arc::try_unwrap(collected_states)
@@ -229,12 +290,7 @@ pub fn collect_states(
 fn collect_states_linear(
     form: &mut XfaForm,
     exploration_state: ExplorationState,
-    global_field_order: &[SelectableField],
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    post_init_nodes: Arc<Vec<XfaNode>>,
-    init_values: Arc<HashMap<SomPath, String>>,
-    seen_layouts: SeenLayouts,
+    ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
     // Check if this is a complete state (all fields processed)
     if exploration_state.is_complete() {
@@ -242,7 +298,7 @@ fn collect_states_linear(
 
         // Skip if we've already collected this exact state (thread-safe check)
         {
-            let mut states = rendered_states.lock().unwrap();
+            let mut states = ctx.rendered_states.lock().unwrap();
             if states.contains(&state_key) {
                 return Ok(());
             }
@@ -257,7 +313,7 @@ fn collect_states_linear(
         let flattened = form.flattened().clone();
 
         // Store the collected state (thread-safe)
-        collected_states.lock().unwrap().push(CollectedState {
+        ctx.collected_states.lock().unwrap().push(CollectedState {
             flattened,
             selections: exploration_state.selections.clone(),
             label,
@@ -269,10 +325,10 @@ fn collect_states_linear(
 
     // Process the next field
     let field_index = exploration_state.next_field_index;
-    let field = &global_field_order[field_index];
+    let field = &ctx.global_field_order[field_index];
 
     // Check if field can be selected
-    let can_select = can_select_field(form, field, &exploration_state.selections);
+    let can_select = can_select_field(form, field, &exploration_state.selections, ctx);
 
     // If field cannot be selected, automatically skip it and continue
     if !can_select {
@@ -280,46 +336,15 @@ fn collect_states_linear(
         new_state.field_actions[field_index] = Some(FieldAction::Skipped);
         new_state.next_field_index = field_index + 1;
 
-        return collect_states_linear(
-            form,
-            new_state,
-            global_field_order,
-            rendered_states,
-            collected_states,
-            post_init_nodes,
-            init_values,
-            seen_layouts,
-        );
+        return collect_states_linear(form, new_state, ctx);
     }
 
     match &field.kind {
         SelectableFieldKind::Radio => {
-            explore_radio(
-                form,
-                exploration_state,
-                field_index,
-                field,
-                global_field_order,
-                rendered_states,
-                collected_states,
-                post_init_nodes,
-                init_values,
-                seen_layouts,
-            )?;
+            explore_radio(form, exploration_state, field_index, field, ctx)?;
         }
         SelectableFieldKind::Checkbox => {
-            explore_checkbox(
-                form,
-                exploration_state,
-                field_index,
-                field,
-                global_field_order,
-                rendered_states,
-                collected_states,
-                post_init_nodes,
-                init_values,
-                seen_layouts,
-            )?;
+            explore_checkbox(form, exploration_state, field_index, field, ctx)?;
         }
         SelectableFieldKind::Dropdown => {
             // Resolve dropdown options from the live form (they may come from
@@ -333,30 +358,9 @@ fn collect_states_linear(
                 let mut new_state = exploration_state.clone();
                 new_state.field_actions[field_index] = Some(FieldAction::Skipped);
                 new_state.next_field_index = field_index + 1;
-                return collect_states_linear(
-                    form,
-                    new_state,
-                    global_field_order,
-                    rendered_states,
-                    collected_states,
-                    post_init_nodes,
-                    init_values,
-                    seen_layouts,
-                );
+                return collect_states_linear(form, new_state, ctx);
             }
-            explore_dropdown(
-                form,
-                exploration_state,
-                field_index,
-                field,
-                &options,
-                global_field_order,
-                rendered_states,
-                collected_states,
-                post_init_nodes,
-                init_values,
-                seen_layouts,
-            )?;
+            explore_dropdown(form, exploration_state, field_index, field, &options, ctx)?;
         }
     }
 
@@ -402,20 +406,12 @@ struct PreparedBranch {
 fn explore_with_dedup(
     form: &mut XfaForm,
     branches: Vec<PreparedBranch>,
-    global_field_order: &[SelectableField],
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    seen_layouts: SeenLayouts,
+    ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
     // Group branches by identical flattened layout.
-    // Each group is a vec of branches whose flattened output is structurally
-    // identical (same positions, text content, field names/labels).
     let groups = group_branches_by_flattened_state(branches);
 
     for mut group in groups {
-        // Only recurse the representative of each group.
-        // Duplicates within the same group have identical flattened output,
-        // so they would produce the same visual result — skip them entirely.
         let mut representative = group.remove(0);
 
         // Record the values from duplicate branches on the representative's
@@ -424,7 +420,6 @@ fn explore_with_dedup(
             if let Some(rep_sel) = representative.state.selections.last_mut() {
                 for dup in &group {
                     if let Some(dup_sel) = dup.state.selections.last() {
-                        // Only merge values for the same selection depth/field
                         if dup_sel.field_path == rep_sel.field_path
                             || dup_sel.group_path == rep_sel.group_path
                         {
@@ -437,31 +432,19 @@ fn explore_with_dedup(
             }
         }
 
-        // Cross-path deduplication: Build a composite key that includes both
-        // the flattened layout AND the current exploration progress (field index).
-        // This avoids the bug where forms with no conditional visibility would
-        // skip all exploration after the first branch because all intermediate
-        // states have the same flattened layout.
         let composite_key = (
             representative.flattened_key.clone(),
             representative.state.next_field_index,
         );
 
         {
-            let mut seen = seen_layouts.lock().unwrap();
+            let mut seen = ctx.seen_layouts.lock().unwrap();
             if seen.contains_key(&composite_key) {
-                // This exact (layout, field_index) combination was already explored.
-                // The subtree would be identical, so skip redundant exploration.
                 continue;
             }
-            // Register this composite key as seen
             seen.insert(composite_key, representative.state.selections.clone());
         }
 
-        // OPTIMIZATION: Reset the form to the representative's snapshot state
-        // using reset_for_branch, which reuses the existing Boa JS engine.
-        // This replaces XfaForm::from_post_init which would create a new
-        // engine from scratch (~25-40ms saving per representative).
         let depth_snapshot_nodes = Arc::new(representative.snapshot_nodes);
         let depth_snapshot_values = Arc::new(representative.snapshot_values);
 
@@ -471,16 +454,20 @@ fn explore_with_dedup(
         )
         .map_err(crate::Error::FormCreation)?;
 
-        collect_states_linear(
-            form,
-            representative.state,
-            global_field_order,
-            rendered_states.clone(),
-            collected_states.clone(),
-            depth_snapshot_nodes,
-            depth_snapshot_values,
-            seen_layouts.clone(),
-        )?;
+        // Build a temporary context with the depth-specific snapshots
+        let depth_ctx = ExplorationContext {
+            global_field_order: ctx.global_field_order.clone(),
+            excl_group_map: ctx.excl_group_map.clone(),
+            radio_group_indices: ctx.radio_group_indices.clone(),
+            script_registry: ctx.script_registry.clone(),
+            post_init_nodes: depth_snapshot_nodes,
+            init_values: depth_snapshot_values,
+            rendered_states: ctx.rendered_states.clone(),
+            collected_states: ctx.collected_states.clone(),
+            seen_layouts: ctx.seen_layouts.clone(),
+        };
+
+        collect_states_linear(form, representative.state, &depth_ctx)?;
     }
 
     Ok(())
@@ -553,37 +540,40 @@ fn explore_radio(
     exploration_state: ExplorationState,
     _field_index: usize,
     field: &SelectableField,
-    global_field_order: &[SelectableField],
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    post_init_nodes: Arc<Vec<XfaNode>>,
-    init_values: Arc<HashMap<SomPath, String>>,
-    seen_layouts: SeenLayouts,
+    ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
-    if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
-        // Find all radio buttons in this group
-        let group_fields: Vec<SelectableField> = global_field_order
-            .iter()
-            .filter(|f| {
-                f.is_radio()
-                    && form.find_excl_group_for_field(f.path.as_str()).as_ref()
-                        == Some(&excl_group_path)
-            })
+    // OPTIMIZATION (Step 1): Use precomputed excl-group map instead of walking the tree
+    if let Some(Some(excl_group_path)) = ctx.excl_group_map.get(&field.path) {
+        // OPTIMIZATION (Step 1): Use precomputed radio-group indices
+        let group_field_indices = ctx
+            .radio_group_indices
+            .get(excl_group_path)
             .cloned()
+            .unwrap_or_default();
+
+        let group_fields: Vec<SelectableField> = group_field_indices
+            .iter()
+            .map(|&idx| ctx.global_field_order[idx].clone())
             .collect();
 
         // Phase A: prepare branches in parallel using rayon thread pool
+        // OPTIMIZATION (Step 2): Share the script registry via Arc
         let branches: Result<Vec<PreparedBranch>, crate::Error> = group_fields
             .par_iter()
             .map(|radio_field| {
-                let nodes = post_init_nodes.as_ref().clone();
-                let mut new_form = XfaForm::from_post_init(nodes, &init_values)
-                    .map_err(crate::Error::FormCreation)?;
+                let nodes = ctx.post_init_nodes.as_ref().clone();
+                let mut new_form = XfaForm::from_post_init_with_registry(
+                    nodes,
+                    &ctx.init_values,
+                    ctx.script_registry.clone(),
+                )
+                .map_err(crate::Error::FormCreation)?;
 
                 let _ = new_form.select_radio_button(radio_field.path.as_str());
 
                 let mut state = exploration_state.clone();
-                let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
+                // OPTIMIZATION (Step 1): Use precomputed excl-group map
+                let group_path = ctx.excl_group_map.get(&radio_field.path).cloned().flatten();
                 state.selections.push(Selection::new(
                     radio_field.path.clone(),
                     group_path.clone(),
@@ -592,11 +582,12 @@ fn explore_radio(
                 ));
 
                 // Mark all fields in this radio group as processed
-                for (idx, f) in global_field_order.iter().enumerate() {
-                    if f.is_radio()
-                        && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
-                        && state.selections.last().and_then(|s| s.group_path.as_ref())
-                            == Some(&FieldId::from_som_path(&fg))
+                // OPTIMIZATION (Step 1): Use precomputed radio-group indices
+                let sel_group_id = group_path.as_ref().map(|gp| FieldId::from_som_path(gp));
+                for &idx in &group_field_indices {
+                    let f = &ctx.global_field_order[idx];
+                    let f_group = ctx.excl_group_map.get(&f.path).and_then(|g| g.as_ref());
+                    if f.is_radio() && f_group.map(|fg| FieldId::from_som_path(fg)) == sel_group_id
                     {
                         state.field_actions[idx] = if f.path == radio_field.path {
                             Some(FieldAction::Selected(radio_field.path.name().to_string()))
@@ -609,7 +600,8 @@ fn explore_radio(
 
                 new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-                let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+                // OPTIMIZATION (Step 6): Use cached flattened key
+                let flattened_key = new_form.flattened_mut().flattened_key().clone();
                 let snapshot_nodes = new_form.xfa_nodes().to_vec();
                 let snapshot_values = new_form.current_field_values();
 
@@ -623,14 +615,7 @@ fn explore_radio(
             .collect();
 
         // Phase B: group by identical XFA state and recurse
-        explore_with_dedup(
-            form,
-            branches?,
-            global_field_order,
-            rendered_states,
-            collected_states,
-            seen_layouts,
-        )?;
+        explore_with_dedup(form, branches?, ctx)?;
     }
 
     Ok(())
@@ -645,22 +630,22 @@ fn explore_checkbox(
     exploration_state: ExplorationState,
     field_index: usize,
     field: &SelectableField,
-    global_field_order: &[SelectableField],
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    post_init_nodes: Arc<Vec<XfaNode>>,
-    init_values: Arc<HashMap<SomPath, String>>,
-    seen_layouts: SeenLayouts,
+    ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
     let checkbox_values: &[(&str, &str)] = &[("1", "checked"), ("0", "unchecked")];
 
     // Phase A: prepare branches in parallel using rayon thread pool
+    // OPTIMIZATION (Step 2): Share the script registry via Arc
     let branches: Result<Vec<PreparedBranch>, crate::Error> = checkbox_values
         .par_iter()
         .map(|(raw_value, label)| {
-            let nodes = post_init_nodes.as_ref().clone();
-            let mut new_form =
-                XfaForm::from_post_init(nodes, &init_values).map_err(crate::Error::FormCreation)?;
+            let nodes = ctx.post_init_nodes.as_ref().clone();
+            let mut new_form = XfaForm::from_post_init_with_registry(
+                nodes,
+                &ctx.init_values,
+                ctx.script_registry.clone(),
+            )
+            .map_err(crate::Error::FormCreation)?;
 
             let _ = new_form.set_value_as_user(field.path.as_str(), raw_value);
 
@@ -675,7 +660,8 @@ fn explore_checkbox(
 
             new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-            let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+            // OPTIMIZATION (Step 6): Use cached flattened key
+            let flattened_key = new_form.flattened_mut().flattened_key().clone();
             let snapshot_nodes = new_form.xfa_nodes().to_vec();
             let snapshot_values = new_form.current_field_values();
 
@@ -689,14 +675,7 @@ fn explore_checkbox(
         .collect();
 
     // Phase B: group by identical XFA state and recurse
-    explore_with_dedup(
-        form,
-        branches?,
-        global_field_order,
-        rendered_states,
-        collected_states,
-        seen_layouts,
-    )?;
+    explore_with_dedup(form, branches?, ctx)?;
 
     Ok(())
 }
@@ -711,20 +690,20 @@ fn explore_dropdown(
     field_index: usize,
     field: &SelectableField,
     options: &[(String, String)],
-    global_field_order: &[SelectableField],
-    rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
-    collected_states: Arc<Mutex<Vec<CollectedState>>>,
-    post_init_nodes: Arc<Vec<XfaNode>>,
-    init_values: Arc<HashMap<SomPath, String>>,
-    seen_layouts: SeenLayouts,
+    ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
     // Phase A: prepare branches in parallel using rayon thread pool
+    // OPTIMIZATION (Step 2): Share the script registry via Arc
     let branches: Result<Vec<PreparedBranch>, crate::Error> = options
         .par_iter()
         .map(|(display_value, save_value)| {
-            let nodes = post_init_nodes.as_ref().clone();
-            let mut new_form =
-                XfaForm::from_post_init(nodes, &init_values).map_err(crate::Error::FormCreation)?;
+            let nodes = ctx.post_init_nodes.as_ref().clone();
+            let mut new_form = XfaForm::from_post_init_with_registry(
+                nodes,
+                &ctx.init_values,
+                ctx.script_registry.clone(),
+            )
+            .map_err(crate::Error::FormCreation)?;
 
             let _ = new_form.set_value_as_user(field.path.as_str(), save_value);
 
@@ -739,7 +718,8 @@ fn explore_dropdown(
 
             new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-            let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+            // OPTIMIZATION (Step 6): Use cached flattened key
+            let flattened_key = new_form.flattened_mut().flattened_key().clone();
             let snapshot_nodes = new_form.xfa_nodes().to_vec();
             let snapshot_values = new_form.current_field_values();
 
@@ -753,14 +733,7 @@ fn explore_dropdown(
         .collect();
 
     // Phase B: group by identical XFA state and recurse
-    explore_with_dedup(
-        form,
-        branches?,
-        global_field_order,
-        rendered_states,
-        collected_states,
-        seen_layouts,
-    )?;
+    explore_with_dedup(form, branches?, ctx)?;
 
     Ok(())
 }
@@ -774,6 +747,7 @@ fn can_select_field(
     form: &XfaForm,
     field: &SelectableField,
     current_selections: &[Selection],
+    ctx: &ExplorationContext,
 ) -> bool {
     // Check if field is visible
     if !form.is_path_visible(field.path.as_str()) {
@@ -789,15 +763,16 @@ fn can_select_field(
     }
 
     // For radio buttons, check if a sibling from the same group is selected
-    if field.is_radio()
-        && let Some(excl_group) = form.find_excl_group_for_field(field.path.as_str())
-    {
-        let excl_group_id = FieldId::from_som_path(&excl_group);
-        let group_already_has_selection = current_selections
-            .iter()
-            .any(|sel| sel.group_path.as_ref() == Some(&excl_group_id));
-        if group_already_has_selection {
-            return false;
+    // OPTIMIZATION (Step 1): Use precomputed excl-group map
+    if field.is_radio() {
+        if let Some(Some(excl_group)) = ctx.excl_group_map.get(&field.path) {
+            let excl_group_id = FieldId::from_som_path(excl_group);
+            let group_already_has_selection = current_selections
+                .iter()
+                .any(|sel| sel.group_path.as_ref() == Some(&excl_group_id));
+            if group_already_has_selection {
+                return false;
+            }
         }
     }
 

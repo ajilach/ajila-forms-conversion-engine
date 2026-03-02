@@ -15,6 +15,8 @@ use std::str::FromStr;
 pub struct Flattened {
     pub page: Page,
     pub children: Vec<FlattenedKind>,
+    /// Cached structural key for deduplication (lazily computed).
+    pub(crate) cached_key: Option<Vec<FlattenedKey>>,
 }
 
 // ============================================================================
@@ -1760,13 +1762,21 @@ impl ContentAreaBounds {
 impl Flattened {
     /// Create a new Flattened instance with the given page and children.
     pub fn new(page: Page, children: Vec<FlattenedKind>) -> Self {
-        Flattened { page, children }
+        Flattened { page, children, cached_key: None }
     }
 
     /// Create a Flattened from a flat list of nodes (wraps each in FlattenedKind::Node)
     pub fn from_nodes(page: Page, nodes: Vec<FlattenedNode>) -> Self {
         let children = nodes.into_iter().map(FlattenedKind::Node).collect();
-        Flattened { page, children }
+        Flattened { page, children, cached_key: None }
+    }
+
+    /// Get the structural key for deduplication, computing and caching on first call.
+    pub fn flattened_key(&mut self) -> &Vec<FlattenedKey> {
+        if self.cached_key.is_none() {
+            self.cached_key = Some(FlattenedKey::from_flattened(self));
+        }
+        self.cached_key.as_ref().unwrap()
     }
 
     /// Iterate over all leaf nodes recursively
@@ -2481,6 +2491,7 @@ impl Flattened {
         Ok(Flattened {
             page,
             children: flattened_children,
+            cached_key: None,
         })
     }
 

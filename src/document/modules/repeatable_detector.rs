@@ -597,6 +597,7 @@ mod tests {
                 children: vec![FlattenedKind::Node(field_node)],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            cached_key: None,
         };
 
         let doc = Document::from_flattened(&flattened);
@@ -648,6 +649,7 @@ mod tests {
                 ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            cached_key: None,
         };
 
         let doc = Document::from_flattened(&flattened);
@@ -699,6 +701,7 @@ mod tests {
                 ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            cached_key: None,
         };
 
         let doc = Document::from_flattened(&flattened);

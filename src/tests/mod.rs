@@ -9457,6 +9457,7 @@ fn test_flattened_key_hashing() {
                 style: RenderStyle::default(),
                 hints: vec![],
             })],
+            cached_key: None,
         }
     };
 

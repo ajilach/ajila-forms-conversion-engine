@@ -17,6 +17,7 @@ use crate::flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
 use crate::xfa::{Num, XfaNode, XfaNodeKind};
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Position and size of a node in the flattened layout
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -464,7 +465,7 @@ pub struct XfaForm {
     /// Cached mapping of field names to their flattened node indices
     field_index_cache: HashMap<String, usize>,
     /// Registry of all scripts in the form, categorized by type
-    script_registry: ScriptRegistry,
+    script_registry: Arc<ScriptRegistry>,
     /// Dependency tracker for cascading calculations
     dependency_tracker: DependencyTracker,
     /// Dirty flag - set when changes require refresh
@@ -476,7 +477,7 @@ pub struct XfaForm {
 impl XfaForm {
     /// Create a new XFA form from parsed nodes
     pub fn new(mut nodes: Vec<XfaNode>) -> Result<Self, String> {
-        let script_registry = Self::build_script_registry(&nodes);
+        let script_registry = Arc::new(Self::build_script_registry(&nodes));
         let dependency_tracker = DependencyTracker::new();
 
         // Execute scripts using ScriptExecutor
@@ -542,7 +543,28 @@ impl XfaForm {
         nodes: Vec<XfaNode>,
         init_values: &HashMap<SomPath, String>,
     ) -> Result<Self, String> {
-        let script_registry = Self::build_script_registry(&nodes);
+        let script_registry = Arc::new(Self::build_script_registry(&nodes));
+        Self::from_post_init_inner(nodes, init_values, script_registry)
+    }
+
+    /// Like [`from_post_init`], but accepts a pre-built `ScriptRegistry` shared
+    /// via `Arc`. This avoids the two full tree walks that
+    /// `build_script_registry` performs — a significant saving when many
+    /// branches are created from the same base nodes (e.g. exhaustive
+    /// exploration).
+    pub fn from_post_init_with_registry(
+        nodes: Vec<XfaNode>,
+        init_values: &HashMap<SomPath, String>,
+        script_registry: Arc<ScriptRegistry>,
+    ) -> Result<Self, String> {
+        Self::from_post_init_inner(nodes, init_values, script_registry)
+    }
+
+    fn from_post_init_inner(
+        nodes: Vec<XfaNode>,
+        init_values: &HashMap<SomPath, String>,
+        script_registry: Arc<ScriptRegistry>,
+    ) -> Result<Self, String> {
         let dependency_tracker = DependencyTracker::new();
 
         let flattened = Flattened::from_xfa(&nodes, init_values)?;
@@ -1525,6 +1547,11 @@ impl XfaForm {
         &self.script_registry
     }
 
+    /// Get a shared reference to the script registry `Arc`.
+    pub fn script_registry_arc(&self) -> Arc<ScriptRegistry> {
+        Arc::clone(&self.script_registry)
+    }
+
     /// Check if the form has uncommitted changes that require refresh
     pub fn is_dirty(&self) -> bool {
         self.dirty
@@ -1548,6 +1575,11 @@ impl XfaForm {
     /// Get the underlying Flattened struct
     pub fn flattened(&self) -> &Flattened {
         &self.flattened
+    }
+
+    /// Get the underlying Flattened struct (mutable)
+    pub fn flattened_mut(&mut self) -> &mut Flattened {
+        &mut self.flattened
     }
 
     /// Get all field names in the form
