@@ -11304,7 +11304,7 @@ fn test_antrag_sozialhilfe_multipage_merge() {
 // =========================================================================
 // AAHQ_019_DE Tests
 // =========================================================================
-/* 
+
 #[test]
 fn test_aahq_has_neuanlage_aenderung_radio_button_group() {
     // Test that the AAHQ document has a radio button group with "Neuanlage" and "Änderung" options.
@@ -11880,4 +11880,4 @@ fn test_aahq_dritte_partei_has_radio_buttons() {
         "Expected 'Dritte Partei' repeatable to contain radio buttons with 'Bereits vorhanden' and 'Anzulegen' options"
     );
 }
-*/
+

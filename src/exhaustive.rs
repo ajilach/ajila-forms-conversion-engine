@@ -741,7 +741,6 @@ pub fn collect_states(
             .map(|mutex| mutex.into_inner().unwrap())
             .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
-
         per_group_results.push(states);
     }
 
@@ -944,6 +943,15 @@ fn collect_states_linear(
     // Process the next field
     let field_index = exploration_state.next_field_index;
     let field = &ctx.global_field_order[field_index];
+
+    // If this field was pre-marked as Skipped (e.g. during per-partition
+    // exploration where only a subset of fields is active), advance
+    // immediately without evaluating can_select or entering explore_*.
+    if exploration_state.field_actions[field_index] == Some(FieldAction::Skipped) {
+        let mut new_state = exploration_state;
+        new_state.next_field_index = field_index + 1;
+        return collect_states_linear(form, new_state, ctx);
+    }
 
     // Check if field can be selected
     let can_select = can_select_field(form, field, &exploration_state.selections, ctx);
