@@ -527,20 +527,6 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
 
     for fp in &repeated {
         let center_y = fp.rel_y + fp.height / 2.0;
-        eprintln!(
-            "[DEBUG] repeated element: kind={} content='{}' rel_y={:.1} height={:.1} center_y={:.1} midpoint={:.1} → {}",
-            fp.kind,
-            fp.content_key,
-            fp.rel_y,
-            fp.height,
-            center_y,
-            midpoint,
-            if center_y < midpoint {
-                "HEADER"
-            } else {
-                "FOOTER"
-            }
-        );
         if center_y < midpoint {
             // Header candidate — track the lowest bottom edge
             let bottom = fp.bottom();
@@ -557,11 +543,6 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
             });
         }
     }
-
-    eprintln!(
-        "[DEBUG] page_height={:.1} midpoint={:.1} header_boundary={:?} footer_boundary={:?}",
-        ref_page_height, midpoint, header_boundary, footer_boundary
-    );
 
     // -- Step 4: Merge pages into a single Flattened, applying hints --
 
@@ -630,18 +611,6 @@ fn offset_and_tag_kind(
                 if rel_y >= fb - POSITION_TOLERANCE
                     && node_bottom <= page_height + POSITION_TOLERANCE
                 {
-                    let content = match &node.kind {
-                        FlattenedNodeKind::Text { content, .. } => content.clone(),
-                        FlattenedNodeKind::Field { name, .. } => format!("[field:{}]", name),
-                    };
-                    eprintln!(
-                        "[DEBUG FOOTER TAG] rel_y={:.1} bottom={:.1} page_h={:.1} y_offset={:.1} content='{}'",
-                        rel_y,
-                        node_bottom,
-                        page_height,
-                        y_offset.to_f64().unwrap_or(0.0),
-                        content
-                    );
                     node.add_hint(Hint::MasterPage {
                         region: MasterPageRegion::Footer,
                     });

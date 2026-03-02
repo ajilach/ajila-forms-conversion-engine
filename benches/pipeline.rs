@@ -3,7 +3,7 @@ use std::time::Duration;
 
 fn bench_full_pipeline(c: &mut Criterion) {
     let mut group = c.benchmark_group("full_pipeline");
-    //group.measurement_time(Duration::from_secs(60));
+    group.measurement_time(Duration::from_secs(10));
     group.sample_size(10);
 
     // Auto-discover all PDFs in `input/`.

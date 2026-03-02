@@ -4249,9 +4249,6 @@ impl Flattened {
         let height = explicit_height.unwrap_or_else(|| {
             // For leaf nodes (field/draw), calculate natural height based on content
             // The natural height must include space for margins + content
-            eprintln!("TRACE height_calc: kind={:?}, name={:?}, explicit_h=None", 
-                std::mem::discriminant(&node.kind), 
-                node.name.as_deref().unwrap_or("?"));
             match &node.kind {
                 XfaNodeKind::Draw => {
                     // Calculate natural height for draw element based on text content.
@@ -4270,11 +4267,6 @@ impl Flattened {
                                 ctx.computed_values,
                                 ctx.id_to_field,
                             );
-                            if result.is_none() {
-                                eprintln!("TRACE: calculate_rich_text_draw_height returned None for draw w={}", width);
-                            } else {
-                                eprintln!("TRACE: calculate_rich_text_draw_height returned {:?}", result);
-                            }
                             result
                         } else {
                             None
@@ -4650,7 +4642,6 @@ impl Flattened {
         let num_lines = match measurer.measure_text_block(text, &Some(xfa_font), para, max_width) {
             Ok(block_metrics) => {
                 let font_lines = block_metrics.lines.len();
-                eprintln!("TRACE natural_height: font-based OK, lines={}, text={:.40}", font_lines, text);
                 let mut total = font_lines;
                 // Add extra lines for paragraph breaks from HTML <p> elements
                 if paragraph_count > 1 {
@@ -4663,7 +4654,6 @@ impl Flattened {
             }
             Err(_) => {
                 // Fallback: crude character-width estimate (used when font is unavailable)
-                eprintln!("TRACE natural_height: font-based FAILED, using crude heuristic, text={:.40}", text);
                 let char_width = font_size_f32 * 0.45;
                 let max_width_f32 = max_width.to_f32().unwrap_or(1000.0);
                 let chars_per_line = (max_width_f32 / char_width).max(1.0) as usize;
@@ -4743,13 +4733,11 @@ impl Flattened {
         let rich_text = match rich_text {
             Some(rt) => rt,
             None => {
-                eprintln!("TRACE rich_text_draw_height: extract_rich_text_from_node returned None");
                 return None;
             }
         };
 
         if rich_text.paragraphs.len() <= 1 {
-            eprintln!("TRACE rich_text_draw_height: single paragraph (len={}), returning None", rich_text.paragraphs.len());
             return None; // Single paragraph — fall back to the standard heuristic
         }
 
