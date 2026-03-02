@@ -29,6 +29,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
+use regex_lite::Regex;
 
 use crate::flattened::{Flattened, FlattenedKey};
 
@@ -43,8 +44,9 @@ use crate::flattened::{Flattened, FlattenedKey};
 /// layout (common in forms where selections don't change visibility).
 type SeenLayouts = Arc<Mutex<HashMap<(Vec<FlattenedKey>, usize), Vec<Selection>>>>;
 use crate::structured::{FieldId, Selection, SelectionKind};
+use crate::xfa::scripting::events::EventActivity;
 use crate::xfa::scripting::registry::ScriptRegistry;
-use crate::xfa::scripting::{SomPath, XfaForm};
+use crate::xfa::scripting::{SomPath, SomResolver, XfaForm};
 use crate::xfa::{XfaNode, XfaNodeKind};
 
 /// The kind of selectable field found in the XFA tree.
@@ -169,6 +171,366 @@ struct ExplorationContext {
 }
 
 // ============================================================================
+// Independent field partitioning — static script analysis + union-find
+// ============================================================================
+
+/// Simple union-find (disjoint-set) data structure for partitioning fields.
+struct UnionFind {
+    parent: Vec<usize>,
+    rank: Vec<usize>,
+}
+
+impl UnionFind {
+    fn new(n: usize) -> Self {
+        Self {
+            parent: (0..n).collect(),
+            rank: vec![0; n],
+        }
+    }
+
+    fn find(&mut self, x: usize) -> usize {
+        if self.parent[x] != x {
+            self.parent[x] = self.find(self.parent[x]); // path compression
+        }
+        self.parent[x]
+    }
+
+    fn union(&mut self, a: usize, b: usize) {
+        let ra = self.find(a);
+        let rb = self.find(b);
+        if ra == rb {
+            return;
+        }
+        // union by rank
+        match self.rank[ra].cmp(&self.rank[rb]) {
+            std::cmp::Ordering::Less => self.parent[ra] = rb,
+            std::cmp::Ordering::Greater => self.parent[rb] = ra,
+            std::cmp::Ordering::Equal => {
+                self.parent[rb] = ra;
+                self.rank[ra] += 1;
+            }
+        }
+    }
+
+    /// Extract connected components as groups of original indices.
+    fn groups(&mut self, n: usize) -> Vec<Vec<usize>> {
+        let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..n {
+            map.entry(self.find(i)).or_default().push(i);
+        }
+        // Sort groups by their smallest index to ensure deterministic ordering
+        let mut groups: Vec<Vec<usize>> = map.into_values().collect();
+        groups.sort_by_key(|g| g[0]);
+        groups
+    }
+}
+
+/// Extract field name references from a JavaScript script source.
+///
+/// Uses regex to find patterns like:
+/// - `Name.presence` / `Name.rawValue` / `Name.value` (property access)
+/// - `resolveNode("path.to.field")` (explicit SOM resolution)
+///
+/// Returns a set of bare names or SOM path components that the script
+/// reads from or writes to. Filters out known non-field names like
+/// `this`, `xfa`, etc.
+///
+/// Script object names (like `soLocalLabelDefinition`) are NOT filtered —
+/// they are returned so that the caller can resolve them transitively.
+fn extract_field_references(source: &str) -> HashSet<String> {
+    let re_prop = Regex::new(
+        r"(\b[A-Za-z_]\w*)\.(?:presence|rawValue|value)"
+    ).expect("valid regex");
+
+    let re_resolve = Regex::new(
+        r#"resolveNode\([\s]*["']([^"']+)["'][\s]*\)"#
+    ).expect("valid regex");
+
+    // Also match method calls on identifiers: `Name.methodName(`
+    // This catches script object calls like `soLocalLabelDefinition.change()`
+    let re_method = Regex::new(
+        r"(\b[A-Za-z_]\w*)\.\w+\("
+    ).expect("valid regex");
+
+    let mut refs = HashSet::new();
+
+    // Non-field names to ignore — only true JS globals, not script objects
+    let ignore: HashSet<&str> = [
+        "this", "xfa", "event", "app", "console",
+        "Math", "String", "Number", "Date",
+        "parseInt", "parseFloat", "JSON",
+    ].into_iter().collect();
+
+    for cap in re_prop.captures_iter(source) {
+        let name = cap[1].to_string();
+        if !ignore.contains(name.as_str()) {
+            refs.insert(name);
+        }
+    }
+
+    for cap in re_resolve.captures_iter(source) {
+        let path = &cap[1];
+        let clean = path
+            .trim_start_matches("xfa.form..")
+            .trim_start_matches("xfa.form.");
+        for part in clean.split('.') {
+            let name = part.split('[').next().unwrap_or(part);
+            if !name.is_empty() && !ignore.contains(name) {
+                refs.insert(name.to_string());
+            }
+        }
+    }
+
+    for cap in re_method.captures_iter(source) {
+        let name = cap[1].to_string();
+        if !ignore.contains(name.as_str()) {
+            refs.insert(name);
+        }
+    }
+
+    refs
+}
+
+/// Collect script object sources from `<variables><script>` nodes in the XFA tree.
+///
+/// Returns a map of script object name → full source code. These are named
+/// script objects defined in `<subform><variables><script name="...">` that
+/// expose methods callable from event scripts (e.g. `soLocalLabelDefinition.change()`).
+fn collect_script_object_sources(nodes: &[XfaNode]) -> HashMap<String, String> {
+    let mut result: HashMap<String, String> = HashMap::new();
+
+    fn walk(nodes: &[XfaNode], result: &mut HashMap<String, String>) {
+        for node in nodes {
+            if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                if tag_name == "variables" {
+                    for child in &node.children {
+                        if let XfaNodeKind::Element {
+                            tag_name: child_tag,
+                            text_content,
+                            ..
+                        } = &child.kind
+                        {
+                            if child_tag == "script" {
+                                if let Some(name) = &child.name {
+                                    // Collect source from text_content and child text nodes
+                                    if let Some(content) = text_content {
+                                        result
+                                            .entry(name.clone())
+                                            .or_default()
+                                            .push_str(content);
+                                    }
+                                    for script_child in &child.children {
+                                        match &script_child.kind {
+                                            XfaNodeKind::Element {
+                                                text_content: Some(content),
+                                                ..
+                                            } => {
+                                                result
+                                                    .entry(name.clone())
+                                                    .or_default()
+                                                    .push_str(content);
+                                            }
+                                            XfaNodeKind::Text { content } => {
+                                                result
+                                                    .entry(name.clone())
+                                                    .or_default()
+                                                    .push_str(content);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            walk(&node.children, result);
+        }
+    }
+
+    walk(nodes, &mut result);
+    result
+}
+
+/// Extract field references transitively through script objects.
+///
+/// First extracts direct references from the source. Then, for any reference
+/// that matches a known script object name, recursively analyses that script
+/// object's source code to find additional field references.
+fn extract_field_references_transitive(
+    source: &str,
+    script_objects: &HashMap<String, String>,
+) -> HashSet<String> {
+    let mut all_refs = extract_field_references(source);
+    let mut visited_objects: HashSet<String> = HashSet::new();
+    let mut queue: Vec<String> = all_refs
+        .iter()
+        .filter(|r| script_objects.contains_key(r.as_str()))
+        .cloned()
+        .collect();
+
+    while let Some(obj_name) = queue.pop() {
+        if !visited_objects.insert(obj_name.clone()) {
+            continue;
+        }
+        if let Some(obj_source) = script_objects.get(&obj_name) {
+            let obj_refs = extract_field_references(obj_source);
+            for r in &obj_refs {
+                if all_refs.insert(r.clone()) && script_objects.contains_key(r.as_str()) {
+                    queue.push(r.clone());
+                }
+            }
+        }
+    }
+
+    all_refs
+}
+
+/// Resolve a bare field name to all matching SOM paths in the XFA tree.
+///
+/// Returns all known paths for the given name, which may correspond to
+/// fields, subforms, or exclGroups at various depths.
+fn resolve_name_to_paths(name: &str, som_resolver: &SomResolver) -> Vec<SomPath> {
+    som_resolver
+        .get_paths_by_name(name)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Collect all SOM paths of descendant interactive fields under a container.
+///
+/// "Interactive" here means the path appears in `field_paths` (the set of
+/// all selectable field paths from the global field order).
+fn descendant_interactive_fields(
+    container_path: &SomPath,
+    field_paths: &HashSet<SomPath>,
+) -> Vec<SomPath> {
+    let prefix = format!("{}.", container_path.as_str());
+    field_paths
+        .iter()
+        .filter(|p| p.as_str().starts_with(&prefix))
+        .cloned()
+        .collect()
+}
+
+/// Build independent field partitions from the global field order.
+///
+/// Analyzes the script source text of every interactive field's change/click
+/// scripts to build a dependency graph. Fields whose scripts reference the
+/// same containers or fields are unioned into the same partition. Fields in
+/// different partitions are guaranteed to be independent and can be explored
+/// separately.
+///
+/// Script object calls (e.g. `soLocalLabelDefinition.change()`) are resolved
+/// transitively: if a field's script calls a script object, all field
+/// references inside that script object's source are treated as dependencies
+/// of the calling field.
+///
+/// Returns groups of indices into `global_field_order`. Each group is an
+/// independent partition that can be explored in isolation.
+fn partition_fields(
+    global_field_order: &[SelectableField],
+    excl_group_map: &HashMap<SomPath, Option<SomPath>>,
+    radio_group_indices: &HashMap<SomPath, Vec<usize>>,
+    script_registry: &ScriptRegistry,
+    som_resolver: &SomResolver,
+    script_objects: &HashMap<String, String>,
+) -> Vec<Vec<usize>> {
+    let n = global_field_order.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut uf = UnionFind::new(n);
+
+    // Build a set of all field paths for quick membership tests
+    let field_paths: HashSet<SomPath> = global_field_order
+        .iter()
+        .map(|f| f.path.clone())
+        .collect();
+
+    // Build path→index lookup
+    let path_to_idx: HashMap<&SomPath, usize> = global_field_order
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (&f.path, i))
+        .collect();
+
+    // Union all radio buttons in the same exclGroup
+    for indices in radio_group_indices.values() {
+        if indices.len() > 1 {
+            let first = indices[0];
+            for &idx in &indices[1..] {
+                uf.union(first, idx);
+            }
+        }
+    }
+
+    // For each selectable field, analyze its change/click scripts with
+    // transitive script-object resolution
+    for (idx, field) in global_field_order.iter().enumerate() {
+        // Determine the script owner: for radios it's the exclGroup, for others it's self
+        let script_owner = if field.is_radio() {
+            excl_group_map
+                .get(&field.path)
+                .and_then(|eg| eg.as_ref())
+                .cloned()
+                .unwrap_or_else(|| field.path.clone())
+        } else {
+            field.path.clone()
+        };
+
+        // Analyze Change and Click scripts for this owner
+        for activity in &[EventActivity::Change, EventActivity::Click] {
+            let scripts = script_registry.get_event_scripts(&script_owner, activity);
+            for registered_script in scripts {
+                // Use transitive extraction to follow script object calls
+                let refs = extract_field_references_transitive(
+                    &registered_script.script.source,
+                    script_objects,
+                );
+
+                for ref_name in &refs {
+                    // Skip script object names themselves — they are not XFA fields
+                    if script_objects.contains_key(ref_name.as_str()) {
+                        continue;
+                    }
+
+                    let target_paths = resolve_name_to_paths(ref_name, som_resolver);
+
+                    for target_path in &target_paths {
+                        // Case 1: target is directly a selectable field
+                        if let Some(&target_idx) = path_to_idx.get(target_path) {
+                            uf.union(idx, target_idx);
+                        }
+
+                        // Case 2: target is a container (subform/exclGroup) —
+                        // union with all descendant interactive fields
+                        let descendants =
+                            descendant_interactive_fields(target_path, &field_paths);
+                        for desc in &descendants {
+                            if let Some(&desc_idx) = path_to_idx.get(desc) {
+                                uf.union(idx, desc_idx);
+                            }
+                        }
+
+                        // Case 3: target is an exclGroup that appears in radio_group_indices
+                        if let Some(rg_indices) = radio_group_indices.get(target_path) {
+                            for &rg_idx in rg_indices {
+                                uf.union(idx, rg_idx);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    uf.groups(n)
+}
+
+// ============================================================================
 // Public data types used by both the library facade and the CLI
 // ============================================================================
 
@@ -220,13 +582,6 @@ pub fn collect_states(
     form: &mut XfaForm,
     _xfa_bytes: &[u8],
 ) -> Result<Vec<CollectedState>, crate::Error> {
-    // Use Arc<Mutex<>> for thread-safe access to shared state
-    let collected_states = Arc::new(Mutex::new(Vec::<CollectedState>::new()));
-    let rendered_states = Arc::new(Mutex::new(HashSet::<Vec<Option<FieldAction>>>::new()));
-
-    // Cross-path deduplication: track seen flattened layouts globally
-    let seen_layouts: SeenLayouts = Arc::new(Mutex::new(HashMap::new()));
-
     // OPTIMIZATION: Cache post-init nodes and computed values from the already-
     // initialised form. Branches use `XfaForm::from_post_init` which skips the
     // expensive `ScriptExecutor::execute()` phase (saves one Boa JS context
@@ -256,6 +611,140 @@ pub fn collect_states(
         excl_group_map.insert(field.path.clone(), excl);
     }
 
+    // ── Independent field partitioning ──────────────────────────────────
+    // Statically analyse script sources to partition fields into independent
+    // groups. Fields whose scripts never reference each other (directly or
+    // transitively) can be explored separately: we explore each group in
+    // isolation and then combine the per-group results via cross-product,
+    // reducing exponential blowup from ∏kᵢ to Σkᵢ + combination.
+    let som_resolver = SomResolver::from_nodes(&post_init_nodes);
+    let script_objects = collect_script_object_sources(&post_init_nodes);
+    let groups = partition_fields(
+        &global_field_order,
+        &excl_group_map,
+        &radio_group_indices,
+        &script_registry,
+        &som_resolver,
+        &script_objects,
+    );
+
+    eprintln!(
+        "[exhaustive] {} selectable fields → {} independent group(s): {}",
+        global_field_order.len(),
+        groups.len(),
+        groups.iter().map(|g| g.len().to_string()).collect::<Vec<_>>().join(", ")
+    );
+
+    // If a single group (or zero/one fields), fall through to the original
+    // algorithm — no partitioning benefit.
+    if groups.len() <= 1 {
+        return collect_states_single_group(
+            form,
+            global_field_order,
+            excl_group_map,
+            radio_group_indices,
+            script_registry,
+            post_init_nodes,
+            init_values,
+        );
+    }
+
+    // ── Per-group exploration ───────────────────────────────────────────
+    // Explore each independent group in isolation. Each group gets its own
+    // sub-field-order (keeping the original indices so field_actions align).
+    let mut per_group_results: Vec<Vec<CollectedState>> = Vec::with_capacity(groups.len());
+
+    for group_indices in &groups {
+        // Build a sub-field-order containing only this group's fields.
+        // We keep the same global_field_order length for ExplorationState but
+        // only visit fields in this group — all others are pre-marked as Skipped.
+        let group_set: HashSet<usize> = group_indices.iter().copied().collect();
+
+        // Build group-local radio_group_indices (only include radio groups
+        // whose members are entirely within this partition)
+        let group_radio_indices: HashMap<SomPath, Vec<usize>> = radio_group_indices
+            .iter()
+            .filter(|(_, indices)| indices.iter().all(|i| group_set.contains(i)))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        let collected_states = Arc::new(Mutex::new(Vec::<CollectedState>::new()));
+        let rendered_states = Arc::new(Mutex::new(HashSet::<Vec<Option<FieldAction>>>::new()));
+        let seen_layouts: SeenLayouts = Arc::new(Mutex::new(HashMap::new()));
+
+        let ctx = ExplorationContext {
+            global_field_order: global_field_order.clone(),
+            excl_group_map: excl_group_map.clone(),
+            radio_group_indices: group_radio_indices,
+            script_registry: script_registry.clone(),
+            post_init_nodes: post_init_nodes.clone(),
+            init_values: init_values.clone(),
+            rendered_states,
+            collected_states: collected_states.clone(),
+            seen_layouts,
+        };
+
+        // Pre-mark all fields NOT in this group as Skipped so the linear
+        // explorer only visits this group's fields.
+        let mut initial_state = ExplorationState::new(global_field_order.len());
+        for idx in 0..global_field_order.len() {
+            if !group_set.contains(&idx) {
+                initial_state.field_actions[idx] = Some(FieldAction::Skipped);
+            }
+        }
+
+        // Reset form to initial state for this group exploration
+        form.reset_for_branch(post_init_nodes.as_ref().clone(), &init_values)
+            .map_err(crate::Error::FormCreation)?;
+
+        collect_states_linear(form, initial_state, &ctx)?;
+
+        let states = Arc::try_unwrap(collected_states)
+            .map(|mutex| mutex.into_inner().unwrap())
+            .unwrap_or_else(|arc| arc.lock().unwrap().clone());
+
+        eprintln!(
+            "[exhaustive]   group {:?} → {} unique states",
+            group_indices, states.len()
+        );
+
+        per_group_results.push(states);
+    }
+
+    // ── Cross-product combination ──────────────────────────────────────
+    // Combine per-group results: for each combination of per-group states,
+    // apply all selections to a fresh form via reset_for_branch, capture
+    // the final flattened layout, and dedup by FlattenedKey.
+    let combined = combine_group_results(
+        form,
+        &per_group_results,
+        &post_init_nodes,
+        &init_values,
+        &script_registry,
+    )?;
+
+    eprintln!(
+        "[exhaustive] combined cross-product → {} unique states",
+        combined.len()
+    );
+
+    Ok(combined)
+}
+
+/// Original single-group exploration (no partitioning).
+fn collect_states_single_group(
+    form: &mut XfaForm,
+    global_field_order: Vec<SelectableField>,
+    excl_group_map: HashMap<SomPath, Option<SomPath>>,
+    radio_group_indices: HashMap<SomPath, Vec<usize>>,
+    script_registry: Arc<ScriptRegistry>,
+    post_init_nodes: Arc<Vec<XfaNode>>,
+    init_values: Arc<HashMap<SomPath, String>>,
+) -> Result<Vec<CollectedState>, crate::Error> {
+    let collected_states = Arc::new(Mutex::new(Vec::<CollectedState>::new()));
+    let rendered_states = Arc::new(Mutex::new(HashSet::<Vec<Option<FieldAction>>>::new()));
+    let seen_layouts: SeenLayouts = Arc::new(Mutex::new(HashMap::new()));
+
     let ctx = ExplorationContext {
         global_field_order,
         excl_group_map,
@@ -269,15 +758,115 @@ pub fn collect_states(
     };
 
     let initial_state = ExplorationState::new(ctx.global_field_order.len());
-
     collect_states_linear(form, initial_state, &ctx)?;
 
-    // Extract the final collected states
     let states = Arc::try_unwrap(collected_states)
         .map(|mutex| mutex.into_inner().unwrap())
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
     Ok(states)
+}
+
+/// Combine per-group exploration results via cross-product.
+///
+/// For each combination of per-group states (one state per group), apply all
+/// selections from every group to a single form, refresh it, and capture the
+/// combined flattened layout. Dedup by FlattenedKey to avoid emitting
+/// duplicate states.
+fn combine_group_results(
+    form: &mut XfaForm,
+    per_group_results: &[Vec<CollectedState>],
+    post_init_nodes: &Arc<Vec<XfaNode>>,
+    init_values: &Arc<HashMap<SomPath, String>>,
+    _script_registry: &Arc<ScriptRegistry>,
+) -> Result<Vec<CollectedState>, crate::Error> {
+    // Compute cross-product indices
+    let group_sizes: Vec<usize> = per_group_results.iter().map(|g| g.len().max(1)).collect();
+    let total_combos: usize = group_sizes.iter().product();
+
+    let mut seen_keys: HashSet<Vec<FlattenedKey>> = HashSet::new();
+    let mut combined: Vec<CollectedState> = Vec::new();
+
+    for combo_idx in 0..total_combos {
+        // Decode combo_idx into per-group state indices
+        let mut remaining = combo_idx;
+        let mut group_state_indices: Vec<usize> = Vec::with_capacity(per_group_results.len());
+        for &size in group_sizes.iter().rev() {
+            group_state_indices.push(remaining % size);
+            remaining /= size;
+        }
+        group_state_indices.reverse();
+
+        // Merge selections and field_actions from all groups
+        let mut merged_selections: Vec<Selection> = Vec::new();
+        let mut merged_field_actions: Vec<Option<FieldAction>> = Vec::new();
+
+        for (group_idx, &state_idx) in group_state_indices.iter().enumerate() {
+            if per_group_results[group_idx].is_empty() {
+                continue;
+            }
+            let group_state = &per_group_results[group_idx][state_idx];
+            merged_selections.extend(group_state.selections.iter().cloned());
+
+            // On first group, initialise merged_field_actions from its actions
+            if merged_field_actions.is_empty() {
+                merged_field_actions = group_state.field_actions.clone();
+            } else {
+                // Overlay this group's non-None actions onto the merged vector
+                for (i, action) in group_state.field_actions.iter().enumerate() {
+                    if action.is_some() {
+                        merged_field_actions[i] = action.clone();
+                    }
+                }
+            }
+        }
+
+        // Apply merged selections to a fresh form
+        form.reset_for_branch(post_init_nodes.as_ref().clone(), init_values)
+            .map_err(crate::Error::FormCreation)?;
+
+        // Replay all selections on the form
+        for sel in &merged_selections {
+            match sel.kind {
+                SelectionKind::Radio => {
+                    let _ = form.select_radio_button(sel.som_path.as_str());
+                }
+                SelectionKind::Checkbox => {
+                    let _ = form.set_value_as_user(
+                        sel.som_path.as_str(),
+                        sel.primary_value(),
+                    );
+                }
+                SelectionKind::Dropdown => {
+                    let _ = form.set_value_as_user(
+                        sel.som_path.as_str(),
+                        sel.primary_value(),
+                    );
+                }
+            }
+        }
+
+        form.refresh().map_err(crate::Error::FormCreation)?;
+
+        // Dedup by flattened key
+        let flattened_key = form.flattened_mut().flattened_key().clone();
+        if seen_keys.contains(&flattened_key) {
+            continue;
+        }
+        seen_keys.insert(flattened_key);
+
+        let label = generate_label(&merged_selections);
+        let flattened = form.flattened().clone();
+
+        combined.push(CollectedState {
+            flattened,
+            selections: merged_selections,
+            label,
+            field_actions: merged_field_actions,
+        });
+    }
+
+    Ok(combined)
 }
 
 /// Pass 1 implementation: recursively collect all form states using linear field exploration.
