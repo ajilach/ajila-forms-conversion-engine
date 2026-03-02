@@ -565,6 +565,67 @@ impl XfaForm {
         })
     }
 
+    /// Reset the form to a snapshot state, reusing the existing Boa JS engine.
+    ///
+    /// This is significantly cheaper than [`from_post_init`] because it avoids:
+    /// - Creating a new Boa JavaScript context (`Context::default()`)
+    /// - Re-running `setup_environment()` (XFA objects, globals, JS helpers)
+    /// - Rebuilding the SOM hierarchy with JS object creation per field
+    /// - Re-extracting translations
+    ///
+    /// Instead, it reuses the existing JS objects and only updates their
+    /// `rawValue` and `presence` properties to match the snapshot.
+    pub fn reset_for_branch(
+        &mut self,
+        nodes: Vec<XfaNode>,
+        snapshot_values: &HashMap<SomPath, String>,
+    ) -> Result<(), String> {
+        self.nodes = nodes;
+        self.som_resolver = SomResolver::from_nodes(&self.nodes);
+
+        // Build a presence map from the restored nodes
+        let presence_map = Self::build_presence_map(&self.nodes);
+
+        // Reset all field values and presence in the JS engine (reuse JS objects)
+        self.script_engine
+            .reset_field_states(snapshot_values, &presence_map);
+
+        // Reflatten and rebuild caches
+        self.flattened = Flattened::from_xfa(&self.nodes, snapshot_values)?;
+        self.field_index_cache = Self::build_field_index_cache(&self.flattened);
+        self.dirty = false;
+
+        Ok(())
+    }
+
+    /// Build a map of SOM path → presence string from the XFA node tree.
+    fn build_presence_map(nodes: &[XfaNode]) -> HashMap<SomPath, String> {
+        let mut map = HashMap::new();
+        Self::collect_presence_recursive(nodes, "", &mut map);
+        map
+    }
+
+    fn collect_presence_recursive(
+        nodes: &[XfaNode],
+        path: &str,
+        map: &mut HashMap<SomPath, String>,
+    ) {
+        for node in nodes {
+            let node_path = match &node.name {
+                Some(name) if path.is_empty() => name.clone(),
+                Some(name) => format!("{}.{}", path, name),
+                None => path.to_string(),
+            };
+
+            if node.name.is_some() {
+                let presence = node.get_presence().as_str().to_string();
+                map.insert(SomPath::new(&node_path), presence);
+            }
+
+            Self::collect_presence_recursive(&node.children, &node_path, map);
+        }
+    }
+
     /// Resolve a node by SOM expression (immutable)
     pub fn resolve(&self, som_expression: &str) -> Option<XfaNodeRef<'_>> {
         let resolved_path = self.som_resolver.resolve_node(som_expression, None)?;

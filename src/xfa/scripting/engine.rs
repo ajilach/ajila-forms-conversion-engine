@@ -2309,6 +2309,34 @@ _xfa_tmp_im_.removeInstance = function() {};
         }
     }
 
+    /// Reset all registered field values and presence to match a snapshot.
+    ///
+    /// Reuses the existing JS objects — only updates `rawValue` + `presence`
+    /// properties and the `initial_presence` baseline.  Much cheaper than
+    /// clearing and rebuilding via `build_som_hierarchy_with_values` because
+    /// no new JS objects are created and the Boa `Context` is reused.
+    pub fn reset_field_states(
+        &mut self,
+        values: &HashMap<SomPath, String>,
+        presence_map: &HashMap<SomPath, String>,
+    ) {
+        let paths: Vec<SomPath> = self.field_objects.keys().cloned().collect();
+        for path in &paths {
+            // Reset rawValue
+            let value = values
+                .get(path)
+                .or_else(|| values.get(&SomPath::new(path.name())))
+                .cloned()
+                .unwrap_or_default();
+            self.update_field_value(path.as_str(), &value);
+
+            // Reset presence + initial_presence baseline
+            if let Some(presence) = presence_map.get(path) {
+                self.update_field_presence_baseline(path, &value, presence);
+            }
+        }
+    }
+
     /// Update initial_presence baseline and form_state value for an
     /// already-registered SOM path.  Used by the Form DOM second pass to
     /// overlay saved runtime state (presence / values) from the `<form>`

@@ -27,7 +27,8 @@
 //! analysis across all form states.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::thread;
+
+use rayon::prelude::*;
 
 use crate::flattened::{Flattened, FlattenedKey};
 
@@ -308,6 +309,7 @@ fn collect_states_linear(
         }
         SelectableFieldKind::Checkbox => {
             explore_checkbox(
+                form,
                 exploration_state,
                 field_index,
                 field,
@@ -343,6 +345,7 @@ fn collect_states_linear(
                 );
             }
             explore_dropdown(
+                form,
                 exploration_state,
                 field_index,
                 field,
@@ -361,75 +364,25 @@ fn collect_states_linear(
 }
 
 // ============================================================================
-// Branch preparation (Phase A)
+// Branch preparation (sequential, engine-reusing)
 // ============================================================================
 
 /// A prepared branch: the result of applying a mutation and refreshing the form,
 /// before any further recursive exploration.
 ///
-/// Stores the post-refresh XFA node snapshot and field values (which are `Send`)
-/// instead of the full `XfaForm` (which contains a Boa JS engine and is not
-/// `Send`). The `XfaForm` is recreated from the snapshot via `from_post_init`
-/// for the representative branch during Phase B — no selection replay needed.
+/// Stores the post-refresh XFA node snapshot and field values so the form can
+/// be cheaply reset to this state via `reset_for_branch`.
 struct PreparedBranch {
     /// Structural key of the flattened layout after refresh — used for deduplication.
     /// Captures position, dimensions, text content, and field names/labels while
     /// excluding field values and checked state.
     flattened_key: Vec<FlattenedKey>,
-    /// Post-mutation XFA node snapshot — used to recreate the form without replay.
+    /// Post-mutation XFA node snapshot — used to reset the form for recursion.
     snapshot_nodes: Vec<XfaNode>,
     /// Post-mutation field values — used together with snapshot_nodes.
     snapshot_values: HashMap<SomPath, String>,
     /// The exploration state at this point (selections, field_actions, etc.)
     state: ExplorationState,
-}
-
-/// Spawn a thread that creates a fresh form from a snapshot (which already
-/// has all prior selections applied), applies a branch-specific mutation
-/// via `setup`, refreshes the form, and returns the prepared branch including
-/// a new snapshot for downstream recursion.
-///
-/// The `snapshot_nodes` and `snapshot_values` represent the form state at the
-/// current exploration depth — they already include all prior selections, so
-/// no replay is needed. Only the new branch mutation is applied.
-fn spawn_branch(
-    snapshot_nodes: Arc<Vec<XfaNode>>,
-    snapshot_values: Arc<HashMap<SomPath, String>>,
-    state: ExplorationState,
-    setup: impl FnOnce(&mut XfaForm, &mut ExplorationState) + Send + 'static,
-) -> thread::JoinHandle<Result<PreparedBranch, crate::Error>> {
-    thread::spawn(move || -> Result<PreparedBranch, crate::Error> {
-        // OPTIMIZATION: Use from_post_init to skip ScriptExecutor::execute().
-        // The snapshot nodes already have presence changes, form-DOM merges,
-        // AND all prior selections applied — saving one Boa JS context creation,
-        // all init-script phases, and selection replay per branch.
-        let nodes = snapshot_nodes.as_ref().clone();
-        let mut new_form =
-            XfaForm::from_post_init(nodes, &snapshot_values).map_err(crate::Error::FormCreation)?;
-        let mut state = state;
-
-        // Apply branch-specific mutation (no replay needed — snapshot is current)
-        setup(&mut new_form, &mut state);
-
-        new_form.refresh().map_err(crate::Error::FormCreation)?;
-
-        // Build a structural key from the flattened layout for deduplication.
-        // This captures JS-driven label/presence changes that only appear
-        // after reflattening, while ignoring field values and checked state.
-        let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
-
-        // Capture the post-mutation snapshot so the representative can create
-        // a form via from_post_init without replaying any selections.
-        let snapshot_nodes = new_form.xfa_nodes().to_vec();
-        let snapshot_values = new_form.current_field_values();
-
-        Ok(PreparedBranch {
-            flattened_key,
-            snapshot_nodes,
-            snapshot_values,
-            state,
-        })
-    })
 }
 
 /// Given a set of prepared branches, group them by identical XFA state
@@ -441,7 +394,13 @@ fn spawn_branch(
 /// the same intermediate flattened layout, their subtrees would be identical.
 /// We track seen layouts to avoid redundant exploration, but only when the
 /// layout key is distinct enough (includes selection depth/field info).
+///
+/// OPTIMIZATION: Reuses the passed `form` via `reset_for_branch` instead of
+/// creating a new `XfaForm::from_post_init` for each representative. This
+/// avoids creating a new Boa JS engine per representative, saving ~25-40ms
+/// each time.
 fn explore_with_dedup(
+    form: &mut XfaForm,
     branches: Vec<PreparedBranch>,
     global_field_order: &[SelectableField],
     rendered_states: Arc<Mutex<HashSet<Vec<Option<FieldAction>>>>>,
@@ -499,19 +458,21 @@ fn explore_with_dedup(
             seen.insert(composite_key, representative.state.selections.clone());
         }
 
-        // Create form directly from the branch's post-mutation snapshot —
-        // no selection replay needed, no extra refresh.
+        // OPTIMIZATION: Reset the form to the representative's snapshot state
+        // using reset_for_branch, which reuses the existing Boa JS engine.
+        // This replaces XfaForm::from_post_init which would create a new
+        // engine from scratch (~25-40ms saving per representative).
         let depth_snapshot_nodes = Arc::new(representative.snapshot_nodes);
         let depth_snapshot_values = Arc::new(representative.snapshot_values);
 
-        let mut form = XfaForm::from_post_init(
+        form.reset_for_branch(
             depth_snapshot_nodes.as_ref().clone(),
             &depth_snapshot_values,
         )
         .map_err(crate::Error::FormCreation)?;
 
         collect_states_linear(
-            &mut form,
+            form,
             representative.state,
             global_field_order,
             rendered_states.clone(),
@@ -583,7 +544,10 @@ fn generate_label(selections: &[Selection]) -> String {
 }
 
 /// Explore all options of a radio button group.
-/// Phase A: prepares one branch per radio option. Phase B: dedup + recurse.
+///
+/// Phase A: prepares one branch per radio option in parallel using rayon.
+/// Each rayon task creates its own `XfaForm` via `from_post_init`.
+/// Phase B: dedup + recurse via `explore_with_dedup` (reuses the passed form).
 fn explore_radio(
     form: &mut XfaForm,
     exploration_state: ExplorationState,
@@ -608,57 +572,60 @@ fn explore_radio(
             .cloned()
             .collect();
 
-        // Phase A: spawn branch-preparation threads
-        let mut handles = Vec::new();
-        for radio_field in group_fields {
-            let global_order_for_closure = global_field_order.to_vec();
+        // Phase A: prepare branches in parallel using rayon thread pool
+        let branches: Result<Vec<PreparedBranch>, crate::Error> = group_fields
+            .par_iter()
+            .map(|radio_field| {
+                let nodes = post_init_nodes.as_ref().clone();
+                let mut new_form = XfaForm::from_post_init(nodes, &init_values)
+                    .map_err(crate::Error::FormCreation)?;
 
-            let handle = spawn_branch(
-                post_init_nodes.clone(),
-                init_values.clone(),
-                exploration_state.clone(),
-                move |new_form, state| {
-                    // Select the radio button
-                    let _ = new_form.select_radio_button(radio_field.path.as_str());
+                let _ = new_form.select_radio_button(radio_field.path.as_str());
 
-                    let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
-                    state.selections.push(Selection::new(
-                        radio_field.path.clone(),
-                        group_path.clone(),
-                        radio_field.path.name().to_string(),
-                        SelectionKind::Radio,
-                    ));
+                let mut state = exploration_state.clone();
+                let group_path = new_form.find_excl_group_for_field(radio_field.path.as_str());
+                state.selections.push(Selection::new(
+                    radio_field.path.clone(),
+                    group_path.clone(),
+                    radio_field.path.name().to_string(),
+                    SelectionKind::Radio,
+                ));
 
-                    // Mark all fields in this radio group as processed
-                    for (idx, f) in global_order_for_closure.iter().enumerate() {
-                        if f.is_radio()
-                            && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
-                            && state.selections.last().and_then(|s| s.group_path.as_ref())
-                                == Some(&FieldId::from_som_path(&fg))
-                        {
-                            state.field_actions[idx] = if f.path == radio_field.path {
-                                Some(FieldAction::Selected(radio_field.path.name().to_string()))
-                            } else {
-                                Some(FieldAction::Skipped)
-                            };
-                            state.next_field_index = idx + 1;
-                        }
+                // Mark all fields in this radio group as processed
+                for (idx, f) in global_field_order.iter().enumerate() {
+                    if f.is_radio()
+                        && let Some(fg) = new_form.find_excl_group_for_field(f.path.as_str())
+                        && state.selections.last().and_then(|s| s.group_path.as_ref())
+                            == Some(&FieldId::from_som_path(&fg))
+                    {
+                        state.field_actions[idx] = if f.path == radio_field.path {
+                            Some(FieldAction::Selected(radio_field.path.name().to_string()))
+                        } else {
+                            Some(FieldAction::Skipped)
+                        };
+                        state.next_field_index = idx + 1;
                     }
-                },
-            );
+                }
 
-            handles.push(handle);
-        }
+                new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-        // Collect prepared branches
-        let mut branches = Vec::new();
-        for handle in handles {
-            branches.push(handle.join().unwrap()?);
-        }
+                let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+                let snapshot_nodes = new_form.xfa_nodes().to_vec();
+                let snapshot_values = new_form.current_field_values();
+
+                Ok(PreparedBranch {
+                    flattened_key,
+                    snapshot_nodes,
+                    snapshot_values,
+                    state,
+                })
+            })
+            .collect();
 
         // Phase B: group by identical XFA state and recurse
         explore_with_dedup(
-            branches,
+            form,
+            branches?,
             global_field_order,
             rendered_states,
             collected_states,
@@ -670,8 +637,11 @@ fn explore_radio(
 }
 
 /// Explore both checked and unchecked states of a checkbox.
-/// Phase A: prepares two branches (checked/unchecked). Phase B: dedup + recurse.
+///
+/// Phase A: prepares two branches (checked/unchecked) in parallel using rayon.
+/// Phase B: dedup + recurse via `explore_with_dedup` (reuses the passed form).
 fn explore_checkbox(
+    form: &mut XfaForm,
     exploration_state: ExplorationState,
     field_index: usize,
     field: &SelectableField,
@@ -682,45 +652,46 @@ fn explore_checkbox(
     init_values: Arc<HashMap<SomPath, String>>,
     seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
-    let checkbox_values = [("1", "checked"), ("0", "unchecked")];
+    let checkbox_values: &[(&str, &str)] = &[("1", "checked"), ("0", "unchecked")];
 
-    // Phase A: spawn branch-preparation threads
-    let mut handles = Vec::new();
-    for (raw_value, label) in checkbox_values {
-        let field = field.clone();
-        let raw_value = raw_value.to_string();
-        let label = label.to_string();
+    // Phase A: prepare branches in parallel using rayon thread pool
+    let branches: Result<Vec<PreparedBranch>, crate::Error> = checkbox_values
+        .par_iter()
+        .map(|(raw_value, label)| {
+            let nodes = post_init_nodes.as_ref().clone();
+            let mut new_form =
+                XfaForm::from_post_init(nodes, &init_values).map_err(crate::Error::FormCreation)?;
 
-        let handle = spawn_branch(
-            post_init_nodes.clone(),
-            init_values.clone(),
-            exploration_state.clone(),
-            move |new_form, state| {
-                // Set the checkbox value and fire change event
-                let _ = new_form.set_value_as_user(field.path.as_str(), &raw_value);
+            let _ = new_form.set_value_as_user(field.path.as_str(), raw_value);
 
-                state.selections.push(Selection::standalone(
-                    field.path.clone(),
-                    label.clone(),
-                    SelectionKind::Checkbox,
-                ));
-                state.field_actions[field_index] = Some(FieldAction::Selected(label));
-                state.next_field_index = field_index + 1;
-            },
-        );
+            let mut state = exploration_state.clone();
+            state.selections.push(Selection::standalone(
+                field.path.clone(),
+                label.to_string(),
+                SelectionKind::Checkbox,
+            ));
+            state.field_actions[field_index] = Some(FieldAction::Selected(label.to_string()));
+            state.next_field_index = field_index + 1;
 
-        handles.push(handle);
-    }
+            new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-    // Collect prepared branches
-    let mut branches = Vec::new();
-    for handle in handles {
-        branches.push(handle.join().unwrap()?);
-    }
+            let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+            let snapshot_nodes = new_form.xfa_nodes().to_vec();
+            let snapshot_values = new_form.current_field_values();
+
+            Ok(PreparedBranch {
+                flattened_key,
+                snapshot_nodes,
+                snapshot_values,
+                state,
+            })
+        })
+        .collect();
 
     // Phase B: group by identical XFA state and recurse
     explore_with_dedup(
-        branches,
+        form,
+        branches?,
         global_field_order,
         rendered_states,
         collected_states,
@@ -731,8 +702,11 @@ fn explore_checkbox(
 }
 
 /// Explore all options of a dropdown field.
-/// Phase A: prepares one branch per option. Phase B: dedup + recurse.
+///
+/// Phase A: prepares one branch per option in parallel using rayon.
+/// Phase B: dedup + recurse via `explore_with_dedup` (reuses the passed form).
 fn explore_dropdown(
+    form: &mut XfaForm,
     exploration_state: ExplorationState,
     field_index: usize,
     field: &SelectableField,
@@ -744,43 +718,44 @@ fn explore_dropdown(
     init_values: Arc<HashMap<SomPath, String>>,
     seen_layouts: SeenLayouts,
 ) -> Result<(), crate::Error> {
-    // Phase A: spawn branch-preparation threads
-    let mut handles = Vec::new();
-    for (display_value, save_value) in options {
-        let field = field.clone();
-        let save_value = save_value.clone();
-        let display_value = display_value.clone();
+    // Phase A: prepare branches in parallel using rayon thread pool
+    let branches: Result<Vec<PreparedBranch>, crate::Error> = options
+        .par_iter()
+        .map(|(display_value, save_value)| {
+            let nodes = post_init_nodes.as_ref().clone();
+            let mut new_form =
+                XfaForm::from_post_init(nodes, &init_values).map_err(crate::Error::FormCreation)?;
 
-        let handle = spawn_branch(
-            post_init_nodes.clone(),
-            init_values.clone(),
-            exploration_state.clone(),
-            move |new_form, state| {
-                // Set the dropdown value and fire change event
-                let _ = new_form.set_value_as_user(field.path.as_str(), &save_value);
+            let _ = new_form.set_value_as_user(field.path.as_str(), save_value);
 
-                state.selections.push(Selection::standalone(
-                    field.path.clone(),
-                    display_value.clone(),
-                    SelectionKind::Dropdown,
-                ));
-                state.field_actions[field_index] = Some(FieldAction::Selected(save_value));
-                state.next_field_index = field_index + 1;
-            },
-        );
+            let mut state = exploration_state.clone();
+            state.selections.push(Selection::standalone(
+                field.path.clone(),
+                display_value.clone(),
+                SelectionKind::Dropdown,
+            ));
+            state.field_actions[field_index] = Some(FieldAction::Selected(save_value.clone()));
+            state.next_field_index = field_index + 1;
 
-        handles.push(handle);
-    }
+            new_form.refresh().map_err(crate::Error::FormCreation)?;
 
-    // Collect prepared branches
-    let mut branches = Vec::new();
-    for handle in handles {
-        branches.push(handle.join().unwrap()?);
-    }
+            let flattened_key = FlattenedKey::from_flattened(new_form.flattened());
+            let snapshot_nodes = new_form.xfa_nodes().to_vec();
+            let snapshot_values = new_form.current_field_values();
+
+            Ok(PreparedBranch {
+                flattened_key,
+                snapshot_nodes,
+                snapshot_values,
+                state,
+            })
+        })
+        .collect();
 
     // Phase B: group by identical XFA state and recurse
     explore_with_dedup(
-        branches,
+        form,
+        branches?,
         global_field_order,
         rendered_states,
         collected_states,
