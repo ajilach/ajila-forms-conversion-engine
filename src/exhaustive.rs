@@ -225,34 +225,59 @@ impl UnionFind {
     }
 }
 
-/// Extract field name references from a JavaScript script source.
+/// Categorised field reference: whether the script accesses `.presence`
+/// (which affects container visibility and all descendants) or just
+/// `.rawValue`/`.value` (which only affects the specific field).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum RefKind {
+    /// Script reads/writes `.presence` — toggling visibility of a container
+    /// affects all interactive fields inside it.
+    Presence,
+    /// Script reads/writes `.rawValue` or `.value` — only the specific field
+    /// is affected.
+    Value,
+    /// Script calls a method on the identifier (e.g., `soLocal.change()`) or
+    /// references via `resolveNode` — conservatively treated like `Value`.
+    Other,
+}
+
+/// A reference extracted from a script source, with its kind.
+#[derive(Debug, Clone)]
+struct FieldRef {
+    name: String,
+    kind: RefKind,
+}
+
+/// Extract field name references from a JavaScript script source,
+/// categorised by reference kind (presence vs value vs other).
 ///
 /// Uses regex to find patterns like:
-/// - `Name.presence` / `Name.rawValue` / `Name.value` (property access)
-/// - `resolveNode("path.to.field")` (explicit SOM resolution)
-///
-/// Returns a set of bare names or SOM path components that the script
-/// reads from or writes to. Filters out known non-field names like
-/// `this`, `xfa`, etc.
+/// - `Name.presence` → [`RefKind::Presence`]
+/// - `Name.rawValue` / `Name.value` → [`RefKind::Value`]
+/// - `Name.method(` → [`RefKind::Other`]
+/// - `resolveNode("path")` → [`RefKind::Other`]
 ///
 /// Script object names (like `soLocalLabelDefinition`) are NOT filtered —
 /// they are returned so that the caller can resolve them transitively.
-fn extract_field_references(source: &str) -> HashSet<String> {
-    let re_prop = Regex::new(
-        r"(\b[A-Za-z_]\w*)\.(?:presence|rawValue|value)"
+fn extract_field_references(source: &str) -> Vec<FieldRef> {
+    let re_presence = Regex::new(
+        r"(\b[A-Za-z_]\w*)\.presence"
+    ).expect("valid regex");
+
+    let re_value = Regex::new(
+        r"(\b[A-Za-z_]\w*)\.(?:rawValue|value)"
     ).expect("valid regex");
 
     let re_resolve = Regex::new(
         r#"resolveNode\([\s]*["']([^"']+)["'][\s]*\)"#
     ).expect("valid regex");
 
-    // Also match method calls on identifiers: `Name.methodName(`
-    // This catches script object calls like `soLocalLabelDefinition.change()`
     let re_method = Regex::new(
         r"(\b[A-Za-z_]\w*)\.\w+\("
     ).expect("valid regex");
 
-    let mut refs = HashSet::new();
+    let mut refs = Vec::new();
+    let mut seen: HashSet<(String, RefKind)> = HashSet::new();
 
     // Non-field names to ignore — only true JS globals, not script objects
     let ignore: HashSet<&str> = [
@@ -261,11 +286,18 @@ fn extract_field_references(source: &str) -> HashSet<String> {
         "parseInt", "parseFloat", "JSON",
     ].into_iter().collect();
 
-    for cap in re_prop.captures_iter(source) {
-        let name = cap[1].to_string();
-        if !ignore.contains(name.as_str()) {
-            refs.insert(name);
+    let mut add_ref = |name: String, kind: RefKind, seen: &mut HashSet<(String, RefKind)>| {
+        if !ignore.contains(name.as_str()) && seen.insert((name.clone(), kind.clone())) {
+            refs.push(FieldRef { name, kind });
         }
+    };
+
+    for cap in re_presence.captures_iter(source) {
+        add_ref(cap[1].to_string(), RefKind::Presence, &mut seen);
+    }
+
+    for cap in re_value.captures_iter(source) {
+        add_ref(cap[1].to_string(), RefKind::Value, &mut seen);
     }
 
     for cap in re_resolve.captures_iter(source) {
@@ -275,17 +307,14 @@ fn extract_field_references(source: &str) -> HashSet<String> {
             .trim_start_matches("xfa.form.");
         for part in clean.split('.') {
             let name = part.split('[').next().unwrap_or(part);
-            if !name.is_empty() && !ignore.contains(name) {
-                refs.insert(name.to_string());
+            if !name.is_empty() {
+                add_ref(name.to_string(), RefKind::Other, &mut seen);
             }
         }
     }
 
     for cap in re_method.captures_iter(source) {
-        let name = cap[1].to_string();
-        if !ignore.contains(name.as_str()) {
-            refs.insert(name);
-        }
+        add_ref(cap[1].to_string(), RefKind::Other, &mut seen);
     }
 
     refs
@@ -361,13 +390,17 @@ fn collect_script_object_sources(nodes: &[XfaNode]) -> HashMap<String, String> {
 fn extract_field_references_transitive(
     source: &str,
     script_objects: &HashMap<String, String>,
-) -> HashSet<String> {
+) -> Vec<FieldRef> {
     let mut all_refs = extract_field_references(source);
+    let mut seen_names: HashSet<(String, RefKind)> = all_refs
+        .iter()
+        .map(|r| (r.name.clone(), r.kind.clone()))
+        .collect();
     let mut visited_objects: HashSet<String> = HashSet::new();
     let mut queue: Vec<String> = all_refs
         .iter()
-        .filter(|r| script_objects.contains_key(r.as_str()))
-        .cloned()
+        .filter(|r| script_objects.contains_key(r.name.as_str()))
+        .map(|r| r.name.clone())
         .collect();
 
     while let Some(obj_name) = queue.pop() {
@@ -376,26 +409,19 @@ fn extract_field_references_transitive(
         }
         if let Some(obj_source) = script_objects.get(&obj_name) {
             let obj_refs = extract_field_references(obj_source);
-            for r in &obj_refs {
-                if all_refs.insert(r.clone()) && script_objects.contains_key(r.as_str()) {
-                    queue.push(r.clone());
+            for r in obj_refs {
+                let key = (r.name.clone(), r.kind.clone());
+                if seen_names.insert(key) {
+                    if script_objects.contains_key(r.name.as_str()) {
+                        queue.push(r.name.clone());
+                    }
+                    all_refs.push(r);
                 }
             }
         }
     }
 
     all_refs
-}
-
-/// Resolve a bare field name to all matching SOM paths in the XFA tree.
-///
-/// Returns all known paths for the given name, which may correspond to
-/// fields, subforms, or exclGroups at various depths.
-fn resolve_name_to_paths(name: &str, som_resolver: &SomResolver) -> Vec<SomPath> {
-    som_resolver
-        .get_paths_by_name(name)
-        .cloned()
-        .unwrap_or_default()
 }
 
 /// Collect all SOM paths of descendant interactive fields under a container.
@@ -491,35 +517,47 @@ fn partition_fields(
                     script_objects,
                 );
 
-                for ref_name in &refs {
+                for field_ref in &refs {
                     // Skip script object names themselves — they are not XFA fields
-                    if script_objects.contains_key(ref_name.as_str()) {
+                    if script_objects.contains_key(field_ref.name.as_str()) {
                         continue;
                     }
 
-                    let target_paths = resolve_name_to_paths(ref_name, som_resolver);
+                    // Use context-aware scoped resolution instead of global
+                    // name lookup. This ensures that `RB_Group` in section A's
+                    // script resolves to section A's exclGroup, not section B's.
+                    let target_path = match som_resolver.resolve_unqualified(
+                        &field_ref.name,
+                        &script_owner,
+                    ) {
+                        Some(p) => p,
+                        None => continue,
+                    };
 
-                    for target_path in &target_paths {
-                        // Case 1: target is directly a selectable field
-                        if let Some(&target_idx) = path_to_idx.get(target_path) {
-                            uf.union(idx, target_idx);
-                        }
+                    // Case 1: target is directly a selectable field
+                    if let Some(&target_idx) = path_to_idx.get(&target_path) {
+                        uf.union(idx, target_idx);
+                    }
 
-                        // Case 2: target is a container (subform/exclGroup) —
-                        // union with all descendant interactive fields
+                    // Case 2: target is a container whose presence is changed —
+                    // only then do we union with ALL descendant interactive
+                    // fields (hiding/showing a container affects all children).
+                    // For .rawValue/.value refs to containers, the container
+                    // itself is not a selectable field, so no union is needed.
+                    if field_ref.kind == RefKind::Presence {
                         let descendants =
-                            descendant_interactive_fields(target_path, &field_paths);
+                            descendant_interactive_fields(&target_path, &field_paths);
                         for desc in &descendants {
                             if let Some(&desc_idx) = path_to_idx.get(desc) {
                                 uf.union(idx, desc_idx);
                             }
                         }
+                    }
 
-                        // Case 3: target is an exclGroup that appears in radio_group_indices
-                        if let Some(rg_indices) = radio_group_indices.get(target_path) {
-                            for &rg_idx in rg_indices {
-                                uf.union(idx, rg_idx);
-                            }
+                    // Case 3: target is an exclGroup that appears in radio_group_indices
+                    if let Some(rg_indices) = radio_group_indices.get(&target_path) {
+                        for &rg_idx in rg_indices {
+                            uf.union(idx, rg_idx);
                         }
                     }
                 }
@@ -703,10 +741,6 @@ pub fn collect_states(
             .map(|mutex| mutex.into_inner().unwrap())
             .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
-        eprintln!(
-            "[exhaustive]   group {:?} → {} unique states",
-            group_indices, states.len()
-        );
 
         per_group_results.push(states);
     }
@@ -722,11 +756,6 @@ pub fn collect_states(
         &init_values,
         &script_registry,
     )?;
-
-    eprintln!(
-        "[exhaustive] combined cross-product → {} unique states",
-        combined.len()
-    );
 
     Ok(combined)
 }
