@@ -19,7 +19,7 @@ use crate::aem::converter::inline_text_to_html;
 use crate::aem::generate_aem_xml;
 use crate::aem::xml_writer::reformat_attributes;
 use crate::structured::{
-    FieldType, InlineNode, InlineText, ListNode, StructuredNode, TranslatableString,
+    FieldType, HeadingLevel, InlineNode, InlineText, ListNode, StructuredNode, TranslatableString,
 };
 
 // ============================================================================
@@ -610,9 +610,18 @@ fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> Translat
 fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut TranslationMap) {
     match node {
         StructuredNode::Heading(h) => {
-            extract_rich_text_translations(&h.content, master_lang, map, |html| {
-                format!("<p>{html}</p>")
-            });
+            match h.level {
+                // H1/H2 become panel jcr:title (plain text), so use plain text keys
+                HeadingLevel::H1 | HeadingLevel::H2 => {
+                    extract_from_inline_text(&h.content, master_lang, map);
+                }
+                // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys
+                _ => {
+                    extract_rich_text_translations(&h.content, master_lang, map, |html| {
+                        format!("<p>{html}</p>")
+                    });
+                }
+            }
         }
         StructuredNode::Paragraph(p) => {
             extract_rich_text_translations(&p.content, master_lang, map, |html| {
@@ -1218,7 +1227,47 @@ mod tests {
     }
 
     #[test]
-    fn translation_key_equals_fd_prefix_plus_value_for_heading() {
+    fn translation_key_for_h2_panel_title_is_plain_text() {
+        // H2 headings become panel jcr:title (plain text, no HTML wrapping)
+        use crate::structured::{
+            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+        };
+        use std::collections::HashMap;
+
+        let mut tmap = HashMap::new();
+        tmap.insert("en".into(), "Client".into());
+        tmap.insert("de".into(), "Kunde".into());
+
+        let node = StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+        });
+
+        let translations = extract_translations(&[node], "en");
+
+        // H2 panel titles use jcr:title (plain text), so the key must be plain text
+        let expected_key = "Client";
+        assert!(
+            translations.contains_key(expected_key),
+            "H2 panel title key must be plain text, got keys: {:?}",
+            translations.keys().collect::<Vec<_>>()
+        );
+
+        let sling_key = format!("fd_{}", expected_key);
+        assert_eq!(sling_key, "fd_Client");
+
+        assert_eq!(translations[expected_key]["de"], "Kunde");
+
+        // Must NOT have HTML-wrapped key
+        assert!(
+            !translations.contains_key("<p>Client</p>"),
+            "H2 panel title key must NOT have HTML wrapping"
+        );
+    }
+
+    #[test]
+    fn translation_key_for_h3_titledraw_includes_html_wrapping() {
+        // H3+ headings become TitleDraw _value (HTML-wrapped)
         use crate::structured::{
             HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
         };
@@ -1229,7 +1278,7 @@ mod tests {
         tmap.insert("de".into(), "Vereinbarung".into());
 
         let node = StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
+            level: HeadingLevel::H3,
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
         });
 
@@ -1238,7 +1287,7 @@ mod tests {
         let expected_key = "<p>Agreement</p>";
         assert!(
             translations.contains_key(expected_key),
-            "Heading translation key must include <p> wrapping, got keys: {:?}",
+            "H3 TitleDraw key must include <p> wrapping, got keys: {:?}",
             translations.keys().collect::<Vec<_>>()
         );
 
