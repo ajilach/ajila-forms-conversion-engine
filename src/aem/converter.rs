@@ -859,7 +859,7 @@ fn wire_conditions_recursive(
 // ============================================================================
 
 /// Convert `InlineText` to a simple HTML string.
-fn inline_text_to_html(text: &InlineText, language: &str) -> String {
+pub(crate) fn inline_text_to_html(text: &InlineText, language: &str) -> String {
     let mut out = String::new();
     for node in &text.0 {
         inline_node_to_html(node, language, &mut out);
@@ -902,7 +902,7 @@ fn inline_node_to_html(node: &InlineNode, language: &str, out: &mut String) {
     }
 }
 
-fn escape_html(s: &str) -> String {
+pub(crate) fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

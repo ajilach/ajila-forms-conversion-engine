@@ -13,6 +13,7 @@
 
 ## Project-specific
 
+- When running tests, use `cargo test --release` such that they are faster
 - Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.md).
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.

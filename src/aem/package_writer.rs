@@ -15,9 +15,12 @@ use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 use super::{AemConfig, AemNode};
+use crate::aem::converter::inline_text_to_html;
 use crate::aem::generate_aem_xml;
 use crate::aem::xml_writer::reformat_attributes;
-use crate::structured::{FieldType, InlineNode, InlineText, StructuredNode, TranslatableString};
+use crate::structured::{
+    FieldType, InlineNode, InlineText, ListNode, StructuredNode, TranslatableString,
+};
 
 // ============================================================================
 // Public API
@@ -606,8 +609,19 @@ fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> Translat
 
 fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut TranslationMap) {
     match node {
-        StructuredNode::Heading(h) => extract_from_inline_text(&h.content, master_lang, map),
-        StructuredNode::Paragraph(p) => extract_from_inline_text(&p.content, master_lang, map),
+        StructuredNode::Heading(h) => {
+            extract_rich_text_translations(&h.content, master_lang, map, |html| {
+                format!("<p>{html}</p>")
+            });
+        }
+        StructuredNode::Paragraph(p) => {
+            extract_rich_text_translations(&p.content, master_lang, map, |html| {
+                format!("<p>{html}</p>")
+            });
+        }
+        StructuredNode::List(list) => {
+            extract_list_translations(list, master_lang, map);
+        }
         StructuredNode::Field(f) => {
             if let Some(label) = &f.label {
                 extract_from_inline_text(label, master_lang, map);
@@ -679,6 +693,104 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut Transla
     }
 }
 
+/// Extract translations from an `InlineText` that will be rendered with HTML wrapping
+/// in the AEM `_value` attribute. The `wrap` closure must apply the same wrapping
+/// that the converter uses (e.g. `|html| format!("<p>{html}</p>")`) so that the
+/// translation key matches the actual `_value` content.
+fn extract_rich_text_translations(
+    text: &InlineText,
+    master_lang: &str,
+    map: &mut TranslationMap,
+    wrap: impl Fn(&str) -> String,
+) {
+    let mut langs = BTreeSet::new();
+    collect_languages_from_inline_text(text, &mut langs);
+    if langs.len() <= 1 {
+        return;
+    }
+
+    let master_html = wrap(&inline_text_to_html(text, master_lang));
+    let others: HashMap<String, String> = langs
+        .iter()
+        .filter(|l| l.as_str() != master_lang)
+        .map(|l| (l.clone(), wrap(&inline_text_to_html(text, l))))
+        .collect();
+    if !others.is_empty() {
+        map.insert(master_html, others);
+    }
+}
+
+/// Extract translations from a `ListNode`, rendering the full `<ul>/<ol>` HTML
+/// for each language so keys match the `_value` attribute.
+fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut TranslationMap) {
+    let mut langs = BTreeSet::new();
+    for item in &list.items {
+        collect_languages_from_inline_text(item, &mut langs);
+    }
+    if langs.len() <= 1 {
+        return;
+    }
+
+    let render_list = |lang: &str| -> String {
+        let tag = if list.list_style.is_ordered() {
+            "ol"
+        } else {
+            "ul"
+        };
+        let style_attr = if list.list_style.needs_css() {
+            format!(
+                " style=\"list-style-type: {};\"",
+                list.list_style.css_value()
+            )
+        } else {
+            String::new()
+        };
+        let items_html: String = list
+            .items
+            .iter()
+            .map(|item| {
+                let html = inline_text_to_html(item, lang);
+                format!("<li>{html}</li>")
+            })
+            .collect();
+        format!("<{tag}{style_attr}>{items_html}</{tag}>")
+    };
+
+    let master_html = render_list(master_lang);
+    let others: HashMap<String, String> = langs
+        .iter()
+        .filter(|l| l.as_str() != master_lang)
+        .map(|l| (l.clone(), render_list(l)))
+        .collect();
+    if !others.is_empty() {
+        map.insert(master_html, others);
+    }
+}
+
+/// Collect all language keys from `TranslatedText` nodes within an `InlineText`.
+fn collect_languages_from_inline_text(text: &InlineText, langs: &mut BTreeSet<String>) {
+    for node in &text.0 {
+        collect_languages_from_inline_node(node, langs);
+    }
+}
+
+fn collect_languages_from_inline_node(node: &InlineNode, langs: &mut BTreeSet<String>) {
+    match node {
+        InlineNode::TranslatedText(tmap) => {
+            langs.extend(tmap.keys().cloned());
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_languages_from_inline_node(inner, langs);
+        }
+        InlineNode::Link(link) => {
+            collect_languages_from_inline_text(&link.content, langs);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+/// Extract translations from plain inline text (for field labels, captions, etc.
+/// that are NOT wrapped in HTML tags).
 fn extract_from_inline_text(text: &InlineText, master_lang: &str, map: &mut TranslationMap) {
     for node in &text.0 {
         extract_from_inline_node(node, master_lang, map);
@@ -1063,6 +1175,157 @@ mod tests {
         assert!(
             dam_folder_xml.contains("lcFolder"),
             "DAM folder must have lcFolder"
+        );
+    }
+
+    #[test]
+    fn translation_key_equals_fd_prefix_plus_value_for_paragraph() {
+        use crate::structured::{InlineNode, InlineText, ParagraphNode, StructuredNode};
+        use std::collections::HashMap;
+
+        let mut tmap = HashMap::new();
+        tmap.insert("en".into(), "Authorized representative(s)".into());
+        tmap.insert("de".into(), "Vertretungsberechtigte(r)".into());
+
+        let node = StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+        });
+
+        let translations = extract_translations(&[node], "en");
+
+        // The key must be the full _value content (with HTML wrapping)
+        let expected_key = "<p>Authorized representative(s)</p>";
+        assert!(
+            translations.contains_key(expected_key),
+            "Translation key must be the full HTML value: expected {:?}, got keys: {:?}",
+            expected_key,
+            translations.keys().collect::<Vec<_>>()
+        );
+
+        // The translated value must also be wrapped
+        let de_val = &translations[expected_key]["de"];
+        assert_eq!(
+            de_val, "<p>Vertretungsberechtigte(r)</p>",
+            "Translated value must include HTML wrapping"
+        );
+
+        // Verify sling:key = fd_ + _value
+        let sling_key = format!("fd_{}", expected_key);
+        assert_eq!(
+            sling_key, "fd_<p>Authorized representative(s)</p>",
+            "sling:key must be fd_ prefixed _value content"
+        );
+    }
+
+    #[test]
+    fn translation_key_equals_fd_prefix_plus_value_for_heading() {
+        use crate::structured::{
+            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+        };
+        use std::collections::HashMap;
+
+        let mut tmap = HashMap::new();
+        tmap.insert("en".into(), "Agreement".into());
+        tmap.insert("de".into(), "Vereinbarung".into());
+
+        let node = StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+        });
+
+        let translations = extract_translations(&[node], "en");
+
+        let expected_key = "<p>Agreement</p>";
+        assert!(
+            translations.contains_key(expected_key),
+            "Heading translation key must include <p> wrapping, got keys: {:?}",
+            translations.keys().collect::<Vec<_>>()
+        );
+
+        let sling_key = format!("fd_{}", expected_key);
+        assert_eq!(sling_key, "fd_<p>Agreement</p>");
+
+        assert_eq!(translations[expected_key]["de"], "<p>Vereinbarung</p>");
+    }
+
+    #[test]
+    fn translation_key_equals_fd_prefix_plus_value_for_list() {
+        use crate::document::ListStyleType;
+        use crate::structured::{InlineNode, InlineText, ListNode, StructuredNode};
+        use std::collections::HashMap;
+
+        let mut tmap1 = HashMap::new();
+        tmap1.insert("en".into(), "Item A".into());
+        tmap1.insert("de".into(), "Punkt A".into());
+        let mut tmap2 = HashMap::new();
+        tmap2.insert("en".into(), "Item B".into());
+        tmap2.insert("de".into(), "Punkt B".into());
+
+        let node = StructuredNode::List(ListNode {
+            list_style: ListStyleType::Disc,
+            items: vec![
+                InlineText(vec![InlineNode::TranslatedText(tmap1)]),
+                InlineText(vec![InlineNode::TranslatedText(tmap2)]),
+            ],
+        });
+
+        let translations = extract_translations(&[node], "en");
+
+        let expected_key = "<ul><li>Item A</li><li>Item B</li></ul>";
+        assert!(
+            translations.contains_key(expected_key),
+            "List translation key must be full HTML, got keys: {:?}",
+            translations.keys().collect::<Vec<_>>()
+        );
+
+        let sling_key = format!("fd_{}", expected_key);
+        assert_eq!(sling_key, "fd_<ul><li>Item A</li><li>Item B</li></ul>");
+
+        assert_eq!(
+            translations[expected_key]["de"],
+            "<ul><li>Punkt A</li><li>Punkt B</li></ul>"
+        );
+    }
+
+    #[test]
+    fn field_label_translation_key_is_plain_text() {
+        use crate::structured::{
+            FieldId, FieldNode, FieldType, InlineNode, InlineText, StructuredNode,
+        };
+        use std::collections::HashMap;
+
+        let mut tmap = HashMap::new();
+        tmap.insert("en".into(), "Company".into());
+        tmap.insert("de".into(), "Firma".into());
+
+        let node = StructuredNode::Field(FieldNode {
+            label: Some(InlineText(vec![InlineNode::TranslatedText(tmap)])),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            name: FieldId::from("test"),
+            som_path: None,
+            value: None,
+            placeholder: None,
+        });
+
+        let translations = extract_translations(&[node], "en");
+
+        // Field labels use jcr:title (plain text), so the key should NOT have HTML wrapping
+        let expected_key = "Company";
+        assert!(
+            translations.contains_key(expected_key),
+            "Field label key must be plain text, got keys: {:?}",
+            translations.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(translations[expected_key]["de"], "Firma");
+
+        // Must NOT contain HTML-wrapped key
+        assert!(
+            !translations.contains_key("<p>Company</p>"),
+            "Field label key must NOT have HTML wrapping"
         );
     }
 }
