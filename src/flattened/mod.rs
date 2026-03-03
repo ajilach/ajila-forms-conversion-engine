@@ -4115,6 +4115,137 @@ impl Flattened {
                                 &child_ctx,
                             )?;
                         }
+                        "area" => {
+                            // Per XFA spec: area elements group related objects.
+                            // "Area objects grow to the minimum size required to hold the
+                            //  nominal extents of all the layout objects they contain.
+                            //  Area objects do not have margins or borders of their own.
+                            //  [...] when an object within the area object uses positioned
+                            //  layout the X and Y positions are specified relative to the
+                            //  area object."
+                            //
+                            // Areas participate in their parent's flow layout (lr-tb, tb, etc.)
+                            // but internally use positioned layout for their children.
+
+                            // Pre-scan children to compute the area's natural dimensions.
+                            // Per spec, the area grows to the minimum bounding box that
+                            // holds all children's nominal extents.
+                            let (area_width, area_height) =
+                                Self::compute_area_dimensions(node, ctx);
+
+                            // Area's own x/y offset (defaults to 0)
+                            let area_x = node.x.unwrap_or(Decimal::ZERO);
+                            let area_y = node.y.unwrap_or(Decimal::ZERO);
+
+                            // Position the area within the parent's flow, similar to how
+                            // subforms are positioned via compute_position_for_node_with_children.
+                            // Areas have no margins or borders per spec.
+                            let outer_pos = match parent_layout {
+                                Layout::Position => {
+                                    Position::new(
+                                        parent_position.x + area_x,
+                                        parent_position.y + area_y,
+                                        area_width,
+                                        area_height,
+                                    )
+                                }
+                                Layout::TopToBottom => {
+                                    let pos = Position::new(
+                                        parent_position.x,
+                                        current_y,
+                                        area_width,
+                                        area_height,
+                                    );
+                                    current_y += area_height;
+                                    pos
+                                }
+                                Layout::LeftToRightTopToBottom | Layout::LeftToRight => {
+                                    // Check if we need to wrap to next line
+                                    if current_x + area_width
+                                        > parent_position.x + parent_position.width
+                                        && current_x > parent_position.x
+                                    {
+                                        current_x = parent_position.x;
+                                        current_y += max_height_in_row;
+                                        max_height_in_row = Decimal::ZERO;
+                                    }
+                                    let pos = Position::new(
+                                        current_x,
+                                        current_y,
+                                        area_width,
+                                        area_height,
+                                    );
+                                    current_x += area_width;
+                                    max_height_in_row = max_height_in_row.max(area_height);
+                                    pos
+                                }
+                                Layout::RightToLeftTopToBottom => {
+                                    let right_edge =
+                                        parent_position.x + parent_position.width;
+                                    if current_x - area_width < parent_position.x
+                                        && current_x < right_edge
+                                    {
+                                        current_x = right_edge;
+                                        current_y += max_height_in_row;
+                                        max_height_in_row = Decimal::ZERO;
+                                    }
+                                    let pos_x = current_x - area_width;
+                                    let pos = Position::new(
+                                        pos_x,
+                                        current_y,
+                                        area_width,
+                                        area_height,
+                                    );
+                                    current_x = pos_x;
+                                    max_height_in_row = max_height_in_row.max(area_height);
+                                    pos
+                                }
+                                _ => {
+                                    // Row, Table, etc. — treat like positioned
+                                    Position::new(
+                                        parent_position.x + area_x,
+                                        parent_position.y + area_y,
+                                        area_width,
+                                        area_height,
+                                    )
+                                }
+                            };
+
+                            // For positioned layout, track the max extent
+                            if parent_layout == Layout::Position {
+                                let node_bottom =
+                                    (outer_pos.y - parent_position.y) + outer_pos.height;
+                                max_extent_y = max_extent_y.max(node_bottom);
+                            }
+
+                            // Recurse into children with the area's position as origin
+                            // and Layout::Position (area's default internal layout per spec)
+                            let children_height = Self::flatten_nodes(
+                                &node.children,
+                                outer_pos,
+                                Layout::Position,
+                                flattened_children,
+                                &child_ctx,
+                            )?;
+
+                            // Post-recursion: if children grew beyond pre-computed height,
+                            // update parent flow state (same pattern as subform growable containers)
+                            let effective_height = children_height.max(area_height);
+                            if effective_height > area_height {
+                                match parent_layout {
+                                    Layout::TopToBottom => {
+                                        current_y =
+                                            outer_pos.y + effective_height;
+                                    }
+                                    Layout::LeftToRightTopToBottom
+                                    | Layout::LeftToRight => {
+                                        max_height_in_row =
+                                            max_height_in_row.max(effective_height);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                         // Skip data-only elements - these are Form DOM data, not layout
                         _ if tag_name.starts_with("xfa:")
                             || tag_name.starts_with("dd:")
@@ -4521,6 +4652,68 @@ impl Flattened {
         // Return the height consumed by this node
         let consumed_height = outer_pos.height;
         Ok((outer_pos, content_pos, layout, consumed_height))
+    }
+
+    /// Compute the natural dimensions of an `<area>` element by scanning its children.
+    /// Per XFA spec: "Area objects grow to the minimum size required to hold the nominal
+    /// extents of all the layout objects they contain."
+    ///
+    /// Area elements use positioned layout internally, so the bounding box is
+    /// determined by the maximum (child.x + child.w, child.y + child.h) across
+    /// all non-hidden children. For children without explicit w/h, estimates are
+    /// used (min_w/min_h, font-based sizing, or 0).
+    fn compute_area_dimensions(node: &XfaNode, ctx: &FlattenContext) -> (Num, Num) {
+        let mut max_right = Decimal::ZERO;
+        let mut max_bottom = Decimal::ZERO;
+
+        for child in &node.children {
+            // Skip hidden/inactive children
+            let presence = ctx.get_effective_presence(child);
+            if presence.should_skip_layout() {
+                continue;
+            }
+
+            let cx = child.x.unwrap_or(Decimal::ZERO);
+            let cy = child.y.unwrap_or(Decimal::ZERO);
+
+            // Estimate child width
+            let cw = child.w.unwrap_or_else(|| child.min_w.unwrap_or(Decimal::ZERO));
+
+            // Estimate child height: use explicit h, else min_h, else font-based guess
+            let ch = child.h.unwrap_or_else(|| {
+                child.min_h.unwrap_or_else(|| {
+                    // Font-based estimate for leaf nodes
+                    match &child.kind {
+                        XfaNodeKind::Field => {
+                            let fs = child
+                                .font
+                                .as_ref()
+                                .map(|f| f.size)
+                                .unwrap_or_else(|| num(10.0));
+                            fs * num(1.4)
+                                + child.margin_top.unwrap_or(Decimal::ZERO)
+                                + child.margin_bottom.unwrap_or(Decimal::ZERO)
+                        }
+                        XfaNodeKind::Draw | XfaNodeKind::Element { .. } => {
+                            let fs = child
+                                .font
+                                .as_ref()
+                                .map(|f| f.size)
+                                .unwrap_or_else(|| num(10.0));
+                            fs * num(1.4)
+                                + child.margin_top.unwrap_or(Decimal::ZERO)
+                                + child.margin_bottom.unwrap_or(Decimal::ZERO)
+                        }
+                        _ => Decimal::ZERO,
+                    }
+                })
+            });
+
+            max_right = max_right.max(cx + cw);
+            max_bottom = max_bottom.max(cy + ch);
+        }
+
+        (max_right, max_bottom)
     }
 
     /// Apply anchor type adjustment to coordinates

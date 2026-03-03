@@ -383,9 +383,16 @@ fn convert_list(
     ctx: &mut ConversionContext,
     colspan: u32,
 ) -> AemNode {
-    let tag = if list.list_style.is_ordered() { "ol" } else { "ul" };
+    let tag = if list.list_style.is_ordered() {
+        "ol"
+    } else {
+        "ul"
+    };
     let style_attr = if list.list_style.needs_css() {
-        format!(" style=\"list-style-type: {};\"", list.list_style.css_value())
+        format!(
+            " style=\"list-style-type: {};\"",
+            list.list_style.css_value()
+        )
     } else {
         String::new()
     };
