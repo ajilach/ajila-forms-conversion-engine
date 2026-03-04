@@ -523,26 +523,7 @@ fn merge_translatable_string(
     other_lang: &str,
 ) -> Option<TranslatableString> {
     match (base, other) {
-        (Some(a), Some(b)) => {
-            let mut map = HashMap::new();
-            match a {
-                TranslatableString::Plain(s) => {
-                    map.insert(base_lang.to_string(), s.clone());
-                }
-                TranslatableString::Translated(m) => {
-                    map.extend(m.clone());
-                }
-            }
-            match b {
-                TranslatableString::Plain(s) => {
-                    map.insert(other_lang.to_string(), s.clone());
-                }
-                TranslatableString::Translated(m) => {
-                    map.extend(m.clone());
-                }
-            }
-            Some(TranslatableString::Translated(map))
-        }
+        (Some(a), Some(b)) => Some(a.merge(base_lang, b, other_lang)),
         (Some(a), None) => Some(a.clone()),
         (None, Some(b)) => Some(b.clone()),
         (None, None) => None,
@@ -599,24 +580,7 @@ fn merge_translatable_string_values(
     other: &TranslatableString,
     other_lang: &str,
 ) -> TranslatableString {
-    let mut map = HashMap::new();
-    match base {
-        TranslatableString::Plain(s) => {
-            map.insert(base_lang.to_string(), s.clone());
-        }
-        TranslatableString::Translated(m) => {
-            map.extend(m.clone());
-        }
-    }
-    match other {
-        TranslatableString::Plain(s) => {
-            map.insert(other_lang.to_string(), s.clone());
-        }
-        TranslatableString::Translated(m) => {
-            map.extend(m.clone());
-        }
-    }
-    TranslatableString::Translated(map)
+    base.merge(base_lang, other, other_lang)
 }
 
 // ============================================================================

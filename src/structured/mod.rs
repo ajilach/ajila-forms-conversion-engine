@@ -251,6 +251,30 @@ impl TranslatableString {
             TranslatableString::Translated(map) => map.values().any(|s| s.contains(needle)),
         }
     }
+
+    /// Merge two `TranslatableString` values, combining their translations into a
+    /// single `Translated` map. `Plain` values are inserted under their respective
+    /// language keys. Already-`Translated` maps are merged directly.
+    pub fn merge(&self, self_lang: &str, other: &Self, other_lang: &str) -> Self {
+        let mut map = std::collections::HashMap::new();
+        match self {
+            TranslatableString::Plain(s) => {
+                map.insert(self_lang.to_string(), s.clone());
+            }
+            TranslatableString::Translated(m) => {
+                map.extend(m.clone());
+            }
+        }
+        match other {
+            TranslatableString::Plain(s) => {
+                map.insert(other_lang.to_string(), s.clone());
+            }
+            TranslatableString::Translated(m) => {
+                map.extend(m.clone());
+            }
+        }
+        TranslatableString::Translated(map)
+    }
 }
 
 impl std::fmt::Display for TranslatableString {
