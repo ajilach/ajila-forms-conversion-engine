@@ -20,9 +20,7 @@
 //! Header, Footer, and InlineField groups are ignored for now.
 
 use crate::document::{Document, GroupKind};
-use crate::flattened::{
-    Bounds, FlattenedNode, FlattenedNodeKind, Hint, RichRun, RichText, WidgetKind,
-};
+use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
     HeadingNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
@@ -248,21 +246,19 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let nodes = self.doc.collect_nodes(group_idx);
                 if nodes.len() == 1 {
                     let node = nodes[0];
-                    for hint in &node.hints {
-                        if let Hint::RichContent(rich_text) = hint {
-                            let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
-                            if paragraphs.len() > 1 {
-                                // Multiple paragraphs - wrap in a GroupNode
-                                return Some(StructuredNode::Group(GroupNode {
-                                    children: paragraphs,
-                                }));
-                            } else if paragraphs.len() == 1 {
-                                // Single paragraph - return it directly
-                                return Some(paragraphs.into_iter().next().unwrap());
-                            }
-                            // No paragraphs (all empty) - return None
-                            return None;
+                    if let Some(rich_text) = node.rich_text() {
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                        if paragraphs.len() > 1 {
+                            // Multiple paragraphs - wrap in a GroupNode
+                            return Some(StructuredNode::Group(GroupNode {
+                                children: paragraphs,
+                            }));
+                        } else if paragraphs.len() == 1 {
+                            // Single paragraph - return it directly
+                            return Some(paragraphs.into_iter().next().unwrap());
                         }
+                        // No paragraphs (all empty) - return None
+                        return None;
                     }
                 }
 
@@ -475,20 +471,18 @@ impl<'a, 'b> Converter<'a, 'b> {
                     None
                 } else {
                     // Check if this node has rich text with multiple paragraphs
-                    for hint in &node.hints {
-                        if let Hint::RichContent(rich_text) = hint {
-                            let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
-                            if paragraphs.len() > 1 {
-                                // Multiple paragraphs - wrap in a GroupNode
-                                return Some(StructuredNode::Group(GroupNode {
-                                    children: paragraphs,
-                                }));
-                            } else if paragraphs.len() == 1 {
-                                // Single paragraph - return it directly
-                                return Some(paragraphs.into_iter().next().unwrap());
-                            }
-                            // No paragraphs (all empty) - fall through to None
+                    if let Some(rich_text) = node.rich_text() {
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                        if paragraphs.len() > 1 {
+                            // Multiple paragraphs - wrap in a GroupNode
+                            return Some(StructuredNode::Group(GroupNode {
+                                children: paragraphs,
+                            }));
+                        } else if paragraphs.len() == 1 {
+                            // Single paragraph - return it directly
+                            return Some(paragraphs.into_iter().next().unwrap());
                         }
+                        // No paragraphs (all empty) - fall through to None
                     }
                     // No rich text or fallback - use plain text
                     let text = self.build_inline_text_from_node(node);
@@ -576,11 +570,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                         }
                         // Extract ExclGroupSomPath from first field's hints
                         if excl_group_som_path.is_none() {
-                            for hint in &node.hints {
-                                if let Hint::ExclGroupSomPath(path) = hint {
-                                    excl_group_som_path = Some(path.clone());
-                                    break;
-                                }
+                            if let Some(path) = node.excl_group_som_path() {
+                                excl_group_som_path = Some(path.clone());
                             }
                         }
                     }
@@ -750,7 +741,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Use the full SOM path as the field name so it matches the condition
         // field_name in conditionals (consistent with radio buttons which use
         // the ExclGroupSomPath).
-        let field_som_path = self.get_som_path(node)
+        let field_som_path = self
+            .get_som_path(node)
             .cloned()
             .unwrap_or_else(|| SomPath::new(name.clone()));
 
@@ -767,43 +759,41 @@ impl<'a, 'b> Converter<'a, 'b> {
     /// Determine FieldType from widget hints.
     fn determine_field_type(&self, node: &FlattenedNode) -> FieldType {
         // Check for widget type hint
-        for hint in &node.hints {
-            if let Hint::WidgetType(widget) = hint {
-                return match widget {
-                    WidgetKind::Text => self.text_field_type(node),
-                    WidgetKind::TextArea => FieldType::Text {
-                        regex: self.get_format_pattern(node),
-                        max_length: self.get_max_length(node),
-                        min_length: None,
-                    },
-                    WidgetKind::Checkbox => FieldType::Bool,
-                    WidgetKind::Radio => FieldType::Radio { options: vec![] },
-                    WidgetKind::Dropdown => {
-                        let options = self.get_dropdown_options(node);
-                        FieldType::Select { options }
+        if let Some(widget) = node.widget_type() {
+            return match widget {
+                WidgetKind::Text => self.text_field_type(node),
+                WidgetKind::TextArea => FieldType::Text {
+                    regex: self.get_format_pattern(node),
+                    max_length: self.get_max_length(node),
+                    min_length: None,
+                },
+                WidgetKind::Checkbox => FieldType::Bool,
+                WidgetKind::Radio => FieldType::Radio { options: vec![] },
+                WidgetKind::Dropdown => {
+                    let options = self.get_dropdown_options(node);
+                    FieldType::Select { options }
+                }
+                WidgetKind::Date | WidgetKind::DateTime => FieldType::Date,
+                WidgetKind::Time => FieldType::Text {
+                    regex: None,
+                    max_length: None,
+                    min_length: None,
+                },
+                WidgetKind::Numeric => {
+                    // TODO: extract min/max/step from validation
+                    FieldType::Number {
+                        min: None,
+                        max: None,
+                        step: None,
                     }
-                    WidgetKind::Date | WidgetKind::DateTime => FieldType::Date,
-                    WidgetKind::Time => FieldType::Text {
-                        regex: None,
-                        max_length: None,
-                        min_length: None,
-                    },
-                    WidgetKind::Numeric => {
-                        // TODO: extract min/max/step from validation
-                        FieldType::Number {
-                            min: None,
-                            max: None,
-                            step: None,
-                        }
-                    }
-                    WidgetKind::Password => FieldType::Text {
-                        regex: None,
-                        max_length: self.get_max_length(node),
-                        min_length: None,
-                    },
-                    _ => self.text_field_type(node),
-                };
-            }
+                }
+                WidgetKind::Password => FieldType::Text {
+                    regex: None,
+                    max_length: self.get_max_length(node),
+                    min_length: None,
+                },
+                _ => self.text_field_type(node),
+            };
         }
 
         // Default to text
@@ -849,65 +839,40 @@ impl<'a, 'b> Converter<'a, 'b> {
     // ========================================================================
 
     fn is_interactive(&self, node: &FlattenedNode) -> bool {
-        for hint in &node.hints {
-            if let Hint::FieldBehavior { access, .. } = hint {
-                return access.is_interactive();
-            }
-        }
-        true // Default to interactive
+        node.is_interactive()
     }
 
     fn get_format_pattern(&self, node: &FlattenedNode) -> Option<String> {
-        for hint in &node.hints {
-            if let Hint::Validation { format_pattern, .. } = hint {
-                return format_pattern.clone();
-            }
-        }
-        None
+        node.validation().and_then(|(_, fmt, _)| fmt.cloned())
     }
 
     /// Extract dropdown options from a Hint::Dropdown, mapping to NameValue pairs.
     fn get_dropdown_options(&self, node: &FlattenedNode) -> Vec<NameValue> {
-        for hint in &node.hints {
-            if let Hint::Dropdown { options, .. } = hint {
-                return options
+        node.dropdown()
+            .map(|(options, _, _)| {
+                options
                     .iter()
                     .map(|(display, save)| NameValue {
                         name: TranslatableString::Plain(display.clone()),
                         value: InputValue::Text(save.clone()),
                     })
-                    .collect();
-            }
-        }
-        vec![]
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn get_max_length(&self, node: &FlattenedNode) -> Option<usize> {
-        for hint in &node.hints {
-            if let Hint::FieldBehavior { max_length, .. } = hint {
-                return max_length.map(|n| n as usize);
-            }
-        }
-        None
+        node.field_behavior()
+            .and_then(|(_, _, max_len, _)| max_len.map(|n| n as usize))
     }
 
     fn get_placeholder(&self, node: &FlattenedNode) -> Option<String> {
-        for hint in &node.hints {
-            if let Hint::Accessibility { tool_tip, .. } = hint {
-                return tool_tip.clone();
-            }
-        }
-        None
+        node.accessibility().and_then(|(_, tip, _)| tip.cloned())
     }
 
     /// Extract the SOM path from a field's hints.
     fn get_som_path<'n>(&self, node: &'n FlattenedNode) -> Option<&'n SomPath> {
-        for hint in &node.hints {
-            if let Hint::SomPath(path) = hint {
-                return Some(path);
-            }
-        }
-        None
+        node.som_path()
     }
 
     /// Get a FieldId from a FlattenedNode's SOM path hint, falling back to node name.
@@ -960,17 +925,15 @@ impl<'a, 'b> Converter<'a, 'b> {
     /// Append InlineNodes from a FlattenedNode to the result vec.
     fn append_inline_nodes_from_node(&self, node: &FlattenedNode, result: &mut Vec<InlineNode>) {
         // Check for rich text content
-        for hint in &node.hints {
-            if let Hint::RichContent(rich_text) = hint {
-                // Only use rich text if it has actual text content (non-empty runs)
-                let has_content = rich_text
-                    .paragraphs
-                    .iter()
-                    .any(|p| p.runs.iter().any(|r| !r.text.is_empty()));
-                if has_content {
-                    self.append_inline_nodes_from_rich_text(rich_text, result);
-                    return;
-                }
+        if let Some(rich_text) = node.rich_text() {
+            // Only use rich text if it has actual text content (non-empty runs)
+            let has_content = rich_text
+                .paragraphs
+                .iter()
+                .any(|p| p.runs.iter().any(|r| !r.text.is_empty()));
+            if has_content {
+                self.append_inline_nodes_from_rich_text(rich_text, result);
+                return;
             }
         }
 

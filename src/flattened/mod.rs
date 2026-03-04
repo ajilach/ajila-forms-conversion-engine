@@ -978,6 +978,34 @@ impl FlattenedNode {
             .unwrap_or(true) // Default to interactive if no hint
     }
 
+    /// Get the SOM path hint if present
+    pub fn som_path(&self) -> Option<&SomPath> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::SomPath(p) => Some(p),
+            _ => None,
+        })
+    }
+
+    /// Get the exclusion group SOM path hint if present
+    pub fn excl_group_som_path(&self) -> Option<&SomPath> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::ExclGroupSomPath(p) => Some(p),
+            _ => None,
+        })
+    }
+
+    /// Get dropdown options if present
+    pub fn dropdown(&self) -> Option<(&[(String, String)], bool, bool)> {
+        self.hints.iter().find_map(|h| match h {
+            Hint::Dropdown {
+                options,
+                text_entry,
+                multi_select,
+            } => Some((options.as_slice(), *text_entry, *multi_select)),
+            _ => None,
+        })
+    }
+
     // ========================================================================
     // Font property helpers
     // ========================================================================
