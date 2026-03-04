@@ -618,6 +618,30 @@ pub enum XfaNodeKind {
 }
 
 impl XfaNodeKind {
+    /// Returns `true` if this kind represents a subform (dedicated or generic element).
+    pub fn is_subform(&self) -> bool {
+        matches!(self, XfaNodeKind::Subform)
+            || matches!(self, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform")
+    }
+
+    /// Returns `true` if this kind represents a field (dedicated or generic element).
+    pub fn is_field(&self) -> bool {
+        matches!(self, XfaNodeKind::Field)
+            || matches!(self, XfaNodeKind::Element { tag_name, .. } if tag_name == "field")
+    }
+
+    /// Returns `true` if this kind represents an exclusion group (dedicated or generic element).
+    pub fn is_exclgroup(&self) -> bool {
+        matches!(self, XfaNodeKind::ExclGroup)
+            || matches!(self, XfaNodeKind::Element { tag_name, .. } if tag_name == "exclGroup")
+    }
+
+    /// Returns `true` if this kind represents a draw element (dedicated or generic element).
+    pub fn is_draw(&self) -> bool {
+        matches!(self, XfaNodeKind::Draw)
+            || matches!(self, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw")
+    }
+
     /// Map an XML tag name to the corresponding `XfaNodeKind`.
     ///
     /// Known XFA tags are mapped to their dedicated variants; everything else
@@ -1453,8 +1477,7 @@ impl XfaNode {
 /// Find the root content subform (the first named `<subform>` that is not a `<pageSet>`).
 pub fn find_root_subform(xfa_nodes: &[XfaNode]) -> Option<&XfaNode> {
     for node in xfa_nodes {
-        let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-            || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
+        let is_subform = node.kind.is_subform();
         let is_page_set =
             matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "pageSet");
 

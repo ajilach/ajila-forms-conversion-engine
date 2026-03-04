@@ -532,8 +532,7 @@ impl ScriptExecutor {
                 let node_id = node.attributes.get("id").cloned().unwrap_or_default();
 
                 if let Some(parent) = parent_key {
-                    let is_field = matches!(node.kind, XfaNodeKind::Field)
-                        || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
+                    let is_field = node.kind.is_field();
 
                     if is_field && !node_name.is_empty() {
                         map.entry(parent.to_string())
@@ -542,9 +541,8 @@ impl ScriptExecutor {
                     }
                 }
 
-                let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
+                let is_subform = node.kind.is_subform();
+                let is_exclgroup = node.kind.is_exclgroup();
 
                 if (is_subform || is_exclgroup) && !node_name.is_empty() {
                     let key = if !node_id.is_empty() {
@@ -652,9 +650,8 @@ impl ScriptExecutor {
             let name = node.name.clone().unwrap_or_default();
             let node_id = node.attributes.get("id").cloned().unwrap_or_default();
 
-            let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-                || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-            let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
+            let is_subform = node.kind.is_subform();
+            let is_exclgroup = node.kind.is_exclgroup();
 
             // Build the full SOM path for this node
             let full_path = if !name.is_empty() {
@@ -729,13 +726,10 @@ impl ScriptExecutor {
                     continue;
                 }
 
-                let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                let is_field = matches!(node.kind, XfaNodeKind::Field)
-                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                let is_exclgroup = matches!(node.kind, XfaNodeKind::ExclGroup);
-                let is_draw = matches!(node.kind, XfaNodeKind::Draw)
-                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
+                let is_subform = node.kind.is_subform();
+                let is_field = node.kind.is_field();
+                let is_exclgroup = node.kind.is_exclgroup();
+                let is_draw = node.kind.is_draw();
 
                 if !is_subform && !is_field && !is_exclgroup && !is_draw {
                     register_nodes_recursive(&node.children, parent_path, engine, false);

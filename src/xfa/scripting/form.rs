@@ -1078,7 +1078,7 @@ impl XfaForm {
         values: &HashMap<String, String>,
     ) {
         // If this node is a draw/field with embeds, resolve it directly
-        let is_draw_or_field = matches!(node.kind, XfaNodeKind::Draw | XfaNodeKind::Field);
+        let is_draw_or_field = node.kind.is_draw() || node.kind.is_field();
         if is_draw_or_field && Self::node_has_embeds(node) {
             if let Some(text) = Self::compute_resolved_text(node, id_map, values) {
                 Self::set_draw_value_text(node, &text);
@@ -1399,7 +1399,7 @@ impl XfaForm {
 
             for node in nodes {
                 let node_name = node.name.as_deref();
-                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
+                let is_excl_group = node.kind.is_exclgroup();
 
                 let node_path = if let Some(name) = node_name {
                     if current_path.is_empty() {
@@ -1455,7 +1455,7 @@ impl XfaForm {
             current_excl_group: Option<&str>,
         ) -> Option<String> {
             for node in nodes {
-                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
+                let is_excl_group = node.kind.is_exclgroup();
 
                 let excl_group_for_children = if is_excl_group {
                     node.name.as_deref()
@@ -1620,11 +1620,9 @@ impl XfaForm {
                     let name = node.name.clone().unwrap_or_default();
                     let id = node.attributes.get("id").cloned().unwrap_or_default();
 
-                    let is_field = matches!(node.kind, XfaNodeKind::Field)
-                        || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "field");
-                    let is_subform = matches!(node.kind, XfaNodeKind::Subform)
-                        || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform");
-                    let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
+                    let is_field = node.kind.is_field();
+                    let is_subform = node.kind.is_subform();
+                    let is_excl_group = node.kind.is_exclgroup();
 
                     if is_field
                         && !name.is_empty()
@@ -1987,13 +1985,12 @@ impl XfaForm {
                     None => path.to_string(),
                 };
 
-                let is_excl_group = matches!(node.kind, XfaNodeKind::ExclGroup);
+                let is_excl_group = node.kind.is_exclgroup();
 
-                let is_draw = matches!(node.kind, XfaNodeKind::Draw)
-                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "draw");
+                let is_draw = node.kind.is_draw();
 
-                let is_field = matches!(node.kind, XfaNodeKind::Field);
-                let is_subform = matches!(node.kind, XfaNodeKind::Subform);
+                let is_field = node.kind.is_field();
+                let is_subform = node.kind.is_subform();
 
                 if (is_field || is_subform || is_excl_group || is_draw)
                     && let Some(name) = &node.name
