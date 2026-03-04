@@ -304,7 +304,7 @@ fn get_box(doc: &Document, obj: &Object, key: &[u8]) -> Option<[f64; 4]> {
     ])
 }
 
-fn obj_to_f64(obj: &Object) -> Option<f64> {
+pub(crate) fn obj_to_f64(obj: &Object) -> Option<f64> {
     match obj {
         Object::Integer(n) => Some(*n as f64),
         Object::Real(f) => Some(*f as f64),

@@ -444,9 +444,5 @@ fn resolve<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
 }
 
 fn obj_to_f64(obj: &Object) -> Option<f64> {
-    match obj {
-        Object::Integer(n) => Some(*n as f64),
-        Object::Real(f) => Some(*f as f64),
-        _ => None,
-    }
+    super::obj_to_f64(obj)
 }
