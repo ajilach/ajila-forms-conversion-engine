@@ -21,10 +21,10 @@ pub fn run_blueprint_pipeline(
     state.step = ProcessingStep::Parsing;
     on_progress(&state);
 
-    let mut parsed = Vec::new();
+    let mut blueprints = Vec::new();
     let mut any_xfa = false;
     for (filename, bytes) in files {
-        let mut bp = match Blueprint::from_pdf_bytes(bytes) {
+        let bp = match Blueprint::from_pdf_bytes(bytes) {
             Ok(bp) => bp,
             Err(e) => {
                 state.error = Some(format!("Failed to parse {filename}: {e}"));
@@ -38,10 +38,15 @@ pub fn run_blueprint_pipeline(
         }
 
         let language = bp.language().to_string();
+        blueprints.push((filename.clone(), language, bp));
+    }
 
-        // Exhaustive Searching is tightly coupled to parsing, so we
-        // do it here but only advance the UI step once *all* files
-        // have been parsed.
+    // ── Phase 2: Exhaustive Searching ───────────────────────────────
+    state.step = ProcessingStep::ExhaustiveSearching;
+    on_progress(&state);
+
+    let mut parsed = Vec::new();
+    for (filename, language, mut bp) in blueprints {
         let form_states = match bp.states() {
             Ok(s) => s,
             Err(e) => {
@@ -54,10 +59,6 @@ pub fn run_blueprint_pipeline(
         let context = bp.context();
         parsed.push((language, form_states, context));
     }
-
-    // ── Phase 2: Exhaustive Searching (completed during parsing) ────
-    state.step = ProcessingStep::ExhaustiveSearching;
-    on_progress(&state);
 
     // ── Phase 3: Flattening – render plain images for all files ─────
     state.step = ProcessingStep::Flattening;

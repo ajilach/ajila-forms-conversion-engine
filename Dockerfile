@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+COPY --from=builder /app/fonts /usr/local/share/fonts/custom/
+RUN fc-cache -f -v
+
 COPY --from=builder /app/target/dx/blueprint-app/release/web/server ./server
 COPY --from=builder /app/target/dx/blueprint-app/release/web/public ./public
 
