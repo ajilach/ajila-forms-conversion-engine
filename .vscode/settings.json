@@ -18,8 +18,11 @@
         "false": true,
     },
     "chat.tools.urls.autoApprove": {
+        "https://github.com": true,
         "https://*.adobe.com": true,
-        "https://*.githubusercontent.com": true
+        "https://raw.githubusercontent.com": true,
+        "https://*.githubusercontent.com": true,
+        "https://docs.rs": true,
     },
     "liveServer.settings.port": 5501,
 }

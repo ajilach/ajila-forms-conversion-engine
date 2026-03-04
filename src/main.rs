@@ -2,8 +2,9 @@
 use blueprint::xfa::{XfaNode, XfaNodeKind};
 #[allow(unused_imports)]
 use blueprint::{
-    Blueprint, Context, Document, DocumentEnvelope, Flattened, FlattenedNodeKind, HtmlConfig,
-    MergeInput, RecursiveMerger, Selection, StructuredNode, document, flattened, structured, xfa,
+    Blueprint, Context, Document, DocumentEnvelope, FieldLabelMap, Flattened, FlattenedNodeKind,
+    GraphSelection, GraphState, HtmlConfig, MergeInput, RecursiveMerger, Selection, StructuredNode,
+    build_field_label_map, document, flattened, structured, xfa,
 };
 use clap::{Parser, ValueEnum};
 use std::path::{Path, PathBuf};
@@ -68,6 +69,10 @@ struct Args {
     /// Export the form as AEM Adaptive Forms JCR content XML
     #[arg(long)]
     aem: bool,
+
+    /// Export a GraphViz DOT file showing the interactive decision flow
+    #[arg(long)]
+    graphviz: bool,
 
     /// Suppress verbose output (only show errors and final results)
     #[arg(short, long)]
@@ -268,7 +273,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("\u{2713} XFA dumped to {}", xml_path.display());
                 }
                 None => {
-                    eprintln!("Note: {} is not an XFA PDF (no XFA data to dump)", doc_path.display());
+                    eprintln!(
+                        "Note: {} is not an XFA PDF (no XFA data to dump)",
+                        doc_path.display()
+                    );
                 }
             }
             continue;
@@ -298,7 +306,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // =====================================================================
         // PIPELINE STAGE 3: Run exhaustive exploration (no I/O inside lib)
         // =====================================================================
-        let need_structured = args.structured || args.html || args.aem || args.documents.len() > 1;
+        let need_structured =
+            args.structured || args.html || args.aem || args.graphviz || args.documents.len() > 1;
         let generate_html = if args.documents.len() > 1 {
             false
         } else {
@@ -323,6 +332,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if args.aem {
                 println!("  AEM package output: enabled");
             }
+            if args.graphviz {
+                println!("  GraphViz decision-flow: enabled");
+            }
         }
 
         if !quiet {
@@ -337,6 +349,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
+        let mut graph_states: Vec<GraphState> = Vec::new();
+        let mut graph_field_labels: Option<FieldLabelMap> = None;
         let mut state_error: Option<Box<dyn std::error::Error>> = None;
 
         for state in form_states.iter() {
@@ -360,6 +374,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 outputs.push(format!("{}_{}.{}.png", doc_name, state.label, suffix));
             }
 
+            // For graphviz, collect graph states from each form state.
+            if args.graphviz {
+                let graph_sels: Vec<GraphSelection> =
+                    state.selections.iter().map(GraphSelection::from).collect();
+                graph_states.push(GraphState {
+                    selections: graph_sels,
+                    label: state.label.clone(),
+                });
+            }
+
             if need_structured {
                 let envelope = state.structured(context.clone());
 
@@ -379,6 +403,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                     outputs.push(json_path.display().to_string());
+                }
+
+                // Aggregate field labels from every state so that fields only
+                // visible in certain states (e.g. nested radio buttons) are
+                // captured.
+                if args.graphviz {
+                    let state_labels = build_field_label_map(&envelope.content);
+                    match graph_field_labels {
+                        Some(ref mut existing) => existing.merge_from(&state_labels),
+                        None => graph_field_labels = Some(state_labels),
+                    }
                 }
 
                 structured_outputs.push((state.selections.clone(), envelope.content));
@@ -441,21 +476,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if args.aem && args.documents.len() <= 1 {
                 if bp.is_xfa() {
                     let aem_config = blueprint::AemConfig::new(&merged_envelope.context)?;
-                    let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
+                    let aem_output =
+                        blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
                     let aem_path = std::path::PathBuf::from(format!("{}_merged.zip", doc_name));
                     std::fs::write(&aem_path, aem_output)
                         .map_err(|e| format!("Failed to write AEM package: {}", e))?;
 
-                    vprintln!(quiet, "    \u{2713} Merged AEM package: {}", aem_path.display());
+                    vprintln!(
+                        quiet,
+                        "    \u{2713} Merged AEM package: {}",
+                        aem_path.display()
+                    );
                 } else {
-                    vprintln!(quiet, "    Note: AEM export skipped (requires XFA variables)");
+                    vprintln!(
+                        quiet,
+                        "    Note: AEM export skipped (requires XFA variables)"
+                    );
                 }
             }
 
             if args.documents.len() > 1 {
                 all_envelopes.push(merged_envelope);
             }
+        }
+
+        // Generate GraphViz decision-flow DOT file
+        if args.graphviz && !graph_states.is_empty() {
+            let field_labels = graph_field_labels.unwrap_or_default();
+            let dot_output = blueprint::generate_dot(&graph_states, &field_labels);
+
+            let dot_path = std::path::PathBuf::from(format!("{}_flow.dot", doc_name));
+            std::fs::write(&dot_path, dot_output)
+                .map_err(|e| format!("Failed to write GraphViz DOT file: {}", e))?;
+
+            vprintln!(quiet, "    ✓ Decision flow: {}", dot_path.display());
         }
     }
 

@@ -60,6 +60,7 @@
 //!   │
 //!   ├──► structured()     ──► DocumentEnvelope        (structured/)
 //!   │     ├──► to_html()  ──► HTML string             (html/)
+//!   │     ├──► to_dot()   ──► DOT graph               (graphviz/)
 //!   │     └──► serde      ──► JSON
 //!   │
 //!   └──► render_*()       ──► RgbaImage               (flattened/ + document/)
@@ -70,6 +71,7 @@ pub mod context;
 pub mod document;
 pub mod exhaustive;
 pub mod flattened;
+pub mod graphviz;
 pub mod html;
 pub mod pdf_parser;
 pub mod structured;
@@ -105,6 +107,12 @@ pub use structured::{
 pub use aem::{
     AemConfig, AemNode, collect_languages, convert_to_aem, detect_master_language,
     generate_aem_package, generate_aem_xml,
+};
+
+// GraphViz decision-flow output
+pub use graphviz::{
+    FieldLabelMap, GraphSelection, GraphSelectionKind, GraphState, build_field_label_map,
+    generate_dot,
 };
 
 // HTML generation
