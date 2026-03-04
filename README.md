@@ -5,15 +5,30 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 ## Usage
 
 ```
-# Analyze document structure
+# Basic analysis (processes the PDF, no file output)
 cargo run -- input/AAAI_019_DE.pdf
 
-# Render with labeled field groups (blue overlays)
-cargo run -- input/AAAI_019_DE.pdf --render-labelled
+# Export structured JSON
+cargo run -- input/AAAI_019_DE.pdf --structured
 
-# Render plain document (no annotations)
-cargo run -- input/AAAI_019_DE.pdf --render-plain
+# Export standalone HTML
+cargo run -- input/AAAI_019_DE.pdf --html
 
-# Render with field annotations (red overlays)
-cargo run -- input/AAAI_019_DE.pdf --render-annotated
+# Export AEM Adaptive Forms package (XFA PDFs only)
+cargo run -- input/AAAI_019_DE.pdf --aem
+
+# Render images (modes: plain, labelled, annotated; repeatable)
+cargo run -- input/AAAI_019_DE.pdf --render plain --render labelled
+
+# Custom render scale (default 1.5)
+cargo run -- input/AAAI_019_DE.pdf --render plain --scale 2.0
+
+# Multilingual merge (pass multiple language variants)
+cargo run -- input/AAAI_019_DE.pdf input/AAAI_019_EN.pdf --structured --html
+
+# Dump raw XFA XML and exit
+cargo run -- input/AAAI_019_DE.pdf --dump-xfa
+
+# Suppress verbose output
+cargo run -- input/AAAI_019_DE.pdf --structured -q
 ```
