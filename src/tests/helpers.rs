@@ -96,6 +96,23 @@ pub fn collect_field_labels(nodes: &[StructuredNode]) -> Vec<String> {
     out
 }
 
+/// Collect field labels with trimming — skips fields with empty labels after trim.
+pub fn collect_field_labels_trimmed(nodes: &[StructuredNode]) -> Vec<String> {
+    let mut out = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Field(f) = node {
+            if let Some(label) = &f.label {
+                let text = label.as_plain_text();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+            }
+        }
+    });
+    out
+}
+
 /// Collect field names (SOM path strings) from all `FieldNode`s in the tree.
 pub fn collect_field_names(nodes: &[StructuredNode]) -> Vec<String> {
     let mut out = Vec::new();

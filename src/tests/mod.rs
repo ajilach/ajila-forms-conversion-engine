@@ -2,7 +2,8 @@
 pub mod helpers;
 
 use helpers::{
-    collect_conditionals, collect_field_labels, collect_fields, collect_headings, collect_radio_fields,
+    collect_conditionals, collect_field_labels, collect_field_labels_trimmed, collect_field_names,
+    collect_fields, collect_headings, collect_radio_fields,
     count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
     flatten_with_scripts, parse_xfa_from_pdf,
 };
@@ -4391,7 +4392,7 @@ fn test_aaai_structured_output_has_expected_field_labels() {
     for (i, node) in structured_nodes.iter().enumerate() {
         match node {
             crate::structured::StructuredNode::Field(f) => {
-                let label = get_field_label(f);
+                let label = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
                 println!("  {}: Field '{}' label='{}'", i, f.name, label);
             }
             crate::structured::StructuredNode::Paragraph(_) => {
@@ -4415,46 +4416,7 @@ fn test_aaai_structured_output_has_expected_field_labels() {
         }
     }
 
-    // Helper to extract label text from a FieldNode
-    fn get_field_label(field: &FieldNode) -> String {
-        field
-            .label
-            .as_ref()
-            .map(|label| label.as_plain_text())
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    }
-
-    // Collect all field labels from structured output
-    fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
-        for node in nodes {
-            match node {
-                StructuredNode::Field(field) => {
-                    let label = get_field_label(field);
-                    if !label.is_empty() {
-                        labels.push(label);
-                    }
-                }
-                StructuredNode::Group(group) => {
-                    collect_field_labels(&group.children, labels);
-                }
-                StructuredNode::Repeatable(rep) => {
-                    collect_field_labels(&[(*rep.item).clone()], labels);
-                }
-                StructuredNode::GridLayout(grid) => {
-                    // Collect labels from grid elements
-                    for element in &grid.elements {
-                        collect_field_labels(std::slice::from_ref(&element.node), labels);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let mut field_labels: Vec<String> = Vec::new();
-    collect_field_labels(&structured_nodes, &mut field_labels);
+    let field_labels = collect_field_labels_trimmed(&structured_nodes);
 
     println!("\n=== Field labels found in structured output ===");
     for label in &field_labels {
@@ -4607,46 +4569,12 @@ fn test_aaai_structured_output_has_h1_heading() {
     // Convert to structured form
     let structured_nodes = crate::structured::convert(&doc);
 
-    // Find all H1 headings
-    fn collect_h1_headings(nodes: &[StructuredNode], headings: &mut Vec<String>) {
-        fn extract_text(nodes: &[InlineNode]) -> String {
-            nodes
-                .iter()
-                .map(|node| match node {
-                    InlineNode::Text(s) => s.clone(),
-                    InlineNode::TranslatedText(map) => {
-                        map.values().next().cloned().unwrap_or_default()
-                    }
-                    InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                        extract_text(&[(**inner).clone()])
-                    }
-                    InlineNode::Link(link) => extract_text(&link.content.0),
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        }
-
-        for node in nodes {
-            match node {
-                StructuredNode::Heading(h) => {
-                    if matches!(h.level, HeadingLevel::H1) {
-                        let text = extract_text(&h.content.0);
-                        headings.push(text);
-                    }
-                }
-                StructuredNode::Group(g) => {
-                    collect_h1_headings(&g.children, headings);
-                }
-                StructuredNode::Repeatable(r) => {
-                    collect_h1_headings(&[(*r.item).clone()], headings);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let mut h1_headings: Vec<String> = Vec::new();
-    collect_h1_headings(&structured_nodes, &mut h1_headings);
+    // Find all H1 headings using shared helper
+    let h1_headings: Vec<String> = collect_headings(&structured_nodes)
+        .into_iter()
+        .filter(|(level, _)| *level == 1)
+        .map(|(_, text)| text)
+        .collect();
 
     println!("\n=== H1 headings found in structured output ===");
     for heading in &h1_headings {
@@ -4749,25 +4677,7 @@ fn test_aaai_structured_output_no_button_add_minus() {
     let structured_nodes = crate::structured::convert(&doc);
 
     // Collect all field names from the structured output
-    fn collect_field_names(nodes: &[StructuredNode], names: &mut Vec<String>) {
-        for node in nodes {
-            match node {
-                StructuredNode::Field(f) => {
-                    names.push(f.som_path_str().to_string());
-                }
-                StructuredNode::Group(g) => {
-                    collect_field_names(&g.children, names);
-                }
-                StructuredNode::Repeatable(r) => {
-                    collect_field_names(&[(*r.item).clone()], names);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let mut field_names: Vec<String> = Vec::new();
-    collect_field_names(&structured_nodes, &mut field_names);
+    let field_names = collect_field_names(&structured_nodes);
 
     println!("\n=== Field names in structured output ===");
     for name in &field_names {
@@ -5840,17 +5750,6 @@ fn test_aaei_has_repeatable_with_nachname_vorname() {
     // Convert to structured form
     let structured_nodes = crate::structured::convert(&doc);
 
-    // Helper to extract label text from a FieldNode
-    fn get_field_label(field: &FieldNode) -> String {
-        field
-            .label
-            .as_ref()
-            .map(|label| label.as_plain_text())
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    }
-
     // Search for repeatables containing Nachname/Vorname fields
     fn find_repeatable_with_fields(
         nodes: &[StructuredNode],
@@ -5860,8 +5759,7 @@ fn test_aaei_has_repeatable_with_nachname_vorname() {
             match node {
                 StructuredNode::Repeatable(rep) => {
                     // Collect all field labels in this repeatable
-                    let mut found_labels: Vec<String> = Vec::new();
-                    collect_field_labels_from_node(&rep.item, &mut found_labels);
+                    let found_labels = collect_field_labels_trimmed(std::slice::from_ref(rep.item.as_ref()));
                     
                     // Check if all target labels are present
                     let all_found = target_labels.iter().all(|target| {
@@ -5886,28 +5784,6 @@ fn test_aaei_has_repeatable_with_nachname_vorname() {
             }
         }
         None
-    }
-
-    fn collect_field_labels_from_node(node: &StructuredNode, labels: &mut Vec<String>) {
-        match node {
-            StructuredNode::Field(field) => {
-                let label = get_field_label(field);
-                if !label.is_empty() {
-                    labels.push(label);
-                }
-            }
-            StructuredNode::Group(group) => {
-                for child in &group.children {
-                    collect_field_labels_from_node(child, labels);
-                }
-            }
-            StructuredNode::GridLayout(grid) => {
-                for element in &grid.elements {
-                    collect_field_labels_from_node(&element.node, labels);
-                }
-            }
-            _ => {}
-        }
     }
 
     let target_labels = ["Nachname", "Vorname(n)"];
@@ -6000,48 +5876,7 @@ fn test_aaei_has_expected_field_labels() {
     // Convert to structured form
     let structured_nodes = crate::structured::convert(&doc);
 
-    // Helper to extract label text from a FieldNode
-    fn get_field_label(field: &FieldNode) -> String {
-        field
-            .label
-            .as_ref()
-            .map(|label| label.as_plain_text())
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    }
-
-    // Collect all field labels from structured output
-    fn collect_field_labels(nodes: &[StructuredNode], labels: &mut Vec<String>) {
-        for node in nodes {
-            match node {
-                StructuredNode::Field(field) => {
-                    let label = get_field_label(field);
-                    if !label.is_empty() {
-                        labels.push(label);
-                    }
-                }
-                StructuredNode::Group(group) => {
-                    collect_field_labels(&group.children, labels);
-                }
-                StructuredNode::Repeatable(rep) => {
-                    collect_field_labels(&[(*rep.item).clone()], labels);
-                }
-                StructuredNode::Conditional(cond) => {
-                    collect_field_labels(&[(*cond.content).clone()], labels);
-                }
-                StructuredNode::GridLayout(grid) => {
-                    for element in &grid.elements {
-                        collect_field_labels(std::slice::from_ref(&element.node), labels);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let mut field_labels: Vec<String> = Vec::new();
-    collect_field_labels(&structured_nodes, &mut field_labels);
+    let field_labels = collect_field_labels_trimmed(&structured_nodes);
 
     println!("\n=== Field labels found in AAEI structured output ===");
     for label in &field_labels {
@@ -6210,32 +6045,6 @@ fn test_aaaa_has_repeatable_sections() {
     // Convert to structured form
     let structured_nodes = crate::structured::convert(&doc);
 
-    // Collect all field names recursively (for debugging)
-    fn collect_field_names(node: &StructuredNode, names: &mut Vec<String>) {
-        match node {
-            StructuredNode::Field(field) => {
-                names.push(field.som_path_str().to_string());
-            }
-            StructuredNode::Group(group) => {
-                for child in &group.children {
-                    collect_field_names(child, names);
-                }
-            }
-            StructuredNode::GridLayout(grid) => {
-                for element in &grid.elements {
-                    collect_field_names(&element.node, names);
-                }
-            }
-            StructuredNode::Repeatable(rep) => {
-                collect_field_names(&rep.item, names);
-            }
-            StructuredNode::Conditional(cond) => {
-                collect_field_names(&cond.content, names);
-            }
-            _ => {}
-        }
-    }
-
     // Find all repeatable sections
     fn find_repeatables(
         nodes: &[StructuredNode],
@@ -6244,8 +6053,7 @@ fn test_aaaa_has_repeatable_sections() {
         for node in nodes {
             match node {
                 StructuredNode::Repeatable(rep) => {
-                    let mut field_names = Vec::new();
-                    collect_field_names(&rep.item, &mut field_names);
+                    let field_names = collect_field_names(std::slice::from_ref(rep.item.as_ref()));
                     found.push((rep.min_occurrences, rep.max_occurrences, field_names));
                     // Also search inside the repeatable's item
                     find_repeatables(&[(*rep.item).clone()], found);
@@ -9942,7 +9750,7 @@ fn test_aaks_strasse_nr_share_row() {
             match node {
                 StructuredNode::GridLayout(gl) => {
                     if gl.elements.len() == expected_elements {
-                        let grid_labels = collect_field_labels_flat(&gl
+                        let grid_labels = collect_field_labels_trimmed(&gl
                             .elements
                             .iter()
                             .map(|e| e.node.clone())
@@ -9990,32 +9798,6 @@ fn test_aaks_strasse_nr_share_row() {
         false
     }
 
-    fn collect_field_labels_flat(nodes: &[StructuredNode]) -> Vec<String> {
-        let mut labels = Vec::new();
-        for node in nodes {
-            match node {
-                StructuredNode::Field(f) => {
-                    if let Some(label) = &f.label {
-                        let text = label.as_plain_text();
-                        if !text.trim().is_empty() {
-                            labels.push(text.trim().to_string());
-                        }
-                    }
-                }
-                StructuredNode::Group(g) => {
-                    labels.extend(collect_field_labels_flat(&g.children));
-                }
-                StructuredNode::GridLayout(gl) => {
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
-                    labels.extend(collect_field_labels_flat(&child_nodes));
-                }
-                _ => {}
-            }
-        }
-        labels
-    }
-
     assert!(
         find_grid_with_fields(&structured, &["Straße", "Nr."], 2),
         "Expected to find a GridLayout with 2 elements containing 'Straße' and 'Nr.' in AAKS"
@@ -10040,7 +9822,7 @@ fn test_aaks_plz_stadt_land_share_row() {
             match node {
                 StructuredNode::GridLayout(gl) => {
                     if gl.elements.len() == expected_elements {
-                        let grid_labels = collect_field_labels_flat(&gl
+                        let grid_labels = collect_field_labels_trimmed(&gl
                             .elements
                             .iter()
                             .map(|e| e.node.clone())
@@ -10085,32 +9867,6 @@ fn test_aaks_plz_stadt_land_share_row() {
             }
         }
         false
-    }
-
-    fn collect_field_labels_flat(nodes: &[StructuredNode]) -> Vec<String> {
-        let mut labels = Vec::new();
-        for node in nodes {
-            match node {
-                StructuredNode::Field(f) => {
-                    if let Some(label) = &f.label {
-                        let text = label.as_plain_text();
-                        if !text.trim().is_empty() {
-                            labels.push(text.trim().to_string());
-                        }
-                    }
-                }
-                StructuredNode::Group(g) => {
-                    labels.extend(collect_field_labels_flat(&g.children));
-                }
-                StructuredNode::GridLayout(gl) => {
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
-                    labels.extend(collect_field_labels_flat(&child_nodes));
-                }
-                _ => {}
-            }
-        }
-        labels
     }
 
     assert!(
