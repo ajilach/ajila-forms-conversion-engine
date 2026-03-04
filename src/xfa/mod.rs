@@ -617,6 +617,31 @@ pub enum XfaNodeKind {
     },
 }
 
+impl XfaNodeKind {
+    /// Map an XML tag name to the corresponding `XfaNodeKind`.
+    ///
+    /// Known XFA tags are mapped to their dedicated variants; everything else
+    /// becomes `Element` with the tag name preserved.
+    fn from_tag(tag_name: &str) -> Self {
+        match tag_name {
+            "template" => XfaNodeKind::Template,
+            "subform" => XfaNodeKind::Subform,
+            "field" => XfaNodeKind::Field,
+            "pageSet" => XfaNodeKind::PageSet,
+            "pageArea" => XfaNodeKind::PageArea,
+            "contentArea" => XfaNodeKind::ContentArea,
+            "draw" => XfaNodeKind::Draw,
+            "value" => XfaNodeKind::Value,
+            "bind" => XfaNodeKind::Bind,
+            "exclGroup" => XfaNodeKind::ExclGroup,
+            _ => XfaNodeKind::Element {
+                tag_name: tag_name.to_string(),
+                text_content: None,
+            },
+        }
+    }
+}
+
 impl XfaNode {
     /// Create a new XFA node
     pub fn new(kind: XfaNodeKind, attributes: HashMap<String, String>) -> Self {
@@ -1057,23 +1082,7 @@ impl XfaNode {
                         .to_string();
 
                     let attributes = Self::parse_attributes(&e)?;
-
-                    let kind = match tag_name.as_str() {
-                        "template" => XfaNodeKind::Template,
-                        "subform" => XfaNodeKind::Subform,
-                        "field" => XfaNodeKind::Field,
-                        "pageSet" => XfaNodeKind::PageSet,
-                        "pageArea" => XfaNodeKind::PageArea,
-                        "contentArea" => XfaNodeKind::ContentArea,
-                        "draw" => XfaNodeKind::Draw,
-                        "value" => XfaNodeKind::Value,
-                        "bind" => XfaNodeKind::Bind,
-                        "exclGroup" => XfaNodeKind::ExclGroup,
-                        _ => XfaNodeKind::Element {
-                            tag_name: tag_name.clone(),
-                            text_content: None,
-                        },
-                    };
+                    let kind = XfaNodeKind::from_tag(&tag_name);
 
                     let mut node = Self::new(kind, attributes);
 
@@ -1157,24 +1166,7 @@ impl XfaNode {
                         .to_string();
 
                     let attributes = Self::parse_attributes(&e)?;
-
-                    // Use the same tag name matching as parse_tree
-                    let kind = match tag_name.as_str() {
-                        "template" => XfaNodeKind::Template,
-                        "subform" => XfaNodeKind::Subform,
-                        "field" => XfaNodeKind::Field,
-                        "pageSet" => XfaNodeKind::PageSet,
-                        "pageArea" => XfaNodeKind::PageArea,
-                        "contentArea" => XfaNodeKind::ContentArea,
-                        "draw" => XfaNodeKind::Draw,
-                        "value" => XfaNodeKind::Value,
-                        "bind" => XfaNodeKind::Bind,
-                        "exclGroup" => XfaNodeKind::ExclGroup,
-                        _ => XfaNodeKind::Element {
-                            tag_name: tag_name.clone(),
-                            text_content: None,
-                        },
-                    };
+                    let kind = XfaNodeKind::from_tag(&tag_name);
 
                     let mut child_node = Self::new(kind, attributes);
                     let mut child_text = String::new();
@@ -1223,23 +1215,7 @@ impl XfaNode {
                         .to_string();
 
                     let attributes = Self::parse_attributes(&e)?;
-
-                    let kind = match tag_name.as_str() {
-                        "template" => XfaNodeKind::Template,
-                        "subform" => XfaNodeKind::Subform,
-                        "field" => XfaNodeKind::Field,
-                        "pageSet" => XfaNodeKind::PageSet,
-                        "pageArea" => XfaNodeKind::PageArea,
-                        "contentArea" => XfaNodeKind::ContentArea,
-                        "draw" => XfaNodeKind::Draw,
-                        "value" => XfaNodeKind::Value,
-                        "bind" => XfaNodeKind::Bind,
-                        "exclGroup" => XfaNodeKind::ExclGroup,
-                        _ => XfaNodeKind::Element {
-                            tag_name: tag_name.clone(),
-                            text_content: None,
-                        },
-                    };
+                    let kind = XfaNodeKind::from_tag(&tag_name);
 
                     let child_node = Self::new(kind, attributes);
                     children.push(child_node);
