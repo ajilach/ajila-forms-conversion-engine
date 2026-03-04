@@ -505,87 +505,9 @@ pub fn detect_master_language(content: &[StructuredNode]) -> String {
 pub fn collect_languages(content: &[StructuredNode]) -> BTreeSet<String> {
     let mut langs = BTreeSet::new();
     for node in content {
-        collect_langs_from_node(node, &mut langs);
+        node.collect_languages(&mut langs);
     }
     langs
-}
-
-fn collect_langs_from_node(node: &StructuredNode, langs: &mut BTreeSet<String>) {
-    match node {
-        StructuredNode::Heading(h) => collect_langs_from_inline_text(&h.content, langs),
-        StructuredNode::Paragraph(p) => collect_langs_from_inline_text(&p.content, langs),
-        StructuredNode::Field(f) => {
-            if let Some(label) = &f.label {
-                collect_langs_from_inline_text(label, langs);
-            }
-            if let Some(TranslatableString::Translated(tmap)) = &f.placeholder {
-                langs.extend(tmap.keys().cloned());
-            }
-            match &f.input_type {
-                FieldType::Radio { options } | FieldType::Select { options } => {
-                    for opt in options {
-                        if let TranslatableString::Translated(tmap) = &opt.name {
-                            langs.extend(tmap.keys().cloned());
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        StructuredNode::Table(t) => {
-            if let Some(caption) = &t.caption {
-                collect_langs_from_inline_text(caption, langs);
-            }
-            if let Some(header) = &t.header {
-                for cell in &header.cells {
-                    collect_langs_from_node(cell, langs);
-                }
-            }
-            for row in &t.rows {
-                for cell in &row.cells {
-                    collect_langs_from_node(cell, langs);
-                }
-            }
-        }
-        StructuredNode::Group(g) => {
-            for child in &g.children {
-                collect_langs_from_node(child, langs);
-            }
-        }
-        StructuredNode::Repeatable(r) => {
-            collect_langs_from_node(&r.item, langs);
-        }
-        StructuredNode::Conditional(c) => {
-            collect_langs_from_node(&c.content, langs);
-        }
-        StructuredNode::GridLayout(g) => {
-            for elem in &g.elements {
-                collect_langs_from_node(&elem.node, langs);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn collect_langs_from_inline_text(text: &InlineText, langs: &mut BTreeSet<String>) {
-    for node in &text.0 {
-        collect_langs_from_inline_node(node, langs);
-    }
-}
-
-fn collect_langs_from_inline_node(node: &InlineNode, langs: &mut BTreeSet<String>) {
-    match node {
-        InlineNode::TranslatedText(tmap) => {
-            langs.extend(tmap.keys().cloned());
-        }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-            collect_langs_from_inline_node(inner, langs);
-        }
-        InlineNode::Link(link) => {
-            collect_langs_from_inline_text(&link.content, langs);
-        }
-        InlineNode::Text(_) => {}
-    }
 }
 
 // ============================================================================
@@ -713,7 +635,7 @@ fn extract_rich_text_translations(
     wrap: impl Fn(&str) -> String,
 ) {
     let mut langs = BTreeSet::new();
-    collect_languages_from_inline_text(text, &mut langs);
+    text.collect_languages(&mut langs);
     if langs.len() <= 1 {
         return;
     }
@@ -734,7 +656,7 @@ fn extract_rich_text_translations(
 fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut TranslationMap) {
     let mut langs = BTreeSet::new();
     for item in &list.items {
-        collect_languages_from_inline_text(item, &mut langs);
+        item.collect_languages(&mut langs);
     }
     if langs.len() <= 1 {
         return;
@@ -773,28 +695,6 @@ fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut Trans
         .collect();
     if !others.is_empty() {
         map.insert(master_html, others);
-    }
-}
-
-/// Collect all language keys from `TranslatedText` nodes within an `InlineText`.
-fn collect_languages_from_inline_text(text: &InlineText, langs: &mut BTreeSet<String>) {
-    for node in &text.0 {
-        collect_languages_from_inline_node(node, langs);
-    }
-}
-
-fn collect_languages_from_inline_node(node: &InlineNode, langs: &mut BTreeSet<String>) {
-    match node {
-        InlineNode::TranslatedText(tmap) => {
-            langs.extend(tmap.keys().cloned());
-        }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-            collect_languages_from_inline_node(inner, langs);
-        }
-        InlineNode::Link(link) => {
-            collect_languages_from_inline_text(&link.content, langs);
-        }
-        InlineNode::Text(_) => {}
     }
 }
 

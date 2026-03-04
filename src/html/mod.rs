@@ -1337,67 +1337,9 @@ fn generate_scripts(form_id: &str) -> String {
 fn collect_languages(nodes: &[StructuredNode]) -> Vec<String> {
     use std::collections::BTreeSet;
     let mut langs = BTreeSet::new();
-
-    fn walk(nodes: &[StructuredNode], langs: &mut BTreeSet<String>) {
-        for node in nodes {
-            match node {
-                StructuredNode::Heading(h) => walk_inline(&h.content.0, langs),
-                StructuredNode::Paragraph(p) => walk_inline(&p.content.0, langs),
-                StructuredNode::Field(f) => {
-                    if let Some(label) = &f.label {
-                        walk_inline(&label.0, langs);
-                    }
-                    if let Some(crate::structured::TranslatableString::Translated(map)) =
-                        &f.placeholder
-                    {
-                        langs.extend(map.keys().cloned());
-                    }
-                    match &f.input_type {
-                        crate::structured::FieldType::Radio { options }
-                        | crate::structured::FieldType::Select { options } => {
-                            for opt in options {
-                                if let crate::structured::TranslatableString::Translated(map) =
-                                    &opt.name
-                                {
-                                    langs.extend(map.keys().cloned());
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                StructuredNode::Group(g) => walk(&g.children, langs),
-                StructuredNode::Conditional(c) => walk(&[(*c.content).clone()], langs),
-                StructuredNode::Repeatable(r) => walk(&[(*r.item).clone()], langs),
-                StructuredNode::Table(t) => {
-                    for row in &t.rows {
-                        walk(&row.cells, langs);
-                    }
-                    if let Some(header) = &t.header {
-                        walk(&header.cells, langs);
-                    }
-                }
-                _ => {}
-            }
-        }
+    for node in nodes {
+        node.collect_languages(&mut langs);
     }
-
-    fn walk_inline(nodes: &[InlineNode], langs: &mut BTreeSet<String>) {
-        for node in nodes {
-            match node {
-                InlineNode::TranslatedText(map) => {
-                    langs.extend(map.keys().cloned());
-                }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                    walk_inline(&[(**inner).clone()], langs);
-                }
-                InlineNode::Link(link) => walk_inline(&link.content.0, langs),
-                _ => {}
-            }
-        }
-    }
-
-    walk(nodes, &mut langs);
     langs.into_iter().collect()
 }
 

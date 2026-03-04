@@ -8,6 +8,7 @@ pub use translation_merger::{MergeError, merge_translations};
 
 use rust_decimal::Decimal;
 use serde::Serialize;
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 use crate::context::Context;
@@ -418,6 +419,29 @@ impl InlineText {
         }
         result
     }
+
+    /// Collect all language codes from `TranslatedText` nodes in this inline text.
+    pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
+        fn walk(node: &InlineNode, langs: &mut BTreeSet<String>) {
+            match node {
+                InlineNode::TranslatedText(map) => {
+                    langs.extend(map.keys().cloned());
+                }
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                    walk(inner, langs);
+                }
+                InlineNode::Link(link) => {
+                    for child in &link.content.0 {
+                        walk(child, langs);
+                    }
+                }
+                InlineNode::Text(_) => {}
+            }
+        }
+        for node in &self.0 {
+            walk(node, langs);
+        }
+    }
 }
 
 impl Default for InlineText {
@@ -599,6 +623,68 @@ impl StructuredNode {
             StructuredNode::Empty => 8,
             StructuredNode::GridLayout(_) => 9,
             StructuredNode::List(_) => 10,
+        }
+    }
+
+    /// Collect all language codes used in translatable content within this node tree.
+    ///
+    /// Recursively walks the node and its children, gathering language keys from
+    /// `TranslatedText` inline nodes and `TranslatableString::Translated` maps.
+    pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
+        match self {
+            StructuredNode::Heading(h) => h.content.collect_languages(langs),
+            StructuredNode::Paragraph(p) => p.content.collect_languages(langs),
+            StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    label.collect_languages(langs);
+                }
+                if let Some(TranslatableString::Translated(map)) = &f.placeholder {
+                    langs.extend(map.keys().cloned());
+                }
+                match &f.input_type {
+                    FieldType::Radio { options } | FieldType::Select { options } => {
+                        for opt in options {
+                            if let TranslatableString::Translated(map) = &opt.name {
+                                langs.extend(map.keys().cloned());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            StructuredNode::Table(t) => {
+                if let Some(caption) = &t.caption {
+                    caption.collect_languages(langs);
+                }
+                if let Some(header) = &t.header {
+                    for cell in &header.cells {
+                        cell.collect_languages(langs);
+                    }
+                }
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        cell.collect_languages(langs);
+                    }
+                }
+            }
+            StructuredNode::Group(g) => {
+                for child in &g.children {
+                    child.collect_languages(langs);
+                }
+            }
+            StructuredNode::Repeatable(r) => r.item.collect_languages(langs),
+            StructuredNode::Conditional(c) => c.content.collect_languages(langs),
+            StructuredNode::GridLayout(g) => {
+                for elem in &g.elements {
+                    elem.node.collect_languages(langs);
+                }
+            }
+            StructuredNode::List(l) => {
+                for item in &l.items {
+                    item.collect_languages(langs);
+                }
+            }
+            _ => {}
         }
     }
 }
