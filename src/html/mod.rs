@@ -1401,21 +1401,10 @@ fn collect_languages(nodes: &[StructuredNode]) -> Vec<String> {
     langs.into_iter().collect()
 }
 
-fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
+use crate::util::{base64_encode, escape_html};
 
 fn escape_attr(s: &str) -> String {
     escape_html(s)
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    use base64::Engine;
-    base64::engine::general_purpose::STANDARD.encode(data)
 }
 
 #[cfg(test)]

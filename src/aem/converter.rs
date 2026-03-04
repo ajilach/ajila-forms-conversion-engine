@@ -958,17 +958,7 @@ fn inline_node_to_html(node: &InlineNode, language: &str, out: &mut String) {
     }
 }
 
-pub(crate) fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    use base64::Engine;
-    base64::engine::general_purpose::STANDARD.encode(data)
-}
+use crate::util::{base64_encode, escape_html};
 
 fn convert_name_values(options: &[NameValue], language: &str) -> Vec<AemOption> {
     options

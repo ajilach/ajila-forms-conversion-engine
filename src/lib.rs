@@ -75,6 +75,7 @@ pub mod graphviz;
 pub mod html;
 pub mod pdf_parser;
 pub mod structured;
+pub mod util;
 pub mod xfa;
 
 #[cfg(test)]
