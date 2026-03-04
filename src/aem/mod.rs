@@ -567,6 +567,11 @@ pub enum AemNode {
         /// Number of columns for Document of Record layout (`dorNumCols`).
         /// Derived from `GridLayout.columns`. `None` means no `dorNumCols` attribute.
         dor_num_cols: Option<u32>,
+        /// Adaptive-form responsive column width (out of 12).
+        colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        /// Set on elements that are children of a `GridLayout` panel.
+        dor_colspan: Option<u32>,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -578,6 +583,8 @@ pub enum AemNode {
         visible: bool,
         max_chars: Option<usize>,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Numeric input (`guideNumberBox`).
@@ -588,6 +595,8 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Date picker (`guideDatePicker`).
@@ -598,6 +607,8 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Drop-down / select list (`guideDropDownList`).
@@ -609,6 +620,8 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
@@ -623,6 +636,8 @@ pub enum AemNode {
         alignment: OptionAlignment,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
@@ -639,6 +654,8 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
@@ -652,6 +669,8 @@ pub enum AemNode {
         content: String,
         dor_exclude: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Title draw for h3–h6 headings (`guideTextDraw` with `headingLevel`).
@@ -661,6 +680,8 @@ pub enum AemNode {
         content: String,
         heading_level: u8,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Multi-line text area (`guideTextBox` with `multiLine`).
@@ -671,6 +692,8 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
     },
 
     /// Repeatable panel with add/remove buttons.

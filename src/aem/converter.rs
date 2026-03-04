@@ -253,7 +253,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     for (title, section_nodes) in &sections {
         let converted: Vec<AemNode> = section_nodes
             .iter()
-            .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns))
+            .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns, None))
             .collect();
 
         if let Some(title) = title {
@@ -269,6 +269,8 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 dor_exclude: false,
                 visible: true,
                 dor_num_cols: None,
+                colspan: config.grid_columns,
+                dor_colspan: None,
             });
         } else {
             // Preamble (before first H2) → also wrap in a Panel
@@ -284,6 +286,8 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     dor_exclude: false,
                     visible: true,
                     dor_num_cols: None,
+                    colspan: config.grid_columns,
+                    dor_colspan: None,
                 });
             }
         }
@@ -312,6 +316,7 @@ fn convert_node(
     config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> Option<AemNode> {
     match node {
         StructuredNode::Heading(h) if matches!(h.level, HeadingLevel::H1 | HeadingLevel::H2) => {
@@ -319,16 +324,24 @@ fn convert_node(
             // Neither should produce an inline TextDraw.
             None
         }
-        StructuredNode::Heading(h) => Some(convert_heading(h, config, ctx, colspan)),
-        StructuredNode::Paragraph(p) => Some(convert_paragraph(p, config, ctx, colspan)),
-        StructuredNode::Image(img) => Some(convert_image(img, config, ctx, colspan)),
-        StructuredNode::Table(t) => Some(convert_table(t, config, ctx, colspan)),
-        StructuredNode::Field(f) => Some(convert_field(f, config, ctx, colspan)),
-        StructuredNode::Repeatable(r) => Some(convert_repeatable(r, config, ctx)),
-        StructuredNode::Group(g) => Some(convert_group(g, config, ctx)),
-        StructuredNode::Conditional(c) => Some(convert_conditional(c, config, ctx)),
-        StructuredNode::GridLayout(gl) => Some(convert_grid_layout(gl, config, ctx)),
-        StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan)),
+        StructuredNode::Heading(h) => Some(convert_heading(h, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Paragraph(p) => {
+            Some(convert_paragraph(p, config, ctx, colspan, dor_colspan))
+        }
+        StructuredNode::Image(img) => Some(convert_image(img, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Table(t) => Some(convert_table(t, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Field(f) => Some(convert_field(f, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Repeatable(r) => {
+            Some(convert_repeatable(r, config, ctx, colspan, dor_colspan))
+        }
+        StructuredNode::Group(g) => Some(convert_group(g, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Conditional(c) => {
+            Some(convert_conditional(c, config, ctx, colspan, dor_colspan))
+        }
+        StructuredNode::GridLayout(gl) => {
+            Some(convert_grid_layout(gl, config, ctx, colspan, dor_colspan))
+        }
+        StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan, dor_colspan)),
         StructuredNode::Empty => None,
     }
 }
@@ -342,6 +355,7 @@ fn convert_heading(
     _config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let plain = inline_text_to_html(&h.content, &ctx.language);
     let content = format!("<p>{plain}</p>");
@@ -354,6 +368,7 @@ fn convert_heading(
         content,
         heading_level: 4,
         colspan,
+        dor_colspan,
     }
 }
 
@@ -362,6 +377,7 @@ fn convert_paragraph(
     _config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let html = inline_text_to_html(&p.content, &ctx.language);
     let content = format!("<p>{html}</p>");
@@ -374,6 +390,7 @@ fn convert_paragraph(
         content,
         dor_exclude: false,
         colspan,
+        dor_colspan,
     }
 }
 
@@ -382,6 +399,7 @@ fn convert_list(
     _config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let tag = if list.list_style.is_ordered() {
         "ol"
@@ -418,6 +436,7 @@ fn convert_list(
         content,
         dor_exclude: false,
         colspan,
+        dor_colspan,
     }
 }
 
@@ -426,6 +445,7 @@ fn convert_image(
     _config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let alt = img.alt_text.as_deref().unwrap_or("image");
     let content = if img.content.is_empty() {
@@ -442,6 +462,7 @@ fn convert_image(
         content,
         dor_exclude: false,
         colspan,
+        dor_colspan,
     }
 }
 
@@ -450,6 +471,7 @@ fn convert_table(
     config: &AemConfig,
     ctx: &mut ConversionContext,
     _colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     // Convert the table into a panel with child rows.
     // Each row becomes a sub-panel with cells distributed across the grid.
@@ -477,7 +499,7 @@ fn convert_table(
         let cells: Vec<AemNode> = header
             .cells
             .iter()
-            .filter_map(|cell| convert_node(cell, config, ctx, col_span))
+            .filter_map(|cell| convert_node(cell, config, ctx, col_span, None))
             .collect();
         children.push(AemNode::Panel {
             uuid: row_uuid,
@@ -488,6 +510,8 @@ fn convert_table(
             dor_exclude: false,
             visible: true,
             dor_num_cols: None,
+            colspan: config.grid_columns,
+            dor_colspan: None,
         });
     }
 
@@ -500,7 +524,7 @@ fn convert_table(
         let cells: Vec<AemNode> = row
             .cells
             .iter()
-            .filter_map(|cell| convert_node(cell, config, ctx, col_span))
+            .filter_map(|cell| convert_node(cell, config, ctx, col_span, None))
             .collect();
         children.push(AemNode::Panel {
             uuid: row_uuid,
@@ -511,6 +535,8 @@ fn convert_table(
             dor_exclude: false,
             visible: true,
             dor_num_cols: None,
+            colspan: config.grid_columns,
+            dor_colspan: None,
         });
     }
 
@@ -523,6 +549,8 @@ fn convert_table(
         dor_exclude: false,
         visible: true,
         dor_num_cols: None,
+        colspan: config.grid_columns,
+        dor_colspan,
     }
 }
 
@@ -531,6 +559,7 @@ fn convert_field(
     _config: &AemConfig,
     ctx: &mut ConversionContext,
     colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let label = f
         .label
@@ -567,6 +596,7 @@ fn convert_field(
                 visible: true,
                 max_chars: *max_length,
                 colspan,
+                dor_colspan,
             }
         }
 
@@ -580,6 +610,7 @@ fn convert_field(
                 mandatory: false,
                 visible: true,
                 colspan,
+                dor_colspan,
             }
         }
 
@@ -593,6 +624,7 @@ fn convert_field(
                 mandatory: false,
                 visible: true,
                 colspan,
+                dor_colspan,
             }
         }
 
@@ -607,6 +639,7 @@ fn convert_field(
                 visible: true,
                 max_chars: None,
                 colspan,
+                dor_colspan,
             }
         }
 
@@ -621,6 +654,7 @@ fn convert_field(
                 visible: true,
                 max_chars: None,
                 colspan,
+                dor_colspan,
             }
         }
 
@@ -638,6 +672,7 @@ fn convert_field(
                 alignment: OptionAlignment::Horizontal,
                 visible: true,
                 colspan,
+                dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
             }
@@ -656,6 +691,7 @@ fn convert_field(
                 mandatory: true,
                 visible: true,
                 colspan,
+                dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
             }
@@ -673,6 +709,7 @@ fn convert_field(
                 mandatory: false,
                 visible: true,
                 colspan,
+                dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
             }
@@ -684,10 +721,12 @@ fn convert_repeatable(
     r: &RepeatableNode,
     config: &AemConfig,
     ctx: &mut ConversionContext,
+    _colspan: u32,
+    _dor_colspan: Option<u32>,
 ) -> AemNode {
     let name = ctx.make_name("RPT", "");
     let uuid = ctx.uuid(&name);
-    let inner = convert_node(&r.item, config, ctx, config.grid_columns);
+    let inner = convert_node(&r.item, config, ctx, config.grid_columns, None);
     let children = inner.into_iter().collect();
     AemNode::Repeatable {
         uuid,
@@ -699,13 +738,19 @@ fn convert_repeatable(
     }
 }
 
-fn convert_group(g: &GroupNode, config: &AemConfig, ctx: &mut ConversionContext) -> AemNode {
+fn convert_group(
+    g: &GroupNode,
+    config: &AemConfig,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> AemNode {
     let name = ctx.make_name("PN", "");
     let uuid = ctx.uuid(&name);
     let children: Vec<AemNode> = g
         .children
         .iter()
-        .filter_map(|n| convert_node(n, config, ctx, config.grid_columns))
+        .filter_map(|n| convert_node(n, config, ctx, config.grid_columns, None))
         .collect();
     AemNode::Panel {
         uuid,
@@ -716,6 +761,8 @@ fn convert_group(g: &GroupNode, config: &AemConfig, ctx: &mut ConversionContext)
         dor_exclude: false,
         visible: true,
         dor_num_cols: None,
+        colspan,
+        dor_colspan,
     }
 }
 
@@ -723,10 +770,12 @@ fn convert_conditional(
     c: &ConditionalNode,
     config: &AemConfig,
     ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let name = ctx.make_name("COND", "");
     let uuid = ctx.uuid(&name);
-    let inner = convert_node(&c.content, config, ctx, config.grid_columns);
+    let inner = convert_node(&c.content, config, ctx, config.grid_columns, None);
     let children: Vec<AemNode> = inner.into_iter().collect();
     let title = format!(
         "Condition: {} = {}",
@@ -752,6 +801,8 @@ fn convert_conditional(
         dor_exclude: true,
         visible: false,
         dor_num_cols: None,
+        colspan,
+        dor_colspan,
     }
 }
 
@@ -759,6 +810,8 @@ fn convert_grid_layout(
     gl: &GridLayout,
     config: &AemConfig,
     ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
 ) -> AemNode {
     let name = ctx.make_name("GRID", "");
     let uuid = ctx.uuid(&name);
@@ -768,7 +821,8 @@ fn convert_grid_layout(
         .iter()
         .filter_map(|elem| {
             let col_span = (elem.span as u32 * config.grid_columns) / total;
-            convert_node(&elem.node, config, ctx, col_span.max(1))
+            let dor_col_span = Some(elem.span as u32);
+            convert_node(&elem.node, config, ctx, col_span.max(1), dor_col_span)
         })
         .collect();
     AemNode::Panel {
@@ -780,6 +834,8 @@ fn convert_grid_layout(
         dor_exclude: false,
         visible: true,
         dor_num_cols: Some(gl.columns as u32),
+        colspan,
+        dor_colspan,
     }
 }
 
@@ -1491,16 +1547,39 @@ mod tests {
         let children = unwrap_preamble(&root);
         assert_eq!(children.len(), 1);
         match &children[0] {
-            AemNode::Panel { children, .. } => {
+            AemNode::Panel {
+                children,
+                dor_num_cols,
+                dor_colspan,
+                ..
+            } => {
+                // Grid with 3 columns → dorNumCols = 3
+                assert_eq!(*dor_num_cols, Some(3));
+                // The panel itself has no dor_colspan (top-level)
+                assert_eq!(*dor_colspan, None);
                 assert_eq!(children.len(), 2);
-                // span=1 of 3 columns → 12/3*1 = 4
+                // span=1 of 3 columns → 12/3*1 = 4, dorColspan = 1
                 match &children[0] {
-                    AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 4),
+                    AemNode::TextField {
+                        colspan,
+                        dor_colspan,
+                        ..
+                    } => {
+                        assert_eq!(*colspan, 4);
+                        assert_eq!(*dor_colspan, Some(1));
+                    }
                     other => panic!("Expected TextField, got {:?}", other),
                 }
-                // span=2 of 3 columns → 12/3*2 = 8
+                // span=2 of 3 columns → 12/3*2 = 8, dorColspan = 2
                 match &children[1] {
-                    AemNode::TextField { colspan, .. } => assert_eq!(*colspan, 8),
+                    AemNode::TextField {
+                        colspan,
+                        dor_colspan,
+                        ..
+                    } => {
+                        assert_eq!(*colspan, 8);
+                        assert_eq!(*dor_colspan, Some(2));
+                    }
                     other => panic!("Expected TextField, got {:?}", other),
                 }
             }

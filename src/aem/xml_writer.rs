@@ -545,6 +545,8 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
         dor_exclude,
         visible,
         dor_num_cols,
+        colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -574,6 +576,9 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
     if *is_page {
         elem.push_attribute(("dorExcludeTitle", "true"));
     }
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("validateOnStepCompletion", "{Boolean}false"));
     w.write_event(Event::Start(elem)).unwrap();
@@ -587,6 +592,8 @@ fn write_panel(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: &Ae
 
     // <layout>
     write_layout(w, config, true, *dor_num_cols);
+
+    write_responsive(w, *colspan);
 
     w.write_event(Event::End(BytesEnd::new(tag))).unwrap();
 }
@@ -604,6 +611,7 @@ fn write_text_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
         visible,
         max_chars,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -623,6 +631,9 @@ fn write_text_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
     elem.push_attribute(("assistPriority", "label"));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
     elem.push_attribute(("dorExclusion", bool_str(!visible)));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -651,6 +662,7 @@ fn write_number_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
         mandatory,
         visible,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -670,6 +682,9 @@ fn write_number_field(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
     elem.push_attribute(("assistPriority", "label"));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
     elem.push_attribute(("dorExclusion", bool_str(!visible)));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideNumberBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -695,6 +710,7 @@ fn write_date_picker(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, confi
         mandatory,
         visible,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -713,6 +729,9 @@ fn write_date_picker(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, confi
     ));
     elem.push_attribute(("visible", format!("{{Boolean}}{visible}").as_str()));
     elem.push_attribute(("dorExclusion", bool_str(!visible)));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("defaultToCurrentDate", "true"));
     elem.push_attribute(("guideNodeClass", "guideDatePicker"));
@@ -749,6 +768,7 @@ fn write_dropdown(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
         mandatory,
         visible,
         colspan,
+        dor_colspan,
         conditions,
         ..
     } = node
@@ -767,6 +787,9 @@ fn write_dropdown(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
         "sling:resourceType",
         config.control_resource_type("dropdownlist").as_str(),
     ));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideDropDownList"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -796,6 +819,7 @@ fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
         alignment,
         visible,
         colspan,
+        dor_colspan,
         conditions,
         ..
     } = node
@@ -814,6 +838,9 @@ fn write_checkbox(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config: 
     elem.push_attribute(("alignment", alignment_str(*alignment)));
     elem.push_attribute(("assistPriority", "caption"));
     elem.push_attribute(("css", config.css_class("checkbox").as_str()));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("richTextOptions", "true"));
     elem.push_attribute(("guideNodeClass", "guideCheckBox"));
@@ -852,6 +879,7 @@ fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
         mandatory,
         visible,
         colspan,
+        dor_colspan,
         conditions,
         ..
     } = node
@@ -871,6 +899,9 @@ fn write_radio_button(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, conf
         config.control_resource_type("radiobutton").as_str(),
     ));
     elem.push_attribute(("css", config.css_class("radiobutton").as_str()));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideRadioButton"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -906,6 +937,7 @@ fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config:
         content,
         dor_exclude,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -921,6 +953,9 @@ fn write_text_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config:
     ));
     elem.push_attribute(("_value", content.as_str()));
     elem.push_attribute(("css", ""));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextDraw"));
     elem.push_attribute(("name", name.as_str()));
@@ -951,6 +986,7 @@ fn write_title_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
         content,
         heading_level,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -965,6 +1001,9 @@ fn write_title_draw(w: &mut Writer<&mut Cursor<Vec<u8>>>, node: &AemNode, config
         config.control_resource_type("titledraw").as_str(),
     ));
     elem.push_attribute(("_value", content.as_str()));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextDraw"));
     elem.push_attribute(("headingLevel", heading_level.to_string().as_str()));
@@ -993,6 +1032,7 @@ fn write_text_box_multiline(
         mandatory,
         visible,
         colspan,
+        dor_colspan,
     } = node
     else {
         return;
@@ -1013,6 +1053,9 @@ fn write_text_box_multiline(
         "css",
         format!("{} ubs-textbox-multiline", config.css_class("textbox")).as_str(),
     ));
+    if let Some(dcs) = dor_colspan {
+        elem.push_attribute(("dorColspan", dcs.to_string().as_str()));
+    }
     elem.push_attribute(("dorFieldStyling", config.dor_field_styling.as_str()));
     elem.push_attribute(("guideNodeClass", "guideTextBox"));
     elem.push_attribute(("mandatory", bool_str(*mandatory)));
@@ -2058,6 +2101,7 @@ mod tests {
                 content: "<p>Hello &amp; world</p>".into(),
                 dor_exclude: false,
                 colspan: 12,
+                dor_colspan: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -2157,6 +2201,7 @@ mod tests {
                 visible: true,
                 max_chars: Some(100),
                 colspan: 6,
+                dor_colspan: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -2185,6 +2230,7 @@ mod tests {
                 alignment: OptionAlignment::Horizontal,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
             }],
@@ -2323,6 +2369,7 @@ mod tests {
                 mandatory: true,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
             }],
@@ -2345,6 +2392,7 @@ mod tests {
                 content: "<h1>Title</h1>".into(),
                 dor_exclude: false,
                 colspan: 12,
+                dor_colspan: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -2373,6 +2421,8 @@ mod tests {
                 dor_exclude: true,
                 visible: false,
                 dor_num_cols: None,
+                colspan: 12,
+                dor_colspan: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -2412,6 +2462,7 @@ mod tests {
                 mandatory: false,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![ConditionRule {
                     target_panel_name: "COND_TargetPanel".into(),
@@ -2459,6 +2510,7 @@ mod tests {
                 mandatory: false,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
             }],
@@ -2494,6 +2546,7 @@ mod tests {
                 mandatory: false,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![ConditionRule {
                     target_panel_name: "COND_PanelA".into(),
@@ -2531,6 +2584,7 @@ mod tests {
                 alignment: OptionAlignment::Horizontal,
                 visible: true,
                 colspan: 12,
+                dor_colspan: None,
                 field_id: None,
                 conditions: vec![ConditionRule {
                     target_panel_name: "COND_AcceptPanel".into(),
@@ -2660,6 +2714,92 @@ mod tests {
             json.contains("SCRIPTMODEL"),
             "JSON should contain SCRIPTMODEL. Got: {}",
             json
+        );
+    }
+
+    // ========================================================================
+    // dorColspan tests
+    // ========================================================================
+
+    #[test]
+    fn dor_colspan_emitted_on_fields_in_grid_panel() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Panel {
+                uuid: fixed_uuid(),
+                name: "GridPanel".into(),
+                title: "Grid Panel".into(),
+                is_page: false,
+                dor_exclude: false,
+                visible: true,
+                dor_num_cols: Some(3),
+                colspan: 12,
+                dor_colspan: None,
+                children: vec![
+                    AemNode::TextField {
+                        uuid: fixed_uuid(),
+                        name: "Street".into(),
+                        label: "Street".into(),
+                        mandatory: false,
+                        visible: true,
+                        max_chars: None,
+                        colspan: 8,
+                        dor_colspan: Some(2),
+                    },
+                    AemNode::TextField {
+                        uuid: fixed_uuid(),
+                        name: "No".into(),
+                        label: "No".into(),
+                        mandatory: false,
+                        visible: true,
+                        max_chars: None,
+                        colspan: 4,
+                        dor_colspan: Some(1),
+                    },
+                ],
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // Panel should have dorNumCols="3"
+        assert!(
+            xml.contains("dorNumCols=\"3\""),
+            "Panel should have dorNumCols=3. Got:\n{}",
+            xml
+        );
+        // Street field should have dorColspan="2"
+        assert!(
+            xml.contains("dorColspan=\"2\""),
+            "Street field should have dorColspan=2. Got:\n{}",
+            xml
+        );
+        // No field should have dorColspan="1"
+        assert!(
+            xml.contains("dorColspan=\"1\""),
+            "No field should have dorColspan=1. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn dor_colspan_not_emitted_when_none() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::TextField {
+                uuid: fixed_uuid(),
+                name: "PlainField".into(),
+                label: "Plain".into(),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            !xml.contains("dorColspan"),
+            "Field without dor_colspan should not emit dorColspan. Got:\n{}",
+            xml
         );
     }
 }
