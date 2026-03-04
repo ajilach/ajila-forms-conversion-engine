@@ -108,7 +108,7 @@ pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
 pub use grid_template::GridTemplateDetector;
-pub use heading_detector::{GlobalBorderStats, GlobalFontStats, HeadingDetector};
+pub use heading_detector::{GlobalFontStats, HeadingDetector};
 pub use inline_field_date_picker::InlineFieldDatePicker;
 pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;

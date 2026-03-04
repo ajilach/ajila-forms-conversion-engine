@@ -38,18 +38,8 @@ pub struct GlobalFontStats {
     pub heading_bucket_x_positions: HashMap<(u32, bool, bool), Vec<f32>>,
 }
 
-/// Kept for backward compatibility. No longer used for heading level detection.
-#[derive(Debug, Clone, Default)]
-pub struct GlobalBorderStats {
-    pub underlined_count: usize,
-    pub non_underlined_count: usize,
-    pub total_count: usize,
-}
-
 impl GlobalFontStats {
     /// Compute global font statistics from an iterator of Flattened references.
-    /// Note: This does NOT compute border_stats. Call `compute_border_stats` separately
-    /// after constructing this, passing the same flattened data.
     pub fn from_flattened_iter<'a>(flattened_iter: impl Iterator<Item = &'a Flattened>) -> Self {
         let mut sizes: Vec<f32> = Vec::new();
         let mut size_counts: HashMap<u32, usize> = HashMap::new();
@@ -274,14 +264,6 @@ impl GlobalFontStats {
             bucket_dominant_x,
             global_dominant_x,
         }
-    }
-
-    /// Backward-compatible alias for compute_heading_buckets.
-    pub fn compute_border_stats<'a>(
-        &mut self,
-        flattened_iter: impl Iterator<Item = &'a Flattened>,
-    ) {
-        self.compute_heading_buckets(flattened_iter);
     }
 
     /// Convert to internal FontStats format
