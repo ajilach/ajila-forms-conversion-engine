@@ -801,7 +801,7 @@ function _xfa_cloneSubform(original, depth) {
     fn create_host_object(&mut self) -> JsObject {
         let message_box = NativeFunction::from_fn_ptr(|_this, args, context| {
             let message = args.get_or_undefined(0).to_string(context)?;
-            eprintln!("[XFA messageBox]: {}", message.to_std_string_escaped());
+            log::debug!("[XFA messageBox]: {}", message.to_std_string_escaped());
             Ok(JsValue::undefined())
         });
 
@@ -2626,9 +2626,7 @@ _xfa_tmp_im_.removeInstance = function() {};
         }
 
         // Store in field_objects for later lookup
-        if std::env::var("XFA_DEBUG").is_ok() {
-            eprintln!("[REG] path={path} name={name} is_field={is_field} parent={parent_path:?}");
-        }
+        log::trace!("[REG] path={path} name={name} is_field={is_field} parent={parent_path:?}");
         self.field_objects
             .insert(som_path.clone(), node_obj.clone());
 

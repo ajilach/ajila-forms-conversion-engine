@@ -7,6 +7,7 @@ use blueprint::{
     build_field_label_map, document, flattened, structured, xfa,
 };
 use clap::{Parser, ValueEnum};
+use log::{error, info};
 use std::path::{Path, PathBuf};
 
 /// CLI render mode, wrapping the library's [`blueprint::RenderMode`].
@@ -74,10 +75,6 @@ struct Args {
     #[arg(long)]
     graphviz: bool,
 
-    /// Suppress verbose output (only show errors and final results)
-    #[arg(short, long)]
-    quiet: bool,
-
     /// Dump the raw XFA XML content to a file and exit
     #[arg(long)]
     dump_xfa: bool,
@@ -111,53 +108,37 @@ fn render_state(
     Ok(())
 }
 
-/// Macro for verbose-only output
-macro_rules! vprintln {
-    ($quiet:expr, $($arg:tt)*) => {
-        if !$quiet {
-            println!($($arg)*);
-        }
-    };
-}
-
 /// Helper to print verbose analysis summary
 #[allow(dead_code)]
-fn print_analysis_summary(doc: &Document, quiet: bool) {
-    if quiet {
-        return;
-    }
-
+fn print_analysis_summary(doc: &Document) {
     let text_blocks = doc.find_groups(|k| matches!(k, document::GroupKind::TextBlock));
-    println!("✓ Text blocks created: {}", text_blocks.len());
+    info!("Text blocks created: {}", text_blocks.len());
 
     let field_groups = doc.find_groups(|k| matches!(k, document::GroupKind::Field));
-    println!("✓ Field groups created: {}", field_groups.len());
+    info!("Field groups created: {}", field_groups.len());
 
     let date_fields = doc.find_groups(|k| matches!(k, document::GroupKind::DateField { .. }));
-    println!("✓ Date fields detected: {}", date_fields.len());
+    info!("Date fields detected: {}", date_fields.len());
 
     let radio_buttons = doc.find_groups(|k| matches!(k, document::GroupKind::RadioButton { .. }));
-    println!("✓ Radio buttons detected: {}", radio_buttons.len());
+    info!("Radio buttons detected: {}", radio_buttons.len());
 
     let checkboxes = doc.find_groups(|k| matches!(k, document::GroupKind::Checkbox { .. }));
-    println!("✓ Checkboxes detected: {}", checkboxes.len());
+    info!("Checkboxes detected: {}", checkboxes.len());
 
     let radio_button_groups =
         doc.find_groups(|k| matches!(k, document::GroupKind::RadioButtonGroup));
-    println!(
-        "✓ Radio button groups created: {}",
-        radio_button_groups.len()
-    );
+    info!("Radio button groups created: {}", radio_button_groups.len());
 
     let headings = doc.headings();
-    println!("✓ Headings detected: {}", headings.len());
+    info!("Headings detected: {}", headings.len());
 
     let labeled_fields = doc.labeled_fields();
-    println!("✓ Labeled fields found: {}", labeled_fields.len());
+    info!("Labeled fields found: {}", labeled_fields.len());
 
     // Print radio button summary
     if !radio_buttons.is_empty() {
-        println!("\nRadio Buttons:");
+        info!("Radio Buttons:");
         for (i, &rb_idx) in radio_buttons.iter().enumerate() {
             if let Some(group) = doc.get_group(rb_idx)
                 && let document::GroupKind::RadioButton { field, label } = group.kind
@@ -191,14 +172,14 @@ fn print_analysis_summary(doc: &Document, quiet: bool) {
                 } else {
                     ""
                 };
-                println!("  {}: [{}] {}{}", i + 1, field_name, preview, suffix);
+                info!("  {}: [{}] {}{}", i + 1, field_name, preview, suffix);
             }
         }
     }
 
     // Print heading summary
     if !headings.is_empty() {
-        println!("\nHeadings:");
+        info!("Headings:");
         for &h_idx in &headings {
             if let Some(group) = doc.get_group(h_idx)
                 && let document::GroupKind::Heading { level } = group.kind
@@ -206,14 +187,14 @@ fn print_analysis_summary(doc: &Document, quiet: bool) {
                 let text = doc.get_text_content(h_idx);
                 let preview: String = text.chars().take(60).collect();
                 let suffix = if text.chars().count() > 60 { "..." } else { "" };
-                println!("  H{}: {}{}", level, preview, suffix);
+                info!("  H{}: {}{}", level, preview, suffix);
             }
         }
     }
 
     // Print labeled field summary
     if !labeled_fields.is_empty() {
-        println!("\nLabeled Fields (sample):");
+        info!("Labeled Fields (sample):");
         for (i, &lf_idx) in labeled_fields.iter().take(10).enumerate() {
             let label_text = doc.get_label_text(lf_idx).unwrap_or_default();
             let field_name = doc.get_field_name(lf_idx).unwrap_or_default();
@@ -223,22 +204,23 @@ fn print_analysis_summary(doc: &Document, quiet: bool) {
             } else {
                 ""
             };
-            println!("  {}: '{}{}' -> {}", i + 1, preview, suffix, field_name);
+            info!("  {}: '{}{}' -> {}", i + 1, preview, suffix, field_name);
         }
         if labeled_fields.len() > 10 {
-            println!("  ... and {} more", labeled_fields.len() - 10);
+            info!("  ... and {} more", labeled_fields.len() - 10);
         }
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+
     let args = Args::parse();
-    let quiet = args.quiet;
 
     // Check if all documents exist
     for doc_path in &args.documents {
         if !doc_path.exists() {
-            eprintln!("Error: Document not found: {}", doc_path.display());
+            error!("Document not found: {}", doc_path.display());
             std::process::exit(1);
         }
     }
@@ -250,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut base_doc_name: Option<String> = None;
 
     for doc_path in &args.documents {
-        vprintln!(quiet, "Processing document: {}", doc_path.display());
+        info!("Processing document: {}", doc_path.display());
 
         let doc_name = doc_path
             .file_stem()
@@ -270,11 +252,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let xml_path = std::path::PathBuf::from(format!("{}.xml", doc_name));
                     std::fs::write(&xml_path, &xfa_data)
                         .map_err(|e| format!("Failed to write XFA XML: {}", e))?;
-                    println!("\u{2713} XFA dumped to {}", xml_path.display());
+                    info!("XFA dumped to {}", xml_path.display());
                 }
                 None => {
-                    eprintln!(
-                        "Note: {} is not an XFA PDF (no XFA data to dump)",
+                    info!(
+                        "{} is not an XFA PDF (no XFA data to dump)",
                         doc_path.display()
                     );
                 }
@@ -285,22 +267,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut bp = Blueprint::from_pdf(doc_path)?;
 
         if bp.is_xfa() {
-            vprintln!(quiet, "\u{2713} XFA data extracted");
-            vprintln!(quiet, "\u{2713} XFA structure parsed");
+            info!("XFA data extracted");
+            info!("XFA structure parsed");
         } else {
-            vprintln!(quiet, "\u{2713} AcroForm PDF parsed (non-XFA)");
+            info!("AcroForm PDF parsed (non-XFA)");
         }
 
         // =====================================================================
         // PIPELINE STAGE 2: Extract language + build context
         // =====================================================================
         let language = bp.language().to_string();
-        vprintln!(quiet, "✓ Detected language: {}", language);
+        info!("Detected language: {}", language);
 
         let context = bp.context();
 
         if !args.modules.is_empty() {
-            vprintln!(quiet, "✓ Enabled modules: {:?}", args.modules);
+            info!("Enabled modules: {:?}", args.modules);
         }
 
         // =====================================================================
@@ -314,39 +296,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.html
         };
 
-        if !quiet {
-            if bp.is_xfa() {
-                println!("\nExhaustive mode: recursively discovering all form states...");
-            } else {
-                println!("\nAcroForm mode: extracting text and form fields...");
-            }
-            if !args.render_modes.is_empty() {
-                println!("  Render modes: {:?}", args.render_modes);
-            }
-            if args.structured {
-                println!("  Structured JSON: enabled");
-            }
-            if args.html {
-                println!("  HTML output: enabled");
-            }
-            if args.aem {
-                println!("  AEM package output: enabled");
-            }
-            if args.graphviz {
-                println!("  GraphViz decision-flow: enabled");
-            }
+        if bp.is_xfa() {
+            info!("Exhaustive mode: recursively discovering all form states...");
+        } else {
+            info!("AcroForm mode: extracting text and form fields...");
+        }
+        if !args.render_modes.is_empty() {
+            info!("  Render modes: {:?}", args.render_modes);
+        }
+        if args.structured {
+            info!("  Structured JSON: enabled");
+        }
+        if args.html {
+            info!("  HTML output: enabled");
+        }
+        if args.aem {
+            info!("  AEM package output: enabled");
+        }
+        if args.graphviz {
+            info!("  GraphViz decision-flow: enabled");
         }
 
-        if !quiet {
-            println!("\n  Pass 1: Collecting all form states...");
-        }
+        info!("  Pass 1: Collecting all form states...");
 
         let form_states = bp.states()?;
 
-        if !quiet {
-            println!("    Found {} unique states", form_states.len());
-            println!("\n  Pass 2: Analyzing and generating outputs...");
-        }
+        info!("    Found {} unique states", form_states.len());
+        info!("  Pass 2: Analyzing and generating outputs...");
 
         let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
         let mut graph_states: Vec<GraphState> = Vec::new();
@@ -419,9 +395,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 structured_outputs.push((state.selections.clone(), envelope.content));
             }
 
-            if !quiet && !outputs.is_empty() {
-                println!(
-                    "    ✓ Generated: {} (selections: {:?})",
+            if !outputs.is_empty() {
+                info!(
+                    "    Generated: {} (selections: {:?})",
                     outputs.join(", "),
                     state
                         .selections
@@ -459,7 +435,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::fs::write(&json_path, json)
                     .map_err(|e| format!("Failed to write merged JSON file: {}", e))?;
 
-                vprintln!(quiet, "    ✓ Merged output: {}", json_path.display());
+                info!("    Merged output: {}", json_path.display());
             }
 
             if generate_html {
@@ -470,7 +446,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::fs::write(&html_path, html_output)
                     .map_err(|e| format!("Failed to write merged HTML file: {}", e))?;
 
-                vprintln!(quiet, "    ✓ Merged HTML: {}", html_path.display());
+                info!("    Merged HTML: {}", html_path.display());
             }
 
             if args.aem && args.documents.len() <= 1 {
@@ -483,16 +459,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::write(&aem_path, aem_output)
                         .map_err(|e| format!("Failed to write AEM package: {}", e))?;
 
-                    vprintln!(
-                        quiet,
-                        "    \u{2713} Merged AEM package: {}",
-                        aem_path.display()
-                    );
+                    info!("    Merged AEM package: {}", aem_path.display());
                 } else {
-                    vprintln!(
-                        quiet,
-                        "    Note: AEM export skipped (requires XFA variables)"
-                    );
+                    info!("    AEM export skipped (requires XFA variables)");
                 }
             }
 
@@ -510,7 +479,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(&dot_path, dot_output)
                 .map_err(|e| format!("Failed to write GraphViz DOT file: {}", e))?;
 
-            vprintln!(quiet, "    ✓ Decision flow: {}", dot_path.display());
+            info!("    Decision flow: {}", dot_path.display());
         }
     }
 
@@ -522,11 +491,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Strip language suffix from base doc name for the merged output
         let merged_name = strip_language_suffix(doc_name);
 
-        vprintln!(
-            quiet,
-            "\nMerging {} language variants...",
-            all_envelopes.len()
-        );
+        info!("Merging {} language variants...", all_envelopes.len());
 
         let merged_envelope = blueprint::merge_translations(all_envelopes)
             .map_err(|e| format!("Translation merge failed: {}", e))?;
@@ -540,7 +505,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(&json_path, json)
                 .map_err(|e| format!("Failed to write multilingual JSON: {}", e))?;
 
-            vprintln!(quiet, "✓ Multilingual JSON: {}", json_path.display());
+            info!("Multilingual JSON: {}", json_path.display());
         }
 
         // Generate merged multilingual HTML
@@ -552,7 +517,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(&html_path, html_output)
                 .map_err(|e| format!("Failed to write multilingual HTML: {}", e))?;
 
-            vprintln!(quiet, "✓ Multilingual HTML: {}", html_path.display());
+            info!("Multilingual HTML: {}", html_path.display());
         }
 
         // Generate merged multilingual AEM package
@@ -564,7 +529,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(&aem_path, aem_output)
                 .map_err(|e| format!("Failed to write multilingual AEM package: {}", e))?;
 
-            vprintln!(quiet, "✓ Multilingual AEM package: {}", aem_path.display());
+            info!("Multilingual AEM package: {}", aem_path.display());
         }
     }
 

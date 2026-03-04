@@ -260,31 +260,35 @@ struct FieldRef {
 /// Script object names (like `soLocalLabelDefinition`) are NOT filtered —
 /// they are returned so that the caller can resolve them transitively.
 fn extract_field_references(source: &str) -> Vec<FieldRef> {
-    let re_presence = Regex::new(
-        r"(\b[A-Za-z_]\w*)\.presence"
-    ).expect("valid regex");
+    let re_presence = Regex::new(r"(\b[A-Za-z_]\w*)\.presence").expect("valid regex");
 
-    let re_value = Regex::new(
-        r"(\b[A-Za-z_]\w*)\.(?:rawValue|value)"
-    ).expect("valid regex");
+    let re_value = Regex::new(r"(\b[A-Za-z_]\w*)\.(?:rawValue|value)").expect("valid regex");
 
-    let re_resolve = Regex::new(
-        r#"resolveNode\([\s]*["']([^"']+)["'][\s]*\)"#
-    ).expect("valid regex");
+    let re_resolve =
+        Regex::new(r#"resolveNode\([\s]*["']([^"']+)["'][\s]*\)"#).expect("valid regex");
 
-    let re_method = Regex::new(
-        r"(\b[A-Za-z_]\w*)\.\w+\("
-    ).expect("valid regex");
+    let re_method = Regex::new(r"(\b[A-Za-z_]\w*)\.\w+\(").expect("valid regex");
 
     let mut refs = Vec::new();
     let mut seen: HashSet<(String, RefKind)> = HashSet::new();
 
     // Non-field names to ignore — only true JS globals, not script objects
     let ignore: HashSet<&str> = [
-        "this", "xfa", "event", "app", "console",
-        "Math", "String", "Number", "Date",
-        "parseInt", "parseFloat", "JSON",
-    ].into_iter().collect();
+        "this",
+        "xfa",
+        "event",
+        "app",
+        "console",
+        "Math",
+        "String",
+        "Number",
+        "Date",
+        "parseInt",
+        "parseFloat",
+        "JSON",
+    ]
+    .into_iter()
+    .collect();
 
     let mut add_ref = |name: String, kind: RefKind, seen: &mut HashSet<(String, RefKind)>| {
         if !ignore.contains(name.as_str()) && seen.insert((name.clone(), kind.clone())) {
@@ -343,10 +347,7 @@ fn collect_script_object_sources(nodes: &[XfaNode]) -> HashMap<String, String> {
                                 if let Some(name) = &child.name {
                                     // Collect source from text_content and child text nodes
                                     if let Some(content) = text_content {
-                                        result
-                                            .entry(name.clone())
-                                            .or_default()
-                                            .push_str(content);
+                                        result.entry(name.clone()).or_default().push_str(content);
                                     }
                                     for script_child in &child.children {
                                         match &script_child.kind {
@@ -471,10 +472,7 @@ fn partition_fields(
     let mut uf = UnionFind::new(n);
 
     // Build a set of all field paths for quick membership tests
-    let field_paths: HashSet<SomPath> = global_field_order
-        .iter()
-        .map(|f| f.path.clone())
-        .collect();
+    let field_paths: HashSet<SomPath> = global_field_order.iter().map(|f| f.path.clone()).collect();
 
     // Build path→index lookup
     let path_to_idx: HashMap<&SomPath, usize> = global_field_order
@@ -526,13 +524,11 @@ fn partition_fields(
                     // Use context-aware scoped resolution instead of global
                     // name lookup. This ensures that `RB_Group` in section A's
                     // script resolves to section A's exclGroup, not section B's.
-                    let target_path = match som_resolver.resolve_unqualified(
-                        &field_ref.name,
-                        &script_owner,
-                    ) {
-                        Some(p) => p,
-                        None => continue,
-                    };
+                    let target_path =
+                        match som_resolver.resolve_unqualified(&field_ref.name, &script_owner) {
+                            Some(p) => p,
+                            None => continue,
+                        };
 
                     // Case 1: target is directly a selectable field
                     if let Some(&target_idx) = path_to_idx.get(&target_path) {
@@ -545,8 +541,7 @@ fn partition_fields(
                     // For .rawValue/.value refs to containers, the container
                     // itself is not a selectable field, so no union is needed.
                     if field_ref.kind == RefKind::Presence {
-                        let descendants =
-                            descendant_interactive_fields(&target_path, &field_paths);
+                        let descendants = descendant_interactive_fields(&target_path, &field_paths);
                         for desc in &descendants {
                             if let Some(&desc_idx) = path_to_idx.get(desc) {
                                 uf.union(idx, desc_idx);
@@ -666,11 +661,15 @@ pub fn collect_states(
         &script_objects,
     );
 
-    eprintln!(
+    log::info!(
         "[exhaustive] {} selectable fields → {} independent group(s): {}",
         global_field_order.len(),
         groups.len(),
-        groups.iter().map(|g| g.len().to_string()).collect::<Vec<_>>().join(", ")
+        groups
+            .iter()
+            .map(|g| g.len().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     // If a single group (or zero/one fields), fall through to the original
@@ -860,16 +859,10 @@ fn combine_group_results(
                     let _ = form.select_radio_button(sel.som_path.as_str());
                 }
                 SelectionKind::Checkbox => {
-                    let _ = form.set_value_as_user(
-                        sel.som_path.as_str(),
-                        sel.primary_value(),
-                    );
+                    let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
                 }
                 SelectionKind::Dropdown => {
-                    let _ = form.set_value_as_user(
-                        sel.som_path.as_str(),
-                        sel.primary_value(),
-                    );
+                    let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
                 }
             }
         }

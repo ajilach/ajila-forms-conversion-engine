@@ -68,8 +68,8 @@ impl ScriptExecutor {
         match Self::execute_internal(xfa_nodes) {
             Ok(result) => result,
             Err(e) => {
-                eprintln!(
-                    "Warning: Script execution failed: {}. Continuing without script results.",
+                log::warn!(
+                    "Script execution failed: {}. Continuing without script results.",
                     e
                 );
                 ScriptExecutionResult::default()
@@ -111,8 +111,8 @@ impl ScriptExecutor {
             .filter(|(_, _, _, script, _)| script.content_type == ScriptContentType::FormCalc)
             .count();
         if formcalc_count > 0 {
-            eprintln!(
-                "Warning: {} FormCalc script(s) found but not executed \
+            log::warn!(
+                "{} FormCalc script(s) found but not executed \
                  (only JavaScript is supported). Results may be incomplete.",
                 formcalc_count
             );
@@ -195,8 +195,8 @@ impl ScriptExecutor {
             }
 
             if iteration == max_calc_iterations - 1 {
-                eprintln!(
-                    "Warning: Calculation convergence not reached after {} iterations \
+                log::warn!(
+                    "Calculation convergence not reached after {} iterations \
                      (possible circular dependency). Results may be incorrect.",
                     max_calc_iterations
                 );
@@ -244,10 +244,8 @@ impl ScriptExecutor {
                 engine.update_event_context(&EventActivity::Initialize, full_path, None);
 
                 let result = engine.execute_script(script);
-                if let Err(ref e) = result
-                    && std::env::var("XFA_DEBUG").is_ok()
-                {
-                    eprintln!("[INIT ERR] field={field_name} path={full_path}: {e}");
+                if let Err(ref e) = result {
+                    log::debug!("[INIT ERR] field={field_name} path={full_path}: {e}");
                 }
                 let _ = result;
 
