@@ -25,4 +25,7 @@
         "https://docs.rs": true,
     },
     "liveServer.settings.port": 5501,
+    "github-actions.workflows.pinned.workflows": [
+        ".github/workflows/test.yml"
+    ],
 }
