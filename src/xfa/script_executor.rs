@@ -319,39 +319,14 @@ impl ScriptExecutor {
         presence_map_after_phase1.extend(dynamic_presence_overrides.clone());
 
         // Phase 2: Execute form-ready JavaScript events
-        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
-            if script.content_type == ScriptContentType::JavaScript
-                && script.activity == EventActivity::Ready
-                && script.event_ref == EventRef::Form
-                && !field_name.is_empty()
-                && !Self::is_effectively_inactive(
-                    full_path,
-                    *static_presence,
-                    &presence_map_after_phase1,
-                )
-            {
-                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Ready, full_path, None);
-
-                if let Ok(Some(value)) = engine.execute_script(script) {
-                    computed_values.insert(SomPath::new(field_name.clone()), value);
-                }
-
-                // Collect values set on child fields
-                // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
-                for (child_name, child_id) in child_fields {
-                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
-
-                        if !storage_key.is_empty() {
-                            computed_values
-                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
-                        }
-                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
-                    }
-                }
-            }
-        }
+        Self::execute_phase_events(
+            &all_events,
+            EventActivity::Ready,
+            Some(&EventRef::Form),
+            &presence_map_after_phase1,
+            &mut engine,
+            &mut computed_values,
+        );
 
         // Build dynamic presence map from Phase 1+2 presence changes.
         // Also collect SOM-level presence changes from Phase 2 for cross-phase suppression.
@@ -367,74 +342,26 @@ impl ScriptExecutor {
         presence_map_after_phase2.extend(dynamic_presence_overrides);
 
         // Phase 3: Execute layout-ready JavaScript events
-        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
-            if script.content_type == ScriptContentType::JavaScript
-                && script.activity == EventActivity::Ready
-                && script.event_ref == EventRef::Layout
-                && !field_name.is_empty()
-                && !Self::is_effectively_inactive(
-                    full_path,
-                    *static_presence,
-                    &presence_map_after_phase2,
-                )
-            {
-                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::Ready, full_path, None);
-
-                if let Ok(Some(value)) = engine.execute_script(script) {
-                    computed_values.insert(SomPath::new(field_name.clone()), value);
-                }
-
-                // Collect values set on child fields
-                // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
-                for (child_name, child_id) in child_fields {
-                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
-
-                        if !storage_key.is_empty() {
-                            computed_values
-                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
-                        }
-                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
-                    }
-                }
-            }
-        }
+        Self::execute_phase_events(
+            &all_events,
+            EventActivity::Ready,
+            Some(&EventRef::Layout),
+            &presence_map_after_phase2,
+            &mut engine,
+            &mut computed_values,
+        );
 
         // Phase 4: Execute docReady JavaScript events
         // Per XFA 3.3 §10 p.408: docReady fires after all form-level events
         // (initialize, form:ready, layout:ready) have completed.
-        for (field_name, full_path, child_fields, script, static_presence) in &all_events {
-            if script.content_type == ScriptContentType::JavaScript
-                && script.activity == EventActivity::DocReady
-                && !field_name.is_empty()
-                && !Self::is_effectively_inactive(
-                    full_path,
-                    *static_presence,
-                    &presence_map_after_phase2,
-                )
-            {
-                engine.set_current_field_with_children(full_path, field_name, "", child_fields);
-                engine.update_event_context(&EventActivity::DocReady, full_path, None);
-
-                if let Ok(Some(value)) = engine.execute_script(script) {
-                    computed_values.insert(SomPath::new(field_name.clone()), value);
-                }
-
-                // Collect values set on child fields
-                for (child_name, child_id) in child_fields {
-                    if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
-                        let storage_key = if !id.is_empty() { id } else { child_id.clone() };
-
-                        if !storage_key.is_empty() {
-                            computed_values
-                                .insert(SomPath::new(storage_key.clone()), child_value.clone());
-                        }
-                        computed_values.insert(SomPath::new(child_name.clone()), child_value);
-                    }
-                }
-            }
-        }
+        Self::execute_phase_events(
+            &all_events,
+            EventActivity::DocReady,
+            None,
+            &presence_map_after_phase2,
+            &mut engine,
+            &mut computed_values,
+        );
 
         // Phase 5: Collect all values from SOM hierarchy
         // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
@@ -567,6 +494,55 @@ impl ScriptExecutor {
             &mut subform_counters,
         );
         parent_child_map
+    }
+
+    /// Execute a phase of JavaScript events (form:ready, layout:ready, or docReady).
+    ///
+    /// Iterates over all collected events, runs those matching the given
+    /// `activity` (and optionally `event_ref`), and collects computed values.
+    fn execute_phase_events(
+        all_events: &[(String, String, Vec<ChildNameIdPair>, XfaScript, Presence)],
+        activity: EventActivity,
+        event_ref: Option<&EventRef>,
+        presence_map: &HashMap<String, Presence>,
+        engine: &mut XfaScriptEngine,
+        computed_values: &mut HashMap<SomPath, String>,
+    ) {
+        for (field_name, full_path, child_fields, script, static_presence) in all_events {
+            if script.content_type != ScriptContentType::JavaScript
+                || script.activity != activity
+                || field_name.is_empty()
+                || Self::is_effectively_inactive(full_path, *static_presence, presence_map)
+            {
+                continue;
+            }
+            if let Some(er) = event_ref {
+                if script.event_ref != *er {
+                    continue;
+                }
+            }
+
+            engine.set_current_field_with_children(full_path, field_name, "", child_fields);
+            engine.update_event_context(&activity, full_path, None);
+
+            if let Ok(Some(value)) = engine.execute_script(script) {
+                computed_values.insert(SomPath::new(field_name.clone()), value);
+            }
+
+            // Collect values set on child fields
+            // Empty strings are valid per XFA spec (cleared fields, deselected exclGroups)
+            for (child_name, child_id) in child_fields {
+                if let Some((id, child_value)) = engine.get_child_field_value(child_name) {
+                    let storage_key = if !id.is_empty() { id } else { child_id.clone() };
+
+                    if !storage_key.is_empty() {
+                        computed_values
+                            .insert(SomPath::new(storage_key.clone()), child_value.clone());
+                    }
+                    computed_values.insert(SomPath::new(child_name.clone()), child_value);
+                }
+            }
+        }
     }
 
     /// Check if a node is effectively inactive, considering both static
