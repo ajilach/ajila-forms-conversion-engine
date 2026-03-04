@@ -841,8 +841,17 @@ mod tests {
     use crate::xfa::{XfaNode, XfaNodeKind};
     use std::collections::HashMap;
 
-    /// Build a minimal field node with an initialize event script.
-    fn make_field_with_init_script(name: &str, script_source: &str, presence: &str) -> XfaNode {
+    /// Build a minimal field node with an event script.
+    ///
+    /// `activity` is e.g. `"initialize"`, `"ready"`, `"calculate"`, `"validate"`.
+    /// `event_ref` is an optional ref attribute (e.g. `"$form"` for form-ready).
+    fn make_field_with_script(
+        name: &str,
+        script_source: &str,
+        presence: &str,
+        activity: &str,
+        event_ref: Option<&str>,
+    ) -> XfaNode {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), name.to_string());
         if !presence.is_empty() {
@@ -851,7 +860,6 @@ mod tests {
 
         let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
 
-        // Build <event activity="initialize"><script contentType="application/x-javascript">...</script></event>
         let script_node = XfaNode::new(
             XfaNodeKind::Element {
                 tag_name: "script".to_string(),
@@ -867,62 +875,42 @@ mod tests {
             },
         );
 
+        let mut event_attrs = HashMap::new();
+        event_attrs.insert("activity".to_string(), activity.to_string());
+        if let Some(r) = event_ref {
+            event_attrs.insert("ref".to_string(), r.to_string());
+        }
+
         let mut event_node = XfaNode::new(
             XfaNodeKind::Element {
                 tag_name: "event".to_string(),
                 text_content: None,
             },
-            {
-                let mut a = HashMap::new();
-                a.insert("activity".to_string(), "initialize".to_string());
-                a
-            },
+            event_attrs,
         );
         event_node.children.push(script_node);
         field.children.push(event_node);
         field
     }
 
-    /// Build a field with a form-ready event script.
+    fn make_field_with_init_script(name: &str, script_source: &str, presence: &str) -> XfaNode {
+        make_field_with_script(name, script_source, presence, "initialize", None)
+    }
+
     fn make_field_with_ready_script(name: &str, script_source: &str, presence: &str) -> XfaNode {
-        let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), name.to_string());
-        if !presence.is_empty() {
-            attrs.insert("presence".to_string(), presence.to_string());
-        }
+        make_field_with_script(name, script_source, presence, "ready", Some("$form"))
+    }
 
-        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
+    fn make_field_with_calculate_script(
+        name: &str,
+        script_source: &str,
+        presence: &str,
+    ) -> XfaNode {
+        make_field_with_script(name, script_source, presence, "calculate", None)
+    }
 
-        let script_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "script".to_string(),
-                text_content: Some(script_source.to_string()),
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert(
-                    "contentType".to_string(),
-                    "application/x-javascript".to_string(),
-                );
-                a
-            },
-        );
-
-        let mut event_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "event".to_string(),
-                text_content: None,
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert("activity".to_string(), "ready".to_string());
-                a.insert("ref".to_string(), "$form".to_string());
-                a
-            },
-        );
-        event_node.children.push(script_node);
-        field.children.push(event_node);
-        field
+    fn make_field_with_validate_script(name: &str, script_source: &str) -> XfaNode {
+        make_field_with_script(name, script_source, "", "validate", None)
     }
 
     /// Wrap fields in a minimal template > subform structure.
@@ -1050,89 +1038,6 @@ mod tests {
             !suppressed,
             "fieldB's form-ready script must be suppressed after dynamic presence change to inactive"
         );
-    }
-
-    /// Build a field with a calculate event script.
-    fn make_field_with_calculate_script(
-        name: &str,
-        script_source: &str,
-        presence: &str,
-    ) -> XfaNode {
-        let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), name.to_string());
-        if !presence.is_empty() {
-            attrs.insert("presence".to_string(), presence.to_string());
-        }
-
-        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
-
-        let script_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "script".to_string(),
-                text_content: Some(script_source.to_string()),
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert(
-                    "contentType".to_string(),
-                    "application/x-javascript".to_string(),
-                );
-                a
-            },
-        );
-
-        let mut event_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "event".to_string(),
-                text_content: None,
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert("activity".to_string(), "calculate".to_string());
-                a
-            },
-        );
-        event_node.children.push(script_node);
-        field.children.push(event_node);
-        field
-    }
-
-    /// Build a field with a validate event script.
-    fn make_field_with_validate_script(name: &str, script_source: &str) -> XfaNode {
-        let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), name.to_string());
-
-        let mut field = XfaNode::new(XfaNodeKind::Field, attrs);
-
-        let script_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "script".to_string(),
-                text_content: Some(script_source.to_string()),
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert(
-                    "contentType".to_string(),
-                    "application/x-javascript".to_string(),
-                );
-                a
-            },
-        );
-
-        let mut event_node = XfaNode::new(
-            XfaNodeKind::Element {
-                tag_name: "event".to_string(),
-                text_content: None,
-            },
-            {
-                let mut a = HashMap::new();
-                a.insert("activity".to_string(), "validate".to_string());
-                a
-            },
-        );
-        event_node.children.push(script_node);
-        field.children.push(event_node);
-        field
     }
 
     // =========================================================================
