@@ -27,10 +27,15 @@ use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource, ListStyleType};
 use crate::flattened::Bounds;
 use rust_decimal::prelude::*;
+use std::collections::HashSet;
 
 /// Maximum horizontal distance (in points) between text blocks' x positions
 /// for them to be considered part of the same list.
 const X_TOLERANCE: f64 = 5.0;
+
+/// Maximum vertical distance (in points) between a standalone marker
+/// TextBlock and a content TextBlock for them to be considered on the same line.
+const Y_SAME_LINE_TOLERANCE: f64 = 2.0;
 
 /// Detects and groups text blocks that form ordered or unordered lists.
 pub struct ListDetector;
@@ -282,16 +287,116 @@ fn detect_roman_marker(text: &str) -> Option<(usize, bool)> {
     Some((i + ws_after, is_upper))
 }
 
+/// Check if a text block contains *only* a list marker (with optional whitespace).
+/// Returns the marker kind if so.
+fn is_standalone_marker(text: &str) -> Option<ListStyleType> {
+    let marker = detect_marker(text)?;
+    // After stripping the marker prefix the remaining text must be empty.
+    let remaining = text[marker.prefix_len..].trim();
+    if remaining.is_empty() {
+        Some(marker.kind)
+    } else {
+        None
+    }
+}
+
+/// Pre-processing: merge standalone marker TextBlocks with their adjacent
+/// content TextBlocks that sit on the same line to the right.
+///
+/// In some PDFs the list bullet/dash is a separate text run positioned to the
+/// left of the item text.  Without this merge the list detector cannot
+/// recognise the items because neither the marker-only block nor the content
+/// block satisfies the detection criteria on its own.
+fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
+    let roots = doc.roots();
+    let y_tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+
+    let mut merges: Vec<(usize, usize)> = Vec::new(); // (marker_idx, content_idx)
+    let mut used: HashSet<usize> = HashSet::new();
+
+    // Collect root TextBlocks with their bounds, sorted by position.
+    let mut root_tbs: Vec<(usize, Bounds)> = Vec::new();
+    for &idx in &roots {
+        if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+            continue;
+        }
+        if let Some(b) = doc.get_bounds(idx) {
+            root_tbs.push((idx, b));
+        }
+    }
+
+    // Sort by y then x so we can find same-line neighbours.
+    root_tbs.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
+
+    for i in 0..root_tbs.len() {
+        let (marker_idx, ref marker_bounds) = root_tbs[i];
+        if used.contains(&marker_idx) {
+            continue;
+        }
+
+        let text = doc.get_text_content(marker_idx);
+        if is_standalone_marker(&text).is_none() {
+            continue;
+        }
+
+        // Find the next root TextBlock on the same line to the right.
+        for j in (i + 1)..root_tbs.len() {
+            let (content_idx, ref content_bounds) = root_tbs[j];
+            if used.contains(&content_idx) {
+                continue;
+            }
+
+            // Past the line – stop looking.
+            if (content_bounds.y - marker_bounds.y).abs() > y_tol {
+                break;
+            }
+
+            // Content must be to the right of the marker.
+            if content_bounds.x <= marker_bounds.x {
+                continue;
+            }
+
+            // The content block must not itself be a standalone marker (avoid
+            // merging two markers).
+            let content_text = doc.get_text_content(content_idx);
+            if is_standalone_marker(&content_text).is_some() {
+                continue;
+            }
+
+            merges.push((marker_idx, content_idx));
+            used.insert(marker_idx);
+            used.insert(content_idx);
+            break;
+        }
+    }
+
+    // Apply merges: wrap each (marker, content) pair in a new TextBlock.
+    for (marker_idx, content_idx) in merges {
+        doc.merge(
+            vec![marker_idx, content_idx],
+            GroupKind::TextBlock,
+            GroupSource::Inferred {
+                module: module_name.to_string(),
+            },
+        );
+    }
+}
 impl AnalysisModule for ListDetector {
     fn name(&self) -> &'static str {
         "ListDetector"
     }
 
     fn process(&self, doc: &mut Document) {
-        // Walk root groups in document order.  For each TextBlock that starts
-        // with a list marker we record it as a candidate.  Any non-TextBlock
-        // root (field, checkbox, heading, …) or a TextBlock without a marker
-        // acts as a separator that breaks the current run of list items.
+        // Phase 0: Merge standalone marker blocks (e.g. a "– " text node)
+        // with their adjacent content blocks on the same line.  This handles
+        // PDFs where the bullet character is a separate text run.
+        merge_standalone_markers(doc, self.name());
+
+        // Phase 1: Walk root groups in document order.  For each TextBlock
+        // that starts with a list marker we record it as a candidate.  Any
+        // non-TextBlock root (field, checkbox, heading, …) or a TextBlock
+        // without a marker acts as a separator that breaks the current run
+        // of list items.
         let roots = doc.roots();
         let x_tol = Decimal::from_f64(X_TOLERANCE).unwrap_or(Decimal::new(50, 1));
 

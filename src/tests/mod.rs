@@ -11763,3 +11763,72 @@ fn test_antrag_debug_title_text_runs() {
         }
     }
 }
+
+#[test]
+fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
+    // The PDF antrag_wirtschaftliche_sozialhilfe.pdf contains an unordered
+    // list where each dash marker (–) is a separate text node positioned to
+    // the left of the item text. The list detector should recognise this
+    // pattern and produce a single unordered list with three items.
+    use crate::context::Context;
+    use crate::document::ListStyleType;
+
+    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+        .expect("Failed to load PDF");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let lists = helpers::collect_lists(&envelope.content);
+
+    // There should be at least one list
+    assert!(
+        !lists.is_empty(),
+        "Expected at least one list in antrag_wirtschaftliche_sozialhilfe, found none"
+    );
+
+    // Find the unordered (dash) list containing these items
+    let dash_list = lists.iter().find(|l| {
+        l.list_style == ListStyleType::Dash
+            && l.items.iter().any(|item| {
+                item.as_plain_text().contains("Antrag muss")
+            })
+    });
+
+    assert!(
+        dash_list.is_some(),
+        "Expected a Dash list containing 'Antrag muss' item.\nFound lists: {:?}",
+        lists.iter().map(|l| format!("{:?}: {:?}", l.list_style, l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())).collect::<Vec<_>>()
+    );
+
+    let dash_list = dash_list.unwrap();
+
+    assert_eq!(
+        dash_list.items.len(),
+        3,
+        "Expected 3 items in the dash list, got {}.\nItems: {:?}",
+        dash_list.items.len(),
+        dash_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    let texts: Vec<String> = dash_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        texts[0].contains("Antrag muss vollständig ausgefüllt"),
+        "First item should contain 'Antrag muss vollständig ausgefüllt', got: {:?}",
+        texts[0]
+    );
+    assert!(
+        texts[1].contains("verlangten Unterlagen"),
+        "Second item should contain 'verlangten Unterlagen', got: {:?}",
+        texts[1]
+    );
+    assert!(
+        texts[2].contains("Alle Fragen beziehen sich"),
+        "Third item should contain 'Alle Fragen beziehen sich', got: {:?}",
+        texts[2]
+    );
+}
+
