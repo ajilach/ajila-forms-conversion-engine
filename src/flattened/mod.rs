@@ -280,6 +280,12 @@ pub struct FlattenedNode {
 
     /// Semantic hints for this node (node-specific hints like RichContent, Validation, etc.)
     pub hints: Vec<Hint>,
+
+    /// When true the renderer must not re-wrap the text content.
+    /// Set for AcroForm text nodes whose width was computed from the PDF
+    /// content stream glyph widths — re-measuring with the resolved render
+    /// font may produce different (wider) widths and cause unwanted wrapping.
+    pub no_wrap: bool,
 }
 
 /// Enum representing the specific kind of flattened node
@@ -459,6 +465,7 @@ pub enum Hint {
         /// Whether multiple selections are allowed (choiceList open="multiSelect")
         multi_select: bool,
     },
+
 }
 
 /// Region classification for master page (page background) content.
@@ -653,6 +660,7 @@ pub struct FlattenedNodeBuilder {
     rotate: i32,
     style: RenderStyle,
     hints: Vec<Hint>,
+    no_wrap: bool,
 }
 
 impl Default for FlattenedNodeBuilder {
@@ -666,6 +674,7 @@ impl Default for FlattenedNodeBuilder {
             rotate: 0,
             style: RenderStyle::default(),
             hints: Vec::new(),
+            no_wrap: false,
         }
     }
 }
@@ -790,6 +799,12 @@ impl FlattenedNodeBuilder {
         self
     }
 
+    /// Mark this node as no-wrap (width already measured from PDF content stream).
+    pub fn no_wrap(mut self, no_wrap: bool) -> Self {
+        self.no_wrap = no_wrap;
+        self
+    }
+
     /// Build the FlattenedNode. Panics if kind was not set.
     pub fn build(self) -> FlattenedNode {
         FlattenedNode {
@@ -803,6 +818,7 @@ impl FlattenedNodeBuilder {
             rotate: self.rotate,
             style: self.style,
             hints: self.hints,
+            no_wrap: self.no_wrap,
         }
     }
 }
@@ -5805,13 +5821,21 @@ impl Flattened {
                     } else if !content.is_empty() {
                         // Fallback to simple text rendering for plain text content
                         // Use styled version to account for letter spacing
-                        let lines = Self::wrap_text_with_font_styled(
-                            content,
-                            content_w as f32,
-                            scaled_font_size,
-                            &render_font,
-                            letter_spacing,
-                        );
+                        // Skip wrapping when the node's width was computed from PDF
+                        // content stream glyph widths (NoWrap hint) since re-measuring
+                        // with the resolved font may yield different widths.
+                        let no_wrap = node.no_wrap;
+                        let lines = if no_wrap {
+                            vec![content.to_string()]
+                        } else {
+                            Self::wrap_text_with_font_styled(
+                                content,
+                                content_w as f32,
+                                scaled_font_size,
+                                &render_font,
+                                letter_spacing,
+                            )
+                        };
                         let total_lines = lines.len();
 
                         for (i, line) in lines.iter().enumerate() {
@@ -6411,6 +6435,17 @@ impl Flattened {
         font: &FontRef<'_>,
     ) -> Vec<String> {
         Self::wrap_text_with_font_styled(text, max_width, font_size, font, 0.0)
+    }
+
+    /// Public test helper wrapping [`Self::wrap_text_with_font`].
+    #[cfg(test)]
+    pub fn wrap_text_with_font_test(
+        text: &str,
+        max_width: f32,
+        font_size: f32,
+        font: &FontRef<'_>,
+    ) -> Vec<String> {
+        Self::wrap_text_with_font(text, max_width, font_size, font)
     }
 
     /// Calculate the total text block height using AXTE rules

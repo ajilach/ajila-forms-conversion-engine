@@ -4,8 +4,8 @@
 //! their absolute positions, font information, and decoded Unicode content.
 
 use super::font_decoder::{FontEntry, FontMap, build_font_map};
-use lopdf::{Document, Object, ObjectId};
 use lopdf::content::Content;
+use lopdf::{Document, Object, ObjectId};
 
 /// A single run of text extracted from the PDF content stream,
 /// with its absolute position and font information.
@@ -111,10 +111,7 @@ fn mat_mul(a: &[f64; 6], b: &[f64; 6]) -> [f64; 6] {
 
 /// Transform a point (x, y) by a matrix.
 fn transform_point(m: &[f64; 6], x: f64, y: f64) -> (f64, f64) {
-    (
-        m[0] * x + m[2] * y + m[4],
-        m[1] * x + m[3] * y + m[5],
-    )
+    (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
 }
 
 /// Get the effective font size after applying the text matrix and CTM.
@@ -127,12 +124,15 @@ fn effective_font_size(text_state: &TextState, tm: &[f64; 6], ctm: &[f64; 6]) ->
     text_state.font_size * y_scale
 }
 
+/// Get the horizontal scaling factor from the text matrix and CTM.
+/// Used to convert text-space widths to user-space widths.
+fn effective_x_scale(tm: &[f64; 6], ctm: &[f64; 6]) -> f64 {
+    let combined = mat_mul(tm, ctm);
+    (combined[0] * combined[0] + combined[1] * combined[1]).sqrt()
+}
+
 /// Extract all text runs from a single PDF page.
-pub fn extract_text_runs(
-    doc: &Document,
-    page_id: ObjectId,
-    page_height: f64,
-) -> Vec<TextRun> {
+pub fn extract_text_runs(doc: &Document, page_id: ObjectId, page_height: f64) -> Vec<TextRun> {
     let font_map = build_font_map(doc, page_id);
 
     // Get page content stream bytes
@@ -245,13 +245,7 @@ pub fn extract_text_runs(
             "Tj" => {
                 if let Some(ref mut tms) = text_matrix {
                     if let Some(bytes) = get_string_bytes(&op.operands, 0) {
-                        let run = show_text(
-                            &bytes,
-                            &gs,
-                            tms,
-                            &font_map,
-                            page_height,
-                        );
+                        let run = show_text(&bytes, &gs, tms, &font_map, page_height);
                         if let Some(r) = run {
                             runs.push(r);
                         }
@@ -261,14 +255,7 @@ pub fn extract_text_runs(
             "TJ" => {
                 if let Some(ref mut tms) = text_matrix {
                     if let Some(Object::Array(array)) = op.operands.first() {
-                        show_text_array(
-                            array,
-                            &gs,
-                            tms,
-                            &font_map,
-                            page_height,
-                            &mut runs,
-                        );
+                        show_text_array(array, &gs, tms, &font_map, page_height, &mut runs);
                     }
                 }
             }
@@ -281,13 +268,7 @@ pub fn extract_text_runs(
                     tms.tm = tms.tlm;
 
                     if let Some(bytes) = get_string_bytes(&op.operands, 0) {
-                        let run = show_text(
-                            &bytes,
-                            &gs,
-                            tms,
-                            &font_map,
-                            page_height,
-                        );
+                        let run = show_text(&bytes, &gs, tms, &font_map, page_height);
                         if let Some(r) = run {
                             runs.push(r);
                         }
@@ -306,13 +287,7 @@ pub fn extract_text_runs(
                     tms.tm = tms.tlm;
 
                     if let Some(bytes) = get_string_bytes(&op.operands, 2) {
-                        let run = show_text(
-                            &bytes,
-                            &gs,
-                            tms,
-                            &font_map,
-                            page_height,
-                        );
+                        let run = show_text(&bytes, &gs, tms, &font_map, page_height);
                         if let Some(r) = run {
                             runs.push(r);
                         }
@@ -354,13 +329,16 @@ fn show_text(
     // Convert PDF coordinates (origin at bottom-left) to our coordinate system (origin at top-left)
     let y_top = page_height - abs_y;
 
+    // Scale text-space width to user-space using the x-component of Tm × CTM
+    let x_scale = effective_x_scale(&start_tm, &gs.ctm);
+
     Some(TextRun {
         text: decoded,
         x: abs_x,
         y: y_top - eff_size, // Adjust so y is the top of the text
         font_size: eff_size,
         font_name: font_entry.base_font.clone(),
-        width: width * gs.text_state.h_scaling,
+        width: (width * gs.text_state.h_scaling).abs() * x_scale,
         height: eff_size,
     })
 }
@@ -397,7 +375,14 @@ fn show_text_array(
                 let adjustment = -*n as f64 / 1000.0 * gs.text_state.font_size;
                 total_width += adjustment;
                 // Advance the text matrix
-                let advance = [1.0, 0.0, 0.0, 1.0, adjustment * gs.text_state.h_scaling, 0.0];
+                let advance = [
+                    1.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    adjustment * gs.text_state.h_scaling,
+                    0.0,
+                ];
                 tms.tm = mat_mul(&advance, &tms.tm);
 
                 // If the adjustment is large enough, it represents a word space
@@ -408,7 +393,14 @@ fn show_text_array(
             Object::Real(f) => {
                 let adjustment = -*f as f64 / 1000.0 * gs.text_state.font_size;
                 total_width += adjustment;
-                let advance = [1.0, 0.0, 0.0, 1.0, adjustment * gs.text_state.h_scaling, 0.0];
+                let advance = [
+                    1.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    adjustment * gs.text_state.h_scaling,
+                    0.0,
+                ];
                 tms.tm = mat_mul(&advance, &tms.tm);
 
                 if *f < -100.0 {
@@ -421,6 +413,7 @@ fn show_text_array(
 
     if !full_text.is_empty() && !full_text.chars().all(|c| c == '\u{FFFD}') {
         let eff_size = effective_font_size(&gs.text_state, &start_tm, &gs.ctm);
+        let x_scale = effective_x_scale(&start_tm, &gs.ctm);
         let y_top = page_height - abs_y;
 
         runs.push(TextRun {
@@ -429,7 +422,7 @@ fn show_text_array(
             y: y_top - eff_size,
             font_size: eff_size,
             font_name: font_entry.base_font.clone(),
-            width: total_width.abs() * gs.text_state.h_scaling,
+            width: total_width.abs() * gs.text_state.h_scaling * x_scale,
             height: eff_size,
         });
     }

@@ -26,7 +26,7 @@ use crate::flattened::{
     Flattened, FlattenedKind, FlattenedNode, FlattenedNodeBuilder, FlattenedNodeKind, Hint,
     MasterPageRegion, Page, RenderStyle, WidgetKind,
 };
-use crate::xfa::{Font, FontPosture, FontWeight, Num};
+use crate::xfa::{Font, FontPosture, FontWeight, GenericFamily, Num};
 use acroform::{
     AcroFieldType, AcroFormField, FF_EDIT, FF_MULTI_SELECT, FF_MULTILINE, FF_PASSWORD,
     FF_PUSH_BUTTON, FF_RADIO, FF_READ_ONLY, FF_REQUIRED, extract_acroform_fields,
@@ -47,6 +47,9 @@ use std::collections::HashMap;
 /// Returns an error string if the PDF cannot be parsed.
 pub fn parse_pdf(pdf_bytes: &[u8]) -> Result<Vec<Flattened>, String> {
     let doc = Document::load_mem(pdf_bytes).map_err(|e| format!("Failed to parse PDF: {}", e))?;
+
+    // Extract and register embedded TrueType fonts before any text measurement
+    register_embedded_pdf_fonts(&doc);
 
     let pages = doc.get_pages();
     let num_pages = pages.len();
@@ -123,6 +126,31 @@ pub fn parse_pdf(pdf_bytes: &[u8]) -> Result<Vec<Flattened>, String> {
     Ok(vec![merged])
 }
 
+/// Extract embedded TrueType fonts from the PDF and register them with the
+/// global [`FontManager`] so they are available for text measurement during
+/// the flattening phase.
+fn register_embedded_pdf_fonts(doc: &Document) {
+    use crate::xfa::font_manager::{EmbeddedFont, register_embedded_font_global};
+    use font_decoder::extract_embedded_fonts;
+
+    let raw_fonts = extract_embedded_fonts(doc);
+    for raw in raw_fonts {
+        let (clean_name, weight, posture) = parse_font_style(&raw.base_font);
+        let generic_family = Some(infer_generic_family(&clean_name));
+
+        let embedded = EmbeddedFont {
+            name: clean_name,
+            data: raw.data,
+            weight,
+            posture,
+            generic_family,
+        };
+
+        // Best-effort: ignore registration errors (e.g. unparseable font data)
+        let _ = register_embedded_font_global(embedded);
+    }
+}
+
 /// Convert a PDF point value to our Num (Decimal) type.
 fn to_num(v: f64) -> Num {
     Decimal::from_f64(v).unwrap_or(Decimal::ZERO)
@@ -138,6 +166,7 @@ fn text_run_to_node(run: &TextRun) -> FlattenedNode {
         size: to_num(run.font_size),
         weight,
         posture,
+        generic_family: Some(infer_generic_family(&clean_name)),
         ..Font::default()
     };
 
@@ -155,6 +184,7 @@ fn text_run_to_node(run: &TextRun) -> FlattenedNode {
         )
         .text(run.text.clone(), to_num(run.font_size), clean_name)
         .style(style)
+        .no_wrap(true)
         .build()
 }
 
@@ -312,11 +342,58 @@ pub(crate) fn obj_to_f64(obj: &Object) -> Option<f64> {
     }
 }
 
+/// Infer the generic font family from a cleaned PDF font name.
+/// Uses well-known font name patterns to classify as serif, sans-serif, or monospace.
+fn infer_generic_family(name: &str) -> GenericFamily {
+    let lower = name.to_lowercase();
+    // Monospace fonts
+    if lower.contains("courier")
+        || lower.contains("consolas")
+        || lower.contains("mono")
+        || lower.contains("menlo")
+        || lower.contains("lucida console")
+    {
+        return GenericFamily::Monospace;
+    }
+    // Serif fonts
+    if lower.contains("times")
+        || lower.contains("georgia")
+        || lower.contains("garamond")
+        || lower.contains("palatino")
+        || lower.contains("cambria")
+        || lower.contains("book antiqua")
+        || lower.contains("bodoni")
+    {
+        return GenericFamily::Serif;
+    }
+    // Default: sans-serif (covers Helvetica, Arial, Verdana, Calibri, etc.)
+    GenericFamily::SansSerif
+}
+
+/// Strip the PDF subset prefix from a font name.
+///
+/// PDF fonts are often subsetted and prefixed with 6 uppercase ASCII letters
+/// followed by a '+' (e.g. "IHBBBY+HelveticaNeue-Light" → "HelveticaNeue-Light").
+fn strip_subset_prefix(name: &str) -> &str {
+    if name.len() > 7
+        && name.as_bytes()[6] == b'+'
+        && name[..6].chars().all(|c| c.is_ascii_uppercase())
+    {
+        &name[7..]
+    } else {
+        name
+    }
+}
+
 /// Parse font style hints from a PDF font name.
 /// E.g. "Helvetica-Bold" → ("Helvetica", Bold, Normal)
 ///      "TimesNewRoman,Italic" → ("TimesNewRoman", Normal, Italic)
 ///      "ArialMT" → ("Arial", Normal, Normal)
+///      "IHBBBY+HelveticaNeue-Light" → ("HelveticaNeue", Normal, Normal)
 fn parse_font_style(name: &str) -> (String, FontWeight, FontPosture) {
+    // First strip the PDF subset prefix (e.g. "IHBBBY+" → "")
+    let name = strip_subset_prefix(name);
+
     let name_lower = name.to_lowercase();
     let is_bold = name_lower.contains("bold");
     let is_italic = name_lower.contains("italic") || name_lower.contains("oblique");
@@ -328,6 +405,15 @@ fn parse_font_style(name: &str) -> (String, FontWeight, FontPosture) {
         .replace("-BoldItalic", "")
         .replace("-BoldOblique", "")
         .replace("-Oblique", "")
+        .replace("-Light", "")
+        .replace("-Medium", "")
+        .replace("-Thin", "")
+        .replace("-UltraLight", "")
+        .replace("-SemiBold", "")
+        .replace("-ExtraBold", "")
+        .replace("-Black", "")
+        .replace("-Heavy", "")
+        .replace("-Condensed", "")
         .replace(",Bold", "")
         .replace(",Italic", "")
         .replace(",BoldItalic", "")

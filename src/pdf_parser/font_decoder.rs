@@ -602,6 +602,173 @@ fn replacement(code: u32) -> String {
 }
 
 // ============================================================================
+// Embedded font extraction
+// ============================================================================
+
+/// Raw embedded font data extracted from a PDF.
+pub struct RawEmbeddedFont {
+    /// Font name from the PDF's /BaseFont entry (e.g. "Helvetica-Bold", "ArialMT")
+    pub base_font: String,
+    /// Raw TrueType font bytes from /FontFile2
+    pub data: Vec<u8>,
+}
+
+/// Extract all embedded TrueType fonts from a PDF document.
+///
+/// Iterates every page's `/Resources/Font` dictionary, resolves each font's
+/// `/FontDescriptor` → `/FontFile2` stream (for simple fonts) or
+/// `/DescendantFonts[0]` → `/FontDescriptor` → `/FontFile2` (for Type0/CID fonts),
+/// decompresses the stream, and returns the raw TTF bytes along with the base font name.
+///
+/// Only TrueType fonts (`/FontFile2`) are extracted; Type1 (`/FontFile`) and
+/// CFF/OpenType (`/FontFile3`) are skipped.
+pub fn extract_embedded_fonts(doc: &Document) -> Vec<RawEmbeddedFont> {
+    let mut result = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+
+    let pages = doc.get_pages();
+
+    for (_page_num, page_id) in &pages {
+        let page_obj = match doc.get_object(*page_id) {
+            Ok(obj) => obj,
+            Err(_) => continue,
+        };
+
+        let Some(fonts) = get_fonts_dict(doc, page_obj) else {
+            continue;
+        };
+
+        for (_resource_name, obj) in fonts {
+            let font_obj = match resolve_object(doc, obj) {
+                Some(o) => o,
+                None => continue,
+            };
+
+            let font_dict = match font_obj.as_dict() {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+
+            // Get base font name
+            let base_font = font_dict
+                .get(b"BaseFont")
+                .ok()
+                .and_then(|o| o.as_name().ok())
+                .map(|n| String::from_utf8_lossy(n).to_string())
+                .unwrap_or_default();
+
+            if base_font.is_empty() || seen_names.contains(&base_font) {
+                continue;
+            }
+
+            // Try to extract TrueType font data via FontDescriptor (/FontFile2)
+            if let Some(data) = extract_font_file2(doc, font_dict) {
+                seen_names.insert(base_font.clone());
+                result.push(RawEmbeddedFont { base_font, data });
+                continue;
+            }
+
+            // Try to extract OpenType CFF font data via FontDescriptor (/FontFile3)
+            if let Some(data) = extract_font_file3(doc, font_dict) {
+                seen_names.insert(base_font.clone());
+                result.push(RawEmbeddedFont { base_font, data });
+                continue;
+            }
+
+            // For Type0 (CID) fonts, look through DescendantFonts
+            if let Ok(descendants) = font_dict.get(b"DescendantFonts") {
+                let desc_array = match descendants {
+                    Object::Array(arr) => Some(arr.as_slice()),
+                    Object::Reference(r) => doc.get_object(*r).ok().and_then(|o| {
+                        if let Object::Array(arr) = o {
+                            Some(arr.as_slice())
+                        } else {
+                            None
+                        }
+                    }),
+                    _ => None,
+                };
+
+                if let Some(arr) = desc_array {
+                    for item in arr {
+                        let cid_obj = match item {
+                            Object::Reference(r) => doc.get_object(*r).ok(),
+                            other => Some(other),
+                        };
+                        if let Some(cid_obj) = cid_obj {
+                            if let Ok(cid_dict) = cid_obj.as_dict() {
+                                if let Some(data) = extract_font_file2(doc, cid_dict) {
+                                    seen_names.insert(base_font.clone());
+                                    result.push(RawEmbeddedFont {
+                                        base_font: base_font.clone(),
+                                        data,
+                                    });
+                                    break;
+                                }
+                                // Also try /FontFile3 for CID fonts
+                                if !seen_names.contains(&base_font) {
+                                    if let Some(data) = extract_font_file3(doc, cid_dict) {
+                                        seen_names.insert(base_font.clone());
+                                        result.push(RawEmbeddedFont {
+                                            base_font: base_font.clone(),
+                                            data,
+                                        });
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Try to extract /FontFile2 (TrueType) data from a font dictionary's /FontDescriptor.
+fn extract_font_file2(doc: &Document, font_dict: &lopdf::Dictionary) -> Option<Vec<u8>> {
+    let fd_obj = font_dict.get(b"FontDescriptor").ok()?;
+    let fd_resolved = resolve_object(doc, fd_obj)?;
+    let fd_dict = fd_resolved.as_dict().ok()?;
+    let ff2_obj = fd_dict.get(b"FontFile2").ok()?;
+    resolve_stream_data(doc, ff2_obj)
+}
+
+/// Try to extract /FontFile3 (CFF/OpenType CFF) data from a font dictionary's /FontDescriptor.
+///
+/// `/FontFile3` entries can have Subtype `CIDFontType0C`, `Type1C`, or `OpenType`.
+/// Only the `OpenType` subtype can be loaded by ab_glyph (it wraps a full
+/// OpenType/CFF font program). The Type1C and CIDFontType0C subtypes are
+/// bare CFF data that ab_glyph cannot parse, so we skip those.
+fn extract_font_file3(doc: &Document, font_dict: &lopdf::Dictionary) -> Option<Vec<u8>> {
+    let fd_obj = font_dict.get(b"FontDescriptor").ok()?;
+    let fd_resolved = resolve_object(doc, fd_obj)?;
+    let fd_dict = fd_resolved.as_dict().ok()?;
+    let ff3_obj = fd_dict.get(b"FontFile3").ok()?;
+
+    // Resolve the stream and check its Subtype
+    let ff3_resolved = resolve_object(doc, ff3_obj)?;
+    let ff3_stream = ff3_resolved.as_stream().ok()?;
+    let subtype = ff3_stream
+        .dict
+        .get(b"Subtype")
+        .ok()
+        .and_then(|o| o.as_name().ok())
+        .map(|n| String::from_utf8_lossy(n).to_string())
+        .unwrap_or_default();
+
+    // Only accept OpenType subtype — Type1C and CIDFontType0C are bare CFF
+    // data that ab_glyph cannot load
+    if subtype != "OpenType" {
+        return None;
+    }
+
+    resolve_stream_data(doc, ff3_obj)
+}
+
+// ============================================================================
 // Build FontMap from a page's /Resources /Font dictionary
 // ============================================================================
 
