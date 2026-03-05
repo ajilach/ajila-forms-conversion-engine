@@ -11951,3 +11951,119 @@ fn test_aaai_inline_field_vertragsbank() {
     );
 }
 
+#[test]
+fn test_aaqm_inline_field_contratto() {
+    // The AAQM form has an inline field embedded in flowing Italian legal text.
+    // The field should appear in the structured output with label "UNKNOWN".
+    // Note: Since the XFA has the before/after text merged into a single text node,
+    // we can only verify that the field appears with the associated text paragraph.
+
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::StructuredNode;
+
+    let flattened = flatten_from_pdf("input/AAQM_033_IT.pdf");
+
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    let structured_nodes = crate::structured::convert(&doc);
+
+    // Find a field with label "UNKNOWN" in the structured output
+    let fields = collect_fields(&structured_nodes);
+    let unknown_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            f.label
+                .as_ref()
+                .map(|l| l.as_plain_text() == "UNKNOWN")
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        !unknown_fields.is_empty(),
+        "Expected to find at least one field with label 'UNKNOWN' in the structured output"
+    );
+
+    // Walk the structured nodes to find the paragraph before and after the inline field.
+    let mut sequence: Vec<(&str, String)> = Vec::new();
+    fn collect_sequence(nodes: &[StructuredNode], seq: &mut Vec<(&str, String)>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    seq.push(("paragraph", p.content.as_plain_text()));
+                }
+                StructuredNode::Field(f) => {
+                    let label = f
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text())
+                        .unwrap_or_default();
+                    seq.push(("field", label));
+                }
+                StructuredNode::Group(g) => collect_sequence(&g.children, seq),
+                StructuredNode::Repeatable(r) => {
+                    collect_sequence(std::slice::from_ref(r.item.as_ref()), seq)
+                }
+                StructuredNode::Conditional(c) => {
+                    collect_sequence(std::slice::from_ref(c.content.as_ref()), seq)
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        collect_sequence(std::slice::from_ref(&el.node), seq);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_sequence(&structured_nodes, &mut sequence);
+
+    // Find the index of a field with label "UNKNOWN" in the sequence
+    let field_pos = sequence
+        .iter()
+        .position(|(kind, content)| *kind == "field" && content == "UNKNOWN");
+    assert!(
+        field_pos.is_some(),
+        "Field with label 'UNKNOWN' should appear in the node sequence"
+    );
+    let field_pos = field_pos.unwrap();
+
+    // The inline field detection works, but since the XFA has the before/after
+    // text merged into a single text node (not split by character position),
+    // we can only verify that:
+    // 1. The UNKNOWN field appears
+    // 2. The paragraph containing the Italian text appears near the field
+
+    // Check that there's a paragraph AFTER the field containing the expected text
+    // (Since it's a single merged text node, it gets placed after due to center position)
+    assert!(
+        field_pos + 1 < sequence.len(),
+        "There should be a paragraph after the inline field"
+    );
+    let (after_kind, after_text) = &sequence[field_pos + 1];
+    assert_eq!(
+        *after_kind, "paragraph",
+        "Node after inline field should be a paragraph, got: {}",
+        after_kind
+    );
+
+    // The paragraph should contain the full Italian text (both what would be
+    // "before" and "after" if we could split it)
+    let expected_text = "Con riferimento al contratto relativo al servizio di consulenza n.";
+    assert!(
+        after_text.contains(expected_text),
+        "Paragraph should contain '{}', got: '{}'",
+        expected_text,
+        after_text
+    );
+
+    // Also verify the continuation text is there
+    let expected_continuation = "(di seguito il «Contratto»)";
+    assert!(
+        after_text.contains(expected_continuation),
+        "Paragraph should contain '{}', got: '{}'",
+        expected_continuation,
+        after_text
+    );
+}
