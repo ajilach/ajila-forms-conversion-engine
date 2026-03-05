@@ -238,21 +238,79 @@ impl AnalysisModule for InlineFieldDetector {
             return;
         }
 
-        // Find all inline fields using both detection methods:
-        // 1. Adjacent text with no label above/below
-        // 2. Field contained within a TextBlock's bounds
-        let inline_fields: Vec<usize> = field_groups
-            .iter()
-            .filter(|&&idx| {
-                self.is_inline_by_adjacency(doc, idx, &text_groups)
-                    || self.is_contained_in_text_block(doc, idx, &text_groups)
-            })
-            .copied()
-            .collect();
+        // Collect inline fields with their before/after text groups
+        struct InlineFieldInfo {
+            field_idx: usize,
+            before: Vec<usize>,
+            after: Vec<usize>,
+        }
 
-        // Mark inline fields with a hint
-        for field_idx in inline_fields {
-            doc.add_inline_field_marker(field_idx);
+        let mut inline_infos: Vec<InlineFieldInfo> = Vec::new();
+
+        for &field_idx in &field_groups {
+            if !self.is_inline_by_adjacency(doc, field_idx, &text_groups)
+                && !self.is_contained_in_text_block(doc, field_idx, &text_groups)
+            {
+                continue;
+            }
+
+            let Some(field_bounds) = doc.get_bounds(field_idx) else {
+                continue;
+            };
+
+            let mut before = Vec::new();
+            let mut after = Vec::new();
+
+            for &text_idx in &text_groups {
+                let Some(text_bounds) = doc.get_bounds(text_idx) else {
+                    continue;
+                };
+                let text_content = doc.get_text_content(text_idx);
+                let trimmed = text_content.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // Only collect text that is long enough to look like flowing prose.
+                // Short text (< MIN_INLINE_TEXT_CHARS) is likely a label for another
+                // field and should stay available for the LabelAttacher.
+                if trimmed.chars().count() < Self::MIN_INLINE_TEXT_CHARS {
+                    continue;
+                }
+
+                // Only collect text on the same line as the field (left or right).
+                // By definition, inline fields have no label above/below,
+                // so we only look at horizontally adjacent or overlapping text.
+                if self.has_text_left(&text_bounds, &field_bounds) {
+                    before.push(text_idx);
+                } else if self.has_text_right(&text_bounds, &field_bounds) {
+                    after.push(text_idx);
+                }
+                // For containment detection: text on same line whose center is left goes before,
+                // otherwise after.
+                else if text_bounds.is_on_same_line(&field_bounds, self.line_tolerance)
+                    && field_bounds.overlaps_horizontally(&text_bounds, self.line_tolerance)
+                {
+                    let text_center_x = text_bounds.x + text_bounds.width / Decimal::TWO;
+                    let field_center_x = field_bounds.x + field_bounds.width / Decimal::TWO;
+                    if text_center_x < field_center_x {
+                        before.push(text_idx);
+                    } else {
+                        after.push(text_idx);
+                    }
+                }
+            }
+
+            inline_infos.push(InlineFieldInfo {
+                field_idx,
+                before,
+                after,
+            });
+        }
+
+        // Create inline field groups — collect first, then mutate doc
+        for info in inline_infos {
+            doc.add_inline_field(info.field_idx, info.before, info.after);
         }
     }
 }

@@ -11832,7 +11832,6 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     );
 }
 
-
 /// Documents the known structural differences between AACC_019_DE.pdf and AACC_019_EN.pdf.
 ///
 /// These differences are the reason the original strict similarity check rejected the pair
@@ -12039,5 +12038,241 @@ fn test_aacc_multilingual_merge_de_en() {
     assert!(
         has_translated_text(&merged.content),
         "Merged document should contain at least one TranslatedText node"
+    );
+}
+
+#[test]
+fn test_aaai_inline_field_vertragsbank() {
+    // The AAAI form has an inline field "Vertragsbank" embedded in flowing text.
+    // The text before it is: "Der Kunde beauftragt hiermit UBS Europe SE (nachstehend UBS),
+    //   sämtliche über das SWIFT-Netz von der"
+    // The text after it is: "(nachstehend Vertragsbank) eingehenden Aufträge zu Lasten
+    //   seiner bei UBS geführten Konten auszuführen. Die für den EFT-Service freigeschalteten
+    //   Konten werden separat über das Kontenblatt EFT seitens des Kunden bestimmt."
+    // The field should appear in the structured output with label "UNKNOWN".
+
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::StructuredNode;
+
+    let flattened = flatten_from_pdf("input/AAAI_019_DE.pdf");
+
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    let structured_nodes = crate::structured::convert(&doc);
+
+    // Find the Vertragsbank field in the structured output
+    let vertragsbank = find_field_by_name(&structured_nodes, "Vertragsbank");
+    assert!(
+        vertragsbank.is_some(),
+        "Expected to find a field with name containing 'Vertragsbank' in the structured output"
+    );
+
+    let field = vertragsbank.unwrap();
+    let label_text = field
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+    assert_eq!(
+        label_text, "UNKNOWN",
+        "Inline field 'Vertragsbank' should have label 'UNKNOWN', got: '{}'",
+        label_text
+    );
+
+    // Walk the structured nodes to find the paragraph before and after the Vertragsbank field.
+    // We collect a flat sequence of (Paragraph text, Field name) so we can check adjacency.
+    let mut sequence: Vec<(&str, String)> = Vec::new(); // ("paragraph"|"field", content)
+    fn collect_sequence(nodes: &[StructuredNode], seq: &mut Vec<(&str, String)>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    seq.push(("paragraph", p.content.as_plain_text()));
+                }
+                StructuredNode::Field(f) => {
+                    seq.push(("field", f.som_path_str().to_string()));
+                }
+                StructuredNode::Group(g) => collect_sequence(&g.children, seq),
+                StructuredNode::Repeatable(r) => {
+                    collect_sequence(std::slice::from_ref(r.item.as_ref()), seq)
+                }
+                StructuredNode::Conditional(c) => {
+                    collect_sequence(std::slice::from_ref(c.content.as_ref()), seq)
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        collect_sequence(std::slice::from_ref(&el.node), seq);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_sequence(&structured_nodes, &mut sequence);
+
+    // Find the index of the Vertragsbank field in the sequence
+    let field_pos = sequence
+        .iter()
+        .position(|(kind, content)| *kind == "field" && content.contains("Vertragsbank"));
+    assert!(
+        field_pos.is_some(),
+        "Vertragsbank field should appear in the node sequence"
+    );
+    let field_pos = field_pos.unwrap();
+
+    // Check the paragraph before
+    assert!(
+        field_pos > 0,
+        "There should be a paragraph before the Vertragsbank field"
+    );
+    let (before_kind, before_text) = &sequence[field_pos - 1];
+    assert_eq!(
+        *before_kind, "paragraph",
+        "Node before Vertragsbank field should be a paragraph, got: {}",
+        before_kind
+    );
+    let expected_before = "Der Kunde beauftragt hiermit UBS Europe SE (nachstehend UBS), sämtliche über das SWIFT-Netz von der";
+    assert!(
+        before_text.contains(expected_before),
+        "Paragraph before field should contain '{}', got: '{}'",
+        expected_before,
+        before_text
+    );
+
+    // Check the paragraph after
+    assert!(
+        field_pos + 1 < sequence.len(),
+        "There should be a paragraph after the Vertragsbank field"
+    );
+    let (after_kind, after_text) = &sequence[field_pos + 1];
+    assert_eq!(
+        *after_kind, "paragraph",
+        "Node after Vertragsbank field should be a paragraph, got: {}",
+        after_kind
+    );
+    let expected_after = "(nachstehend Vertragsbank) eingehenden Aufträge zu Lasten seiner bei UBS geführten Konten auszuführen. Die für den EFT-Service freigeschalteten Konten werden separat über das Kontenblatt EFT seitens des Kunden bestimmt.";
+    assert!(
+        after_text.contains(expected_after),
+        "Paragraph after field should contain '{}', got: '{}'",
+        expected_after,
+        after_text
+    );
+}
+
+#[test]
+fn test_aaqm_inline_field_contratto() {
+    // The AAQM form has an inline field embedded in flowing Italian legal text.
+    // The field should appear in the structured output with label "UNKNOWN".
+    // Note: Since the XFA has the before/after text merged into a single text node,
+    // we can only verify that the field appears with the associated text paragraph.
+
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::StructuredNode;
+
+    let flattened = flatten_from_pdf("input/AAQM_033_IT.pdf");
+
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    let structured_nodes = crate::structured::convert(&doc);
+
+    // Find a field with label "UNKNOWN" in the structured output
+    let fields = collect_fields(&structured_nodes);
+    let unknown_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            f.label
+                .as_ref()
+                .map(|l| l.as_plain_text() == "UNKNOWN")
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        !unknown_fields.is_empty(),
+        "Expected to find at least one field with label 'UNKNOWN' in the structured output"
+    );
+
+    // Walk the structured nodes to find the paragraph before and after the inline field.
+    let mut sequence: Vec<(&str, String)> = Vec::new();
+    fn collect_sequence(nodes: &[StructuredNode], seq: &mut Vec<(&str, String)>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    seq.push(("paragraph", p.content.as_plain_text()));
+                }
+                StructuredNode::Field(f) => {
+                    let label = f
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text())
+                        .unwrap_or_default();
+                    seq.push(("field", label));
+                }
+                StructuredNode::Group(g) => collect_sequence(&g.children, seq),
+                StructuredNode::Repeatable(r) => {
+                    collect_sequence(std::slice::from_ref(r.item.as_ref()), seq)
+                }
+                StructuredNode::Conditional(c) => {
+                    collect_sequence(std::slice::from_ref(c.content.as_ref()), seq)
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        collect_sequence(std::slice::from_ref(&el.node), seq);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_sequence(&structured_nodes, &mut sequence);
+
+    // Find the index of a field with label "UNKNOWN" in the sequence
+    let field_pos = sequence
+        .iter()
+        .position(|(kind, content)| *kind == "field" && content == "UNKNOWN");
+    assert!(
+        field_pos.is_some(),
+        "Field with label 'UNKNOWN' should appear in the node sequence"
+    );
+    let field_pos = field_pos.unwrap();
+
+    // The inline field detection works, but since the XFA has the before/after
+    // text merged into a single text node (not split by character position),
+    // we can only verify that:
+    // 1. The UNKNOWN field appears
+    // 2. The paragraph containing the Italian text appears near the field
+
+    // Check that there's a paragraph AFTER the field containing the expected text
+    // (Since it's a single merged text node, it gets placed after due to center position)
+    assert!(
+        field_pos + 1 < sequence.len(),
+        "There should be a paragraph after the inline field"
+    );
+    let (after_kind, after_text) = &sequence[field_pos + 1];
+    assert_eq!(
+        *after_kind, "paragraph",
+        "Node after inline field should be a paragraph, got: {}",
+        after_kind
+    );
+
+    // The paragraph should contain the full Italian text (both what would be
+    // "before" and "after" if we could split it)
+    let expected_text = "Con riferimento al contratto relativo al servizio di consulenza n.";
+    assert!(
+        after_text.contains(expected_text),
+        "Paragraph should contain '{}', got: '{}'",
+        expected_text,
+        after_text
+    );
+
+    // Also verify the continuation text is there
+    let expected_continuation = "(di seguito il «Contratto»)";
+    assert!(
+        after_text.contains(expected_continuation),
+        "Paragraph should contain '{}', got: '{}'",
+        expected_continuation,
+        after_text
     );
 }

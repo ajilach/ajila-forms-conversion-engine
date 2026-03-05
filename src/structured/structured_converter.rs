@@ -17,7 +17,7 @@
 //! - Leaf (Field, non-interactive) → `ParagraphNode` (readonly → text)
 //! - Leaf (Field, interactive) → `FieldNode`
 //!
-//! Header, Footer, and InlineField groups are ignored for now.
+//! Header and Footer groups are ignored for now.
 
 use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
@@ -27,6 +27,7 @@ use crate::structured::{
     RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
+use rust_decimal::Decimal;
 
 /// Check if a StructuredNode contains any fields (recursively).
 fn contains_fields(node: &StructuredNode) -> bool {
@@ -225,8 +226,12 @@ impl<'a, 'b> Converter<'a, 'b> {
             // Skip header/footer for now
             GroupKind::Header | GroupKind::Footer => None,
 
-            // Skip inline fields for now
-            GroupKind::InlineField => None,
+            // InlineField → Paragraph(before) + Field("UNKNOWN") + Paragraph(after)
+            GroupKind::InlineField {
+                before,
+                field,
+                after,
+            } => self.convert_inline_field(group_idx, before, *field, after),
 
             // Skip non-printable elements (relevant="-print")
             GroupKind::NoPrint => None,
@@ -723,6 +728,180 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
 
         Some(field_node)
+    }
+
+    /// Convert an InlineField group to structured nodes.
+    ///
+    /// Produces: Paragraph(before text) + Field("UNKNOWN" label) + Paragraph(after text),
+    /// wrapped in a GroupNode if there are multiple result nodes.
+    ///
+    /// When a "before" text group contains multiple text nodes (e.g. from paragraph
+    /// splitting during flattening), individual text nodes whose vertical position
+    /// is below the field are treated as "after" text instead.
+    fn convert_inline_field(
+        &self,
+        group_idx: usize,
+        before: &[usize],
+        field_child_idx: usize,
+        after: &[usize],
+    ) -> Option<StructuredNode> {
+        let group = self.doc.get_group(group_idx)?;
+
+        // Get the field bounds (used to classify text nodes as before/after)
+        let field_group_idx = group.children.get(field_child_idx).copied();
+        let field_bounds = field_group_idx.and_then(|idx| self.doc.get_bounds(idx));
+
+        let mut before_nodes: Vec<StructuredNode> = Vec::new();
+        let mut after_nodes: Vec<StructuredNode> = Vec::new();
+
+        // Helper closure to classify and split a text group by position.
+        // Returns (before_paragraphs, after_paragraphs).
+        let split_by_position =
+            |child_group_idx: usize, fb: &Bounds| -> (Vec<StructuredNode>, Vec<StructuredNode>) {
+                let node_indices = self.doc.collect_node_indices(child_group_idx);
+                let mut before = Vec::new();
+                let mut after = Vec::new();
+
+                if node_indices.len() > 1 {
+                    // Multiple text nodes: classify each by position
+                    for &ni in &node_indices {
+                        if let Some(node) = self.doc.get_node(ni) {
+                            let text = self.build_inline_text_from_node(node);
+                            if text.is_empty() {
+                                continue;
+                            }
+                            let node_bounds = node.bounds();
+
+                            // For multi-node text groups, classify each node:
+                            // 1. If on a different vertical line than the field, use y-position
+                            // 2. If on the same line as the field, use x-position
+
+                            let line_tolerance = Decimal::from(8); // same as InlineFieldDetector
+                            let on_same_line = (node_bounds.y - fb.y).abs() < line_tolerance
+                                || (node_bounds.y + node_bounds.height - fb.y - fb.height).abs()
+                                    < line_tolerance;
+
+                            let is_after = if on_same_line {
+                                // Same line: compare x positions
+                                node_bounds.x >= fb.x + fb.width
+                            } else {
+                                // Different line: compare y positions
+                                node_bounds.y > fb.y + fb.height
+                            };
+
+                            if is_after {
+                                after.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            } else {
+                                before.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            }
+                        }
+                    }
+                } else {
+                    // Single node: use horizontal position relative to field
+                    let text = self.extract_inline_text(child_group_idx);
+                    if !text.is_empty() {
+                        if let Some(text_bounds) = self.doc.get_bounds(child_group_idx) {
+                            // If text ends before field starts, it's "before"
+                            // If text starts after field ends, it's "after"
+                            // Otherwise, classify by center position
+                            if text_bounds.x + text_bounds.width <= fb.x {
+                                before.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            } else if text_bounds.x >= fb.x + fb.width {
+                                after.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            } else {
+                                // Overlapping: use center
+                                let text_center =
+                                    text_bounds.x + text_bounds.width / Decimal::TWO;
+                                let field_center = fb.x + fb.width / Decimal::TWO;
+                                if text_center < field_center {
+                                    before.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: text,
+                                    }));
+                                } else {
+                                    after.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: text,
+                                    }));
+                                }
+                            }
+                        } else {
+                            // No bounds, fall back to original classification
+                            before.push(StructuredNode::Paragraph(ParagraphNode {
+                                content: text,
+                            }));
+                        }
+                    }
+                }
+                (before, after)
+            };
+
+        // Convert "before" text groups, splitting by position when possible
+        for &child_index in before {
+            if let Some(&child_group_idx) = group.children.get(child_index) {
+                if let Some(fb) = &field_bounds {
+                    let (b, a) = split_by_position(child_group_idx, fb);
+                    before_nodes.extend(b);
+                    after_nodes.extend(a);
+                } else {
+                    // No field bounds — treat entire group as "before"
+                    let text = self.extract_inline_text(child_group_idx);
+                    if !text.is_empty() {
+                        before_nodes.push(StructuredNode::Paragraph(ParagraphNode {
+                            content: text,
+                        }));
+                    }
+                }
+            }
+        }
+
+        // Convert "after" text groups, also splitting by position when possible
+        for &child_index in after {
+            if let Some(&child_group_idx) = group.children.get(child_index) {
+                if let Some(fb) = &field_bounds {
+                    let (b, a) = split_by_position(child_group_idx, fb);
+                    before_nodes.extend(b);
+                    after_nodes.extend(a);
+                } else {
+                    // No field bounds — treat entire group as "after"
+                    let text = self.extract_inline_text(child_group_idx);
+                    if !text.is_empty() {
+                        after_nodes.push(StructuredNode::Paragraph(ParagraphNode {
+                            content: text,
+                        }));
+                    }
+                }
+            }
+        }
+
+        let mut result_nodes: Vec<StructuredNode> = Vec::new();
+        result_nodes.extend(before_nodes);
+
+        // Convert the field itself with label "UNKNOWN"
+        if let Some(&field_group_idx) = group.children.get(field_child_idx) {
+            if let Some(field_node) =
+                self.convert_field_group(field_group_idx, Some(InlineText::plain("UNKNOWN")))
+            {
+                result_nodes.push(field_node);
+            }
+        }
+
+        // Emit paragraphs that belong after the field
+        result_nodes.extend(after_nodes);
+
+        match result_nodes.len() {
+            0 => None,
+            1 => Some(result_nodes.into_iter().next().unwrap()),
+            _ => Some(StructuredNode::Group(GroupNode {
+                children: result_nodes,
+            })),
+        }
     }
 
     /// Build a FieldNode from a FlattenedNode.
