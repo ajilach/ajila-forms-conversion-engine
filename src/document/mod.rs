@@ -220,8 +220,17 @@ pub enum GroupKind {
     },
 
     /// An inline field - a field with text directly before/after but no label above/below
-    /// These are fields embedded in flowing text rather than traditional form layouts
-    InlineField,
+    /// These are fields embedded in flowing text rather than traditional form layouts.
+    /// `before` and `after` are child indices pointing to text groups before/after the field.
+    /// `field` is the child index for the field group itself.
+    InlineField {
+        /// Child indices for text groups before the field (left / above)
+        before: Vec<usize>,
+        /// Child index for the field group
+        field: usize,
+        /// Child indices for text groups after the field (right / below)
+        after: Vec<usize>,
+    },
 
     /// An inline date field detected from text patterns like "Löschung ab: 01..1"
     /// The text block is split into: label (prefix) + date field + optional suffix
@@ -592,19 +601,33 @@ impl<'a> Document<'a> {
 
     /// Check if a group is an InlineField.
     pub fn is_inline_field(&self, group_idx: usize) -> bool {
-        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::InlineField))
+        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::InlineField { .. }))
     }
 
     /// Find all InlineField groups.
     pub fn inline_fields(&self) -> Vec<usize> {
-        self.find_groups(|k| matches!(k, GroupKind::InlineField))
+        self.find_groups(|k| matches!(k, GroupKind::InlineField { .. }))
     }
 
-    /// Mark a field group as an inline field by wrapping it in an InlineField group.
-    pub fn add_inline_field_marker(&mut self, field_idx: usize) {
+    /// Create an InlineField group wrapping the field and its adjacent text groups.
+    /// `before_text` and `after_text` are the text group indices before/after the field.
+    pub fn add_inline_field(
+        &mut self,
+        field_idx: usize,
+        before_text: Vec<usize>,
+        after_text: Vec<usize>,
+    ) {
+        let field_child_index = before_text.len();
+        let mut children = before_text.clone();
+        children.push(field_idx);
+        children.extend(after_text.iter());
         self.merge(
-            vec![field_idx],
-            GroupKind::InlineField,
+            children,
+            GroupKind::InlineField {
+                before: (0..before_text.len()).collect(),
+                field: field_child_index,
+                after: (field_child_index + 1..field_child_index + 1 + after_text.len()).collect(),
+            },
             GroupSource::Inferred {
                 module: "InlineFieldDetector".to_string(),
             },
@@ -884,7 +907,7 @@ impl<'a> Document<'a> {
                 Some(max) => format!("RepeatableSection[{}-{}]", min_occurrences, max),
                 None => format!("RepeatableSection[{}+]", min_occurrences),
             },
-            GroupKind::InlineField => "InlineField".to_string(),
+            GroupKind::InlineField { .. } => "InlineField".to_string(),
             GroupKind::InlineDateField { generated_name, .. } => {
                 format!("InlineDateField[{}]", generated_name)
             }
