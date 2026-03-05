@@ -11833,6 +11833,153 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
 }
 
 
+/// Documents the known structural differences between AACC_019_DE.pdf and AACC_019_EN.pdf.
+///
+/// These differences are the reason the original strict similarity check rejected the pair
+/// (similarity ~38%), and why a relaxed similarity check is required.
+///
+/// Confirmed differences (by diagnostic inspection):
+///
+/// 1. **Node count**: DE has 13 top-level nodes, EN has 15.
+///
+/// 2. **Position 3 — layout element type differs**:
+///    - DE[3] is an H2 `Heading` ("Hinweis" / notice section header).
+///    - EN[3] is a `Paragraph` ("InstructionUBS AG is a member of…").
+///    The EN version folds the notice title into body text instead of a heading.
+///
+/// 3. **Signature grid layout is split differently**:
+///    - DE[10] is a single `GridLayout` with 12 columns and **4 elements**.
+///    - EN[9] and EN[12] are **two** `GridLayout`s with 12 columns and **2 elements** each.
+///    The EN form splits each signer row into its own grid, while DE groups both in one.
+///
+/// 4. **Trailing fields differ**:
+///    - DE ends with two `Field` nodes ([11], [12]) right after the single grid.
+///    - EN intersperses a `Paragraph` ("Signature of client") and a `Field` between the
+///      two grids, and repeats the pattern after the second grid, giving nodes [10]–[14].
+///
+/// 5. **Conditional internal structure differs**:
+///    Both versions have 4 `Conditional` nodes (DE[5–8], EN[4–7]), but the child counts
+///    inside each conditional's `Group` differ between the two language versions.
+#[test]
+fn test_aacc_structural_differences_de_vs_en() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+
+    let de = run_exhaustive_to_envelope("input/AACC_019_DE.pdf", "de")
+        .expect("Failed to process AACC_019_DE");
+    let en = run_exhaustive_to_envelope("input/AACC_019_EN.pdf", "en")
+        .expect("Failed to process AACC_019_EN");
+
+    // ── 1. Node counts ────────────────────────────────────────────────────────
+    assert_eq!(de.content.len(), 13, "DE should have 13 top-level nodes");
+    assert_eq!(en.content.len(), 15, "EN should have 15 top-level nodes");
+
+    // ── 2. Position 3: H2 Heading in DE, Paragraph in EN ─────────────────────
+    assert!(
+        matches!(&de.content[3], StructuredNode::Heading(h) if h.level.as_u8() == 2),
+        "DE[3] should be an H2 Heading, got: {:?}",
+        de.content[3].structural_discriminant()
+    );
+    assert!(
+        matches!(&en.content[3], StructuredNode::Paragraph(_)),
+        "EN[3] should be a Paragraph, got: {:?}",
+        en.content[3].structural_discriminant()
+    );
+
+    // ── 3. Signature grid: one 4-element grid in DE vs two 2-element grids in EN
+    match &de.content[10] {
+        StructuredNode::GridLayout(g) => {
+            assert_eq!(g.columns, 12, "DE signature grid should have 12 columns");
+            assert_eq!(
+                g.elements.len(),
+                4,
+                "DE has a single GridLayout with 4 elements for the signature section"
+            );
+        }
+        other => panic!(
+            "DE[10] should be GridLayout, got discriminant {}",
+            other.structural_discriminant()
+        ),
+    }
+    match &en.content[9] {
+        StructuredNode::GridLayout(g) => {
+            assert_eq!(g.columns, 12, "EN first signature grid should have 12 columns");
+            assert_eq!(g.elements.len(), 2, "EN first GridLayout should have 2 elements");
+        }
+        other => panic!(
+            "EN[9] should be GridLayout, got discriminant {}",
+            other.structural_discriminant()
+        ),
+    }
+    match &en.content[12] {
+        StructuredNode::GridLayout(g) => {
+            assert_eq!(g.columns, 12, "EN second signature grid should have 12 columns");
+            assert_eq!(g.elements.len(), 2, "EN second GridLayout should have 2 elements");
+        }
+        other => panic!(
+            "EN[12] should be GridLayout, got discriminant {}",
+            other.structural_discriminant()
+        ),
+    }
+
+    // ── 4. Trailing structure: DE ends with two Fields; EN has Para+Field pairs ─
+    assert!(
+        matches!(&de.content[11], StructuredNode::Field(_)),
+        "DE[11] should be a Field"
+    );
+    assert!(
+        matches!(&de.content[12], StructuredNode::Field(_)),
+        "DE[12] should be a Field"
+    );
+    assert!(
+        matches!(&en.content[10], StructuredNode::Paragraph(_)),
+        "EN[10] should be Paragraph (\"Signature of client\")"
+    );
+    assert!(
+        matches!(&en.content[11], StructuredNode::Field(_)),
+        "EN[11] should be a Field"
+    );
+    assert!(
+        matches!(&en.content[13], StructuredNode::Paragraph(_)),
+        "EN[13] should be Paragraph (\"Signature of client\")"
+    );
+    assert!(
+        matches!(&en.content[14], StructuredNode::Field(_)),
+        "EN[14] should be a Field"
+    );
+
+    // ── 5. Both versions have exactly 4 Conditionals ─────────────────────────
+    let de_conditionals = de
+        .content
+        .iter()
+        .filter(|n| matches!(n, StructuredNode::Conditional(_)))
+        .count();
+    let en_conditionals = en
+        .content
+        .iter()
+        .filter(|n| matches!(n, StructuredNode::Conditional(_)))
+        .count();
+    assert_eq!(de_conditionals, 4, "DE should have 4 top-level Conditionals");
+    assert_eq!(en_conditionals, 4, "EN should have 4 top-level Conditionals");
+
+    // The Conditionals occupy different index ranges but the count is equal.
+    // DE: [5,6,7,8] — EN: [4,5,6,7].
+    for idx in 5..=8 {
+        assert!(
+            matches!(&de.content[idx], StructuredNode::Conditional(_)),
+            "DE[{}] should be Conditional",
+            idx
+        );
+    }
+    for idx in 4..=7 {
+        assert!(
+            matches!(&en.content[idx], StructuredNode::Conditional(_)),
+            "EN[{}] should be Conditional",
+            idx
+        );
+    }
+}
+
 #[test]
 fn test_aacc_multilingual_merge_de_en() {
     // Regression test: merging AACC_019_DE and AACC_019_EN used to fail with
