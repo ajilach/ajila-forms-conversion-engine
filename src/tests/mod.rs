@@ -11832,3 +11832,70 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     );
 }
 
+
+#[test]
+#[ignore]
+fn test_aacc_diagnostic() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+
+    let de_envelope = run_exhaustive_to_envelope("input/AACC_019_DE.pdf", "de")
+        .expect("Failed to process AACC_019_DE");
+    let en_envelope = run_exhaustive_to_envelope("input/AACC_019_EN.pdf", "en")
+        .expect("Failed to process AACC_019_EN");
+
+    println!("DE top-level nodes: {}", de_envelope.content.len());
+    println!("EN top-level nodes: {}", en_envelope.content.len());
+
+    fn node_type_name(node: &StructuredNode) -> &'static str {
+        match node {
+            StructuredNode::Heading(_) => "Heading",
+            StructuredNode::Paragraph(_) => "Paragraph",
+            StructuredNode::Image(_) => "Image",
+            StructuredNode::Table(_) => "Table",
+            StructuredNode::Field(_) => "Field",
+            StructuredNode::Repeatable(_) => "Repeatable",
+            StructuredNode::Group(_) => "Group",
+            StructuredNode::Conditional(_) => "Conditional",
+            StructuredNode::Empty => "Empty",
+            StructuredNode::GridLayout(_) => "GridLayout",
+            StructuredNode::List(_) => "List",
+        }
+    }
+
+    fn node_type_detail(node: &StructuredNode) -> String {
+        match node {
+            StructuredNode::Heading(h) => format!("Heading(H{})", h.level.as_u8()),
+            StructuredNode::Paragraph(p) => format!("Paragraph(\"{}\")", p.content.as_plain_text().chars().take(40).collect::<String>()),
+            StructuredNode::Image(i) => format!("Image(alt={:?})", i.alt_text),
+            StructuredNode::Table(t) => format!("Table(rows={}, headers={})", t.rows.len(), t.header.as_ref().map_or(0, |h| h.cells.len())),
+            StructuredNode::Field(f) => format!("Field(name={:?})", f.name),
+            StructuredNode::Repeatable(r) => format!("Repeatable(min={}, max={:?})", r.min_occurrences, r.max_occurrences),
+            StructuredNode::Group(g) => format!("Group(children={})", g.children.len()),
+            StructuredNode::Conditional(_) => "Conditional".to_string(),
+            StructuredNode::Empty => "Empty".to_string(),
+            StructuredNode::GridLayout(g) => format!("GridLayout(cols={}, elems={})", g.columns, g.elements.len()),
+            StructuredNode::List(l) => format!("List(items={})", l.items.len()),
+        }
+    }
+
+    println!("\nDE nodes:");
+    for (i, node) in de_envelope.content.iter().enumerate() {
+        println!("  [{}] {}", i, node_type_detail(node));
+    }
+
+    println!("\nEN nodes:");
+    for (i, node) in en_envelope.content.iter().enumerate() {
+        println!("  [{}] {}", i, node_type_detail(node));
+    }
+
+    // Try to match each DE node against each EN node
+    println!("\nStructural match matrix (DE vs EN):");
+    for (i, a) in de_envelope.content.iter().enumerate() {
+        for (j, b) in en_envelope.content.iter().enumerate() {
+            if a.structural_eq_ignore_text(b) {
+                println!("  DE[{}]({}) matches EN[{}]({})", i, node_type_name(a), j, node_type_name(b));
+            }
+        }
+    }
+}
