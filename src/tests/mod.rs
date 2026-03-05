@@ -11834,68 +11834,63 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
 
 
 #[test]
-#[ignore]
-fn test_aacc_diagnostic() {
+fn test_aacc_multilingual_merge_de_en() {
+    // Regression test: merging AACC_019_DE and AACC_019_EN used to fail with
+    // "Documents are too different to be translations (similarity: ~38%, required: 50%)"
+    // because the strict structural comparison did not match Conditionals and GridLayouts
+    // whose internal layout differs slightly between the two language versions.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::StructuredNode;
+    use crate::structured::{self, InlineNode, StructuredNode};
 
     let de_envelope = run_exhaustive_to_envelope("input/AACC_019_DE.pdf", "de")
         .expect("Failed to process AACC_019_DE");
     let en_envelope = run_exhaustive_to_envelope("input/AACC_019_EN.pdf", "en")
         .expect("Failed to process AACC_019_EN");
 
-    println!("DE top-level nodes: {}", de_envelope.content.len());
-    println!("EN top-level nodes: {}", en_envelope.content.len());
+    assert_eq!(de_envelope.context.language(), "de");
+    assert_eq!(en_envelope.context.language(), "en");
 
-    fn node_type_name(node: &StructuredNode) -> &'static str {
-        match node {
-            StructuredNode::Heading(_) => "Heading",
-            StructuredNode::Paragraph(_) => "Paragraph",
-            StructuredNode::Image(_) => "Image",
-            StructuredNode::Table(_) => "Table",
-            StructuredNode::Field(_) => "Field",
-            StructuredNode::Repeatable(_) => "Repeatable",
-            StructuredNode::Group(_) => "Group",
-            StructuredNode::Conditional(_) => "Conditional",
-            StructuredNode::Empty => "Empty",
-            StructuredNode::GridLayout(_) => "GridLayout",
-            StructuredNode::List(_) => "List",
-        }
-    }
+    // This must succeed — the two versions are translations of the same form.
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+        .expect("Merging AACC_019 DE/EN should succeed");
 
-    fn node_type_detail(node: &StructuredNode) -> String {
-        match node {
-            StructuredNode::Heading(h) => format!("Heading(H{})", h.level.as_u8()),
-            StructuredNode::Paragraph(p) => format!("Paragraph(\"{}\")", p.content.as_plain_text().chars().take(40).collect::<String>()),
-            StructuredNode::Image(i) => format!("Image(alt={:?})", i.alt_text),
-            StructuredNode::Table(t) => format!("Table(rows={}, headers={})", t.rows.len(), t.header.as_ref().map_or(0, |h| h.cells.len())),
-            StructuredNode::Field(f) => format!("Field(name={:?})", f.name),
-            StructuredNode::Repeatable(r) => format!("Repeatable(min={}, max={:?})", r.min_occurrences, r.max_occurrences),
-            StructuredNode::Group(g) => format!("Group(children={})", g.children.len()),
-            StructuredNode::Conditional(_) => "Conditional".to_string(),
-            StructuredNode::Empty => "Empty".to_string(),
-            StructuredNode::GridLayout(g) => format!("GridLayout(cols={}, elems={})", g.columns, g.elements.len()),
-            StructuredNode::List(l) => format!("List(items={})", l.items.len()),
-        }
-    }
+    let lang = merged.context.language();
+    assert!(lang.contains("de"), "Merged language should contain 'de', got: {}", lang);
+    assert!(lang.contains("en"), "Merged language should contain 'en', got: {}", lang);
+    assert!(!merged.content.is_empty(), "Merged content should not be empty");
 
-    println!("\nDE nodes:");
-    for (i, node) in de_envelope.content.iter().enumerate() {
-        println!("  [{}] {}", i, node_type_detail(node));
-    }
-
-    println!("\nEN nodes:");
-    for (i, node) in en_envelope.content.iter().enumerate() {
-        println!("  [{}] {}", i, node_type_detail(node));
-    }
-
-    // Try to match each DE node against each EN node
-    println!("\nStructural match matrix (DE vs EN):");
-    for (i, a) in de_envelope.content.iter().enumerate() {
-        for (j, b) in en_envelope.content.iter().enumerate() {
-            if a.structural_eq_ignore_text(b) {
-                println!("  DE[{}]({}) matches EN[{}]({})", i, node_type_name(a), j, node_type_name(b));
+    // At least one TranslatedText node with both languages should be present.
+    fn has_translated_text(nodes: &[StructuredNode]) -> bool {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    if h.content.0.iter().any(|n| matches!(n, InlineNode::TranslatedText(_))) {
+                        return true;
+                    }
+                }
+                StructuredNode::Paragraph(p) => {
+                    if p.content.0.iter().any(|n| matches!(n, InlineNode::TranslatedText(_))) {
+                        return true;
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if has_translated_text(&g.children) {
+                        return true;
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if has_translated_text(std::slice::from_ref(c.content.as_ref())) {
+                        return true;
+                    }
+                }
+                _ => {}
             }
         }
+        false
     }
+
+    assert!(
+        has_translated_text(&merged.content),
+        "Merged document should contain at least one TranslatedText node"
+    );
 }

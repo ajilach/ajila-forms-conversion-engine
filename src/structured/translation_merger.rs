@@ -140,7 +140,11 @@ pub fn merge_translations(
 /// Calculate structural similarity between two node lists.
 ///
 /// Returns a value between 0.0 (completely different) and 1.0 (identical structure).
-/// Uses the LCS length as a percentage of the average list length.
+/// Uses the LCS length (with relaxed node matching) as a percentage of the average list length.
+///
+/// The relaxed matching treats container nodes (Conditional, Group, GridLayout, Repeatable)
+/// as matching by type/shape rather than requiring identical deep structure. This correctly
+/// handles translation pairs where layout details differ slightly between languages.
 fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -> f64 {
     if a.is_empty() && b.is_empty() {
         return 1.0;
@@ -149,11 +153,51 @@ fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -
         return 0.0;
     }
 
-    let dp = lcs_table(a, b);
+    let dp = lcs_table_relaxed(a, b);
     let lcs_length = dp[a.len()][b.len()] as f64;
     let avg_length = (a.len() + b.len()) as f64 / 2.0;
 
     lcs_length / avg_length
+}
+
+/// Relaxed node matching used only for the similarity pre-check.
+///
+/// Unlike `structural_eq_ignore_text`, this function matches nodes based on their
+/// high-level type and shape without requiring identical deep structure. This allows
+/// translation pairs with minor layout differences (different groupings, different
+/// conditional content, etc.) to be correctly identified as structurally compatible.
+///
+/// Rules:
+/// - Headings: same level required
+/// - Fields: same `FieldId` required (fields identify form elements across languages)
+/// - Tables: same header column count required
+/// - GridLayouts: same column count required (element count may differ)
+/// - Paragraphs, Images, Groups, Conditionals, Repeatables, Lists, Empty: match by type only
+fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
+    match (a, b) {
+        (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
+            ha.level.as_u8() == hb.level.as_u8()
+        }
+        (StructuredNode::Paragraph(_), StructuredNode::Paragraph(_)) => true,
+        (StructuredNode::Image(_), StructuredNode::Image(_)) => true,
+        (StructuredNode::Table(ta), StructuredNode::Table(tb)) => {
+            let a_cols = ta.header.as_ref().map_or(0, |h| h.cells.len());
+            let b_cols = tb.header.as_ref().map_or(0, |h| h.cells.len());
+            a_cols == b_cols
+        }
+        (StructuredNode::Field(fa), StructuredNode::Field(fb)) => fa.name == fb.name,
+        (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
+        (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
+        (StructuredNode::Conditional(_), StructuredNode::Conditional(_)) => true,
+        (StructuredNode::Empty, StructuredNode::Empty) => true,
+        (StructuredNode::GridLayout(ga), StructuredNode::GridLayout(gb)) => {
+            ga.columns == gb.columns
+        }
+        (StructuredNode::List(la), StructuredNode::List(lb)) => {
+            la.list_style == lb.list_style
+        }
+        _ => false,
+    }
 }
 
 // ============================================================================
@@ -170,6 +214,26 @@ fn lcs_table(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
     for i in 1..=m {
         for j in 1..=n {
             if a[i - 1].structural_eq_ignore_text(&b[j - 1]) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
+            }
+        }
+    }
+
+    dp
+}
+
+/// Compute the LCS table using the relaxed similarity predicate `node_matches_for_similarity`.
+/// Used only by `calculate_structural_similarity`.
+fn lcs_table_relaxed(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
+    let m = a.len();
+    let n = b.len();
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+
+    for i in 1..=m {
+        for j in 1..=n {
+            if node_matches_for_similarity(&a[i - 1], &b[j - 1]) {
                 dp[i][j] = dp[i - 1][j - 1] + 1;
             } else {
                 dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
@@ -1197,8 +1261,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_preserves_context_variables() {
-        let vars: HashMap<String, String> = [
+    fn test_merge_preserves_context_variables() {        let vars: HashMap<String, String> = [
             ("formrange_code".to_string(), "AAAI".to_string()),
             ("formrange_entity".to_string(), "019".to_string()),
         ]
@@ -1224,5 +1287,179 @@ mod tests {
         assert_eq!(merged.context.language(), "de,en");
         assert_eq!(merged.context.get_variable("formrange_code"), Some("AAAI"));
         assert_eq!(merged.context.get_variable("formrange_entity"), Some("019"));
+    }
+
+    #[test]
+    fn test_accept_documents_with_differing_conditional_and_gridlayout_structure() {
+        // Regression test for: similarity check was rejecting translation pairs where
+        // Conditionals had different internal structure or GridLayouts had different
+        // element counts but the same column count.
+        //
+        // Synthetic structure mirroring AACC_019 DE vs EN:
+        //   DE: H1, H2, Field(shared), H2, Para, Cond, Cond, Cond, Cond, H2, GridLayout(12, 4 elems)
+        //   EN: H1, H2, Field(shared), Para, Cond, Cond, Cond, Cond, H2, GridLayout(12, 2 elems)
+        use crate::structured::{
+            ConditionalNode, FieldCondition, FieldId, FieldType, GridLayout, GridLayoutElement,
+            GroupNode, InputValue,
+        };
+
+        let shared_field = FieldNode {
+            name: "shared_field".into(),
+            som_path: None,
+            label: Some(InlineText::plain("Shared")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        };
+
+        let dummy_condition = FieldCondition {
+            field_name: FieldId::from("some_field"),
+            value: InputValue::Text("yes".to_string()),
+        };
+
+        // DE Conditional wraps a Group with 3 children.
+        let de_cond = || {
+            StructuredNode::Conditional(ConditionalNode {
+                condition: dummy_condition.clone(),
+                content: Box::new(StructuredNode::Group(GroupNode {
+                    children: vec![
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Absatz 1"),
+                        }),
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Absatz 2"),
+                        }),
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Absatz 3"),
+                        }),
+                    ],
+                })),
+            })
+        };
+
+        // EN Conditional wraps a Group with 2 children (structurally different from DE).
+        let en_cond = || {
+            StructuredNode::Conditional(ConditionalNode {
+                condition: dummy_condition.clone(),
+                content: Box::new(StructuredNode::Group(GroupNode {
+                    children: vec![
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Paragraph 1"),
+                        }),
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Paragraph 2"),
+                        }),
+                    ],
+                })),
+            })
+        };
+
+        let de_grid = StructuredNode::GridLayout(GridLayout {
+            columns: 12,
+            elements: vec![
+                GridLayoutElement {
+                    span: 3,
+                    node: StructuredNode::Empty,
+                },
+                GridLayoutElement {
+                    span: 3,
+                    node: StructuredNode::Empty,
+                },
+                GridLayoutElement {
+                    span: 3,
+                    node: StructuredNode::Empty,
+                },
+                GridLayoutElement {
+                    span: 3,
+                    node: StructuredNode::Empty,
+                },
+            ],
+        });
+
+        // EN has 2 elements instead of 4 — different count, same column count.
+        let en_grid = StructuredNode::GridLayout(GridLayout {
+            columns: 12,
+            elements: vec![
+                GridLayoutElement {
+                    span: 6,
+                    node: StructuredNode::Empty,
+                },
+                GridLayoutElement {
+                    span: 6,
+                    node: StructuredNode::Empty,
+                },
+            ],
+        });
+
+        let de = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Formular"),
+                }),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Abschnitt"),
+                }),
+                StructuredNode::Field(shared_field.clone()),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Hinweis"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Erklärung"),
+                }),
+                de_cond(),
+                de_cond(),
+                de_cond(),
+                de_cond(),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Unterschrift"),
+                }),
+                de_grid,
+            ],
+        );
+
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H1,
+                    content: InlineText::plain("Form"),
+                }),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Section"),
+                }),
+                StructuredNode::Field(shared_field.clone()),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Instruction"),
+                }),
+                en_cond(),
+                en_cond(),
+                en_cond(),
+                en_cond(),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Signature"),
+                }),
+                en_grid,
+            ],
+        );
+
+        // Should succeed: relaxed similarity check recognises Conditionals and
+        // GridLayouts with the same column count as structurally compatible.
+        let result = merge_translations(vec![de, en]);
+        assert!(
+            result.is_ok(),
+            "Expected merge to succeed for documents with differing Conditional/GridLayout internals, got: {:?}",
+            result.err()
+        );
     }
 }
