@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # Profile directory for UBS-specific AEM output.
-# Use with:  blueprint --aem profiles/ubs input/AAAI_019_DE.pdf
+# Use with:  blueprint --aem profiles/ubs/aem input/AAAI_019_DE.pdf
 #
 # Template syntax: Tera (Jinja2-style)
 #   Namespaces:
