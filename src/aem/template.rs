@@ -41,21 +41,39 @@ pub fn resolve_variables(
 ) -> Result<HashMap<String, String>, crate::Error> {
     let mut resolved: HashMap<String, String> = HashMap::new();
 
-    // Multiple passes until stable
+    // Multiple passes until stable.  Variables may reference other variables
+    // that have not been resolved yet (iteration order of HashMap is
+    // non-deterministic), so we tolerate render failures in intermediate
+    // passes and retry on the next one.
     let max_passes = raw_vars.len() + 1;
     for _ in 0..max_passes {
         let mut changed = false;
         for (name, template) in raw_vars {
             let ctx = build_context(xfa_vars, &resolved);
-            let value = render_string(template, &ctx)?;
-
-            if resolved.get(name) != Some(&value) {
-                resolved.insert(name.clone(), value);
-                changed = true;
+            match render_string(template, &ctx) {
+                Ok(value) => {
+                    if resolved.get(name) != Some(&value) {
+                        resolved.insert(name.clone(), value);
+                        changed = true;
+                    }
+                }
+                Err(_) => {
+                    // Variable references not yet available — retry next pass.
+                    changed = true;
+                }
             }
         }
         if !changed {
             break;
+        }
+    }
+
+    // Final validation: render every variable once more and report any
+    // remaining errors (e.g. genuine syntax errors or circular references).
+    for (name, template) in raw_vars {
+        let ctx = build_context(xfa_vars, &resolved);
+        if resolved.get(name).is_none() {
+            render_string(template, &ctx)?;
         }
     }
 
