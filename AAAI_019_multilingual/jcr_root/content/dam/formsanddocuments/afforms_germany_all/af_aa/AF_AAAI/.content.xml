@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+          xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+          xmlns:dam="http://www.day.com/dam/1.0"
+          xmlns:jcr="http://www.jcp.org/jcr/1.0"
+          xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+          jcr:primaryType="dam:Asset">
+    <jcr:content jcr:primaryType="dam:AssetContent"
+                 sling:resourceType="fd/fm/af/render"
+                 guide="1"
+                 type="guide">
+        <metadata fd:version="1.1"
+                  jcr:primaryType="nt:unstructured"
+                  allowedRenderFormat="HTML"
+                  author="blueprint"
+                  dorTemplateRef="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAAI/jcr:content/renditions/dorTemplate"
+                  dorType="generate"
+                  formmodel="none"
+                  hasCustomThumbnail="{Boolean}false"
+                  themeRef="/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
+                  title="AAAI"/>
+    </jcr:content>
+</jcr:root>

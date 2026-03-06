@@ -30,6 +30,11 @@ form_dir = "AF_{{ xfa.formrange_code }}"
 entity_dir = """{% if xfa.formrange_entity == "019" %}afforms_germany_all{% elif xfa.formrange_entity == "033" %}afforms_italy_all{% elif xfa.formrange_entity == "001" %}afforms_ch_all{% else %}afforms_global_all{% endif %}"""
 prefix_dir = "af_{{ xfa.formrange_code | truncate(length=2, end='') | lower }}"
 
+# Summary component toggle — set to "true" to enable the summary component
+# on the preview panel (replaces carousel preview) and add redactoSummary
+# metadata to the DAM asset.
+use_summary = "true"
+
 # Form identity
 form_code = "{{ xfa.formrange_code }}"
 

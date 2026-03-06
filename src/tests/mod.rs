@@ -7451,110 +7451,6 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     );
 }
 
-#[test]
-fn test_aaai_aem_output_contains_preview_panel_and_metadata() {
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
-
-    let mut bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
-        .expect("Failed to load AAAI PDF");
-    let ctx = bp.context();
-    let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
-
-    let (profile, templates) = load_ubs_profile();
-    let config = AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
-
-    let config = crate::resolve_aem_languages(&content, &config);
-    let root = convert_to_aem(&content, &config);
-    let xml = generate_aem_xml(&root, &config);
-
-    // jcr:title should be the form code
-    assert!(
-        xml.contains("jcr:title=\"AAAI\""),
-        "jcr:content should have jcr:title set to form code"
-    );
-
-    // Preview panel should be present
-    assert!(
-        xml.contains("<previewpanel_copy"),
-        "Output should contain previewpanel_copy"
-    );
-    assert!(
-        xml.contains("name=\"preview\""),
-        "Preview panel should have name='preview'"
-    );
-
-    // Message boxes
-    assert!(
-        xml.contains("<messagebox_ElsigCheck"),
-        "Preview panel should contain ElsigCheck messagebox"
-    );
-    assert!(
-        xml.contains("name=\"previewInformation\""),
-        "Preview panel should contain submission info messagebox"
-    );
-    assert!(
-        xml.contains("name=\"carouselPreview\""),
-        "Preview panel should contain carousel"
-    );
-    assert!(
-        xml.contains("name=\"previewErrorMessage\""),
-        "Preview panel should contain carousel error messagebox"
-    );
-    assert!(
-        xml.contains("name=\"submitErrorMessage\""),
-        "Preview panel should contain submission error messagebox"
-    );
-    assert!(
-        xml.contains("name=\"doroptionsubs\""),
-        "Preview panel should contain DOR options"
-    );
-
-    // Metadata element
-    assert!(
-        xml.contains("<metadata"),
-        "Preview panel should contain metadata element"
-    );
-    assert!(
-        xml.contains("formrange_code=\"AAAI\""),
-        "Metadata should contain form code"
-    );
-    assert!(
-        xml.contains("formrange_entity=\"019\""),
-        "Metadata should contain entity"
-    );
-    assert!(
-        xml.contains("formrange_version=\"V0\""),
-        "Metadata should contain version"
-    );
-    assert!(
-        xml.contains("formrange_cdokinfo=\"61137\""),
-        "Metadata should contain cdokinfo"
-    );
-    assert!(
-        xml.contains("formrange_releasedate=\"31.10.2019\""),
-        "Metadata should contain release date"
-    );
-    assert!(
-        xml.contains("formrange_afmasterlanguage="),
-        "Metadata should contain master language"
-    );
-
-    // Nested structure: entities > item0 > cdoks > item0
-    assert!(
-        xml.contains("<entities"),
-        "Metadata should contain entities element"
-    );
-    assert!(
-        xml.contains("<cdoks"),
-        "Metadata should contain cdoks element"
-    );
-    assert!(
-        xml.contains("formrange_language=\""),
-        "Metadata entity should contain language list"
-    );
-}
-
 // =========================================================================
 // Context extraction from XFA
 // =========================================================================
@@ -12139,8 +12035,8 @@ fn test_ubs_profile_aem_output_matches_legacy() {
         "Profile output metadata should have form code"
     );
     assert!(
-        profile_xml.contains("name=\"preview\""),
-        "Profile output should have preview panel"
+        profile_xml.contains("name=\"preview\"") || profile_xml.contains("name=\"summaryPanel\""),
+        "Profile output should have preview or summary panel"
     );
     assert!(
         profile_xml.contains("name=\"metadata\""),

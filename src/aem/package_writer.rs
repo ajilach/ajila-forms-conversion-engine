@@ -17,6 +17,7 @@ use zip::write::SimpleFileOptions;
 use super::{AemConfig, AemNode};
 use crate::aem::converter::inline_text_to_html;
 use crate::aem::generate_aem_xml;
+use crate::aem::template;
 use crate::aem::xml_writer::reformat_attributes;
 use crate::structured::{
     FieldType, HeadingLevel, InlineNode, InlineText, ListNode, StructuredNode, TranslatableString,
@@ -36,7 +37,7 @@ pub fn generate_aem_package(
     content: &[StructuredNode],
 ) -> Vec<u8> {
     let form_xml = generate_aem_xml(root, config);
-    let dam_xml = generate_dam_asset_xml(config);
+    let dam_xml = generate_dam_xml(config);
 
     let package_name = format!("BlueprintFormsPackage_{}", config.form_code);
 
@@ -239,6 +240,31 @@ fn write_intermediate_folders(
 // ============================================================================
 // DAM Asset XML generation
 // ============================================================================
+
+/// Generate the DAM `.content.xml` using a Tera template if available in the
+/// profile (`dam.xml`), otherwise fall back to the hard-coded builder.
+fn generate_dam_xml(config: &AemConfig) -> String {
+    if let Some(dam_template) = config.component_templates.get("dam") {
+        let mut ctx = tera::Context::new();
+        ctx.insert("xfa", &config.xfa_vars);
+        ctx.insert("variables", &config.user_vars);
+        ctx.insert("author", &config.author);
+        ctx.insert("master_language", &config.master_language);
+        ctx.insert("languages", &config.languages.join(","));
+        ctx.insert("expanded_languages", &config.expand_languages().join(","));
+        ctx.insert("form_code", &config.form_code);
+
+        match template::render_string(dam_template, &ctx) {
+            Ok(rendered) => return reformat_attributes(&rendered),
+            Err(e) => {
+                log::error!("Failed to render dam.xml template: {}", e);
+                // fall through to hard-coded generator
+            }
+        }
+    }
+
+    generate_dam_asset_xml(config)
+}
 
 /// Generate the `dam:Asset` `.content.xml` for the DAM entry of the form.
 fn generate_dam_asset_xml(config: &AemConfig) -> String {
