@@ -222,3 +222,28 @@ pub fn flatten_from_pdf(path: &str) -> Flattened {
     let mut nodes = parse_xfa_from_pdf(path);
     flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts")
 }
+
+/// Load the UBS profile (config.toml + XML templates) from `profiles/ubs/`.
+///
+/// Returns `(AemProfile, templates)` ready for `AemConfig::from_profile`.
+pub fn load_ubs_profile() -> (crate::aem::AemProfile, std::collections::HashMap<String, String>) {
+    let dir = std::path::Path::new("profiles/ubs");
+    let toml_str = std::fs::read_to_string(dir.join("config.toml"))
+        .expect("Failed to read profiles/ubs/config.toml");
+    let profile: crate::aem::AemProfile =
+        toml::from_str(&toml_str).expect("Failed to parse UBS config.toml");
+
+    let mut templates = std::collections::HashMap::new();
+    for entry in std::fs::read_dir(dir).expect("Failed to read profiles/ubs/") {
+        let entry = entry.expect("Failed to read dir entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                let content =
+                    std::fs::read_to_string(&path).expect("Failed to read template");
+                templates.insert(stem.to_string(), content);
+            }
+        }
+    }
+    (profile, templates)
+}

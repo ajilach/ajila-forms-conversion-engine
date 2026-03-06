@@ -1,0 +1,72 @@
+# =============================================================================
+# UBS AEM Forms Output Profile
+# =============================================================================
+#
+# Profile directory for UBS-specific AEM output.
+# Use with:  blueprint --aem profiles/ubs input/AAAI_019_DE.pdf
+#
+# Template syntax: Tera (Jinja2-style)
+#   Namespaces:
+#     xfa.*        — raw XFA <variables><text> from the PDF
+#     variables.*  — user-defined intermediate values (below)
+#   Runtime vars (available in *.xml templates):
+#     author           — authoring user name
+#     master_language  — primary language code (from profile)
+#     languages        — comma-separated list of detected languages
+#     expanded_languages — languages including synonyms, comma-separated
+
+title = "{{ xfa.formrange_code }}"
+
+master_language = "en"
+
+form_path = "{{ variables.entity_dir }}/{{ variables.prefix_dir }}"
+
+form_dir = "AF_{{ xfa.formrange_code }}"
+
+# =============================================================================
+# Variables — reusable intermediate values
+# =============================================================================
+[variables]
+entity_dir = """{% if xfa.formrange_entity == "019" %}afforms_germany_all{% elif xfa.formrange_entity == "033" %}afforms_italy_all{% elif xfa.formrange_entity == "001" %}afforms_ch_all{% else %}afforms_global_all{% endif %}"""
+prefix_dir = "af_{{ xfa.formrange_code | truncate(length=2, end='') | lower }}"
+
+# Form identity
+form_code = "{{ xfa.formrange_code }}"
+
+# Paths
+template_path = "/conf/ajila-forms-ubs/settings/wcm/templates/basic"
+page_resource_type = "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
+theme_ref = "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
+redirect_url = "/content/forms/af/afforms_global_common/confirm-successful-submission"
+meta_template_ref = "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp"
+dor_template_ref = "/content/dam/formsanddocuments/{{ variables.entity_dir }}/{{ variables.prefix_dir }}/AF_{{ xfa.formrange_code }}/jcr:content/renditions/dorTemplate"
+
+# Component resource types
+resource_type_base = "fd/af/components"
+custom_resource_type_base = "ajila-forms-customers/ajila-forms-ubs/components"
+action_type = "ajila-forms-customers/ajila-forms-ubs/components/actions/submit"
+client_lib_ref = "ajila-forms-ubs"
+wizard_layout = "ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard"
+default_layout = "fd/af/layouts/gridFluidLayout2"
+
+# DOR settings
+form_type = " "
+dor_field_styling = "Default"
+dor_type = "generate"
+
+# Per-component CSS classes
+css_textbox = "widget_ajila-forms-ubs-textbox"
+css_numericbox = "widget_ajila-forms-ubs-numericbox"
+css_datepicker = "widget_ajila_forms_datepicker"
+css_checkbox = "widget_ajila_forms_checkbox"
+css_radiobutton = "widget_ajila_forms_radiobutton"
+css_dropdownlist = "widget_ajila_forms_dropdownlist"
+css_primarybutton = "widget_ajila-forms-ubs-primarybutton"
+css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
+
+# =============================================================================
+# Language Synonyms
+# =============================================================================
+[language_synonyms]
+de = ["de-ch"]
+sp = ["es"]

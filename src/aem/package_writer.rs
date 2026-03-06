@@ -485,22 +485,6 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 // Language detection
 // ============================================================================
 
-/// Detect the best master language from the structured content.
-///
-/// Scans all `TranslatableString::Translated` and `InlineNode::TranslatedText`
-/// entries. Returns `"en"` if English is among the available languages,
-/// otherwise the first language alphabetically. Falls back to `"en"` if no
-/// translations are present at all.
-pub fn detect_master_language(content: &[StructuredNode]) -> String {
-    let langs = collect_languages(content);
-    if langs.is_empty() || langs.contains("en") {
-        "en".into()
-    } else {
-        // First alphabetically
-        langs.into_iter().next().unwrap()
-    }
-}
-
 /// Collect all language codes present in the structured content.
 pub fn collect_languages(content: &[StructuredNode]) -> BTreeSet<String> {
     let mut langs = BTreeSet::new();
@@ -997,7 +981,7 @@ mod tests {
 
     #[test]
     fn dam_asset_xml_has_correct_resource_type() {
-        let mut config = AemConfig::test_default("TEST_FORM", "019");
+        let mut config = AemConfig::test_default("TEST_FORM");
         config.form_title = "TEST_FORM".into();
         let xml = generate_dam_asset_xml(&config);
         assert!(
@@ -1034,7 +1018,7 @@ mod tests {
 
     #[test]
     fn package_contains_dam_and_form_content() {
-        let config = AemConfig::test_default("TEST", "019");
+        let config = AemConfig::test_default("TEST");
         let root = AemNode::Root {
             title: "TEST".into(),
             children: vec![],
@@ -1058,7 +1042,7 @@ mod tests {
             {
                 found_dam = true;
             }
-            if name.contains("content/dam/formsanddocuments/afforms_germany_all/.content.xml") {
+            if name.contains("content/dam/formsanddocuments/test/.content.xml") {
                 found_dam_folder = true;
             }
         }
@@ -1072,7 +1056,7 @@ mod tests {
 
         // Verify DAM intermediate folder uses sling:Folder
         let mut dam_folder = archive
-            .by_name("jcr_root/content/dam/formsanddocuments/afforms_germany_all/.content.xml")
+            .by_name("jcr_root/content/dam/formsanddocuments/test/.content.xml")
             .expect("DAM folder entry");
         let mut dam_folder_xml = String::new();
         dam_folder.read_to_string(&mut dam_folder_xml).unwrap();

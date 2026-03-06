@@ -444,6 +444,39 @@ impl InlineText {
         result
     }
 
+    /// Get the plain text content in a specific language (stripping formatting).
+    ///
+    /// For `TranslatedText` nodes, prefers the given `lang`; falls back to
+    /// the first available translation if the language is not present.
+    pub fn plain_text_in(&self, lang: &str) -> String {
+        fn collect_text(node: &InlineNode, lang: &str, out: &mut String) {
+            match node {
+                InlineNode::Text(s) => out.push_str(s),
+                InlineNode::TranslatedText(translations) => {
+                    let text = translations
+                        .get(lang)
+                        .or_else(|| translations.values().next());
+                    if let Some(text) = text {
+                        out.push_str(text);
+                    }
+                }
+                InlineNode::Link(link) => {
+                    for child in &link.content.0 {
+                        collect_text(child, lang, out);
+                    }
+                }
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                    collect_text(inner, lang, out);
+                }
+            }
+        }
+        let mut result = String::new();
+        for node in &self.0 {
+            collect_text(node, lang, &mut result);
+        }
+        result
+    }
+
     /// Collect all language codes from `TranslatedText` nodes in this inline text.
     pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
         fn walk(node: &InlineNode, langs: &mut BTreeSet<String>) {

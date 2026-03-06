@@ -556,25 +556,60 @@ fn strip_language_suffix(name: &str) -> &str {
     name
 }
 
-/// Load AEM config: if a profile path is given, read and parse the TOML
-/// to create an `AemConfig` via `from_profile()`. Otherwise fall back to
-/// the legacy `AemConfig::new()` constructor.
+/// Load AEM config from a profile directory.
+///
+/// The directory must contain a `config.toml` file and may contain `*.xml`
+/// template files. Each `.xml` file's stem (e.g. `root` from `root.xml`)
+/// becomes a key in `component_templates`.
 fn load_aem_config(
     profile_path: Option<&Path>,
     ctx: &blueprint::Context,
 ) -> Result<blueprint::AemConfig, Box<dyn std::error::Error>> {
-    match profile_path {
-        Some(path) => {
-            let toml_str = std::fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read AEM profile '{}': {}", path.display(), e))?;
-            let profile: blueprint::AemProfile = toml::from_str(&toml_str)
-                .map_err(|e| format!("Failed to parse AEM profile '{}': {}", path.display(), e))?;
-            let config = blueprint::AemConfig::from_profile(&profile, ctx)?;
-            Ok(config)
-        }
-        None => {
-            let config = blueprint::AemConfig::new(ctx)?;
-            Ok(config)
+    let dir = profile_path
+        .ok_or("No AEM profile directory specified (use --aem <dir>)")?;
+
+    if !dir.is_dir() {
+        return Err(format!(
+            "AEM profile path '{}' is not a directory",
+            dir.display()
+        )
+        .into());
+    }
+
+    // Read config.toml
+    let config_path = dir.join("config.toml");
+    let toml_str = std::fs::read_to_string(&config_path).map_err(|e| {
+        format!(
+            "Failed to read config.toml in '{}': {}",
+            dir.display(),
+            e
+        )
+    })?;
+    let profile: blueprint::AemProfile = toml::from_str(&toml_str).map_err(|e| {
+        format!(
+            "Failed to parse config.toml in '{}': {}",
+            dir.display(),
+            e
+        )
+    })?;
+
+    // Scan for *.xml template files
+    let mut templates = std::collections::HashMap::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| {
+        format!("Failed to read profile directory '{}': {}", dir.display(), e)
+    })? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                let content = std::fs::read_to_string(&path).map_err(|e| {
+                    format!("Failed to read template '{}': {}", path.display(), e)
+                })?;
+                templates.insert(stem.to_string(), content);
+            }
         }
     }
+
+    let config = blueprint::AemConfig::from_profile(&profile, templates, ctx)?;
+    Ok(config)
 }

@@ -213,14 +213,14 @@ fn short_uuid(uuid: &Uuid) -> String {
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
 
-    // Extract the H1 heading text to use as the form display title.
-    // Falls back to the form code if no H1 is found.
+    // Extract H1 heading text to use as the display title (guideformtitle _value).
+    // Falls back to form_title (form code) if no H1 is present.
     let form_display_title = nodes
         .iter()
         .find_map(|n| {
             if let StructuredNode::Heading(h) = n {
                 if matches!(h.level, HeadingLevel::H1) {
-                    return Some(h.content.as_plain_text().trim().to_string());
+                    return Some(h.content.plain_text_in(&ctx.language).trim().to_string());
                 }
             }
             None
@@ -234,7 +234,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     for node in nodes {
         if let StructuredNode::Heading(h) = node {
             if matches!(h.level, HeadingLevel::H2) {
-                let title = h.content.as_plain_text().trim().to_string();
+                let title = h.content.plain_text_in(&ctx.language).trim().to_string();
                 sections.push((Some(title), vec![]));
                 continue;
             }
@@ -359,7 +359,7 @@ fn convert_heading(
 ) -> AemNode {
     let plain = inline_text_to_html(&h.content, &ctx.language);
     let content = format!("<p>{plain}</p>");
-    let source_text = h.content.as_plain_text();
+    let source_text = h.content.plain_text_in(&ctx.language);
     let name = ctx.make_name("TTL", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TitleDraw {
@@ -381,7 +381,7 @@ fn convert_paragraph(
 ) -> AemNode {
     let html = inline_text_to_html(&p.content, &ctx.language);
     let content = format!("<p>{html}</p>");
-    let source_text = p.content.as_plain_text();
+    let source_text = p.content.plain_text_in(&ctx.language);
     let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
@@ -426,7 +426,7 @@ fn convert_list(
     let first_item_text = list
         .items
         .first()
-        .map(|i| i.as_plain_text())
+        .map(|i| i.plain_text_in(&ctx.language))
         .unwrap_or_default();
     let name = ctx.make_name("ST", &first_item_text);
     let uuid = ctx.uuid(&name);
@@ -478,7 +478,7 @@ fn convert_table(
     let caption_text = table
         .caption
         .as_ref()
-        .map(|c| c.as_plain_text())
+        .map(|c| c.plain_text_in(&ctx.language))
         .unwrap_or_default();
     let name = ctx.make_name("TBL", &caption_text);
     let uuid = ctx.uuid(&name);
@@ -574,7 +574,7 @@ fn convert_field(
     let source_text = f
         .label
         .as_ref()
-        .map(|l| l.as_plain_text())
+        .map(|l| l.plain_text_in(&ctx.language))
         .filter(|s| !s.trim().is_empty())
         .or_else(|| {
             f.som_path
@@ -996,7 +996,7 @@ mod tests {
     use crate::structured::*;
 
     fn default_config() -> AemConfig {
-        let mut config = AemConfig::test_default("TEST", "019");
+        let mut config = AemConfig::test_default("TEST");
         config.deterministic_uuids = true;
         config
     }
@@ -2033,7 +2033,7 @@ mod tests {
     }
 
     #[test]
-    fn h1_heading_becomes_root_title() {
+    fn root_title_uses_h1_heading_text() {
         let nodes = vec![
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
@@ -2049,7 +2049,7 @@ mod tests {
             AemNode::Root { title, .. } => {
                 assert_eq!(
                     title, "My Form Display Title",
-                    "Root title should come from H1, not form code"
+                    "Root title should come from H1 heading text"
                 );
             }
             other => panic!("Expected Root, got {:?}", other),

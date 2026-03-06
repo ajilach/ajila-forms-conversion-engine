@@ -1,0 +1,27 @@
+<{{ element_name }}
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="{{ author }}"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="{{ author }}"
+    jcr:primaryType="nt:unstructured"
+    {% if title and title != "" %}jcr:title="{{ title }}"{% endif %}
+    sling:resourceType="{{ variables.resource_type_base }}/panel"
+    {% if is_page %}css="stepTitle"{% endif %}
+    {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
+    dorExcludeDescription="true"
+    {% if is_page %}dorExcludeTitle="true"{% endif %}
+    {% if dor_exclude %}dorExclusion="{{ dor_exclude }}"{% endif %}
+    dorFieldStyling="{{ variables.dor_field_styling }}"
+    guideNodeClass="guidePanel"
+    name="{{ name }}"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    {% if not visible %}visible="{Boolean}false"{% endif %}>
+    <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
+        {{ children }}
+    </items>
+    <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar"{% if dor_num_cols %} dorNumCols="{{ dor_num_cols }}"{% endif %} nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
+    </cq:responsive>
+</{{ element_name }}>

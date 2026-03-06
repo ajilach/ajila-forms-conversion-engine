@@ -11,22 +11,32 @@
         "head": true,
         "tail": true,
         "wc": true,
+        "ls": true,
+        "pwd": true,
+        "echo": true,
+        "git status": true,
+        "git diff": true,
+        "git log": true,
         "git stash": true,
         "git stash pop": true,
         "cargo": true,
+        "cargo check": true,
+        "cargo test": true,
         "true": true,
         "false": true,
+        "diff": true
     },
     "chat.tools.urls.autoApprove": {
         "https://github.com": true,
         "https://*.adobe.com": true,
         "https://huggingface.co": true,
-        "https://raw.githubusercontent.com": true,
-        "https://*.circom.io": true,
-        "https://noir-lang.org": true,
         "https://*.githubusercontent.com": true,
         "https://docs.rs": true,
         "https://crates.io": true,
-        "https://*.github.io": true
-    }
+        "https://*.github.io": true,
+        "https://stackoverflow.com": true,
+        "https://*.rust-lang.org": true,
+        "https://developer.mozilla.org": true
+    },
+    "chat.agent.maxRequests": 100,
 }

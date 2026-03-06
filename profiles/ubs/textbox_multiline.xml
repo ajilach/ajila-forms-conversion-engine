@@ -1,0 +1,21 @@
+<{{ element_name }}
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="{{ author }}"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="{{ author }}"
+    jcr:primaryType="nt:unstructured"
+    {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
+    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/textboxMultiline"
+    css="{{ variables.css_textbox_multiline }}"
+    {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
+    dorFieldStyling="{{ variables.dor_field_styling }}"
+    guideNodeClass="guideTextBox"
+    mandatory="{{ mandatory }}"
+    multiLine="true"
+    name="{{ name }}"
+    {% if not visible %}visible="{Boolean}false"
+    dorExclusion="true"{% endif %}>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
+    </cq:responsive>
+</{{ element_name }}>

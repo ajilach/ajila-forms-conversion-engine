@@ -106,8 +106,8 @@ pub use structured::{
 
 // AEM generation
 pub use aem::{
-    AemConfig, AemNode, AemProfile, collect_languages, convert_to_aem, detect_master_language,
-    generate_aem_package, generate_aem_xml,
+    AemConfig, AemNode, AemProfile, collect_languages, convert_to_aem, generate_aem_package,
+    generate_aem_xml,
 };
 
 // GraphViz decision-flow output
@@ -718,32 +718,20 @@ pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8>
     generate_aem_package(&root, &config, content)
 }
 
-/// Auto-detect master language and available languages from content,
-/// applying them to a clone of the provided config.
+/// Detect available languages from content, applying them to a clone of the
+/// provided config. The master language is taken from the config as-is
+/// (set via the TOML profile or the constructor).
 ///
-/// Also triggers deferred XML snippet rendering (for profile-based configs)
-/// now that `master_language` and `languages` are known.
+/// Detect available languages from content, applying them to a clone of the
+/// provided config. The master language is taken from the config as-is
+/// (set via the TOML profile or the constructor).
 pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
     let detected_langs = collect_languages(content);
-    if detected_langs.is_empty() {
-        let mut config = config.clone();
-        config.render_snippets();
-        return config;
-    }
     let mut config = config.clone();
-    config.master_language = detect_master_language_from_set(&detected_langs);
-    config.languages = detected_langs.into_iter().collect();
-    config.render_snippets();
-    config
-}
-
-/// Pick "en" if present, otherwise the first language alphabetically.
-fn detect_master_language_from_set(langs: &std::collections::BTreeSet<String>) -> String {
-    if langs.contains("en") {
-        "en".into()
-    } else {
-        langs.iter().next().cloned().unwrap_or_else(|| "en".into())
+    if !detected_langs.is_empty() {
+        config.languages = detected_langs.into_iter().collect();
     }
+    config
 }
 
 /// Run exhaustive exploration on a PDF file and return the merged structured tree.
