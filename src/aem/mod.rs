@@ -23,10 +23,13 @@
 
 mod converter;
 mod package_writer;
+pub mod profile;
+pub mod template;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
 pub use package_writer::{collect_languages, detect_master_language, generate_aem_package};
+pub use profile::AemProfile;
 pub use xml_writer::generate_aem_xml;
 
 use std::collections::HashMap;
@@ -193,24 +196,35 @@ pub struct AemConfig {
     /// Default: `"ajila-forms-ubs/output/Germany_Tranch_1"`.
     pub form_path: String,
 
-    // -- Metadata (populated from XFA context) --------------------------------
-    /// When `true`, the preview panel (with metadata, message boxes, carousel,
-    /// etc.) is emitted as the last page in the root panel items.
-    /// Automatically set to `true` by `populate_from_context()`.
-    pub include_preview_panel: bool,
+    // -- Profile-based configuration -----------------------------------------
+    /// Pre-rendered XML snippets for injection points.
+    ///
+    /// Supported keys: `print_branding`, `first_panel`, `last_panel`.
+    /// Populated by `from_profile()` + `render_snippets()`.
+    pub xml_snippets: HashMap<String, String>,
 
-    /// FormRange entity code (e.g. `"019"`).
-    pub metadata_entity: String,
-    /// FormRange CDOK info (e.g. `"61137"`).
-    pub metadata_cdokinfo: String,
-    /// FormRange release date (e.g. `"31.10.2019"`).
-    pub metadata_releasedate: String,
-    /// FormRange version (e.g. `"V0"`).
-    pub metadata_version: String,
-    /// FormRange partner level (e.g. `"false"`).
-    pub metadata_partnerlevel: String,
-    /// FormRange CLP mandatory flag (e.g. `"false"`).
-    pub metadata_clpmandatory: String,
+    /// Raw Tera templates for XML snippets (before language detection).
+    /// Kept for deferred rendering in `render_snippets()`.
+    snippet_templates: HashMap<String, String>,
+
+    /// Base context entries (xfa.* + variables.*) for deferred snippet
+    /// rendering.
+    snippet_xfa_vars: HashMap<String, String>,
+    snippet_user_vars: HashMap<String, String>,
+
+    /// Per-component configuration from the profile.
+    /// Keys match component names (e.g. `"textbox"`, `"textbox_multiline"`).
+    pub component_config: HashMap<String, profile::ComponentConfig>,
+
+    /// Optional script for the Next button's click handler.
+    pub next_click_script: Option<String>,
+
+    /// Whether to include the Preview button in the toolbar.
+    pub include_preview_button: bool,
+
+    /// Override for `form_dir()`. When set, `form_dir()` returns this value
+    /// instead of computing `"AF_" + form_code`.
+    pub form_dir_override: Option<String>,
 }
 
 impl AemConfig {
@@ -222,7 +236,7 @@ impl AemConfig {
     /// | Variable             | Maps to             |
     /// |----------------------|---------------------|
     /// | `formrange_code`     | `form_code` / `form_title` |
-    /// | `formrange_entity`   | `metadata_entity` / `form_path` |
+    /// | `formrange_entity`   | `form_path` |
     ///
     /// Returns an error if either required variable is missing.
     pub fn new(ctx: &crate::Context) -> Result<Self, crate::Error> {
@@ -296,35 +310,199 @@ impl AemConfig {
 
             form_path,
 
-            include_preview_panel: true,
-            metadata_entity: entity_code,
-            metadata_cdokinfo: ctx
-                .get_variable("formrange_cdokinfo")
-                .or_else(|| ctx.get_variable("Footer_Line_txtformid"))
-                .unwrap_or("")
-                .to_string(),
-            metadata_releasedate: ctx
-                .get_variable("formrange_releasedate")
-                .or_else(|| ctx.get_variable("Footer_Line_txtversiondate"))
-                .unwrap_or("")
-                .to_string(),
-            metadata_version: ctx
-                .get_variable("formrange_version")
-                .unwrap_or("")
-                .to_string(),
-            metadata_partnerlevel: ctx
-                .get_variable("formrange_partnerlevel")
-                .unwrap_or("false")
-                .to_string(),
-            metadata_clpmandatory: ctx
-                .get_variable("formrange_clpmandatory")
-                .unwrap_or("false")
-                .to_string(),
+            xml_snippets: HashMap::new(),
+            snippet_templates: HashMap::new(),
+            snippet_xfa_vars: HashMap::new(),
+            snippet_user_vars: HashMap::new(),
+            component_config: HashMap::new(),
+            next_click_script: None,
+            include_preview_button: true,
+            form_dir_override: None,
         };
 
         config.dor_template_ref = config.compute_dor_template_ref();
 
         Ok(config)
+    }
+
+    /// Create an `AemConfig` from an [`AemProfile`] and a [`Context`](crate::Context).
+    ///
+    /// The profile provides all customer-specific settings. XFA variables from
+    /// the context are available in template expressions as `xfa.*`.
+    ///
+    /// XML snippets are stored as raw Tera templates; call
+    /// [`render_snippets()`](Self::render_snippets) after language detection
+    /// to render them with `master_language` / `languages` context.
+    pub fn from_profile(
+        profile: &AemProfile,
+        ctx: &crate::Context,
+    ) -> Result<Self, crate::Error> {
+        let xfa_vars = ctx.variables.clone();
+        let user_vars = template::resolve_variables(&profile.variables, &xfa_vars)?;
+        let tera_ctx = template::build_context(&xfa_vars, &user_vars);
+
+        // --- form identity ---
+        let form_code = ctx
+            .get_variable("formrange_code")
+            .ok_or_else(|| {
+                crate::Error::AemConfig("missing required XFA variable 'formrange_code'".into())
+            })?
+            .to_string();
+
+        let form_title = match &profile.title {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => form_code.clone(),
+        };
+
+        let form_path = match &profile.form_path {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => String::new(),
+        };
+
+        let form_dir_override = match &profile.form_dir {
+            Some(tmpl) => Some(template::render_string(tmpl, &tera_ctx)?),
+            None => None,
+        };
+
+        // --- paths (render templates) ---
+        let template_path = match &profile.paths.template_path {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => String::new(),
+        };
+        let page_resource_type = match &profile.paths.page_resource_type {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => "fd/af/components/page2".into(),
+        };
+        let theme_ref = match &profile.paths.theme_ref {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => String::new(),
+        };
+        let redirect_url = match &profile.paths.redirect_url {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => String::new(),
+        };
+        let meta_template_ref = match &profile.paths.meta_template_ref {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => String::new(),
+        };
+
+        // --- components ---
+        let resource_type_base = profile
+            .components
+            .resource_type_base
+            .clone()
+            .unwrap_or_else(|| "fd/af/components".into());
+        let custom_resource_type_base = profile.components.custom_resource_type_base.clone();
+        let action_type = profile
+            .components
+            .action_type
+            .clone()
+            .unwrap_or_else(|| String::new());
+        let client_lib_ref = profile
+            .components
+            .client_lib_ref
+            .clone()
+            .unwrap_or_else(|| String::new());
+        let wizard_layout = profile
+            .components
+            .wizard_layout
+            .clone()
+            .unwrap_or_else(|| "fd/af/layouts/panel/wizard".into());
+        let form_type = profile
+            .components
+            .form_type
+            .clone()
+            .unwrap_or_else(|| " ".into());
+
+        // --- build config ---
+        let mut config = Self {
+            form_title,
+            form_code,
+            languages: vec!["en".into()],
+            master_language: "en".into(),
+            language_synonyms: profile.language_synonyms.clone(),
+
+            resource_type_base,
+            custom_resource_type_base,
+
+            default_layout: "fd/af/layouts/gridFluidLayout2".into(),
+            grid_columns: 12,
+            enable_layout_optimization: true,
+
+            dor_field_styling: "Default".into(),
+            dor_exclude_description: true,
+            dor_type: "generate".into(),
+
+            include_toolbar: true,
+            include_page_wrapper: true,
+
+            css_prefix: "widget_".into(),
+            author: "blueprint".into(),
+            deterministic_uuids: false,
+
+            repeatable_min_occur: 1,
+            repeatable_max_occur: 20,
+
+            page_resource_type,
+            template_path,
+            theme_ref,
+            dor_template_ref: String::new(),
+            redirect_url,
+
+            action_type,
+            client_lib_ref,
+            wizard_layout,
+            form_type,
+            meta_template_ref,
+
+            form_path,
+
+            xml_snippets: HashMap::new(),
+            snippet_templates: profile.xml_snippets.clone(),
+            snippet_xfa_vars: xfa_vars,
+            snippet_user_vars: user_vars,
+            component_config: profile.components.component_config.clone(),
+            next_click_script: profile.scripts.next_click.clone(),
+            include_preview_button: profile.scripts.include_preview_button.unwrap_or(true),
+            form_dir_override,
+        };
+
+        // Render dor_template_ref (may reference variables.*)
+        config.dor_template_ref = match &profile.paths.dor_template_ref {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None => config.compute_dor_template_ref(),
+        };
+
+        Ok(config)
+    }
+
+    /// Render deferred XML snippets with the current `master_language` and
+    /// `languages` values.
+    ///
+    /// Call this after language detection has populated those fields
+    /// (typically via [`resolve_aem_languages()`](crate::resolve_aem_languages)).
+    pub fn render_snippets(&mut self) {
+        if self.snippet_templates.is_empty() {
+            return;
+        }
+
+        let mut ctx = template::build_context(&self.snippet_xfa_vars, &self.snippet_user_vars);
+        ctx.insert("master_language", &self.master_language);
+        ctx.insert("languages", &self.languages.join(","));
+        ctx.insert("form_code", &self.form_code);
+        ctx.insert("author", &self.author);
+
+        self.xml_snippets.clear();
+        for (name, tmpl) in &self.snippet_templates {
+            match template::render_string(tmpl, &ctx) {
+                Ok(rendered) => {
+                    self.xml_snippets.insert(name.clone(), rendered);
+                }
+                Err(e) => {
+                    log::warn!("Failed to render XML snippet '{}': {}", name, e);
+                }
+            }
+        }
     }
 
     /// Resolve the sling resource type for a control component.
@@ -353,11 +531,18 @@ impl AemConfig {
 
     /// CSS class for a control component.
     ///
-    /// When a custom resource type base is configured, returns the
-    /// component-specific widget class that matches the AEM component
-    /// library (e.g. `widget_ajila-forms-ubs-textbox`).
-    /// Otherwise falls back to `"{css_prefix}{component}"`.
+    /// Checks `component_config` first (populated from the profile's
+    /// per-component sections). Falls back to the hardcoded UBS
+    /// widget classes when a custom resource type base is configured,
+    /// or `"{css_prefix}{component}"` otherwise.
     pub fn css_class(&self, component: &str) -> String {
+        // Profile override takes precedence
+        if let Some(cfg) = self.component_config.get(component) {
+            if let Some(ref css) = cfg.css {
+                return css.clone();
+            }
+        }
+        // Legacy fallback
         if self.custom_resource_type_base.is_some() {
             match component {
                 "textbox" => "widget_ajila-forms-ubs-textbox".into(),
@@ -374,12 +559,16 @@ impl AemConfig {
         }
     }
 
-    /// The JCR folder name for this form: `"AF_" + form_code`.
+    /// The JCR folder name for this form.
     ///
-    /// Matches the Java convention where the terminal folder is
-    /// `AF_AAAI`, `AF_AAEI`, etc.
+    /// Uses `form_dir_override` if set (from profile's `form_dir` template),
+    /// otherwise computes `"AF_" + form_code`.
     pub fn form_dir(&self) -> String {
-        format!("AF_{}", self.form_code)
+        if let Some(ref dir) = self.form_dir_override {
+            dir.clone()
+        } else {
+            format!("AF_{}", self.form_code)
+        }
     }
 
     /// Compute the DOR template ref from `form_path` and `form_dir()`.
@@ -491,13 +680,14 @@ impl AemConfig {
 
             form_path,
 
-            include_preview_panel: false,
-            metadata_entity: entity_code.into(),
-            metadata_cdokinfo: String::new(),
-            metadata_releasedate: String::new(),
-            metadata_version: String::new(),
-            metadata_partnerlevel: "false".into(),
-            metadata_clpmandatory: "false".into(),
+            xml_snippets: HashMap::new(),
+            snippet_templates: HashMap::new(),
+            snippet_xfa_vars: HashMap::new(),
+            snippet_user_vars: HashMap::new(),
+            component_config: HashMap::new(),
+            next_click_script: None,
+            include_preview_button: true,
+            form_dir_override: None,
         };
 
         config.dor_template_ref = config.compute_dor_template_ref();

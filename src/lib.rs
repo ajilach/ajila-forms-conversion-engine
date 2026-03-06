@@ -106,7 +106,7 @@ pub use structured::{
 
 // AEM generation
 pub use aem::{
-    AemConfig, AemNode, collect_languages, convert_to_aem, detect_master_language,
+    AemConfig, AemNode, AemProfile, collect_languages, convert_to_aem, detect_master_language,
     generate_aem_package, generate_aem_xml,
 };
 
@@ -720,14 +720,20 @@ pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8>
 
 /// Auto-detect master language and available languages from content,
 /// applying them to a clone of the provided config.
+///
+/// Also triggers deferred XML snippet rendering (for profile-based configs)
+/// now that `master_language` and `languages` are known.
 pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
     let detected_langs = collect_languages(content);
     if detected_langs.is_empty() {
-        return config.clone();
+        let mut config = config.clone();
+        config.render_snippets();
+        return config;
     }
     let mut config = config.clone();
     config.master_language = detect_master_language_from_set(&detected_langs);
     config.languages = detected_langs.into_iter().collect();
+    config.render_snippets();
     config
 }
 

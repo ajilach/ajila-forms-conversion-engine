@@ -20,8 +20,13 @@
     "chat.tools.urls.autoApprove": {
         "https://github.com": true,
         "https://*.adobe.com": true,
+        "https://huggingface.co": true,
         "https://raw.githubusercontent.com": true,
+        "https://*.circom.io": true,
+        "https://noir-lang.org": true,
         "https://*.githubusercontent.com": true,
         "https://docs.rs": true,
+        "https://crates.io": true,
+        "https://*.github.io": true
     }
 }

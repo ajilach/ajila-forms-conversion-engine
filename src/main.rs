@@ -67,9 +67,11 @@ struct Args {
     #[arg(long)]
     html: bool,
 
-    /// Export the form as AEM Adaptive Forms JCR content XML
+    /// Export the form as AEM Adaptive Forms JCR content XML.
+    /// Pass a TOML profile file to configure customer-specific output settings.
+    /// If no profile is given, legacy UBS defaults are used.
     #[arg(long)]
-    aem: bool,
+    aem: Option<PathBuf>,
 
     /// Export a GraphViz DOT file showing the interactive decision flow
     #[arg(long)]
@@ -288,8 +290,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // =====================================================================
         // PIPELINE STAGE 3: Run exhaustive exploration (no I/O inside lib)
         // =====================================================================
-        let need_structured =
-            args.structured || args.html || args.aem || args.graphviz || args.documents.len() > 1;
+        let need_structured = args.structured
+            || args.html
+            || args.aem.is_some()
+            || args.graphviz
+            || args.documents.len() > 1;
         let generate_html = if args.documents.len() > 1 {
             false
         } else {
@@ -310,7 +315,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.html {
             info!("  HTML output: enabled");
         }
-        if args.aem {
+        if args.aem.is_some() {
             info!("  AEM package output: enabled");
         }
         if args.graphviz {
@@ -449,9 +454,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("    Merged HTML: {}", html_path.display());
             }
 
-            if args.aem && args.documents.len() <= 1 {
+            if args.aem.is_some() && args.documents.len() <= 1 {
                 if bp.is_xfa() {
-                    let aem_config = blueprint::AemConfig::new(&merged_envelope.context)?;
+                    let aem_config =
+                        load_aem_config(args.aem.as_deref(), &merged_envelope.context)?;
                     let aem_output =
                         blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
@@ -521,8 +527,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Generate merged multilingual AEM package
-        if args.aem {
-            let aem_config = blueprint::AemConfig::new(&merged_envelope.context)?;
+        if args.aem.is_some() {
+            let aem_config = load_aem_config(args.aem.as_deref(), &merged_envelope.context)?;
             let aem_output = blueprint::to_aem_package(&merged_envelope.content, &aem_config);
 
             let aem_path = std::path::PathBuf::from(format!("{}_multilingual.zip", merged_name));
@@ -548,4 +554,27 @@ fn strip_language_suffix(name: &str) -> &str {
         }
     }
     name
+}
+
+/// Load AEM config: if a profile path is given, read and parse the TOML
+/// to create an `AemConfig` via `from_profile()`. Otherwise fall back to
+/// the legacy `AemConfig::new()` constructor.
+fn load_aem_config(
+    profile_path: Option<&Path>,
+    ctx: &blueprint::Context,
+) -> Result<blueprint::AemConfig, Box<dyn std::error::Error>> {
+    match profile_path {
+        Some(path) => {
+            let toml_str = std::fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read AEM profile '{}': {}", path.display(), e))?;
+            let profile: blueprint::AemProfile = toml::from_str(&toml_str)
+                .map_err(|e| format!("Failed to parse AEM profile '{}': {}", path.display(), e))?;
+            let config = blueprint::AemConfig::from_profile(&profile, ctx)?;
+            Ok(config)
+        }
+        None => {
+            let config = blueprint::AemConfig::new(ctx)?;
+            Ok(config)
+        }
+    }
 }

@@ -7457,7 +7457,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
 
 #[test]
 fn test_aaai_aem_output_contains_preview_panel_and_metadata() {
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{AemConfig, AemProfile, convert_to_aem, generate_aem_xml};
 
     let mut bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
         .expect("Failed to load AAAI PDF");
@@ -7465,7 +7465,11 @@ fn test_aaai_aem_output_contains_preview_panel_and_metadata() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let config = AemConfig::new(&ctx).expect("Failed to create AemConfig");
+    let toml_str = std::fs::read_to_string("profiles/ubs.toml")
+        .expect("Failed to read UBS profile");
+    let profile: AemProfile = toml::from_str(&toml_str)
+        .expect("Failed to parse UBS profile");
+    let config = AemConfig::from_profile(&profile, &ctx).expect("Failed to create AemConfig");
 
     let config = crate::resolve_aem_languages(&content, &config);
     let root = convert_to_aem(&content, &config);
@@ -12065,5 +12069,160 @@ fn test_aaqm_inline_field_contratto() {
         "Paragraph should contain '{}', got: '{}'",
         expected_continuation,
         after_text
+    );
+}
+
+// =========================================================================
+// Profile-based AEM config tests
+// =========================================================================
+
+#[test]
+fn test_ubs_profile_produces_same_config_as_legacy_constructor() {
+    use crate::aem::AemConfig;
+    use crate::aem::AemProfile;
+
+    let toml_str = std::fs::read_to_string("profiles/ubs.toml")
+        .expect("Failed to read UBS profile");
+    let profile: AemProfile = toml::from_str(&toml_str)
+        .expect("Failed to parse UBS profile");
+
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAAB".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    vars.insert("formrange_cdokinfo".into(), "12345".into());
+    vars.insert("formrange_releasedate".into(), "01.01.2025".into());
+    vars.insert("formrange_version".into(), "V1".into());
+    vars.insert("formrange_partnerlevel".into(), "false".into());
+    vars.insert("formrange_clpmandatory".into(), "false".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+
+    let legacy = AemConfig::new(&ctx).expect("Legacy config");
+    let profile_config = AemConfig::from_profile(&profile, &ctx).expect("Profile config");
+
+    // Core identity fields
+    assert_eq!(profile_config.form_code, legacy.form_code);
+    assert_eq!(profile_config.form_title, legacy.form_title);
+    assert_eq!(profile_config.form_path, legacy.form_path);
+    assert_eq!(profile_config.form_dir(), legacy.form_dir());
+
+    // Path fields
+    assert_eq!(profile_config.template_path, legacy.template_path);
+    assert_eq!(profile_config.page_resource_type, legacy.page_resource_type);
+    assert_eq!(profile_config.theme_ref, legacy.theme_ref);
+    assert_eq!(profile_config.redirect_url, legacy.redirect_url);
+    assert_eq!(profile_config.meta_template_ref, legacy.meta_template_ref);
+    assert_eq!(profile_config.dor_template_ref, legacy.dor_template_ref);
+
+    // Component fields
+    assert_eq!(profile_config.resource_type_base, legacy.resource_type_base);
+    assert_eq!(profile_config.custom_resource_type_base, legacy.custom_resource_type_base);
+    assert_eq!(profile_config.action_type, legacy.action_type);
+    assert_eq!(profile_config.client_lib_ref, legacy.client_lib_ref);
+    assert_eq!(profile_config.wizard_layout, legacy.wizard_layout);
+    assert_eq!(profile_config.form_type, legacy.form_type);
+
+    // CSS class overrides should produce the same results as the legacy css_class()
+    for component in &["textbox", "numericbox", "datepicker", "checkbox", "radiobutton", "dropdownlist", "primarybutton"] {
+        assert_eq!(
+            profile_config.css_class(component),
+            legacy.css_class(component),
+            "CSS class mismatch for component '{}'",
+            component
+        );
+    }
+
+    // Language synonyms
+    assert_eq!(profile_config.language_synonyms, legacy.language_synonyms);
+}
+
+#[test]
+fn test_ubs_profile_entity_folder_mapping() {
+    use crate::aem::AemConfig;
+    use crate::aem::AemProfile;
+
+    let toml_str = std::fs::read_to_string("profiles/ubs.toml")
+        .expect("Failed to read UBS profile");
+    let profile: AemProfile = toml::from_str(&toml_str)
+        .expect("Failed to parse UBS profile");
+
+    // Germany (019)
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, &ctx).unwrap();
+    assert_eq!(config.form_path, "afforms_germany_all/af_aa");
+
+    // Italy (033)
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAOE".into());
+    vars.insert("formrange_entity".into(), "033".into());
+    let ctx = crate::Context::new("it".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, &ctx).unwrap();
+    assert_eq!(config.form_path, "afforms_italy_all/af_aa");
+
+    // Switzerland (001)
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "ACAV".into());
+    vars.insert("formrange_entity".into(), "001".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, &ctx).unwrap();
+    assert_eq!(config.form_path, "afforms_ch_all/af_ac");
+
+    // Unknown entity
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "TEST".into());
+    vars.insert("formrange_entity".into(), "999".into());
+    let ctx = crate::Context::new("en".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, &ctx).unwrap();
+    assert_eq!(config.form_path, "afforms_global_all/af_te");
+}
+
+#[test]
+fn test_ubs_profile_aem_output_matches_legacy() {
+    // Full pipeline test: verify that the UBS profile produces correct AEM
+    // XML output for a real PDF.
+    use crate::aem::{AemConfig, AemProfile, convert_to_aem, generate_aem_xml};
+
+    let mut bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
+        .expect("Failed to load AAAI PDF");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to explore states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    // Profile path
+    let toml_str = std::fs::read_to_string("profiles/ubs.toml")
+        .expect("Failed to read UBS profile");
+    let profile: AemProfile = toml::from_str(&toml_str)
+        .expect("Failed to parse UBS profile");
+    let profile_config = AemConfig::from_profile(&profile, &ctx).expect("Profile config");
+    let profile_config = crate::resolve_aem_languages(&content, &profile_config);
+    let profile_root = convert_to_aem(&content, &profile_config);
+    let profile_xml = generate_aem_xml(&profile_root, &profile_config);
+
+    // Key structural elements must be present
+    assert!(
+        profile_xml.contains("jcr:title=\"AAAI\""),
+        "Profile output should have correct form code"
+    );
+    assert!(
+        profile_xml.contains("formrange_code=\"AAAI\""),
+        "Profile output metadata should have form code"
+    );
+    assert!(
+        profile_xml.contains("name=\"preview\""),
+        "Profile output should have preview panel"
+    );
+    assert!(
+        profile_xml.contains("name=\"metadata\""),
+        "Profile output should have metadata element"
+    );
+    assert!(
+        profile_xml.contains("formrange_entity=\"019\""),
+        "Profile output should have entity"
+    );
+    assert!(
+        profile_xml.contains("<branding"),
+        "Profile output should have branding"
     );
 }
