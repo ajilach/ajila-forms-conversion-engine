@@ -117,7 +117,10 @@ pub use graphviz::{
 };
 
 // HTML generation
-pub use html::{HtmlConfig, generate_form_body, generate_html};
+pub use html::{
+    FontFamilyProfile, HtmlConfig, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily,
+    ResolvedFontVariant, generate_form_body, generate_html,
+};
 
 // XFA layer
 pub use xfa::scripting::{SomPath, XfaForm};

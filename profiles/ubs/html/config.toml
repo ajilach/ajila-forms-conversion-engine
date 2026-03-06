@@ -1,0 +1,35 @@
+# =============================================================================
+# UBS HTML Output Profile
+# =============================================================================
+#
+# Profile directory for UBS-specific HTML output.
+# Use with: blueprint --profile profiles/ubs --html input/AAAI_019_DE.pdf
+#
+# All paths are relative to this directory (profiles/ubs/html/).
+#
+# Assets (stylesheet, logo, fonts) are base64-encoded and embedded
+# directly into the generated HTML — no external file references.
+
+# Optional CSS stylesheet appended after the built-in default styles.
+# Use this to override colours, fonts, spacing, etc.
+# stylesheet = "styles.css"
+
+# Optional logo image displayed in the sticky header.
+# Supports PNG, JPEG, SVG, GIF, WebP.
+# logo = "logo.png"
+
+# Font-face declarations.
+# Each [[fonts]] entry creates a CSS @font-face family.
+# Variants (regular, bold, italic, bold_italic) point to TTF/WOFF2 files.
+#
+# [[fonts]]
+# family = "UBS Headline"
+# regular = "fonts/UBSHeadline-Regular.ttf"
+# bold = "fonts/UBSHeadline-Bold.ttf"
+#
+# [[fonts]]
+# family = "UBS Body"
+# regular = "fonts/UBSBody-Regular.ttf"
+# bold = "fonts/UBSBody-Bold.ttf"
+# italic = "fonts/UBSBody-Italic.ttf"
+# bold_italic = "fonts/UBSBody-BoldItalic.ttf"

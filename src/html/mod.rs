@@ -9,6 +9,86 @@ use crate::structured::{
     RepeatableNode, StructuredNode, TableNode,
 };
 use crate::xfa::scripting::SomPath;
+use serde::Deserialize;
+use std::path::PathBuf;
+
+// ============================================================================
+// Profile types (TOML-deserializable)
+// ============================================================================
+
+/// A font-family declaration in the HTML profile TOML.
+///
+/// Each entry maps to one CSS `font-family`. Individual variants (regular,
+/// bold, italic, bold-italic) point to TTF/WOFF2 files relative to the
+/// `html/` profile directory.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FontFamilyProfile {
+    /// CSS font-family name.
+    pub family: String,
+    /// Path to the regular-weight font file.
+    pub regular: Option<PathBuf>,
+    /// Path to the bold-weight font file.
+    pub bold: Option<PathBuf>,
+    /// Path to the italic font file.
+    pub italic: Option<PathBuf>,
+    /// Path to the bold-italic font file.
+    pub bold_italic: Option<PathBuf>,
+}
+
+/// TOML-deserializable HTML profile loaded from
+/// `profiles/{name}/html/config.toml`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct HtmlProfile {
+    /// Path to a CSS stylesheet file (relative to the `html/` directory).
+    pub stylesheet: Option<PathBuf>,
+    /// Path to a logo image file (relative to the `html/` directory).
+    pub logo: Option<PathBuf>,
+    /// Font-face declarations.
+    #[serde(default)]
+    pub fonts: Vec<FontFamilyProfile>,
+}
+
+// ============================================================================
+// Resolved custom styles (pre-loaded data, no file I/O needed)
+// ============================================================================
+
+/// A single resolved `@font-face` variant with its base64 data-URI.
+#[derive(Debug, Clone)]
+pub struct ResolvedFontVariant {
+    /// CSS `font-weight` value (e.g. `"normal"`, `"bold"`).
+    pub weight: String,
+    /// CSS `font-style` value (e.g. `"normal"`, `"italic"`).
+    pub style: String,
+    /// The full `data:font/ttf;base64,...` URI.
+    pub data_uri: String,
+}
+
+/// A resolved font-family with all its variants ready for embedding.
+#[derive(Debug, Clone)]
+pub struct ResolvedFontFamily {
+    /// CSS `font-family` name.
+    pub family: String,
+    /// Resolved variants.
+    pub variants: Vec<ResolvedFontVariant>,
+}
+
+/// Pre-resolved custom styling data that is embedded directly into the HTML.
+///
+/// All file I/O happens *before* this struct is created (in `main.rs`);
+/// the HTML generator only consumes the already-loaded data.
+#[derive(Debug, Clone, Default)]
+pub struct HtmlCustomStyles {
+    /// Raw CSS text from the external stylesheet.
+    pub stylesheet_css: Option<String>,
+    /// Logo as a complete `data:image/…;base64,…` URI.
+    pub logo_data_uri: Option<String>,
+    /// Resolved `@font-face` families.
+    pub font_faces: Vec<ResolvedFontFamily>,
+}
+
+// ============================================================================
+// HtmlConfig
+// ============================================================================
 
 /// Configuration for HTML generation
 #[derive(Debug, Clone)]
@@ -19,6 +99,8 @@ pub struct HtmlConfig {
     pub include_styles: bool,
     /// Include JavaScript for dynamic behavior
     pub include_scripts: bool,
+    /// Optional custom styles (fonts, logo, CSS) to embed.
+    pub custom_styles: Option<HtmlCustomStyles>,
 }
 
 impl Default for HtmlConfig {
@@ -27,6 +109,7 @@ impl Default for HtmlConfig {
             form_id: "generated-form".to_string(),
             include_styles: true,
             include_scripts: true,
+            custom_styles: None,
         }
     }
 }
@@ -45,7 +128,7 @@ pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
     html.push_str("  <title>Generated Form</title>\n");
 
     if config.include_styles {
-        html.push_str(&generate_styles());
+        html.push_str(&generate_styles(config.custom_styles.as_ref()));
     }
 
     // If multilingual, set body class to first language by default
@@ -58,43 +141,73 @@ pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
         html.push_str("</head>\n<body>\n");
     }
 
-    // Language selector (only if multilingual)
-    if languages.len() > 1 {
-        html.push_str("  <div class=\"language-selector\">\n");
-        html.push_str("    <label for=\"language-select\">Language: </label>\n");
-        html.push_str("    <select id=\"language-select\">\n");
-        for lang in &languages {
-            let label = match lang.as_str() {
-                "de" => "Deutsch",
-                "en" => "English",
-                "fr" => "Français",
-                "it" => "Italiano",
-                "es" => "Español",
-                other => other,
-            };
+    // Sticky header with optional logo and language selector
+    let has_logo = config
+        .custom_styles
+        .as_ref()
+        .and_then(|s| s.logo_data_uri.as_ref())
+        .is_some();
+    let has_lang_selector = languages.len() > 1;
+
+    if has_logo || has_lang_selector {
+        html.push_str("  <header class=\"site-header\">\n");
+
+        // Logo
+        if let Some(data_uri) = config
+            .custom_styles
+            .as_ref()
+            .and_then(|s| s.logo_data_uri.as_ref())
+        {
             html.push_str(&format!(
-                "      <option value=\"{}\">{}</option>\n",
-                escape_attr(lang),
-                escape_html(label)
+                "    <img class=\"site-logo\" src=\"{}\" alt=\"Logo\">\n",
+                escape_attr(data_uri)
             ));
         }
-        html.push_str("    </select>\n");
-        html.push_str("  </div>\n");
+
+        // Language selector
+        if has_lang_selector {
+            html.push_str("    <div class=\"language-selector\">\n");
+            html.push_str("      <label for=\"language-select\">Language: </label>\n");
+            html.push_str("      <select id=\"language-select\">\n");
+            for lang in &languages {
+                let label = match lang.as_str() {
+                    "de" => "Deutsch",
+                    "en" => "English",
+                    "fr" => "Français",
+                    "it" => "Italiano",
+                    "es" => "Español",
+                    other => other,
+                };
+                html.push_str(&format!(
+                    "        <option value=\"{}\">{}</option>\n",
+                    escape_attr(lang),
+                    escape_html(label)
+                ));
+            }
+            html.push_str("      </select>\n");
+            html.push_str("    </div>\n");
+        }
+
+        html.push_str("  </header>\n");
     }
+
+    // Main content area
+    html.push_str("  <main>\n");
 
     // Form container
     html.push_str(&format!(
-        "  <form id=\"{}\" class=\"generated-form\">\n",
+        "    <form id=\"{}\" class=\"generated-form\">\n",
         escape_attr(&config.form_id)
     ));
 
     // Generate form content
     let mut ctx = GeneratorContext::new();
     for node in nodes {
-        html.push_str(&generate_node(node, &mut ctx, 2));
+        html.push_str(&generate_node(node, &mut ctx, 3));
     }
 
-    html.push_str("  </form>\n");
+    html.push_str("    </form>\n");
+    html.push_str("  </main>\n");
 
     if config.include_scripts {
         html.push_str(&generate_scripts(&config.form_id));
@@ -759,9 +872,24 @@ fn generate_inline_node(node: &InlineNode) -> String {
 }
 
 /// Generate embedded CSS styles
-fn generate_styles() -> String {
-    r#"  <style>
-    :root {
+fn generate_styles(custom: Option<&HtmlCustomStyles>) -> String {
+    let mut css = String::from("  <style>\n");
+
+    // -- @font-face rules (injected first so they're available to all styles) --
+    if let Some(custom) = custom {
+        for family in &custom.font_faces {
+            for variant in &family.variants {
+                css.push_str(&format!(
+                    "    @font-face {{\n      font-family: '{}';\n      src: url({}) format('truetype');\n      font-weight: {};\n      font-style: {};\n    }}\n\n",
+                    family.family, variant.data_uri, variant.weight, variant.style
+                ));
+            }
+        }
+    }
+
+    // -- Default styles --
+    css.push_str(
+        r#"    :root {
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
       --danger: #dc2626;
@@ -781,9 +909,54 @@ fn generate_styles() -> String {
       line-height: 1.6;
       color: var(--text);
       background: var(--bg);
-      padding: 2rem;
+      margin: 0;
+    }
+
+    /* Sticky header with logo + language selector */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #f0f4f8;
+      padding: 0.75rem 2rem;
+      border-bottom: 1px solid #d1d5db;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.875rem;
+    }
+
+    .site-logo {
+      max-height: 2.5rem;
+      width: auto;
+    }
+
+    .language-selector {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .language-selector label {
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .language-selector select {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: white;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    main {
       max-width: 800px;
       margin: 0 auto;
+      padding: 2rem;
     }
 
     .generated-form {
@@ -805,35 +978,6 @@ fn generate_styles() -> String {
     body.lang-it span[lang]:not(.lang-it),
     body.lang-es span[lang]:not(.lang-es) {
       display: none;
-    }
-
-    /* Language selector */
-    .language-selector {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: #f0f4f8;
-      padding: 0.75rem 2rem;
-      border-bottom: 1px solid #d1d5db;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 0.875rem;
-    }
-
-    .language-selector label {
-      font-weight: 600;
-      color: #374151;
-    }
-
-    .language-selector select {
-      padding: 0.25rem 0.5rem;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
-      background: white;
-      font-size: 0.875rem;
-      cursor: pointer;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -1037,9 +1181,26 @@ fn generate_styles() -> String {
       border-color: #7c3aed;
       background: rgba(124, 58, 237, 0.02);
     }
-  </style>
-"#
-    .to_string()
+"#,
+    );
+
+    css.push_str("  </style>\n");
+
+    // -- Custom stylesheet (appended after defaults so it can override) --
+    if let Some(custom) = custom {
+        if let Some(ref stylesheet) = custom.stylesheet_css {
+            css.push_str("  <style>\n");
+            // Indent each line for consistent formatting
+            for line in stylesheet.lines() {
+                css.push_str("    ");
+                css.push_str(line);
+                css.push('\n');
+            }
+            css.push_str("  </style>\n");
+        }
+    }
+
+    css
 }
 
 /// Generate embedded JavaScript for dynamic behavior
@@ -1553,5 +1714,141 @@ mod tests {
             html.contains(&format!("name=\"{}\"", field_id_str)),
             "name= should use the original field name"
         );
+    }
+
+    #[test]
+    fn test_custom_font_face_embedded() {
+        let custom = HtmlCustomStyles {
+            stylesheet_css: None,
+            logo_data_uri: None,
+            font_faces: vec![ResolvedFontFamily {
+                family: "TestFont".to_string(),
+                variants: vec![
+                    ResolvedFontVariant {
+                        weight: "normal".to_string(),
+                        style: "normal".to_string(),
+                        data_uri: "data:font/ttf;base64,AAAA".to_string(),
+                    },
+                    ResolvedFontVariant {
+                        weight: "bold".to_string(),
+                        style: "normal".to_string(),
+                        data_uri: "data:font/ttf;base64,BBBB".to_string(),
+                    },
+                ],
+            }],
+        };
+        let config = HtmlConfig {
+            custom_styles: Some(custom),
+            ..HtmlConfig::default()
+        };
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("Hello"),
+        })];
+        let html = generate_html(&nodes, &config);
+
+        assert!(
+            html.contains("@font-face"),
+            "Should contain @font-face rule"
+        );
+        assert!(
+            html.contains("font-family: 'TestFont'"),
+            "Should reference TestFont family"
+        );
+        assert!(
+            html.contains("data:font/ttf;base64,AAAA"),
+            "Should embed regular variant base64 data"
+        );
+        assert!(
+            html.contains("data:font/ttf;base64,BBBB"),
+            "Should embed bold variant base64 data"
+        );
+        assert!(
+            html.contains("font-weight: bold"),
+            "Should set font-weight for bold variant"
+        );
+    }
+
+    #[test]
+    fn test_custom_stylesheet_appended() {
+        let custom = HtmlCustomStyles {
+            stylesheet_css: Some("body { background: red; }".to_string()),
+            logo_data_uri: None,
+            font_faces: vec![],
+        };
+        let config = HtmlConfig {
+            custom_styles: Some(custom),
+            ..HtmlConfig::default()
+        };
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("Hello"),
+        })];
+        let html = generate_html(&nodes, &config);
+
+        // Default styles should still be present
+        assert!(
+            html.contains("--primary: #2563eb"),
+            "Default CSS variables should be present"
+        );
+        // Custom stylesheet should appear in a separate <style> block after defaults
+        assert!(
+            html.contains("body { background: red; }"),
+            "Custom stylesheet should be embedded"
+        );
+        // Custom CSS should come after the default closing </style>
+        let default_end = html.find("--primary: #2563eb").unwrap();
+        let custom_start = html.find("body { background: red; }").unwrap();
+        assert!(
+            custom_start > default_end,
+            "Custom CSS should appear after default styles"
+        );
+    }
+
+    #[test]
+    fn test_logo_in_header() {
+        let custom = HtmlCustomStyles {
+            stylesheet_css: None,
+            logo_data_uri: Some("data:image/png;base64,iVBOR".to_string()),
+            font_faces: vec![],
+        };
+        let config = HtmlConfig {
+            custom_styles: Some(custom),
+            ..HtmlConfig::default()
+        };
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("Hello"),
+        })];
+        let html = generate_html(&nodes, &config);
+
+        assert!(
+            html.contains("<header class=\"site-header\">"),
+            "Should have a sticky header"
+        );
+        assert!(
+            html.contains("site-logo"),
+            "Should contain logo img with site-logo class"
+        );
+        assert!(
+            html.contains("data:image/png;base64,iVBOR"),
+            "Should embed the logo data URI"
+        );
+        assert!(html.contains("<main>"), "Should have a <main> element");
+    }
+
+    #[test]
+    fn test_header_main_structure_without_custom() {
+        let config = HtmlConfig::default();
+        let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain("Hello"),
+        })];
+        let html = generate_html(&nodes, &config);
+
+        // Without multilingual content or logo, no header should be emitted
+        assert!(
+            !html.contains("<header"),
+            "No header without logo or multiple languages"
+        );
+        // Main should still wrap the form
+        assert!(html.contains("<main>"), "Should have <main> element");
+        assert!(html.contains("</main>"), "Should close <main>");
     }
 }
