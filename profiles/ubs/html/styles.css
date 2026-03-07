@@ -164,6 +164,7 @@ main {
 .remove-item-btn {
   background: var(--ubs-gray);
   border-radius: 2px;
+  right: 0;
 }
 
 .remove-item-btn:hover {
