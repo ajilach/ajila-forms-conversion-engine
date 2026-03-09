@@ -241,6 +241,56 @@ body {
     color: var(--color-text-muted);
 }
 
+.profile-selector {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+}
+
+.profile-selector label {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.profile-selector select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--light);
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23505050' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.profile-selector select:hover {
+    border-color: var(--secondary300);
+}
+
+.profile-selector select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(220, 158, 38, 0.2);
+}
+
+.profile-selector select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background-color: var(--color-bg-light);
+}
+
 .file-list {
     margin-top: var(--space-md);
 }

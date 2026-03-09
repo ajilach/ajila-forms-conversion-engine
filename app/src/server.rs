@@ -22,9 +22,17 @@ pub fn next_session_id() -> String {
 
 // ── Server functions (fullstack) ─────────────────────────────────────
 
+/// Return the names of all embedded profiles.
+#[server]
+pub async fn get_profiles() -> Result<Vec<String>, ServerFnError> {
+    use crate::profiles;
+    Ok(profiles::list_profiles())
+}
+
 #[server]
 pub async fn start_processing(
     files: Vec<(String, Vec<u8>)>,
+    profile: Option<String>,
 ) -> Result<String, ServerFnError> {
     use crate::models::ProcessingStep;
     use crate::pipeline::run_blueprint_pipeline;
@@ -40,7 +48,7 @@ pub async fn start_processing(
 
     let sid = session_id.clone();
     std::thread::spawn(move || {
-        let final_state = run_blueprint_pipeline(&files, |state| {
+        let final_state = run_blueprint_pipeline(&files, profile, |state| {
             SESSIONS.lock().unwrap().insert(sid.clone(), state.clone());
         });
         SESSIONS.lock().unwrap().insert(sid, final_state);
