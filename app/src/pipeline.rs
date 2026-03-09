@@ -72,6 +72,10 @@ pub fn run_blueprint_pipeline(
             on_progress(&state);
         }
 
+        // The app does not request annotated renders (PipelineConfig::render_annotated
+        // is false by default), but we must match all variants.
+        PipelineEvent::AnnotatedRender { .. } => {}
+
         PipelineEvent::Warning(msg) => {
             state.warnings.push(msg);
         }

@@ -52,7 +52,7 @@ use std::sync::Arc;
 
 use crate::{
     Blueprint, Context, DocumentEnvelope, Error, MergeInput, RecursiveMerger, RgbaImage,
-    StructuredNode,
+    Selection, StructuredNode,
 };
 
 // ============================================================================
@@ -130,6 +130,18 @@ pub enum PipelineEvent {
         image: Arc<RgbaImage>,
     },
 
+    /// An annotated (red field-level debug annotations) render completed for
+    /// one form state.
+    ///
+    /// `label` is the same identifier as in the corresponding
+    /// [`PlainRender`](PipelineEvent::PlainRender).
+    AnnotatedRender {
+        /// State identifier (e.g. `"de_0"`).
+        label: String,
+        /// The rendered image.
+        image: Arc<RgbaImage>,
+    },
+
     /// A non-fatal warning occurred.
     ///
     /// Processing continues even when warnings are emitted.
@@ -155,6 +167,12 @@ pub struct PipelineConfig {
     /// [`PipelineOutput::plain_renders`] is populated.
     pub render_plain: bool,
 
+    /// Whether to produce annotated (red field-level debug annotations) renders.
+    ///
+    /// When `true`, [`PipelineEvent::AnnotatedRender`] events are emitted and
+    /// [`PipelineOutput::annotated_renders`] is populated.
+    pub render_annotated: bool,
+
     /// Whether to produce labelled (analysis-overlay) renders.
     ///
     /// When `true`, [`PipelineEvent::LabelledRender`] events are emitted and
@@ -167,6 +185,7 @@ impl Default for PipelineConfig {
         Self {
             scale: 1.5,
             render_plain: true,
+            render_annotated: false,
             render_labelled: true,
         }
     }
@@ -183,10 +202,25 @@ pub struct PipelineOutput {
     /// Empty when [`PipelineConfig::render_plain`] is `false`.
     pub plain_renders: Vec<(String, Arc<RgbaImage>)>,
 
+    /// Annotated (red field-level debug annotations) renders in discovery
+    /// order: `(label, image)`.
+    ///
+    /// Empty when [`PipelineConfig::render_annotated`] is `false`.
+    pub annotated_renders: Vec<(String, Arc<RgbaImage>)>,
+
     /// Labelled renders in discovery order: `(label, image)`.
     ///
     /// Empty when [`PipelineConfig::render_labelled`] is `false`.
     pub labelled_renders: Vec<(String, Arc<RgbaImage>)>,
+
+    /// Per-state labels and selections, in discovery order.
+    ///
+    /// Each entry is `(label, selections)` where `label` is the same
+    /// identifier used in the render events (e.g. `"de_0"`).
+    ///
+    /// Useful for callers that need per-state information after the pipeline
+    /// completes, for example when building a GraphViz decision-flow graph.
+    pub state_labels: Vec<(String, Vec<Selection>)>,
 
     /// The merged document envelope.
     ///
@@ -260,27 +294,49 @@ pub fn run_pipeline(
         explored.push((filename, language, form_states, context));
     }
 
-    // ── Phase 3: Flattening — plain renders ───────────────────────────────────
+    // ── Phase 3: Flattening — plain and annotated renders ─────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Flattening));
 
     let mut plain_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
+    let mut annotated_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
 
-    if config.render_plain {
+    if config.render_plain || config.render_annotated {
         for (_filename, language, form_states, _context) in &explored {
             for (state_idx, form_state) in form_states.iter().enumerate() {
                 let label = format!("{}_{}", language, state_idx);
-                match form_state.render_plain(config.scale) {
-                    Ok(image) => {
-                        let image = Arc::new(image);
-                        on_event(PipelineEvent::PlainRender {
-                            label: label.clone(),
-                            image: Arc::clone(&image),
-                        });
-                        plain_renders.push((label, image));
+
+                if config.render_plain {
+                    match form_state.render_plain(config.scale) {
+                        Ok(image) => {
+                            let image = Arc::new(image);
+                            on_event(PipelineEvent::PlainRender {
+                                label: label.clone(),
+                                image: Arc::clone(&image),
+                            });
+                            // Clone label here so the annotated block below can still use it.
+                            plain_renders.push((label.clone(), image));
+                        }
+                        Err(e) => on_event(PipelineEvent::Warning(format!(
+                            "Plain render failed for {label}: {e}"
+                        ))),
                     }
-                    Err(e) => on_event(PipelineEvent::Warning(format!(
-                        "Plain render failed for {label}: {e}"
-                    ))),
+                }
+
+                if config.render_annotated {
+                    match form_state.render_annotated(config.scale) {
+                        Ok(image) => {
+                            let image = Arc::new(image);
+                            on_event(PipelineEvent::AnnotatedRender {
+                                label: label.clone(),
+                                image: Arc::clone(&image),
+                            });
+                            // Move label into the push — it is no longer needed after this.
+                            annotated_renders.push((label, image));
+                        }
+                        Err(e) => on_event(PipelineEvent::Warning(format!(
+                            "Annotated render failed for {label}: {e}"
+                        ))),
+                    }
                 }
             }
         }
@@ -291,12 +347,16 @@ pub fn run_pipeline(
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut all_envelopes: Vec<DocumentEnvelope> = Vec::new();
+    let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
-        let mut structured_outputs: Vec<(Vec<crate::Selection>, Vec<StructuredNode>)> = Vec::new();
+        let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
 
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let label = format!("{}_{}", language, state_idx);
+
+            // Collect label + selections for callers (e.g. GraphViz).
+            state_labels.push((label.clone(), form_state.selections.clone()));
 
             // Labelled render
             if config.render_labelled {
@@ -350,7 +410,9 @@ pub fn run_pipeline(
 
     Ok(PipelineOutput {
         plain_renders,
+        annotated_renders,
         labelled_renders,
+        state_labels,
         merged,
     })
 }
