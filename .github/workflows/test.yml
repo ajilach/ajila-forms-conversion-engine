@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   build:
 
@@ -24,3 +27,11 @@ jobs:
       run: cargo build --verbose --release
     - name: Run tests
       run: cargo test --verbose --release
+
+    - name: Tag commit as tested
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -f "tested-${{ github.sha }}"
+        git push origin "tested-${{ github.sha }}" --force

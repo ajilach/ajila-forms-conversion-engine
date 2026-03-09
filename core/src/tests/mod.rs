@@ -5,7 +5,7 @@ use helpers::{
     collect_conditionals, collect_field_labels, collect_field_labels_trimmed, collect_field_names,
     collect_fields, collect_headings, collect_radio_fields,
     count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
-    flatten_with_scripts, load_ubs_profile, parse_xfa_from_pdf,
+    flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
 
 use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 #[test]
 fn test_parse_xfa_from_aaab_document() {
-    let pdf_path = "input/AAAB_019_DE.pdf";
+    let pdf_path = input_path("AAAB_019_DE.pdf");
 
     // Extract XFA from PDF
     let xfa_data = extract_xfa_from_pdf(pdf_path).expect("Failed to read PDF");
@@ -45,7 +45,7 @@ fn test_parse_xfa_from_aaab_document() {
 
 #[test]
 fn test_fully_parse_aaab_structure() {
-    let pdf_path = "input/AAAB_019_DE.pdf";
+    let pdf_path = input_path("AAAB_019_DE.pdf");
 
     // Extract XFA from PDF
     let xfa_data = extract_xfa_from_pdf(pdf_path).expect("Failed to read PDF");
@@ -142,7 +142,7 @@ fn test_fully_parse_aaab_structure() {
 #[test]
 fn test_flatten_aaab_xfa() {
     // Test flattening a real XFA document
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -190,7 +190,7 @@ fn test_debug_fim_company_font() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::FontWeight;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -248,7 +248,7 @@ fn test_aaab_fim_company_has_correct_font() {
     use crate::xfa::FontWeight;
     use rust_decimal::prelude::ToPrimitive;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -307,7 +307,7 @@ fn test_aaab_disclaimer_text_not_bold() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::FontWeight;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -351,7 +351,7 @@ fn test_debug_aaab_fim_company_xfa_structure() {
     // Debug test to understand why FIM Company has the wrong font
     use crate::xfa::XfaNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -408,7 +408,7 @@ fn test_aaai_title_is_h1() {
     use crate::document::Document;
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -456,7 +456,7 @@ fn test_aaai_kunde_is_h2() {
     use crate::document::Document;
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -503,7 +503,7 @@ fn test_aaai_comprehensive_heading_detection() {
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -682,7 +682,7 @@ fn test_aaai_comprehensive_heading_detection() {
 #[test]
 fn test_aaai_field_alignment() {
     // Test that specific fields that should be on the same line have the same Y coordinate
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -823,7 +823,7 @@ fn test_aaai_t_left_font_properties() {
     use crate::xfa::{FontWeight, XfaNode};
     use rust_decimal::Decimal;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to read PDF")
         .expect("No XFA data");
 
@@ -1010,7 +1010,7 @@ fn test_aaab_des_label_alignment() {
     use crate::flattened::FlattenedNodeKind;
 
     // Use AAAI which has these fields
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1160,7 +1160,7 @@ fn test_aaab_des_label_alignment() {
 #[test]
 fn test_debug_des_postalcode_structure() {
     // Debug the XFA structure for DES_PostalCode
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1250,7 +1250,7 @@ fn test_debug_des_postalcode_structure() {
 #[test]
 fn test_debug_xfa_positioning() {
     // Debug XFA positioning to understand coordinate system
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1388,7 +1388,7 @@ fn test_debug_xfa_positioning() {
 
 #[test]
 fn test_dump_xfa() {
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to read PDF")
         .expect("No XFA data");
     // Write to file for inspection
@@ -1398,7 +1398,7 @@ fn test_dump_xfa() {
 
 #[test]
 fn test_dump_aaai_xfa() {
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf")
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to read PDF")
         .expect("No XFA data");
     // Write to file for inspection
@@ -1409,7 +1409,7 @@ fn test_dump_aaai_xfa() {
 #[test]
 fn test_draw_text_extraction() {
     // Test that we can extract text from draw elements
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf")
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to read PDF")
         .expect("No XFA data");
 
@@ -1473,7 +1473,7 @@ fn test_draw_text_extraction() {
 
 #[test]
 fn test_debug_postal_code_structure() {
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1525,7 +1525,7 @@ fn test_debug_postal_code_structure() {
 fn test_aaai_header_positioning() {
     // Test that "UBS Europe SE" text is positioned ABOVE the form title
     // "Vereinbarung für die Erteilung von Zahlungsaufträgen..."
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1722,7 +1722,7 @@ fn test_aaai_header_positioning() {
 fn test_aaai_subform_no_overlap() {
     // Test that subforms like "Kunde" and "Vertretungsberechtigte(r)" do NOT overlap
     // These are separate sections that should be stacked vertically
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1799,7 +1799,7 @@ fn test_aaab_script_extraction_and_execution() {
     use std::collections::HashMap;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -1930,7 +1930,7 @@ fn test_aaab_ff_firstname_gets_vorname() {
     use std::collections::HashMap;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2023,7 +2023,7 @@ fn test_aaab_ff_firstname_gets_vorname() {
 #[test]
 fn test_flattened_with_scripts_has_vorname() {
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -2108,7 +2108,7 @@ fn test_flattened_with_scripts_has_vorname() {
 #[test]
 fn test_explore_xfa_embed_structure() {
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2186,7 +2186,7 @@ fn test_des_firstname_gets_vorname_via_embed() {
     use crate::flattened::FlattenedNodeKind;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -2277,7 +2277,7 @@ fn test_vorname_label_visible_in_flattened_output() {
     use crate::flattened::FlattenedNodeKind;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -2373,7 +2373,7 @@ fn test_vorname_visible_after_xfa_form_refresh() {
     use crate::xfa::scripting::XfaForm;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2448,7 +2448,7 @@ fn test_aaai_label_attachment() {
         AnalysisModule, FieldGrouper, LabelAttacher, TextBlockGrouper,
     };
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2507,7 +2507,7 @@ fn test_aaai_signature_labels_present() {
     // which sets the hidden field value to "Unterschrift des Kunden"
     use crate::flattened::FlattenedNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2562,7 +2562,7 @@ fn test_aaai_unterschrift_en_section_header() {
     // 4. T_Signature draw embeds this via xfa:embed="#floatingField018467"
     use crate::flattened::FlattenedNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2611,7 +2611,7 @@ fn test_aaai_ffdesignature_script_execution() {
     };
     use std::collections::HashMap;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2770,7 +2770,7 @@ fn test_aaab_rb1_default_value() {
     use crate::xfa::XfaNodeKind;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -2942,7 +2942,7 @@ fn test_aaab_rb1_default_value() {
 #[test]
 fn test_aaab_hidden_field_with_computed_value_not_visible() {
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -3050,7 +3050,7 @@ fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
     use crate::xfa::scripting::{EventActivity, parse_events_from_node};
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -3290,7 +3290,7 @@ fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
 #[test]
 fn test_aaab_ffrb1_shows_neuanlage_text_when_rb1_selected() {
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -3350,7 +3350,7 @@ fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
     use crate::xfa::scripting::XfaScriptEngine;
 
     // Extract and parse XFA from AAAB
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -3533,7 +3533,7 @@ fn test_aaab_conditional_groups_section_visibility() {
     // Test with RB_1 selected (default) - Neuanlage section
     {
         let xfa_data =
-            extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+            extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
         let form = XfaForm::new(nodes).expect("Failed to create XfaForm");
 
@@ -3552,7 +3552,7 @@ fn test_aaab_conditional_groups_section_visibility() {
     // Test with RB_2 selected - Änderung section
     {
         let xfa_data =
-            extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+            extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
         let mut form = XfaForm::new(nodes).expect("Failed to create XfaForm");
 
@@ -3588,7 +3588,7 @@ fn test_aaab_conditional_groups_section_visibility() {
     // Test with RB_3 selected - Löschung section
     {
         let xfa_data =
-            extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+            extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA");
         let mut form = XfaForm::new(nodes).expect("Failed to create XfaForm");
 
@@ -3672,7 +3672,7 @@ fn test_aaab_conditional_groups_field_enumeration() {
 
     // State 1: RB_1 selected (default - Neuanlage)
     let fields_rb1 = {
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+        let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
         let form = XfaForm::new(nodes).unwrap();
         get_field_names(form.flattened())
@@ -3680,7 +3680,7 @@ fn test_aaab_conditional_groups_field_enumeration() {
 
     // State 2: RB_2 selected (Änderung)
     let fields_rb2 = {
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+        let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
         let mut form = XfaForm::new(nodes).unwrap();
         form.select_radio_button(
@@ -3693,7 +3693,7 @@ fn test_aaab_conditional_groups_field_enumeration() {
 
     // State 3: RB_3 selected (Löschung)
     let fields_rb3 = {
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").unwrap();
+        let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
         let nodes = xfa::XfaNode::parse(&xfa_data.unwrap()).unwrap();
         let mut form = XfaForm::new(nodes).unwrap();
         form.select_radio_button(
@@ -3783,7 +3783,7 @@ fn test_aaab_merged_has_expected_conditionals() {
     };
 
     // Get merged structured nodes directly without file I/O
-    let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     // Helper to check if a StructuredNode is an h2 heading with text starting with prefix
@@ -3879,7 +3879,7 @@ fn test_aaab_merged_signature_section_not_conditional() {
     use crate::structured::{StructuredNode};
 
     // Get merged structured nodes directly without file I/O
-    let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     // Check that signature fields appear at top level (not inside conditionals)
@@ -3955,7 +3955,7 @@ fn test_aaai_has_two_repeatable_sections() {
     use crate::document::Document;
     use crate::document::modules::{RepeatableDetector, run_analysis_pipeline};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4025,7 +4025,7 @@ fn test_aaai_kunde_heading_not_in_repeatable() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4103,7 +4103,7 @@ fn test_aaai_watermark_not_recognized_as_field() {
     use crate::document::modules::{AnalysisModule, FieldGrouper};
     use crate::flattened::FlattenedNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4160,7 +4160,7 @@ fn test_aaai_has_header_and_footer_groups() {
     use crate::document::modules::{AnalysisModule, MasterPageDetector};
     use crate::flattened::{Hint, MasterPageRegion};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4350,7 +4350,7 @@ fn test_aaai_structured_output_has_expected_field_labels() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{FieldNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4456,7 +4456,7 @@ fn test_aaai_structured_output_no_invisible_content() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{InlineNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4554,7 +4554,7 @@ fn test_aaai_structured_output_has_h1_heading() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4604,7 +4604,7 @@ fn test_aaai_structured_output_h1_is_first() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{HeadingLevel, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4661,7 +4661,7 @@ fn test_aaai_structured_output_no_button_add_minus() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::StructuredNode;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4719,7 +4719,7 @@ fn test_aaab_heading_structure() {
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -4820,7 +4820,7 @@ fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
     };
 
     // Get merged structured nodes directly
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     // Counters for what we find
@@ -4981,7 +4981,7 @@ fn test_aaab_direktvereinbarung2_column_headers_absorbed() {
     use crate::structured::{HeadingNode, InlineNode, StructuredNode};
 
     // Get merged structured nodes directly
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     // Find the Direktvereinbarung2 heading and count column header headings
@@ -5087,7 +5087,7 @@ fn test_aaab_loeschung_radio_buttons_are_grouped() {
     use crate::structured::{StructuredNode, FieldNode, FieldType};
 
     // Get merged structured nodes directly without file I/O
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     let radio_field = find_field_by_name(&structured, "RB_Group_Retro")
@@ -5139,7 +5139,7 @@ fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     // Locate the RB_Group_Retro radio field and find the value for
@@ -5315,7 +5315,7 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
         false
     }
 
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     let retro_field = find_field_by_name(&structured, "RB_Group_Retro")
@@ -5522,7 +5522,7 @@ fn test_aaab_fim3_text_inside_rb2_conditional() {
         false
     }
 
-    let structured = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
 
     let retro_field = find_field_by_name(&structured, "RB_Group_Retro")
@@ -5571,7 +5571,7 @@ fn test_aaei_heading_structure() {
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -5675,7 +5675,7 @@ fn test_debug_aaei_investmentvermogen_title() {
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -5735,7 +5735,7 @@ fn test_aaei_has_repeatable_with_nachname_vorname() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{FieldNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -5812,7 +5812,7 @@ fn test_aaei_has_exactly_one_repeatable() {
     // Only STP_Master_DYN should produce a RepeatableNode in the structured tree.
     use crate::structured::StructuredNode;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -5861,7 +5861,7 @@ fn test_aaei_has_expected_field_labels() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{FieldNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -5921,7 +5921,7 @@ fn test_aaaa_heading_structure() {
     use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper};
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAA_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -6030,7 +6030,7 @@ fn test_aaaa_has_repeatable_sections() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::StructuredNode;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAA_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -6115,7 +6115,7 @@ fn test_aaaa_has_two_radio_button_groups() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAA_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -6205,7 +6205,7 @@ fn test_aaaa_019_checkbox_detection() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::document::{Document, GroupKind};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAA_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAA_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -6291,7 +6291,7 @@ fn test_aaai_multi_paragraph_split_at_flattening() {
     // the HTML exData should produce its own FlattenedNode.
     use crate::flattened::FlattenedNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -6380,9 +6380,9 @@ fn test_aaai_multilingual_merge_de_en() {
     use std::collections::HashMap;
 
     // Build envelopes for both languages
-    let de_envelope = run_exhaustive_to_envelope("input/AAAI_019_DE.pdf", "de")
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
         .expect("Failed to process AAAI_019_DE");
-    let en_envelope = run_exhaustive_to_envelope("input/AAAI_019_EN.pdf", "en")
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_EN.pdf"), "en")
         .expect("Failed to process AAAI_019_EN");
 
     assert_eq!(de_envelope.context.language(), "de");
@@ -6562,7 +6562,7 @@ fn test_aaoe_has_exactly_one_h1_heading() {
     use crate::document::GroupKind;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -6609,7 +6609,7 @@ fn test_aaoe_labels_computed_from_javascript() {
     // This test verifies that the script executor correctly computes these
     // labels and that they appear as non-empty text in the flattened output.
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     let mut nodes =
         XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
     let flattened =
@@ -6659,7 +6659,7 @@ fn test_aaoe_dropdown_has_legal_entity_and_individual_options() {
     use crate::flattened::Hint;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -6701,7 +6701,7 @@ fn test_aaoe_dropdown_has_legal_entity_and_individual_options() {
 fn test_aaoe_exhaustive_produces_two_dropdown_states() {
     // AAOE has a dropdown (CL_ClientType) with 2 options: "Individual" and "Legal entity".
     // Exhaustive exploration should produce exactly 2 states, one per dropdown value.
-    let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -6757,7 +6757,7 @@ fn test_set_value_as_user_fires_change_event_on_dropdown() {
     use crate::xfa;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read AAOE PDF");
     let nodes =
         xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
@@ -6783,7 +6783,7 @@ fn test_set_value_as_user_fires_change_event_on_dropdown() {
     // Now compare: create a second form where we only set the raw value
     // (no change event). If scripts exist, the two forms should differ.
     let xfa_data2 =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read AAOE PDF");
     let nodes2 =
         xfa::XfaNode::parse(&xfa_data2.unwrap()).expect("Failed to parse XFA structure");
     let mut form_no_event = XfaForm::new(nodes2).expect("Failed to create XfaForm");
@@ -6835,7 +6835,7 @@ fn test_aaoe_company_section_hidden_when_individual_selected() {
     // hidden in the saved form state.
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read AAOE PDF");
     let mut nodes =
         xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
@@ -6876,7 +6876,7 @@ fn test_aaoe_company_section_visible_when_legal_entity_selected() {
     use crate::xfa;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read AAOE PDF");
     let nodes =
         xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
@@ -6909,7 +6909,7 @@ fn test_set_value_as_user_fires_change_event_on_checkbox() {
     use crate::xfa;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read AAAB PDF");
+        extract_xfa_from_pdf(input_path("AAAB_019_DE.pdf")).expect("Failed to read AAAB PDF");
     let nodes =
         xfa::XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
@@ -6935,7 +6935,7 @@ fn test_aaoe_merged_has_dropdown_conditionals() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOE");
 
     // Helper to find conditionals on a specific field
@@ -7100,7 +7100,7 @@ fn test_aaei_overlapping_text_block_merger() {
     };
     use crate::document::Document;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -7153,7 +7153,7 @@ fn test_aaei_has_one_unordered_list_with_two_items() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::{ListNode, StructuredNode};
 
-    let xfa_data = extract_xfa_from_pdf("input/AAEI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -7234,7 +7234,7 @@ fn test_aaoe_has_one_ordered_list_with_three_items() {
     use crate::structured::{ListNode, StructuredNode};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read AAOE PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read AAOE PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -7309,7 +7309,7 @@ fn test_aapr_has_decimal_and_dash_lists() {
     use crate::structured::{ListNode, StructuredNode};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAPR_033_IT.pdf").expect("Failed to read AAPR PDF");
+        extract_xfa_from_pdf(input_path("AAPR_033_IT.pdf")).expect("Failed to read AAPR PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -7407,7 +7407,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     // on the repeatable section.
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
 
-    let mut bp = Blueprint::from_pdf("input/AAEI_019_DE.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
         .expect("Failed to load AAEI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
@@ -7457,7 +7457,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
 
 #[test]
 fn test_context_extraction_from_aaei_pdf() {
-    let bp = Blueprint::from_pdf("input/AAEI_019_DE.pdf")
+    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
         .expect("Failed to load AAEI PDF");
     let ctx = bp.context();
 
@@ -7478,7 +7478,7 @@ fn test_context_extraction_from_aaei_pdf() {
 
 #[test]
 fn test_context_extraction_from_aaoe_pdf() {
-    let bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to load AAOE PDF");
     let ctx = bp.context();
 
@@ -7494,7 +7494,7 @@ fn test_context_extraction_from_aaoe_pdf() {
 
 #[test]
 fn test_context_serialization_includes_variables() {
-    let bp = Blueprint::from_pdf("input/AAEI_019_DE.pdf")
+    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
         .expect("Failed to load AAEI PDF");
     let ctx = bp.context();
 
@@ -7506,7 +7506,7 @@ fn test_context_serialization_includes_variables() {
 
 #[test]
 fn test_context_extraction_from_aaai_pdf() {
-    let bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
+    let bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to load AAAI PDF");
     let ctx = bp.context();
 
@@ -7529,7 +7529,7 @@ fn test_aaoe_h2_sections() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{InlineNode, StructuredNode};
 
-    let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOE");
 
     // Helper to extract plain text from a HeadingNode
@@ -7641,7 +7641,7 @@ fn test_aaoe_headings_consistent_across_states() {
     use crate::structured::{HeadingLevel, StructuredNode};
     use crate::context::Context;
 
-    let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -7686,7 +7686,7 @@ fn test_aaoe_dichiarazione_and_firme_in_all_states() {
     use crate::structured::{HeadingLevel, StructuredNode};
     use crate::context::Context;
 
-    let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -7732,7 +7732,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
 
-    let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -7804,7 +7804,7 @@ fn test_aaoe_debug_all_section_titles_in_flattened() {
     // aren't both present in every state.
     use crate::flattened::FlattenedNodeKind;
 
-    let mut bp = Blueprint::from_pdf("input/AAOE_033_IT.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -7887,7 +7887,7 @@ fn test_acav_has_vertical_field_table() {
     }
 
     let merged =
-        run_exhaustive_to_merged("input/ACAV_001_DE.pdf").expect("Failed to process ACAV PDF");
+        run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf")).expect("Failed to process ACAV PDF");
     let count = count_single_column_grid_layouts(&merged);
     assert!(
         count >= 1,
@@ -7903,7 +7903,7 @@ fn test_acav_vollsaldierung_uebertrag_are_grouped() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -7941,7 +7941,7 @@ fn test_acav_gesamtbetrag_teilzahlung_are_grouped() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -7969,7 +7969,7 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -7996,7 +7996,7 @@ fn test_acav_vermieter_mieter_are_grouped() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -8054,7 +8054,7 @@ fn test_acav_field_labels_are_correct() {
             .unwrap_or_default()
     }
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     let mut fields: Vec<FieldNode> = Vec::new();
@@ -8106,7 +8106,7 @@ fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
         ConditionalNode, FieldNode, FieldType, StructuredNode,
     };
 
-    let structured = run_exhaustive_to_merged("input/ACAV_001_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
 
     // Find the radio group that contains both "Vollsaldierung" and "Übertrag/Mutation"
@@ -8217,7 +8217,7 @@ fn test_aaab_has_no_vertical_field_table() {
         count
     }
 
-    let merged = run_exhaustive_to_merged("input/AAAB_019_DE.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to process AAAB PDF");
     let count = count_single_column_grid_layouts(&merged);
     assert_eq!(
@@ -8263,7 +8263,7 @@ fn test_aaai_has_no_vertical_field_table() {
         count
     }
 
-    let merged = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to process AAAI PDF");
     let count = count_single_column_grid_layouts(&merged);
     assert_eq!(
@@ -8288,7 +8288,7 @@ fn test_aaoe_title_does_not_include_subtitle() {
     use crate::document::GroupKind;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -8365,7 +8365,7 @@ fn test_aaoe_individual_street_row_below_name_row() {
     //
     // The saved form state already has CL_ClientType = "Individual".
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     let mut nodes =
         XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
 
@@ -8446,7 +8446,7 @@ fn test_aaoe_no_extra_spacing_above_h2_headings() {
     use crate::flattened::{Bounds, FlattenedNodeKind};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -8589,7 +8589,7 @@ fn test_aaoe_nazionalita_dichiarazione_gap_not_too_large() {
     use crate::flattened::FlattenedNodeKind;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -8648,7 +8648,7 @@ fn test_aacj_dropdown_has_expected_client_type_options() {
     use crate::flattened::Hint;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AACJ_019_DE.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AACJ_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -8700,7 +8700,7 @@ fn test_aacj_heading_structure() {
     use crate::document::{Document, GroupKind};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AACJ_019_DE.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AACJ_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -8800,11 +8800,11 @@ fn test_aacj_multilingual_merge_de_en_sp() {
     use crate::structured::{self, InlineNode, StructuredNode};
 
     // Build envelopes for all three languages
-    let de_envelope = run_exhaustive_to_envelope("input/AACJ_019_DE.pdf", "de")
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
         .expect("Failed to process AACJ_019_DE");
-    let en_envelope = run_exhaustive_to_envelope("input/AACJ_019_EN.pdf", "en")
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
         .expect("Failed to process AACJ_019_EN");
-    let sp_envelope = run_exhaustive_to_envelope("input/AACJ_019_SP.pdf", "sp")
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
         .expect("Failed to process AACJ_019_SP");
 
     assert_eq!(de_envelope.context.language(), "de");
@@ -8891,7 +8891,7 @@ fn test_aacj_dropdown_conditional_field_visibility() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldId, InputValue, StructuredNode};
 
-    let merged = run_exhaustive_to_merged("input/AACJ_019_DE.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AACJ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AACJ");
 
     // --- helpers ---
@@ -9219,7 +9219,7 @@ fn test_aaab_exhaustive_produces_expected_states() {
     // - Under RB_3, nested RB_1/RB_2/RB_3 are structurally identical   → collapsed
     // - Nested RB_4 has different structure (fewer repeatable rows)      → 1
     //                                                            Total: 4
-    let mut bp = Blueprint::from_pdf("input/AAAB_019_DE.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to create Blueprint from AAAB PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -9241,7 +9241,7 @@ fn test_acav_exhaustive_dedup_reduces_states() {
     // change the form's visible structure (no conditional visibility).
     // With structural dedup, all selection combinations produce
     // identical flattened output, so they collapse to a single state.
-    let mut bp = Blueprint::from_pdf("input/ACAV_001_DE.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to create Blueprint from ACAV PDF");
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
@@ -9303,7 +9303,7 @@ fn test_aaks_radio_button_has_three_options() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -9359,7 +9359,7 @@ fn test_aaks_checkboxes() {
     use crate::structured::{FieldNode, StructuredNode};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAKS_019_DE.pdf").expect("Failed to read AAKS PDF");
+        extract_xfa_from_pdf(input_path("AAKS_019_DE.pdf")).expect("Failed to read AAKS PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -9475,7 +9475,7 @@ fn test_aaks_heading_structure() {
     use crate::document::{Document, GroupKind};
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAKS_019_DE.pdf").expect("Failed to read AAKS PDF");
+        extract_xfa_from_pdf(input_path("AAKS_019_DE.pdf")).expect("Failed to read AAKS PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -9562,7 +9562,7 @@ fn test_aaks_nachname_vorname_firma_on_single_row() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldNode, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
 
     // Check that the field exists somewhere in the tree but is NOT a direct child of
@@ -9640,7 +9640,7 @@ fn test_aaks_strasse_nr_share_row() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
 
     fn find_grid_with_fields(
@@ -9712,7 +9712,7 @@ fn test_aaks_plz_stadt_land_share_row() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let structured = run_exhaustive_to_merged("input/AAKS_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
 
     fn find_grid_with_fields(
@@ -9792,7 +9792,7 @@ fn test_aaai_numbered_list_vertical_alignment() {
     // causing T_LeftIndent numbers to misalign.
     use crate::flattened::FlattenedNodeKind;
 
-    let xfa_data = extract_xfa_from_pdf("input/AAAI_019_DE.pdf").expect("Failed to read PDF");
+    let xfa_data = extract_xfa_from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
@@ -9922,7 +9922,7 @@ fn test_aaoe_split_paragraph_border_not_propagated() {
     use crate::flattened::FlattenedNodeKind;
 
     let xfa_data =
-        extract_xfa_from_pdf("input/AAOE_033_IT.pdf").expect("Failed to read PDF");
+        extract_xfa_from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to read PDF");
     assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
     let mut nodes =
@@ -9993,7 +9993,7 @@ fn test_aaoe_dichiarazione_is_bold() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
 
-    let merged = run_exhaustive_to_merged("input/AAOE_033_IT.pdf")
+    let merged = run_exhaustive_to_merged(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOE");
 
     // Recursively search for structured nodes matching a predicate
@@ -10302,7 +10302,7 @@ fn test_aaai_plz_stadt_land_colspan_ordering() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let structured = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAAI");
 
     /// Recursively search for a GridLayout whose elements contain all of the
@@ -10425,7 +10425,7 @@ fn test_aaai_nachname_vorname_equal_colspan() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let structured = run_exhaustive_to_merged("input/AAAI_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAAI");
 
     fn find_grid_spans(
@@ -10525,7 +10525,7 @@ fn test_antrag_sozialhilfe_structured_headings_and_fields() {
     use crate::structured::{HeadingLevel, StructuredNode, FieldNode, HeadingNode, InlineText};
     use crate::context::Context;
 
-    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load antrag_wirtschaftliche_sozialhilfe PDF");
 
     assert!(bp.is_acroform(), "PDF should be detected as AcroForm (non-XFA)");
@@ -10934,7 +10934,7 @@ fn test_antrag_sozialhilfe_multipage_merge() {
     // produce a single merged Flattened state with header/footer hints.
     use crate::flattened::{Hint, MasterPageRegion};
 
-    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load PDF");
 
     assert!(bp.is_acroform(), "PDF should be AcroForm");
@@ -10967,7 +10967,7 @@ fn test_aahq_has_neuanlage_aenderung_radio_button_group() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::FieldType;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -10996,7 +10996,7 @@ fn test_aahq_nachname_vorname_in_same_row() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{StructuredNode, GridLayout};
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     // Helper function to find GridLayout with both Nachname and Vorname fields
@@ -11081,7 +11081,7 @@ fn test_aahq_endkunde_radio_bereits_vorhanden_anzulegen() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::FieldType;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -11109,7 +11109,7 @@ fn test_aahq_endkunde_conditional_fields_for_bereits_vorhanden() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{ConditionalNode, FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let conditionals = collect_conditionals(&structured);
@@ -11149,7 +11149,7 @@ fn test_aahq_endkunde_conditional_fields_for_anzulegen() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     // List of fields that should appear in the "Anzulegen" state
@@ -11184,7 +11184,7 @@ fn test_aahq_anredesprache_dropdown() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::FieldType;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let fields = collect_fields(&structured);
@@ -11234,7 +11234,7 @@ fn test_aahq_pvv_banklagernder_kunde_radio_group() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::FieldType;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let radio_fields = collect_radio_fields(&structured);
@@ -11260,7 +11260,7 @@ fn test_aahq_h1_heading() {
     // Test that the H1 heading is "Hinterlegung von Versandinstruktionen eines Endkunden – EAM"
     use crate::run_exhaustive_to_merged;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
@@ -11290,7 +11290,7 @@ fn test_aahq_h2_headings() {
     // - "EAM"
     use crate::run_exhaustive_to_merged;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
@@ -11321,7 +11321,7 @@ fn test_aahq_h3_headings() {
     // - "edoc-Korrespondenzempfänger (Assetlink)"
     use crate::run_exhaustive_to_merged;
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
@@ -11354,7 +11354,7 @@ fn test_aahq_dritte_partei_is_repeatable() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{RepeatableNode, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     // Collect all repeatable nodes
@@ -11410,7 +11410,7 @@ fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{RepeatableNode, StructuredNode, HeadingLevel};
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     // Find the Dritte Partei repeatable and check for Korrespondenzadresse H3
@@ -11477,7 +11477,7 @@ fn test_aahq_dritte_partei_has_radio_buttons() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::{FieldType, StructuredNode};
 
-    let structured = run_exhaustive_to_merged("input/AAHQ_019_DE.pdf")
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
 
     // Find the Dritte Partei repeatable
@@ -11545,7 +11545,7 @@ fn test_antrag_sozialhilfe_font_generic_family_not_monospace() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::GenericFamily;
 
-    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load PDF");
 
     assert!(bp.is_acroform(), "PDF should be AcroForm");
@@ -11592,7 +11592,7 @@ fn test_antrag_debug_title_text_runs() {
     use crate::xfa::font_manager::get_font_manager;
     use ab_glyph::{Font as AbFont, ScaleFont};
 
-    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf").unwrap();
+    let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf")).unwrap();
     let form_states = bp.states().unwrap();
     let state = form_states.iter().next().unwrap();
 
@@ -11669,7 +11669,7 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     use crate::context::Context;
     use crate::document::ListStyleType;
 
-    let mut bp = Blueprint::from_pdf("input/antrag_wirtschaftliche_sozialhilfe.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load PDF");
 
     let ctx = bp.context();
@@ -11728,152 +11728,6 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     );
 }
 
-/// Documents the known structural differences between AACC_019_DE.pdf and AACC_019_EN.pdf.
-///
-/// These differences are the reason the original strict similarity check rejected the pair
-/// (similarity ~38%), and why a relaxed similarity check is required.
-///
-/// Confirmed differences (by diagnostic inspection):
-///
-/// 1. **Node count**: DE has 13 top-level nodes, EN has 15.
-///
-/// 2. **Position 3 — layout element type differs**:
-///    - DE[3] is an H2 `Heading` ("Hinweis" / notice section header).
-///    - EN[3] is a `Paragraph` ("InstructionUBS AG is a member of…").
-///    The EN version folds the notice title into body text instead of a heading.
-///
-/// 3. **Signature grid layout is split differently**:
-///    - DE[10] is a single `GridLayout` with 12 columns and **4 elements**.
-///    - EN[9] and EN[12] are **two** `GridLayout`s with 12 columns and **2 elements** each.
-///    The EN form splits each signer row into its own grid, while DE groups both in one.
-///
-/// 4. **Trailing fields differ**:
-///    - DE ends with two `Field` nodes ([11], [12]) right after the single grid.
-///    - EN intersperses a `Paragraph` ("Signature of client") and a `Field` between the
-///      two grids, and repeats the pattern after the second grid, giving nodes [10]–[14].
-///
-/// 5. **Conditional internal structure differs**:
-///    Both versions have 4 `Conditional` nodes (DE[5–8], EN[4–7]), but the child counts
-///    inside each conditional's `Group` differ between the two language versions.
-#[test]
-fn test_aacc_structural_differences_de_vs_en() {
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured::StructuredNode;
-
-    let de = run_exhaustive_to_envelope("input/AACC_019_DE.pdf", "de")
-        .expect("Failed to process AACC_019_DE");
-    let en = run_exhaustive_to_envelope("input/AACC_019_EN.pdf", "en")
-        .expect("Failed to process AACC_019_EN");
-
-    // ── 1. Node counts ────────────────────────────────────────────────────────
-    assert_eq!(de.content.len(), 13, "DE should have 13 top-level nodes");
-    assert_eq!(en.content.len(), 15, "EN should have 15 top-level nodes");
-
-    // ── 2. Position 3: H2 Heading in DE, Paragraph in EN ─────────────────────
-    assert!(
-        matches!(&de.content[3], StructuredNode::Heading(h) if h.level.as_u8() == 2),
-        "DE[3] should be an H2 Heading, got: {:?}",
-        de.content[3].structural_discriminant()
-    );
-    assert!(
-        matches!(&en.content[3], StructuredNode::Paragraph(_)),
-        "EN[3] should be a Paragraph, got: {:?}",
-        en.content[3].structural_discriminant()
-    );
-
-    // ── 3. Signature grid: one 4-element grid in DE vs two 2-element grids in EN
-    match &de.content[10] {
-        StructuredNode::GridLayout(g) => {
-            assert_eq!(g.columns, 12, "DE signature grid should have 12 columns");
-            assert_eq!(
-                g.elements.len(),
-                4,
-                "DE has a single GridLayout with 4 elements for the signature section"
-            );
-        }
-        other => panic!(
-            "DE[10] should be GridLayout, got discriminant {}",
-            other.structural_discriminant()
-        ),
-    }
-    match &en.content[9] {
-        StructuredNode::GridLayout(g) => {
-            assert_eq!(g.columns, 12, "EN first signature grid should have 12 columns");
-            assert_eq!(g.elements.len(), 2, "EN first GridLayout should have 2 elements");
-        }
-        other => panic!(
-            "EN[9] should be GridLayout, got discriminant {}",
-            other.structural_discriminant()
-        ),
-    }
-    match &en.content[12] {
-        StructuredNode::GridLayout(g) => {
-            assert_eq!(g.columns, 12, "EN second signature grid should have 12 columns");
-            assert_eq!(g.elements.len(), 2, "EN second GridLayout should have 2 elements");
-        }
-        other => panic!(
-            "EN[12] should be GridLayout, got discriminant {}",
-            other.structural_discriminant()
-        ),
-    }
-
-    // ── 4. Trailing structure: DE ends with two Fields; EN has Para+Field pairs ─
-    assert!(
-        matches!(&de.content[11], StructuredNode::Field(_)),
-        "DE[11] should be a Field"
-    );
-    assert!(
-        matches!(&de.content[12], StructuredNode::Field(_)),
-        "DE[12] should be a Field"
-    );
-    assert!(
-        matches!(&en.content[10], StructuredNode::Paragraph(_)),
-        "EN[10] should be Paragraph (\"Signature of client\")"
-    );
-    assert!(
-        matches!(&en.content[11], StructuredNode::Field(_)),
-        "EN[11] should be a Field"
-    );
-    assert!(
-        matches!(&en.content[13], StructuredNode::Paragraph(_)),
-        "EN[13] should be Paragraph (\"Signature of client\")"
-    );
-    assert!(
-        matches!(&en.content[14], StructuredNode::Field(_)),
-        "EN[14] should be a Field"
-    );
-
-    // ── 5. Both versions have exactly 4 Conditionals ─────────────────────────
-    let de_conditionals = de
-        .content
-        .iter()
-        .filter(|n| matches!(n, StructuredNode::Conditional(_)))
-        .count();
-    let en_conditionals = en
-        .content
-        .iter()
-        .filter(|n| matches!(n, StructuredNode::Conditional(_)))
-        .count();
-    assert_eq!(de_conditionals, 4, "DE should have 4 top-level Conditionals");
-    assert_eq!(en_conditionals, 4, "EN should have 4 top-level Conditionals");
-
-    // The Conditionals occupy different index ranges but the count is equal.
-    // DE: [5,6,7,8] — EN: [4,5,6,7].
-    for idx in 5..=8 {
-        assert!(
-            matches!(&de.content[idx], StructuredNode::Conditional(_)),
-            "DE[{}] should be Conditional",
-            idx
-        );
-    }
-    for idx in 4..=7 {
-        assert!(
-            matches!(&en.content[idx], StructuredNode::Conditional(_)),
-            "EN[{}] should be Conditional",
-            idx
-        );
-    }
-}
 
 #[test]
 fn test_aacc_multilingual_merge_de_en() {
@@ -11884,9 +11738,9 @@ fn test_aacc_multilingual_merge_de_en() {
     use crate::run_exhaustive_to_envelope;
     use crate::structured::{self, InlineNode, StructuredNode};
 
-    let de_envelope = run_exhaustive_to_envelope("input/AACC_019_DE.pdf", "de")
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACC_019_DE.pdf"), "de")
         .expect("Failed to process AACC_019_DE");
-    let en_envelope = run_exhaustive_to_envelope("input/AACC_019_EN.pdf", "en")
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACC_019_EN.pdf"), "en")
         .expect("Failed to process AACC_019_EN");
 
     assert_eq!(de_envelope.context.language(), "de");
@@ -11951,7 +11805,7 @@ fn test_aaai_inline_field_vertragsbank() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::StructuredNode;
 
-    let flattened = flatten_from_pdf("input/AAAI_019_DE.pdf");
+    let flattened = flatten_from_pdf(input_path("AAAI_019_DE.pdf"));
 
     let mut doc = Document::from_flattened(&flattened);
     run_analysis_pipeline(&mut doc);
@@ -12067,7 +11921,7 @@ fn test_aaqm_inline_field_contratto() {
     use crate::document::modules::run_analysis_pipeline;
     use crate::structured::StructuredNode;
 
-    let flattened = flatten_from_pdf("input/AAQM_033_IT.pdf");
+    let flattened = flatten_from_pdf(input_path("AAQM_033_IT.pdf"));
 
     let mut doc = Document::from_flattened(&flattened);
     run_analysis_pipeline(&mut doc);
@@ -12218,7 +12072,7 @@ fn test_ubs_profile_aem_output_matches_legacy() {
     // XML output for a real PDF.
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
 
-    let mut bp = Blueprint::from_pdf("input/AAAI_019_DE.pdf")
+    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to load AAAI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");

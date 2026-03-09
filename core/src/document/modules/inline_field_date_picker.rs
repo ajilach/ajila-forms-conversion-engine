@@ -426,7 +426,8 @@ mod tests {
         use crate::xfa::scripting::XfaForm;
 
         // Load AAAB PDF
-        let xfa_data = extract_xfa_from_pdf("input/AAAB_019_DE.pdf").expect("Failed to read PDF");
+        let pdf_path = format!("{}/input/AAAB_019_DE.pdf", env!("CARGO_MANIFEST_DIR"));
+        let xfa_data = extract_xfa_from_pdf(&pdf_path).expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
         let nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");

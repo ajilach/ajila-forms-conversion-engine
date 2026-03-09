@@ -742,7 +742,7 @@ pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> 
 /// This helper reads the PDF from disk, explores all states, and merges them
 /// into a single structured representation. It does not perform any file I/O
 /// beyond reading the input PDF.
-pub fn run_exhaustive_to_merged(pdf_path: &str) -> Result<Vec<StructuredNode>, Error> {
+pub fn run_exhaustive_to_merged(pdf_path: impl AsRef<Path>) -> Result<Vec<StructuredNode>, Error> {
     let mut bp = Blueprint::from_pdf(pdf_path)?;
     let form_states = bp.states()?;
     let context = bp.context();
@@ -753,7 +753,7 @@ pub fn run_exhaustive_to_merged(pdf_path: &str) -> Result<Vec<StructuredNode>, E
 ///
 /// The caller controls the language value stored in the envelope context.
 pub fn run_exhaustive_to_envelope(
-    pdf_path: &str,
+    pdf_path: impl AsRef<Path>,
     language: &str,
 ) -> Result<DocumentEnvelope, Error> {
     let mut bp = Blueprint::from_pdf(pdf_path)?;

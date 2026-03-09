@@ -1,13 +1,18 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::time::Duration;
 
+/// Build a path to a file in the `input/` test data directory.
+fn input_dir() -> String {
+    format!("{}/input", env!("CARGO_MANIFEST_DIR"))
+}
+
 fn bench_full_pipeline(c: &mut Criterion) {
     let mut group = c.benchmark_group("full_pipeline");
     group.measurement_time(Duration::from_secs(5));
     group.sample_size(10);
 
     // Auto-discover all PDFs in `input/`.
-    let mut pdfs: Vec<_> = std::fs::read_dir("input")
+    let mut pdfs: Vec<_> = std::fs::read_dir(input_dir())
         .expect("input/ directory must exist")
         .filter_map(|entry| {
             let entry = entry.ok()?;

@@ -7,6 +7,21 @@ use crate::structured::{
 use crate::xfa::script_executor::ScriptExecutor;
 use crate::{Flattened, XfaNode, extract_xfa_from_pdf};
 
+/// Build a path to a file in the `input/` test data directory.
+///
+/// Uses `CARGO_MANIFEST_DIR` so tests work regardless of the current working
+/// directory (e.g. running from workspace root vs. package directory).
+pub fn input_path(filename: &str) -> String {
+    format!("{}/input/{}", env!("CARGO_MANIFEST_DIR"), filename)
+}
+
+/// Build a path to a directory or file inside the `profiles/` directory.
+///
+/// Profiles are at the workspace root, so we go up one level from CARGO_MANIFEST_DIR.
+pub fn profiles_path(subpath: &str) -> String {
+    format!("{}/../profiles/{}", env!("CARGO_MANIFEST_DIR"), subpath)
+}
+
 /// Recursively walk a tree of `StructuredNode`s, calling `callback` on every
 /// node encountered (depth-first, pre-order).
 ///
@@ -210,15 +225,15 @@ pub fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> 
 
 /// Extract XFA from a PDF file and parse it into `XfaNode`s.
 /// Panics if the PDF cannot be read, contains no XFA, or parsing fails.
-pub fn parse_xfa_from_pdf(path: &str) -> Vec<XfaNode> {
-    let xfa_data = extract_xfa_from_pdf(path).expect("Failed to read PDF");
+pub fn parse_xfa_from_pdf(path: impl AsRef<std::path::Path>) -> Vec<XfaNode> {
+    let xfa_data = extract_xfa_from_pdf(path.as_ref()).expect("Failed to read PDF");
     let xfa_buffer = xfa_data.expect("PDF should contain XFA data");
     XfaNode::parse(&xfa_buffer).expect("Failed to parse XFA structure")
 }
 
 /// Extract XFA from a PDF file, parse it, and flatten with script execution.
 /// Panics if any step fails.
-pub fn flatten_from_pdf(path: &str) -> Flattened {
+pub fn flatten_from_pdf(path: impl AsRef<std::path::Path>) -> Flattened {
     let mut nodes = parse_xfa_from_pdf(path);
     flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts")
 }
@@ -230,7 +245,8 @@ pub fn load_ubs_profile() -> (
     crate::aem::AemProfile,
     std::collections::HashMap<String, String>,
 ) {
-    let dir = std::path::Path::new("profiles/ubs/aem");
+    let dir_path = profiles_path("ubs/aem");
+    let dir = std::path::Path::new(&dir_path);
     let toml_str = std::fs::read_to_string(dir.join("config.toml"))
         .expect("Failed to read profiles/ubs/aem/config.toml");
     let profile: crate::aem::AemProfile =

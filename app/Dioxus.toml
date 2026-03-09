@@ -1,0 +1,21 @@
+[application]
+name = "blueprint-app"
+default_platform = "web"
+
+[web.app]
+title = "Ajila Forms Conversion Engine"
+
+[web.watcher]
+reload_html = true
+watch_path = ["src"]
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+style = []
+script = []
+
+[web.wasm_opt]
+level = "0"
