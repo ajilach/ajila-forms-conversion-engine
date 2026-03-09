@@ -8878,6 +8878,293 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 }
 
 #[test]
+fn test_aacj_ubs_aei_paragraph_merged_correctly() {
+    // Regression test: the long "Ich bestätige / I confirm / Confirmo" paragraph that ends
+    // with "www.ubs.com/aei" should be merged into a single TranslatedText inline node
+    // with complete (non-truncated) text for all three languages (de, en, sp).
+    //
+    // Previously the fallback path in `merge_inline_text` only extracted the first
+    // TranslatedText node from the already-merged base instead of the full plain text,
+    // causing the DE and EN versions to be truncated when the SP paragraph had a
+    // different inline-node count.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
+        .expect("Failed to process AACJ_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+
+    // Walk the tree and collect all paragraphs whose plain text contains the
+    // UBS AEI URL — there should be exactly one such paragraph and it must
+    // carry all three languages with the full text.
+    fn collect_paragraphs(nodes: &[StructuredNode], out: &mut Vec<crate::structured::InlineText>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) => out.push(p.content.clone()),
+                StructuredNode::Group(g) => collect_paragraphs(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_paragraphs(&[(*c.content).clone()], out);
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_paragraphs(&[(*r.item).clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut paragraphs = Vec::new();
+    collect_paragraphs(&merged.content, &mut paragraphs);
+
+    // Find paragraphs that contain the AEI URL AND the specific confirmation text
+    // (the paragraph starting with "Ich bestätige" / "I confirm" / "Confirmo")
+    let confirmation_paragraphs: Vec<_> = paragraphs
+        .iter()
+        .filter(|p| {
+            let text = p.as_plain_text();
+            text.contains("www.ubs.com/aei")
+                && (text.contains("Ich best\u{00e4}tige")
+                    || text.contains("I confirm")
+                    || text.contains("Confirmo"))
+        })
+        .collect();
+
+    assert!(
+        !confirmation_paragraphs.is_empty(),
+        "Should find the 'Ich bestätige / I confirm / Confirmo' paragraph containing 'www.ubs.com/aei'"
+    );
+
+    // There should be exactly one such paragraph in the merged output
+    assert_eq!(
+        confirmation_paragraphs.len(),
+        1,
+        "Should find exactly one confirmation paragraph, but found {}",
+        confirmation_paragraphs.len()
+    );
+
+    let para = confirmation_paragraphs[0];
+
+    // The paragraph should consist of exactly one InlineNode::TranslatedText
+    assert_eq!(
+        para.0.len(),
+        1,
+        "The confirmation paragraph should have exactly one inline node after merging, \
+         but got {} nodes: {:?}",
+        para.0.len(),
+        para.0
+            .iter()
+            .map(|n| match n {
+                InlineNode::Text(t) => format!("Text({:?})", &t[..t.len().min(30)]),
+                InlineNode::TranslatedText(m) => format!("TranslatedText(keys={:?})", m.keys().collect::<Vec<_>>()),
+                InlineNode::Link(_) => "Link".to_string(),
+                InlineNode::Strong(_) => "Strong".to_string(),
+                InlineNode::Emphasis(_) => "Emphasis".to_string(),
+            })
+            .collect::<Vec<_>>()
+    );
+
+    let node = &para.0[0];
+    let map = match node {
+        InlineNode::TranslatedText(m) => m,
+        other => panic!(
+            "Expected TranslatedText but got a different inline node: {:?}",
+            match other {
+                InlineNode::Text(t) => format!("Text({:?})", t),
+                InlineNode::Link(_) => "Link".to_string(),
+                _ => "other".to_string(),
+            }
+        ),
+    };
+
+    // All three languages must be present
+    assert!(
+        map.contains_key("de"),
+        "TranslatedText should contain 'de' key, got keys: {:?}",
+        map.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        map.contains_key("en"),
+        "TranslatedText should contain 'en' key, got keys: {:?}",
+        map.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        map.contains_key("sp"),
+        "TranslatedText should contain 'sp' key, got keys: {:?}",
+        map.keys().collect::<Vec<_>>()
+    );
+
+    // Each language text must contain the URL (ensuring the text is not truncated)
+    let de_text = map.get("de").unwrap();
+    let en_text = map.get("en").unwrap();
+    let sp_text = map.get("sp").unwrap();
+
+    assert!(
+        de_text.contains("www.ubs.com/aei"),
+        "DE text is missing 'www.ubs.com/aei' — text may be truncated. DE text ends with: {:?}",
+        &de_text[de_text.len().saturating_sub(50)..]
+    );
+    assert!(
+        en_text.contains("www.ubs.com/aei"),
+        "EN text is missing 'www.ubs.com/aei' — text may be truncated. EN text ends with: {:?}",
+        &en_text[en_text.len().saturating_sub(50)..]
+    );
+    assert!(
+        sp_text.contains("www.ubs.com/aei"),
+        "SP text is missing 'www.ubs.com/aei' — text may be truncated. SP text ends with: {:?}",
+        &sp_text[sp_text.len().saturating_sub(50)..]
+    );
+
+    // The DE text must start with "Ich bestätige"
+    assert!(
+        de_text.starts_with("Ich best\u{00e4}tige"),
+        "DE text should start with 'Ich bestätige', but starts with: {:?}",
+        &de_text[..de_text.len().min(50)]
+    );
+
+    // The EN text must start with "I confirm"
+    assert!(
+        en_text.starts_with("I confirm"),
+        "EN text should start with 'I confirm', but starts with: {:?}",
+        &en_text[..en_text.len().min(50)]
+    );
+
+    // The SP text must start with "Confirmo"
+    assert!(
+        sp_text.starts_with("Confirmo"),
+        "SP text should start with 'Confirmo', but starts with: {:?}",
+        &sp_text[..sp_text.len().min(50)]
+    );
+
+    println!(
+        "\n✓ AACJ 'www.ubs.com/aei' paragraph is merged correctly with complete text for all \
+         three languages (de, en, sp)"
+    );
+}
+
+#[test]
+fn test_aacj_diag_ubs_aei_structure() {
+    // Diagnostic test: print the structure of the confirmation paragraph.
+    // This test always fails with output so we can inspect the structure.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
+        .expect("Failed to process AACJ_019_SP");
+
+    // Walk ALL text content in any node type
+    fn search_text(nodes: &[StructuredNode], needle: &str, out: &mut Vec<String>) {
+        for node in nodes {
+            let text = match node {
+                StructuredNode::Paragraph(p) => Some(format!("Para: {}", p.content.as_plain_text())),
+                StructuredNode::Heading(h) => Some(format!("H{}: {}", h.level.as_u8(), h.content.as_plain_text())),
+                _ => None,
+            };
+            if let Some(t) = &text {
+                if t.contains(needle) {
+                    out.push(t.clone()); // No truncation
+                }
+            }
+            match node {
+                StructuredNode::Group(g) => search_text(&g.children, needle, out),
+                StructuredNode::Conditional(c) => {
+                    search_text(&[(*c.content).clone()], needle, out);
+                }
+                StructuredNode::Repeatable(r) => {
+                    search_text(&[(*r.item).clone()], needle, out);
+                }
+                StructuredNode::GridLayout(gl) => {
+                    for e in &gl.elements {
+                        search_text(std::slice::from_ref(&e.node), needle, out);
+                    }
+                }
+                StructuredNode::Table(t) => {
+                    if let Some(h) = &t.header {
+                        search_text(&h.cells, needle, out);
+                    }
+                    for row in &t.rows {
+                        search_text(&row.cells, needle, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Search for the key phrases from the problem statement
+    let searches = [
+        ("DE", &de_envelope.content as &[StructuredNode], vec!["30 Tage", "steuerpflichtig bin", "steuerpflichtig", "bestätige", "Ich best", "verpflicht"]),
+        ("EN", &en_envelope.content, vec!["30 days", "tax resident only", "I confirm that I am", "I acknowledge"]),
+        ("SP", &sp_envelope.content, vec!["30 días", "residente fiscal solo", "Confirmo que soy", "Me obligo"]),
+    ];
+
+    for (lang, content, keywords) in &searches {
+        println!("\n=== {} keyword search ===", lang);
+        for kw in keywords {
+            let mut results = Vec::new();
+            search_text(content, kw, &mut results);
+            if results.is_empty() {
+                println!("  '{}': NOT FOUND", kw);
+            } else {
+                for r in &results {
+                    println!("  '{}': found in {:?}...", kw, &r[..r.len().min(150)]);
+                }
+            }
+        }
+    }
+
+    // Print top-level structure for DE and EN to compare alignment
+    fn describe_node(node: &StructuredNode) -> String {
+        match node {
+            StructuredNode::Heading(h) => format!("H{}: {:?}", h.level.as_u8(), &h.content.as_plain_text()[..h.content.as_plain_text().len().min(50)]),
+            StructuredNode::Paragraph(p) => {
+                let t = p.content.as_plain_text();
+                format!("Para({}): {:?}", p.content.0.len(), &t[..t.len().min(50)])
+            }
+            StructuredNode::Field(f) => format!("Field({})", f.som_path_str()),
+            StructuredNode::Group(g) => format!("Group({} children)", g.children.len()),
+            StructuredNode::Conditional(c) => format!("Conditional({})", match c.content.as_ref() {
+                StructuredNode::Group(g) => format!("Group({} children)", g.children.len()),
+                StructuredNode::Paragraph(_) => "Paragraph".to_string(),
+                _ => "other".to_string(),
+            }),
+            StructuredNode::GridLayout(gl) => format!("Grid({} cols, {} elem)", gl.columns, gl.elements.len()),
+            StructuredNode::Repeatable(_) => "Repeatable".to_string(),
+            StructuredNode::Image(_) => "Image".to_string(),
+            StructuredNode::Table(_) => "Table".to_string(),
+            StructuredNode::List(_) => "List".to_string(),
+            StructuredNode::Empty => "Empty".to_string(),
+        }
+    }
+
+    println!("\n=== DE top-level structure ===");
+    for (i, node) in de_envelope.content.iter().enumerate() {
+        println!("  [{}] {}", i, describe_node(node));
+    }
+
+    println!("\n=== EN top-level structure ===");
+    for (i, node) in en_envelope.content.iter().enumerate() {
+        println!("  [{}] {}", i, describe_node(node));
+    }
+
+    println!("\n=== SP top-level structure ===");
+    for (i, node) in sp_envelope.content.iter().enumerate() {
+        println!("  [{}] {}", i, describe_node(node));
+    }
+
+    panic!("Diagnostic test — always fails to show output");
+}
+
+#[test]
 fn test_aacj_dropdown_conditional_field_visibility() {
     // When the CL_ClientType dropdown in AACJ is set to a particular value,
     // certain fields should become visible (wrapped in a Conditional for
