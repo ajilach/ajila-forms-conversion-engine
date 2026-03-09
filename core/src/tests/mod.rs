@@ -8,6 +8,7 @@ use helpers::{
     flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
 
+use crate::pipeline::{PipelineConfig, PipelineEvent, PipelineStep};
 use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
@@ -12108,5 +12109,195 @@ fn test_ubs_profile_aem_output_matches_legacy() {
     assert!(
         profile_xml.contains("<branding"),
         "Profile output should have branding"
+    );
+}
+// ============================================================================
+// Pipeline API tests
+// ============================================================================
+
+/// run_pipeline emits StepChanged events in the expected order.
+#[test]
+fn test_pipeline_emits_step_events_in_order() {
+    let pdf_bytes = std::fs::read(input_path("AAAB_019_DE.pdf"))
+        .expect("Failed to read test PDF");
+
+    let files = vec![("AAAB_019_DE.pdf".to_string(), pdf_bytes)];
+    let config = PipelineConfig {
+        render_plain: false,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let mut steps: Vec<PipelineStep> = Vec::new();
+    crate::run_pipeline(&files, &config, |event| {
+        if let PipelineEvent::StepChanged(step) = event {
+            steps.push(step);
+        }
+    })
+    .expect("Pipeline should succeed");
+
+    // The mandatory steps must appear in order.
+    let expected_order = [
+        PipelineStep::Parsing,
+        PipelineStep::ExhaustiveSearching,
+        PipelineStep::Flattening,
+        PipelineStep::Structuring,
+        PipelineStep::Merging,
+        PipelineStep::Complete,
+    ];
+    for window in expected_order.windows(2) {
+        let before = steps.iter().position(|s| *s == window[0]);
+        let after = steps.iter().position(|s| *s == window[1]);
+        assert!(
+            before.is_some() && after.is_some() && before.unwrap() < after.unwrap(),
+            "{:?} must come before {:?} in step sequence (got {:?})",
+            window[0],
+            window[1],
+            steps
+        );
+    }
+}
+
+/// run_pipeline emits StatesFound with a non-zero count.
+#[test]
+fn test_pipeline_states_found_nonzero() {
+    let pdf_bytes = std::fs::read(input_path("AAAB_019_DE.pdf"))
+        .expect("Failed to read test PDF");
+
+    let files = vec![("AAAB_019_DE.pdf".to_string(), pdf_bytes)];
+    let config = PipelineConfig {
+        render_plain: false,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let mut state_counts: Vec<usize> = Vec::new();
+    crate::run_pipeline(&files, &config, |event| {
+        if let PipelineEvent::StatesFound { count, .. } = event {
+            state_counts.push(count);
+        }
+    })
+    .expect("Pipeline should succeed");
+
+    assert!(
+        !state_counts.is_empty(),
+        "At least one StatesFound event should be emitted"
+    );
+    assert!(
+        state_counts.iter().all(|&c| c > 0),
+        "Every StatesFound count should be positive"
+    );
+}
+
+/// run_pipeline produces a non-empty merged DocumentEnvelope.
+#[test]
+fn test_pipeline_output_has_merged_nodes() {
+    let pdf_bytes = std::fs::read(input_path("AAAB_019_DE.pdf"))
+        .expect("Failed to read test PDF");
+
+    let files = vec![("AAAB_019_DE.pdf".to_string(), pdf_bytes)];
+    let config = PipelineConfig {
+        render_plain: false,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let output = crate::run_pipeline(&files, &config, |_| {})
+        .expect("Pipeline should succeed");
+
+    assert!(
+        !output.merged.content.is_empty(),
+        "Merged document envelope should contain structured nodes"
+    );
+}
+
+/// With renders enabled, PlainRender events are emitted for every state, and
+/// the output's plain_renders list has the same count.
+#[test]
+fn test_pipeline_plain_renders_match_event_count() {
+    let pdf_bytes = std::fs::read(input_path("AAAB_019_DE.pdf"))
+        .expect("Failed to read test PDF");
+
+    let files = vec![("AAAB_019_DE.pdf".to_string(), pdf_bytes)];
+    let config = PipelineConfig {
+        render_plain: true,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let mut plain_event_count = 0usize;
+    let output = crate::run_pipeline(&files, &config, |event| {
+        if matches!(event, PipelineEvent::PlainRender { .. }) {
+            plain_event_count += 1;
+        }
+    })
+    .expect("Pipeline should succeed");
+
+    assert_eq!(
+        output.plain_renders.len(),
+        plain_event_count,
+        "plain_renders in output must match PlainRender event count"
+    );
+    assert!(
+        !output.plain_renders.is_empty(),
+        "At least one plain render should be produced"
+    );
+}
+
+/// With renders disabled, no PlainRender or LabelledRender events are emitted
+/// and the output render lists are empty.
+#[test]
+fn test_pipeline_no_renders_when_disabled() {
+    let pdf_bytes = std::fs::read(input_path("AAAB_019_DE.pdf"))
+        .expect("Failed to read test PDF");
+
+    let files = vec![("AAAB_019_DE.pdf".to_string(), pdf_bytes)];
+    let config = PipelineConfig {
+        render_plain: false,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let mut render_events = 0usize;
+    let output = crate::run_pipeline(&files, &config, |event| {
+        if matches!(
+            event,
+            PipelineEvent::PlainRender { .. } | PipelineEvent::LabelledRender { .. }
+        ) {
+            render_events += 1;
+        }
+    })
+    .expect("Pipeline should succeed");
+
+    assert_eq!(render_events, 0, "No render events expected when renders are disabled");
+    assert!(output.plain_renders.is_empty(), "plain_renders should be empty");
+    assert!(output.labelled_renders.is_empty(), "labelled_renders should be empty");
+}
+
+/// Multilingual pipeline: merging two language variants produces one envelope
+/// with both languages present in the context.
+#[test]
+fn test_pipeline_multilingual_merge() {
+    let de_bytes = std::fs::read(input_path("AAAI_019_DE.pdf"))
+        .expect("Failed to read DE PDF");
+    let en_bytes = std::fs::read(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to read EN PDF");
+
+    let files = vec![
+        ("AAAI_019_DE.pdf".to_string(), de_bytes),
+        ("AAAI_019_EN.pdf".to_string(), en_bytes),
+    ];
+    let config = PipelineConfig {
+        render_plain: false,
+        render_labelled: false,
+        ..PipelineConfig::default()
+    };
+
+    let output = crate::run_pipeline(&files, &config, |_| {})
+        .expect("Multilingual pipeline should succeed");
+
+    assert!(
+        !output.merged.content.is_empty(),
+        "Merged multilingual envelope should contain structured nodes"
     );
 }

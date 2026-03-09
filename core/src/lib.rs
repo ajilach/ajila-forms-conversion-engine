@@ -74,6 +74,7 @@ pub mod flattened;
 pub mod graphviz;
 pub mod html;
 pub mod pdf_parser;
+pub mod pipeline;
 pub mod structured;
 pub mod util;
 pub mod xfa;
@@ -128,6 +129,9 @@ pub use xfa::{XfaNode, XfaNodeKind};
 
 // Image type (re-export so consumers don't need to depend on `image` directly)
 pub use image::RgbaImage;
+
+// Pipeline
+pub use pipeline::{PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, run_pipeline};
 
 use std::path::Path;
 use std::sync::Arc;
