@@ -46,6 +46,12 @@ impl InlineFieldDetector {
     /// LabelAttacher instead.
     const MIN_INLINE_TEXT_CHARS: usize = 20;
 
+    /// Maximum number of characters for text above/below a field to be
+    /// considered a label. Text longer than this (e.g. paragraphs, section
+    /// descriptions) is not treated as a field label and won't prevent
+    /// inline field detection.
+    const MAX_LABEL_ABOVE_BELOW_CHARS: usize = 100;
+
     pub fn new() -> Self {
         InlineFieldDetector {
             line_tolerance: Decimal::from_str("8.0").unwrap(),
@@ -184,7 +190,9 @@ impl InlineFieldDetector {
             };
 
             // Skip empty text
-            if doc.get_text_content(text_idx).trim().is_empty() {
+            let text_content = doc.get_text_content(text_idx);
+            let trimmed = text_content.trim();
+            if trimmed.is_empty() {
                 continue;
             }
 
@@ -197,11 +205,16 @@ impl InlineFieldDetector {
                 }
             }
 
-            // Check for text above or below (potential label) - same as is_inline_by_adjacency
-            if self.has_text_above(&text_bounds, &field_bounds)
-                || self.has_text_below(&text_bounds, &field_bounds)
-            {
-                has_label_above_or_below = true;
+            // Check for text above or below (potential label).
+            // Only short text is considered a potential label — long text
+            // (>= MAX_LABEL_ABOVE_BELOW_CHARS) is likely a paragraph or section
+            // heading, not a field label.
+            if trimmed.chars().count() < Self::MAX_LABEL_ABOVE_BELOW_CHARS {
+                if self.has_text_above(&text_bounds, &field_bounds)
+                    || self.has_text_below(&text_bounds, &field_bounds)
+                {
+                    has_label_above_or_below = true;
+                }
             }
         }
 

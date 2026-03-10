@@ -627,18 +627,32 @@ impl StructuredNode {
             }
             (StructuredNode::Image(a), StructuredNode::Image(b)) => a.alt_text == b.alt_text,
             (StructuredNode::Table(a), StructuredNode::Table(b)) => a.structural_cmp(b, mode),
-            (StructuredNode::Field(a), StructuredNode::Field(b)) => a.structural_eq(b),
+            (StructuredNode::Field(a), StructuredNode::Field(b)) => {
+                // In IgnoreText mode (used for translation merging), Fields match by
+                // input type structure only — FieldIds are derived from SOM paths which
+                // can differ across languages for the same logical field.
+                if mode == CompareMode::IgnoreText {
+                    a.input_type.structural_eq(&b.input_type)
+                } else {
+                    a.structural_eq(b)
+                }
+            }
             (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
                 a.min_occurrences == b.min_occurrences
                     && a.max_occurrences == b.max_occurrences
                     && a.item.structural_cmp(&b.item, mode)
             }
             (StructuredNode::Group(a), StructuredNode::Group(b)) => {
-                a.children.len() == b.children.len()
-                    && a.children
-                        .iter()
-                        .zip(b.children.iter())
-                        .all(|(ca, cb)| ca.structural_cmp(cb, mode))
+                // In IgnoreText mode (used for translation merging), Groups match by type
+                // only — the child count may differ across languages because rich text
+                // can produce a different number of <p> elements. merge_node_lists will
+                // use LCS to align the children correctly.
+                mode == CompareMode::IgnoreText
+                    || (a.children.len() == b.children.len()
+                        && a.children
+                            .iter()
+                            .zip(b.children.iter())
+                            .all(|(ca, cb)| ca.structural_cmp(cb, mode)))
             }
             (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
                 a.content.structural_cmp(&b.content, mode)
