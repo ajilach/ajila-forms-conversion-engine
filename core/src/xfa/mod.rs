@@ -1231,6 +1231,16 @@ impl XfaNode {
                         .unescape()
                         .map_err(|e| format!("Failed to unescape text: {}", e))?;
                     text_content.push_str(&text);
+                    // Also add as a Text child to preserve interleaving
+                    // with sibling elements (e.g. <span>s within a <p>).
+                    if !text.is_empty() {
+                        children.push(Self::new(
+                            XfaNodeKind::Text {
+                                content: text.to_string(),
+                            },
+                            std::collections::HashMap::new(),
+                        ));
+                    }
                 }
                 Ok(Event::Empty(e)) => {
                     // Handle self-closing tags like <contentArea ... />

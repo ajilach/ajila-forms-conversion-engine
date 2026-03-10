@@ -12185,8 +12185,13 @@ fn test_aaai_inline_field_vertragsbank() {
 fn test_aaqm_inline_field_contratto() {
     // The AAQM form has an inline field embedded in flowing Italian legal text.
     // The field should appear in the structured output with label "UNKNOWN".
-    // Note: Since the XFA has the before/after text merged into a single text node,
-    // we can only verify that the field appears with the associated text paragraph.
+    //
+    // Text before: "Con riferimento al contratto relativo al servizio di consulenza n."
+    // Text after: "(di seguito il «Contratto») sottoscritto dal Cliente con UBS Europe
+    //   SE, Succursale Italia (di seguito «UBS» o la «Banca») e avente ad oggetto lo
+    //   svolgimento da parte della Banca del Servizio di Consulenza della tipologia
+    //   attivata dal Cliente, quest'ultimo, esercitando la propria facoltà di recesso
+    //   dal Contratto, richiede alla Banca la disattivazione di tale servizio."
 
     use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
@@ -12259,14 +12264,26 @@ fn test_aaqm_inline_field_contratto() {
     );
     let field_pos = field_pos.unwrap();
 
-    // The inline field detection works, but since the XFA has the before/after
-    // text merged into a single text node (not split by character position),
-    // we can only verify that:
-    // 1. The UNKNOWN field appears
-    // 2. The paragraph containing the Italian text appears near the field
+    // Check the paragraph before
+    assert!(
+        field_pos > 0,
+        "There should be a paragraph before the inline field"
+    );
+    let (before_kind, before_text) = &sequence[field_pos - 1];
+    assert_eq!(
+        *before_kind, "paragraph",
+        "Node before inline field should be a paragraph, got: {}",
+        before_kind
+    );
+    let expected_before = "Con riferimento al contratto relativo al servizio di consulenza n.";
+    assert!(
+        before_text.contains(expected_before),
+        "Paragraph before field should contain '{}', got: '{}'",
+        expected_before,
+        before_text
+    );
 
-    // Check that there's a paragraph AFTER the field containing the expected text
-    // (Since it's a single merged text node, it gets placed after due to center position)
+    // Check the paragraph after
     assert!(
         field_pos + 1 < sequence.len(),
         "There should be a paragraph after the inline field"
@@ -12277,23 +12294,11 @@ fn test_aaqm_inline_field_contratto() {
         "Node after inline field should be a paragraph, got: {}",
         after_kind
     );
-
-    // The paragraph should contain the full Italian text (both what would be
-    // "before" and "after" if we could split it)
-    let expected_text = "Con riferimento al contratto relativo al servizio di consulenza n.";
+    let expected_after = "(di seguito il «Contratto») sottoscritto dal Cliente con UBS Europe SE, Succursale Italia (di seguito «UBS» o la «Banca») e avente ad oggetto lo svolgimento da parte della Banca del Servizio di Consulenza della tipologia attivata dal Cliente, quest'ultimo, esercitando la propria facoltà di recesso dal Contratto, richiede alla Banca la disattivazione di tale servizio.";
     assert!(
-        after_text.contains(expected_text),
-        "Paragraph should contain '{}', got: '{}'",
-        expected_text,
-        after_text
-    );
-
-    // Also verify the continuation text is there
-    let expected_continuation = "(di seguito il «Contratto»)";
-    assert!(
-        after_text.contains(expected_continuation),
-        "Paragraph should contain '{}', got: '{}'",
-        expected_continuation,
+        after_text.contains(expected_after),
+        "Paragraph after field should contain '{}', got: '{}'",
+        expected_after,
         after_text
     );
 }

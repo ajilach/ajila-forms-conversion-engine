@@ -832,7 +832,37 @@ impl<'a, 'b> Converter<'a, 'b> {
                         }
                     }
                 } else {
-                    // Single node: use horizontal position relative to field
+                    // Single node: check if it's a multi-line node spanning the field
+                    // and split it at the field boundary (same logic as multi-node branch).
+                    if node_indices.len() == 1 {
+                        if let Some(node) = self.doc.get_node(node_indices[0]) {
+                            let node_bounds = node.bounds();
+                            let is_multiline_spanning_field =
+                                node_bounds.height > fb.height * Decimal::from(2)
+                                    && fb.y >= node_bounds.y
+                                    && fb.y <= node_bounds.y + node_bounds.height;
+
+                            if is_multiline_spanning_field {
+                                if let Some((before_str, after_str)) =
+                                    Self::split_text_at_field_position(node, fb)
+                                {
+                                    if !before_str.is_empty() {
+                                        before.push(StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(before_str),
+                                        }));
+                                    }
+                                    if !after_str.is_empty() {
+                                        after.push(StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(after_str),
+                                        }));
+                                    }
+                                    return (before, after);
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback: use horizontal position relative to field
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
                         if let Some(text_bounds) = self.doc.get_bounds(child_group_idx) {
@@ -1195,19 +1225,68 @@ impl<'a, 'b> Converter<'a, 'b> {
         let approx_char = ((total_chars as f32) * overall_frac).round() as usize;
         let approx_char = approx_char.min(total_chars);
 
-        // Snap to nearest word boundary by finding the closest whitespace.
+        // Snap to the best word/sentence boundary near the estimated position.
+        // Prefer sentence-ending punctuation ('. ', '.(' etc.) over plain
+        // whitespace, because inline fields typically sit at clause/sentence
+        // boundaries and the proportional estimate has limited accuracy.
         let chars: Vec<char> = content.chars().collect();
-        let mut best_split = approx_char;
-        for delta in 0..30 {
-            if approx_char + delta < chars.len() && chars[approx_char + delta].is_whitespace() {
-                best_split = approx_char + delta;
-                break;
+
+        // Phase 1: look for a sentence boundary (period/colon/semicolon
+        //          followed by whitespace or '(') within ±20 chars.
+        let mut best_split = None;
+        let search_radius = 20usize;
+        for delta in 0..=search_radius {
+            // Forward
+            let fwd = approx_char + delta;
+            if best_split.is_none()
+                && fwd < chars.len()
+                && (chars[fwd] == '.' || chars[fwd] == ':' || chars[fwd] == ';')
+            {
+                let next = fwd + 1;
+                if next >= chars.len()
+                    || chars[next].is_whitespace()
+                    || chars[next] == '('
+                {
+                    best_split = Some(next); // split AFTER the punctuation
+                }
             }
-            if approx_char >= delta && chars[approx_char - delta].is_whitespace() {
-                best_split = approx_char - delta;
+            // Backward
+            if best_split.is_none() && approx_char >= delta {
+                let bwd = approx_char - delta;
+                if bwd < chars.len()
+                    && (chars[bwd] == '.' || chars[bwd] == ':' || chars[bwd] == ';')
+                {
+                    let next = bwd + 1;
+                    if next >= chars.len()
+                        || chars[next].is_whitespace()
+                        || chars[next] == '('
+                    {
+                        best_split = Some(next);
+                    }
+                }
+            }
+            if best_split.is_some() {
                 break;
             }
         }
+
+        // Phase 2: fall back to nearest whitespace within ±30 chars.
+        if best_split.is_none() {
+            for delta in 0..30 {
+                if approx_char + delta < chars.len()
+                    && chars[approx_char + delta].is_whitespace()
+                {
+                    best_split = Some(approx_char + delta);
+                    break;
+                }
+                if approx_char >= delta && chars[approx_char - delta].is_whitespace() {
+                    best_split = Some(approx_char - delta);
+                    break;
+                }
+            }
+        }
+
+        let best_split = best_split.unwrap_or(approx_char);
 
         let before_text: String = chars[..best_split].iter().collect();
         let after_text: String = chars[best_split..].iter().collect();

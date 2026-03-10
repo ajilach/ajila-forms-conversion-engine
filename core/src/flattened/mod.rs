@@ -5298,6 +5298,21 @@ impl Flattened {
                 XfaNodeKind::Text { content } => {
                     let trimmed = content.trim();
                     if !trimmed.is_empty() {
+                        // Ensure word-boundary separation between consecutive
+                        // non-space text segments.  With trim_text(true), the
+                        // XML reader strips whitespace that originally
+                        // separated adjacent text and element nodes; this
+                        // restores a single space so words don't get fused.
+                        if !text_parts.is_empty() {
+                            if let Some(last) = text_parts.last() {
+                                if !last.is_empty()
+                                    && !last.ends_with(' ')
+                                    && !last.ends_with('\n')
+                                {
+                                    text_parts.push(" ".to_string());
+                                }
+                            }
+                        }
                         text_parts.push(trimmed.to_string());
                     } else if content.contains(' ') && !text_parts.is_empty() {
                         // Preserve a single space between inline elements
@@ -5321,14 +5336,25 @@ impl Flattened {
                         }
                     }
 
-                    // Add text content if present
-                    if let Some(text) = text_content {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            text_parts.push(trimmed.to_string());
-                        } else if text.contains(' ') && !text_parts.is_empty() {
-                            // Preserve a single space between inline elements
-                            text_parts.push(" ".to_string());
+                    // When children include interleaved Text nodes (created
+                    // by the parser to preserve DOM order), skip the
+                    // aggregated text_content and rely on the children
+                    // instead.  Otherwise fall back to text_content.
+                    let has_text_children = child
+                        .children
+                        .iter()
+                        .any(|c| matches!(&c.kind, XfaNodeKind::Text { .. }));
+
+                    if !has_text_children {
+                        // Add text content if present
+                        if let Some(text) = text_content {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                text_parts.push(trimmed.to_string());
+                            } else if text.contains(' ') && !text_parts.is_empty() {
+                                // Preserve a single space between inline elements
+                                text_parts.push(" ".to_string());
+                            }
                         }
                     }
                     // Add space/newline for paragraph breaks
@@ -6732,17 +6758,26 @@ impl Flattened {
                             // Add paragraph to list
                             paragraphs.push(para);
 
-                            // First, handle direct text_content of the <p> element
-                            // Use helper that handles U+2029 paragraph separators
-                            if let Some(text) = text_content {
-                                Self::add_text_with_paragraph_splits(
-                                    text,
-                                    paragraphs,
-                                    preserve_spaces,
-                                    effective_bold,
-                                    italic,
-                                    default_h_align,
-                                );
+                            // Handle direct text_content of the <p> element.
+                            // When the parser created interleaved Text children
+                            // (to preserve DOM order), skip the aggregated
+                            // text_content and let the recursion handle it.
+                            let has_text_children = child
+                                .children
+                                .iter()
+                                .any(|c| matches!(&c.kind, XfaNodeKind::Text { .. }));
+
+                            if !has_text_children {
+                                if let Some(text) = text_content {
+                                    Self::add_text_with_paragraph_splits(
+                                        text,
+                                        paragraphs,
+                                        preserve_spaces,
+                                        effective_bold,
+                                        italic,
+                                        default_h_align,
+                                    );
+                                }
                             }
 
                             // Then parse children with inherited styles
@@ -6800,6 +6835,13 @@ impl Flattened {
 
                             // Handle text_content if present
                             // Handle text_content with U+2029 support
+                            // Skip when Text children are present (they preserve DOM order)
+                            let has_text_children_span = child
+                                .children
+                                .iter()
+                                .any(|c| matches!(&c.kind, XfaNodeKind::Text { .. }));
+
+                            if !has_text_children_span {
                             if let Some(text) = text_content {
                                 if new_preserve {
                                     // For xfa-spacerun, count spaces but still handle U+2029
@@ -6841,6 +6883,7 @@ impl Flattened {
                                         default_h_align,
                                     );
                                 }
+                            }
                             }
 
                             // Recurse into span children
