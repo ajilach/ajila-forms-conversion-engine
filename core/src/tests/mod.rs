@@ -8954,6 +8954,94 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
 }
 
 #[test]
+fn test_aags_multilingual_merge_de_en() {
+    // Test that merging AAGS DE and EN produces correct bilingual translations
+    // for several key text pairs across headings, paragraphs, and field labels.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
+        .expect("Failed to process AAGS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
+        .expect("Failed to process AAGS_019_EN");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
+
+    assert_eq!(merged.context.language(), "de,en");
+    assert!(!merged.content.is_empty());
+
+    // Define expected translation pairs (DE snippet, EN snippet).
+    // Each pair must appear in the same TranslatedText node somewhere
+    // in the merged tree (in a heading, paragraph, or field label).
+    let expected_pairs: Vec<(&str, &str)> = vec![
+        (
+            "Anlage zur Eröffnung von Konten/Depots vom:",
+            "Enclosure to the opening of account/safe custody accounts of:",
+        ),
+        (
+            "Sofern ausweislich des Handels-/Genossenschaftsregisters oder Partnerschaftsregisters",
+            "If, in accordance with the Commercial Register/Register of Cooperative Societies",
+        ),
+        (
+            "Zum Nachweis über die Legitimation von Mitgliedern des Stiftungsvorstands als Vertreter",
+            "The account holder must notify the Bank immediately",
+        ),
+        (
+            "Es ist der Bank ein großes Anliegen, in jeder Situation ein Maximum an Dienstleistungsqualität und Sicherheit zu bieten",
+            "It is very important to the bank to offer optimal service quality and security in every situation",
+        ),
+    ];
+
+    let mut pair_found = vec![false; expected_pairs.len()];
+
+    // Collect all TranslatedText nodes from headings, paragraphs, and field labels.
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => {
+                f.label.as_ref().into_iter().collect()
+            }
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+
+                    for (i, (de_snippet, en_snippet)) in expected_pairs.iter().enumerate() {
+                        if de_text.contains(de_snippet) || en_text.contains(en_snippet) {
+                            assert!(
+                                de_text.contains(de_snippet) && en_text.contains(en_snippet),
+                                "Translation pair {} should have both languages in the same \
+                                 TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: {:?}\n  \
+                                 Actual DE: {:?}\n  Actual EN: {:?}",
+                                i, de_snippet, en_snippet,
+                                &de_text[..de_text.len().min(200)],
+                                &en_text[..en_text.len().min(200)],
+                            );
+                            pair_found[i] = true;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    for (i, (de_snippet, _en_snippet)) in expected_pairs.iter().enumerate() {
+        assert!(
+            pair_found[i],
+            "Translation pair {} was not found in the merged tree.\n  DE: {:?}",
+            i, de_snippet,
+        );
+    }
+}
+
+#[test]
 fn test_aacj_dropdown_conditional_field_visibility() {
     // When the CL_ClientType dropdown in AACJ is set to a particular value,
     // certain fields should become visible (wrapped in a Conditional for
