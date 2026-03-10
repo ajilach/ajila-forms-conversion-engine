@@ -305,6 +305,23 @@ fn lcs_align(
     result
 }
 
+/// Tracks the origin of each entry produced by the alignment phase,
+/// so the post-processing step knows which language an unmatched paragraph
+/// belongs to.
+enum AlignedEntry<'a> {
+    /// Both languages matched — the two source nodes are stored so we can
+    /// re-derive the plain text when absorbing an adjacent orphan.
+    Matched {
+        node: StructuredNode,
+        base: &'a StructuredNode,
+        other: &'a StructuredNode,
+    },
+    /// Present only in the *base* language.
+    BaseOnly(StructuredNode),
+    /// Present only in the *other* language.
+    OtherOnly(StructuredNode),
+}
+
 /// Merge two node lists from different languages using LCS alignment.
 fn merge_node_lists(
     base: &[StructuredNode],
@@ -315,25 +332,140 @@ fn merge_node_lists(
     let dp = lcs_table(base, other);
     let alignment = lcs_align(base, other, &dp);
 
-    let mut result = Vec::new();
-    for (ai, bi) in alignment {
+    let mut entries: Vec<AlignedEntry> = Vec::new();
+    for (ai, bi) in &alignment {
         match (ai, bi) {
             (Some(a), Some(b)) => {
-                // Matched pair: merge text content from both languages
-                result.push(merge_node(&base[a], base_lang, &other[b], other_lang));
+                let node = merge_node(&base[*a], base_lang, &other[*b], other_lang);
+                entries.push(AlignedEntry::Matched {
+                    node,
+                    base: &base[*a],
+                    other: &other[*b],
+                });
             }
             (Some(a), None) => {
-                // Only in base language - keep as-is
-                result.push(base[a].clone());
+                entries.push(AlignedEntry::BaseOnly(base[*a].clone()));
             }
             (None, Some(b)) => {
-                // Only in other language - keep as-is
-                result.push(other[b].clone());
+                entries.push(AlignedEntry::OtherOnly(other[*b].clone()));
             }
             (None, None) => unreachable!(),
         }
     }
-    result
+
+    consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
+
+    entries
+        .into_iter()
+        .map(|e| match e {
+            AlignedEntry::Matched { node, .. } => node,
+            AlignedEntry::BaseOnly(node) => node,
+            AlignedEntry::OtherOnly(node) => node,
+        })
+        .collect()
+}
+
+/// Post-process aligned entries to absorb orphaned (unmatched) `Paragraph`
+/// nodes into an adjacent matched `Paragraph`.
+///
+/// When one language splits a block of text into multiple paragraphs while
+/// another keeps it as a single paragraph, LCS alignment leaves some
+/// paragraphs unmatched. This step detects such orphans and prepends/appends
+/// their text to the nearest matched paragraph's `TranslatedText` map.
+fn consolidate_orphan_paragraphs(
+    entries: &mut Vec<AlignedEntry>,
+    base_lang: &str,
+    other_lang: &str,
+) {
+    // When one language splits a block of text into N paragraphs while another
+    // keeps it as a single paragraph, the LCS alignment matches one paragraph
+    // from each side and leaves the remaining N-1 paragraphs unmatched.  Since
+    // the LCS backtrace works from the end, the unmatched paragraphs appear
+    // *before* the matched one.  This pass detects such orphans and prepends
+    // their text into the adjacent matched paragraph's TranslatedText map.
+    //
+    // We only absorb forward (orphan → next matched paragraph) and stop at any
+    // non-paragraph boundary (e.g. a Field or Heading) to avoid merging text
+    // across unrelated sections.
+    let len = entries.len();
+    let mut absorbed = vec![false; len];
+
+    let mut prepend_ops: Vec<(usize, usize, String, String)> = Vec::new();
+    for i in 0..len {
+        if absorbed[i] {
+            continue;
+        }
+
+        // Only absorb OtherOnly paragraphs. BaseOnly paragraphs are kept as-is
+        // because the base language defines the document structure: its unique
+        // paragraphs represent genuinely extra content, while extra paragraphs
+        // from other languages are likely split-paragraph artifacts.
+        let orphan_lang = match &entries[i] {
+            AlignedEntry::OtherOnly(StructuredNode::Paragraph(_)) => other_lang,
+            _ => continue,
+        };
+
+        let orphan_text = match &entries[i] {
+            AlignedEntry::OtherOnly(StructuredNode::Paragraph(p)) => p.content.as_plain_text(),
+            _ => continue,
+        };
+        if orphan_text.is_empty() {
+            continue;
+        }
+
+        // Search forward for the nearest Matched(Paragraph). Stop if we
+        // encounter a non-paragraph entry (e.g. a Field or Heading) that
+        // acts as a section boundary.
+        let mut target = None;
+        for j in (i + 1)..len {
+            if absorbed[j] {
+                continue;
+            }
+            match &entries[j] {
+                AlignedEntry::Matched {
+                    node: StructuredNode::Paragraph(_),
+                    ..
+                } => {
+                    target = Some(j);
+                    break;
+                }
+                // Allow skipping other orphan paragraphs (they'll be
+                // absorbed in their own iteration).
+                AlignedEntry::OtherOnly(StructuredNode::Paragraph(_)) => continue,
+                // Any non-paragraph entry is a barrier — don't absorb
+                // across section boundaries.
+                _ => break,
+            }
+        }
+
+        if let Some(j) = target {
+            prepend_ops.push((i, j, orphan_text, orphan_lang.to_string()));
+            absorbed[i] = true;
+        }
+    }
+
+    for (_, target, text, lang) in prepend_ops {
+        if let AlignedEntry::Matched {
+            node: StructuredNode::Paragraph(para),
+            ..
+        } = &mut entries[target]
+        {
+            for inline in &mut para.content.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let entry = map.entry(lang.clone()).or_default();
+                    *entry = format!("{}{}", text, entry);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Remove absorbed entries (iterate in reverse to preserve indices)
+    for i in (0..len).rev() {
+        if absorbed[i] {
+            entries.remove(i);
+        }
+    }
 }
 
 // ============================================================================

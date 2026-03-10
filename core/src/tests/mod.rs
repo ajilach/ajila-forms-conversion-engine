@@ -8954,6 +8954,91 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
 }
 
 #[test]
+fn test_aacj_multilingual_translation_snippets() {
+    // Verify that specific text snippets are correctly aligned across DE, EN,
+    // and SP in the merged AACJ tree.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
+        .expect("Failed to process AACJ_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+
+    // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
+    // TranslatedText node.
+    let expected_triplets: Vec<(&str, &str, &str)> = vec![
+        (
+            "Bitte füllen Sie dieses Formular aus, wenn Sie ein Einzelkontoinhaber (natürliche Person) oder ein Einzelunternehmen sind.",
+            "Please fill in this form if you are an individual account holder (a natural person) or a sole proprietorship.",
+            "Si usted es un titular de cuenta individual (persona física) o un empresario individual, rellene este formulario.",
+        ),
+    ];
+
+    let mut triplet_found = vec![false; expected_triplets.len()];
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+
+                    for (i, (de_snippet, en_snippet, sp_snippet)) in
+                        expected_triplets.iter().enumerate()
+                    {
+                        if de_text.contains(de_snippet)
+                            || en_text.contains(en_snippet)
+                            || sp_text.contains(sp_snippet)
+                        {
+                            assert!(
+                                de_text.contains(de_snippet)
+                                    && en_text.contains(en_snippet)
+                                    && sp_text.contains(sp_snippet),
+                                "Translation triplet {} should have all three languages in the \
+                                 same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
+                                 {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
+                                 Actual SP: {:?}",
+                                i,
+                                de_snippet,
+                                en_snippet,
+                                sp_snippet,
+                                &de_text[..de_text.len().min(200)],
+                                &en_text[..en_text.len().min(200)],
+                                &sp_text[..sp_text.len().min(200)],
+                            );
+                            triplet_found[i] = true;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    for (i, (de_snippet, _, _)) in expected_triplets.iter().enumerate() {
+        assert!(
+            triplet_found[i],
+            "Translation triplet {} was not found in the merged tree.\n  DE: {:?}",
+            i, de_snippet,
+        );
+    }
+}
+
+#[test]
 fn test_aags_multilingual_merge_de_en() {
     // Test that merging AAGS DE and EN produces correct bilingual translations
     // for several key text pairs across headings, paragraphs, and field labels.
@@ -12273,4 +12358,197 @@ fn test_ubs_profile_aem_output_matches_legacy() {
         profile_xml.contains("<branding"),
         "Profile output should have branding"
     );
+}
+
+#[test]
+fn debug_aacj_en_flattened_text() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+
+    // Search ALL node types recursively for any text containing our target
+    eprintln!("\n=== Deep search in EN structured output ===");
+    fn deep_search(nodes: &[StructuredNode], depth: usize) {
+        for (idx, node) in nodes.iter().enumerate() {
+            let prefix = "  ".repeat(depth);
+            match node {
+                StructuredNode::Heading(h) => {
+                    check_inline(&h.content, &format!("{}Heading[{}]", prefix, idx));
+                }
+                StructuredNode::Paragraph(p) => {
+                    check_inline(&p.content, &format!("{}Para[{}]", prefix, idx));
+                }
+                StructuredNode::Field(f) => {
+                    if let Some(label) = &f.label {
+                        check_inline(label, &format!("{}Field[{}].label", prefix, idx));
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    deep_search(&g.children, depth + 1);
+                }
+                StructuredNode::Conditional(c) => {
+                    deep_search(std::slice::from_ref(c.content.as_ref()), depth + 1);
+                }
+                StructuredNode::Repeatable(r) => {
+                    deep_search(std::slice::from_ref(r.item.as_ref()), depth + 1);
+                }
+                StructuredNode::Table(t) => {
+                    for row in &t.rows {
+                        deep_search(&row.cells, depth + 1);
+                    }
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        deep_search(std::slice::from_ref(&el.node), depth + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn check_inline(text: &InlineText, label: &str) {
+        for inline in &text.0 {
+            let s = match inline {
+                InlineNode::Text(t) => t.clone(),
+                InlineNode::TranslatedText(map) => {
+                    map.values().cloned().collect::<Vec<_>>().join(" | ")
+                }
+                _ => continue,
+            };
+            let lower = s.to_lowercase();
+            if lower.contains("please fill") || lower.contains("individual account")
+                || lower.contains("common reporting") || lower.contains("fkaustg")
+                || lower.contains("einzelkontoinhaber") || lower.contains("titular de cuenta")
+            {
+                eprintln!("  FOUND {} -> {:?}", label, &s[..s.len().min(400)]);
+            }
+        }
+    }
+
+    deep_search(&en_envelope.content, 0);
+
+    // Also search for the German text in a DE envelope for comparison
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+
+    eprintln!("\n=== Deep search in DE structured output (for reference) ===");
+    deep_search(&de_envelope.content, 0);
+
+    // Count total paragraphs
+    let mut en_para_count = 0usize;
+    let mut en_heading_count = 0usize;
+    walk_structured_nodes(&en_envelope.content, &mut |node| {
+        match node {
+            StructuredNode::Paragraph(_) => en_para_count += 1,
+            StructuredNode::Heading(_) => en_heading_count += 1,
+            _ => {}
+        }
+    });
+
+    let mut de_para_count = 0usize;
+    let mut de_heading_count = 0usize;
+    walk_structured_nodes(&de_envelope.content, &mut |node| {
+        match node {
+            StructuredNode::Paragraph(_) => de_para_count += 1,
+            StructuredNode::Heading(_) => de_heading_count += 1,
+            _ => {}
+        }
+    });
+
+    eprintln!("\n=== EN: {} paragraphs, {} headings ===", en_para_count, en_heading_count);
+    eprintln!("=== DE: {} paragraphs, {} headings ===", de_para_count, de_heading_count);
+
+    // Also dump ALL paragraphs from EN for comparison
+    eprintln!("\n=== All EN paragraphs (first 200 chars) ===");
+    let mut para_idx = 0;
+    walk_structured_nodes(&en_envelope.content, &mut |node| {
+        if let StructuredNode::Paragraph(p) = node {
+            let text: String = p.content.0.iter().map(|i| match i {
+                InlineNode::Text(t) => t.clone(),
+                _ => String::new(),
+            }).collect();
+            let end = text.char_indices().take(200).last().map(|(i,c)| i + c.len_utf8()).unwrap_or(0);
+            eprintln!("  EN Para[{}]: {:?}", para_idx, &text[..end]);
+            para_idx += 1;
+        }
+    });
+
+    eprintln!("\n=== All DE paragraphs (first 200 chars) ===");
+    let mut para_idx = 0;
+    walk_structured_nodes(&de_envelope.content, &mut |node| {
+        if let StructuredNode::Paragraph(p) = node {
+            let text: String = p.content.0.iter().map(|i| match i {
+                InlineNode::Text(t) => t.clone(),
+                _ => String::new(),
+            }).collect();
+            let end = text.char_indices().take(200).last().map(|(i,c)| i + c.len_utf8()).unwrap_or(0);
+            eprintln!("  DE Para[{}]: {:?}", para_idx, &text[..end]);
+            para_idx += 1;
+        }
+    });
+
+    // Also check if the text might be inside conditionals
+    eprintln!("\n=== EN conditionals ===");
+    walk_structured_nodes(&en_envelope.content, &mut |node| {
+        if let StructuredNode::Conditional(c) = node {
+            eprintln!("  Conditional: field={:?} value={:?}", c.condition.field_name, c.condition.value);
+        }
+    });
+
+    // Check single-state (non-exhaustive) output  
+    eprintln!("\n=== Single-state EN structured output (via Document pipeline) ===");
+    let en_flat = flatten_from_pdf(input_path("AACJ_019_EN.pdf"));
+    
+    // Check node hints for target text
+    eprintln!("\n=== Node hints for EN target text ===");
+    for (i, node) in en_flat.iter_nodes().enumerate() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let lower = content.to_lowercase();
+            if lower.contains("please fill") || lower.contains("individual account")
+                || lower.contains("common reporting") || lower.contains("fkaustg")
+            {
+                eprintln!("  TEXT[{}] ({:.0},{:.0} {:.0}x{:.0}): {:?}", i, node.x, node.y, node.width, node.height, &content[..content.len().min(100)]);
+                eprintln!("    hints: {:?}", node.hints);
+                if let Some(som) = node.som_path() {
+                    eprintln!("    SOM path: {:?}", som);
+                }
+            }
+        }
+    }
+    
+    let mut doc = crate::document::Document::from_flattened(&en_flat);
+    crate::document::modules::run_analysis_pipeline(&mut doc);
+    let single_state = crate::structured::convert(&doc);
+    
+    fn deep_search_single(nodes: &[StructuredNode], depth: usize) {
+        for (idx, node) in nodes.iter().enumerate() {
+            let prefix = "  ".repeat(depth);
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    let text: String = p.content.0.iter().filter_map(|i| match i {
+                        InlineNode::Text(t) => Some(t.as_str()),
+                        _ => None,
+                    }).collect::<Vec<_>>().join("");
+                    if text.to_lowercase().contains("please fill") || text.to_lowercase().contains("individual account") {
+                        eprintln!("  {}FOUND Para[{}]: {:?}", prefix, idx, &text[..text.len().min(300)]);
+                    }
+                }
+                StructuredNode::Group(g) => deep_search_single(&g.children, depth + 1),
+                StructuredNode::Conditional(c) => deep_search_single(std::slice::from_ref(c.content.as_ref()), depth + 1),
+                _ => {}
+            }
+        }
+    }
+    deep_search_single(&single_state, 0);
+    
+    // Count single-state paragraphs
+    let mut single_para_count = 0;
+    helpers::walk_structured_nodes(&single_state, &mut |node| {
+        if matches!(node, StructuredNode::Paragraph(_)) { single_para_count += 1; }
+    });
+    eprintln!("  Single-state EN: {} paragraphs", single_para_count);
 }
