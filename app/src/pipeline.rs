@@ -20,8 +20,8 @@ pub fn run_blueprint_pipeline(
     on_progress: impl Fn(&ProcessingState),
 ) -> ProcessingState {
     use blueprint::{
-        AemConfig, AemProfile, HtmlConfig, PipelineConfig, PipelineEvent,
-        PipelineStep as CoreStep, run_pipeline,
+        AemConfig, AemProfile, HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep,
+        run_pipeline,
     };
     use std::collections::HashMap;
 
@@ -30,13 +30,15 @@ pub fn run_blueprint_pipeline(
 
     let result = run_pipeline(files, &config, |event| match event {
         PipelineEvent::StepChanged(step) => {
+            // Don't forward Complete here — the app sets Complete only after
+            // post-processing (JSON/HTML/AEM) finishes in the Ok(output) branch.
             state.step = match step {
                 CoreStep::Parsing => ProcessingStep::Parsing,
                 CoreStep::ExhaustiveSearching => ProcessingStep::ExhaustiveSearching,
                 CoreStep::Flattening => ProcessingStep::Flattening,
                 CoreStep::Structuring => ProcessingStep::Structuring,
                 CoreStep::Merging => ProcessingStep::Merging,
-                CoreStep::Complete => ProcessingStep::Complete,
+                CoreStep::Complete => return,
             };
             on_progress(&state);
         }
