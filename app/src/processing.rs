@@ -16,6 +16,7 @@ use crate::models::{ProcessingState, ProcessingStep};
 ///   `poll_progress` every 200 ms.
 pub async fn run_and_track(
     files: Vec<(String, Vec<u8>)>,
+    profile: Option<String>,
     mut processing_state: Signal<ProcessingState>,
 ) {
     #[cfg(feature = "desktop")]
@@ -24,7 +25,7 @@ pub async fn run_and_track(
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ProcessingState>();
         tokio::task::spawn_blocking(move || {
-            run_blueprint_pipeline(&files, |state| {
+            run_blueprint_pipeline(&files, profile, |state| {
                 let _ = tx.send(state.clone());
             })
         });
@@ -42,7 +43,7 @@ pub async fn run_and_track(
         use crate::platform::async_sleep_ms;
         use crate::server::{poll_progress, start_processing};
 
-        match start_processing(files).await {
+        match start_processing(files, profile).await {
             Ok(session_id) => {
                 loop {
                     async_sleep_ms(500).await;

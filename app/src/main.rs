@@ -4,6 +4,8 @@ mod models;
 mod pipeline;
 mod platform;
 mod processing;
+#[cfg(not(target_arch = "wasm32"))]
+mod profiles;
 #[cfg(any(feature = "web", feature = "server"))]
 mod server;
 
@@ -17,11 +19,9 @@ fn main() {
     #[cfg(feature = "desktop")]
     {
         dioxus::LaunchBuilder::desktop()
-            .with_cfg(
-                dioxus::desktop::Config::new().with_window(
-                    dioxus::desktop::WindowBuilder::new().with_title("Ajila Forms Conversion Engine"),
-                ),
-            )
+            .with_cfg(dioxus::desktop::Config::new().with_window(
+                dioxus::desktop::WindowBuilder::new().with_title("Ajila Forms Conversion Engine"),
+            ))
             .launch(App);
     }
 
@@ -36,6 +36,26 @@ fn App() -> Element {
     let mut processing_state = use_signal(ProcessingState::new);
     let mut is_processing = use_signal(|| false);
     let mut enlarged_image = use_signal(|| None::<(String, String)>);
+    let selected_profile = use_signal(|| None::<String>);
+
+    // Fetch available profiles on mount
+    let profiles_resource = use_resource(|| async {
+        #[cfg(any(feature = "web", feature = "server"))]
+        {
+            return crate::server::get_profiles().await.unwrap_or_default();
+        }
+        #[cfg(feature = "desktop")]
+        {
+            return crate::profiles::list_profiles();
+        }
+        #[allow(unreachable_code)]
+        Vec::<String>::new()
+    });
+    let profiles: Vec<String> = profiles_resource
+        .read()
+        .as_ref()
+        .cloned()
+        .unwrap_or_default();
 
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
@@ -44,8 +64,9 @@ fn App() -> Element {
             ..ProcessingState::new()
         });
 
+        let profile = selected_profile.read().clone();
         spawn(async move {
-            run_and_track(file_data, processing_state).await;
+            run_and_track(file_data, profile, processing_state).await;
             is_processing.set(false);
         });
     };
@@ -69,6 +90,8 @@ fn App() -> Element {
             // File Upload Section
             FileUploadSection {
                 is_processing: *is_processing.read(),
+                profiles: profiles.clone(),
+                selected_profile,
                 on_process: move |files: Vec<(String, Vec<u8>)>| {
                     on_process(files);
                 },

@@ -16,6 +16,7 @@ use image::ImageEncoder;
 #[allow(dead_code)]
 pub fn run_blueprint_pipeline(
     files: &[(String, Vec<u8>)],
+    profile: Option<String>,
     on_progress: impl Fn(&ProcessingState),
 ) -> ProcessingState {
     use blueprint::{
@@ -94,19 +95,65 @@ pub fn run_blueprint_pipeline(
                 }
             };
 
-            let html = blueprint::to_html(&merged.content, &HtmlConfig::default());
+            // Generate HTML, applying a profile's custom styles when provided.
+            let html = {
+                let html_config = if let Some(ref profile_name) = profile {
+                    match crate::profiles::load_html_custom_styles(profile_name) {
+                        Ok(Some(styles)) => HtmlConfig {
+                            custom_styles: Some(styles),
+                            ..HtmlConfig::default()
+                        },
+                        Ok(None) => HtmlConfig::default(),
+                        Err(e) => {
+                            state
+                                .warnings
+                                .push(format!("Failed to load HTML profile: {e}"));
+                            HtmlConfig::default()
+                        }
+                    }
+                } else {
+                    HtmlConfig::default()
+                };
+                blueprint::to_html(&merged.content, &html_config)
+            };
 
-            // AEM package generation — fails gracefully for non-XFA PDFs.
-            let profile = AemProfile {
-                master_language: None,
-                title: None,
-                form_path: None,
-                form_dir: None,
-                variables: HashMap::new(),
-                language_synonyms: HashMap::new(),
+            // AEM package generation — load profile config when provided, fall back
+            // to empty defaults otherwise.  Fails gracefully for non-XFA PDFs.
+            let (aem_profile, templates) = if let Some(ref profile_name) = profile {
+                match crate::profiles::load_aem_profile(profile_name) {
+                    Ok((p, t)) => (p, t),
+                    Err(e) => {
+                        state
+                            .warnings
+                            .push(format!("Failed to load AEM profile: {e}"));
+                        (
+                            AemProfile {
+                                master_language: None,
+                                title: None,
+                                form_path: None,
+                                form_dir: None,
+                                variables: HashMap::new(),
+                                language_synonyms: HashMap::new(),
+                            },
+                            HashMap::new(),
+                        )
+                    }
+                }
+            } else {
+                (
+                    AemProfile {
+                        master_language: None,
+                        title: None,
+                        form_path: None,
+                        form_dir: None,
+                        variables: HashMap::new(),
+                        language_synonyms: HashMap::new(),
+                    },
+                    HashMap::new(),
+                )
             };
             if let Ok(aem_config) =
-                AemConfig::from_profile(&profile, HashMap::new(), &merged.context)
+                AemConfig::from_profile(&aem_profile, templates, &merged.context)
             {
                 let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
                 state.form_code = Some(aem_config.form_code.clone());
@@ -141,4 +188,3 @@ pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> R
         .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
         .map_err(|e| format!("PNG encoding error: {}", e))
 }
-

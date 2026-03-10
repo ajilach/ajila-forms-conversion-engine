@@ -1,0 +1,24 @@
+# =============================================================================
+# AKB (Aargauische Kantonalbank) HTML Output Profile
+# =============================================================================
+#
+# Profile directory for AKB-specific HTML output.
+# Use with: blueprint --profile profiles/akb --html input/AAAI_019_DE.pdf
+#
+# All paths are relative to this directory (profiles/akb/html/).
+#
+# Assets (stylesheet, logo) are base64-encoded and embedded
+# directly into the generated HTML — no external file references.
+
+# AKB brand stylesheet (appended after built-in defaults)
+stylesheet = "styles.css"
+
+# AKB logo displayed in the sticky header
+logo = "logo.svg"
+
+# Poppins — AKB corporate typeface
+[[fonts]]
+family = "Poppins"
+regular = "fonts/poppins-regular.ttf"
+bold = "fonts/poppins-bold.ttf"
+italic = "fonts/poppins-italic.ttf"
