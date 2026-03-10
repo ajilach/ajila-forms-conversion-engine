@@ -397,8 +397,23 @@ impl AnalysisModule for ListDetector {
         // non-TextBlock root (field, checkbox, heading, …) or a TextBlock
         // without a marker acts as a separator that breaks the current run
         // of list items.
+        //
+        // Composite groups (headings, field labels, …) created by later
+        // modules have higher indices than TextBlocks, so iterating roots
+        // by index would not see them between TextBlocks.  To account for
+        // this, we pre-collect all non-TextBlock roots with their y-positions
+        // and check for intervening content when extending a run.
         let roots = doc.roots();
         let x_tol = Decimal::from_f64(X_TOLERANCE).unwrap_or(Decimal::new(50, 1));
+
+        // Collect y-positions of all non-TextBlock root groups.  If any of
+        // these sit between two consecutive list candidates, the run must be
+        // broken because there is other content separating them.
+        let non_tb_root_ys: Vec<Decimal> = roots
+            .iter()
+            .filter(|&&idx| !matches!(doc.groups[idx].kind, GroupKind::TextBlock))
+            .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
+            .collect();
 
         // Each entry: (group_idx, text, bounds, marker)
         let mut current_run: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
@@ -438,7 +453,22 @@ impl AnalysisModule for ListDetector {
                 if let Some(last) = current_run.last() {
                     let same_kind = marker.kind == last.3.kind;
                     let similar_x = (bounds.x - last.2.x).abs() <= x_tol;
-                    if same_kind && similar_x {
+
+                    // Check whether any non-TextBlock root group sits
+                    // between the previous item and this candidate (by
+                    // y-position).  If so, there is other content between
+                    // them and they belong to separate lists.
+                    let last_bottom = last.2.y + last.2.height;
+                    let curr_top = bounds.y;
+                    let (range_lo, range_hi) = if last_bottom <= curr_top {
+                        (last_bottom, curr_top)
+                    } else {
+                        (curr_top, last_bottom)
+                    };
+                    let has_intervening =
+                        non_tb_root_ys.iter().any(|&y| y > range_lo && y < range_hi);
+
+                    if same_kind && similar_x && !has_intervening {
                         current_run.push((idx, text, bounds, marker));
                     } else {
                         flush(&mut current_run, &mut groups, &mut group_styles);

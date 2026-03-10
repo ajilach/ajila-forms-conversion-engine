@@ -12712,3 +12712,84 @@ fn test_aacj_de_inline_fields() {
         );
     }
 }
+
+#[test]
+fn test_aags_de_two_separate_lists_not_merged() {
+    // AAGS DE has two separate lists that occur at different places in the form.
+    // They should NOT be merged into a single list.
+    //
+    // List 1 (4 items):
+    //   - Einzelkaufleute, Personenhandels- und Kapitalgesellschaften
+    //   - Vereine einschließlich rechtsfähiger Stiftungen
+    //   - Partnergesellschaften
+    //   - Juristische Personen des öffentlichen Rechts …
+    //
+    // List 2 (5 items):
+    //   - Verfügungen über jeweilige Guthaben …
+    //   - Inanspruchnahme eingeräumter Kredite …
+    //   - An- und Verkauf von Wertpapieren …
+    //   - Entgegennahme und Anerkennung …
+    //   - Erteilung von Inkassoaufträgen.
+
+    let mut bp = Blueprint::from_pdf(input_path("AAGS_019_DE.pdf"))
+        .expect("Failed to load PDF");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let lists = helpers::collect_lists(&envelope.content);
+
+    // Find the list containing "Einzelkaufleute"
+    let list1 = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text().contains("Einzelkaufleute")
+        })
+    });
+    assert!(
+        list1.is_some(),
+        "Expected a list containing 'Einzelkaufleute'.\nFound lists: {:?}",
+        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+    );
+    let list1 = list1.unwrap();
+
+    // Find the list containing "Verfügungen"
+    let list2 = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text().contains("Verfügungen")
+        })
+    });
+    assert!(
+        list2.is_some(),
+        "Expected a list containing 'Verfügungen'.\nFound lists: {:?}",
+        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+    );
+    let list2 = list2.unwrap();
+
+    // The two lists must be DIFFERENT (not merged into one)
+    assert_eq!(
+        list1.items.len(),
+        4,
+        "List 1 (Einzelkaufleute…) should have 4 items, found {}.\nItems: {:?}",
+        list1.items.len(),
+        list1.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        list2.items.len(),
+        5,
+        "List 2 (Verfügungen…) should have 5 items, found {}.\nItems: {:?}",
+        list2.items.len(),
+        list2.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    // They should NOT be in the same list
+    let list1_has_verfuegungen = list1.items.iter().any(|item| {
+        item.as_plain_text().contains("Verfügungen")
+    });
+    assert!(
+        !list1_has_verfuegungen,
+        "List 1 should NOT contain 'Verfügungen' — the two lists must be separate"
+    );
+}
