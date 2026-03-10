@@ -757,151 +757,141 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         // Helper closure to classify and split a text group by position.
         // Returns (before_paragraphs, after_paragraphs).
-        let split_by_position =
-            |child_group_idx: usize, fb: &Bounds| -> (Vec<StructuredNode>, Vec<StructuredNode>) {
-                let node_indices = self.doc.collect_node_indices(child_group_idx);
-                let mut before = Vec::new();
-                let mut after = Vec::new();
+        let split_by_position = |child_group_idx: usize,
+                                 fb: &Bounds|
+         -> (Vec<StructuredNode>, Vec<StructuredNode>) {
+            let node_indices = self.doc.collect_node_indices(child_group_idx);
+            let mut before = Vec::new();
+            let mut after = Vec::new();
 
-                if node_indices.len() > 1 {
-                    // Multiple text nodes: classify each by position
-                    for &ni in &node_indices {
-                        if let Some(node) = self.doc.get_node(ni) {
-                            let text = self.build_inline_text_from_node(node);
-                            if text.is_empty() {
+            if node_indices.len() > 1 {
+                // Multiple text nodes: classify each by position
+                for &ni in &node_indices {
+                    if let Some(node) = self.doc.get_node(ni) {
+                        let text = self.build_inline_text_from_node(node);
+                        if text.is_empty() {
+                            continue;
+                        }
+                        let node_bounds = node.bounds();
+
+                        // For multi-node text groups, classify each node:
+                        // 1. If on a different vertical line than the field, use y-position
+                        // 2. If on the same line as the field, use x-position
+
+                        let line_tolerance = Decimal::from(8); // same as InlineFieldDetector
+
+                        // Check if a multi-line text node spans the field's
+                        // vertical position.  When a text node is much taller
+                        // than the field it wraps multiple lines; we need to
+                        // split its content at the field boundary instead of
+                        // assigning the whole node to "before" or "after".
+                        let is_multiline_spanning_field = node_bounds.height
+                            > fb.height * Decimal::from(2)
+                            && fb.y >= node_bounds.y
+                            && fb.y <= node_bounds.y + node_bounds.height;
+
+                        if is_multiline_spanning_field {
+                            if let Some((before_str, after_str)) =
+                                Self::split_text_at_field_position(node, fb)
+                            {
+                                if !before_str.is_empty() {
+                                    before.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(before_str),
+                                    }));
+                                }
+                                if !after_str.is_empty() {
+                                    after.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(after_str),
+                                    }));
+                                }
                                 continue;
                             }
-                            let node_bounds = node.bounds();
-
-                            // For multi-node text groups, classify each node:
-                            // 1. If on a different vertical line than the field, use y-position
-                            // 2. If on the same line as the field, use x-position
-
-                            let line_tolerance = Decimal::from(8); // same as InlineFieldDetector
-
-                            // Check if a multi-line text node spans the field's
-                            // vertical position.  When a text node is much taller
-                            // than the field it wraps multiple lines; we need to
-                            // split its content at the field boundary instead of
-                            // assigning the whole node to "before" or "after".
-                            let is_multiline_spanning_field =
-                                node_bounds.height > fb.height * Decimal::from(2)
-                                    && fb.y >= node_bounds.y
-                                    && fb.y <= node_bounds.y + node_bounds.height;
-
-                            if is_multiline_spanning_field {
-                                if let Some((before_str, after_str)) =
-                                    Self::split_text_at_field_position(node, fb)
-                                {
-                                    if !before_str.is_empty() {
-                                        before.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(before_str),
-                                        }));
-                                    }
-                                    if !after_str.is_empty() {
-                                        after.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(after_str),
-                                        }));
-                                    }
-                                    continue;
-                                }
-                                // Fall through to normal classification if splitting fails
-                            }
-
-                            let on_same_line = (node_bounds.y - fb.y).abs() < line_tolerance
-                                || (node_bounds.y + node_bounds.height - fb.y - fb.height).abs()
-                                    < line_tolerance;
-
-                            let is_after = if on_same_line {
-                                // Same line: compare x positions
-                                node_bounds.x >= fb.x + fb.width
-                            } else {
-                                // Different line: compare y positions
-                                node_bounds.y > fb.y + fb.height
-                            };
-
-                            if is_after {
-                                after.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
-                                }));
-                            } else {
-                                before.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
-                                }));
-                            }
+                            // Fall through to normal classification if splitting fails
                         }
-                    }
-                } else {
-                    // Single node: check if it's a multi-line node spanning the field
-                    // and split it at the field boundary (same logic as multi-node branch).
-                    if node_indices.len() == 1 {
-                        if let Some(node) = self.doc.get_node(node_indices[0]) {
-                            let node_bounds = node.bounds();
-                            let is_multiline_spanning_field =
-                                node_bounds.height > fb.height * Decimal::from(2)
-                                    && fb.y >= node_bounds.y
-                                    && fb.y <= node_bounds.y + node_bounds.height;
 
-                            if is_multiline_spanning_field {
-                                if let Some((before_str, after_str)) =
-                                    Self::split_text_at_field_position(node, fb)
-                                {
-                                    if !before_str.is_empty() {
-                                        before.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(before_str),
-                                        }));
-                                    }
-                                    if !after_str.is_empty() {
-                                        after.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(after_str),
-                                        }));
-                                    }
-                                    return (before, after);
-                                }
-                            }
-                        }
-                    }
+                        let on_same_line = (node_bounds.y - fb.y).abs() < line_tolerance
+                            || (node_bounds.y + node_bounds.height - fb.y - fb.height).abs()
+                                < line_tolerance;
 
-                    // Fallback: use horizontal position relative to field
-                    let text = self.extract_inline_text(child_group_idx);
-                    if !text.is_empty() {
-                        if let Some(text_bounds) = self.doc.get_bounds(child_group_idx) {
-                            // If text ends before field starts, it's "before"
-                            // If text starts after field ends, it's "after"
-                            // Otherwise, classify by center position
-                            if text_bounds.x + text_bounds.width <= fb.x {
-                                before.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
-                                }));
-                            } else if text_bounds.x >= fb.x + fb.width {
-                                after.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
-                                }));
-                            } else {
-                                // Overlapping: use center
-                                let text_center =
-                                    text_bounds.x + text_bounds.width / Decimal::TWO;
-                                let field_center = fb.x + fb.width / Decimal::TWO;
-                                if text_center < field_center {
-                                    before.push(StructuredNode::Paragraph(ParagraphNode {
-                                        content: text,
-                                    }));
-                                } else {
-                                    after.push(StructuredNode::Paragraph(ParagraphNode {
-                                        content: text,
-                                    }));
-                                }
-                            }
+                        let is_after = if on_same_line {
+                            // Same line: compare x positions
+                            node_bounds.x >= fb.x + fb.width
                         } else {
-                            // No bounds, fall back to original classification
-                            before.push(StructuredNode::Paragraph(ParagraphNode {
-                                content: text,
-                            }));
+                            // Different line: compare y positions
+                            node_bounds.y > fb.y + fb.height
+                        };
+
+                        if is_after {
+                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                        } else {
+                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
                         }
                     }
                 }
-                (before, after)
-            };
+            } else {
+                // Single node: check if it's a multi-line node spanning the field
+                // and split it at the field boundary (same logic as multi-node branch).
+                if node_indices.len() == 1 {
+                    if let Some(node) = self.doc.get_node(node_indices[0]) {
+                        let node_bounds = node.bounds();
+                        let is_multiline_spanning_field = node_bounds.height
+                            > fb.height * Decimal::from(2)
+                            && fb.y >= node_bounds.y
+                            && fb.y <= node_bounds.y + node_bounds.height;
+
+                        if is_multiline_spanning_field {
+                            if let Some((before_str, after_str)) =
+                                Self::split_text_at_field_position(node, fb)
+                            {
+                                if !before_str.is_empty() {
+                                    before.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(before_str),
+                                    }));
+                                }
+                                if !after_str.is_empty() {
+                                    after.push(StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(after_str),
+                                    }));
+                                }
+                                return (before, after);
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: use horizontal position relative to field
+                let text = self.extract_inline_text(child_group_idx);
+                if !text.is_empty() {
+                    if let Some(text_bounds) = self.doc.get_bounds(child_group_idx) {
+                        // If text ends before field starts, it's "before"
+                        // If text starts after field ends, it's "after"
+                        // Otherwise, classify by center position
+                        if text_bounds.x + text_bounds.width <= fb.x {
+                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                        } else if text_bounds.x >= fb.x + fb.width {
+                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                        } else {
+                            // Overlapping: use center
+                            let text_center = text_bounds.x + text_bounds.width / Decimal::TWO;
+                            let field_center = fb.x + fb.width / Decimal::TWO;
+                            if text_center < field_center {
+                                before.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            } else {
+                                after.push(StructuredNode::Paragraph(ParagraphNode {
+                                    content: text,
+                                }));
+                            }
+                        }
+                    } else {
+                        // No bounds, fall back to original classification
+                        before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                    }
+                }
+            }
+            (before, after)
+        };
 
         // Convert "before" text groups, splitting by position when possible
         for &child_index in before {
@@ -914,9 +904,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                     // No field bounds — treat entire group as "before"
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
-                        before_nodes.push(StructuredNode::Paragraph(ParagraphNode {
-                            content: text,
-                        }));
+                        before_nodes
+                            .push(StructuredNode::Paragraph(ParagraphNode { content: text }));
                     }
                 }
             }
@@ -933,9 +922,8 @@ impl<'a, 'b> Converter<'a, 'b> {
                     // No field bounds — treat entire group as "after"
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
-                        after_nodes.push(StructuredNode::Paragraph(ParagraphNode {
-                            content: text,
-                        }));
+                        after_nodes
+                            .push(StructuredNode::Paragraph(ParagraphNode { content: text }));
                     }
                 }
             }
@@ -1243,10 +1231,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 && (chars[fwd] == '.' || chars[fwd] == ':' || chars[fwd] == ';')
             {
                 let next = fwd + 1;
-                if next >= chars.len()
-                    || chars[next].is_whitespace()
-                    || chars[next] == '('
-                {
+                if next >= chars.len() || chars[next].is_whitespace() || chars[next] == '(' {
                     best_split = Some(next); // split AFTER the punctuation
                 }
             }
@@ -1257,10 +1242,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     && (chars[bwd] == '.' || chars[bwd] == ':' || chars[bwd] == ';')
                 {
                     let next = bwd + 1;
-                    if next >= chars.len()
-                        || chars[next].is_whitespace()
-                        || chars[next] == '('
-                    {
+                    if next >= chars.len() || chars[next].is_whitespace() || chars[next] == '(' {
                         best_split = Some(next);
                     }
                 }
@@ -1273,9 +1255,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Phase 2: fall back to nearest whitespace within ±30 chars.
         if best_split.is_none() {
             for delta in 0..30 {
-                if approx_char + delta < chars.len()
-                    && chars[approx_char + delta].is_whitespace()
-                {
+                if approx_char + delta < chars.len() && chars[approx_char + delta].is_whitespace() {
                     best_split = Some(approx_char + delta);
                     break;
                 }
