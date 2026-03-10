@@ -8878,6 +8878,82 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 }
 
 #[test]
+fn test_aacj_multilingual_merge_paragraph_alignment() {
+    // Regression test: The long tax-residency confirmation text must be merged
+    // across all three languages (DE, EN, SP) into a single field with a
+    // TranslatedText label containing all three language keys.
+    //
+    // Previously, this failed because:
+    // 1. FieldIds are derived from SOM paths which differ across languages
+    //    for the same logical field, so fields failed to match in LCS.
+    // 2. Groups wrapping rich-text paragraphs had different child counts
+    //    across languages, so they also failed to match.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode, TranslatableString};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
+        .expect("Failed to process AACJ_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+
+    // Walk the merged tree and look for a Field whose label contains the
+    // tax-residency confirmation text in all three languages.
+    let mut found_de = false;
+    let mut found_en = false;
+    let mut found_sp = false;
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        if let StructuredNode::Field(f) = node {
+            if let Some(label) = &f.label {
+                for inline in &label.0 {
+                    if let InlineNode::TranslatedText(map) = inline {
+                        let has_de = map
+                            .get("de")
+                            .map_or(false, |t| t.contains("Ich bestätige"));
+                        let has_en = map
+                            .get("en")
+                            .map_or(false, |t| t.contains("I confirm that I am tax resident"));
+                        let has_sp = map
+                            .get("sp")
+                            .map_or(false, |t| t.contains("Confirmo que soy residente fiscal"));
+
+                        if has_de { found_de = true; }
+                        if has_en { found_en = true; }
+                        if has_sp { found_sp = true; }
+
+                        // All three translations should be in the same
+                        // TranslatedText node.
+                        if has_de || has_en || has_sp {
+                            assert!(
+                                has_de && has_en && has_sp,
+                                "Tax residency field label should have all three languages \
+                                 in the same TranslatedText, but got: de={}, en={}, sp={}.\n\
+                                 Map keys: {:?}",
+                                has_de, has_en, has_sp,
+                                map.keys().collect::<Vec<_>>()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        found_de && found_en && found_sp,
+        "Should find the tax residency field with all three language translations \
+         merged together. found_de={}, found_en={}, found_sp={}",
+        found_de, found_en, found_sp,
+    );
+}
+
+#[test]
 fn test_aacj_dropdown_conditional_field_visibility() {
     // When the CL_ClientType dropdown in AACJ is set to a particular value,
     // certain fields should become visible (wrapped in a Conditional for

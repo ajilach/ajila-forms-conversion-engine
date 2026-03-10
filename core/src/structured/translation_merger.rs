@@ -169,7 +169,7 @@ fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -
 ///
 /// Rules:
 /// - Headings: same level required
-/// - Fields: same `FieldId` required (fields identify form elements across languages)
+/// - Fields: same `FieldType` variant required (FieldIds may differ across languages)
 /// - Tables: same header column count required
 /// - GridLayouts: same column count required (element count may differ)
 /// - Paragraphs, Images, Groups, Conditionals, Repeatables, Lists, Empty: match by type only
@@ -185,7 +185,11 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
             let b_cols = tb.header.as_ref().map_or(0, |h| h.cells.len());
             a_cols == b_cols
         }
-        (StructuredNode::Field(fa), StructuredNode::Field(fb)) => fa.name == fb.name,
+        (StructuredNode::Field(fa), StructuredNode::Field(fb)) => {
+            // Match by FieldType variant — FieldIds are derived from SOM paths
+            // which can differ across languages for the same logical field.
+            std::mem::discriminant(&fa.input_type) == std::mem::discriminant(&fb.input_type)
+        }
         (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
         (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
         (StructuredNode::Conditional(_), StructuredNode::Conditional(_)) => true,
@@ -193,9 +197,7 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
         (StructuredNode::GridLayout(ga), StructuredNode::GridLayout(gb)) => {
             ga.columns == gb.columns
         }
-        (StructuredNode::List(la), StructuredNode::List(lb)) => {
-            la.list_style == lb.list_style
-        }
+        (StructuredNode::List(la), StructuredNode::List(lb)) => la.list_style == lb.list_style,
         _ => false,
     }
 }
@@ -1261,7 +1263,8 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_preserves_context_variables() {        let vars: HashMap<String, String> = [
+    fn test_merge_preserves_context_variables() {
+        let vars: HashMap<String, String> = [
             ("formrange_code".to_string(), "AAAI".to_string()),
             ("formrange_entity".to_string(), "019".to_string()),
         ]
