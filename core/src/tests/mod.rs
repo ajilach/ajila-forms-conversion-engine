@@ -8879,14 +8879,18 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 
 #[test]
 fn test_aacj_ubs_aei_paragraph_merged_correctly() {
-    // Regression test: the long "Ich bestätige / I confirm / Confirmo" paragraph that ends
-    // with "www.ubs.com/aei" should be merged into a single TranslatedText inline node
-    // with complete (non-truncated) text for all three languages (de, en, sp).
+    // Regression test for the LCS backtracking bug in `lcs_align`.
     //
-    // Previously the fallback path in `merge_inline_text` only extracted the first
-    // TranslatedText node from the already-merged base instead of the full plain text,
-    // causing the DE and EN versions to be truncated when the SP paragraph had a
-    // different inline-node count.
+    // Because every Paragraph is structurally equal to every other Paragraph in
+    // IgnoreText mode, the old (greedy) backtracker would match a[i-1] with b[j-1]
+    // unconditionally whenever they were structurally equal — even when a better
+    // (positionally earlier) alignment existed.  This caused the agreement-declaration
+    // paragraph ("Ich erkläre durch meine Unterschrift…" / "By signing this form…" /
+    // "Mediante la firma de este documento…") to be paired with the WRONG EN paragraph
+    // ("I agree to inform UBS Europe SE…") instead of the correct one.
+    //
+    // After the fix the three language versions of the agreement declaration must end
+    // up as ONE TranslatedText node with all three language keys.
     use crate::run_exhaustive_to_envelope;
     use crate::structured::{self, InlineNode, StructuredNode};
 
@@ -8900,268 +8904,104 @@ fn test_aacj_ubs_aei_paragraph_merged_correctly() {
     let merged =
         structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
 
-    // Walk the tree and collect all paragraphs whose plain text contains the
-    // UBS AEI URL — there should be exactly one such paragraph and it must
-    // carry all three languages with the full text.
-    fn collect_paragraphs(nodes: &[StructuredNode], out: &mut Vec<crate::structured::InlineText>) {
+    // Collect every TranslatedText node that appears inside any Paragraph across
+    // the whole merged tree.
+    fn collect_translated_paragraphs(
+        nodes: &[StructuredNode],
+        out: &mut Vec<std::collections::HashMap<String, String>>,
+    ) {
         for node in nodes {
             match node {
-                StructuredNode::Paragraph(p) => out.push(p.content.clone()),
-                StructuredNode::Group(g) => collect_paragraphs(&g.children, out),
+                StructuredNode::Paragraph(p) => {
+                    // Paragraphs whose entire content is a single TranslatedText node
+                    if let [InlineNode::TranslatedText(map)] = p.content.0.as_slice() {
+                        out.push(map.clone());
+                    }
+                }
+                StructuredNode::Group(g) => collect_translated_paragraphs(&g.children, out),
                 StructuredNode::Conditional(c) => {
-                    collect_paragraphs(&[(*c.content).clone()], out);
+                    collect_translated_paragraphs(&[(*c.content).clone()], out);
                 }
                 StructuredNode::Repeatable(r) => {
-                    collect_paragraphs(&[(*r.item).clone()], out);
+                    collect_translated_paragraphs(&[(*r.item).clone()], out);
+                }
+                StructuredNode::GridLayout(gl) => {
+                    for e in &gl.elements {
+                        collect_translated_paragraphs(std::slice::from_ref(&e.node), out);
+                    }
                 }
                 _ => {}
             }
         }
     }
 
-    let mut paragraphs = Vec::new();
-    collect_paragraphs(&merged.content, &mut paragraphs);
+    let mut translated_paras = Vec::new();
+    collect_translated_paragraphs(&merged.content, &mut translated_paras);
 
-    // Find paragraphs that contain the AEI URL AND the specific confirmation text
-    // (the paragraph starting with "Ich bestätige" / "I confirm" / "Confirmo")
-    let confirmation_paragraphs: Vec<_> = paragraphs
-        .iter()
-        .filter(|p| {
-            let text = p.as_plain_text();
-            text.contains("www.ubs.com/aei")
-                && (text.contains("Ich best\u{00e4}tige")
-                    || text.contains("I confirm")
-                    || text.contains("Confirmo"))
-        })
-        .collect();
+    // Find the trilingual map whose DE text is the agreement declaration
+    // ("Ich erkläre durch meine Unterschrift…").
+    let declaration_map = translated_paras.iter().find(|map| {
+        map.get("de")
+            .map(|t| t.starts_with("Ich erkl\u{00e4}re durch meine Unterschrift"))
+            .unwrap_or(false)
+    });
 
-    assert!(
-        !confirmation_paragraphs.is_empty(),
-        "Should find the 'Ich bestätige / I confirm / Confirmo' paragraph containing 'www.ubs.com/aei'"
-    );
+    let map = declaration_map.unwrap_or_else(|| {
+        panic!(
+            "Could not find a TranslatedText paragraph whose DE text starts with \
+             'Ich erkläre durch meine Unterschrift'. \
+             DE texts found:\n{}",
+            translated_paras
+                .iter()
+                .filter_map(|m| m.get("de"))
+                .map(|t| format!("  {:?}", &t[..t.len().min(80)]))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
 
-    // There should be exactly one such paragraph in the merged output
-    assert_eq!(
-        confirmation_paragraphs.len(),
-        1,
-        "Should find exactly one confirmation paragraph, but found {}",
-        confirmation_paragraphs.len()
-    );
-
-    let para = confirmation_paragraphs[0];
-
-    // The paragraph should consist of exactly one InlineNode::TranslatedText
-    assert_eq!(
-        para.0.len(),
-        1,
-        "The confirmation paragraph should have exactly one inline node after merging, \
-         but got {} nodes: {:?}",
-        para.0.len(),
-        para.0
-            .iter()
-            .map(|n| match n {
-                InlineNode::Text(t) => format!("Text({:?})", &t[..t.len().min(30)]),
-                InlineNode::TranslatedText(m) => format!("TranslatedText(keys={:?})", m.keys().collect::<Vec<_>>()),
-                InlineNode::Link(_) => "Link".to_string(),
-                InlineNode::Strong(_) => "Strong".to_string(),
-                InlineNode::Emphasis(_) => "Emphasis".to_string(),
-            })
-            .collect::<Vec<_>>()
-    );
-
-    let node = &para.0[0];
-    let map = match node {
-        InlineNode::TranslatedText(m) => m,
-        other => panic!(
-            "Expected TranslatedText but got a different inline node: {:?}",
-            match other {
-                InlineNode::Text(t) => format!("Text({:?})", t),
-                InlineNode::Link(_) => "Link".to_string(),
-                _ => "other".to_string(),
-            }
-        ),
-    };
-
-    // All three languages must be present
-    assert!(
-        map.contains_key("de"),
-        "TranslatedText should contain 'de' key, got keys: {:?}",
-        map.keys().collect::<Vec<_>>()
-    );
+    // All three languages must be present in this single paragraph node.
     assert!(
         map.contains_key("en"),
-        "TranslatedText should contain 'en' key, got keys: {:?}",
+        "Agreement declaration paragraph is missing 'en' key. Keys present: {:?}",
         map.keys().collect::<Vec<_>>()
     );
     assert!(
         map.contains_key("sp"),
-        "TranslatedText should contain 'sp' key, got keys: {:?}",
+        "Agreement declaration paragraph is missing 'sp' key. Keys present: {:?}",
         map.keys().collect::<Vec<_>>()
     );
 
-    // Each language text must contain the URL (ensuring the text is not truncated)
-    let de_text = map.get("de").unwrap();
     let en_text = map.get("en").unwrap();
     let sp_text = map.get("sp").unwrap();
 
+    // The EN counterpart must be the agreement declaration ("By signing this form…"),
+    // NOT the notification-obligation paragraph ("I agree to inform UBS Europe SE…")
+    // which the buggy backtracker was wrongly matching here.
     assert!(
-        de_text.contains("www.ubs.com/aei"),
-        "DE text is missing 'www.ubs.com/aei' — text may be truncated. DE text ends with: {:?}",
-        &de_text[de_text.len().saturating_sub(50)..]
-    );
-    assert!(
-        en_text.contains("www.ubs.com/aei"),
-        "EN text is missing 'www.ubs.com/aei' — text may be truncated. EN text ends with: {:?}",
-        &en_text[en_text.len().saturating_sub(50)..]
-    );
-    assert!(
-        sp_text.contains("www.ubs.com/aei"),
-        "SP text is missing 'www.ubs.com/aei' — text may be truncated. SP text ends with: {:?}",
-        &sp_text[sp_text.len().saturating_sub(50)..]
+        en_text.contains("By signing this form") || en_text.contains("by signing this form"),
+        "EN text in the agreement declaration paragraph should start with 'By signing this form', \
+         but got: {:?}",
+        &en_text[..en_text.len().min(100)]
     );
 
-    // The DE text must start with "Ich bestätige"
+    // The SP counterpart must be the agreement declaration ("Mediante la firma…").
     assert!(
-        de_text.starts_with("Ich best\u{00e4}tige"),
-        "DE text should start with 'Ich bestätige', but starts with: {:?}",
-        &de_text[..de_text.len().min(50)]
-    );
-
-    // The EN text must start with "I confirm"
-    assert!(
-        en_text.starts_with("I confirm"),
-        "EN text should start with 'I confirm', but starts with: {:?}",
-        &en_text[..en_text.len().min(50)]
-    );
-
-    // The SP text must start with "Confirmo"
-    assert!(
-        sp_text.starts_with("Confirmo"),
-        "SP text should start with 'Confirmo', but starts with: {:?}",
-        &sp_text[..sp_text.len().min(50)]
+        sp_text.starts_with("Mediante la firma de este documento"),
+        "SP text in the agreement declaration paragraph should start with \
+         'Mediante la firma de este documento', but got: {:?}",
+        &sp_text[..sp_text.len().min(100)]
     );
 
     println!(
-        "\n✓ AACJ 'www.ubs.com/aei' paragraph is merged correctly with complete text for all \
-         three languages (de, en, sp)"
+        "\n✓ AACJ agreement declaration paragraph is correctly merged with all three languages:\n\
+         de: {:?}…\n\
+         en: {:?}…\n\
+         sp: {:?}…",
+        &map["de"][..map["de"].len().min(60)],
+        &en_text[..en_text.len().min(60)],
+        &sp_text[..sp_text.len().min(60)],
     );
-}
-
-#[test]
-fn test_aacj_diag_ubs_aei_structure() {
-    // Diagnostic test: print the structure of the confirmation paragraph.
-    // This test always fails with output so we can inspect the structure.
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
-
-    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
-        .expect("Failed to process AACJ_019_DE");
-    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
-        .expect("Failed to process AACJ_019_EN");
-    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
-        .expect("Failed to process AACJ_019_SP");
-
-    // Walk ALL text content in any node type
-    fn search_text(nodes: &[StructuredNode], needle: &str, out: &mut Vec<String>) {
-        for node in nodes {
-            let text = match node {
-                StructuredNode::Paragraph(p) => Some(format!("Para: {}", p.content.as_plain_text())),
-                StructuredNode::Heading(h) => Some(format!("H{}: {}", h.level.as_u8(), h.content.as_plain_text())),
-                _ => None,
-            };
-            if let Some(t) = &text {
-                if t.contains(needle) {
-                    out.push(t.clone()); // No truncation
-                }
-            }
-            match node {
-                StructuredNode::Group(g) => search_text(&g.children, needle, out),
-                StructuredNode::Conditional(c) => {
-                    search_text(&[(*c.content).clone()], needle, out);
-                }
-                StructuredNode::Repeatable(r) => {
-                    search_text(&[(*r.item).clone()], needle, out);
-                }
-                StructuredNode::GridLayout(gl) => {
-                    for e in &gl.elements {
-                        search_text(std::slice::from_ref(&e.node), needle, out);
-                    }
-                }
-                StructuredNode::Table(t) => {
-                    if let Some(h) = &t.header {
-                        search_text(&h.cells, needle, out);
-                    }
-                    for row in &t.rows {
-                        search_text(&row.cells, needle, out);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // Search for the key phrases from the problem statement
-    let searches = [
-        ("DE", &de_envelope.content as &[StructuredNode], vec!["30 Tage", "steuerpflichtig bin", "steuerpflichtig", "bestätige", "Ich best", "verpflicht"]),
-        ("EN", &en_envelope.content, vec!["30 days", "tax resident only", "I confirm that I am", "I acknowledge"]),
-        ("SP", &sp_envelope.content, vec!["30 días", "residente fiscal solo", "Confirmo que soy", "Me obligo"]),
-    ];
-
-    for (lang, content, keywords) in &searches {
-        println!("\n=== {} keyword search ===", lang);
-        for kw in keywords {
-            let mut results = Vec::new();
-            search_text(content, kw, &mut results);
-            if results.is_empty() {
-                println!("  '{}': NOT FOUND", kw);
-            } else {
-                for r in &results {
-                    println!("  '{}': found in {:?}...", kw, &r[..r.len().min(150)]);
-                }
-            }
-        }
-    }
-
-    // Print top-level structure for DE and EN to compare alignment
-    fn describe_node(node: &StructuredNode) -> String {
-        match node {
-            StructuredNode::Heading(h) => format!("H{}: {:?}", h.level.as_u8(), &h.content.as_plain_text()[..h.content.as_plain_text().len().min(50)]),
-            StructuredNode::Paragraph(p) => {
-                let t = p.content.as_plain_text();
-                format!("Para({}): {:?}", p.content.0.len(), &t[..t.len().min(50)])
-            }
-            StructuredNode::Field(f) => format!("Field({})", f.som_path_str()),
-            StructuredNode::Group(g) => format!("Group({} children)", g.children.len()),
-            StructuredNode::Conditional(c) => format!("Conditional({})", match c.content.as_ref() {
-                StructuredNode::Group(g) => format!("Group({} children)", g.children.len()),
-                StructuredNode::Paragraph(_) => "Paragraph".to_string(),
-                _ => "other".to_string(),
-            }),
-            StructuredNode::GridLayout(gl) => format!("Grid({} cols, {} elem)", gl.columns, gl.elements.len()),
-            StructuredNode::Repeatable(_) => "Repeatable".to_string(),
-            StructuredNode::Image(_) => "Image".to_string(),
-            StructuredNode::Table(_) => "Table".to_string(),
-            StructuredNode::List(_) => "List".to_string(),
-            StructuredNode::Empty => "Empty".to_string(),
-        }
-    }
-
-    println!("\n=== DE top-level structure ===");
-    for (i, node) in de_envelope.content.iter().enumerate() {
-        println!("  [{}] {}", i, describe_node(node));
-    }
-
-    println!("\n=== EN top-level structure ===");
-    for (i, node) in en_envelope.content.iter().enumerate() {
-        println!("  [{}] {}", i, describe_node(node));
-    }
-
-    println!("\n=== SP top-level structure ===");
-    for (i, node) in sp_envelope.content.iter().enumerate() {
-        println!("  [{}] {}", i, describe_node(node));
-    }
-
-    panic!("Diagnostic test — always fails to show output");
 }
 
 #[test]

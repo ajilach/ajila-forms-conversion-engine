@@ -204,26 +204,6 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
 // LCS-based alignment for node lists
 // ============================================================================
 
-/// Compute the LCS (longest common subsequence) table for two node slices,
-/// using `structural_eq_ignore_text` as the equality predicate.
-fn lcs_table(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
-    let m = a.len();
-    let n = b.len();
-    let mut dp = vec![vec![0usize; n + 1]; m + 1];
-
-    for i in 1..=m {
-        for j in 1..=n {
-            if a[i - 1].structural_eq_ignore_text(&b[j - 1]) {
-                dp[i][j] = dp[i - 1][j - 1] + 1;
-            } else {
-                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
-            }
-        }
-    }
-
-    dp
-}
-
 /// Compute the LCS table using the relaxed similarity predicate `node_matches_for_similarity`.
 /// Used only by `calculate_structural_similarity`.
 fn lcs_table_relaxed(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
@@ -244,32 +224,76 @@ fn lcs_table_relaxed(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usiz
     dp
 }
 
-/// Backtrack through the LCS table to produce aligned pairs.
+/// Produce a *leftmost* LCS alignment for two node slices.
+///
 /// Returns a list of (Option<idx_in_a>, Option<idx_in_b>) pairs.
 /// Both Some → matched pair. Only one Some → unmatched node from that side.
+///
+/// # Why leftmost?
+///
+/// The standard greedy backtrack on the forward dp table produces the
+/// *rightmost* alignment: when all Paragraphs are structurally equal
+/// (IgnoreText mode), it matches the last a-paragraph with the last
+/// b-paragraph, etc.  This causes cross-section mis-alignment — e.g. the
+/// agreement-declaration paragraph in DE gets paired with "I agree to
+/// inform…" (EN) instead of the correct "By signing this form…".
+///
+/// # Algorithm
+///
+/// We compute the LCS dp table for the *reversed* sequences and run the
+/// standard greedy backtrack on that table.  The rightmost alignment of the
+/// reversed sequences is exactly the leftmost alignment of the originals.
 fn lcs_align(
     a: &[StructuredNode],
     b: &[StructuredNode],
-    dp: &[Vec<usize>],
 ) -> Vec<(Option<usize>, Option<usize>)> {
     let mut result = Vec::new();
-    let mut i = a.len();
-    let mut j = b.len();
 
-    // Backtrack to find the LCS alignment
-    let mut matches = Vec::new();
+    let ra: Vec<_> = a.iter().rev().collect();
+    let rb: Vec<_> = b.iter().rev().collect();
+
+    // LCS dp table for the reversed sequences.
+    let n = ra.len();
+    let m = rb.len();
+    let mut rdp = vec![vec![0usize; m + 1]; n + 1];
+    for i in 1..=n {
+        for j in 1..=m {
+            if ra[i - 1].structural_eq_ignore_text(rb[j - 1]) {
+                rdp[i][j] = rdp[i - 1][j - 1] + 1;
+            } else {
+                rdp[i][j] = rdp[i - 1][j].max(rdp[i][j - 1]);
+            }
+        }
+    }
+
+    // Standard greedy backtrack on the reversed dp table.
+    let mut matches_rev = Vec::new();
+    let mut i = n;
+    let mut j = m;
     while i > 0 && j > 0 {
-        if a[i - 1].structural_eq_ignore_text(&b[j - 1]) {
-            matches.push((i - 1, j - 1));
+        if ra[i - 1].structural_eq_ignore_text(rb[j - 1]) {
+            matches_rev.push((i - 1, j - 1));
             i -= 1;
             j -= 1;
-        } else if dp[i - 1][j] >= dp[i][j - 1] {
+        } else if rdp[i - 1][j] >= rdp[i][j - 1] {
             i -= 1;
         } else {
             j -= 1;
         }
     }
-    matches.reverse();
+
+    // Convert reversed-sequence indices back to original indices.
+    // ra[k] = a[n-1-k], rb[k] = b[m-1-k].
+    let matches: Vec<(usize, usize)> = {
+        let mut v: Vec<(usize, usize)> = matches_rev
+            .into_iter()
+            .map(|(ri, rj)| (n - 1 - ri, m - 1 - rj))
+            .collect();
+        // After remapping, the matches are already in ascending order
+        // (matches_rev is descending in reversed-index space, which becomes
+        // ascending in original-index space after the mapping n-1-ri).
+        v
+    };
 
     // Build the full alignment with unmatched nodes
     let mut ai = 0;
@@ -310,8 +334,7 @@ fn merge_node_lists(
     other: &[StructuredNode],
     other_lang: &str,
 ) -> Vec<StructuredNode> {
-    let dp = lcs_table(base, other);
-    let alignment = lcs_align(base, other, &dp);
+    let alignment = lcs_align(base, other);
 
     let mut result = Vec::new();
     for (ai, bi) in alignment {
@@ -1461,5 +1484,120 @@ mod tests {
             "Expected merge to succeed for documents with differing Conditional/GridLayout internals, got: {:?}",
             result.err()
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: leftmost LCS alignment when one side has extra paragraphs
+    // -------------------------------------------------------------------------
+    //
+    // Regression test for the rightward-drift bug: when Paragraphs are all
+    // structurally equal in IgnoreText mode, the old greedy backtrack (on the
+    // forward dp table) matched a[i] with the *last* compatible b[j], not the
+    // *first*.  The new implementation (backward pass on reversed sequences)
+    // must produce the leftmost alignment.
+    //
+    // Scenario: DE has one agreement-declaration paragraph; EN has two
+    // paragraphs in that section (declaration + extra), followed by the same
+    // fields/headings.  DE's declaration paragraph must align with EN's *first*
+    // paragraph, not the second.
+    fn make_field(name: &str) -> StructuredNode {
+        StructuredNode::Field(FieldNode {
+            name: name.into(),
+            som_path: None,
+            label: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        })
+    }
+
+    fn make_para(text: &str) -> StructuredNode {
+        StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::plain(text),
+        })
+    }
+
+    fn make_h2(text: &str) -> StructuredNode {
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain(text),
+        })
+    }
+
+    #[test]
+    fn test_leftmost_alignment_declaration_paragraph() {
+        // DE: [H2(Agreement), Para(declaration), Field(mailing), Field(residence), H2(Signature)]
+        // EN: [H2(Agreement), Para(declaration_en), Para(extra), Field(mailing), Field(residence),
+        //      Field(passport), Para(notification), H2(Signature)]
+        //
+        // The correct (leftmost) alignment:
+        //   H2(Agreement) ↔ H2(Agreement)
+        //   Para(declaration) ↔ Para(declaration_en)   ← must be leftmost Para in EN
+        //   Field(mailing) ↔ Field(mailing)
+        //   Field(residence) ↔ Field(residence)
+        //   H2(Signature) ↔ H2(Signature)
+
+        let de = make_envelope(
+            "de",
+            vec![
+                make_h2("Zustimmung"),
+                make_para("Ich erkläre durch meine Unterschrift"),
+                make_field("mailing"),
+                make_field("residence"),
+                make_h2("Unterschrift"),
+            ],
+        );
+
+        let en = make_envelope(
+            "en",
+            vec![
+                make_h2("Agreement"),
+                make_para("By signing this form"),
+                make_para("Additional confirmation"),
+                make_field("mailing"),
+                make_field("residence"),
+                make_field("passport"),
+                make_para("I agree to inform UBS"),
+                make_h2("Signature"),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).expect("merge must succeed");
+
+        // Find the paragraph that has a DE translation starting with "Ich erkl"
+        let declaration_para = result.content.iter().find(|n| {
+            if let StructuredNode::Paragraph(p) = n {
+                if let [InlineNode::TranslatedText(map)] = p.content.0.as_slice() {
+                    return map
+                        .get("de")
+                        .map(|t| t.starts_with("Ich erkl"))
+                        .unwrap_or(false);
+                }
+            }
+            false
+        });
+
+        let para = declaration_para.expect(
+            "Must find a merged Paragraph with DE text starting with 'Ich erkl'",
+        );
+
+        if let StructuredNode::Paragraph(p) = para {
+            if let [InlineNode::TranslatedText(map)] = p.content.0.as_slice() {
+                let en_text = map
+                    .get("en")
+                    .expect("Merged paragraph must have EN translation");
+
+                assert!(
+                    en_text.starts_with("By signing this form"),
+                    "EN translation in the declaration paragraph must start with \
+                     'By signing this form' (leftmost match), but got: {:?}",
+                    en_text
+                );
+            }
+        }
     }
 }
