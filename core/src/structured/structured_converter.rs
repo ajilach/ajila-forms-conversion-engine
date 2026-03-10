@@ -28,6 +28,7 @@ use crate::structured::{
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Check if a StructuredNode contains any fields (recursively).
 fn contains_fields(node: &StructuredNode) -> bool {
@@ -777,6 +778,36 @@ impl<'a, 'b> Converter<'a, 'b> {
                             // 2. If on the same line as the field, use x-position
 
                             let line_tolerance = Decimal::from(8); // same as InlineFieldDetector
+
+                            // Check if a multi-line text node spans the field's
+                            // vertical position.  When a text node is much taller
+                            // than the field it wraps multiple lines; we need to
+                            // split its content at the field boundary instead of
+                            // assigning the whole node to "before" or "after".
+                            let is_multiline_spanning_field =
+                                node_bounds.height > fb.height * Decimal::from(2)
+                                    && fb.y >= node_bounds.y
+                                    && fb.y <= node_bounds.y + node_bounds.height;
+
+                            if is_multiline_spanning_field {
+                                if let Some((before_str, after_str)) =
+                                    Self::split_text_at_field_position(node, fb)
+                                {
+                                    if !before_str.is_empty() {
+                                        before.push(StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(before_str),
+                                        }));
+                                    }
+                                    if !after_str.is_empty() {
+                                        after.push(StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(after_str),
+                                        }));
+                                    }
+                                    continue;
+                                }
+                                // Fall through to normal classification if splitting fails
+                            }
+
                             let on_same_line = (node_bounds.y - fb.y).abs() < line_tolerance
                                 || (node_bounds.y + node_bounds.height - fb.y - fb.height).abs()
                                     < line_tolerance;
@@ -1076,6 +1107,115 @@ impl<'a, 'b> Converter<'a, 'b> {
         } else {
             String::new()
         }
+    }
+
+    // ========================================================================
+    // Helper: Multi-line text splitting for inline fields
+    // ========================================================================
+
+    /// Split the text content of a multi-line FlattenedNode at the position
+    /// where an inline field is located.
+    ///
+    /// Uses a proportional estimate based on the field's (x, y) position
+    /// relative to the text node's bounding box.  The content is split at
+    /// the nearest word boundary.
+    ///
+    /// Returns `Some((before, after))` on success, or `None` if splitting
+    /// cannot be performed (e.g. empty text or field outside node).
+    fn split_text_at_field_position(
+        node: &FlattenedNode,
+        field_bounds: &Bounds,
+    ) -> Option<(String, String)> {
+        let (content, font_size, _font_name) = match &node.kind {
+            FlattenedNodeKind::Text {
+                content,
+                font_size,
+                font_name,
+                ..
+            } => (content.as_str(), *font_size, font_name.as_str()),
+            _ => return None,
+        };
+
+        if content.trim().is_empty() {
+            return None;
+        }
+
+        let node_bounds = node.bounds();
+        let node_width = node_bounds.width;
+        let node_height = node_bounds.height;
+
+        if node_width <= Decimal::ZERO || node_height <= Decimal::ZERO {
+            return None;
+        }
+
+        // Estimate line height using AXTE convention (font_size * 1.2).
+        let line_height = font_size * Decimal::from_str_exact("1.2").unwrap();
+        if line_height <= Decimal::ZERO {
+            return None;
+        }
+
+        // Which line the field occupies (0-indexed).
+        let field_y_offset = field_bounds.y - node_bounds.y;
+        let field_line = (field_y_offset / line_height)
+            .to_f32()
+            .unwrap_or(0.0)
+            .floor()
+            .max(0.0) as usize;
+
+        // Fraction of the line before the field.
+        let field_x_offset = field_bounds.x - node_bounds.x;
+        let line_frac = (field_x_offset / node_width)
+            .to_f32()
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+
+        // The field also occupies horizontal space on the line.
+        // Text before the field occupies `field_x_offset` width, the field
+        // itself occupies `field_bounds.width`, and remaining text (if any)
+        // comes after.  Compute the effective fraction of text BEFORE the
+        // field on that line — this is `field_x_offset / (node_width - field_width)`.
+        // We cap the effective text width at node_width (the field could be
+        // wider than the remaining space).
+        let text_width_on_line = (node_width - field_bounds.width).max(Decimal::ONE);
+        let effective_frac = (field_x_offset / text_width_on_line)
+            .to_f32()
+            .unwrap_or(line_frac)
+            .clamp(0.0, 1.0);
+
+        // Estimate total number of lines via the node height.
+        let num_lines = (node_height / line_height)
+            .to_f32()
+            .unwrap_or(1.0)
+            .ceil()
+            .max(1.0);
+
+        // Approximate the split as a fraction of total content.
+        let overall_frac = (field_line as f32 + effective_frac) / num_lines;
+        let total_chars = content.chars().count();
+        let approx_char = ((total_chars as f32) * overall_frac).round() as usize;
+        let approx_char = approx_char.min(total_chars);
+
+        // Snap to nearest word boundary by finding the closest whitespace.
+        let chars: Vec<char> = content.chars().collect();
+        let mut best_split = approx_char;
+        for delta in 0..30 {
+            if approx_char + delta < chars.len() && chars[approx_char + delta].is_whitespace() {
+                best_split = approx_char + delta;
+                break;
+            }
+            if approx_char >= delta && chars[approx_char - delta].is_whitespace() {
+                best_split = approx_char - delta;
+                break;
+            }
+        }
+
+        let before_text: String = chars[..best_split].iter().collect();
+        let after_text: String = chars[best_split..].iter().collect();
+
+        let before_trimmed = before_text.trim_end().to_string();
+        let after_trimmed = after_text.trim_start().to_string();
+
+        Some((before_trimmed, after_trimmed))
     }
 
     // ========================================================================

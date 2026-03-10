@@ -8880,14 +8880,18 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 #[test]
 fn test_aacj_multilingual_merge_paragraph_alignment() {
     // Regression test: The long tax-residency confirmation text must be merged
-    // across all three languages (DE, EN, SP) into a single field with a
-    // TranslatedText label containing all three language keys.
+    // across all three languages (DE, EN, SP) into a single TranslatedText
+    // node containing all three language keys.
     //
     // Previously, this failed because:
     // 1. FieldIds are derived from SOM paths which differ across languages
     //    for the same logical field, so fields failed to match in LCS.
     // 2. Groups wrapping rich-text paragraphs had different child counts
     //    across languages, so they also failed to match.
+    //
+    // The "Ich bestätige" confirmation text may appear as a paragraph or as
+    // part of an inline field's context — what matters is that all three
+    // language translations are merged into the same TranslatedText node.
     use crate::run_exhaustive_to_envelope;
     use crate::structured::{self, InlineNode, StructuredNode, TranslatableString};
     use helpers::walk_structured_nodes;
@@ -8902,52 +8906,69 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     let merged =
         structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
 
-    // Walk the merged tree and look for a Field whose label contains the
-    // tax-residency confirmation text in all three languages.
+    // Walk the merged tree and look for a TranslatedText node containing the
+    // tax-residency confirmation text in all three languages. This may appear
+    // in a field label, paragraph, or inline field context.
     let mut found_de = false;
     let mut found_en = false;
     let mut found_sp = false;
 
-    walk_structured_nodes(&merged.content, &mut |node| {
-        if let StructuredNode::Field(f) = node {
-            if let Some(label) = &f.label {
-                for inline in &label.0 {
-                    if let InlineNode::TranslatedText(map) = inline {
-                        let has_de = map
-                            .get("de")
-                            .map_or(false, |t| t.contains("Ich bestätige"));
-                        let has_en = map
-                            .get("en")
-                            .map_or(false, |t| t.contains("I confirm that I am tax resident"));
-                        let has_sp = map
-                            .get("sp")
-                            .map_or(false, |t| t.contains("Confirmo que soy residente fiscal"));
+    /// Helper to check TranslatedText nodes in an InlineNode slice.
+    fn check_inlines(
+        inlines: &[InlineNode],
+        found_de: &mut bool,
+        found_en: &mut bool,
+        found_sp: &mut bool,
+    ) {
+        for inline in inlines {
+            if let InlineNode::TranslatedText(map) = inline {
+                let has_de = map
+                    .get("de")
+                    .map_or(false, |t| t.contains("Ich bestätige"));
+                let has_en = map
+                    .get("en")
+                    .map_or(false, |t| t.contains("I confirm that I am tax resident"));
+                let has_sp = map
+                    .get("sp")
+                    .map_or(false, |t| t.contains("Confirmo que soy residente fiscal"));
 
-                        if has_de { found_de = true; }
-                        if has_en { found_en = true; }
-                        if has_sp { found_sp = true; }
+                if has_de { *found_de = true; }
+                if has_en { *found_en = true; }
+                if has_sp { *found_sp = true; }
 
-                        // All three translations should be in the same
-                        // TranslatedText node.
-                        if has_de || has_en || has_sp {
-                            assert!(
-                                has_de && has_en && has_sp,
-                                "Tax residency field label should have all three languages \
-                                 in the same TranslatedText, but got: de={}, en={}, sp={}.\n\
-                                 Map keys: {:?}",
-                                has_de, has_en, has_sp,
-                                map.keys().collect::<Vec<_>>()
-                            );
-                        }
-                    }
+                // All three translations should be in the same
+                // TranslatedText node.
+                if has_de || has_en || has_sp {
+                    assert!(
+                        has_de && has_en && has_sp,
+                        "Tax residency text should have all three languages \
+                         in the same TranslatedText, but got: de={}, en={}, sp={}.\n\
+                         Map keys: {:?}",
+                        has_de, has_en, has_sp,
+                        map.keys().collect::<Vec<_>>()
+                    );
                 }
             }
+        }
+    }
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        match node {
+            StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    check_inlines(&label.0, &mut found_de, &mut found_en, &mut found_sp);
+                }
+            }
+            StructuredNode::Paragraph(p) => {
+                check_inlines(&p.content.0, &mut found_de, &mut found_en, &mut found_sp);
+            }
+            _ => {}
         }
     });
 
     assert!(
         found_de && found_en && found_sp,
-        "Should find the tax residency field with all three language translations \
+        "Should find the tax residency text with all three language translations \
          merged together. found_de={}, found_en={}, found_sp={}",
         found_de, found_en, found_sp,
     );
@@ -12551,4 +12572,142 @@ fn debug_aacj_en_flattened_text() {
         if matches!(node, StructuredNode::Paragraph(_)) { single_para_count += 1; }
     });
     eprintln!("  Single-state EN: {} paragraphs", single_para_count);
+}
+
+#[test]
+fn test_aacj_de_inline_fields() {
+    // AACJ DE has three inline fields embedded in flowing German legal text.
+    // Each inline field should appear as a Field("UNKNOWN") between paragraphs
+    // containing the specified before / after text.
+
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::StructuredNode;
+
+    let flattened = flatten_from_pdf(input_path("AACJ_019_DE.pdf"));
+
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    let structured_nodes = crate::structured::convert(&doc);
+
+    // Collect a flat sequence of (kind, text) for paragraphs and fields.
+    let mut sequence: Vec<(&str, String)> = Vec::new();
+    fn collect_sequence(nodes: &[StructuredNode], seq: &mut Vec<(&str, String)>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    seq.push(("paragraph", p.content.as_plain_text()));
+                }
+                StructuredNode::Field(f) => {
+                    let label = f
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text())
+                        .unwrap_or_default();
+                    seq.push(("field", label));
+                }
+                StructuredNode::Group(g) => collect_sequence(&g.children, seq),
+                StructuredNode::Repeatable(r) => {
+                    collect_sequence(std::slice::from_ref(r.item.as_ref()), seq)
+                }
+                StructuredNode::Conditional(c) => {
+                    collect_sequence(std::slice::from_ref(c.content.as_ref()), seq)
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        collect_sequence(std::slice::from_ref(&el.node), seq);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_sequence(&structured_nodes, &mut sequence);
+
+    // All UNKNOWN fields in the sequence
+    let unknown_positions: Vec<usize> = sequence
+        .iter()
+        .enumerate()
+        .filter(|(_, (kind, label))| *kind == "field" && label == "UNKNOWN")
+        .map(|(i, _)| i)
+        .collect();
+
+    assert!(
+        unknown_positions.len() >= 3,
+        "Expected at least 3 inline fields with label 'UNKNOWN', found {}",
+        unknown_positions.len()
+    );
+
+    // Helper: collect the text from all paragraphs directly before and after
+    // a field position.  We gather consecutive paragraphs in each direction
+    // so that approximate splitting (where the before/after boundary may be
+    // one paragraph off) is tolerated.
+    let context_text = |field_pos: usize| -> (String, String) {
+        let mut before_texts = Vec::new();
+        for i in (0..field_pos).rev() {
+            if sequence[i].0 == "paragraph" {
+                before_texts.push(sequence[i].1.clone());
+            } else {
+                break;
+            }
+        }
+        before_texts.reverse();
+        let mut after_texts = Vec::new();
+        for i in (field_pos + 1)..sequence.len() {
+            if sequence[i].0 == "paragraph" {
+                after_texts.push(sequence[i].1.clone());
+            } else {
+                break;
+            }
+        }
+        (before_texts.join(" "), after_texts.join(" "))
+    };
+
+    // Expected text fragments that should appear BEFORE each inline field.
+    let expected_before = [
+        "dient (bitte angeben",
+        "oder Sonstiges (bitte angeben",
+        "Gründen (bitte angeben",
+    ];
+
+    // Expected text fragments that should appear AFTER each inline field.
+    let expected_after = [
+        ") und das Land dieser Postadresse nicht mein Steuerdomizil ist.",
+        ") bedingt ist.",
+        ") nicht zutreffen",
+    ];
+
+    for (i, &pos) in unknown_positions.iter().take(3).enumerate() {
+        let (before_ctx, after_ctx) = context_text(pos);
+        let combined = format!("{} {}", before_ctx, after_ctx);
+
+        // The expected "before" fragment must appear in the combined context
+        // AND must come before the expected "after" fragment.
+        let before_frag = expected_before[i];
+        let after_frag = expected_after[i];
+
+        let before_pos = combined.find(before_frag);
+        let after_pos = combined.find(after_frag);
+
+        assert!(
+            before_pos.is_some(),
+            "Field {}: combined context should contain before-text '{}'\nContext: '{}'",
+            i + 1,
+            before_frag,
+            combined
+        );
+        assert!(
+            after_pos.is_some(),
+            "Field {}: combined context should contain after-text '{}'\nContext: '{}'",
+            i + 1,
+            after_frag,
+            combined
+        );
+        assert!(
+            before_pos.unwrap() < after_pos.unwrap(),
+            "Field {}: before-text should appear before after-text in the context",
+            i + 1
+        );
+    }
 }
