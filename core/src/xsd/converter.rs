@@ -34,28 +34,17 @@ pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
     output.push_str("<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n");
 
     // Emit xs:include directives only for types actually used in the schema,
-    // deduplicated by path (multiple entries may point to the same file).
+    // deduplicated by path (multiple type names in one file collapse to one include).
     let include_paths: std::collections::BTreeSet<&str> = config
-        .profile
-        .includes
+        .type_to_file
         .iter()
         .filter(|(name, _)| ctx.used_type_refs.contains(*name))
-        .map(|(_, inc)| inc.path.as_str())
+        .map(|(_, path)| path.as_str())
         .collect();
     for path in &include_paths {
         output.push_str(&format!("  <xs:include schemaLocation=\"{}\"/>\n", path));
     }
     if !include_paths.is_empty() {
-        output.push('\n');
-    }
-
-    // Include predefined type definitions
-    for type_fragment in &config.predefined_types {
-        for line in type_fragment.lines() {
-            output.push_str("  ");
-            output.push_str(line);
-            output.push('\n');
-        }
         output.push('\n');
     }
 

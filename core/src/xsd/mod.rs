@@ -16,9 +16,12 @@
 //! The module reads a TOML config from `profiles/{name}/xsd/config.toml` with:
 //! - `[complexTypes.<name>]` — synonym mappings for headings → complexType objects
 //! - `[elements.<name>]` — synonym mappings for fields → xs:element declarations
+//! - `schemaLocationPrefix`  — prefix prepended to auto-discovered include paths
+//!   (default: `"../"`)
 //!
-//! Predefined `xs:simpleType` / `xs:complexType` definitions are auto-loaded
-//! from `profiles/{name}/xsd/types/*.xsd`.
+//! `xs:include` directives are generated automatically by indexing all `*.xsd`
+//! files in `profiles/{name}/xsd/types/`. An include is emitted only when a
+//! type declared in that file is actually referenced by the generated schema.
 
 mod converter;
 
@@ -30,6 +33,10 @@ use std::collections::HashMap;
 // ============================================================================
 // Profile types (TOML-deserializable)
 // ============================================================================
+
+fn default_schema_location_prefix() -> String {
+    "../".to_string()
+}
 
 /// TOML-deserializable XSD profile loaded from
 /// `profiles/{name}/xsd/config.toml`.
@@ -44,20 +51,15 @@ pub struct XsdProfile {
     #[serde(default)]
     pub elements: HashMap<String, ElementMapping>,
 
-    /// External schema includes, keyed by a logical type name.
-    /// Each entry generates an `<xs:include schemaLocation="..."/>` directive.
-    #[serde(default)]
-    pub includes: HashMap<String, IncludeMapping>,
-}
-
-/// Configuration for an external schema include.
-///
-/// Generates `<xs:include schemaLocation="{path}"/>` at the top of the
-/// output XSD, before any type definitions or the root element.
-#[derive(Debug, Clone, Deserialize)]
-pub struct IncludeMapping {
-    /// The `schemaLocation` path for the `xs:include` directive.
-    pub path: String,
+    /// Prefix prepended to every auto-discovered include path.
+    ///
+    /// For example, if the types directory contains `AFFragments/Signature.xsd`
+    /// and `schemaLocationPrefix = "../"`, the generated include will be:
+    /// `<xs:include schemaLocation="../AFFragments/Signature.xsd"/>`.
+    ///
+    /// Defaults to `"../"`.
+    #[serde(default = "default_schema_location_prefix")]
+    pub schema_location_prefix: String,
 }
 
 /// Configuration for a complexType synonym mapping.
@@ -111,34 +113,76 @@ pub struct ElementMapping {
 
 /// Resolved XSD configuration, ready for schema generation.
 ///
-/// Contains the parsed profile plus any predefined type definitions
-/// loaded from the `types/` subdirectory.
+/// Contains the parsed profile plus an index mapping every declared XSD
+/// type/element name to the `schemaLocation` string of the file that declares it.
+/// This is built automatically by scanning the `types/` subdirectory.
 #[derive(Debug, Clone)]
 pub struct XsdConfig {
     /// The parsed profile.
     pub profile: XsdProfile,
 
-    /// Raw XSD fragments from `types/*.xsd` files, to be included verbatim
-    /// inside the output `<xs:schema>` element.
-    pub predefined_types: Vec<String>,
+    /// Index from declared type/element name → `schemaLocation` path.
+    ///
+    /// Built from all `*.xsd` files found recursively under `types/`
+    /// using [`extract_declared_names`]. Only entries whose key appears in
+    /// `used_type_refs` during generation produce an `<xs:include>` directive.
+    pub type_to_file: HashMap<String, String>,
 }
 
 impl XsdConfig {
-    /// Build an `XsdConfig` from a profile and a list of predefined type fragments.
-    pub fn new(profile: XsdProfile, predefined_types: Vec<String>) -> Self {
+    /// Build an `XsdConfig` from a profile and a type-to-file index.
+    pub fn new(profile: XsdProfile, type_to_file: HashMap<String, String>) -> Self {
         Self {
             profile,
-            predefined_types,
+            type_to_file,
         }
     }
 
-    /// Build an `XsdConfig` from just a profile (no predefined types).
+    /// Build an `XsdConfig` from just a profile (empty type index).
     pub fn from_profile(profile: XsdProfile) -> Self {
         Self {
             profile,
-            predefined_types: Vec::new(),
+            type_to_file: HashMap::new(),
         }
     }
+}
+
+/// Extract the names of all globally declared `xs:complexType`, `xs:simpleType`,
+/// and `xs:element` definitions from an XSD file's text content.
+///
+/// Uses a simple line-by-line scan rather than full XML parsing.
+/// Each matched line must start (after trimming) with one of the three tag
+/// prefixes and contain a `name="..."` attribute on the same line.
+///
+/// # Example
+///
+/// Given the fragment:
+/// ```xml
+/// <xs:complexType name="SignatureType">
+///   <xs:sequence>
+///     <xs:element name="Place" type="xs:string" minOccurs="0"/>
+/// ```
+/// This returns `["SignatureType"]` (the element `"Place"` is not a global
+/// declaration so it is typically inside a complexType body and still matched;
+/// callers should ensure the file only contains global-scope declarations that
+/// they actually want indexed, which is true for the `types/` convention).
+pub fn extract_declared_names(content: &str) -> Vec<String> {
+    const PREFIXES: &[&str] = &["<xs:complexType ", "<xs:simpleType ", "<xs:element "];
+
+    let mut names = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !PREFIXES.iter().any(|p| trimmed.starts_with(p)) {
+            continue;
+        }
+        if let Some(name_start) = trimmed.find("name=\"") {
+            let after = &trimmed[name_start + 6..];
+            if let Some(name_end) = after.find('"') {
+                names.push(after[..name_end].to_string());
+            }
+        }
+    }
+    names
 }
 
 // ============================================================================

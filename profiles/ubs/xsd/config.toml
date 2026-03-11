@@ -12,20 +12,14 @@
 #   synonyms              — list of strings to match (case-insensitive substring)
 #   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
 #
-# Predefined simpleType/complexType definitions are auto-loaded from the
-# types/ subdirectory (all *.xsd files).
+# All *.xsd files in the types/ subdirectory are automatically indexed.
+# An <xs:include> directive is emitted for every indexed file that declares a
+# type actually referenced by the generated schema.
 #
-# [includes.<TypeName>]  — external schema includes
-#   path                 — schemaLocation for the xs:include directive
-#
-# Each entry generates: <xs:include schemaLocation="{path}"/>
-# at the top of the output XSD.
+# schemaLocationPrefix — prefix prepended to the relative path of each types/
+#   file when constructing the schemaLocation attribute (default: "../")
 
-# ─── Includes ──────────────────────────────────────────────────────────────────
-
-# Example:
-# [includes.CommonTypes]
-# path = "common-types.xsd"
+schemaLocationPrefix = "../"
 
 # ─── Complex Types ─────────────────────────────────────────────────────────────
 

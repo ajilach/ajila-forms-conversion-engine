@@ -13803,26 +13803,38 @@ fn test_xsd_radio_creates_enumeration() {
 
 #[test]
 fn test_xsd_predefined_types_included() {
-    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::structured::*;
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use std::collections::HashMap;
 
-    let predefined = vec![
-        r#"<xs:simpleType name="CurrencyType">
-  <xs:restriction base="xs:string">
-    <xs:enumeration value="CHF"/>
-    <xs:enumeration value="EUR"/>
-    <xs:enumeration value="USD"/>
-  </xs:restriction>
-</xs:simpleType>"#.to_string(),
+    // Map CurrencyType to an external file. A field that references it should
+    // cause an <xs:include> to be emitted.
+    let mut type_to_file = HashMap::new();
+    type_to_file.insert("CurrencyType".to_string(), "currency-types.xsd".to_string());
+
+    let mut elements = HashMap::new();
+    elements.insert("currency".to_string(), ElementMapping {
+        synonyms: vec!["Currency".to_string()],
+        type_ref: "CurrencyType".to_string(),
+    });
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.currency"),
+            som_path: None,
+            label: Some(InlineText::plain("Currency")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None, placeholder: None,
+        }),
     ];
 
-    let config = XsdConfig::new(XsdProfile::default(), predefined);
-    let xsd = generate_xsd(&[], &config);
+    let profile = XsdProfile { elements, ..XsdProfile::default() };
+    let config = XsdConfig::new(profile, type_to_file);
+    let xsd = generate_xsd(&nodes, &config);
 
-    assert!(xsd.contains("CurrencyType"),
-        "Should include predefined type. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:enumeration value=\"CHF\"/>"),
-        "Should include CHF enumeration. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
+        "Should include the file that declares CurrencyType. Got:\n{}", xsd);
 }
 
 #[test]
@@ -13879,16 +13891,51 @@ fn test_xsd_snake_case_conversion() {
 }
 
 #[test]
+fn test_xsd_extract_declared_names() {
+    use crate::xsd::extract_declared_names;
+
+    let content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="SignatureType">
+    <xs:sequence>
+      <xs:element name="Place" type="xs:string" minOccurs="0"/>
+      <xs:element name="Date" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:simpleType name="CurrencyCodeType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CHF"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Signature" type="SignatureType"/>
+</xs:schema>"#;
+
+    let names = extract_declared_names(content);
+
+    // Global declarations (complexType, simpleType, top-level element) should be found
+    assert!(names.contains(&"SignatureType".to_string()),
+        "Should extract complexType name. Got: {:?}", names);
+    assert!(names.contains(&"CurrencyCodeType".to_string()),
+        "Should extract simpleType name. Got: {:?}", names);
+    assert!(names.contains(&"Signature".to_string()),
+        "Should extract element name. Got: {:?}", names);
+
+    // Inline child elements inside a complexType body are also matched by the
+    // line scanner (they start with <xs:element); verify no crash and names found
+    assert!(names.len() >= 3, "Should find at least 3 declarations. Got: {:?}", names);
+}
+
+#[test]
 fn test_xsd_includes_only_emitted_when_type_is_used() {
     use crate::structured::*;
-    use crate::xsd::{ElementMapping, IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
     use std::collections::HashMap;
 
-    // Two includes configured, but only AddressType will be referenced
-    let mut includes = HashMap::new();
-    includes.insert("AddressType".to_string(), IncludeMapping { path: "address.xsd".to_string() });
-    includes.insert("PersonType".to_string(),  IncludeMapping { path: "person.xsd".to_string() });
+    // Two types indexed, but only AddressType will be referenced
+    let mut type_to_file = HashMap::new();
+    type_to_file.insert("AddressType".to_string(), "address.xsd".to_string());
+    type_to_file.insert("PersonType".to_string(),  "person.xsd".to_string());
 
     // Only "address" element uses AddressType; "name" uses xs:string (no include needed)
     let mut elements = HashMap::new();
@@ -13918,8 +13965,8 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
         }),
     ];
 
-    let profile = XsdProfile { includes, elements, ..XsdProfile::default() };
-    let config = XsdConfig::from_profile(profile);
+    let profile = XsdProfile { elements, ..XsdProfile::default() };
+    let config = XsdConfig::new(profile, type_to_file);
     let xsd = generate_xsd(&nodes, &config);
 
     // AddressType is used → address.xsd should be included
@@ -13940,14 +13987,14 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
 #[test]
 fn test_xsd_includes_deduplicated_by_path() {
     use crate::structured::*;
-    use crate::xsd::{ElementMapping, IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
     use std::collections::HashMap;
 
     // Two different logical type names → same physical file
-    let mut includes = HashMap::new();
-    includes.insert("TypeA".to_string(), IncludeMapping { path: "shared.xsd".to_string() });
-    includes.insert("TypeB".to_string(), IncludeMapping { path: "shared.xsd".to_string() });
+    let mut type_to_file = HashMap::new();
+    type_to_file.insert("TypeA".to_string(), "shared.xsd".to_string());
+    type_to_file.insert("TypeB".to_string(), "shared.xsd".to_string());
 
     let mut elements = HashMap::new();
     elements.insert("field_a".to_string(), ElementMapping {
@@ -13976,8 +14023,8 @@ fn test_xsd_includes_deduplicated_by_path() {
         }),
     ];
 
-    let profile = XsdProfile { includes, elements, ..XsdProfile::default() };
-    let config = XsdConfig::from_profile(profile);
+    let profile = XsdProfile { elements, ..XsdProfile::default() };
+    let config = XsdConfig::new(profile, type_to_file);
     let xsd = generate_xsd(&nodes, &config);
 
     // Both types used, but same path → only one xs:include
@@ -13988,15 +14035,14 @@ fn test_xsd_includes_deduplicated_by_path() {
 
 #[test]
 fn test_xsd_unused_includes_not_emitted() {
-    use crate::xsd::{IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
     use std::collections::HashMap;
 
-    let mut includes = HashMap::new();
-    includes.insert("SomeType".to_string(), IncludeMapping { path: "some-types.xsd".to_string() });
+    let mut type_to_file = HashMap::new();
+    type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
 
-    let profile = XsdProfile { includes, ..XsdProfile::default() };
-    let config = XsdConfig::from_profile(profile);
+    let config = XsdConfig::new(XsdProfile::default(), type_to_file);
     // No nodes at all → SomeType is never referenced
     let xsd = generate_xsd(&[], &config);
 

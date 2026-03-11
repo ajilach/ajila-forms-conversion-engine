@@ -1,7 +1,7 @@
 use blueprint::{
     FieldLabelMap, GraphSelection, GraphState, HtmlConfig, HtmlCustomStyles, PipelineConfig,
-    PipelineEvent, PipelineStep, XsdConfig, XsdProfile, build_field_label_map, generate_dot,
-    run_pipeline,
+    PipelineEvent, PipelineStep, XsdConfig, XsdProfile, build_field_label_map,
+    extract_declared_names, generate_dot, run_pipeline,
 };
 use clap::{Parser, ValueEnum};
 use log::info;
@@ -178,15 +178,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ─── Post-pipeline: structured / HTML / AEM / GraphViz output ────────────
     let is_multilingual = args.documents.len() > 1;
     let merged_name = strip_language_suffix(base_name).to_string();
-    let suffix = if is_multilingual { "multilingual" } else { "merged" };
+    let suffix = if is_multilingual {
+        "multilingual"
+    } else {
+        "merged"
+    };
 
     // Structured JSON
     if args.structured {
         let json = serde_json::to_string_pretty(&output.merged)
             .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
         let json_path = PathBuf::from(format!("{}_{}.json", merged_name, suffix));
-        std::fs::write(&json_path, json)
-            .map_err(|e| format!("Failed to write JSON: {}", e))?;
+        std::fs::write(&json_path, json).map_err(|e| format!("Failed to write JSON: {}", e))?;
         info!("Structured JSON: {}", json_path.display());
     }
 
@@ -199,8 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let html = blueprint::to_html(&output.merged.content, &html_config);
         let html_path = PathBuf::from(format!("{}_{}.html", merged_name, suffix));
-        std::fs::write(&html_path, html)
-            .map_err(|e| format!("Failed to write HTML: {}", e))?;
+        std::fs::write(&html_path, html).map_err(|e| format!("Failed to write HTML: {}", e))?;
         info!("HTML: {}", html_path.display());
     }
 
@@ -241,8 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let xsd_config = load_xsd_config(args.profile.as_deref())?;
         let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
-        std::fs::write(&xsd_path, xsd)
-            .map_err(|e| format!("Failed to write XSD: {}", e))?;
+        std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;
         info!("XSD: {}", xsd_path.display());
     }
 
@@ -448,13 +449,26 @@ fn mime_from_extension(path: &Path) -> &'static str {
     }
 }
 
+/// Recursively collect all `*.xsd` files under `dir` into `out`.
+fn walk_xsd_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_xsd_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("xsd") {
+            out.push(path);
+        }
+    }
+}
+
 /// Load XSD config from the `xsd/` subdirectory of a profile.
 ///
 /// Reads `config.toml` for synonym mappings and auto-discovers all `*.xsd`
 /// files in the `types/` subdirectory as predefined type definitions.
-fn load_xsd_config(
-    profile_path: Option<&Path>,
-) -> Result<XsdConfig, Box<dyn std::error::Error>> {
+fn load_xsd_config(profile_path: Option<&Path>) -> Result<XsdConfig, Box<dyn std::error::Error>> {
     let base = match profile_path {
         Some(p) => p,
         None => {
@@ -478,25 +492,28 @@ fn load_xsd_config(
         }
     };
 
-    // Auto-discover predefined types from types/ subdirectory
-    let mut predefined_types = Vec::new();
+    // Auto-discover and index all *.xsd files in the types/ subdirectory.
+    // For each declared type/element name, record the schemaLocation path.
+    let mut type_to_file = std::collections::HashMap::new();
     let types_dir = dir.join("types");
     if types_dir.is_dir() {
-        let mut entries: Vec<_> = std::fs::read_dir(&types_dir)
-            .map_err(|e| format!("Failed to read xsd/types/ directory: {}", e))?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().extension().and_then(|ext| ext.to_str()) == Some("xsd")
-            })
-            .collect();
-        // Sort for deterministic output
-        entries.sort_by_key(|e| e.path());
-        for entry in entries {
-            let content = std::fs::read_to_string(entry.path())
-                .map_err(|e| format!("Failed to read type file '{}': {}", entry.path().display(), e))?;
-            predefined_types.push(content);
+        let mut xsd_files: Vec<PathBuf> = Vec::new();
+        walk_xsd_files(&types_dir, &mut xsd_files);
+        xsd_files.sort();
+        for xsd_path in &xsd_files {
+            // Relative path from types_dir (e.g. "AFFragments/Signature.xsd")
+            let rel = xsd_path
+                .strip_prefix(&types_dir)
+                .unwrap_or(xsd_path)
+                .to_string_lossy();
+            let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
+            let content = std::fs::read_to_string(xsd_path)
+                .map_err(|e| format!("Failed to read type file '{}': {}", xsd_path.display(), e))?;
+            for name in extract_declared_names(&content) {
+                type_to_file.insert(name, schema_location.clone());
+            }
         }
     }
 
-    Ok(XsdConfig::new(profile, predefined_types))
+    Ok(XsdConfig::new(profile, type_to_file))
 }

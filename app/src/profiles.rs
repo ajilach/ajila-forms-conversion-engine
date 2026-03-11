@@ -6,7 +6,7 @@
 
 use blueprint::{
     AemProfile, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily, ResolvedFontVariant,
-    XsdConfig, XsdProfile,
+    XsdConfig, XsdProfile, extract_declared_names,
 };
 use include_dir::{Dir, include_dir};
 use std::collections::HashMap;
@@ -197,9 +197,11 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
         XsdProfile::default()
     };
 
-    // Auto-discover predefined types from types/ subdirectory
-    let mut predefined_types = Vec::new();
+    // Auto-discover and index all *.xsd files in the types/ subdirectory.
+    // For each declared type/element name, record the schemaLocation path.
+    let mut type_to_file = std::collections::HashMap::new();
     if let Some(dir) = xsd_dir {
+        let types_prefix = format!("{name}/xsd/types/");
         if let Some(types_dir) = dir.get_dir(format!("{name}/xsd/types")) {
             let mut files: Vec<_> = types_dir
                 .files()
@@ -211,11 +213,21 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
             files.sort_by_key(|f| f.path().to_path_buf());
             for file in files {
                 if let Some(content) = file.contents_utf8() {
-                    predefined_types.push(content.to_string());
+                    // Relative path from types/ (e.g. "AFFragments/Signature.xsd")
+                    let rel = file
+                        .path()
+                        .to_string_lossy()
+                        .trim_start_matches(&*types_prefix)
+                        .to_string();
+                    let schema_location =
+                        format!("{}{}", profile.schema_location_prefix, rel);
+                    for name in extract_declared_names(content) {
+                        type_to_file.insert(name, schema_location.clone());
+                    }
                 }
             }
         }
     }
 
-    Ok(XsdConfig::new(profile, predefined_types))
+    Ok(XsdConfig::new(profile, type_to_file))
 }
