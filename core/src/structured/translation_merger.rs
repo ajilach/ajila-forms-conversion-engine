@@ -153,7 +153,7 @@ fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -
         return 0.0;
     }
 
-    let dp = lcs_table_relaxed(a, b);
+    let dp = lcs_table_with(a, b, node_matches_for_similarity);
     let lcs_length = dp[a.len()][b.len()] as f64;
     let avg_length = (a.len() + b.len()) as f64 / 2.0;
 
@@ -207,35 +207,19 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
 // ============================================================================
 
 /// Compute the LCS (longest common subsequence) table for two node slices,
-/// using `structural_eq_ignore_text` as the equality predicate.
-fn lcs_table(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
+/// using the given equality predicate.
+fn lcs_table_with(
+    a: &[StructuredNode],
+    b: &[StructuredNode],
+    eq: impl Fn(&StructuredNode, &StructuredNode) -> bool,
+) -> Vec<Vec<usize>> {
     let m = a.len();
     let n = b.len();
     let mut dp = vec![vec![0usize; n + 1]; m + 1];
 
     for i in 1..=m {
         for j in 1..=n {
-            if a[i - 1].structural_eq_ignore_text(&b[j - 1]) {
-                dp[i][j] = dp[i - 1][j - 1] + 1;
-            } else {
-                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
-            }
-        }
-    }
-
-    dp
-}
-
-/// Compute the LCS table using the relaxed similarity predicate `node_matches_for_similarity`.
-/// Used only by `calculate_structural_similarity`.
-fn lcs_table_relaxed(a: &[StructuredNode], b: &[StructuredNode]) -> Vec<Vec<usize>> {
-    let m = a.len();
-    let n = b.len();
-    let mut dp = vec![vec![0usize; n + 1]; m + 1];
-
-    for i in 1..=m {
-        for j in 1..=n {
-            if node_matches_for_similarity(&a[i - 1], &b[j - 1]) {
+            if eq(&a[i - 1], &b[j - 1]) {
                 dp[i][j] = dp[i - 1][j - 1] + 1;
             } else {
                 dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
@@ -329,7 +313,7 @@ fn merge_node_lists(
     other: &[StructuredNode],
     other_lang: &str,
 ) -> Vec<StructuredNode> {
-    let dp = lcs_table(base, other);
+    let dp = lcs_table_with(base, other, StructuredNode::structural_eq_ignore_text);
     let alignment = lcs_align(base, other, &dp);
 
     let mut entries: Vec<AlignedEntry> = Vec::new();
