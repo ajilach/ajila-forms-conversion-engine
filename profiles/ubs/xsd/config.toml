@@ -23,133 +23,133 @@ schemaLocationPrefix = "../"
 
 # ─── Complex Types ─────────────────────────────────────────────────────────────
 
-[complexTypes.account]
+[complexTypes.Account]
 synonyms = ["Account", "Konto", "Conto", "Cuenta"]
 
-[complexTypes.personal_info]
+[complexTypes.Individual]
 synonyms = ["Personal Information", "Personal Details", "Personalien", "Kundendaten", "Datos del cliente", "Endkunde"]
 
-[complexTypes.signature]
+[complexTypes.Signature]
 synonyms = ["Unterschrift(en)", "Signature(s)", "Letto, confermato e sottoscritto"]
 
-[complexTypes.agreement]
+[complexTypes.Agreement]
 synonyms = ["Agreement", "Vereinbarung"]
 
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---
 
-[elements.last_name]
+[elements.LastName]
 synonyms = ["Last Name", "Nachname", "Cognome", "Apellido(s)", "Name des Kunden", "Name of client", "Nome del cliente"]
 type = "xs:string"
 
-[elements.first_name]
+[elements.FirstName]
 synonyms = ["First Name(s)", "Vorname(n)", "Nome(i)", "Nombre(s)", "Vorname"]
 type = "xs:string"
 
-[elements.name]
+[elements.Name]
 synonyms = ["Name", "Nome", "Nombre", "Nome della società"]
 type = "xs:string"
 
-[elements.company]
+[elements.Company]
 synonyms = ["Company", "Firma", "Società"]
 type = "xs:string"
 
 # --- Address fields ---
 
-[elements.street]
+[elements.Street]
 synonyms = ["Street", "Straße", "Strasse/Nr.", "Via", "Calle"]
 type = "xs:string"
 
-[elements.postal_code]
+[elements.PostalCode]
 synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
 type = "xs:string"
 
-[elements.city]
+[elements.City]
 synonyms = ["City", "Stadt", "Ort", "Località", "Luogo", "Ciudad", "Place", "Lugar"]
 type = "xs:string"
 
-[elements.country]
+[elements.Country]
 synonyms = ["Country", "Land", "Paese", "País"]
 type = "xs:string"
 
-[elements.address_number]
+[elements.StreetNumber]
 synonyms = ["Nr.", "Nr", "No.", "No", "Nº", "Adress-Nr.", "Adress-Nummer"]
 type = "xs:string"
 
 # --- Contact fields ---
 
-[elements.phone]
+[elements.Phone]
 synonyms = ["Telephone", "Phone", "Mobile", "Telefon", "Telefax privat", "Telefax beruflich"]
 type = "xs:string"
 
-[elements.email]
+[elements.Email]
 synonyms = ["E-Mail", "Email"]
 type = "xs:string"
 
 # --- Financial fields ---
 
-[elements.amount]
+[elements.Amount]
 synonyms = ["Amount", "Total", "Betrag"]
 type = "xs:decimal"
 
-[elements.currency]
+[elements.Currency]
 synonyms = ["Currency", "Währung"]
 type = "xs:string"
 
-[elements.iban]
+[elements.IBAN]
 synonyms = ["IBAN"]
 type = "xs:string"
 
-[elements.account_number]
+[elements.AccountNumber]
 synonyms = ["Account No", "Konto-Nr", "Konto Nr"]
 type = "xs:string"
 
-[elements.tin]
+[elements.TIN]
 synonyms = ["TIN", "Steuerliches Identifikationsmerkmal"]
 type = "xs:string"
 
 # --- Date / time fields ---
 
-[elements.date]
+[elements.Date]
 synonyms = ["Date", "Datum", "Data", "Fecha"]
 type = "xs:date"
 
-[elements.year]
+[elements.Year]
 synonyms = ["Year", "Jahr"]
 type = "xs:gYear"
 
-[elements.place_and_date]
+[elements.PlaceAndDate]
 synonyms = ["Place and Date", "Ort und Datum", "Luogo e Data", "Lugar y Fecha"]
 type = "xs:string"
 
 # --- Other common fields ---
 
-[elements.role]
+[elements.Role]
 synonyms = ["Role", "Rolle", "Funktion"]
 type = "xs:string"
 
-[elements.marital_status]
+[elements.MaritalStatus]
 synonyms = ["Marital Status", "Zivilstand", "Familienstand", "Estado civil"]
 type = "xs:string"
 
-[elements.country_of_birth]
+[elements.CountryOfBirth]
 synonyms = ["Country of Birth", "Geburtsland", "País de nacimiento"]
 type = "xs:string"
 
-[elements.city_of_birth]
+[elements.CityOfBirth]
 synonyms = ["City of Birth", "Geburtsort", "Ciudad de nacimiento"]
 type = "xs:string"
 
-[elements.date_of_birth]
+[elements.DateOfBirth]
 synonyms = ["Date of Birth", "Geburtsdatum", "Fecha de nacimiento"]
 type = "xs:date"
 
-[elements.tax_residence]
+[elements.TaxResidence]
 synonyms = ["Tax Residence", "Steuerdomizil", "Residencia(s) fiscal(es)"]
 type = "xs:string"
 
-[elements.form_of_address]
+[elements.FormOfAddress]
 synonyms = ["Form of Address", "Anrede", "Anredesprache"]
 type = "xs:string"
  
