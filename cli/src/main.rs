@@ -1,6 +1,7 @@
 use blueprint::{
     FieldLabelMap, GraphSelection, GraphState, HtmlConfig, HtmlCustomStyles, PipelineConfig,
-    PipelineEvent, PipelineStep, build_field_label_map, generate_dot, run_pipeline,
+    PipelineEvent, PipelineStep, XsdConfig, XsdProfile, build_field_label_map, generate_dot,
+    run_pipeline,
 };
 use clap::{Parser, ValueEnum};
 use log::info;
@@ -49,6 +50,10 @@ struct Args {
     /// Export the form as AEM Adaptive Forms JCR content XML.
     #[arg(long)]
     aem: bool,
+
+    /// Export the form as an XSD (XML Schema Definition) file.
+    #[arg(long)]
+    xsd: bool,
 
     /// Path to a profile directory containing per-output configs.
     /// Expected layout: {profile}/aem/config.toml, {profile}/html/config.toml.
@@ -229,6 +234,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(&dot_path, dot)
             .map_err(|e| format!("Failed to write GraphViz DOT file: {}", e))?;
         info!("GraphViz DOT: {}", dot_path.display());
+    }
+
+    // XSD schema
+    if args.xsd {
+        let xsd_config = load_xsd_config(args.profile.as_deref())?;
+        let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
+        let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
+        std::fs::write(&xsd_path, xsd)
+            .map_err(|e| format!("Failed to write XSD: {}", e))?;
+        info!("XSD: {}", xsd_path.display());
     }
 
     Ok(())
@@ -427,4 +442,57 @@ fn mime_from_extension(path: &Path) -> &'static str {
         Some("ico") => "image/x-icon",
         _ => "application/octet-stream",
     }
+}
+
+/// Load XSD config from the `xsd/` subdirectory of a profile.
+///
+/// Reads `config.toml` for synonym mappings and auto-discovers all `*.xsd`
+/// files in the `types/` subdirectory as predefined type definitions.
+fn load_xsd_config(
+    profile_path: Option<&Path>,
+) -> Result<XsdConfig, Box<dyn std::error::Error>> {
+    let base = match profile_path {
+        Some(p) => p,
+        None => {
+            // No profile specified — return default (empty) config
+            return Ok(XsdConfig::from_profile(XsdProfile::default()));
+        }
+    };
+
+    let dir = base.join("xsd");
+
+    // Read config.toml (optional — missing file means empty profile)
+    let profile = {
+        let config_path = dir.join("config.toml");
+        if config_path.exists() {
+            let toml_str = std::fs::read_to_string(&config_path)
+                .map_err(|e| format!("Failed to read xsd/config.toml: {}", e))?;
+            toml::from_str::<XsdProfile>(&toml_str)
+                .map_err(|e| format!("Failed to parse xsd/config.toml: {}", e))?
+        } else {
+            XsdProfile::default()
+        }
+    };
+
+    // Auto-discover predefined types from types/ subdirectory
+    let mut predefined_types = Vec::new();
+    let types_dir = dir.join("types");
+    if types_dir.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(&types_dir)
+            .map_err(|e| format!("Failed to read xsd/types/ directory: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().extension().and_then(|ext| ext.to_str()) == Some("xsd")
+            })
+            .collect();
+        // Sort for deterministic output
+        entries.sort_by_key(|e| e.path());
+        for entry in entries {
+            let content = std::fs::read_to_string(entry.path())
+                .map_err(|e| format!("Failed to read type file '{}': {}", entry.path().display(), e))?;
+            predefined_types.push(content);
+        }
+    }
+
+    Ok(XsdConfig::new(profile, predefined_types))
 }

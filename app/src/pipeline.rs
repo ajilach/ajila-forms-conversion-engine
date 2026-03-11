@@ -21,6 +21,7 @@ pub fn run_blueprint_pipeline(
 ) -> ProcessingState {
     use blueprint::{
         AemConfig, AemProfile, HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep,
+        XsdConfig, XsdProfile,
         run_pipeline,
     };
     use std::collections::HashMap;
@@ -161,6 +162,23 @@ pub fn run_blueprint_pipeline(
                 state.form_code = Some(aem_config.form_code.clone());
                 state.aem_package = Some(aem_zip);
             }
+
+            // XSD schema generation
+            let xsd_config = if let Some(ref profile_name) = profile {
+                match crate::profiles::load_xsd_config(profile_name) {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        state
+                            .warnings
+                            .push(format!("Failed to load XSD profile: {e}"));
+                        XsdConfig::from_profile(XsdProfile::default())
+                    }
+                }
+            } else {
+                XsdConfig::from_profile(XsdProfile::default())
+            };
+            let xsd = blueprint::to_xsd(&merged.content, &xsd_config);
+            state.xsd_schema = Some(xsd);
 
             state.step = ProcessingStep::Complete;
             state.merged_json = Some(json);

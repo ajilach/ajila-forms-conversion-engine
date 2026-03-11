@@ -1,0 +1,149 @@
+# XSD Output Profile Configuration
+#
+# This file configures how structured form content maps to XSD schema elements.
+#
+# [complexTypes.<name>]   — heading → xs:complexType mappings
+#   synonyms              — list of strings to match (case-insensitive substring)
+#   type                  — optional reference to a predefined complexType name
+#   required_children     — optional: canonical child names that MUST be present
+#   optional_children     — optional: canonical child names that MAY be present
+#
+# [elements.<name>]       — field → xs:element mappings
+#   synonyms              — list of strings to match (case-insensitive substring)
+#   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
+#
+# Predefined simpleType/complexType definitions are auto-loaded from the
+# types/ subdirectory (all *.xsd files).
+
+# ─── Complex Types ─────────────────────────────────────────────────────────────
+
+[complexTypes.account]
+synonyms = ["Account", "Konto", "Conto", "Cuenta"]
+
+[complexTypes.personal_info]
+synonyms = ["Personal Information", "Personal Details", "Personalien", "Kundendaten", "Datos del cliente", "Endkunde"]
+
+[complexTypes.signature]
+synonyms = ["Unterschrift(en)", "Signature(s)", "Letto, confermato e sottoscritto"]
+
+[complexTypes.agreement]
+synonyms = ["Agreement", "Vereinbarung"]
+
+# ─── Elements ──────────────────────────────────────────────────────────────────
+
+# --- Name fields ---
+
+[elements.last_name]
+synonyms = ["Last Name", "Nachname", "Cognome", "Apellido(s)", "Name des Kunden", "Name of client", "Nome del cliente"]
+type = "xs:string"
+
+[elements.first_name]
+synonyms = ["First Name(s)", "Vorname(n)", "Nome(i)", "Nombre(s)", "Vorname"]
+type = "xs:string"
+
+[elements.name]
+synonyms = ["Name", "Nome", "Nombre", "Nome della società"]
+type = "xs:string"
+
+[elements.company]
+synonyms = ["Company", "Firma", "Società"]
+type = "xs:string"
+
+# --- Address fields ---
+
+[elements.street]
+synonyms = ["Street", "Straße", "Strasse/Nr.", "Via", "Calle"]
+type = "xs:string"
+
+[elements.postal_code]
+synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
+type = "xs:string"
+
+[elements.city]
+synonyms = ["City", "Stadt", "Ort", "Località", "Luogo", "Ciudad", "Place", "Lugar"]
+type = "xs:string"
+
+[elements.country]
+synonyms = ["Country", "Land", "Paese", "País"]
+type = "xs:string"
+
+[elements.address_number]
+synonyms = ["Nr.", "Nr", "No.", "No", "Nº", "Adress-Nr.", "Adress-Nummer"]
+type = "xs:string"
+
+# --- Contact fields ---
+
+[elements.phone]
+synonyms = ["Telephone", "Phone", "Mobile", "Telefon", "Telefax privat", "Telefax beruflich"]
+type = "xs:string"
+
+[elements.email]
+synonyms = ["E-Mail", "Email"]
+type = "xs:string"
+
+# --- Financial fields ---
+
+[elements.amount]
+synonyms = ["Amount", "Total", "Betrag"]
+type = "xs:decimal"
+
+[elements.currency]
+synonyms = ["Currency", "Währung"]
+type = "xs:string"
+
+[elements.iban]
+synonyms = ["IBAN"]
+type = "xs:string"
+
+[elements.account_number]
+synonyms = ["Account No", "Konto-Nr", "Konto Nr"]
+type = "xs:string"
+
+[elements.tin]
+synonyms = ["TIN", "Steuerliches Identifikationsmerkmal"]
+type = "xs:string"
+
+# --- Date / time fields ---
+
+[elements.date]
+synonyms = ["Date", "Datum", "Data", "Fecha"]
+type = "xs:date"
+
+[elements.year]
+synonyms = ["Year", "Jahr"]
+type = "xs:gYear"
+
+[elements.place_and_date]
+synonyms = ["Place and Date", "Ort und Datum", "Luogo e Data", "Lugar y Fecha"]
+type = "xs:string"
+
+# --- Other common fields ---
+
+[elements.role]
+synonyms = ["Role", "Rolle", "Funktion"]
+type = "xs:string"
+
+[elements.marital_status]
+synonyms = ["Marital Status", "Zivilstand", "Familienstand", "Estado civil"]
+type = "xs:string"
+
+[elements.country_of_birth]
+synonyms = ["Country of Birth", "Geburtsland", "País de nacimiento"]
+type = "xs:string"
+
+[elements.city_of_birth]
+synonyms = ["City of Birth", "Geburtsort", "Ciudad de nacimiento"]
+type = "xs:string"
+
+[elements.date_of_birth]
+synonyms = ["Date of Birth", "Geburtsdatum", "Fecha de nacimiento"]
+type = "xs:date"
+
+[elements.tax_residence]
+synonyms = ["Tax Residence", "Steuerdomizil", "Residencia(s) fiscal(es)"]
+type = "xs:string"
+
+[elements.form_of_address]
+synonyms = ["Form of Address", "Anrede", "Anredesprache"]
+type = "xs:string"
+ 

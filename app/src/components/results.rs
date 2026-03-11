@@ -63,6 +63,21 @@ pub fn ResultsSection(state: ProcessingState) -> Element {
                         "Download AEM Package"
                     }
                 }
+
+                // XSD Schema Download button
+                if let Some(ref xsd_data) = state.xsd_schema {
+                    button {
+                        class: "btn btn-primary btn-lg",
+                        onclick: {
+                            let xsd_data = xsd_data.clone();
+                            let xsd_filename = filename("schema", &state.form_code, "xsd");
+                            move |_| {
+                                download_file(xsd_data.as_bytes(), &xsd_filename, "application/xml");
+                            }
+                        },
+                        "Download XSD Schema"
+                    }
+                }
             }
         }
     }

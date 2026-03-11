@@ -2,10 +2,11 @@
 //!
 //! The entire `profiles/` directory tree is baked into the binary at compile
 //! time via [`include_dir!`].  This module provides helpers to list available
-//! profiles and to load their AEM / HTML configuration from the embedded data.
+//! profiles and to load their AEM / HTML / XSD configuration from the embedded data.
 
 use blueprint::{
     AemProfile, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily, ResolvedFontVariant,
+    XsdConfig, XsdProfile,
 };
 use include_dir::{Dir, include_dir};
 use std::collections::HashMap;
@@ -171,4 +172,50 @@ fn mime_from_extension(path: &std::path::Path) -> &'static str {
         Some("ico") => "image/x-icon",
         _ => "application/octet-stream",
     }
+}
+
+/// Load the XSD config for the given profile name.
+///
+/// Reads `xsd/config.toml` for synonym mappings and auto-discovers all
+/// `*.xsd` files in the `xsd/types/` subdirectory as predefined type definitions.
+pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
+    let xsd_dir = PROFILES_DIR.get_dir(format!("{name}/xsd"));
+
+    // Read config.toml (optional)
+    let profile = if let Some(dir) = xsd_dir {
+        match dir.get_file(format!("{name}/xsd/config.toml")) {
+            Some(config_file) => {
+                let toml_str = config_file
+                    .contents_utf8()
+                    .ok_or_else(|| "xsd/config.toml is not valid UTF-8".to_string())?;
+                toml::from_str::<XsdProfile>(toml_str)
+                    .map_err(|e| format!("Failed to parse xsd/config.toml: {e}"))?
+            }
+            None => XsdProfile::default(),
+        }
+    } else {
+        XsdProfile::default()
+    };
+
+    // Auto-discover predefined types from types/ subdirectory
+    let mut predefined_types = Vec::new();
+    if let Some(dir) = xsd_dir {
+        if let Some(types_dir) = dir.get_dir(format!("{name}/xsd/types")) {
+            let mut files: Vec<_> = types_dir
+                .files()
+                .filter(|f| {
+                    f.path().extension().and_then(|e| e.to_str()) == Some("xsd")
+                })
+                .collect();
+            // Sort for deterministic output
+            files.sort_by_key(|f| f.path().to_path_buf());
+            for file in files {
+                if let Some(content) = file.contents_utf8() {
+                    predefined_types.push(content.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(XsdConfig::new(profile, predefined_types))
 }

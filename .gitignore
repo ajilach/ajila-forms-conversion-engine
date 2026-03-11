@@ -1,11 +1,12 @@
 /target
 .DS_Store
 
-/*.png
-/*.json
-/*.html
-/*.xml
-/*.zip
-/*.dot
+/cli/*.png
+/cli/*.json
+/cli/*.html
+/cli/*.xml
+/cli/*.zip
+/cli/*.dot
+/cli/*.xsd
 
 /specs/migrated

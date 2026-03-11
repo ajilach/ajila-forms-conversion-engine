@@ -78,6 +78,7 @@ pub mod pipeline;
 pub mod structured;
 pub mod util;
 pub mod xfa;
+pub mod xsd;
 
 #[cfg(test)]
 mod tests;
@@ -122,6 +123,9 @@ pub use html::{
     FontFamilyProfile, HtmlConfig, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily,
     ResolvedFontVariant, generate_form_body, generate_html,
 };
+
+// XSD generation
+pub use xsd::{ComplexTypeMapping, ElementMapping, XsdConfig, XsdProfile, generate_xsd};
 
 // XFA layer
 pub use xfa::scripting::{SomPath, XfaForm};
@@ -714,6 +718,11 @@ pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
     let config = resolve_aem_languages(content, config);
     let root = convert_to_aem(content, &config);
     generate_aem_xml(&root, &config)
+}
+
+/// Generate an XSD schema from structured nodes.
+pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
+    generate_xsd(content, config)
 }
 
 /// Convert structured nodes to a complete AEM FileVault content package (ZIP).

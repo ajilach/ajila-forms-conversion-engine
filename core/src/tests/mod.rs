@@ -13262,3 +13262,615 @@ fn test_aacj_de_tin_radio_button_options() {
 
     println!("\n✓ AACJ TIN radio button has all expected options");
 }
+
+// ============================================================================
+// XSD generation tests
+// ============================================================================
+
+#[test]
+fn test_xsd_basic_field_generation() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping};
+    use crate::xsd::generate_xsd;
+
+    // Build a simple structured tree with one field
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.phone"),
+            som_path: None,
+            label: Some(InlineText::plain("Phone Number")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    // Config with a matching synonym
+    let mut elements = std::collections::HashMap::new();
+    elements.insert(
+        "phone".to_string(),
+        ElementMapping {
+            synonyms: vec!["Phone".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    let profile = XsdProfile {
+        complex_types: std::collections::HashMap::new(),
+        elements,
+    };
+    let config = XsdConfig::from_profile(profile);
+
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Verify the output contains the expected element
+    assert!(xsd.contains("<xs:element name=\"phone\" type=\"xs:string\"/>"), 
+        "XSD should contain phone element. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:schema"), "Should have schema root");
+    assert!(xsd.contains("</xs:schema>"), "Should close schema root");
+}
+
+#[test]
+fn test_xsd_unmatched_field_uses_snake_case() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.dob"),
+            som_path: None,
+            label: Some(InlineText::plain("Date of Birth")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Unmatched field should use snake_case name and xs:string type
+    assert!(xsd.contains("<xs:element name=\"date_of_birth\" type=\"xs:string\"/>"),
+        "Unmatched field should use snake_case name. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_heading_creates_complex_type() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Account Details"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.iban"),
+            som_path: None,
+            label: Some(InlineText::plain("IBAN")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut complex_types = std::collections::HashMap::new();
+    complex_types.insert(
+        "account".to_string(),
+        ComplexTypeMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: None,
+            required_children: None,
+            optional_children: None,
+        },
+    );
+
+    let mut elements = std::collections::HashMap::new();
+    elements.insert(
+        "iban".to_string(),
+        ElementMapping {
+            synonyms: vec!["IBAN".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+
+    let profile = XsdProfile {
+        complex_types,
+        elements,
+    };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Should create a complexType element named "account" with child "iban"
+    assert!(xsd.contains("<xs:element name=\"account\">"),
+        "Should create element for matched heading. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:complexType>"),
+        "Should contain complexType. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:element name=\"iban\" type=\"xs:string\"/>"),
+        "Should contain iban element inside. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_heading_with_type_ref() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Account Details"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.num"),
+            som_path: None,
+            label: Some(InlineText::plain("Account Number")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut complex_types = std::collections::HashMap::new();
+    complex_types.insert(
+        "account".to_string(),
+        ComplexTypeMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: Some("AccountType".to_string()),
+            required_children: None,
+            optional_children: None,
+        },
+    );
+
+    let profile = XsdProfile {
+        complex_types,
+        elements: std::collections::HashMap::new(),
+    };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Should reference the predefined type
+    assert!(xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
+        "Should reference predefined type. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_child_validation_required_present() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Account"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.iban"),
+            som_path: None,
+            label: Some(InlineText::plain("IBAN")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.phone"),
+            som_path: None,
+            label: Some(InlineText::plain("Phone")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut complex_types = std::collections::HashMap::new();
+    complex_types.insert(
+        "account".to_string(),
+        ComplexTypeMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: Some("AccountType".to_string()),
+            required_children: Some(vec!["iban".to_string()]),
+            optional_children: Some(vec!["phone".to_string()]),
+        },
+    );
+
+    let mut elements = std::collections::HashMap::new();
+    elements.insert("iban".to_string(), ElementMapping {
+        synonyms: vec!["IBAN".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("phone".to_string(), ElementMapping {
+        synonyms: vec!["Phone".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+
+    let profile = XsdProfile { complex_types, elements };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // All required children present, optional child present → use config type ref
+    assert!(xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
+        "Should use type ref when children match. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_child_validation_required_missing() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::generate_xsd;
+
+    // Only "Phone" field, but "iban" is required
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Account"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.phone"),
+            som_path: None,
+            label: Some(InlineText::plain("Phone")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut complex_types = std::collections::HashMap::new();
+    complex_types.insert(
+        "account".to_string(),
+        ComplexTypeMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: Some("AccountType".to_string()),
+            required_children: Some(vec!["iban".to_string()]),
+            optional_children: Some(vec!["phone".to_string()]),
+        },
+    );
+
+    let mut elements = std::collections::HashMap::new();
+    elements.insert("phone".to_string(), ElementMapping {
+        synonyms: vec!["Phone".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+
+    let profile = XsdProfile { complex_types, elements };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Required child "iban" missing → fallback to inline complexType with camelCase name
+    assert!(!xsd.contains("AccountType"),
+        "Should NOT use type ref when required child missing. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:element name=\"account\">"),
+        "Should fall back to inline complexType. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:complexType>"),
+        "Should generate inline complexType. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_child_validation_extra_child() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::generate_xsd;
+
+    // Has "iban" (required), "phone" (optional), and "email" (undeclared)
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Account"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.iban"),
+            som_path: None,
+            label: Some(InlineText::plain("IBAN")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.phone"),
+            som_path: None,
+            label: Some(InlineText::plain("Phone")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.email"),
+            som_path: None,
+            label: Some(InlineText::plain("E-Mail")),
+            input_type: FieldType::Email,
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut complex_types = std::collections::HashMap::new();
+    complex_types.insert(
+        "account".to_string(),
+        ComplexTypeMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: Some("AccountType".to_string()),
+            required_children: Some(vec!["iban".to_string()]),
+            optional_children: Some(vec!["phone".to_string()]),
+        },
+    );
+
+    let mut elements = std::collections::HashMap::new();
+    elements.insert("iban".to_string(), ElementMapping {
+        synonyms: vec!["IBAN".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("phone".to_string(), ElementMapping {
+        synonyms: vec!["Phone".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("email".to_string(), ElementMapping {
+        synonyms: vec!["E-Mail".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+
+    let profile = XsdProfile { complex_types, elements };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // "email" is undeclared in required/optional → constraint fails → fallback
+    assert!(!xsd.contains("AccountType"),
+        "Should NOT use type ref when extra undeclared child present. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:element name=\"account\">"),
+        "Should fall back to inline complexType. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_conditional_creates_choice() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let field_id = FieldId::from("test.selector");
+
+    let nodes = vec![
+        StructuredNode::Conditional(ConditionalNode {
+            condition: FieldCondition {
+                field_name: field_id.clone(),
+                value: InputValue::Text("option1".to_string()),
+            },
+            content: Box::new(StructuredNode::Field(FieldNode {
+                name: FieldId::from("test.field_a"),
+                som_path: None,
+                label: Some(InlineText::plain("Field A")),
+                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+                value: None,
+                placeholder: None,
+            })),
+        }),
+        StructuredNode::Conditional(ConditionalNode {
+            condition: FieldCondition {
+                field_name: field_id.clone(),
+                value: InputValue::Text("option2".to_string()),
+            },
+            content: Box::new(StructuredNode::Field(FieldNode {
+                name: FieldId::from("test.field_b"),
+                som_path: None,
+                label: Some(InlineText::plain("Field B")),
+                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+                value: None,
+                placeholder: None,
+            })),
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Should produce xs:choice with two xs:sequence branches
+    assert!(xsd.contains("<xs:choice>"), "Should contain xs:choice. Got:\n{}", xsd);
+    assert!(xsd.contains("</xs:choice>"), "Should close xs:choice. Got:\n{}", xsd);
+
+    let sequence_count = xsd.matches("<xs:sequence>").count();
+    // The root sequence + 2 branches = at least 3
+    assert!(sequence_count >= 3,
+        "Should have at least 3 xs:sequence elements (root + 2 branches). Found: {}. Got:\n{}",
+        sequence_count, xsd);
+
+    assert!(xsd.contains("field_a"), "Should contain field_a. Got:\n{}", xsd);
+    assert!(xsd.contains("field_b"), "Should contain field_b. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_repeatable_min_max_occurs() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Repeatable(RepeatableNode {
+            item: Box::new(StructuredNode::Field(FieldNode {
+                name: FieldId::from("test.item"),
+                som_path: None,
+                label: Some(InlineText::plain("Item")),
+                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+                value: None,
+                placeholder: None,
+            })),
+            min_occurrences: 0,
+            max_occurrences: None, // unbounded
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Should have minOccurs and maxOccurs attributes
+    assert!(xsd.contains("minOccurs=\"0\""), "Should have minOccurs=0. Got:\n{}", xsd);
+    assert!(xsd.contains("maxOccurs=\"unbounded\""), "Should have maxOccurs=unbounded. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_field_with_restrictions() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.name"),
+            som_path: None,
+            label: Some(InlineText::plain("Full Name")),
+            input_type: FieldType::Text {
+                regex: Some("[A-Za-z ]+".to_string()),
+                max_length: Some(100),
+                min_length: Some(1),
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    assert!(xsd.contains("<xs:restriction base=\"xs:string\">"),
+        "Should have restriction. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:pattern value=\"[A-Za-z ]+\"/>"),
+        "Should have pattern. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:minLength value=\"1\"/>"),
+        "Should have minLength. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:maxLength value=\"100\"/>"),
+        "Should have maxLength. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_radio_creates_enumeration() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.color"),
+            som_path: None,
+            label: Some(InlineText::plain("Color")),
+            input_type: FieldType::Radio {
+                options: vec![
+                    NameValue {
+                        name: TranslatableString::Plain("Red".to_string()),
+                        value: InputValue::Text("red".to_string()),
+                    },
+                    NameValue {
+                        name: TranslatableString::Plain("Blue".to_string()),
+                        value: InputValue::Text("blue".to_string()),
+                    },
+                    NameValue {
+                        name: TranslatableString::Plain("Green".to_string()),
+                        value: InputValue::Text("green".to_string()),
+                    },
+                ],
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    assert!(xsd.contains("<xs:enumeration value=\"red\"/>"),
+        "Should have red enumeration. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:enumeration value=\"blue\"/>"),
+        "Should have blue enumeration. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:enumeration value=\"green\"/>"),
+        "Should have green enumeration. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_predefined_types_included() {
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let predefined = vec![
+        r#"<xs:simpleType name="CurrencyType">
+  <xs:restriction base="xs:string">
+    <xs:enumeration value="CHF"/>
+    <xs:enumeration value="EUR"/>
+    <xs:enumeration value="USD"/>
+  </xs:restriction>
+</xs:simpleType>"#.to_string(),
+    ];
+
+    let config = XsdConfig::new(XsdProfile::default(), predefined);
+    let xsd = generate_xsd(&[], &config);
+
+    assert!(xsd.contains("CurrencyType"),
+        "Should include predefined type. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:enumeration value=\"CHF\"/>"),
+        "Should include CHF enumeration. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_nested_heading_levels() {
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H1,
+            content: InlineText::plain("Top Section"),
+        }),
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Sub Section"),
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.field"),
+            som_path: None,
+            label: Some(InlineText::plain("Inner Field")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&nodes, &config);
+
+    // H1 should create outer complexType, H2 should create inner complexType
+    assert!(xsd.contains("top_section"), "Should contain top_section. Got:\n{}", xsd);
+    assert!(xsd.contains("sub_section"), "Should contain sub_section. Got:\n{}", xsd);
+    assert!(xsd.contains("inner_field"), "Should contain inner_field. Got:\n{}", xsd);
+
+    // Count complexType occurrences — at least 3 (root form + outer heading + inner heading)
+    let ct_count = xsd.matches("<xs:complexType>").count();
+    assert!(ct_count >= 3,
+        "Should have at least 3 complexTypes (form root + 2 headings). Found: {}. Got:\n{}",
+        ct_count, xsd);
+}
+
+#[test]
+fn test_xsd_snake_case_conversion() {
+    use crate::xsd::to_snake_case;
+
+    assert_eq!(to_snake_case("Date of Birth"), "date_of_birth");
+    assert_eq!(to_snake_case("Phone Number"), "phone_number");
+    assert_eq!(to_snake_case("IBAN"), "iban");
+    assert_eq!(to_snake_case("first name"), "first_name");
+    assert_eq!(to_snake_case("Account Details (Primary)"), "account_details_primary");
+    assert_eq!(to_snake_case(""), "unknown");
+    assert_eq!(to_snake_case("single"), "single");
+}
