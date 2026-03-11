@@ -43,6 +43,21 @@ pub struct XsdProfile {
     /// Mapping from canonical element names to their config.
     #[serde(default)]
     pub elements: HashMap<String, ElementMapping>,
+
+    /// External schema includes, keyed by a logical type name.
+    /// Each entry generates an `<xs:include schemaLocation="..."/>` directive.
+    #[serde(default)]
+    pub includes: HashMap<String, IncludeMapping>,
+}
+
+/// Configuration for an external schema include.
+///
+/// Generates `<xs:include schemaLocation="{path}"/>` at the top of the
+/// output XSD, before any type definitions or the root element.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IncludeMapping {
+    /// The `schemaLocation` path for the `xs:include` directive.
+    pub path: String,
 }
 
 /// Configuration for a complexType synonym mapping.

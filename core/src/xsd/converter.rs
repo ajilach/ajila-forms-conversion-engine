@@ -33,6 +33,22 @@ pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
     output.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     output.push_str("<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n");
 
+    // Emit xs:include directives only for types actually used in the schema,
+    // deduplicated by path (multiple entries may point to the same file).
+    let include_paths: std::collections::BTreeSet<&str> = config
+        .profile
+        .includes
+        .iter()
+        .filter(|(name, _)| ctx.used_type_refs.contains(*name))
+        .map(|(_, inc)| inc.path.as_str())
+        .collect();
+    for path in &include_paths {
+        output.push_str(&format!("  <xs:include schemaLocation=\"{}\"/>\n", path));
+    }
+    if !include_paths.is_empty() {
+        output.push('\n');
+    }
+
     // Include predefined type definitions
     for type_fragment in &config.predefined_types {
         for line in type_fragment.lines() {
@@ -64,12 +80,24 @@ pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
 struct GeneratorContext {
     /// The accumulated XSD body content (inside the root element's sequence).
     body: String,
+    /// Type names referenced via `type="..."` attributes during generation.
+    /// Used to determine which xs:include directives are actually needed.
+    used_type_refs: std::collections::HashSet<String>,
 }
 
 impl GeneratorContext {
     fn new() -> Self {
         Self {
             body: String::new(),
+            used_type_refs: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Record a type reference. Builtin xs: types are ignored since they
+    /// never require an xs:include directive.
+    fn record_type_ref(&mut self, type_ref: &str) {
+        if !type_ref.starts_with("xs:") {
+            self.used_type_refs.insert(type_ref.to_string());
         }
     }
 }
@@ -262,6 +290,7 @@ fn generate_section(
                     // Config match with child validation passed
                     if let Some(ref type_ref) = res.type_ref {
                         // Reference a predefined complexType
+                        ctx.record_type_ref(type_ref);
                         ctx.body.push_str(&format!(
                             "{}<xs:element name=\"{}\" type=\"{}\"/>\n",
                             indent_str, res.name, type_ref
@@ -573,6 +602,7 @@ fn generate_field(
         Some(res) => (res.name, res.type_ref),
         None => (to_snake_case(&label), "xs:string".to_string()),
     };
+    ctx.record_type_ref(&type_ref);
 
     // Build occurrence attributes
     let occur_attrs = build_occurrence_attrs(min_occurs, max_occurs);

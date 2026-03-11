@@ -14,6 +14,18 @@
 #
 # Predefined simpleType/complexType definitions are auto-loaded from the
 # types/ subdirectory (all *.xsd files).
+#
+# [includes.<TypeName>]  — external schema includes
+#   path                 — schemaLocation for the xs:include directive
+#
+# Each entry generates: <xs:include schemaLocation="{path}"/>
+# at the top of the output XSD.
+
+# ─── Includes ──────────────────────────────────────────────────────────────────
+
+# Example:
+# [includes.CommonTypes]
+# path = "common-types.xsd"
 
 # ─── Complex Types ─────────────────────────────────────────────────────────────
 

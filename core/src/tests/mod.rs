@@ -13301,6 +13301,7 @@ fn test_xsd_basic_field_generation() {
     let profile = XsdProfile {
         complex_types: std::collections::HashMap::new(),
         elements,
+        ..Default::default()
     };
     let config = XsdConfig::from_profile(profile);
 
@@ -13390,6 +13391,7 @@ fn test_xsd_heading_creates_complex_type() {
     let profile = XsdProfile {
         complex_types,
         elements,
+        ..Default::default()
     };
     let config = XsdConfig::from_profile(profile);
     let xsd = generate_xsd(&nodes, &config);
@@ -13442,6 +13444,7 @@ fn test_xsd_heading_with_type_ref() {
     let profile = XsdProfile {
         complex_types,
         elements: std::collections::HashMap::new(),
+        ..Default::default()
     };
     let config = XsdConfig::from_profile(profile);
     let xsd = generate_xsd(&nodes, &config);
@@ -13501,7 +13504,7 @@ fn test_xsd_child_validation_required_present() {
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements };
+    let profile = XsdProfile { complex_types, elements, ..Default::default() };
     let config = XsdConfig::from_profile(profile);
     let xsd = generate_xsd(&nodes, &config);
 
@@ -13549,7 +13552,7 @@ fn test_xsd_child_validation_required_missing() {
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements };
+    let profile = XsdProfile { complex_types, elements, ..Default::default() };
     let config = XsdConfig::from_profile(profile);
     let xsd = generate_xsd(&nodes, &config);
 
@@ -13625,7 +13628,7 @@ fn test_xsd_child_validation_extra_child() {
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements };
+    let profile = XsdProfile { complex_types, elements, ..Default::default() };
     let config = XsdConfig::from_profile(profile);
     let xsd = generate_xsd(&nodes, &config);
 
@@ -13873,4 +13876,143 @@ fn test_xsd_snake_case_conversion() {
     assert_eq!(to_snake_case("Account Details (Primary)"), "account_details_primary");
     assert_eq!(to_snake_case(""), "unknown");
     assert_eq!(to_snake_case("single"), "single");
+}
+
+#[test]
+fn test_xsd_includes_only_emitted_when_type_is_used() {
+    use crate::structured::*;
+    use crate::xsd::{ElementMapping, IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+    use std::collections::HashMap;
+
+    // Two includes configured, but only AddressType will be referenced
+    let mut includes = HashMap::new();
+    includes.insert("AddressType".to_string(), IncludeMapping { path: "address.xsd".to_string() });
+    includes.insert("PersonType".to_string(),  IncludeMapping { path: "person.xsd".to_string() });
+
+    // Only "address" element uses AddressType; "name" uses xs:string (no include needed)
+    let mut elements = HashMap::new();
+    elements.insert("address".to_string(), ElementMapping {
+        synonyms: vec!["Address".to_string()],
+        type_ref: "AddressType".to_string(),
+    });
+    elements.insert("name".to_string(), ElementMapping {
+        synonyms: vec!["Name".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.address"),
+            som_path: None,
+            label: Some(InlineText::plain("Address")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None, placeholder: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.name"),
+            som_path: None,
+            label: Some(InlineText::plain("Name")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None, placeholder: None,
+        }),
+    ];
+
+    let profile = XsdProfile { includes, elements, ..XsdProfile::default() };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // AddressType is used → address.xsd should be included
+    assert!(xsd.contains("<xs:include schemaLocation=\"address.xsd\"/>"),
+        "Used type include should appear. Got:\n{}", xsd);
+
+    // PersonType is NOT used → person.xsd should NOT be included
+    assert!(!xsd.contains("person.xsd"),
+        "Unused type include should not appear. Got:\n{}", xsd);
+
+    // Include should appear before the root form element
+    let include_pos = xsd.find("<xs:include").unwrap();
+    let form_pos = xsd.find("<xs:element name=\"form\">").unwrap();
+    assert!(include_pos < form_pos,
+        "Includes should appear before the root element. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_includes_deduplicated_by_path() {
+    use crate::structured::*;
+    use crate::xsd::{ElementMapping, IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+    use std::collections::HashMap;
+
+    // Two different logical type names → same physical file
+    let mut includes = HashMap::new();
+    includes.insert("TypeA".to_string(), IncludeMapping { path: "shared.xsd".to_string() });
+    includes.insert("TypeB".to_string(), IncludeMapping { path: "shared.xsd".to_string() });
+
+    let mut elements = HashMap::new();
+    elements.insert("field_a".to_string(), ElementMapping {
+        synonyms: vec!["Field A".to_string()],
+        type_ref: "TypeA".to_string(),
+    });
+    elements.insert("field_b".to_string(), ElementMapping {
+        synonyms: vec!["Field B".to_string()],
+        type_ref: "TypeB".to_string(),
+    });
+
+    let nodes = vec![
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.a"),
+            som_path: None,
+            label: Some(InlineText::plain("Field A")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None, placeholder: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.b"),
+            som_path: None,
+            label: Some(InlineText::plain("Field B")),
+            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            value: None, placeholder: None,
+        }),
+    ];
+
+    let profile = XsdProfile { includes, elements, ..XsdProfile::default() };
+    let config = XsdConfig::from_profile(profile);
+    let xsd = generate_xsd(&nodes, &config);
+
+    // Both types used, but same path → only one xs:include
+    let count = xsd.matches("<xs:include schemaLocation=\"shared.xsd\"/>").count();
+    assert_eq!(count, 1,
+        "Duplicate include path should appear only once, found {}. Got:\n{}", count, xsd);
+}
+
+#[test]
+fn test_xsd_unused_includes_not_emitted() {
+    use crate::xsd::{IncludeMapping, XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+    use std::collections::HashMap;
+
+    let mut includes = HashMap::new();
+    includes.insert("SomeType".to_string(), IncludeMapping { path: "some-types.xsd".to_string() });
+
+    let profile = XsdProfile { includes, ..XsdProfile::default() };
+    let config = XsdConfig::from_profile(profile);
+    // No nodes at all → SomeType is never referenced
+    let xsd = generate_xsd(&[], &config);
+
+    assert!(!xsd.contains("<xs:include"),
+        "No includes should appear when no types are used. Got:\n{}", xsd);
+}
+
+#[test]
+fn test_xsd_no_includes_no_extra_whitespace() {
+    use crate::xsd::{XsdConfig, XsdProfile};
+    use crate::xsd::generate_xsd;
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let xsd = generate_xsd(&[], &config);
+
+    // With no includes, there should be no xs:include directives
+    assert!(!xsd.contains("<xs:include"),
+        "Should not contain xs:include when none configured. Got:\n{}", xsd);
 }
