@@ -13086,3 +13086,179 @@ fn test_aags_en_page_66439_included_in_flattened_output() {
         "Flattened output should still contain content from the first page (Page)"
     );
 }
+
+#[test]
+fn test_aacj_de_formular_adressat_dropdown_options() {
+    // Test that the AACJ_019_DE document has a dropdown field (Formular Adressat)
+    // with the four expected options: "Private Person", "Minderjährige", "Firma", "GbR".
+    use crate::flattened::Hint;
+
+    let xfa_data =
+        extract_xfa_from_pdf(input_path("AACJ_019_DE.pdf")).expect("Failed to read PDF");
+    assert!(xfa_data.is_some(), "AACJ_019_DE.pdf should contain XFA data");
+
+    let mut nodes =
+        XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+    let flattened =
+        flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+    // Find any field that carries a Hint::Dropdown and contains all four options
+    let mut found_options: Option<Vec<(String, String)>> = None;
+
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Field { .. } = &node.kind {
+            for hint in &node.hints {
+                if let Hint::Dropdown { options, .. } = hint {
+                    let display: Vec<&str> = options.iter().map(|(d, _)| d.as_str()).collect();
+                    if display.contains(&"Private Person") {
+                        found_options = Some(options.clone());
+                        break;
+                    }
+                }
+            }
+        }
+        if found_options.is_some() {
+            break;
+        }
+    }
+
+    let options =
+        found_options.expect("Expected to find a dropdown containing 'Private Person' (Formular Adressat)");
+    let display_values: Vec<&str> = options.iter().map(|(d, _)| d.as_str()).collect();
+
+    println!("\n=== AACJ Formular Adressat dropdown options ===");
+    for v in &display_values {
+        println!("  - '{}'", v);
+    }
+
+    let expected = [
+        "Private Person",
+        "Minderjährige",
+        "Firma",
+        "GbR",
+    ];
+
+    for exp in expected {
+        assert!(
+            display_values.contains(&exp),
+            "Expected dropdown option '{}' not found.\nFound: {:?}",
+            exp, display_values
+        );
+    }
+
+    println!("\n✓ AACJ Formular Adressat dropdown has all expected options");
+}
+
+#[test]
+fn test_aacj_de_has_expected_field_labels() {
+    // Test that the AACJ_019_DE document contains the following fields:
+    // "Nachname", "Vorname(n)", "Straße", "Nr.", "PLZ", "Stadt", "Land",
+    // "Geburtsdatum", "Geburtsort", "Geburtsland", "Steuerdomizil", "TIN"
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+
+    let xfa_data =
+        extract_xfa_from_pdf(input_path("AACJ_019_DE.pdf")).expect("Failed to read PDF");
+    assert!(xfa_data.is_some(), "AACJ_019_DE.pdf should contain XFA data");
+
+    let mut nodes =
+        XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+    let flattened =
+        flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    let structured_nodes = crate::structured::convert(&doc);
+    let field_labels = collect_field_labels_trimmed(&structured_nodes);
+
+    println!("\n=== Field labels found in AACJ_019_DE structured output ===");
+    for label in &field_labels {
+        println!("  - '{}'", label);
+    }
+
+    let expected_labels = [
+        "Nachname",
+        "Vorname(n)",
+        "Straße",
+        "Nr.",
+        "PLZ",
+        "Stadt",
+        "Land",
+        "Geburtsdatum",
+        "Geburtsort",
+        "Geburtsland",
+        "Steuerdomizil",
+        "TIN",
+    ];
+
+    for expected in expected_labels {
+        let found = field_labels.iter().any(|label| label.contains(expected));
+        assert!(
+            found,
+            "Expected to find field with label containing '{}', but it was not found.\nFound labels: {:?}",
+            expected, field_labels
+        );
+    }
+
+    println!("\n✓ All expected AACJ_019_DE field labels found");
+}
+
+#[test]
+fn test_aacj_de_tin_radio_button_options() {
+    // Test that the AACJ_019_DE document has a radio button group for TIN absence reasons
+    // with the following options:
+    // - "Das Steuerdomizilland teilt den Steuerpflichtigen keine TIN zu"
+    // - "Die TIN ist noch nicht zugeteilt (bitte beachten Sie, dass die TIN binnen neunzig
+    //    90 Tagen einzureichen ist, sonst ist UBS Europe SE berechtigt, die Bankbeziehung
+    //    zu kündigen)"
+    // - "Aus folgenden Gründen nicht in der Lage, eine TIN anzugeben"
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AACJ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AACJ_019_DE.pdf");
+
+    // Find the radio field whose options include the TIN-related labels
+    let all_fields = collect_fields(&structured);
+    let tin_radio = all_fields.into_iter().find(|f| {
+        if let FieldType::Radio { options } = &f.input_type {
+            options.iter().any(|o| o.name.contains("Steuerdomizilland"))
+        } else {
+            false
+        }
+    });
+
+    let tin_radio = tin_radio.expect(
+        "Expected to find a radio field containing a 'Steuerdomizilland' option (TIN radio group)"
+    );
+
+    let FieldType::Radio { options } = &tin_radio.input_type else {
+        panic!("TIN field should have type Radio");
+    };
+
+    println!("\n=== AACJ TIN radio button options ===");
+    for opt in options {
+        println!("  - '{}'", opt.name);
+    }
+
+    let expected_substrings = [
+        "Steuerdomizilland teilt den Steuerpflichtigen keine TIN zu",
+        "TIN ist noch nicht zugeteilt",
+        "Aus folgenden Gründen nicht in der Lage, eine TIN anzugeben",
+    ];
+
+    for expected in expected_substrings {
+        let found = options.iter().any(|o| o.name.contains(expected));
+        assert!(
+            found,
+            "Expected radio option containing '{}' not found.\nFound options: {:?}",
+            expected,
+            options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+
+    println!("\n✓ AACJ TIN radio button has all expected options");
+}
