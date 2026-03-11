@@ -32,9 +32,6 @@ synonyms = ["Personal Information", "Personal Details", "Personalien", "Kundenda
 [complexTypes.Signature]
 synonyms = ["Unterschrift(en)", "Signature(s)", "Letto, confermato e sottoscritto"]
 
-[complexTypes.Agreement]
-synonyms = ["Agreement", "Vereinbarung"]
-
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---
@@ -89,10 +86,6 @@ type = "xs:string"
 
 # --- Financial fields ---
 
-[elements.Amount]
-synonyms = ["Amount", "Total", "Betrag"]
-type = "xs:decimal"
-
 [elements.Currency]
 synonyms = ["Currency", "Währung"]
 type = "xs:string"
@@ -105,23 +98,11 @@ type = "xs:string"
 synonyms = ["Account No", "Konto-Nr", "Konto Nr"]
 type = "xs:string"
 
-[elements.TIN]
-synonyms = ["TIN", "Steuerliches Identifikationsmerkmal"]
-type = "xs:string"
-
 # --- Date / time fields ---
 
 [elements.Date]
 synonyms = ["Date", "Datum", "Data", "Fecha"]
 type = "xs:date"
-
-[elements.Year]
-synonyms = ["Year", "Jahr"]
-type = "xs:gYear"
-
-[elements.PlaceAndDate]
-synonyms = ["Place and Date", "Ort und Datum", "Luogo e Data", "Lugar y Fecha"]
-type = "xs:string"
 
 # --- Other common fields ---
 
@@ -133,21 +114,9 @@ type = "xs:string"
 synonyms = ["Marital Status", "Zivilstand", "Familienstand", "Estado civil"]
 type = "xs:string"
 
-[elements.CountryOfBirth]
-synonyms = ["Country of Birth", "Geburtsland", "País de nacimiento"]
-type = "xs:string"
-
-[elements.CityOfBirth]
-synonyms = ["City of Birth", "Geburtsort", "Ciudad de nacimiento"]
-type = "xs:string"
-
 [elements.DateOfBirth]
 synonyms = ["Date of Birth", "Geburtsdatum", "Fecha de nacimiento"]
 type = "xs:date"
-
-[elements.TaxResidence]
-synonyms = ["Tax Residence", "Steuerdomizil", "Residencia(s) fiscal(es)"]
-type = "xs:string"
 
 [elements.FormOfAddress]
 synonyms = ["Form of Address", "Anrede", "Anredesprache"]
