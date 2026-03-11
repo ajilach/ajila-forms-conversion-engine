@@ -569,27 +569,39 @@ fn merge_inline_text(
     }
 
     // Fallback: merge the entire text as a single TranslatedText node
-    let base_text = base.as_plain_text();
-    let other_text = other.as_plain_text();
-    let mut map = HashMap::new();
-
-    // Check if base already has translations
-    if let Some(InlineNode::TranslatedText(existing)) = base.0.first() {
-        map.extend(existing.clone());
-    } else if !base_text.is_empty() {
-        map.insert(base_lang.to_string(), base_text);
-    }
-
-    if let Some(InlineNode::TranslatedText(existing)) = other.0.first() {
-        map.extend(existing.clone());
-    } else if !other_text.is_empty() {
-        map.insert(other_lang.to_string(), other_text);
-    }
+    let mut map = inline_text_to_text_map(base, base_lang);
+    map.extend(inline_text_to_text_map(other, other_lang));
 
     if map.is_empty() {
         InlineText::empty()
     } else {
         InlineText(vec![InlineNode::TranslatedText(map)])
+    }
+}
+
+/// Extract a language→text map from an `InlineText`.
+/// If it contains a single `TranslatedText` node, returns that map.
+/// Otherwise returns a single-entry map from the given language to the plain text.
+fn inline_text_to_text_map(text: &InlineText, lang: &str) -> HashMap<String, String> {
+    if let Some(InlineNode::TranslatedText(existing)) = text.0.first() {
+        existing.clone()
+    } else {
+        let plain = text.as_plain_text();
+        if plain.is_empty() {
+            HashMap::new()
+        } else {
+            HashMap::from([(lang.to_string(), plain)])
+        }
+    }
+}
+
+/// Extract a language→text map from an `InlineNode`.
+/// `Text` → single-entry map, `TranslatedText` → existing map, others → empty.
+fn into_text_map(node: &InlineNode, lang: &str) -> HashMap<String, String> {
+    match node {
+        InlineNode::Text(s) => HashMap::from([(lang.to_string(), s.clone())]),
+        InlineNode::TranslatedText(m) => m.clone(),
+        _ => HashMap::new(),
     }
 }
 
@@ -615,29 +627,13 @@ fn merge_inline_node(
     other_lang: &str,
 ) -> InlineNode {
     match (base, other) {
-        // Text + Text → TranslatedText
-        (InlineNode::Text(a), InlineNode::Text(b)) => {
-            let mut map = HashMap::new();
-            map.insert(base_lang.to_string(), a.clone());
-            map.insert(other_lang.to_string(), b.clone());
-            InlineNode::TranslatedText(map)
-        }
-        // TranslatedText + Text → merge into existing map
-        (InlineNode::TranslatedText(existing), InlineNode::Text(b)) => {
-            let mut map = existing.clone();
-            map.insert(other_lang.to_string(), b.clone());
-            InlineNode::TranslatedText(map)
-        }
-        // Text + TranslatedText → merge into existing map
-        (InlineNode::Text(a), InlineNode::TranslatedText(existing)) => {
-            let mut map = existing.clone();
-            map.insert(base_lang.to_string(), a.clone());
-            InlineNode::TranslatedText(map)
-        }
-        // TranslatedText + TranslatedText → merge maps
-        (InlineNode::TranslatedText(a), InlineNode::TranslatedText(b)) => {
-            let mut map = a.clone();
-            map.extend(b.clone());
+        // Text/TranslatedText combinations → merge into a single TranslatedText
+        (
+            InlineNode::Text(_) | InlineNode::TranslatedText(_),
+            InlineNode::Text(_) | InlineNode::TranslatedText(_),
+        ) => {
+            let mut map = into_text_map(base, base_lang);
+            map.extend(into_text_map(other, other_lang));
             InlineNode::TranslatedText(map)
         }
         // Strong + Strong → merge inner
