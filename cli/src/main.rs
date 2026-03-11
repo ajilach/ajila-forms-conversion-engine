@@ -322,7 +322,11 @@ fn load_aem_config(
         }
     }
 
-    let config = blueprint::AemConfig::from_profile(&profile, templates, ctx)?;
+    let mut config = blueprint::AemConfig::from_profile(&profile, templates, ctx)?;
+    if config.bind_to_xsd {
+        let xsd_config = load_xsd_config(Some(base))?;
+        config.xsd_config = Some(xsd_config);
+    }
     Ok(config)
 }
 

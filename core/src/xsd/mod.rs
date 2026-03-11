@@ -22,7 +22,7 @@
 
 mod converter;
 
-pub use converter::generate_xsd;
+pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd};
 
 use serde::Deserialize;
 use std::collections::HashMap;

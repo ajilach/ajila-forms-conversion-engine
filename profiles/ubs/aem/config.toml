@@ -18,6 +18,7 @@
 title = "{{ xfa.formrange_code }}"
 
 master_language = "en"
+bind_to_xsd = false
 
 form_path = "{{ variables.entity_dir }}/{{ variables.prefix_dir }}"
 

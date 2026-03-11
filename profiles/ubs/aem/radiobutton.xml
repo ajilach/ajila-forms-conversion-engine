@@ -13,6 +13,7 @@
     guideNodeClass="guideRadioButton"
     mandatory="{{ mandatory }}"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     options="{{ options_attr }}"
     richTextOptions="true"
     textIsRich="{{ text_is_rich }}"

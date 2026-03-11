@@ -21,8 +21,7 @@ pub fn run_blueprint_pipeline(
 ) -> ProcessingState {
     use blueprint::{
         AemConfig, AemProfile, HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep,
-        XsdConfig, XsdProfile,
-        run_pipeline,
+        XsdConfig, XsdProfile, run_pipeline,
     };
     use std::collections::HashMap;
 
@@ -137,6 +136,7 @@ pub fn run_blueprint_pipeline(
                                 form_dir: None,
                                 variables: HashMap::new(),
                                 language_synonyms: HashMap::new(),
+                                bind_to_xsd: None,
                             },
                             HashMap::new(),
                         )
@@ -151,13 +151,28 @@ pub fn run_blueprint_pipeline(
                         form_dir: None,
                         variables: HashMap::new(),
                         language_synonyms: HashMap::new(),
+                        bind_to_xsd: None,
                     },
                     HashMap::new(),
                 )
             };
-            if let Ok(aem_config) =
+            if let Ok(mut aem_config) =
                 AemConfig::from_profile(&aem_profile, templates, &merged.context)
             {
+                if aem_config.bind_to_xsd {
+                    if let Some(ref profile_name) = profile {
+                        match crate::profiles::load_xsd_config(profile_name) {
+                            Ok(xsd_cfg) => {
+                                aem_config.xsd_config = Some(xsd_cfg);
+                            }
+                            Err(e) => {
+                                state
+                                    .warnings
+                                    .push(format!("Failed to load XSD config for AEM bind: {e}"));
+                            }
+                        }
+                    }
+                }
                 let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
                 state.form_code = Some(aem_config.form_code.clone());
                 state.aem_package = Some(aem_zip);

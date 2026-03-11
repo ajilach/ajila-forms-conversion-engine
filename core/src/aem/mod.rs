@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{FieldId, InputValue};
+use crate::xsd::XsdConfig;
 
 // ============================================================================
 // Configuration
@@ -115,6 +116,16 @@ pub struct AemConfig {
 
     /// Resolved user-defined variables (`variables.*` in templates).
     pub user_vars: HashMap<String, String>,
+
+    // -- XSD binding ---------------------------------------------------------
+    /// When `true`, `bindRef` attributes are added to all form fields/panels
+    /// pointing to the matching element path in the generated XSD schema.
+    /// The XSD is also bundled into the AEM content package.
+    pub bind_to_xsd: bool,
+
+    /// XSD configuration used both for schema generation and for computing
+    /// `bindRef` paths.  Must be `Some` when `bind_to_xsd` is `true`.
+    pub xsd_config: Option<XsdConfig>,
 }
 
 impl AemConfig {
@@ -184,6 +195,9 @@ impl AemConfig {
             component_templates: templates,
             xfa_vars,
             user_vars,
+
+            bind_to_xsd: profile.bind_to_xsd.unwrap_or(false),
+            xsd_config: None,
         })
     }
 
@@ -255,6 +269,9 @@ impl AemConfig {
             component_templates: HashMap::new(),
             xfa_vars: HashMap::new(),
             user_vars: HashMap::new(),
+
+            bind_to_xsd: false,
+            xsd_config: None,
         }
     }
 }
@@ -326,6 +343,9 @@ pub enum AemNode {
         /// Column span in Document of Record layout (`dorColspan`).
         /// Set on elements that are children of a `GridLayout` panel.
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute (e.g. `/form/personal_data`).
+        /// `None` when `bind_to_xsd` is `false` or the panel has no corresponding XSD element.
+        bind_ref: Option<String>,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -339,6 +359,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Numeric input (`guideNumberBox`).
@@ -351,6 +373,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Date picker (`guideDatePicker`).
@@ -363,6 +387,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Drop-down / select list (`guideDropDownList`).
@@ -380,6 +406,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Checkbox group (`guideCheckBox`).
@@ -396,6 +424,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Radio button group (`guideRadioButton`).
@@ -414,6 +444,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Static text / heading (`guideTextDraw`).
@@ -448,6 +480,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Repeatable panel with add/remove buttons.

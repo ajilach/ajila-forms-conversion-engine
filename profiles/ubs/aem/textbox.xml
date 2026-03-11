@@ -14,6 +14,7 @@
     mandatory="{{ mandatory }}"
     {% if max_chars %}maxChars="{{ max_chars }}"{% endif %}
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     textIsRich="[true,true,true]"
     {% if not visible %}visible="{Boolean}false"
     dorExclusion="true"{% endif %}>

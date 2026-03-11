@@ -6,7 +6,7 @@
 //! repeatables use `minOccurs`/`maxOccurs`.
 
 use crate::structured::{
-    FieldNode, FieldType, GroupNode, HeadingNode, RepeatableNode, StructuredNode,
+    FieldId, FieldNode, FieldType, GroupNode, HeadingNode, RepeatableNode, StructuredNode,
 };
 
 use super::{XsdConfig, resolve_complex_type, resolve_element, to_snake_case};
@@ -822,4 +822,160 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+// ============================================================================
+// BindRef computation (for AEM XSD binding)
+// ============================================================================
+
+/// Maps produced by [`compute_bind_refs`] and consumed by the AEM converter
+/// to attach `bindRef` attributes to form components.
+pub struct BindRefMaps {
+    /// Maps a [`FieldId`] to its absolute XSD path (e.g. `/form/section/field_name`).
+    pub fields: std::collections::HashMap<FieldId, String>,
+    /// Maps a heading's plain-text label to the XSD path of the corresponding
+    /// complex type element (e.g. `"Personal Data"` → `/form/personal_data`).
+    /// Used to look up the bind path for AEM section panels.
+    pub sections: std::collections::HashMap<String, String>,
+}
+
+/// Compute XSD bind-ref paths for all fields and heading sections in `nodes`.
+///
+/// Reuses the same name-resolution logic as [`generate_xsd`] so that the
+/// resulting paths exactly match the elements produced by the XSD generator.
+pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) -> BindRefMaps {
+    let mut maps = BindRefMaps {
+        fields: std::collections::HashMap::new(),
+        sections: std::collections::HashMap::new(),
+    };
+    let sections = build_heading_hierarchy(nodes);
+    for section in &sections {
+        collect_section_bind_refs(section, "/form", config, &mut maps);
+    }
+    maps
+}
+
+/// Recursively accumulate bind-ref paths for a single [`Section`].
+fn collect_section_bind_refs(
+    section: &Section,
+    parent_path: &str,
+    config: &super::XsdConfig,
+    maps: &mut BindRefMaps,
+) {
+    let current_path = match &section.heading {
+        Some(heading) => {
+            let label = heading.content.as_plain_text();
+            let resolved = resolve_complex_type(&label, &config.profile);
+            let name = match resolved {
+                Some(ref res) if should_use_complex_type(res, section, config) => res.name.clone(),
+                _ => to_snake_case(&label),
+            };
+            let path = format!("{}/{}", parent_path, name);
+            // Key by trimmed plain-text so it matches AEM panel titles.
+            maps.sections.insert(label.trim().to_string(), path.clone());
+            path
+        }
+        None => {
+            // Preamble section (no heading): inherit parent path without adding a segment.
+            parent_path.to_string()
+        }
+    };
+
+    collect_section_items_bind_refs(&section.children, &current_path, config, maps);
+}
+
+/// Accumulate bind-ref paths for the direct children of a section.
+fn collect_section_items_bind_refs(
+    items: &[SectionItem],
+    current_path: &str,
+    config: &super::XsdConfig,
+    maps: &mut BindRefMaps,
+) {
+    for item in items {
+        match item {
+            SectionItem::SubSection(sub) => {
+                collect_section_bind_refs(sub, current_path, config, maps);
+            }
+            SectionItem::Node(node) => {
+                collect_node_bind_refs(node, current_path, config, maps);
+            }
+        }
+    }
+}
+
+/// Accumulate bind-ref paths for a single [`StructuredNode`].
+fn collect_node_bind_refs(
+    node: &StructuredNode,
+    current_path: &str,
+    config: &super::XsdConfig,
+    maps: &mut BindRefMaps,
+) {
+    match node {
+        StructuredNode::Field(field) => {
+            let label = field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default();
+            let name = match resolve_element(&label, &config.profile) {
+                Some(res) => res.name,
+                None => to_snake_case(&label),
+            };
+            // Skip empty names (fields with no label and no resolved name).
+            if !name.is_empty() && name != "unknown" {
+                let path = format!("{}/{}", current_path, name);
+                maps.fields.insert(field.name.clone(), path);
+            }
+        }
+        StructuredNode::Repeatable(rep) => {
+            // XSD uses minOccurs/maxOccurs on the element itself — the inner
+            // item gets the same path level as a non-repeatable field.
+            collect_node_bind_refs(&rep.item, current_path, config, maps);
+        }
+        StructuredNode::Group(group) => {
+            // Groups are transparent: recurse into children at the same path.
+            for child in &group.children {
+                collect_node_bind_refs(child, current_path, config, maps);
+            }
+        }
+        StructuredNode::Conditional(cond) => {
+            // Conditional content sits at the same path level (xs:choice doesn't
+            // add a new named element).
+            collect_conditional_node_bind_refs(&cond.content, current_path, config, maps);
+        }
+        StructuredNode::GridLayout(grid) => {
+            for elem in &grid.elements {
+                collect_node_bind_refs(&elem.node, current_path, config, maps);
+            }
+        }
+        // Presentational / structural nodes — no XSD elements produced.
+        StructuredNode::Heading(_)
+        | StructuredNode::Paragraph(_)
+        | StructuredNode::Image(_)
+        | StructuredNode::Table(_)
+        | StructuredNode::List(_)
+        | StructuredNode::Empty => {}
+    }
+}
+
+/// Accumulate bind-ref paths for the content of a conditional branch.
+///
+/// Mirrors [`generate_conditional_content`]: groups are transparent, all other
+/// nodes delegate to [`collect_node_bind_refs`].
+fn collect_conditional_node_bind_refs(
+    node: &StructuredNode,
+    current_path: &str,
+    config: &super::XsdConfig,
+    maps: &mut BindRefMaps,
+) {
+    match node {
+        StructuredNode::Group(group) => {
+            for child in &group.children {
+                collect_conditional_node_bind_refs(child, current_path, config, maps);
+            }
+        }
+        _ => {
+            collect_node_bind_refs(node, current_path, config, maps);
+        }
+    }
 }

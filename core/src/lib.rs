@@ -126,7 +126,8 @@ pub use html::{
 
 // XSD generation
 pub use xsd::{
-    ComplexTypeMapping, ElementMapping, IncludeMapping, XsdConfig, XsdProfile, generate_xsd,
+    BindRefMaps, ComplexTypeMapping, ElementMapping, IncludeMapping, XsdConfig, XsdProfile,
+    compute_bind_refs, generate_xsd,
 };
 
 // XFA layer

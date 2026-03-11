@@ -198,6 +198,18 @@ pub fn generate_aem_package(
         }
     }
 
+    // ── XSD schema (when bind_to_xsd = true) ───────────────────────────
+    if config.bind_to_xsd {
+        if let Some(ref xsd_config) = config.xsd_config {
+            let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
+            let xsd_zip_path = format!(
+                "jcr_root/content/dam/formsanddocuments/{}/{}/schema.xsd",
+                config.form_path, form_dir
+            );
+            write_entry(&mut zip, &opts, &xsd_zip_path, &xsd_content);
+        }
+    }
+
     zip.finish().expect("finalize zip").into_inner()
 }
 
@@ -253,6 +265,7 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("languages", &config.languages.join(","));
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
+        ctx.insert("bind_to_xsd", &config.bind_to_xsd);
 
         match template::render_string(dam_template, &ctx) {
             Ok(rendered) => return reformat_attributes(&rendered),
@@ -303,7 +316,15 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
             meta.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
         }
         meta.push_attribute(("dorType", config.dor_type.as_str()));
-        meta.push_attribute(("formmodel", "none"));
+        meta.push_attribute(("formmodel", if config.bind_to_xsd { "xsd" } else { "none" }));
+        if config.bind_to_xsd {
+            let xsd_ref = format!(
+                "/content/dam/formsanddocuments/{}/{}/schema.xsd",
+                config.form_path,
+                config.form_dir()
+            );
+            meta.push_attribute(("xsdRef", xsd_ref.as_str()));
+        }
         meta.push_attribute(("hasCustomThumbnail", "{Boolean}false"));
         if !config.theme_ref.is_empty() {
             meta.push_attribute(("themeRef", config.theme_ref.as_str()));

@@ -13,6 +13,7 @@
     mandatory="{{ mandatory }}"
     multiLine="true"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     {% if not visible %}visible="{Boolean}false"
     dorExclusion="true"{% endif %}>
     <cq:responsive jcr:primaryType="nt:unstructured">

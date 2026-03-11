@@ -45,4 +45,12 @@ pub struct AemProfile {
     /// Language synonym mappings (e.g. `de = ["de-ch"]`).
     #[serde(default)]
     pub language_synonyms: HashMap<String, Vec<String>>,
+
+    /// When `true`, the generated AEM package will include the XSD schema and
+    /// all form fields / panels will receive a `bindRef` attribute pointing to
+    /// their corresponding XSD element path.
+    ///
+    /// Requires an XSD profile (`xsd/config.toml`) to be present alongside the
+    /// AEM profile so that name resolution is consistent.  Default: `false`.
+    pub bind_to_xsd: Option<bool>,
 }

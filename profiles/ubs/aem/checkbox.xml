@@ -13,6 +13,7 @@
     guideNodeClass="guideCheckBox"
     hideTitle="true"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     options="{{ options_attr }}"
     richTextOptions="true"
     textIsRich="{{ text_is_rich }}"

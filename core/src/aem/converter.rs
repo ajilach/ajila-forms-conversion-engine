@@ -53,6 +53,8 @@ struct ConversionContext {
     grid_columns: u32,
     /// Conditions collected during the first pass.
     collected_conditions: Vec<CollectedCondition>,
+    /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` is true.
+    bind_refs: Option<crate::xsd::BindRefMaps>,
 }
 
 impl ConversionContext {
@@ -63,6 +65,7 @@ impl ConversionContext {
             language: config.master_language.clone(),
             grid_columns: config.grid_columns,
             collected_conditions: Vec::new(),
+            bind_refs: None,
         }
     }
 
@@ -213,6 +216,14 @@ fn short_uuid(uuid: &Uuid) -> String {
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
 
+    // If bind_to_xsd is enabled, pre-compute XSD bind-ref paths so that each
+    // field / section panel can receive a `bindRef` attribute.
+    if config.bind_to_xsd {
+        if let Some(ref xsd_config) = config.xsd_config {
+            ctx.bind_refs = Some(crate::xsd::compute_bind_refs(nodes, xsd_config));
+        }
+    }
+
     // Extract H1 heading text to use as the display title (guideformtitle _value).
     // Falls back to form_title (form code) if no H1 is present.
     let form_display_title = nodes
@@ -257,7 +268,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             .collect();
 
         if let Some(title) = title {
-            // H2 section → wrap in a Panel
+            // H2 section → wrap in a Panel; look up XSD bindRef if enabled.
+            let bind_ref = ctx
+                .bind_refs
+                .as_ref()
+                .and_then(|br| br.sections.get(title.as_str()))
+                .cloned();
             let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
             children.push(AemNode::Panel {
@@ -271,6 +287,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 dor_num_cols: None,
                 colspan: config.grid_columns,
                 dor_colspan: None,
+                bind_ref,
             });
         } else {
             // Preamble (before first H2) → also wrap in a Panel
@@ -288,6 +305,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     dor_num_cols: None,
                     colspan: config.grid_columns,
                     dor_colspan: None,
+                    bind_ref: None,
                 });
             }
         }
@@ -512,6 +530,7 @@ fn convert_table(
             dor_num_cols: None,
             colspan: config.grid_columns,
             dor_colspan: None,
+            bind_ref: None,
         });
     }
 
@@ -537,6 +556,7 @@ fn convert_table(
             dor_num_cols: None,
             colspan: config.grid_columns,
             dor_colspan: None,
+            bind_ref: None,
         });
     }
 
@@ -551,6 +571,7 @@ fn convert_table(
         dor_num_cols: None,
         colspan: config.grid_columns,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -584,6 +605,13 @@ fn convert_field(
         })
         .unwrap_or_default();
 
+    // Look up the XSD bindRef path for this field when bind_to_xsd is enabled.
+    let bind_ref: Option<String> = ctx
+        .bind_refs
+        .as_ref()
+        .and_then(|br| br.fields.get(&f.name))
+        .cloned();
+
     match &f.input_type {
         FieldType::Text { max_length, .. } => {
             let name = ctx.make_name("TXT", &source_text);
@@ -597,6 +625,7 @@ fn convert_field(
                 max_chars: *max_length,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -611,6 +640,7 @@ fn convert_field(
                 visible: true,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -625,6 +655,7 @@ fn convert_field(
                 visible: true,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -640,6 +671,7 @@ fn convert_field(
                 max_chars: None,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -655,6 +687,7 @@ fn convert_field(
                 max_chars: None,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -675,6 +708,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
 
@@ -694,6 +728,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
 
@@ -712,6 +747,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
     }
@@ -763,6 +799,7 @@ fn convert_group(
         dor_num_cols: None,
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -803,6 +840,7 @@ fn convert_conditional(
         dor_num_cols: None,
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -836,6 +874,7 @@ fn convert_grid_layout(
         dor_num_cols: Some(gl.columns as u32),
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
