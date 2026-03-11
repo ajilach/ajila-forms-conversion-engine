@@ -2464,28 +2464,55 @@ impl Flattened {
             content_height,
         );
 
-        // Find and flatten the root content subform (the Form DOM)
-        // This is the sibling to pageSet, NOT inside pageArea
-        // We need BOTH the subform AND its path so computed_values lookups work correctly
-        if let Some((root_subform, root_path)) = Self::find_root_subform_with_path(xfa_nodes) {
-            // Create flatten context with the root path prefix
-            // This ensures computed_values lookups use the full SOM path (e.g., "UBSForms.Page.FormTitle...")
-            let ctx = FlattenContext::new_with_path(computed_values, id_to_field, root_path);
+        // Find and flatten ALL content subforms (the Form DOM)
+        // These are siblings to pageSet, NOT inside pageArea
+        // Some forms (e.g., AAGS) have multiple content subforms (Page, Page_66439)
+        // that are all siblings under the root container.
+        let content_subforms = Self::find_all_content_subforms_with_paths(xfa_nodes);
+        if !content_subforms.is_empty() {
+            // Track current y-offset for stacking multiple content subforms vertically.
+            // Each content subform represents a separate page in the XFA form.
+            // Per XFA spec, the root container's layout (typically "tb") determines
+            // how sibling content subforms are arranged.
+            let mut current_content_y = content_offset_y;
 
-            // Get the layout from the root subform (often "tb" for top-to-bottom)
-            let layout = root_subform
-                .layout
-                .as_ref()
-                .and_then(|l| l.parse().ok())
-                .unwrap_or(Layout::Position);
+            for (content_subform, content_path) in &content_subforms {
+                // Create flatten context with the content subform's path prefix
+                // This ensures computed_values lookups use the full SOM path
+                let ctx = FlattenContext::new_with_path(
+                    computed_values,
+                    id_to_field,
+                    content_path.clone(),
+                );
 
-            Self::flatten_nodes(
-                &root_subform.children,
-                root_position,
-                layout,
-                &mut flattened_children,
-                &ctx,
-            )?;
+                // Get the layout from the content subform (often "tb" for top-to-bottom)
+                let layout = content_subform
+                    .layout
+                    .as_ref()
+                    .and_then(|l| l.parse().ok())
+                    .unwrap_or(Layout::Position);
+
+                // Position this content subform at the current y-offset
+                let subform_position = Position::new(
+                    content_offset_x,
+                    current_content_y,
+                    content_width,
+                    content_height,
+                );
+
+                let consumed_height = Self::flatten_nodes(
+                    &content_subform.children,
+                    subform_position,
+                    layout,
+                    &mut flattened_children,
+                    &ctx,
+                )?;
+
+                // Advance y-offset for the next content subform
+                // Use the subform's explicit height if set, otherwise use consumed height
+                let subform_height = content_subform.h.unwrap_or(consumed_height);
+                current_content_y += subform_height;
+            }
         } else {
             // Fallback: flatten all nodes (old behavior for simple forms without proper structure)
             let ctx = FlattenContext::new(computed_values, id_to_field);
@@ -2700,6 +2727,149 @@ impl Flattened {
             }
             None
         }
+        search_recursive(nodes)
+    }
+
+    /// Find ALL content subforms (siblings to pageSet) with their full SOM paths.
+    ///
+    /// Per XFA spec, the root container subform can have multiple content subforms
+    /// as siblings to the pageSet. For example:
+    /// ```text
+    ///   template
+    ///     subform 'UBSForms' (root container)
+    ///       pageSet 'MPs'        <-- page structure
+    ///       subform 'Page'       <-- first content subform
+    ///       subform 'Page_66439' <-- second content subform
+    /// ```
+    ///
+    /// Returns a Vec of (subform, full_path) pairs for all content subforms found.
+    /// Falls back to `find_root_subform_with_path` to return a single-element Vec
+    /// if the multi-subform search doesn't find a container with pageSet.
+    fn find_all_content_subforms_with_paths(nodes: &[XfaNode]) -> Vec<(&XfaNode, String)> {
+        /// Helper to check if a node is a pageSet or similar page structure element
+        fn is_page_structure(node: &XfaNode) -> bool {
+            matches!(
+                node.kind,
+                XfaNodeKind::PageSet | XfaNodeKind::PageArea | XfaNodeKind::ContentArea
+            ) || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. }
+                if tag_name == "pageSet" || tag_name == "pageArea" || tag_name == "contentArea")
+        }
+
+        /// Helper to check if a node is a non-content element (variables, proto, desc, event, etc.)
+        fn is_non_content_element(node: &XfaNode) -> bool {
+            if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                matches!(
+                    tag_name.as_str(),
+                    "variables"
+                        | "proto"
+                        | "desc"
+                        | "event"
+                        | "extras"
+                        | "occur"
+                        | "breakBefore"
+                        | "breakAfter"
+                        | "break"
+                        | "overflow"
+                        | "instanceManager"
+                )
+            } else {
+                false
+            }
+        }
+
+        /// Helper to check if a node is a data-only element
+        fn is_data_element(node: &XfaNode) -> bool {
+            if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                tag_name.starts_with("xfa:")
+                    || tag_name.starts_with("dd:")
+                    || tag_name == "datasets"
+                    || tag_name == "data"
+                    || tag_name == "form"
+            } else {
+                false
+            }
+        }
+
+        /// Check if node is a content subform (subform that is not page structure)
+        fn is_content_subform(node: &XfaNode) -> bool {
+            if is_page_structure(node) || is_non_content_element(node) {
+                return false;
+            }
+            matches!(node.kind, XfaNodeKind::Subform)
+                || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "subform")
+        }
+
+        /// Collect all content subforms from a container
+        fn collect_content_subforms_in_container<'a>(
+            container: &'a XfaNode,
+            container_name: &str,
+        ) -> Vec<(&'a XfaNode, String)> {
+            let mut result = Vec::new();
+            for child in &container.children {
+                if is_content_subform(child) {
+                    let path = if let Some(name) = child.name.as_deref() {
+                        if container_name.is_empty() {
+                            name.to_string()
+                        } else {
+                            format!("{}.{}", container_name, name)
+                        }
+                    } else {
+                        container_name.to_string()
+                    };
+                    result.push((child, path));
+                }
+            }
+            result
+        }
+
+        fn search_recursive<'a>(nodes: &'a [XfaNode]) -> Vec<(&'a XfaNode, String)> {
+            for node in nodes {
+                if is_data_element(node) {
+                    continue;
+                }
+
+                // Look in template
+                let is_template = matches!(node.kind, XfaNodeKind::Template)
+                    || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "template");
+
+                if is_template {
+                    for child in &node.children {
+                        let is_subform = matches!(child.kind, XfaNodeKind::Subform)
+                            || matches!(&child.kind, XfaNodeKind::Element { tag_name: ct, .. } if ct == "subform");
+
+                        if is_subform {
+                            let container_name = child.name.as_deref().unwrap_or("");
+                            let has_page_set = child.children.iter().any(is_page_structure);
+
+                            // Collect ALL content subforms from the container
+                            // (siblings to pageSet, skipping non-content elements)
+                            let subforms =
+                                collect_content_subforms_in_container(child, container_name);
+
+                            if !subforms.is_empty() {
+                                return subforms;
+                            }
+
+                            // If no content subforms found and no pageSet,
+                            // the container itself is the content
+                            if !has_page_set {
+                                return vec![(child, container_name.to_string())];
+                            }
+                        }
+                    }
+                }
+
+                // Recurse into container nodes
+                if !is_data_element(node) {
+                    let result = search_recursive(&node.children);
+                    if !result.is_empty() {
+                        return result;
+                    }
+                }
+            }
+            Vec::new()
+        }
+
         search_recursive(nodes)
     }
 

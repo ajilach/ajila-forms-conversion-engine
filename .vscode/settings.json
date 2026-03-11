@@ -29,7 +29,6 @@
     "chat.tools.urls.autoApprove": {
         "https://github.com": true,
         "https://*.adobe.com": true,
-        "https://huggingface.co": true,
         "https://*.githubusercontent.com": true,
         "https://docs.rs": true,
         "https://crates.io": true,
@@ -39,4 +38,8 @@
         "https://developer.mozilla.org": true
     },
     "chat.agent.maxRequests": 100,
+    "chat.tools.edits.autoApprove": {
+        "/tmp": true,
+    },
+    // "chat.tools.autoApprove": true
 }

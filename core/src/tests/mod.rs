@@ -12798,3 +12798,292 @@ fn test_aags_de_two_separate_lists_not_merged() {
         "List 1 should NOT contain 'Verfügungen' — the two lists must be separate"
     );
 }
+
+#[test]
+fn test_aags_en_has_expected_fields_and_labels() {
+    // Test that the AAGS_019_EN.pdf has the expected fields with labels,
+    // checkboxes with labels, and radio button groups.
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::StructuredNode;
+
+    let xfa_data =
+        extract_xfa_from_pdf(input_path("AAGS_019_EN.pdf")).expect("Failed to read PDF");
+    assert!(xfa_data.is_some(), "PDF should contain XFA data");
+
+    let mut nodes = XfaNode::parse(&xfa_data.unwrap()).expect("Failed to parse XFA structure");
+
+    let flattened =
+        flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts");
+
+    // Create Document and run full analysis pipeline
+    let mut doc = Document::from_flattened(&flattened);
+    run_analysis_pipeline(&mut doc);
+
+    // Convert to structured form
+    let structured_nodes = crate::structured::convert(&doc);
+
+    // ── 1. Field labels ──────────────────────────────────────────────────
+    let field_labels = collect_field_labels_trimmed(&structured_nodes);
+
+    println!("\n=== AAGS EN field labels ===");
+    for label in &field_labels {
+        println!("  - '{}'", label);
+    }
+
+    let expected_field_labels = [
+        "Name",
+        "Date (dd.mm.yyyy)",
+        "Sheet no.",
+        "Office telephone",
+        "Home telephone",
+        "Office mobile telephone",
+        "mobile telephone", // "Privatemobile telephone" (no space) – partial match
+        "Office e-mail",
+        "Private e-mail",
+        "Office fax",
+        "Private fax",
+        "Place",
+        // second "Date (dd.mm.yyyy)" is already covered by the first check
+        "Straße",
+        "Nr.",
+        "PLZ",
+        "Stadt",
+        "Land",
+        "Geburstdatum",
+        "Geburtsort",
+        "Geburtsland",
+    ];
+
+    for expected in expected_field_labels {
+        let found = field_labels.iter().any(|label| label.contains(expected));
+        assert!(
+            found,
+            "Expected to find field with label containing '{}', but it was not found.\nFound labels: {:?}",
+            expected, field_labels
+        );
+    }
+
+    // Verify that "Date (dd.mm.yyyy)" appears at least twice
+    let date_count = field_labels
+        .iter()
+        .filter(|l| l.contains("Date (dd.mm.yyyy)"))
+        .count();
+    assert!(
+        date_count >= 2,
+        "Expected at least 2 fields labelled 'Date (dd.mm.yyyy)', found {}",
+        date_count
+    );
+
+    // ── 2. Checkbox labels (Bool fields) ─────────────────────────────────
+    fn collect_bool_field_labels(nodes: &[StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(field) => {
+                    if matches!(field.input_type, crate::structured::FieldType::Bool) {
+                        if let Some(label) = &field.label {
+                            let text = label.as_plain_text();
+                            if !text.trim().is_empty() {
+                                out.push(text.trim().to_string());
+                            }
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => collect_bool_field_labels(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_bool_field_labels(std::slice::from_ref(&c.content), out);
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_bool_field_labels(std::slice::from_ref(&r.item), out);
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_bool_field_labels(&nodes, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut bool_labels = Vec::new();
+    collect_bool_field_labels(&structured_nodes, &mut bool_labels);
+
+    println!("\n=== AAGS EN checkbox (bool) labels ===");
+    for label in &bool_labels {
+        println!("  - '{}'", label);
+    }
+
+    let expected_checkbox_labels = [
+        "Legitimation durch IDnow",
+        "Compliance Register geprüft (COSIMA)",
+        "Eine Kopie dieses Formulars wurde dem Kontoinhaber übergeben/zugesandt",
+    ];
+
+    for expected in expected_checkbox_labels {
+        let found = bool_labels.iter().any(|label| label.contains(expected));
+        assert!(
+            found,
+            "Expected to find checkbox with label containing '{}', but it was not found.\nFound checkbox labels: {:?}",
+            expected, bool_labels
+        );
+    }
+
+    // ── 3. Radio button groups ───────────────────────────────────────────
+    let radio_fields = collect_radio_fields(&structured_nodes);
+
+    println!("\n=== AAGS EN radio fields ===");
+    for field in &radio_fields {
+        if let crate::structured::FieldType::Radio { options } = &field.input_type {
+            println!(
+                "  Field: {} ({} options)",
+                field.name,
+                options.len()
+            );
+            for opt in options {
+                println!("    - {}", opt.name);
+            }
+        }
+    }
+
+    let expected_radio_options = [
+        "Ohne Resultat",
+        "Mit Resultat",
+    ];
+
+    let found_radio_group = radio_fields.iter().any(|field| {
+        if let crate::structured::FieldType::Radio { options } = &field.input_type {
+            expected_radio_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    let name_str = match &opt.name {
+                        crate::structured::TranslatableString::Plain(s) => s.as_str(),
+                        crate::structured::TranslatableString::Translated(map) => {
+                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                        }
+                    };
+                    name_str.contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        found_radio_group,
+        "Expected to find a radio button group with options 'Ohne Resultat' and 'Mit Resultat (s. unten stehende Erklärung)'"
+    );
+
+    println!("\n✓ All expected AAGS EN fields, checkboxes, and radio buttons found");
+}
+
+#[test]
+fn test_aags_en_debug_flattened_fields() {
+    // Temporary debug test to see all fields for AAGS EN
+    use crate::flattened::{FlattenedNodeKind, FlattenedKind};
+
+    let xfa_data =
+        extract_xfa_from_pdf(input_path("AAGS_019_EN.pdf")).expect("Failed to read PDF");
+    assert!(xfa_data.is_some());
+    let xfa_buf = xfa_data.unwrap();
+
+    // Search raw XFA XML for "Straße" with large context
+    let xfa_str = String::from_utf8_lossy(&xfa_buf);
+    println!("\n=== XFA XML around 'Straße' ===");
+    if let Some(pos) = xfa_str.find("Straße") {
+        let start = pos.saturating_sub(2000);
+        let end = (pos + 2000).min(xfa_str.len());
+        println!("{}", &xfa_str[start..end]);
+    }
+
+    // Also check presence of parent subform
+    println!("\n=== XFA XML around 'Interne' ===");
+    if let Some(pos) = xfa_str.find("Interne Bearbeitungsvermerke") {
+        let start = pos.saturating_sub(1000);
+        let end = (pos + 1000).min(xfa_str.len());
+        println!("{}", &xfa_str[start..end]);
+    } else if let Some(pos) = xfa_str.find("Interne") {
+        let start = pos.saturating_sub(500);
+        let end = (pos + 500).min(xfa_str.len());
+        println!("{}", &xfa_str[start..end]);
+    }
+
+    let mut nodes = XfaNode::parse(&xfa_buf).expect("Failed to parse XFA");
+    let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten");
+
+    println!("\n=== All flattened nodes (fields and text) ===");
+    fn print_nodes(children: &[FlattenedKind], depth: usize) {
+        for child in children {
+            match child {
+                FlattenedKind::Node(node) => {
+                    let indent = "  ".repeat(depth);
+                    match &node.kind {
+                        FlattenedNodeKind::Field { name, label, .. } => {
+                            println!("{}FIELD name='{}' label='{}'", indent, name, label);
+                        }
+                        FlattenedNodeKind::Text { content, .. } => {
+                            let short = content.chars().take(80).collect::<String>();
+                            println!("{}TEXT  content='{}'", indent, short);
+                        }
+                    }
+                }
+                FlattenedKind::Group { children: c, .. } => {
+                    print_nodes(c, depth + 1);
+                }
+            }
+        }
+    }
+    print_nodes(&flattened.children, 0);
+}
+
+#[test]
+fn test_aags_en_page_66439_included_in_flattened_output() {
+    // Regression test: Page_66439 ("Interne Bearbeitungsvermerke") was missing
+    // from the flattened output because find_root_subform_with_path only
+    // returned the FIRST content subform (Page) and ignored sibling subforms.
+    // The fix collects ALL content subforms from the root container.
+    use crate::flattened::{FlattenedKind, FlattenedNodeKind};
+
+    let mut nodes = parse_xfa_from_pdf(input_path("AAGS_019_EN.pdf"));
+    let flattened = flatten_with_scripts(&mut nodes).expect("Failed to flatten");
+
+    fn collect_all_text(children: &[FlattenedKind], texts: &mut Vec<String>) {
+        for child in children {
+            match child {
+                FlattenedKind::Node(node) => match &node.kind {
+                    FlattenedNodeKind::Text { content, .. } => {
+                        texts.push(content.clone());
+                    }
+                    FlattenedNodeKind::Field { name, .. } => {
+                        texts.push(format!("FIELD:{}", name));
+                    }
+                },
+                FlattenedKind::Group { children: c, .. } => {
+                    collect_all_text(c, texts);
+                }
+            }
+        }
+    }
+
+    let mut all_texts = Vec::new();
+    collect_all_text(&flattened.children, &mut all_texts);
+
+    // Page_66439 should contain these labels from the "Interne Bearbeitungsvermerke" page
+    assert!(
+        all_texts.iter().any(|t| t.contains("Interne Bearbeitungsvermerke")),
+        "Flattened output should contain 'Interne Bearbeitungsvermerke' from Page_66439"
+    );
+    assert!(
+        all_texts.iter().any(|t| t.contains("Legitimation")),
+        "Flattened output should contain 'Legitimation' section from Page_66439"
+    );
+    assert!(
+        all_texts.iter().any(|t| t == "FIELD:Geburstdatum"),
+        "Flattened output should contain 'Geburstdatum' field from Page_66439"
+    );
+
+    // Page (first content subform) should also still be present
+    assert!(
+        all_texts.iter().any(|t| t.contains("specimen signatures")),
+        "Flattened output should still contain content from the first page (Page)"
+    );
+}
