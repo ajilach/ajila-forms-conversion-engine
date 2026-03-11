@@ -680,6 +680,21 @@ fn merge_inline_node(
 // Field merging
 // ============================================================================
 
+/// Merge two `Option<T>` values, using a merge function when both are `Some`.
+/// Preserves the value from either side when only one is present.
+fn merge_option<T: Clone>(
+    base: &Option<T>,
+    other: &Option<T>,
+    merge_fn: impl FnOnce(&T, &T) -> T,
+) -> Option<T> {
+    match (base, other) {
+        (Some(a), Some(b)) => Some(merge_fn(a, b)),
+        (Some(a), None) => Some(a.clone()),
+        (None, Some(b)) => Some(b.clone()),
+        (None, None) => None,
+    }
+}
+
 /// Merge two `FieldNode`s from different languages.
 /// Combines labels, placeholders, and option names into translated forms.
 fn merge_field(
@@ -688,17 +703,13 @@ fn merge_field(
     other: &FieldNode,
     other_lang: &str,
 ) -> FieldNode {
-    // Merge label
-    let label = match (&base.label, &other.label) {
-        (Some(a), Some(b)) => Some(merge_inline_text(a, base_lang, b, other_lang)),
-        (Some(a), None) => Some(a.clone()),
-        (None, Some(b)) => Some(b.clone()),
-        (None, None) => None,
-    };
+    let label = merge_option(&base.label, &other.label, |a, b| {
+        merge_inline_text(a, base_lang, b, other_lang)
+    });
 
-    // Merge placeholder
-    let placeholder =
-        merge_translatable_string(&base.placeholder, base_lang, &other.placeholder, other_lang);
+    let placeholder = merge_option(&base.placeholder, &other.placeholder, |a, b| {
+        a.merge(base_lang, b, other_lang)
+    });
 
     // Merge input type (for Radio/Select option names)
     let input_type = merge_field_type(&base.input_type, base_lang, &other.input_type, other_lang);
@@ -710,21 +721,6 @@ fn merge_field(
         input_type,
         value: base.value.clone(),
         placeholder,
-    }
-}
-
-/// Merge two `TranslatableString` options.
-fn merge_translatable_string(
-    base: &Option<TranslatableString>,
-    base_lang: &str,
-    other: &Option<TranslatableString>,
-    other_lang: &str,
-) -> Option<TranslatableString> {
-    match (base, other) {
-        (Some(a), Some(b)) => Some(a.merge(base_lang, b, other_lang)),
-        (Some(a), None) => Some(a.clone()),
-        (None, Some(b)) => Some(b.clone()),
-        (None, None) => None,
     }
 }
 
@@ -760,25 +756,11 @@ fn merge_name_values(
 ) -> Vec<NameValue> {
     base.iter()
         .zip(other.iter())
-        .map(|(a, b)| {
-            let merged_name =
-                merge_translatable_string_values(&a.name, base_lang, &b.name, other_lang);
-            NameValue {
-                name: merged_name,
-                value: a.value.clone(),
-            }
+        .map(|(a, b)| NameValue {
+            name: a.name.merge(base_lang, &b.name, other_lang),
+            value: a.value.clone(),
         })
         .collect()
-}
-
-/// Merge two `TranslatableString` values (non-optional).
-fn merge_translatable_string_values(
-    base: &TranslatableString,
-    base_lang: &str,
-    other: &TranslatableString,
-    other_lang: &str,
-) -> TranslatableString {
-    base.merge(base_lang, other, other_lang)
 }
 
 // ============================================================================
@@ -792,16 +774,11 @@ fn merge_table(
     other: &TableNode,
     other_lang: &str,
 ) -> TableNode {
-    // Merge header
-    let header = match (&base.header, &other.header) {
-        (Some(h1), Some(h2)) => {
-            let cells = merge_node_lists(&h1.cells, base_lang, &h2.cells, other_lang);
-            Some(TableHeader { cells })
-        }
-        (h, _) => h.clone(),
-    };
+    let header = merge_option(&base.header, &other.header, |h1, h2| {
+        let cells = merge_node_lists(&h1.cells, base_lang, &h2.cells, other_lang);
+        TableHeader { cells }
+    });
 
-    // Merge rows
     let rows: Vec<TableRow> = base
         .rows
         .iter()
@@ -812,11 +789,9 @@ fn merge_table(
         })
         .collect();
 
-    // Merge caption
-    let caption = match (&base.caption, &other.caption) {
-        (Some(a), Some(b)) => Some(merge_inline_text(a, base_lang, b, other_lang)),
-        (c, _) => c.clone(),
-    };
+    let caption = merge_option(&base.caption, &other.caption, |a, b| {
+        merge_inline_text(a, base_lang, b, other_lang)
+    });
 
     TableNode {
         header,
@@ -828,7 +803,9 @@ fn merge_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structured::{HeadingLevel, HeadingNode, InlineText, ParagraphNode};
+    use crate::structured::{
+        HeadingLevel, HeadingNode, InlineText, ParagraphNode, TableHeader, TableNode, TableRow,
+    };
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
         DocumentEnvelope {
@@ -1595,6 +1572,70 @@ mod tests {
             result.is_ok(),
             "Expected merge to succeed for documents with differing Conditional/GridLayout internals, got: {:?}",
             result.err()
+        );
+    }
+
+    #[test]
+    fn test_merge_table_caption_only_in_other_language() {
+        // Base (de) has a table with no caption; other (en) has a caption.
+        // The caption from the other language should be preserved, not dropped.
+        let base = TableNode {
+            header: None,
+            rows: vec![TableRow {
+                cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Zelle"),
+                })],
+            }],
+            caption: None,
+        };
+        let other = TableNode {
+            header: None,
+            rows: vec![TableRow {
+                cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Cell"),
+                })],
+            }],
+            caption: Some(InlineText::plain("My Table")),
+        };
+
+        let merged = merge_table(&base, "de", &other, "en");
+        assert!(
+            merged.caption.is_some(),
+            "Caption from 'en' should not be dropped when base has None"
+        );
+    }
+
+    #[test]
+    fn test_merge_table_header_only_in_other_language() {
+        // Base (de) has no header; other (en) has a header.
+        // The header should be preserved, not dropped.
+        let base = TableNode {
+            header: None,
+            rows: vec![TableRow {
+                cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Zelle"),
+                })],
+            }],
+            caption: None,
+        };
+        let other = TableNode {
+            header: Some(TableHeader {
+                cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Column"),
+                })],
+            }),
+            rows: vec![TableRow {
+                cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Cell"),
+                })],
+            }],
+            caption: None,
+        };
+
+        let merged = merge_table(&base, "de", &other, "en");
+        assert!(
+            merged.header.is_some(),
+            "Header from 'en' should not be dropped when base has None"
         );
     }
 }
