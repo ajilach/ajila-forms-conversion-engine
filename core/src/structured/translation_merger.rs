@@ -384,13 +384,10 @@ fn consolidate_orphan_paragraphs(
         // because the base language defines the document structure: its unique
         // paragraphs represent genuinely extra content, while extra paragraphs
         // from other languages are likely split-paragraph artifacts.
-        let orphan_lang = match &entries[i] {
-            AlignedEntry::OtherOnly(StructuredNode::Paragraph(_)) => other_lang,
-            _ => continue,
-        };
-
-        let orphan_text = match &entries[i] {
-            AlignedEntry::OtherOnly(StructuredNode::Paragraph(p)) => p.content.as_plain_text(),
+        let (orphan_lang, orphan_text) = match &entries[i] {
+            AlignedEntry::OtherOnly(StructuredNode::Paragraph(p)) => {
+                (other_lang, p.content.as_plain_text())
+            }
             _ => continue,
         };
         if orphan_text.is_empty() {
