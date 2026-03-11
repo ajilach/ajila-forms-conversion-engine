@@ -440,7 +440,7 @@ impl RecursiveMerger {
                         StructuredNode::Group(g) => g.children,
                         other => vec![other],
                     };
-                    children.extend(extra[i].drain(..));
+                    children.append(&mut extra[i]);
                     StructuredNode::Conditional(ConditionalNode {
                         condition: c.condition,
                         content: Box::new(StructuredNode::Group(GroupNode { children })),

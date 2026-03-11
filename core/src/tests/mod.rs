@@ -8,7 +8,6 @@ use helpers::{
     flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
 
-use crate::pipeline::{PipelineConfig, PipelineEvent, PipelineStep};
 use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;

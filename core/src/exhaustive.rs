@@ -1202,12 +1202,11 @@ fn explore_radio(
 
                 // Mark all fields in this radio group as processed
                 // OPTIMIZATION (Step 1): Use precomputed radio-group indices
-                let sel_group_id = group_path.as_ref().map(|gp| FieldId::from_som_path(gp));
+                let sel_group_id = group_path.as_ref().map(FieldId::from_som_path);
                 for &idx in &group_field_indices {
                     let f = &ctx.global_field_order[idx];
                     let f_group = ctx.excl_group_map.get(&f.path).and_then(|g| g.as_ref());
-                    if f.is_radio() && f_group.map(|fg| FieldId::from_som_path(fg)) == sel_group_id
-                    {
+                    if f.is_radio() && f_group.map(FieldId::from_som_path) == sel_group_id {
                         state.field_actions[idx] = if f.path == radio_field.path {
                             Some(FieldAction::Selected(radio_field.path.name().to_string()))
                         } else {

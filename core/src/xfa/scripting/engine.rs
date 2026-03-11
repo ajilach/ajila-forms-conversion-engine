@@ -2235,7 +2235,7 @@ _xfa_tmp_im_.removeInstance = function() {};
                 };
 
                 let mut values = HashMap::new();
-                self.collect_instance_values(&instance_obj, "", &mut values, 0);
+                self.collect_instance_values(instance_obj, "", &mut values, 0);
                 all_instance_values.push(values);
             }
 

@@ -72,7 +72,7 @@ pub fn resolve_variables(
     // remaining errors (e.g. genuine syntax errors or circular references).
     for (name, template) in raw_vars {
         let ctx = build_context(xfa_vars, &resolved);
-        if resolved.get(name).is_none() {
+        if !resolved.contains_key(name) {
             render_string(template, &ctx)?;
         }
     }
