@@ -191,11 +191,16 @@ function _xfa_cloneSubform(original, depth) {
     /// suitable for passing to `Flattened::from_xfa`.
     pub fn get_all_field_values_for_flattening(&mut self) -> HashMap<SomPath, String> {
         let mut map = HashMap::new();
-        let paths: Vec<(SomPath, JsObject)> = self
+        // Sort paths for deterministic iteration order. HashMap iteration is
+        // non-deterministic across runs (random hash seed), and when multiple
+        // fields share the same short name, the last insert wins — making the
+        // result depend on iteration order.
+        let mut paths: Vec<(SomPath, JsObject)> = self
             .field_objects
             .iter()
             .map(|(p, o)| (p.clone(), o.clone()))
             .collect();
+        paths.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
         for (path, obj) in paths {
             if let Ok(raw_value) =
                 obj.get(PropertyKey::from(js_string!("rawValue")), &mut self.context)
@@ -2320,7 +2325,10 @@ _xfa_tmp_im_.removeInstance = function() {};
         values: &HashMap<SomPath, String>,
         presence_map: &HashMap<SomPath, String>,
     ) {
-        let paths: Vec<SomPath> = self.field_objects.keys().cloned().collect();
+        // Sort paths for deterministic iteration order (HashMap iteration
+        // order varies across runs due to random hashing).
+        let mut paths: Vec<SomPath> = self.field_objects.keys().cloned().collect();
+        paths.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         for path in &paths {
             // Reset rawValue
             let value = values

@@ -13351,3 +13351,109 @@ fn test_aem_xml_valid_aaqm() {
 fn test_aem_xml_valid_acav() {
     assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
 }
+
+#[test]
+fn test_aags_de_en_state_counts_match() {
+    // After fixing non-deterministic HashMap iteration in the script engine,
+    // both AAGS DE and EN consistently produce the same number of exhaustive
+    // states. The merge should succeed.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
+        .expect("Failed to process AAGS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
+        .expect("Failed to process AAGS_019_EN");
+
+    assert_eq!(
+        de_envelope.state_count, en_envelope.state_count,
+        "DE and EN should have the same number of exhaustive states (DE={}, EN={})",
+        de_envelope.state_count, en_envelope.state_count,
+    );
+
+    let result = structured::merge_translations(vec![de_envelope, en_envelope]);
+    assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
+}
+
+#[test]
+fn test_aacj_state_count_diagnostic() {
+    // Diagnostic: compare what each AACJ language variant produces when
+    // different CL_ClientType dropdown values are selected.
+    use crate::Blueprint;
+    use crate::flattened::FlattenedNodeKind;
+
+    // Compare DE and EN flattened outputs for "Private Person" vs "Firma"
+    for (file, lang) in [("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en")] {
+        let mut bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+        let states = bp.states()
+            .unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
+
+        println!("\n=== {} ({}) — {} states ===", file, lang, states.len());
+
+        for (i, state) in states.iter().enumerate() {
+            println!("  --- state {} (label='{}') ---", i, state.label);
+
+            for node in state.flattened.iter_nodes() {
+                match &node.kind {
+                    FlattenedNodeKind::Field { name, label, .. } => {
+                        if name.contains("Kontoinhaber")
+                            || name.contains("Vertreter")
+                            || name.contains("Vertretungsberechtigt")
+                            || name.contains("account_holder")
+                            || name.contains("AccountHolder")
+                            || name.contains("legal")
+                            || name.contains("Legal")
+                            || name.contains("ClientName")
+                            || name.contains("represen")
+                            || name.contains("Represen")
+                            || label.contains("Kontoinhaber")
+                            || label.contains("Vertreter")
+                            || label.contains("Vertretungsberechtigt")
+                            || label.contains("account holder")
+                            || label.contains("Account holder")
+                            || label.contains("Account Holder")
+                            || label.contains("representative")
+                            || label.contains("Representative")
+                        {
+                            println!("    FIELD: name='{}', label='{}'",
+                                name, &label[..label.len().min(80)]);
+                        }
+                    }
+                    FlattenedNodeKind::Text { content, source_name, .. } => {
+                        if content.contains("Kontoinhaber")
+                            || content.contains("Vertreter")
+                            || content.contains("Vertretungsberechtigt")
+                            || content.contains("account holder")
+                            || content.contains("Account holder")
+                            || content.contains("representative")
+                            || content.contains("Representative")
+                        {
+                            let src = source_name.as_deref().unwrap_or("(none)");
+                            println!("    TEXT: src='{}', content='{}'",
+                                src, &content[..content.len().min(80)]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // AACJ has genuinely different state counts: DE has 3 (Private Person,
+    // Minderjährige, Firma/GbR), EN has 2 (PP+Firma+GbR are identical).
+    // The merger handles this by matching conditionals by their condition values.
+    let mut bp_de = Blueprint::from_pdf(input_path("AACJ_019_DE.pdf")).unwrap();
+    let mut bp_en = Blueprint::from_pdf(input_path("AACJ_019_EN.pdf")).unwrap();
+    let de_count = bp_de.states().unwrap().len();
+    let en_count = bp_en.states().unwrap().len();
+    assert_eq!(de_count, 3, "DE should produce 3 states");
+    assert_eq!(en_count, 2, "EN should produce 2 states");
+
+    // Despite different state counts, merging should succeed
+    let de_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de").unwrap();
+    let en_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en").unwrap();
+    let merged = crate::merge_translations(
+        vec![de_envelope, en_envelope],
+    );
+    assert!(merged.is_ok(), "AACJ DE+EN merge should succeed despite different state counts: {:?}", merged.err());
+}

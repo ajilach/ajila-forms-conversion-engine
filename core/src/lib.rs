@@ -556,12 +556,14 @@ impl Blueprint {
     /// to structured output, and then running `RecursiveMerger`.
     pub fn merged_structured(&mut self) -> Result<DocumentEnvelope, Error> {
         let form_states = self.states()?;
+        let state_count = form_states.len();
         let context = self.context();
         let merged = merge_form_states(&form_states, context.clone());
 
         Ok(DocumentEnvelope {
             context,
             content: merged,
+            state_count,
         })
     }
 }
@@ -762,9 +764,14 @@ pub fn run_exhaustive_to_envelope(
 ) -> Result<DocumentEnvelope, Error> {
     let mut bp = Blueprint::from_pdf(pdf_path)?;
     let form_states = bp.states()?;
+    let state_count = form_states.len();
     let mut context = bp.context();
     // Override language if caller provides one (e.g. for translation merging)
     context.set_language(language.to_string());
     let content = merge_form_states(&form_states, context.clone());
-    Ok(DocumentEnvelope { context, content })
+    Ok(DocumentEnvelope {
+        context,
+        content,
+        state_count,
+    })
 }
