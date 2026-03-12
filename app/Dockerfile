@@ -22,7 +22,7 @@ WORKDIR /app
 COPY . .
 
 RUN cargo fetch
-RUN dx build --release --platform web --fullstack
+RUN dx build --release --platform web --fullstack --package blueprint-app
 
 # ── Runtime stage ─────────────────────────────────────────
 FROM --platform=linux/amd64 ubuntu:24.04
