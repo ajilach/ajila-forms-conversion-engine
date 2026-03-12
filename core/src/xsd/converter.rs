@@ -355,6 +355,11 @@ fn collect_node_name_type_pairs(
                 collect_node_name_type_pairs(child, config, pairs);
             }
         }
+        StructuredNode::GridLayout(grid) => {
+            for elem in &grid.elements {
+                collect_node_name_type_pairs(&elem.node, config, pairs);
+            }
+        }
         _ => {}
     }
 }

@@ -52,13 +52,12 @@ synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
 type = "xs:string"
 
 [elements.Place]
-synonyms = ["Ort", "Località"]
+synonyms = ["Ort", "Località", "Place"]
 type = "xs:string"
 
 [elements.City]
-synonyms = ["City", "Stadt", "Luogo", "Ciudad", "Place", "Lugar"]
+synonyms = ["City", "Stadt"]
 type = "xs:string"
-
 
 [elements.Country]
 synonyms = ["Country", "Land", "Paese", "País"]

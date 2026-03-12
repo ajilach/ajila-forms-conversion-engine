@@ -14080,3 +14080,133 @@ fn test_xsd_no_includes_no_extra_whitespace() {
     assert!(!xsd.contains("<xs:include"),
         "Should not contain xs:include when none configured. Got:\n{}", xsd);
 }
+
+#[test]
+fn test_aaai_en_xsd_signature_type_matching() {
+    // Test that the "Client" and "UBS Europe SE" signature sections
+    // in AAAI EN are matched to "SignatureType" because they each
+    // contain the child elements Place, Name, and Date which are a
+    // subset of SignatureType's children.
+    use crate::run_exhaustive_to_merged;
+    use crate::xsd::{
+        XsdConfig, XsdNode, XsdProfile,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    // 1) Load the PDF and get structured nodes
+    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to process AAAI_019_EN");
+
+    // 2) Load the UBS XSD profile (same logic as CLI's load_xsd_config)
+    let profile_dir_str = helpers::profiles_path("ubs/xsd");
+    let profile_dir = Path::new(&profile_dir_str);
+    let config_path = profile_dir.join("config.toml");
+    let profile: XsdProfile = {
+        let toml_str = std::fs::read_to_string(&config_path)
+            .expect("Failed to read ubs xsd/config.toml");
+        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
+    };
+
+    let types_dir = profile_dir.join("types");
+    let mut type_to_file = HashMap::new();
+    let mut parsed_schemas = Vec::new();
+    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_xsd(&path, out);
+                } else if path.extension().map_or(false, |e| e == "xsd") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    let mut xsd_files = Vec::new();
+    walk_xsd(&types_dir, &mut xsd_files);
+    xsd_files.sort();
+    for xsd_path in &xsd_files {
+        let rel = xsd_path
+            .strip_prefix(&types_dir)
+            .unwrap_or(xsd_path)
+            .to_string_lossy();
+        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
+        let content = std::fs::read_to_string(xsd_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
+        for name in extract_declared_names(&content) {
+            type_to_file.insert(name, schema_location.clone());
+        }
+        parsed_schemas.push((parse_schema(&content), schema_location));
+    }
+    let registered_types = build_registered_types(&parsed_schemas);
+    let config = XsdConfig::new(profile, type_to_file, registered_types);
+
+    // 3) Generate intermediate XSD schema
+    let schema = generate_xsd_schema(&nodes, &config);
+
+    // 4) Walk the XsdNode tree to find elements by name
+    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
+        match node {
+            XsdNode::Element {
+                name: n, content, ..
+            } => {
+                if n == name {
+                    results.push(node);
+                }
+                if let Some(child) = content {
+                    find_elements_by_name(child, name, results);
+                }
+            }
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    find_elements_by_name(child, name, results);
+                }
+            }
+            XsdNode::SimpleType { .. } => {}
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        find_elements_by_name(child, name, results);
+                    }
+                }
+            }
+        }
+    }
+
+    // 5) Assert "client" (under Signature(s)) has type SignatureType
+    //    There are two "client" elements in the tree (one under the
+    //    main H1 and one under "Signature(s)"). The one under signatures
+    //    is the second occurrence (depth-first).
+    let mut client_matches = Vec::new();
+    find_elements_by_name(&schema.root, "client", &mut client_matches);
+    assert!(
+        client_matches.len() >= 2,
+        "Should find at least 2 elements named 'client' (one main, one signature). Found: {}",
+        client_matches.len()
+    );
+    // The second "client" is the one under Signature(s)
+    if let XsdNode::Element { type_ref, .. } = client_matches[1] {
+        assert_eq!(
+            type_ref.as_deref(),
+            Some("SignatureType"),
+            "Signature 'client' element should be matched to SignatureType"
+        );
+    }
+
+    // 6) Assert "ubs_europe_se" has type SignatureType
+    let mut ubs_matches = Vec::new();
+    find_elements_by_name(&schema.root, "ubs_europe_se", &mut ubs_matches);
+    assert!(
+        !ubs_matches.is_empty(),
+        "Should find an element named 'ubs_europe_se' in the XSD tree"
+    );
+    if let XsdNode::Element { type_ref, .. } = ubs_matches[0] {
+        assert_eq!(
+            type_ref.as_deref(),
+            Some("SignatureType"),
+            "Element 'ubs_europe_se' should be matched to SignatureType"
+        );
+    }
+}
