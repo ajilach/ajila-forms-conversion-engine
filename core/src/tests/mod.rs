@@ -13299,7 +13299,6 @@ fn test_xsd_basic_field_generation() {
         },
     );
     let profile = XsdProfile {
-        complex_types: std::collections::HashMap::new(),
         elements,
         ..Default::default()
     };
@@ -13346,7 +13345,7 @@ fn test_xsd_unmatched_field_uses_snake_case() {
 #[test]
 fn test_xsd_heading_creates_complex_type() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
 
     let nodes = vec![
@@ -13368,47 +13367,45 @@ fn test_xsd_heading_creates_complex_type() {
         }),
     ];
 
-    let mut complex_types = std::collections::HashMap::new();
-    complex_types.insert(
-        "account".to_string(),
-        ComplexTypeMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: None,
-            required_children: None,
-            optional_children: None,
-        },
-    );
-
     let mut elements = std::collections::HashMap::new();
     elements.insert(
-        "iban".to_string(),
+        "IBAN".to_string(),
         ElementMapping {
             synonyms: vec!["IBAN".to_string()],
             type_ref: "xs:string".to_string(),
         },
     );
 
+    // Register a type that contains IBAN as a child
+    let mut registered_types = std::collections::HashMap::new();
+    registered_types.insert(
+        "AccountType".to_string(),
+        RegisteredComplexType {
+            name: "AccountType".to_string(),
+            elements: vec![
+                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement { name: "Currency".to_string(), type_ref: "xs:string".to_string() },
+            ],
+            file: "../AFFragments/Account.xsd".to_string(),
+        },
+    );
+
     let profile = XsdProfile {
-        complex_types,
         elements,
         ..Default::default()
     };
-    let config = XsdConfig::from_profile(profile);
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
     let xsd = generate_xsd(&nodes, &config);
 
-    // Should create a complexType element named "account" with child "iban"
-    assert!(xsd.contains("<xs:element name=\"account\">"),
-        "Should create element for matched heading. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:complexType>"),
-        "Should contain complexType. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:element name=\"iban\" type=\"xs:string\"/>"),
-        "Should contain iban element inside. Got:\n{}", xsd);
+    // Should match AccountType (IBAN is a subset) and use type ref
+    assert!(xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        "Should create element with matched type. Got:\n{}", xsd);
 }
 
 #[test]
 fn test_xsd_heading_with_type_ref() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping};
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
 
     let nodes = vec![
@@ -13430,34 +13427,46 @@ fn test_xsd_heading_with_type_ref() {
         }),
     ];
 
-    let mut complex_types = std::collections::HashMap::new();
-    complex_types.insert(
-        "account".to_string(),
-        ComplexTypeMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: Some("AccountType".to_string()),
-            required_children: None,
-            optional_children: None,
+    let mut elements = std::collections::HashMap::new();
+    elements.insert("AccountNumber".to_string(), ElementMapping {
+        synonyms: vec!["Account".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+
+    // Register a type that contains AccountNumber
+    let mut registered_types = std::collections::HashMap::new();
+    registered_types.insert(
+        "AccountType".to_string(),
+        RegisteredComplexType {
+            name: "AccountType".to_string(),
+            elements: vec![
+                TypeChildElement { name: "AccountNumber".to_string(), type_ref: "xs:string".to_string() },
+            ],
+            file: "../AFFragments/Account.xsd".to_string(),
         },
     );
 
+    let mut type_to_file = std::collections::HashMap::new();
+    type_to_file.insert("AccountType".to_string(), "../AFFragments/Account.xsd".to_string());
+
     let profile = XsdProfile {
-        complex_types,
-        elements: std::collections::HashMap::new(),
+        elements,
         ..Default::default()
     };
-    let config = XsdConfig::from_profile(profile);
+    let config = XsdConfig::new(profile, type_to_file, registered_types);
     let xsd = generate_xsd(&nodes, &config);
 
-    // Should reference the predefined type
-    assert!(xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
-        "Should reference predefined type. Got:\n{}", xsd);
+    // Should reference the registered type and emit include
+    assert!(xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        "Should reference registered type. Got:\n{}", xsd);
+    assert!(xsd.contains("<xs:include schemaLocation=\"../AFFragments/Account.xsd\"/>"),
+        "Should include the file for AccountType. Got:\n{}", xsd);
 }
 
 #[test]
 fn test_xsd_child_validation_required_present() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
 
     let nodes = vec![
@@ -13483,43 +13492,47 @@ fn test_xsd_child_validation_required_present() {
         }),
     ];
 
-    let mut complex_types = std::collections::HashMap::new();
-    complex_types.insert(
-        "account".to_string(),
-        ComplexTypeMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: Some("AccountType".to_string()),
-            required_children: Some(vec!["iban".to_string()]),
-            optional_children: Some(vec!["phone".to_string()]),
-        },
-    );
-
     let mut elements = std::collections::HashMap::new();
-    elements.insert("iban".to_string(), ElementMapping {
+    elements.insert("IBAN".to_string(), ElementMapping {
         synonyms: vec!["IBAN".to_string()],
         type_ref: "xs:string".to_string(),
     });
-    elements.insert("phone".to_string(), ElementMapping {
+    elements.insert("Phone".to_string(), ElementMapping {
         synonyms: vec!["Phone".to_string()],
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements, ..Default::default() };
-    let config = XsdConfig::from_profile(profile);
+    // Register a type that includes both IBAN and Phone
+    let mut registered_types = std::collections::HashMap::new();
+    registered_types.insert(
+        "AccountType".to_string(),
+        RegisteredComplexType {
+            name: "AccountType".to_string(),
+            elements: vec![
+                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement { name: "Phone".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement { name: "Currency".to_string(), type_ref: "xs:string".to_string() },
+            ],
+            file: "../AFFragments/Account.xsd".to_string(),
+        },
+    );
+
+    let profile = XsdProfile { elements, ..Default::default() };
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
     let xsd = generate_xsd(&nodes, &config);
 
-    // All required children present, optional child present → use config type ref
+    // Both children are a subset of AccountType → match
     assert!(xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
-        "Should use type ref when children match. Got:\n{}", xsd);
+        "Should use type ref when children are subset. Got:\n{}", xsd);
 }
 
 #[test]
 fn test_xsd_child_validation_required_missing() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
 
-    // Only "Phone" field, but "iban" is required
+    // Only "Phone" field; registered type requires IBAN which has a different type
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
@@ -13535,30 +13548,32 @@ fn test_xsd_child_validation_required_missing() {
         }),
     ];
 
-    let mut complex_types = std::collections::HashMap::new();
-    complex_types.insert(
-        "account".to_string(),
-        ComplexTypeMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: Some("AccountType".to_string()),
-            required_children: Some(vec!["iban".to_string()]),
-            optional_children: Some(vec!["phone".to_string()]),
-        },
-    );
-
     let mut elements = std::collections::HashMap::new();
-    elements.insert("phone".to_string(), ElementMapping {
+    elements.insert("Phone".to_string(), ElementMapping {
         synonyms: vec!["Phone".to_string()],
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements, ..Default::default() };
-    let config = XsdConfig::from_profile(profile);
+    // Register a type that only has IBAN (not Phone) → no match
+    let mut registered_types = std::collections::HashMap::new();
+    registered_types.insert(
+        "AccountType".to_string(),
+        RegisteredComplexType {
+            name: "AccountType".to_string(),
+            elements: vec![
+                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
+            ],
+            file: "../AFFragments/Account.xsd".to_string(),
+        },
+    );
+
+    let profile = XsdProfile { elements, ..Default::default() };
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
     let xsd = generate_xsd(&nodes, &config);
 
-    // Required child "iban" missing → fallback to inline complexType with camelCase name
+    // Phone is not in AccountType's elements → no match → fallback
     assert!(!xsd.contains("AccountType"),
-        "Should NOT use type ref when required child missing. Got:\n{}", xsd);
+        "Should NOT use type ref when child not in registered type. Got:\n{}", xsd);
     assert!(xsd.contains("<xs:element name=\"account\">"),
         "Should fall back to inline complexType. Got:\n{}", xsd);
     assert!(xsd.contains("<xs:complexType>"),
@@ -13568,10 +13583,10 @@ fn test_xsd_child_validation_required_missing() {
 #[test]
 fn test_xsd_child_validation_extra_child() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ComplexTypeMapping, ElementMapping};
+    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
 
-    // Has "iban" (required), "phone" (optional), and "email" (undeclared)
+    // Has "IBAN", "Phone", and "Email" — but registered type only has IBAN and Phone
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
@@ -13603,38 +13618,41 @@ fn test_xsd_child_validation_extra_child() {
         }),
     ];
 
-    let mut complex_types = std::collections::HashMap::new();
-    complex_types.insert(
-        "account".to_string(),
-        ComplexTypeMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: Some("AccountType".to_string()),
-            required_children: Some(vec!["iban".to_string()]),
-            optional_children: Some(vec!["phone".to_string()]),
-        },
-    );
-
     let mut elements = std::collections::HashMap::new();
-    elements.insert("iban".to_string(), ElementMapping {
+    elements.insert("IBAN".to_string(), ElementMapping {
         synonyms: vec!["IBAN".to_string()],
         type_ref: "xs:string".to_string(),
     });
-    elements.insert("phone".to_string(), ElementMapping {
+    elements.insert("Phone".to_string(), ElementMapping {
         synonyms: vec!["Phone".to_string()],
         type_ref: "xs:string".to_string(),
     });
-    elements.insert("email".to_string(), ElementMapping {
+    elements.insert("Email".to_string(), ElementMapping {
         synonyms: vec!["E-Mail".to_string()],
         type_ref: "xs:string".to_string(),
     });
 
-    let profile = XsdProfile { complex_types, elements, ..Default::default() };
-    let config = XsdConfig::from_profile(profile);
+    // Register a type with only IBAN and Phone (not Email)
+    let mut registered_types = std::collections::HashMap::new();
+    registered_types.insert(
+        "AccountType".to_string(),
+        RegisteredComplexType {
+            name: "AccountType".to_string(),
+            elements: vec![
+                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement { name: "Phone".to_string(), type_ref: "xs:string".to_string() },
+            ],
+            file: "../AFFragments/Account.xsd".to_string(),
+        },
+    );
+
+    let profile = XsdProfile { elements, ..Default::default() };
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
     let xsd = generate_xsd(&nodes, &config);
 
-    // "email" is undeclared in required/optional → constraint fails → fallback
+    // Email is not in AccountType → not a subset → fallback
     assert!(!xsd.contains("AccountType"),
-        "Should NOT use type ref when extra undeclared child present. Got:\n{}", xsd);
+        "Should NOT use type ref when extra child not in registered type. Got:\n{}", xsd);
     assert!(xsd.contains("<xs:element name=\"account\">"),
         "Should fall back to inline complexType. Got:\n{}", xsd);
 }
@@ -13830,7 +13848,7 @@ fn test_xsd_predefined_types_included() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file);
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     assert!(xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
@@ -13966,7 +13984,7 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file);
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // AddressType is used → address.xsd should be included
@@ -14024,7 +14042,7 @@ fn test_xsd_includes_deduplicated_by_path() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file);
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Both types used, but same path → only one xs:include
@@ -14042,7 +14060,7 @@ fn test_xsd_unused_includes_not_emitted() {
     let mut type_to_file = HashMap::new();
     type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
 
-    let config = XsdConfig::new(XsdProfile::default(), type_to_file);
+    let config = XsdConfig::new(XsdProfile::default(), type_to_file, std::collections::HashMap::new());
     // No nodes at all → SomeType is never referenced
     let xsd = generate_xsd(&[], &config);
 

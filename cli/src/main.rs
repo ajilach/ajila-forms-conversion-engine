@@ -1,7 +1,7 @@
 use blueprint::{
     FieldLabelMap, GraphSelection, GraphState, HtmlConfig, HtmlCustomStyles, PipelineConfig,
     PipelineEvent, PipelineStep, XsdConfig, XsdProfile, build_field_label_map,
-    extract_declared_names, generate_dot, run_pipeline,
+    build_registered_types, extract_declared_names, generate_dot, parse_schema, run_pipeline,
 };
 use clap::{Parser, ValueEnum};
 use log::info;
@@ -494,7 +494,9 @@ fn load_xsd_config(profile_path: Option<&Path>) -> Result<XsdConfig, Box<dyn std
 
     // Auto-discover and index all *.xsd files in the types/ subdirectory.
     // For each declared type/element name, record the schemaLocation path.
+    // Also parse complex types for auto-matching.
     let mut type_to_file = std::collections::HashMap::new();
+    let mut parsed_schemas = Vec::new();
     let types_dir = dir.join("types");
     if types_dir.is_dir() {
         let mut xsd_files: Vec<PathBuf> = Vec::new();
@@ -512,8 +514,10 @@ fn load_xsd_config(profile_path: Option<&Path>) -> Result<XsdConfig, Box<dyn std
             for name in extract_declared_names(&content) {
                 type_to_file.insert(name, schema_location.clone());
             }
+            parsed_schemas.push((parse_schema(&content), schema_location));
         }
     }
 
-    Ok(XsdConfig::new(profile, type_to_file))
+    let registered_types = build_registered_types(&parsed_schemas);
+    Ok(XsdConfig::new(profile, type_to_file, registered_types))
 }

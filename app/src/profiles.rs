@@ -6,7 +6,7 @@
 
 use blueprint::{
     AemProfile, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily, ResolvedFontVariant,
-    XsdConfig, XsdProfile, extract_declared_names,
+    XsdConfig, XsdProfile, build_registered_types, extract_declared_names, parse_schema,
 };
 use include_dir::{Dir, include_dir};
 use std::collections::HashMap;
@@ -199,7 +199,9 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
 
     // Auto-discover and index all *.xsd files in the types/ subdirectory.
     // For each declared type/element name, record the schemaLocation path.
+    // Also parse complex types for auto-matching.
     let mut type_to_file = std::collections::HashMap::new();
+    let mut parsed_schemas = Vec::new();
     if let Some(dir) = xsd_dir {
         let types_prefix = format!("{name}/xsd/types/");
         if let Some(types_dir) = dir.get_dir(format!("{name}/xsd/types")) {
@@ -221,13 +223,15 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
                         .to_string();
                     let schema_location =
                         format!("{}{}", profile.schema_location_prefix, rel);
-                    for name in extract_declared_names(content) {
-                        type_to_file.insert(name, schema_location.clone());
+                    for decl_name in extract_declared_names(content) {
+                        type_to_file.insert(decl_name, schema_location.clone());
                     }
+                    parsed_schemas.push((parse_schema(content), schema_location));
                 }
             }
         }
     }
 
-    Ok(XsdConfig::new(profile, type_to_file))
+    let registered_types = build_registered_types(&parsed_schemas);
+    Ok(XsdConfig::new(profile, type_to_file, registered_types))
 }

@@ -9,7 +9,7 @@ use crate::structured::{
     FieldId, FieldNode, FieldType, GroupNode, HeadingNode, RepeatableNode, StructuredNode,
 };
 
-use super::{XsdConfig, resolve_complex_type, resolve_element, to_snake_case};
+use super::{XsdConfig, find_matching_type, resolve_element, to_snake_case};
 
 // ============================================================================
 // Public API
@@ -270,55 +270,33 @@ fn generate_section(
     match &section.heading {
         Some(heading) => {
             let label = heading.content.as_plain_text();
+            let name = to_snake_case(&label);
 
-            // Try to resolve against complexTypes config
-            let resolved = resolve_complex_type(&label, &config.profile);
+            // Collect child (name, type) pairs and try auto-matching
+            let child_pairs = collect_child_name_type_pairs(section, config);
+            let matched = find_matching_type(&child_pairs, &config.registered_types);
 
-            match resolved {
-                Some(ref res) if should_use_complex_type(res, section, config) => {
-                    // Config match with child validation passed
-                    if let Some(ref type_ref) = res.type_ref {
-                        // Reference a predefined complexType
-                        ctx.record_type_ref(type_ref);
-                        ctx.body.push_str(&format!(
-                            "{}<xs:element name=\"{}\" type=\"{}\"/>\n",
-                            indent_str, res.name, type_ref
-                        ));
-                    } else {
-                        // Inline complexType with children
-                        ctx.body.push_str(&format!(
-                            "{}<xs:element name=\"{}\">\n",
-                            indent_str, res.name
-                        ));
-                        ctx.body
-                            .push_str(&format!("{}  <xs:complexType>\n", indent_str));
-                        ctx.body
-                            .push_str(&format!("{}    <xs:sequence>\n", indent_str));
-                        generate_section_children(section, config, ctx, indent + 6);
-                        ctx.body
-                            .push_str(&format!("{}    </xs:sequence>\n", indent_str));
-                        ctx.body
-                            .push_str(&format!("{}  </xs:complexType>\n", indent_str));
-                        ctx.body.push_str(&format!("{}</xs:element>\n", indent_str));
-                    }
-                }
-                _ => {
-                    // No config match or child validation failed → inline complexType
-                    // with snake_case name derived from the heading label
-                    let name = to_snake_case(&label);
-                    ctx.body
-                        .push_str(&format!("{}<xs:element name=\"{}\">\n", indent_str, name));
-                    ctx.body
-                        .push_str(&format!("{}  <xs:complexType>\n", indent_str));
-                    ctx.body
-                        .push_str(&format!("{}    <xs:sequence>\n", indent_str));
-                    generate_section_children(section, config, ctx, indent + 6);
-                    ctx.body
-                        .push_str(&format!("{}    </xs:sequence>\n", indent_str));
-                    ctx.body
-                        .push_str(&format!("{}  </xs:complexType>\n", indent_str));
-                    ctx.body.push_str(&format!("{}</xs:element>\n", indent_str));
-                }
+            if let Some(reg_type) = matched {
+                // Auto-matched against a registered complexType
+                ctx.record_type_ref(&reg_type.name);
+                ctx.body.push_str(&format!(
+                    "{}<xs:element name=\"{}\" type=\"{}\"/>\n",
+                    indent_str, name, reg_type.name
+                ));
+            } else {
+                // No match → inline complexType with snake_case name
+                ctx.body
+                    .push_str(&format!("{}<xs:element name=\"{}\">\n", indent_str, name));
+                ctx.body
+                    .push_str(&format!("{}  <xs:complexType>\n", indent_str));
+                ctx.body
+                    .push_str(&format!("{}    <xs:sequence>\n", indent_str));
+                generate_section_children(section, config, ctx, indent + 6);
+                ctx.body
+                    .push_str(&format!("{}    </xs:sequence>\n", indent_str));
+                ctx.body
+                    .push_str(&format!("{}  </xs:complexType>\n", indent_str));
+                ctx.body.push_str(&format!("{}</xs:element>\n", indent_str));
             }
         }
         None => {
@@ -328,145 +306,55 @@ fn generate_section(
     }
 }
 
-/// Check whether a resolved complexType config should be used, considering
-/// the `required_children` / `optional_children` constraints.
-fn should_use_complex_type(
-    resolved: &super::ResolvedComplexType,
-    section: &Section,
-    config: &XsdConfig,
-) -> bool {
-    let mapping = &resolved.mapping;
-
-    // If no child constraints are set, always match on synonym alone
-    if mapping.required_children.is_none() && mapping.optional_children.is_none() {
-        return true;
-    }
-
-    // Collect canonical names of direct children
-    let child_names = collect_child_canonical_names(section, config);
-
-    // Check required: every required child must be present
-    if let Some(ref required) = mapping.required_children {
-        for req in required {
-            if !child_names.contains(req) {
-                return false;
-            }
-        }
-    }
-
-    // Check strict subset: every child must be in required ∪ optional
-    let allowed: std::collections::HashSet<&str> = {
-        let mut set = std::collections::HashSet::new();
-        if let Some(ref required) = mapping.required_children {
-            for r in required {
-                set.insert(r.as_str());
-            }
-        }
-        if let Some(ref optional) = mapping.optional_children {
-            for o in optional {
-                set.insert(o.as_str());
-            }
-        }
-        set
-    };
-
-    for child_name in &child_names {
-        if !allowed.contains(child_name.as_str()) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Collect the resolved canonical names of direct children in a section.
+/// Collect resolved (name, type) pairs for the direct children of a section.
 ///
-/// For fields, resolves against `[elements]` config; for sub-sections,
-/// resolves against `[complexTypes]` config. Unmatched items use camelCase
-/// from the label.
-fn collect_child_canonical_names(section: &Section, config: &XsdConfig) -> Vec<String> {
-    let mut names = Vec::new();
+/// For fields, resolves against `[elements]` config. Unmatched items use
+/// snake_case from the label with `xs:string` as the default type.
+fn collect_child_name_type_pairs(section: &Section, config: &XsdConfig) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
 
     for item in &section.children {
         match item {
-            SectionItem::SubSection(sub) => {
-                if let Some(ref heading) = sub.heading {
-                    let label = heading.content.as_plain_text();
-                    let name = match resolve_complex_type(&label, &config.profile) {
-                        Some(res) => res.name,
-                        None => to_snake_case(&label),
-                    };
-                    names.push(name);
-                }
+            SectionItem::SubSection(_) => {
+                // Sub-sections are headings, not simple elements — skip for matching
             }
-            SectionItem::Node(node) => match node {
-                StructuredNode::Field(field) => {
-                    let label = field
-                        .label
-                        .as_ref()
-                        .map(|l| l.as_plain_text())
-                        .unwrap_or_default();
-                    let name = match resolve_element(&label, &config.profile) {
-                        Some(res) => res.name,
-                        None => to_snake_case(&label),
-                    };
-                    names.push(name);
-                }
-                StructuredNode::Repeatable(rep) => {
-                    // If the repeated item is a field, resolve it
-                    if let StructuredNode::Field(field) = rep.item.as_ref() {
-                        let label = field
-                            .label
-                            .as_ref()
-                            .map(|l| l.as_plain_text())
-                            .unwrap_or_default();
-                        let name = match resolve_element(&label, &config.profile) {
-                            Some(res) => res.name,
-                            None => to_snake_case(&label),
-                        };
-                        names.push(name);
-                    }
-                }
-                StructuredNode::Group(group) => {
-                    // Recurse into groups to find fields
-                    collect_group_child_names(group, config, &mut names);
-                }
-                StructuredNode::Conditional(_) => {
-                    // Conditionals contribute their children's names
-                    // but we don't add the conditional itself as a name
-                }
-                _ => {
-                    // Presentational nodes (Paragraph, Image, Table, List, etc.)
-                    // don't contribute to the schema
-                }
-            },
+            SectionItem::Node(node) => {
+                collect_node_name_type_pairs(node, config, &mut pairs);
+            }
         }
     }
 
-    names
+    pairs
 }
 
-/// Recursively collect canonical names from a GroupNode's children.
-fn collect_group_child_names(group: &GroupNode, config: &XsdConfig, names: &mut Vec<String>) {
-    for child in &group.children {
-        match child {
-            StructuredNode::Field(field) => {
-                let label = field
-                    .label
-                    .as_ref()
-                    .map(|l| l.as_plain_text())
-                    .unwrap_or_default();
-                let name = match resolve_element(&label, &config.profile) {
-                    Some(res) => res.name,
-                    None => to_snake_case(&label),
-                };
-                names.push(name);
-            }
-            StructuredNode::Group(g) => {
-                collect_group_child_names(g, config, names);
-            }
-            _ => {}
+/// Collect (name, type) pairs from a single node.
+fn collect_node_name_type_pairs(
+    node: &StructuredNode,
+    config: &XsdConfig,
+    pairs: &mut Vec<(String, String)>,
+) {
+    match node {
+        StructuredNode::Field(field) => {
+            let label = field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default();
+            let (name, type_ref) = match resolve_element(&label, &config.profile) {
+                Some(res) => (res.name, res.type_ref),
+                None => (to_snake_case(&label), "xs:string".to_string()),
+            };
+            pairs.push((name, type_ref));
         }
+        StructuredNode::Repeatable(rep) => {
+            collect_node_name_type_pairs(&rep.item, config, pairs);
+        }
+        StructuredNode::Group(group) => {
+            for child in &group.children {
+                collect_node_name_type_pairs(child, config, pairs);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -854,11 +742,7 @@ fn collect_section_bind_refs(
     let current_path = match &section.heading {
         Some(heading) => {
             let label = heading.content.as_plain_text();
-            let resolved = resolve_complex_type(&label, &config.profile);
-            let name = match resolved {
-                Some(ref res) if should_use_complex_type(res, section, config) => res.name.clone(),
-                _ => to_snake_case(&label),
-            };
+            let name = to_snake_case(&label);
             let path = format!("{}/{}", parent_path, name);
             // Key by trimmed plain-text so it matches AEM panel titles.
             maps.sections.insert(label.trim().to_string(), path.clone());

@@ -2,12 +2,6 @@
 #
 # This file configures how structured form content maps to XSD schema elements.
 #
-# [complexTypes.<name>]   — heading → xs:complexType mappings
-#   synonyms              — list of strings to match (case-insensitive substring)
-#   type                  — optional reference to a predefined complexType name
-#   required_children     — optional: canonical child names that MUST be present
-#   optional_children     — optional: canonical child names that MAY be present
-#
 # [elements.<name>]       — field → xs:element mappings
 #   synonyms              — list of strings to match (case-insensitive substring)
 #   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
@@ -16,28 +10,23 @@
 # An <xs:include> directive is emitted for every indexed file that declares a
 # type actually referenced by the generated schema.
 #
+# Complex types are auto-matched: xs:complexType definitions from the types/
+# directory are parsed (including xs:extension inheritance and xs:element ref
+# resolution). During generation, a heading's resolved children are compared
+# against the registry — if all children (name + type) form a subset of a
+# registered type's elements, the best-matching type is used.
+#
 # schemaLocationPrefix — prefix prepended to the relative path of each types/
 #   file when constructing the schemaLocation attribute (default: "../")
 
 schemaLocationPrefix = "../"
-
-# ─── Complex Types ─────────────────────────────────────────────────────────────
-
-[complexTypes.Account]
-synonyms = ["Account", "Konto", "Conto", "Cuenta"]
-
-[complexTypes.Individual]
-synonyms = ["Personal Information", "Personal Details", "Personalien", "Kundendaten", "Datos del cliente", "Endkunde"]
-
-[complexTypes.Signature]
-synonyms = ["Unterschrift(en)", "Signature(s)", "Letto, confermato e sottoscritto"]
 
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---
 
 [elements.LastName]
-synonyms = ["Last Name", "Nachname", "Cognome", "Apellido(s)", "Name des Kunden", "Name of client", "Nome del cliente"]
+synonyms = ["Last Name", "Nachname", "Cognome", "Apellido(s)",]
 type = "xs:string"
 
 [elements.FirstName]
@@ -45,7 +34,7 @@ synonyms = ["First Name(s)", "Vorname(n)", "Nome(i)", "Nombre(s)", "Vorname"]
 type = "xs:string"
 
 [elements.Name]
-synonyms = ["Name", "Nome", "Nombre", "Nome della società"]
+synonyms = ["Name", "Nome", "Nombre", "Nome della società", "Name des Kunden", "Name of client", "Nome del cliente"]
 type = "xs:string"
 
 [elements.Company]
@@ -62,9 +51,14 @@ type = "xs:string"
 synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
 type = "xs:string"
 
-[elements.City]
-synonyms = ["City", "Stadt", "Ort", "Località", "Luogo", "Ciudad", "Place", "Lugar"]
+[elements.Place]
+synonyms = ["Ort", "Località"]
 type = "xs:string"
+
+[elements.City]
+synonyms = ["City", "Stadt", "Luogo", "Ciudad", "Place", "Lugar"]
+type = "xs:string"
+
 
 [elements.Country]
 synonyms = ["Country", "Land", "Paese", "País"]
