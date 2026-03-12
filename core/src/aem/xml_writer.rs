@@ -535,7 +535,7 @@ fn alignment_str(a: OptionAlignment) -> &'static str {
 fn format_options_attr(options: &[AemOption]) -> String {
     let inner: Vec<String> = options
         .iter()
-        .map(|o| format!("{}={}", o.value, o.label))
+        .map(|o| format!("{}={}", xml_escape(&o.value), xml_escape(&o.label)))
         .collect();
     format!("[{}]", inner.join(","))
 }

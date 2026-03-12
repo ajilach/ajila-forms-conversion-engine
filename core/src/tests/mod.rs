@@ -2,10 +2,10 @@
 pub mod helpers;
 
 use helpers::{
-    assert_valid_xml, collect_conditionals, collect_field_labels, collect_field_labels_trimmed,
-    collect_field_names, collect_fields, collect_headings, collect_radio_fields,
-    count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
-    flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
+    assert_aem_xml_valid_for, assert_valid_xml, collect_conditionals, collect_field_labels,
+    collect_field_labels_trimmed, collect_field_names, collect_fields, collect_headings,
+    collect_radio_fields, count_conditionals, find_field_by_name, find_field_id_by_suffix,
+    flatten_from_pdf, flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
 
 use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
@@ -13263,30 +13263,91 @@ fn test_aacj_de_tin_radio_button_options() {
     println!("\n✓ AACJ TIN radio button has all expected options");
 }
 
+// =========================================================================
+// AEM content.xml syntax validation — one test per form
+// =========================================================================
+
 #[test]
-fn test_aags_aem_content_xml_is_valid() {
-    // Verify that the generated AEM content.xml for AAGS is well-formed XML.
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured;
+fn test_aem_xml_valid_aaaa() {
+    assert_aem_xml_valid_for(&[("AAAA_019_DE.pdf", "de")]);
+}
 
-    let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
-        .expect("Failed to process AAGS_019_DE");
-    let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
-        .expect("Failed to process AAGS_019_EN");
+#[test]
+fn test_aem_xml_valid_aaab() {
+    assert_aem_xml_valid_for(&[("AAAB_019_DE.pdf", "de")]);
+}
 
-    let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
-    let ctx = merged.context;
-    let content = merged.content;
+#[test]
+fn test_aem_xml_valid_aaai() {
+    assert_aem_xml_valid_for(&[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")]);
+}
 
-    let (profile, templates) = load_ubs_profile();
-    let config = AemConfig::from_profile(&profile, templates, &ctx)
-        .expect("Failed to create AemConfig");
-    let config = crate::resolve_aem_languages(&content, &config);
+#[test]
+fn test_aem_xml_valid_aacb() {
+    assert_aem_xml_valid_for(&[("AACB_033_IT.pdf", "it")]);
+}
 
-    let root = convert_to_aem(&content, &config);
-    let xml = generate_aem_xml(&root, &config);
+#[test]
+fn test_aem_xml_valid_aacc() {
+    assert_aem_xml_valid_for(&[("AACC_019_DE.pdf", "de"), ("AACC_019_EN.pdf", "en")]);
+}
 
-    assert_valid_xml(&xml);
+#[test]
+fn test_aem_xml_valid_aace() {
+    assert_aem_xml_valid_for(&[("AACE_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aacj() {
+    assert_aem_xml_valid_for(&[
+        ("AACJ_019_DE.pdf", "de"),
+        ("AACJ_019_EN.pdf", "en"),
+        ("AACJ_019_SP.pdf", "es"),
+    ]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaei() {
+    assert_aem_xml_valid_for(&[("AAEI_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aagg() {
+    assert_aem_xml_valid_for(&[("AAGG_019_SP.pdf", "es")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aags() {
+    assert_aem_xml_valid_for(&[("AAGS_019_DE.pdf", "de"), ("AAGS_019_EN.pdf", "en")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aahq() {
+    assert_aem_xml_valid_for(&[("AAHQ_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaks() {
+    assert_aem_xml_valid_for(&[("AAKS_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaoe() {
+    assert_aem_xml_valid_for(&[("AAOE_033_IT.pdf", "it")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aapr() {
+    assert_aem_xml_valid_for(&[("AAPR_033_IT.pdf", "it")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaqm() {
+    assert_aem_xml_valid_for(&[("AAQM_033_IT.pdf", "it")]);
+}
+
+#[test]
+#[ignore] // ACAV_001 lacks XFA variables required by the UBS AEM profile templates
+fn test_aem_xml_valid_acav() {
+    assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
 }

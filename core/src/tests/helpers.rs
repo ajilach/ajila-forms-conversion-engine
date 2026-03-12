@@ -266,6 +266,39 @@ pub fn load_ubs_profile() -> (
     (profile, templates)
 }
 
+/// Generate AEM XML from one or more PDF files and validate that it is
+/// well-formed XML. Each entry is `(filename, language_code)`.
+pub fn assert_aem_xml_valid_for(pdfs: &[(&str, &str)]) {
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let (ctx, content) = if envelopes.len() == 1 {
+        let env = envelopes.into_iter().next().unwrap();
+        (env.context, env.content)
+    } else {
+        let merged =
+            crate::structured::merge_translations(envelopes).expect("Failed to merge translations");
+        (merged.context, merged.content)
+    };
+
+    let (profile, templates) = load_ubs_profile();
+    let config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    assert_valid_xml(&xml);
+}
+
 /// Assert that the given string is well-formed XML.
 ///
 /// Parses the string with `quick_xml::Reader` and panics on any syntax error,
