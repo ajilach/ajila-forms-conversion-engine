@@ -1,6 +1,7 @@
 //! XSD schema generation from structured nodes.
 //!
-//! Traverses the `StructuredNode` tree and emits an XSD schema string.
+//! Traverses the `StructuredNode` tree and builds an `XsdSchema` tree
+//! (intermediate representation), which can then be serialized to XML.
 //! Headings create nested `xs:complexType` hierarchies, fields become
 //! `xs:element` declarations, conditionals become `xs:choice`, and
 //! repeatables use `minOccurs`/`maxOccurs`.
@@ -9,84 +10,89 @@ use crate::structured::{
     FieldId, FieldNode, FieldType, GroupNode, HeadingNode, RepeatableNode, StructuredNode,
 };
 
-use super::{XsdConfig, find_matching_type, resolve_element, to_snake_case};
+use super::{
+    XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_type, resolve_element,
+    to_snake_case,
+};
 
 // ============================================================================
 // Public API
 // ============================================================================
 
-/// Generate a complete XSD schema string from structured nodes.
+/// Generate a complete XSD schema tree from structured nodes.
 ///
-/// The output wraps all generated content in an `<xs:schema>` root element,
-/// including any predefined type definitions from the config.
-pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
-    let mut ctx = GeneratorContext::new();
-
-    // Build the heading-based hierarchy first, then generate XSD.
+/// Returns an `XsdSchema` with includes (deduplicated, only for used types)
+/// and a root `<xs:element name="form">` wrapping all generated content.
+pub fn generate_xsd_schema(nodes: &[StructuredNode], config: &XsdConfig) -> XsdSchema {
     let sections = build_heading_hierarchy(nodes);
+    let mut body = Vec::new();
     for section in &sections {
-        generate_section(section, config, &mut ctx, 2);
+        build_section(section, config, &mut body);
     }
 
-    // Assemble the full schema
-    let mut output = String::new();
-    output.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    output.push_str("<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n");
+    // Collect all non-builtin type refs used in the tree
+    let mut used_refs = std::collections::HashSet::new();
+    for node in &body {
+        collect_type_refs(node, &mut used_refs);
+    }
 
-    // Emit xs:include directives only for types actually used in the schema,
-    // deduplicated by path (multiple type names in one file collapse to one include).
+    // Build deduplicated, sorted include list
     let include_paths: std::collections::BTreeSet<&str> = config
         .type_to_file
         .iter()
-        .filter(|(name, _)| ctx.used_type_refs.contains(*name))
+        .filter(|(name, _)| used_refs.contains(name.as_str()))
         .map(|(_, path)| path.as_str())
         .collect();
-    for path in &include_paths {
-        output.push_str(&format!("  <xs:include schemaLocation=\"{}\"/>\n", path));
-    }
-    if !include_paths.is_empty() {
-        output.push('\n');
-    }
 
-    // Root element wrapping all generated content
-    output.push_str("  <xs:element name=\"form\">\n");
-    output.push_str("    <xs:complexType>\n");
-    output.push_str("      <xs:sequence>\n");
-    output.push_str(&ctx.body);
-    output.push_str("      </xs:sequence>\n");
-    output.push_str("    </xs:complexType>\n");
-    output.push_str("  </xs:element>\n");
+    let root = XsdNode::Element {
+        name: "form".to_string(),
+        type_ref: None,
+        min_occurs: None,
+        max_occurs: None,
+        content: Some(Box::new(XsdNode::ComplexType {
+            name: None,
+            sequence: body,
+        })),
+    };
 
-    output.push_str("</xs:schema>\n");
-    output
+    XsdSchema {
+        includes: include_paths.into_iter().map(|s| s.to_string()).collect(),
+        root,
+    }
 }
 
-// ============================================================================
-// Generator context
-// ============================================================================
-
-/// Mutable state carried through generation.
-struct GeneratorContext {
-    /// The accumulated XSD body content (inside the root element's sequence).
-    body: String,
-    /// Type names referenced via `type="..."` attributes during generation.
-    /// Used to determine which xs:include directives are actually needed.
-    used_type_refs: std::collections::HashSet<String>,
+/// Generate a complete XSD schema XML string from structured nodes.
+pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
+    generate_xsd_schema(nodes, config).to_xml()
 }
 
-impl GeneratorContext {
-    fn new() -> Self {
-        Self {
-            body: String::new(),
-            used_type_refs: std::collections::HashSet::new(),
+/// Recursively collect non-builtin type references from an XsdNode tree.
+fn collect_type_refs<'a>(node: &'a XsdNode, refs: &mut std::collections::HashSet<&'a str>) {
+    match node {
+        XsdNode::Element {
+            type_ref, content, ..
+        } => {
+            if let Some(tr) = type_ref {
+                if !tr.starts_with("xs:") {
+                    refs.insert(tr.as_str());
+                }
+            }
+            if let Some(child) = content {
+                collect_type_refs(child, refs);
+            }
         }
-    }
-
-    /// Record a type reference. Builtin xs: types are ignored since they
-    /// never require an xs:include directive.
-    fn record_type_ref(&mut self, type_ref: &str) {
-        if !type_ref.starts_with("xs:") {
-            self.used_type_refs.insert(type_ref.to_string());
+        XsdNode::ComplexType { sequence, .. } => {
+            for child in sequence {
+                collect_type_refs(child, refs);
+            }
+        }
+        XsdNode::SimpleType { .. } => {}
+        XsdNode::Choice { options } => {
+            for branch in options {
+                for child in branch {
+                    collect_type_refs(child, refs);
+                }
+            }
         }
     }
 }
@@ -255,18 +261,11 @@ fn flatten_group_for_hierarchy(group: &GroupNode) -> Vec<FlatItem> {
 }
 
 // ============================================================================
-// Section → XSD generation
+// Section → XsdNode building
 // ============================================================================
 
-/// Generate XSD content for a section (heading + children).
-fn generate_section(
-    section: &Section,
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
-    let indent_str = " ".repeat(indent);
-
+/// Build XsdNode(s) for a section (heading + children).
+fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) {
     match &section.heading {
         Some(heading) => {
             let label = heading.content.as_plain_text();
@@ -278,30 +277,32 @@ fn generate_section(
 
             if let Some(reg_type) = matched {
                 // Auto-matched against a registered complexType
-                ctx.record_type_ref(&reg_type.name);
-                ctx.body.push_str(&format!(
-                    "{}<xs:element name=\"{}\" type=\"{}\"/>\n",
-                    indent_str, name, reg_type.name
-                ));
+                out.push(XsdNode::Element {
+                    name,
+                    type_ref: Some(reg_type.name.clone()),
+                    min_occurs: None,
+                    max_occurs: None,
+                    content: None,
+                });
             } else {
-                // No match → inline complexType with snake_case name
-                ctx.body
-                    .push_str(&format!("{}<xs:element name=\"{}\">\n", indent_str, name));
-                ctx.body
-                    .push_str(&format!("{}  <xs:complexType>\n", indent_str));
-                ctx.body
-                    .push_str(&format!("{}    <xs:sequence>\n", indent_str));
-                generate_section_children(section, config, ctx, indent + 6);
-                ctx.body
-                    .push_str(&format!("{}    </xs:sequence>\n", indent_str));
-                ctx.body
-                    .push_str(&format!("{}  </xs:complexType>\n", indent_str));
-                ctx.body.push_str(&format!("{}</xs:element>\n", indent_str));
+                // No match → inline complexType
+                let mut children = Vec::new();
+                build_section_children(section, config, &mut children);
+                out.push(XsdNode::Element {
+                    name,
+                    type_ref: None,
+                    min_occurs: None,
+                    max_occurs: None,
+                    content: Some(Box::new(XsdNode::ComplexType {
+                        name: None,
+                        sequence: children,
+                    })),
+                });
             }
         }
         None => {
-            // Preamble section (no heading) — just emit children directly
-            generate_section_children(section, config, ctx, indent);
+            // Preamble section (no heading) — emit children directly
+            build_section_children(section, config, out);
         }
     }
 }
@@ -358,25 +359,18 @@ fn collect_node_name_type_pairs(
     }
 }
 
-/// Generate XSD for the children of a section.
-fn generate_section_children(
-    section: &Section,
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
+/// Build XsdNode(s) for the children of a section.
+fn build_section_children(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) {
     let items = &section.children;
     let mut i = 0;
     while i < items.len() {
         match &items[i] {
             SectionItem::SubSection(sub) => {
-                generate_section(sub, config, ctx, indent);
+                build_section(sub, config, out);
                 i += 1;
             }
             SectionItem::Node(node) => {
-                // Check for conditional grouping
                 if let StructuredNode::Conditional(cond) = node {
-                    // Group adjacent conditionals with the same field_name
                     let field_name = &cond.condition.field_name;
                     let start = i;
                     let mut end = i + 1;
@@ -391,17 +385,10 @@ fn generate_section_children(
                         }
                         break;
                     }
-
-                    if end - start > 1 {
-                        // Multiple conditionals → xs:choice
-                        generate_choice(&items[start..end], config, ctx, indent);
-                    } else {
-                        // Single conditional — still wrap in xs:choice for schema correctness
-                        generate_choice(&items[start..end], config, ctx, indent);
-                    }
+                    out.push(build_choice(&items[start..end], config));
                     i = end;
                 } else {
-                    generate_node(node, config, ctx, indent, None, None);
+                    build_node(node, config, out, None, None);
                     i += 1;
                 }
             }
@@ -410,41 +397,42 @@ fn generate_section_children(
 }
 
 // ============================================================================
-// Node → XSD generation
+// Node → XsdNode building
 // ============================================================================
 
-/// Generate XSD for a single structured node.
-fn generate_node(
+/// Build XsdNode(s) for a single structured node.
+fn build_node(
     node: &StructuredNode,
     config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
+    out: &mut Vec<XsdNode>,
     min_occurs: Option<u32>,
     max_occurs: Option<Option<u32>>,
 ) {
     match node {
         StructuredNode::Field(field) => {
-            generate_field(field, config, ctx, indent, min_occurs, max_occurs);
+            out.push(build_field(field, config, min_occurs, max_occurs));
         }
         StructuredNode::Repeatable(rep) => {
-            generate_repeatable(rep, config, ctx, indent);
-        }
-        StructuredNode::Group(group) => {
-            generate_group(group, config, ctx, indent);
-        }
-        StructuredNode::Conditional(cond) => {
-            // Single conditional not caught by the grouping logic
-            generate_choice(
-                &[SectionItem::Node(StructuredNode::Conditional(cond.clone()))],
+            build_node(
+                &rep.item,
                 config,
-                ctx,
-                indent,
+                out,
+                Some(rep.min_occurrences),
+                Some(rep.max_occurrences),
             );
         }
+        StructuredNode::Group(group) => {
+            build_group(group, config, out);
+        }
+        StructuredNode::Conditional(cond) => {
+            out.push(build_choice(
+                &[SectionItem::Node(StructuredNode::Conditional(cond.clone()))],
+                config,
+            ));
+        }
         StructuredNode::GridLayout(grid) => {
-            // Recurse into grid elements
             for elem in &grid.elements {
-                generate_node(&elem.node, config, ctx, indent, None, None);
+                build_node(&elem.node, config, out, None, None);
             }
         }
         // Presentational nodes — skip
@@ -457,68 +445,50 @@ fn generate_node(
     }
 }
 
-/// Generate XSD for a field node.
-fn generate_field(
+/// Build an XsdNode for a field.
+fn build_field(
     field: &FieldNode,
     config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
     min_occurs: Option<u32>,
     max_occurs: Option<Option<u32>>,
-) {
-    let indent_str = " ".repeat(indent);
-
+) -> XsdNode {
     let label = field
         .label
         .as_ref()
         .map(|l| l.as_plain_text())
         .unwrap_or_default();
 
-    // Resolve name and type
     let (name, type_ref) = match resolve_element(&label, &config.profile) {
         Some(res) => (res.name, res.type_ref),
         None => (to_snake_case(&label), "xs:string".to_string()),
     };
-    ctx.record_type_ref(&type_ref);
 
-    // Build occurrence attributes
-    let occur_attrs = build_occurrence_attrs(min_occurs, max_occurs);
-
-    // Check if we need restrictions (enumeration, pattern, etc.)
     let restrictions = collect_restrictions(field);
 
     if restrictions.is_empty() {
-        // Simple element with type attribute
-        ctx.body.push_str(&format!(
-            "{}<xs:element name=\"{}\" type=\"{}\"{}/>\n",
-            indent_str, name, type_ref, occur_attrs
-        ));
-    } else {
-        // Element with inline simpleType restriction
-        ctx.body.push_str(&format!(
-            "{}<xs:element name=\"{}\"{}>\n",
-            indent_str, name, occur_attrs
-        ));
-        ctx.body
-            .push_str(&format!("{}  <xs:simpleType>\n", indent_str));
-        ctx.body.push_str(&format!(
-            "{}    <xs:restriction base=\"{}\">\n",
-            indent_str, type_ref
-        ));
-        for restriction in &restrictions {
-            ctx.body
-                .push_str(&format!("{}      {}\n", indent_str, restriction));
+        XsdNode::Element {
+            name,
+            type_ref: Some(type_ref),
+            min_occurs,
+            max_occurs,
+            content: None,
         }
-        ctx.body
-            .push_str(&format!("{}    </xs:restriction>\n", indent_str));
-        ctx.body
-            .push_str(&format!("{}  </xs:simpleType>\n", indent_str));
-        ctx.body.push_str(&format!("{}</xs:element>\n", indent_str));
+    } else {
+        XsdNode::Element {
+            name,
+            type_ref: None,
+            min_occurs,
+            max_occurs,
+            content: Some(Box::new(XsdNode::SimpleType {
+                base: type_ref,
+                restrictions,
+            })),
+        }
     }
 }
 
 /// Collect XSD restriction facets for a field based on its FieldType.
-fn collect_restrictions(field: &FieldNode) -> Vec<String> {
+fn collect_restrictions(field: &FieldNode) -> Vec<XsdRestriction> {
     let mut restrictions = Vec::new();
 
     match &field.input_type {
@@ -528,21 +498,21 @@ fn collect_restrictions(field: &FieldNode) -> Vec<String> {
             min_length,
         } => {
             if let Some(pattern) = regex {
-                restrictions.push(format!("<xs:pattern value=\"{}\"/>", xml_escape(pattern)));
+                restrictions.push(XsdRestriction::Pattern(pattern.clone()));
             }
             if let Some(min) = min_length {
-                restrictions.push(format!("<xs:minLength value=\"{}\"/>", min));
+                restrictions.push(XsdRestriction::MinLength(*min));
             }
             if let Some(max) = max_length {
-                restrictions.push(format!("<xs:maxLength value=\"{}\"/>", max));
+                restrictions.push(XsdRestriction::MaxLength(*max));
             }
         }
         FieldType::Number { min, max, .. } => {
             if let Some(min_val) = min {
-                restrictions.push(format!("<xs:minInclusive value=\"{}\"/>", min_val));
+                restrictions.push(XsdRestriction::MinInclusive(min_val.to_string()));
             }
             if let Some(max_val) = max {
-                restrictions.push(format!("<xs:maxInclusive value=\"{}\"/>", max_val));
+                restrictions.push(XsdRestriction::MaxInclusive(max_val.to_string()));
             }
         }
         FieldType::Radio { options } | FieldType::Select { options } => {
@@ -552,10 +522,7 @@ fn collect_restrictions(field: &FieldNode) -> Vec<String> {
                     crate::structured::InputValue::Number(n) => n.to_string(),
                     crate::structured::InputValue::Bool(b) => b.to_string(),
                 };
-                restrictions.push(format!(
-                    "<xs:enumeration value=\"{}\"/>",
-                    xml_escape(&value_str)
-                ));
+                restrictions.push(XsdRestriction::Enumeration(value_str));
             }
         }
         _ => {}
@@ -564,35 +531,12 @@ fn collect_restrictions(field: &FieldNode) -> Vec<String> {
     restrictions
 }
 
-/// Generate XSD for a repeatable node.
-fn generate_repeatable(
-    rep: &RepeatableNode,
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
-    generate_node(
-        &rep.item,
-        config,
-        ctx,
-        indent,
-        Some(rep.min_occurrences),
-        Some(rep.max_occurrences),
-    );
-}
-
-/// Generate XSD for a group node (recurse into children).
-fn generate_group(
-    group: &GroupNode,
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
+/// Build XsdNode(s) for a group node (recurse into children).
+fn build_group(group: &GroupNode, config: &XsdConfig, out: &mut Vec<XsdNode>) {
     let mut i = 0;
     let children = &group.children;
 
     while i < children.len() {
-        // Check for conditional grouping within the group
         if let StructuredNode::Conditional(cond) = &children[i] {
             let field_name = &cond.condition.field_name;
             let start = i;
@@ -606,101 +550,49 @@ fn generate_group(
                 }
                 break;
             }
-
-            // Convert to SectionItems for generate_choice
             let section_items: Vec<SectionItem> = children[start..end]
                 .iter()
                 .map(|n| SectionItem::Node(n.clone()))
                 .collect();
-            generate_choice(&section_items, config, ctx, indent);
+            out.push(build_choice(&section_items, config));
             i = end;
         } else {
-            generate_node(&children[i], config, ctx, indent, None, None);
+            build_node(&children[i], config, out, None, None);
             i += 1;
         }
     }
 }
 
-/// Generate an `xs:choice` from a slice of conditional node items.
-fn generate_choice(
-    items: &[SectionItem],
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
-    let indent_str = " ".repeat(indent);
-
-    ctx.body.push_str(&format!("{}<xs:choice>\n", indent_str));
+/// Build an `XsdNode::Choice` from a slice of conditional node items.
+fn build_choice(items: &[SectionItem], config: &XsdConfig) -> XsdNode {
+    let mut options = Vec::new();
 
     for item in items {
         if let SectionItem::Node(StructuredNode::Conditional(cond)) = item {
-            ctx.body
-                .push_str(&format!("{}  <xs:sequence>\n", indent_str));
-            generate_conditional_content(&cond.content, config, ctx, indent + 4);
-            ctx.body
-                .push_str(&format!("{}  </xs:sequence>\n", indent_str));
+            let mut branch = Vec::new();
+            build_conditional_content(&cond.content, config, &mut branch);
+            options.push(branch);
         }
     }
 
-    ctx.body.push_str(&format!("{}</xs:choice>\n", indent_str));
+    XsdNode::Choice { options }
 }
 
-/// Generate XSD content for the inner content of a conditional branch.
-fn generate_conditional_content(
-    node: &StructuredNode,
-    config: &XsdConfig,
-    ctx: &mut GeneratorContext,
-    indent: usize,
-) {
+/// Build XsdNode(s) for the content of a conditional branch.
+fn build_conditional_content(node: &StructuredNode, config: &XsdConfig, out: &mut Vec<XsdNode>) {
     match node {
         StructuredNode::Group(group) => {
-            // Recurse into all group children
             for child in &group.children {
-                generate_conditional_content(child, config, ctx, indent);
+                build_conditional_content(child, config, out);
             }
         }
         _ => {
-            generate_node(node, config, ctx, indent, None, None);
+            build_node(node, config, out, None, None);
         }
     }
 }
 
 // ============================================================================
-// Helpers
-// ============================================================================
-
-/// Build the `minOccurs`/`maxOccurs` attribute string for an element.
-fn build_occurrence_attrs(min_occurs: Option<u32>, max_occurs: Option<Option<u32>>) -> String {
-    let mut attrs = String::new();
-    if let Some(min) = min_occurs {
-        if min != 1 {
-            attrs.push_str(&format!(" minOccurs=\"{}\"", min));
-        }
-    }
-    if let Some(max) = max_occurs {
-        match max {
-            Some(n) => {
-                if n != 1 {
-                    attrs.push_str(&format!(" maxOccurs=\"{}\"", n));
-                }
-            }
-            None => {
-                attrs.push_str(" maxOccurs=\"unbounded\"");
-            }
-        }
-    }
-    attrs
-}
-
-/// Escape special XML characters in attribute values.
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
 // ============================================================================
 // BindRef computation (for AEM XSD binding)
 // ============================================================================

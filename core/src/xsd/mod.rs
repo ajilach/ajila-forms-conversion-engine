@@ -32,12 +32,218 @@
 
 mod converter;
 
-pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd};
+pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd, generate_xsd_schema};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde::Deserialize;
 use std::collections::HashMap;
+
+// ============================================================================
+// XSD node types (intermediate representation)
+// ============================================================================
+
+/// An XSD restriction facet.
+#[derive(Debug, Clone, PartialEq)]
+pub enum XsdRestriction {
+    Pattern(String),
+    MinLength(usize),
+    MaxLength(usize),
+    MinInclusive(String),
+    MaxInclusive(String),
+    Enumeration(String),
+}
+
+/// An XSD node in the intermediate schema tree.
+#[derive(Debug, Clone, PartialEq)]
+pub enum XsdNode {
+    /// `<xs:element name="..." type="..." .../>`
+    Element {
+        name: String,
+        type_ref: Option<String>,
+        min_occurs: Option<u32>,
+        max_occurs: Option<Option<u32>>,
+        content: Option<Box<XsdNode>>,
+    },
+    /// `<xs:complexType>` (inline when `name` is `None`, named when `Some`)
+    ComplexType {
+        name: Option<String>,
+        sequence: Vec<XsdNode>,
+    },
+    /// `<xs:simpleType>` with restriction facets
+    SimpleType {
+        base: String,
+        restrictions: Vec<XsdRestriction>,
+    },
+    /// `<xs:choice>` — each option is one `<xs:sequence>` branch
+    Choice { options: Vec<Vec<XsdNode>> },
+}
+
+/// A complete XSD schema with includes and a root element.
+#[derive(Debug, Clone, PartialEq)]
+pub struct XsdSchema {
+    pub includes: Vec<String>,
+    pub root: XsdNode,
+}
+
+impl XsdSchema {
+    /// Serialize to a complete XSD XML string.
+    pub fn to_xml(&self) -> String {
+        let mut out = String::new();
+        out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        out.push_str("<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n");
+
+        for path in &self.includes {
+            out.push_str(&format!("  <xs:include schemaLocation=\"{}\"/>\n", path));
+        }
+        if !self.includes.is_empty() {
+            out.push('\n');
+        }
+
+        self.root.write_xml(&mut out, 2);
+
+        out.push_str("</xs:schema>\n");
+        out
+    }
+}
+
+impl XsdNode {
+    /// Write this node as XSD XML into `out` at the given indentation level.
+    pub fn write_xml(&self, out: &mut String, indent: usize) {
+        let pad = " ".repeat(indent);
+        match self {
+            XsdNode::Element {
+                name,
+                type_ref,
+                min_occurs,
+                max_occurs,
+                content,
+            } => {
+                let occur = build_occurrence_attrs(*min_occurs, *max_occurs);
+                match (type_ref, content) {
+                    (Some(tr), None) => {
+                        out.push_str(&format!(
+                            "{}<xs:element name=\"{}\" type=\"{}\"{}/>",
+                            pad, name, tr, occur
+                        ));
+                        out.push('\n');
+                    }
+                    (None, Some(child)) => {
+                        out.push_str(&format!("{}<xs:element name=\"{}\"{}>\n", pad, name, occur));
+                        child.write_xml(out, indent + 2);
+                        out.push_str(&format!("{}</xs:element>\n", pad));
+                    }
+                    _ => {
+                        // Fallback: element with no type and no content
+                        out.push_str(&format!(
+                            "{}<xs:element name=\"{}\" type=\"xs:string\"{}/>",
+                            pad, name, occur
+                        ));
+                        out.push('\n');
+                    }
+                }
+            }
+            XsdNode::ComplexType { name, sequence } => {
+                match name {
+                    Some(n) => out.push_str(&format!("{}<xs:complexType name=\"{}\">\n", pad, n)),
+                    None => out.push_str(&format!("{}<xs:complexType>\n", pad)),
+                }
+                out.push_str(&format!("{}  <xs:sequence>\n", pad));
+                for child in sequence {
+                    child.write_xml(out, indent + 4);
+                }
+                out.push_str(&format!("{}  </xs:sequence>\n", pad));
+                out.push_str(&format!("{}</xs:complexType>\n", pad));
+            }
+            XsdNode::SimpleType { base, restrictions } => {
+                out.push_str(&format!("{}<xs:simpleType>\n", pad));
+                out.push_str(&format!("{}  <xs:restriction base=\"{}\">\n", pad, base));
+                for r in restrictions {
+                    r.write_xml(out, indent + 4);
+                }
+                out.push_str(&format!("{}  </xs:restriction>\n", pad));
+                out.push_str(&format!("{}</xs:simpleType>\n", pad));
+            }
+            XsdNode::Choice { options } => {
+                out.push_str(&format!("{}<xs:choice>\n", pad));
+                for option in options {
+                    out.push_str(&format!("{}  <xs:sequence>\n", pad));
+                    for child in option {
+                        child.write_xml(out, indent + 4);
+                    }
+                    out.push_str(&format!("{}  </xs:sequence>\n", pad));
+                }
+                out.push_str(&format!("{}</xs:choice>\n", pad));
+            }
+        }
+    }
+}
+
+impl XsdRestriction {
+    fn write_xml(&self, out: &mut String, indent: usize) {
+        let pad = " ".repeat(indent);
+        match self {
+            XsdRestriction::Pattern(v) => {
+                out.push_str(&format!(
+                    "{}<xs:pattern value=\"{}\"/>\n",
+                    pad,
+                    xml_escape(v)
+                ));
+            }
+            XsdRestriction::MinLength(v) => {
+                out.push_str(&format!("{}<xs:minLength value=\"{}\"/>\n", pad, v));
+            }
+            XsdRestriction::MaxLength(v) => {
+                out.push_str(&format!("{}<xs:maxLength value=\"{}\"/>\n", pad, v));
+            }
+            XsdRestriction::MinInclusive(v) => {
+                out.push_str(&format!("{}<xs:minInclusive value=\"{}\"/>\n", pad, v));
+            }
+            XsdRestriction::MaxInclusive(v) => {
+                out.push_str(&format!("{}<xs:maxInclusive value=\"{}\"/>\n", pad, v));
+            }
+            XsdRestriction::Enumeration(v) => {
+                out.push_str(&format!(
+                    "{}<xs:enumeration value=\"{}\"/>\n",
+                    pad,
+                    xml_escape(v)
+                ));
+            }
+        }
+    }
+}
+
+/// Build `minOccurs`/`maxOccurs` attribute string for an element.
+fn build_occurrence_attrs(min_occurs: Option<u32>, max_occurs: Option<Option<u32>>) -> String {
+    let mut attrs = String::new();
+    if let Some(min) = min_occurs {
+        if min != 1 {
+            attrs.push_str(&format!(" minOccurs=\"{}\"", min));
+        }
+    }
+    if let Some(max) = max_occurs {
+        match max {
+            Some(n) => {
+                if n != 1 {
+                    attrs.push_str(&format!(" maxOccurs=\"{}\"", n));
+                }
+            }
+            None => {
+                attrs.push_str(" maxOccurs=\"unbounded\"");
+            }
+        }
+    }
+    attrs
+}
+
+/// Escape special XML characters in attribute values.
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
 
 // ============================================================================
 // Profile types (TOML-deserializable)

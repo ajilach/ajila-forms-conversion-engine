@@ -126,9 +126,9 @@ pub use html::{
 
 // XSD generation
 pub use xsd::{
-    BindRefMaps, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    build_registered_types, compute_bind_refs, extract_declared_names, find_matching_type,
-    generate_xsd, parse_schema,
+    BindRefMaps, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdNode,
+    XsdProfile, XsdRestriction, XsdSchema, build_registered_types, compute_bind_refs,
+    extract_declared_names, find_matching_type, generate_xsd, generate_xsd_schema, parse_schema,
 };
 
 // XFA layer
