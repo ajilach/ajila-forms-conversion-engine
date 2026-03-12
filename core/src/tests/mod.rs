@@ -2,8 +2,8 @@
 pub mod helpers;
 
 use helpers::{
-    collect_conditionals, collect_field_labels, collect_field_labels_trimmed, collect_field_names,
-    collect_fields, collect_headings, collect_radio_fields,
+    assert_valid_xml, collect_conditionals, collect_field_labels, collect_field_labels_trimmed,
+    collect_field_names, collect_fields, collect_headings, collect_radio_fields,
     count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
     flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
@@ -13261,4 +13261,32 @@ fn test_aacj_de_tin_radio_button_options() {
     }
 
     println!("\n✓ AACJ TIN radio button has all expected options");
+}
+
+#[test]
+fn test_aags_aem_content_xml_is_valid() {
+    // Verify that the generated AEM content.xml for AAGS is well-formed XML.
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
+        .expect("Failed to process AAGS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
+        .expect("Failed to process AAGS_019_EN");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
+    let ctx = merged.context;
+    let content = merged.content;
+
+    let (profile, templates) = load_ubs_profile();
+    let config = AemConfig::from_profile(&profile, templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    assert_valid_xml(&xml);
 }

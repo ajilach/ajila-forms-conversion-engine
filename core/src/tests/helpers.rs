@@ -265,3 +265,105 @@ pub fn load_ubs_profile() -> (
     }
     (profile, templates)
 }
+
+/// Assert that the given string is well-formed XML.
+///
+/// Parses the string with `quick_xml::Reader` and panics on any syntax error,
+/// printing the error and a snippet of the surrounding XML.
+pub fn assert_valid_xml(xml: &str) {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().check_end_names = true;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                let pos = reader.error_position() as usize;
+                let start = pos.saturating_sub(200);
+                let end = (pos + 200).min(xml.len());
+                let snippet = &xml[start..end];
+                panic!("XML syntax error at byte {pos}: {e}\n\nContext:\n{snippet}");
+            }
+            _ => {}
+        }
+    }
+
+    // Also check for unescaped `&` in attribute values, which quick-xml
+    // may silently accept. An `&` must be followed by a valid entity
+    // reference (`amp;`, `lt;`, `gt;`, `quot;`, `apos;`) or a numeric
+    // character reference (`#...;`).
+    check_no_unescaped_ampersands(xml);
+
+    // Check for unescaped `<` inside attribute values.
+    check_no_unescaped_angle_brackets_in_attributes(xml);
+}
+
+/// Verify that every `&` in the XML is part of a valid entity or character
+/// reference. Panics with context if an unescaped `&` is found.
+fn check_no_unescaped_ampersands(xml: &str) {
+    let bytes = xml.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b != b'&' {
+            continue;
+        }
+        // Look ahead for `;`
+        let rest = &xml[i + 1..];
+        if let Some(semi) = rest.find(';') {
+            let entity = &rest[..semi];
+            // Permit named entities and numeric references
+            if matches!(entity, "amp" | "lt" | "gt" | "quot" | "apos") || entity.starts_with('#') {
+                continue;
+            }
+        }
+        // Unescaped `&`
+        let start = i.saturating_sub(100);
+        let end = (i + 100).min(xml.len());
+        let snippet = &xml[start..end];
+        panic!("Unescaped '&' at byte {i} in XML output.\n\nContext:\n{snippet}");
+    }
+}
+
+/// Verify that no `<` or `>` appear inside XML attribute values.
+/// Panics with context if a raw angle bracket is found in an attribute.
+fn check_no_unescaped_angle_brackets_in_attributes(xml: &str) {
+    // Simple state machine: track whether we are inside an opening tag
+    // (between `<tagname` and `>`) and inside a quoted attribute value.
+    let bytes = xml.as_bytes();
+    let mut in_tag = false;
+    let mut quote_char: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote_char {
+            // Inside a quoted attribute value
+            if b == q {
+                quote_char = None;
+            } else if b == b'<' || b == b'>' {
+                let start = i.saturating_sub(100);
+                let end = (i + 100).min(xml.len());
+                let snippet = &xml[start..end];
+                panic!(
+                    "Unescaped '{}' inside XML attribute value at byte {i}.\n\nContext:\n{snippet}",
+                    b as char
+                );
+            }
+            i += 1;
+            continue;
+        }
+        if in_tag {
+            if b == b'"' || b == b'\'' {
+                quote_char = Some(b);
+            } else if b == b'>' || (b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'>') {
+                in_tag = false;
+            }
+        } else if b == b'<' {
+            // Detect start of an opening/self-closing tag (skip comments, CDATA, PI)
+            if i + 1 < bytes.len() && bytes[i + 1] != b'!' && bytes[i + 1] != b'?' {
+                in_tag = true;
+            }
+        }
+        i += 1;
+    }
+}
