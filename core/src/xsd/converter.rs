@@ -11,7 +11,7 @@ use crate::structured::{
 };
 
 use super::{
-    XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_type, resolve_element,
+    XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
     to_snake_case,
 };
 
@@ -273,16 +273,46 @@ fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) 
 
             // Collect child (name, type) pairs and try auto-matching
             let child_pairs = collect_child_name_type_pairs(section, config);
-            let matched = find_matching_type(&child_pairs, &config.registered_types);
+            let matched = find_matching_types(&child_pairs, &config.registered_types);
 
-            if let Some(reg_type) = matched {
-                // Auto-matched against a registered complexType
+            if matched.len() == 1 {
+                // Single type covers all children
                 out.push(XsdNode::Element {
                     name,
-                    type_ref: Some(reg_type.name.clone()),
+                    type_ref: Some(matched[0].name.clone()),
                     min_occurs: None,
                     max_occurs: None,
                     content: None,
+                });
+            } else if matched.len() > 1 {
+                // Multiple disjoint types cover all children
+                let sequence: Vec<XsdNode> = matched
+                    .iter()
+                    .map(|rt| {
+                        let elem_name = config
+                            .type_to_element_name
+                            .get(&rt.name)
+                            .cloned()
+                            .unwrap_or_else(|| rt.name.trim_end_matches("Type").to_string());
+                        XsdNode::Element {
+                            name: elem_name,
+                            type_ref: Some(rt.name.clone()),
+                            min_occurs: None,
+                            max_occurs: None,
+                            content: None,
+                        }
+                    })
+                    .collect();
+
+                out.push(XsdNode::Element {
+                    name,
+                    type_ref: None,
+                    min_occurs: None,
+                    max_occurs: None,
+                    content: Some(Box::new(XsdNode::ComplexType {
+                        name: None,
+                        sequence,
+                    })),
                 });
             } else {
                 // No match → inline complexType

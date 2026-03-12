@@ -232,6 +232,6 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
         }
     }
 
-    let registered_types = build_registered_types(&parsed_schemas);
-    Ok(XsdConfig::new(profile, type_to_file, registered_types))
+    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    Ok(XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name))
 }

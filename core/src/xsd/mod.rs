@@ -37,7 +37,7 @@ pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd, generate_xsd_s
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ============================================================================
 // XSD node types (intermediate representation)
@@ -342,6 +342,12 @@ pub struct XsdConfig {
     /// `xs:complexType` definitions with their child elements, and resolving
     /// `xs:extension base` inheritance and `xs:element ref` references.
     pub registered_types: HashMap<String, RegisteredComplexType>,
+
+    /// Reverse map from complex type name → global element name.
+    ///
+    /// E.g. `"AddressType" → "Address"`, `"IndividualBasicType" → "IndividualBasic"`.
+    /// Built from global element declarations in the parsed XSD files.
+    pub type_to_element_name: HashMap<String, String>,
 }
 
 impl XsdConfig {
@@ -350,11 +356,13 @@ impl XsdConfig {
         profile: XsdProfile,
         type_to_file: HashMap<String, String>,
         registered_types: HashMap<String, RegisteredComplexType>,
+        type_to_element_name: HashMap<String, String>,
     ) -> Self {
         Self {
             profile,
             type_to_file,
             registered_types,
+            type_to_element_name,
         }
     }
 
@@ -364,6 +372,7 @@ impl XsdConfig {
             profile,
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
+            type_to_element_name: HashMap::new(),
         }
     }
 }
@@ -563,9 +572,15 @@ fn get_attr(e: &quick_xml::events::BytesStart, attr_name: &[u8]) -> Option<Strin
 /// 2. Resolves `xs:element ref="X"` references using global element declarations.
 /// 3. Resolves `xs:extension base="Y"` inheritance by prepending base type elements.
 /// 4. Associates each type with its `schemaLocation` path.
+///
+/// Returns `(registered_types, type_to_element_name)` where `type_to_element_name`
+/// maps complex type names to their global element names (e.g. `"AddressType" → "Address"`).
 pub fn build_registered_types(
     parsed_schemas: &[(ParsedSchema, String)], // (schema, schemaLocation)
-) -> HashMap<String, RegisteredComplexType> {
+) -> (
+    HashMap<String, RegisteredComplexType>,
+    HashMap<String, String>,
+) {
     // Collect all global elements across all files (for ref resolution)
     let mut all_global_elements: HashMap<String, String> = HashMap::new();
     for (schema, _) in parsed_schemas {
@@ -674,62 +689,187 @@ pub fn build_registered_types(
         }
     }
 
-    resolved
+    // Build reverse map: type name → element name (e.g. "AddressType" → "Address")
+    let mut type_to_element_name: HashMap<String, String> = HashMap::new();
+    for (elem_name, type_name) in &all_global_elements {
+        type_to_element_name.insert(type_name.clone(), elem_name.clone());
+    }
+
+    (resolved, type_to_element_name)
 }
 
 // ============================================================================
 // Complex type matching
 // ============================================================================
 
-/// Find the best matching registered complex type for a set of child elements.
+/// Find the best set of 1..n pairwise-disjoint registered complex types
+/// whose combined elements cover all `children`.
 ///
-/// A registered type matches if all `children` (name + type) are present in
-/// the registered type's elements (i.e. `children` is a subset).
-/// If multiple types match, the one with the most element overlap is returned.
-/// Returns `None` if no type matches or `children` is empty.
-pub fn find_matching_type<'a>(
-    children: &[(String, String)],
-    registered_types: &'a HashMap<String, RegisteredComplexType>,
-) -> Option<&'a RegisteredComplexType> {
-    if children.is_empty() {
-        return None;
-    }
-
-    let mut best_match: Option<(&RegisteredComplexType, usize)> = None;
-
-    for reg_type in registered_types.values() {
-        // Check if all children are a subset of the registered type's elements
-        let all_match = children.iter().all(|(name, type_ref)| {
-            reg_type
-                .elements
-                .iter()
-                .any(|e| e.name == *name && e.type_ref == *type_ref)
-        });
-
-        if all_match {
-            // Count overlap (how many of the registered type's elements match)
-            let overlap = children
-                .iter()
-                .filter(|(name, type_ref)| {
-                    reg_type
-                        .elements
-                        .iter()
-                        .any(|e| e.name == *name && e.type_ref == *type_ref)
-                })
-                .count();
-
-            match &best_match {
-                None => best_match = Some((reg_type, overlap)),
-                Some((_, best_overlap)) => {
-                    if overlap > *best_overlap {
-                        best_match = Some((reg_type, overlap));
-                    }
-                }
+/// **Disjoint** means no two selected types share an element with the same
+/// `(name, type_ref)` pair.
+///
+/// **Ranking** – among all valid covers, pick the one with the fewest total
+/// type elements (tightest fit).  Every selected type must contribute at
+/// least one child.
+///
+/// Returns an empty `Vec` if no cover exists or `children` is empty.
+/// Collect the leaf element names of a registered complex type by recursively
+/// expanding children whose `type_ref` is itself a registered complex type.
+fn collect_leaf_names(
+    rt: &RegisteredComplexType,
+    registered_types: &HashMap<String, RegisteredComplexType>,
+) -> HashSet<String> {
+    let mut leaves = HashSet::new();
+    let mut stack: Vec<&RegisteredComplexType> = vec![rt];
+    let mut visited = HashSet::new();
+    while let Some(current) = stack.pop() {
+        if !visited.insert(&current.name as &str as *const str) {
+            continue;
+        }
+        for elem in &current.elements {
+            if let Some(child_type) = registered_types.get(&elem.type_ref) {
+                stack.push(child_type);
+            } else {
+                leaves.insert(elem.name.clone());
             }
         }
     }
+    leaves
+}
 
-    best_match.map(|(t, _)| t)
+pub fn find_matching_types<'a>(
+    children: &[(String, String)],
+    registered_types: &'a HashMap<String, RegisteredComplexType>,
+) -> Vec<&'a RegisteredComplexType> {
+    if children.is_empty() {
+        return Vec::new();
+    }
+
+    // Pre-filter: keep only types that cover at least one child.
+    let candidates: Vec<&RegisteredComplexType> = registered_types
+        .values()
+        .filter(|rt| {
+            children.iter().any(|(name, type_ref)| {
+                rt.elements
+                    .iter()
+                    .any(|e| e.name == *name && e.type_ref == *type_ref)
+            })
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // Pre-compute leaf element names for each candidate (recursively expanded).
+    let candidate_leaves: Vec<HashSet<String>> = candidates
+        .iter()
+        .map(|rt| collect_leaf_names(rt, registered_types))
+        .collect();
+
+    // For each candidate, compute a bitmask of which children it covers.
+    let child_masks: Vec<u64> = candidates
+        .iter()
+        .map(|rt| {
+            let mut mask = 0u64;
+            for (i, (name, type_ref)) in children.iter().enumerate() {
+                if rt
+                    .elements
+                    .iter()
+                    .any(|e| e.name == *name && e.type_ref == *type_ref)
+                {
+                    mask |= 1u64 << i;
+                }
+            }
+            mask
+        })
+        .collect();
+
+    let full_mask = (1u64 << children.len()) - 1;
+
+    // Best solution found so far: (total_elements, indices).
+    let mut best: Option<(usize, Vec<usize>)> = None;
+
+    // Recursive search with pruning.
+    fn search(
+        candidates: &[&RegisteredComplexType],
+        candidate_leaves: &[HashSet<String>],
+        child_masks: &[u64],
+        full_mask: u64,
+        start: usize,
+        covered: u64,
+        selected: &mut Vec<usize>,
+        total_elems: usize,
+        best: &mut Option<(usize, Vec<usize>)>,
+    ) {
+        if covered == full_mask {
+            // Valid cover — check if it's better than the best.
+            if best
+                .as_ref()
+                .map_or(true, |(best_total, _)| total_elems < *best_total)
+            {
+                *best = Some((total_elems, selected.clone()));
+            }
+            return;
+        }
+
+        // Prune: if current total already >= best, stop.
+        if let Some((best_total, _)) = best {
+            if total_elems >= *best_total {
+                return;
+            }
+        }
+
+        for i in start..candidates.len() {
+            let mask_i = child_masks[i];
+
+            // Must contribute at least one new child.
+            if mask_i & !covered == 0 {
+                continue;
+            }
+
+            // Must be leaf-disjoint with all already-selected types:
+            // no shared leaf element names after recursive expansion.
+            let disjoint = selected
+                .iter()
+                .all(|&j| candidate_leaves[i].is_disjoint(&candidate_leaves[j]));
+            if !disjoint {
+                continue;
+            }
+
+            selected.push(i);
+            search(
+                candidates,
+                candidate_leaves,
+                child_masks,
+                full_mask,
+                i + 1,
+                covered | mask_i,
+                selected,
+                total_elems + candidates[i].elements.len(),
+                best,
+            );
+            selected.pop();
+        }
+    }
+
+    let mut selected = Vec::new();
+    search(
+        &candidates,
+        &candidate_leaves,
+        &child_masks,
+        full_mask,
+        0,
+        0,
+        &mut selected,
+        0,
+        &mut best,
+    );
+
+    match best {
+        Some((_, indices)) => indices.iter().map(|&i| candidates[i]).collect(),
+        None => Vec::new(),
+    }
 }
 
 // ============================================================================
@@ -747,21 +887,29 @@ pub struct ResolvedElement {
 
 /// Attempt to resolve a label against the `[elements]` config.
 ///
-/// Returns the first entry whose any synonym appears as a case-insensitive
-/// substring of the label.
+/// Finds the best match by picking the longest matching synonym
+/// (most specific). Matching is case-insensitive substring.
 pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElement> {
     let label_lower = label.to_lowercase();
+    let mut best: Option<(usize, ResolvedElement)> = None;
     for (name, mapping) in &profile.elements {
         for synonym in &mapping.synonyms {
-            if label_lower.contains(&synonym.to_lowercase()) {
-                return Some(ResolvedElement {
-                    name: name.clone(),
-                    type_ref: mapping.type_ref.clone(),
-                });
+            let syn_lower = synonym.to_lowercase();
+            if label_lower.contains(&syn_lower) {
+                let len = syn_lower.len();
+                if best.as_ref().map_or(true, |(best_len, _)| len > *best_len) {
+                    best = Some((
+                        len,
+                        ResolvedElement {
+                            name: name.clone(),
+                            type_ref: mapping.type_ref.clone(),
+                        },
+                    ));
+                }
             }
         }
     }
-    None
+    best.map(|(_, resolved)| resolved)
 }
 
 /// Convert a label string to a snake_case identifier suitable for XSD names.

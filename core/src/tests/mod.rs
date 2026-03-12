@@ -13394,7 +13394,7 @@ fn test_xsd_heading_creates_complex_type() {
         elements,
         ..Default::default()
     };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Should match AccountType (IBAN is a subset) and use type ref
@@ -13453,7 +13453,7 @@ fn test_xsd_heading_with_type_ref() {
         elements,
         ..Default::default()
     };
-    let config = XsdConfig::new(profile, type_to_file, registered_types);
+    let config = XsdConfig::new(profile, type_to_file, registered_types, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Should reference the registered type and emit include
@@ -13518,7 +13518,7 @@ fn test_xsd_child_validation_required_present() {
     );
 
     let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Both children are a subset of AccountType → match
@@ -13568,7 +13568,7 @@ fn test_xsd_child_validation_required_missing() {
     );
 
     let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Phone is not in AccountType's elements → no match → fallback
@@ -13647,7 +13647,7 @@ fn test_xsd_child_validation_extra_child() {
     );
 
     let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types);
+    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Email is not in AccountType → not a subset → fallback
@@ -13848,7 +13848,7 @@ fn test_xsd_predefined_types_included() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     assert!(xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
@@ -13984,7 +13984,7 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // AddressType is used → address.xsd should be included
@@ -14042,7 +14042,7 @@ fn test_xsd_includes_deduplicated_by_path() {
     ];
 
     let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new());
+    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
     let xsd = generate_xsd(&nodes, &config);
 
     // Both types used, but same path → only one xs:include
@@ -14060,7 +14060,7 @@ fn test_xsd_unused_includes_not_emitted() {
     let mut type_to_file = HashMap::new();
     type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
 
-    let config = XsdConfig::new(XsdProfile::default(), type_to_file, std::collections::HashMap::new());
+    let config = XsdConfig::new(XsdProfile::default(), type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
     // No nodes at all → SomeType is never referenced
     let xsd = generate_xsd(&[], &config);
 
@@ -14140,8 +14140,8 @@ fn test_aaai_en_xsd_signature_type_matching() {
         }
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
-    let registered_types = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(profile, type_to_file, registered_types);
+    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
 
     // 3) Generate intermediate XSD schema
     let schema = generate_xsd_schema(&nodes, &config);
@@ -14208,5 +14208,182 @@ fn test_aaai_en_xsd_signature_type_matching() {
             Some("SignatureType"),
             "Element 'ubs_europe_se' should be matched to SignatureType"
         );
+    }
+
+    // 7) Assert the authorized_representative_s section is matched to multiple types
+    //    (LetterAddressType + AddressType), so it contains typed references instead
+    //    of individual child elements like "LastName".
+    let mut auth_rep_matches = Vec::new();
+    find_elements_by_name(&schema.root, "authorized_representative_s", &mut auth_rep_matches);
+    assert!(
+        !auth_rep_matches.is_empty(),
+        "Should find 'authorized_representative_s' element"
+    );
+    if let XsdNode::Element { content, type_ref, .. } = auth_rep_matches[0] {
+        assert!(
+            type_ref.is_none(),
+            "authorized_representative_s should have inline content (multi-type match)"
+        );
+        let content = content.as_ref().expect("Should have inline content");
+        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
+            let child_type_refs: Vec<&str> = sequence
+                .iter()
+                .filter_map(|node| {
+                    if let XsdNode::Element { type_ref, .. } = node {
+                        type_ref.as_deref()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert!(
+                child_type_refs.contains(&"IndividualBasicType"),
+                "Should contain IndividualBasicType. Got: {:?}",
+                child_type_refs
+            );
+            assert!(
+                child_type_refs.contains(&"AddressType"),
+                "Should contain AddressType. Got: {:?}",
+                child_type_refs
+            );
+        } else {
+            panic!("Expected ComplexType content for authorized_representative_s");
+        }
+    }
+}
+
+#[test]
+fn test_aaai_en_xsd_authorized_rep_type_pair() {
+    // Test that "authorized_representative_s" is matched to a pair of disjoint
+    // types: IndividualBasicType (for LastName/FirstName) and AddressType
+    // (for Street/StreetNumber/PostalCode/City/Country), because its child
+    // elements span both types but neither alone covers all children.
+    // LetterAddressType is rejected because it contains a LetterAddress child
+    // of type AddressType, making them non-disjoint at the leaf level.
+    use crate::run_exhaustive_to_merged;
+    use crate::xsd::{
+        XsdConfig, XsdNode, XsdProfile,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to process AAAI_019_EN");
+
+    let profile_dir_str = helpers::profiles_path("ubs/xsd");
+    let profile_dir = Path::new(&profile_dir_str);
+    let config_path = profile_dir.join("config.toml");
+    let profile: XsdProfile = {
+        let toml_str = std::fs::read_to_string(&config_path)
+            .expect("Failed to read ubs xsd/config.toml");
+        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
+    };
+
+    let types_dir = profile_dir.join("types");
+    let mut type_to_file = HashMap::new();
+    let mut parsed_schemas = Vec::new();
+    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_xsd(&path, out);
+                } else if path.extension().map_or(false, |e| e == "xsd") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    let mut xsd_files = Vec::new();
+    walk_xsd(&types_dir, &mut xsd_files);
+    xsd_files.sort();
+    for xsd_path in &xsd_files {
+        let rel = xsd_path
+            .strip_prefix(&types_dir)
+            .unwrap_or(xsd_path)
+            .to_string_lossy();
+        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
+        let content = std::fs::read_to_string(xsd_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
+        for name in extract_declared_names(&content) {
+            type_to_file.insert(name, schema_location.clone());
+        }
+        parsed_schemas.push((parse_schema(&content), schema_location));
+    }
+    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
+
+    let schema = generate_xsd_schema(&nodes, &config);
+
+    // Walk the tree to find "authorized_representative_s"
+    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
+        match node {
+            XsdNode::Element {
+                name: n, content, ..
+            } => {
+                if n == name {
+                    results.push(node);
+                }
+                if let Some(child) = content {
+                    find_elements_by_name(child, name, results);
+                }
+            }
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    find_elements_by_name(child, name, results);
+                }
+            }
+            XsdNode::SimpleType { .. } => {}
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        find_elements_by_name(child, name, results);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut matches = Vec::new();
+    find_elements_by_name(&schema.root, "authorized_representative_s", &mut matches);
+    assert!(
+        !matches.is_empty(),
+        "Should find 'authorized_representative_s' element"
+    );
+
+    // It should be an inline complexType containing two typed child elements
+    if let XsdNode::Element { content, type_ref, .. } = matches[0] {
+        assert!(
+            type_ref.is_none(),
+            "authorized_representative_s should NOT have a single type_ref"
+        );
+        let content = content.as_ref().expect("Should have inline content");
+        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
+            // Collect child element type_refs
+            let child_types: Vec<Option<&str>> = sequence
+                .iter()
+                .filter_map(|node| {
+                    if let XsdNode::Element { type_ref, .. } = node {
+                        Some(type_ref.as_deref())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            assert!(
+                child_types.iter().any(|t| *t == Some("IndividualBasicType")),
+                "Should contain IndividualBasicType child. Got types: {:?}",
+                child_types
+            );
+            assert!(
+                child_types.iter().any(|t| *t == Some("AddressType")),
+                "Should contain AddressType child. Got types: {:?}",
+                child_types
+            );
+        } else {
+            panic!("Expected ComplexType content");
+        }
     }
 }
