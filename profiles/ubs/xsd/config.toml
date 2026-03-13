@@ -52,7 +52,7 @@ synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
 type = "xs:string"
 
 [elements.Place]
-synonyms = ["Ort", "Località", "Place"]
+synonyms = ["Ort", "Località", "Place", "Lugar"]
 type = "xs:string"
 
 [elements.City]
@@ -113,5 +113,33 @@ type = "xs:date"
 
 [elements.FormOfAddress]
 synonyms = ["Form of Address", "Anrede", "Anredesprache"]
+type = "xs:string"
+
+[elements.OURef]
+synonyms = ["OU Ref", "OURef", "OU-Ref"]
+type = "xs:string"
+
+[elements.Nationality]
+synonyms = ["Nationality", "Nationalität", "Nazionalità", "Nacionalidad"]
+type = "xs:string"
+
+[elements.Title]
+synonyms = ["Title", "Titel", "Titolo", "Título"]
+type = "xs:string"
+
+[elements.Gender]
+synonyms = ["Gender", "Geschlecht", "Genere", "Género"]
+type = "xs:string"
+
+[elements.Domicile]
+synonyms = ["Domicile", "Domizil", "Domicilio"]
+type = "xs:string"
+
+[elements.FullName]
+synonyms = ["Full Name", "Vollständiger Name"]
+type = "xs:string"
+
+[elements.CorrespondenceLanguage]
+synonyms = ["Correspondence Language", "Korrespondenzsprache"]
 type = "xs:string"
  

@@ -671,25 +671,77 @@ fn collect_section_bind_refs(
             let label = heading.content.as_plain_text();
             let name = to_snake_case(&label);
             let path = format!("{}/{}", parent_path, name);
-            // Key by trimmed plain-text so it matches AEM panel titles.
             maps.sections.insert(label.trim().to_string(), path.clone());
             path
         }
-        None => {
-            // Preamble section (no heading): inherit parent path without adding a segment.
-            parent_path.to_string()
-        }
+        None => parent_path.to_string(),
     };
 
-    collect_section_items_bind_refs(&section.children, &current_path, config, maps);
+    // Mirror the type-matching logic from build_section: when a section is
+    // matched to multiple disjoint types, the XSD generator wraps each type's
+    // fields under a wrapper element, adding an extra path level.
+    let wrapper_paths = if section.heading.is_some() {
+        let child_pairs = collect_child_name_type_pairs(section, config);
+        let matched = find_matching_types(&child_pairs, &config.registered_types);
+        if matched.len() > 1 {
+            Some(build_multi_type_wrapper_paths(
+                &matched,
+                config,
+                &current_path,
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    collect_section_items_bind_refs(
+        &section.children,
+        &current_path,
+        config,
+        maps,
+        wrapper_paths.as_ref(),
+    );
+}
+
+type WrapperPaths = std::collections::HashMap<(String, String), String>;
+
+/// For each matched type, compute the wrapper element path that the XSD
+/// generator would produce, and map every child element of that type to it.
+fn build_multi_type_wrapper_paths(
+    matched: &[&super::RegisteredComplexType],
+    config: &super::XsdConfig,
+    section_path: &str,
+) -> WrapperPaths {
+    let mut map = WrapperPaths::new();
+    for rt in matched {
+        let elem_name = config
+            .type_to_element_name
+            .get(&rt.name)
+            .cloned()
+            .unwrap_or_else(|| rt.name.trim_end_matches("Type").to_string());
+        let wrapper_path = format!("{}/{}", section_path, elem_name);
+        for child in &rt.elements {
+            map.insert(
+                (child.name.clone(), child.type_ref.clone()),
+                wrapper_path.clone(),
+            );
+        }
+    }
+    map
 }
 
 /// Accumulate bind-ref paths for the direct children of a section.
+///
+/// When `wrappers` is `Some` (multi-type matched section), field paths are
+/// routed through the appropriate wrapper element.
 fn collect_section_items_bind_refs(
     items: &[SectionItem],
     current_path: &str,
     config: &super::XsdConfig,
     maps: &mut BindRefMaps,
+    wrappers: Option<&WrapperPaths>,
 ) {
     for item in items {
         match item {
@@ -697,7 +749,7 @@ fn collect_section_items_bind_refs(
                 collect_section_bind_refs(sub, current_path, config, maps);
             }
             SectionItem::Node(node) => {
-                collect_node_bind_refs(node, current_path, config, maps);
+                collect_node_bind_refs(node, current_path, config, maps, wrappers);
             }
         }
     }
@@ -709,6 +761,7 @@ fn collect_node_bind_refs(
     current_path: &str,
     config: &super::XsdConfig,
     maps: &mut BindRefMaps,
+    wrappers: Option<&WrapperPaths>,
 ) {
     match node {
         StructuredNode::Field(field) => {
@@ -717,38 +770,35 @@ fn collect_node_bind_refs(
                 .as_ref()
                 .map(|l| l.as_plain_text())
                 .unwrap_or_default();
-            let name = match resolve_element(&label, &config.profile) {
-                Some(res) => res.name,
-                None => to_snake_case(&label),
+            let (name, type_ref) = match resolve_element(&label, &config.profile) {
+                Some(res) => (res.name, res.type_ref),
+                None => (to_snake_case(&label), "xs:string".to_string()),
             };
-            // Skip empty names (fields with no label and no resolved name).
             if !name.is_empty() && name != "unknown" {
-                let path = format!("{}/{}", current_path, name);
+                let base_path = wrappers
+                    .and_then(|wp| wp.get(&(name.clone(), type_ref)))
+                    .map(|s| s.as_str())
+                    .unwrap_or(current_path);
+                let path = format!("{}/{}", base_path, name);
                 maps.fields.insert(field.name.clone(), path);
             }
         }
         StructuredNode::Repeatable(rep) => {
-            // XSD uses minOccurs/maxOccurs on the element itself — the inner
-            // item gets the same path level as a non-repeatable field.
-            collect_node_bind_refs(&rep.item, current_path, config, maps);
+            collect_node_bind_refs(&rep.item, current_path, config, maps, wrappers);
         }
         StructuredNode::Group(group) => {
-            // Groups are transparent: recurse into children at the same path.
             for child in &group.children {
-                collect_node_bind_refs(child, current_path, config, maps);
+                collect_node_bind_refs(child, current_path, config, maps, wrappers);
             }
         }
         StructuredNode::Conditional(cond) => {
-            // Conditional content sits at the same path level (xs:choice doesn't
-            // add a new named element).
-            collect_conditional_node_bind_refs(&cond.content, current_path, config, maps);
+            collect_conditional_node_bind_refs(&cond.content, current_path, config, maps, wrappers);
         }
         StructuredNode::GridLayout(grid) => {
             for elem in &grid.elements {
-                collect_node_bind_refs(&elem.node, current_path, config, maps);
+                collect_node_bind_refs(&elem.node, current_path, config, maps, wrappers);
             }
         }
-        // Presentational / structural nodes — no XSD elements produced.
         StructuredNode::Heading(_)
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
@@ -760,22 +810,22 @@ fn collect_node_bind_refs(
 
 /// Accumulate bind-ref paths for the content of a conditional branch.
 ///
-/// Mirrors [`generate_conditional_content`]: groups are transparent, all other
-/// nodes delegate to [`collect_node_bind_refs`].
+/// Groups are transparent, all other nodes delegate to [`collect_node_bind_refs`].
 fn collect_conditional_node_bind_refs(
     node: &StructuredNode,
     current_path: &str,
     config: &super::XsdConfig,
     maps: &mut BindRefMaps,
+    wrappers: Option<&WrapperPaths>,
 ) {
     match node {
         StructuredNode::Group(group) => {
             for child in &group.children {
-                collect_conditional_node_bind_refs(child, current_path, config, maps);
+                collect_conditional_node_bind_refs(child, current_path, config, maps, wrappers);
             }
         }
         _ => {
-            collect_node_bind_refs(node, current_path, config, maps);
+            collect_node_bind_refs(node, current_path, config, maps, wrappers);
         }
     }
 }

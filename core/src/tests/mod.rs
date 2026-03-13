@@ -14640,3 +14640,436 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
         }
     }
 }
+
+// ============================================================================
+// compute_bind_refs unit tests
+// ============================================================================
+
+/// Helper: build a FieldNode with a plain-text label.
+fn make_field(id: &str, label: &str) -> crate::structured::FieldNode {
+    use crate::structured::*;
+    FieldNode {
+        name: FieldId::from(id),
+        som_path: None,
+        label: Some(InlineText::plain(label)),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+    }
+}
+
+/// Helper: build a heading node.
+fn make_heading(level: u8, text: &str) -> crate::structured::HeadingNode {
+    use crate::structured::*;
+    HeadingNode {
+        level: HeadingLevel::from_u8(level),
+        content: InlineText::plain(text),
+    }
+}
+
+#[test]
+fn test_bind_refs_no_match_inline() {
+    // When no registered types exist, fields get flat paths under the section.
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+
+    let nodes = vec![
+        StructuredNode::Heading(make_heading(2, "Personal Data")),
+        StructuredNode::Field(make_field("f.first", "First Name")),
+        StructuredNode::Field(make_field("f.last", "Last Name")),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let maps = compute_bind_refs(&nodes, &config);
+
+    assert_eq!(
+        maps.sections.get("Personal Data"),
+        Some(&"/form/personal_data".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.first")),
+        Some(&"/form/personal_data/first_name".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.last")),
+        Some(&"/form/personal_data/last_name".to_string()),
+    );
+}
+
+#[test]
+fn test_bind_refs_single_type_match() {
+    // When a section matches a single registered type, fields still get
+    // flat paths (no wrapper level needed).
+    use crate::structured::*;
+    use crate::xsd::{
+        XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement,
+        compute_bind_refs,
+    };
+    use std::collections::HashMap;
+
+    let nodes = vec![
+        StructuredNode::Heading(make_heading(2, "Signature")),
+        StructuredNode::Field(make_field("f.place", "Place")),
+        StructuredNode::Field(make_field("f.name", "Name")),
+        StructuredNode::Field(make_field("f.date", "Date")),
+    ];
+
+    let mut elements = HashMap::new();
+    elements.insert("Place".to_string(), ElementMapping {
+        synonyms: vec!["Place".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("Name".to_string(), ElementMapping {
+        synonyms: vec!["Name".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("Date".to_string(), ElementMapping {
+        synonyms: vec!["Date".to_string()],
+        type_ref: "xs:date".to_string(),
+    });
+    let profile = XsdProfile {
+        elements,
+        ..Default::default()
+    };
+
+    let mut registered_types = HashMap::new();
+    registered_types.insert("SignatureType".to_string(), RegisteredComplexType {
+        name: "SignatureType".to_string(),
+        elements: vec![
+            TypeChildElement { name: "Place".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "Name".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "Date".to_string(), type_ref: "xs:date".to_string() },
+            TypeChildElement { name: "Role".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "OURef".to_string(), type_ref: "xs:string".to_string() },
+        ],
+        file: "Signature.xsd".to_string(),
+    });
+
+    let mut type_to_element_name = HashMap::new();
+    type_to_element_name.insert("SignatureType".to_string(), "Signature".to_string());
+
+    let config = XsdConfig::new(profile, HashMap::new(), registered_types, type_to_element_name);
+    let maps = compute_bind_refs(&nodes, &config);
+
+    assert_eq!(
+        maps.sections.get("Signature"),
+        Some(&"/form/signature".to_string()),
+    );
+    // Single-type match: no wrapper segment needed.
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.place")),
+        Some(&"/form/signature/Place".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.name")),
+        Some(&"/form/signature/Name".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.date")),
+        Some(&"/form/signature/Date".to_string()),
+    );
+}
+
+#[test]
+fn test_bind_refs_multi_type_match() {
+    // When a section matches multiple disjoint types, fields must include
+    // the wrapper element segment in their paths.
+    use crate::structured::*;
+    use crate::xsd::{
+        XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement,
+        compute_bind_refs,
+    };
+    use std::collections::HashMap;
+
+    let nodes = vec![
+        StructuredNode::Heading(make_heading(2, "Representative")),
+        StructuredNode::Field(make_field("f.last", "Last Name")),
+        StructuredNode::Field(make_field("f.first", "First Name")),
+        StructuredNode::Field(make_field("f.street", "Street")),
+        StructuredNode::Field(make_field("f.city", "City")),
+        StructuredNode::Field(make_field("f.country", "Country")),
+    ];
+
+    let mut elements = HashMap::new();
+    elements.insert("LastName".to_string(), ElementMapping {
+        synonyms: vec!["Last Name".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("FirstName".to_string(), ElementMapping {
+        synonyms: vec!["First Name".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("Street".to_string(), ElementMapping {
+        synonyms: vec!["Street".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("City".to_string(), ElementMapping {
+        synonyms: vec!["City".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    elements.insert("Country".to_string(), ElementMapping {
+        synonyms: vec!["Country".to_string()],
+        type_ref: "xs:string".to_string(),
+    });
+    let profile = XsdProfile {
+        elements,
+        ..Default::default()
+    };
+
+    let mut registered_types = HashMap::new();
+    registered_types.insert("IndividualBasicType".to_string(), RegisteredComplexType {
+        name: "IndividualBasicType".to_string(),
+        elements: vec![
+            TypeChildElement { name: "LastName".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "FirstName".to_string(), type_ref: "xs:string".to_string() },
+        ],
+        file: "Individual.xsd".to_string(),
+    });
+    registered_types.insert("AddressType".to_string(), RegisteredComplexType {
+        name: "AddressType".to_string(),
+        elements: vec![
+            TypeChildElement { name: "Street".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "City".to_string(), type_ref: "xs:string".to_string() },
+            TypeChildElement { name: "Country".to_string(), type_ref: "xs:string".to_string() },
+        ],
+        file: "Address.xsd".to_string(),
+    });
+
+    let mut type_to_element_name = HashMap::new();
+    type_to_element_name.insert("IndividualBasicType".to_string(), "IndividualBasic".to_string());
+    type_to_element_name.insert("AddressType".to_string(), "Address".to_string());
+
+    let config = XsdConfig::new(profile, HashMap::new(), registered_types, type_to_element_name);
+    let maps = compute_bind_refs(&nodes, &config);
+
+    assert_eq!(
+        maps.sections.get("Representative"),
+        Some(&"/form/representative".to_string()),
+    );
+    // Multi-type match: fields must include wrapper segment.
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.last")),
+        Some(&"/form/representative/IndividualBasic/LastName".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.first")),
+        Some(&"/form/representative/IndividualBasic/FirstName".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.street")),
+        Some(&"/form/representative/Address/Street".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.city")),
+        Some(&"/form/representative/Address/City".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.country")),
+        Some(&"/form/representative/Address/Country".to_string()),
+    );
+}
+
+#[test]
+fn test_bind_refs_nested_subsections() {
+    // Nested headings produce nested path segments.
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+
+    let nodes = vec![
+        StructuredNode::Heading(make_heading(2, "Section A")),
+        StructuredNode::Heading(make_heading(3, "Sub B")),
+        StructuredNode::Field(make_field("f.inner", "Inner Field")),
+        StructuredNode::Field(make_field("f.outer", "Outer Field")),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let maps = compute_bind_refs(&nodes, &config);
+
+    assert_eq!(
+        maps.sections.get("Section A"),
+        Some(&"/form/section_a".to_string()),
+    );
+    assert_eq!(
+        maps.sections.get("Sub B"),
+        Some(&"/form/section_a/sub_b".to_string()),
+    );
+    // Inner field is under the H3 subsection.
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.inner")),
+        Some(&"/form/section_a/sub_b/inner_field".to_string()),
+    );
+}
+
+#[test]
+fn test_bind_refs_preamble_fields() {
+    // Fields before any heading go directly under /form.
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+
+    let nodes = vec![
+        StructuredNode::Field(make_field("f.top", "Top Level")),
+        StructuredNode::Heading(make_heading(2, "Section")),
+        StructuredNode::Field(make_field("f.inside", "Inside")),
+    ];
+
+    let config = XsdConfig::from_profile(XsdProfile::default());
+    let maps = compute_bind_refs(&nodes, &config);
+
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.top")),
+        Some(&"/form/top_level".to_string()),
+    );
+    assert_eq!(
+        maps.fields.get(&FieldId::from("f.inside")),
+        Some(&"/form/section/inside".to_string()),
+    );
+}
+
+#[test]
+fn test_aaai_en_bind_refs_match_xsd_structure() {
+    // Integration test: verify that compute_bind_refs produces paths that are
+    // structurally consistent with generate_xsd_schema for the AAAI EN form.
+    // Specifically, for multi-type matched sections the wrapper element names
+    // must appear in the bindRef field paths.
+    use crate::run_exhaustive_to_merged;
+    use crate::xsd::{
+        XsdConfig, XsdNode, XsdProfile,
+        build_registered_types, compute_bind_refs, extract_declared_names,
+        generate_xsd_schema, parse_schema,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    // 1) Load the PDF and get structured nodes
+    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to process AAAI_019_EN");
+
+    // 2) Load the UBS XSD profile
+    let profile_dir_str = helpers::profiles_path("ubs/xsd");
+    let profile_dir = Path::new(&profile_dir_str);
+    let config_path = profile_dir.join("config.toml");
+    let profile: XsdProfile = {
+        let toml_str = std::fs::read_to_string(&config_path)
+            .expect("Failed to read ubs xsd/config.toml");
+        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
+    };
+
+    let types_dir = profile_dir.join("types");
+    let mut type_to_file = HashMap::new();
+    let mut parsed_schemas = Vec::new();
+    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_xsd(&path, out);
+                } else if path.extension().map_or(false, |e| e == "xsd") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    let mut xsd_files = Vec::new();
+    walk_xsd(&types_dir, &mut xsd_files);
+    xsd_files.sort();
+    for xsd_path in &xsd_files {
+        let rel = xsd_path
+            .strip_prefix(&types_dir)
+            .unwrap_or(xsd_path)
+            .to_string_lossy();
+        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
+        let content = std::fs::read_to_string(xsd_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
+        for name in extract_declared_names(&content) {
+            type_to_file.insert(name, schema_location.clone());
+        }
+        parsed_schemas.push((parse_schema(&content), schema_location));
+    }
+    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
+
+    // 3) Generate XSD schema and compute bind refs
+    let schema = generate_xsd_schema(&nodes, &config);
+    let maps = compute_bind_refs(&nodes, &config);
+
+    // 4) Collect all element paths from the XSD tree, expanding typed elements
+    //    by recursively resolving registered types' child elements.
+    fn collect_xsd_paths(
+        node: &XsdNode,
+        parent: &str,
+        paths: &mut HashSet<String>,
+        registered_types: &HashMap<String, crate::RegisteredComplexType>,
+    ) {
+        match node {
+            XsdNode::Element { name, type_ref, content, .. } => {
+                let path = format!("{}/{}", parent, name);
+                paths.insert(path.clone());
+                if let Some(child) = content {
+                    collect_xsd_paths(child, &path, paths, registered_types);
+                }
+                // Expand external type references: add child element paths
+                // that would exist in the data instance.
+                if let Some(tr) = type_ref {
+                    if let Some(rt) = registered_types.get(tr.as_str()) {
+                        for elem in &rt.elements {
+                            paths.insert(format!("{}/{}", path, elem.name));
+                        }
+                    }
+                }
+            }
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    collect_xsd_paths(child, parent, paths, registered_types);
+                }
+            }
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        collect_xsd_paths(child, parent, paths, registered_types);
+                    }
+                }
+            }
+            XsdNode::SimpleType { .. } => {}
+        }
+    }
+    use std::collections::HashSet;
+    let mut xsd_paths = HashSet::new();
+    collect_xsd_paths(&schema.root, "", &mut xsd_paths, &config.registered_types);
+
+    // 5) Every field bindRef path should exist as an element in the XSD tree
+    for (field_id, bind_path) in &maps.fields {
+        assert!(
+            xsd_paths.contains(bind_path),
+            "Field {} has bindRef {} but no matching element in the XSD tree. \
+             Available XSD element paths (sample): {:?}",
+            field_id, bind_path,
+            xsd_paths.iter().take(20).collect::<Vec<_>>()
+        );
+    }
+
+    // 6) Verify specific multi-type section: authorized_representative_s
+    //    Fields in this section should have wrapper paths (e.g. IndividualBasic/LastName).
+    let auth_rep_fields: Vec<_> = maps.fields.iter()
+        .filter(|(_, path)| path.contains("/authorized_representative_s/"))
+        .collect();
+    assert!(
+        !auth_rep_fields.is_empty(),
+        "Should have fields under authorized_representative_s section"
+    );
+    // At least some fields should go through wrapper elements (IndividualBasic or Address),
+    // not be directly under authorized_representative_s.
+    let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
+        // Find the part after "authorized_representative_s/"
+        let after = path.split("/authorized_representative_s/").last().unwrap_or("");
+        after.contains('/')  // has another segment before the field name (= wrapper)
+    });
+    assert!(
+        has_wrapper_paths,
+        "Multi-type section authorized_representative_s should have wrapper paths. Got: {:?}",
+        auth_rep_fields
+    );
+}
