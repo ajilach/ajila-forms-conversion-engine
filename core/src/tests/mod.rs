@@ -15297,3 +15297,35 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
         names
     );
 }
+
+#[test]
+fn test_aaai_section_bind_ref_client_not_under_signature() {
+    // The heading "Client" appears both as an H2 section (directly under
+    // the main H1) and as a sub-heading under "Signature(s)".
+    // The sections map should map "Client" to the top-level path
+    // (/form/.../client), not to the nested path (/form/.../signature_s/client).
+    use crate::run_exhaustive_to_merged;
+    use crate::xsd::compute_bind_refs;
+
+    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to process AAAI EN");
+    let config = helpers::load_ubs_xsd_config().with_master_language("en");
+    let maps = compute_bind_refs(&nodes, &config);
+
+    let client_path = maps.sections.get("Client").expect(
+        "sections map should contain 'Client'"
+    );
+
+    // "Client" is a direct child of the H1 heading, so its path should be
+    // /form/<h1_slug>/client — NOT /form/<h1_slug>/signature_s/client.
+    assert!(
+        !client_path.contains("/signature_s/"),
+        "Client section bind_ref should NOT be under signature_s. Got: {}",
+        client_path
+    );
+    assert!(
+        client_path.ends_with("/client"),
+        "Client section bind_ref should end with /client. Got: {}",
+        client_path
+    );
+}

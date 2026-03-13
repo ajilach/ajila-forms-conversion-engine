@@ -671,7 +671,13 @@ fn collect_section_bind_refs(
             let label = config.label_text(&heading.content);
             let name = to_snake_case(&label);
             let path = format!("{}/{}", parent_path, name);
-            maps.sections.insert(label.trim().to_string(), path.clone());
+            // Use or_insert so that the first (shallowest) heading with a
+            // given label wins.  The AEM converter only creates panels for
+            // top-level H2 headings, so deeper sub-headings with the same
+            // text must not overwrite the earlier entry.
+            maps.sections
+                .entry(label.trim().to_string())
+                .or_insert(path.clone());
             path
         }
         None => parent_path.to_string(),
