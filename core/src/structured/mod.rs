@@ -655,7 +655,15 @@ impl StructuredNode {
                             .all(|(ca, cb)| ca.structural_cmp(cb, mode)))
             }
             (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
-                a.content.structural_cmp(&b.content, mode)
+                if mode == CompareMode::IgnoreText {
+                    // In IgnoreText mode (translation merging), match conditionals
+                    // by their condition (field_name + value) so that the LCS
+                    // correctly pairs e.g. Cond(CL_ClientType=="Firma") across
+                    // languages, even when content structure differs.
+                    a.condition == b.condition
+                } else {
+                    a.content.structural_cmp(&b.content, mode)
+                }
             }
             (StructuredNode::Empty, StructuredNode::Empty) => true,
             (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
@@ -897,4 +905,13 @@ pub struct DocumentEnvelope {
 
     /// The structured document content
     pub content: Vec<StructuredNode>,
+
+    /// The number of exhaustive form states that were merged to produce this envelope.
+    /// Used to detect mismatches between language variants of the same form.
+    #[serde(default = "default_state_count")]
+    pub state_count: usize,
+}
+
+fn default_state_count() -> usize {
+    1
 }

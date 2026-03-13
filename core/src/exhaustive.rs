@@ -1112,7 +1112,18 @@ fn group_branches_by_flattened_state(branches: Vec<PreparedBranch>) -> Vec<Vec<P
     // Convert index groups → branch groups (consuming the vec)
     let mut branches: Vec<Option<PreparedBranch>> = branches.into_iter().map(Some).collect();
     let mut groups: Vec<Vec<PreparedBranch>> = Vec::new();
-    for (_key, indices) in key_to_group {
+    // Collect into a Vec sorted by the minimum original index in each group
+    // to ensure deterministic processing order (HashMap iteration is random).
+    let mut sorted_entries: Vec<(usize, Vec<usize>)> = key_to_group
+        .into_values()
+        .map(|indices| {
+            let min_idx = *indices.iter().min().unwrap();
+            (min_idx, indices)
+        })
+        .collect();
+    sorted_entries.sort_by_key(|(min_idx, _)| *min_idx);
+
+    for (_, indices) in sorted_entries {
         let mut group = Vec::with_capacity(indices.len());
         for i in indices {
             if let Some(b) = branches[i].take() {

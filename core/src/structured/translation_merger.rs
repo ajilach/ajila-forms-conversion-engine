@@ -76,6 +76,7 @@ pub fn merge_translations(
         return Ok(DocumentEnvelope {
             context: Context::with_language("und"),
             content: Vec::new(),
+            state_count: 1,
         });
     }
 
@@ -95,6 +96,26 @@ pub fn merge_translations(
             return Err(MergeError::DuplicateLanguage {
                 language: lang.clone(),
             });
+        }
+    }
+
+    // Log a warning if envelopes have different state counts.
+    // Different state counts can occur when one language version's scripts
+    // don't differentiate layouts as finely as another's. The merger handles
+    // this by matching Conditional nodes by their condition values.
+    {
+        let first_count = envelopes[0].state_count;
+        if envelopes.iter().any(|e| e.state_count != first_count) {
+            let details: Vec<String> = envelopes
+                .iter()
+                .zip(languages.iter())
+                .map(|(e, lang)| format!("{}: {}", lang, e.state_count))
+                .collect();
+            log::warn!(
+                "Language versions have different state counts ({}). \
+                 Merging by condition values.",
+                details.join(", ")
+            );
         }
     }
 
@@ -134,6 +155,7 @@ pub fn merge_translations(
     Ok(DocumentEnvelope {
         context,
         content: merged_content,
+        state_count: base.state_count,
     })
 }
 
@@ -192,7 +214,9 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
         }
         (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
         (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
-        (StructuredNode::Conditional(_), StructuredNode::Conditional(_)) => true,
+        (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
+            a.condition == b.condition
+        }
         (StructuredNode::Empty, StructuredNode::Empty) => true,
         (StructuredNode::GridLayout(ga), StructuredNode::GridLayout(gb)) => {
             ga.columns == gb.columns
@@ -338,6 +362,7 @@ fn merge_node_lists(
     }
 
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
+    consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
 
     entries
         .into_iter()
@@ -444,6 +469,98 @@ fn consolidate_orphan_paragraphs(
     // Remove absorbed entries (iterate in reverse to preserve indices)
     for i in (0..len).rev() {
         if absorbed[i] {
+            entries.remove(i);
+        }
+    }
+}
+
+/// Post-process aligned entries to merge orphaned `Conditional` nodes that
+/// have the same `FieldCondition` (field + value) but ended up unmatched
+/// because the two languages emitted them in a different order.
+///
+/// For each `BaseOnly(Conditional)` entry, we look for an `OtherOnly(Conditional)`
+/// with the same condition. If found, we merge the two nodes and replace the
+/// base-only entry with a `Matched` entry, removing the other-only entry.
+fn consolidate_orphan_conditionals(
+    entries: &mut Vec<AlignedEntry>,
+    base_lang: &str,
+    other_lang: &str,
+) {
+    let len = entries.len();
+    // Collect indices of OtherOnly(Conditional) entries.
+    let mut other_only_indices: Vec<usize> = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        if let AlignedEntry::OtherOnly(StructuredNode::Conditional(_)) = entry {
+            other_only_indices.push(i);
+        }
+    }
+
+    if other_only_indices.is_empty() {
+        return;
+    }
+
+    // For each BaseOnly(Conditional), find a matching OtherOnly(Conditional)
+    // by condition equality. We collect operations first to avoid borrow issues.
+    let mut merge_ops: Vec<(usize, usize)> = Vec::new(); // (base_idx, other_idx)
+    let mut consumed_other: Vec<bool> = vec![false; other_only_indices.len()];
+
+    for i in 0..len {
+        if let AlignedEntry::BaseOnly(StructuredNode::Conditional(base_cond)) = &entries[i] {
+            // Linear search for a matching OtherOnly conditional
+            for (k, &other_idx) in other_only_indices.iter().enumerate() {
+                if consumed_other[k] {
+                    continue;
+                }
+                if let AlignedEntry::OtherOnly(StructuredNode::Conditional(other_cond)) =
+                    &entries[other_idx]
+                {
+                    if base_cond.condition == other_cond.condition {
+                        merge_ops.push((i, other_idx));
+                        consumed_other[k] = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if merge_ops.is_empty() {
+        return;
+    }
+
+    // Apply merges: replace BaseOnly with Matched, mark OtherOnly for removal.
+    let mut to_remove = vec![false; len];
+    for (base_idx, other_idx) in merge_ops {
+        // We need to extract the nodes to merge. Use a temporary swap.
+        let base_node = std::mem::replace(
+            &mut entries[base_idx],
+            AlignedEntry::BaseOnly(StructuredNode::Empty),
+        );
+        let other_node = std::mem::replace(
+            &mut entries[other_idx],
+            AlignedEntry::OtherOnly(StructuredNode::Empty),
+        );
+
+        if let (AlignedEntry::BaseOnly(base_sn), AlignedEntry::OtherOnly(other_sn)) =
+            (&base_node, &other_node)
+        {
+            let merged = merge_node(base_sn, base_lang, other_sn, other_lang);
+            entries[base_idx] = AlignedEntry::Matched {
+                node: merged,
+                // We don't have references to the original nodes anymore since
+                // we consumed them, but we can store references to Empty as
+                // placeholders — these are only used by consolidate_orphan_paragraphs
+                // which runs before us.
+                base: &StructuredNode::Empty,
+                other: &StructuredNode::Empty,
+            };
+        }
+        to_remove[other_idx] = true;
+    }
+
+    // Remove consumed OtherOnly entries (reverse order to preserve indices).
+    for i in (0..len).rev() {
+        if to_remove[i] {
             entries.remove(i);
         }
     }
@@ -788,6 +905,7 @@ mod tests {
         DocumentEnvelope {
             context: Context::with_language(lang),
             content,
+            state_count: 1,
         }
     }
 
@@ -799,6 +917,7 @@ mod tests {
         DocumentEnvelope {
             context: Context::new(lang.to_string(), variables),
             content,
+            state_count: 1,
         }
     }
 
@@ -814,6 +933,32 @@ mod tests {
         let result = merge_translations(vec![envelope]).unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.context.language(), "de");
+    }
+
+    #[test]
+    fn test_merge_mismatched_state_counts_succeeds_with_warning() {
+        // Mismatched state counts should now produce a warning (not an error)
+        // and succeed with condition-based merging.
+        let mut de = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Hallo"),
+            })],
+        );
+        de.state_count = 2;
+
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Hello"),
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]);
+        assert!(
+            result.is_ok(),
+            "Mismatched state counts should not be an error"
+        );
     }
 
     #[test]

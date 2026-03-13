@@ -26,8 +26,11 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 - [Rust](https://rustup.rs/) (edition 2024)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the web app
 
+Dioxus can easily be installed using cargo-binstall:
+
 ```sh
-cargo install dioxus-cli
+cargo install cargo-binstall
+cargo binstall dioxus-cli@0.6.3
 ```
 
 ## Running Tests

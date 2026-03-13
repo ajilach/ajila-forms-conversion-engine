@@ -112,7 +112,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("title", title);
+            ctx.insert("title", &xml_escape(title));
             ctx.insert("is_page", is_page);
             ctx.insert("dor_exclude", dor_exclude);
             ctx.insert("visible", visible);
@@ -136,7 +136,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -157,7 +157,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -177,7 +177,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -200,7 +200,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -260,7 +260,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -326,7 +326,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("label", label);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("mandatory", mandatory);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
@@ -344,7 +344,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("title", title);
+            ctx.insert("title", &xml_escape(title));
             ctx.insert("min_occur", min_occur);
             ctx.insert("max_occur", max_occur);
             ctx.insert("children", &render_children(children, config));
@@ -551,7 +551,7 @@ fn alignment_str(a: OptionAlignment) -> &'static str {
 fn format_options_attr(options: &[AemOption]) -> String {
     let inner: Vec<String> = options
         .iter()
-        .map(|o| format!("{}={}", o.value, o.label))
+        .map(|o| format!("{}={}", xml_escape(&o.value), xml_escape(&o.label)))
         .collect();
     format!("[{}]", inner.join(","))
 }

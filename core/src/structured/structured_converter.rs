@@ -186,7 +186,11 @@ pub fn convert_with_context(
     context: crate::context::Context,
 ) -> crate::structured::DocumentEnvelope {
     let content = convert(doc);
-    crate::structured::DocumentEnvelope { context, content }
+    crate::structured::DocumentEnvelope {
+        context,
+        content,
+        state_count: 1,
+    }
 }
 
 /// Compare two bounds in reading order: top to bottom, then left to right.

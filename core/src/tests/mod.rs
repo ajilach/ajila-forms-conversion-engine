@@ -2,10 +2,10 @@
 pub mod helpers;
 
 use helpers::{
-    collect_conditionals, collect_field_labels, collect_field_labels_trimmed, collect_field_names,
-    collect_fields, collect_headings, collect_radio_fields,
-    count_conditionals, find_field_by_name, find_field_id_by_suffix, flatten_from_pdf,
-    flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
+    assert_aem_xml_valid_for, assert_valid_xml, collect_conditionals, collect_field_labels,
+    collect_field_labels_trimmed, collect_field_names, collect_fields, collect_headings,
+    collect_radio_fields, count_conditionals, find_field_by_name, find_field_id_by_suffix,
+    flatten_from_pdf, flatten_with_scripts, input_path, load_ubs_profile, parse_xfa_from_pdf,
 };
 
 use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, extract_xfa_from_pdf};
@@ -13261,6 +13261,259 @@ fn test_aacj_de_tin_radio_button_options() {
     }
 
     println!("\n✓ AACJ TIN radio button has all expected options");
+}
+
+// =========================================================================
+// AEM content.xml syntax validation — one test per form
+// =========================================================================
+
+#[test]
+fn test_aem_xml_valid_aaaa() {
+    assert_aem_xml_valid_for(&[("AAAA_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaab() {
+    assert_aem_xml_valid_for(&[("AAAB_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaai() {
+    assert_aem_xml_valid_for(&[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aacb() {
+    assert_aem_xml_valid_for(&[("AACB_033_IT.pdf", "it")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aacc() {
+    assert_aem_xml_valid_for(&[("AACC_019_DE.pdf", "de"), ("AACC_019_EN.pdf", "en")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aace() {
+    assert_aem_xml_valid_for(&[("AACE_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aacj() {
+    assert_aem_xml_valid_for(&[
+        ("AACJ_019_DE.pdf", "de"),
+        ("AACJ_019_EN.pdf", "en"),
+        ("AACJ_019_SP.pdf", "es"),
+    ]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaei() {
+    assert_aem_xml_valid_for(&[("AAEI_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aagg() {
+    assert_aem_xml_valid_for(&[("AAGG_019_SP.pdf", "es")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aags() {
+    assert_aem_xml_valid_for(&[("AAGS_019_DE.pdf", "de"), ("AAGS_019_EN.pdf", "en")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aahq() {
+    assert_aem_xml_valid_for(&[("AAHQ_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaks() {
+    assert_aem_xml_valid_for(&[("AAKS_019_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaoe() {
+    assert_aem_xml_valid_for(&[("AAOE_033_IT.pdf", "it")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aapr() {
+    assert_aem_xml_valid_for(&[("AAPR_033_IT.pdf", "it")]);
+}
+
+#[test]
+fn test_aem_xml_valid_aaqm() {
+    assert_aem_xml_valid_for(&[("AAQM_033_IT.pdf", "it")]);
+}
+
+#[test]
+#[ignore] // ACAV_001 lacks XFA variables required by the UBS AEM profile templates
+fn test_aem_xml_valid_acav() {
+    assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aags_de_en_state_counts_match() {
+    // After fixing non-deterministic HashMap iteration in the script engine,
+    // both AAGS DE and EN consistently produce the same number of exhaustive
+    // states. The merge should succeed.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
+        .expect("Failed to process AAGS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
+        .expect("Failed to process AAGS_019_EN");
+
+    assert_eq!(
+        de_envelope.state_count, en_envelope.state_count,
+        "DE and EN should have the same number of exhaustive states (DE={}, EN={})",
+        de_envelope.state_count, en_envelope.state_count,
+    );
+
+    let result = structured::merge_translations(vec![de_envelope, en_envelope]);
+    assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
+}
+
+#[test]
+fn test_aacj_state_count_diagnostic() {
+    // Diagnostic: compare what each AACJ language variant produces when
+    // different CL_ClientType dropdown values are selected.
+    use crate::Blueprint;
+    use crate::flattened::FlattenedNodeKind;
+
+    // Compare DE and EN flattened outputs for "Private Person" vs "Firma"
+    for (file, lang) in [("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en")] {
+        let mut bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+        let states = bp.states()
+            .unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
+
+        println!("\n=== {} ({}) — {} states ===", file, lang, states.len());
+
+        for (i, state) in states.iter().enumerate() {
+            println!("  --- state {} (label='{}') ---", i, state.label);
+
+            for node in state.flattened.iter_nodes() {
+                match &node.kind {
+                    FlattenedNodeKind::Field { name, label, .. } => {
+                        if name.contains("Kontoinhaber")
+                            || name.contains("Vertreter")
+                            || name.contains("Vertretungsberechtigt")
+                            || name.contains("account_holder")
+                            || name.contains("AccountHolder")
+                            || name.contains("legal")
+                            || name.contains("Legal")
+                            || name.contains("ClientName")
+                            || name.contains("represen")
+                            || name.contains("Represen")
+                            || label.contains("Kontoinhaber")
+                            || label.contains("Vertreter")
+                            || label.contains("Vertretungsberechtigt")
+                            || label.contains("account holder")
+                            || label.contains("Account holder")
+                            || label.contains("Account Holder")
+                            || label.contains("representative")
+                            || label.contains("Representative")
+                        {
+                            println!("    FIELD: name='{}', label='{}'",
+                                name, &label[..label.len().min(80)]);
+                        }
+                    }
+                    FlattenedNodeKind::Text { content, source_name, .. } => {
+                        if content.contains("Kontoinhaber")
+                            || content.contains("Vertreter")
+                            || content.contains("Vertretungsberechtigt")
+                            || content.contains("account holder")
+                            || content.contains("Account holder")
+                            || content.contains("representative")
+                            || content.contains("Representative")
+                        {
+                            let src = source_name.as_deref().unwrap_or("(none)");
+                            println!("    TEXT: src='{}', content='{}'",
+                                src, &content[..content.len().min(80)]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // AACJ has genuinely different state counts: DE has 3 (Private Person,
+    // Minderjährige, Firma/GbR), EN has 2 (PP+Firma+GbR are identical).
+    // The merger handles this by matching conditionals by their condition values.
+    let mut bp_de = Blueprint::from_pdf(input_path("AACJ_019_DE.pdf")).unwrap();
+    let mut bp_en = Blueprint::from_pdf(input_path("AACJ_019_EN.pdf")).unwrap();
+    let de_count = bp_de.states().unwrap().len();
+    let en_count = bp_en.states().unwrap().len();
+    assert_eq!(de_count, 3, "DE should produce 3 states");
+    assert_eq!(en_count, 2, "EN should produce 2 states");
+
+    // Despite different state counts, merging should succeed
+    let de_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de").unwrap();
+    let en_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en").unwrap();
+    let merged = crate::merge_translations(
+        vec![de_envelope, en_envelope],
+    );
+    assert!(merged.is_ok(), "AACJ DE+EN merge should succeed despite different state counts: {:?}", merged.err());
+}
+
+#[test]
+fn test_aaki_has_list_with_expected_items() {
+    // AAKI SP should contain a list with four items describing entity types.
+    use crate::Blueprint;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAKI_019_SP.pdf"))
+        .expect("Failed to load AAKI_019_SP.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let lists = helpers::collect_lists(&envelope.content);
+
+    // Find the list containing "Empresarios individuales"
+    let target_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text().contains("Empresarios individuales")
+        })
+    });
+
+    assert!(
+        target_list.is_some(),
+        "Expected a list containing 'Empresarios individuales'.\nFound lists: {:?}",
+        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+    );
+
+    let target_list = target_list.unwrap();
+
+    assert_eq!(
+        target_list.items.len(),
+        4,
+        "Expected 4 items in the list, got {}.\nItems: {:?}",
+        target_list.items.len(),
+        target_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    let texts: Vec<String> = target_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        texts.iter().any(|t| t.contains("Empresarios individuales")),
+        "List should contain 'Empresarios individuales'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades mercantiles")),
+        "List should contain 'Sociedades mercantiles'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades capitalistas")),
+        "List should contain 'Sociedades capitalistas'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades de profesionales")),
+        "List should contain 'Sociedades de profesionales, inscritos en los correspondientes registros'.\nItems: {:?}", texts
+    );
 }
 
 // ============================================================================

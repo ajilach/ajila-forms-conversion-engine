@@ -390,6 +390,7 @@ pub fn run_pipeline(
             all_envelopes.push(DocumentEnvelope {
                 context: context.clone(),
                 content: merged_content,
+                state_count: form_states.len(),
             });
         }
     }
