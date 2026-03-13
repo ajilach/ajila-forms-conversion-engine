@@ -10,10 +10,10 @@ pub fn FileUploadSection(
     let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
 
     // Auto-select the first profile if none is selected yet
-    if selected_profile.read().is_none() {
-        if let Some(first) = profiles.first() {
-            selected_profile.set(Some(first.clone()));
-        }
+    if selected_profile.read().is_none()
+        && let Some(first) = profiles.first()
+    {
+        selected_profile.set(Some(first.clone()));
     }
 
     rsx! {

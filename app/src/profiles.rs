@@ -5,8 +5,8 @@
 //! profiles and to load their AEM / HTML / XSD configuration from the embedded data.
 
 use blueprint::{
-    AemProfile, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily, ResolvedFontVariant,
-    XsdConfig, XsdProfile, build_registered_types, extract_declared_names, parse_schema,
+    AemProfile, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily, ResolvedFontVariant, XsdConfig,
+    XsdProfile, build_registered_types, extract_declared_names, parse_schema,
 };
 use include_dir::{Dir, include_dir};
 use std::collections::HashMap;
@@ -46,12 +46,11 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
     let mut templates = HashMap::new();
     for entry in aem_dir.files() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("xml") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                if let Some(content) = entry.contents_utf8() {
-                    templates.insert(stem.to_string(), content.to_string());
-                }
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("xml")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            && let Some(content) = entry.contents_utf8()
+        {
+            templates.insert(stem.to_string(), content.to_string());
         }
     }
 
@@ -207,9 +206,7 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
         if let Some(types_dir) = dir.get_dir(format!("{name}/xsd/types")) {
             let mut files: Vec<_> = types_dir
                 .files()
-                .filter(|f| {
-                    f.path().extension().and_then(|e| e.to_str()) == Some("xsd")
-                })
+                .filter(|f| f.path().extension().and_then(|e| e.to_str()) == Some("xsd"))
                 .collect();
             // Sort for deterministic output
             files.sort_by_key(|f| f.path().to_path_buf());
@@ -221,8 +218,7 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
                         .to_string_lossy()
                         .trim_start_matches(&*types_prefix)
                         .to_string();
-                    let schema_location =
-                        format!("{}{}", profile.schema_location_prefix, rel);
+                    let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
                     for decl_name in extract_declared_names(content) {
                         type_to_file.insert(decl_name, schema_location.clone());
                     }
@@ -233,5 +229,10 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
     }
 
     let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    Ok(XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name))
+    Ok(XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    ))
 }

@@ -314,12 +314,12 @@ fn load_aem_config(
     })? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("xml") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| format!("Failed to read template '{}': {}", path.display(), e))?;
-                templates.insert(stem.to_string(), content);
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("xml")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read template '{}': {}", path.display(), e))?;
+            templates.insert(stem.to_string(), content);
         }
     }
 
@@ -519,5 +519,10 @@ fn load_xsd_config(profile_path: Option<&Path>) -> Result<XsdConfig, Box<dyn std
     }
 
     let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    Ok(XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name))
+    Ok(XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    ))
 }
