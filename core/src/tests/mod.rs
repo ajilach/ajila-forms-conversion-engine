@@ -13457,3 +13457,61 @@ fn test_aacj_state_count_diagnostic() {
     );
     assert!(merged.is_ok(), "AACJ DE+EN merge should succeed despite different state counts: {:?}", merged.err());
 }
+
+#[test]
+fn test_aaki_has_list_with_expected_items() {
+    // AAKI SP should contain a list with four items describing entity types.
+    use crate::Blueprint;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAKI_019_SP.pdf"))
+        .expect("Failed to load AAKI_019_SP.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let lists = helpers::collect_lists(&envelope.content);
+
+    // Find the list containing "Empresarios individuales"
+    let target_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text().contains("Empresarios individuales")
+        })
+    });
+
+    assert!(
+        target_list.is_some(),
+        "Expected a list containing 'Empresarios individuales'.\nFound lists: {:?}",
+        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+    );
+
+    let target_list = target_list.unwrap();
+
+    assert_eq!(
+        target_list.items.len(),
+        4,
+        "Expected 4 items in the list, got {}.\nItems: {:?}",
+        target_list.items.len(),
+        target_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    let texts: Vec<String> = target_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        texts.iter().any(|t| t.contains("Empresarios individuales")),
+        "List should contain 'Empresarios individuales'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades mercantiles")),
+        "List should contain 'Sociedades mercantiles'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades capitalistas")),
+        "List should contain 'Sociedades capitalistas'.\nItems: {:?}", texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Sociedades de profesionales")),
+        "List should contain 'Sociedades de profesionales, inscritos en los correspondientes registros'.\nItems: {:?}", texts
+    );
+}
