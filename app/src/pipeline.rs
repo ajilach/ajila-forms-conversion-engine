@@ -12,6 +12,17 @@ use base64::Engine;
 #[cfg(not(target_arch = "wasm32"))]
 use image::ImageEncoder;
 
+fn apply_master_language_to_xsd(
+    xsd_config: blueprint::XsdConfig,
+    master_language: Option<&str>,
+) -> blueprint::XsdConfig {
+    if let Some(lang) = master_language {
+        xsd_config.with_master_language(lang)
+    } else {
+        xsd_config
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub fn run_blueprint_pipeline(
@@ -169,6 +180,10 @@ pub fn run_blueprint_pipeline(
                     if let Some(ref profile_name) = profile {
                         match crate::profiles::load_xsd_config(profile_name) {
                             Ok(xsd_cfg) => {
+                                let xsd_cfg = apply_master_language_to_xsd(
+                                    xsd_cfg,
+                                    aem_profile.master_language.as_deref(),
+                                );
                                 aem_config.xsd_config = Some(xsd_cfg);
                             }
                             Err(e) => {
@@ -198,11 +213,8 @@ pub fn run_blueprint_pipeline(
             } else {
                 XsdConfig::from_profile(XsdProfile::default())
             };
-            let xsd_config = if let Some(lang) = aem_profile.master_language.as_deref() {
-                xsd_config.with_master_language(lang)
-            } else {
-                xsd_config
-            };
+            let xsd_config =
+                apply_master_language_to_xsd(xsd_config, aem_profile.master_language.as_deref());
             let xsd = blueprint::to_xsd(&merged.content, &xsd_config);
             state.xsd_schema = Some(xsd);
 
@@ -218,6 +230,26 @@ pub fn run_blueprint_pipeline(
     }
 
     state
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_master_language_to_xsd;
+    use blueprint::{XsdConfig, XsdProfile};
+
+    #[test]
+    fn apply_master_language_sets_language_when_present() {
+        let cfg = XsdConfig::from_profile(XsdProfile::default());
+        let cfg = apply_master_language_to_xsd(cfg, Some("en"));
+        assert_eq!(cfg.master_language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn apply_master_language_keeps_language_none_when_absent() {
+        let cfg = XsdConfig::from_profile(XsdProfile::default());
+        let cfg = apply_master_language_to_xsd(cfg, None);
+        assert_eq!(cfg.master_language.as_deref(), None);
+    }
 }
 
 /// Encode an RGBA image to PNG bytes.

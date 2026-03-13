@@ -246,9 +246,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let aem_cfg_path = base.join("aem/config.toml");
             if let Ok(toml_str) = std::fs::read_to_string(&aem_cfg_path)
                 && let Ok(aem_profile) = toml::from_str::<blueprint::AemProfile>(&toml_str)
-                && let Some(lang) = aem_profile.master_language
             {
-                xsd_config = xsd_config.with_master_language(lang);
+                xsd_config = apply_master_language_to_xsd(
+                    xsd_config,
+                    aem_profile.master_language.as_deref(),
+                );
             }
         }
         let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
@@ -281,6 +283,34 @@ fn strip_language_suffix(name: &str) -> &str {
         }
     }
     name
+}
+
+fn apply_master_language_to_xsd(xsd_config: XsdConfig, master_language: Option<&str>) -> XsdConfig {
+    if let Some(lang) = master_language {
+        xsd_config.with_master_language(lang)
+    } else {
+        xsd_config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_master_language_to_xsd;
+    use blueprint::{XsdConfig, XsdProfile};
+
+    #[test]
+    fn apply_master_language_sets_language_when_present() {
+        let cfg = XsdConfig::from_profile(XsdProfile::default());
+        let cfg = apply_master_language_to_xsd(cfg, Some("en"));
+        assert_eq!(cfg.master_language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn apply_master_language_keeps_language_none_when_absent() {
+        let cfg = XsdConfig::from_profile(XsdProfile::default());
+        let cfg = apply_master_language_to_xsd(cfg, None);
+        assert_eq!(cfg.master_language.as_deref(), None);
+    }
 }
 
 // ─── Profile loading ──────────────────────────────────────────────────────────
@@ -336,6 +366,8 @@ fn load_aem_config(
     let mut config = blueprint::AemConfig::from_profile(&profile, templates, ctx)?;
     if config.bind_to_xsd {
         let xsd_config = load_xsd_config(Some(base))?;
+        let xsd_config =
+            apply_master_language_to_xsd(xsd_config, profile.master_language.as_deref());
         config.xsd_config = Some(xsd_config);
     }
     if config.use_fragments {
