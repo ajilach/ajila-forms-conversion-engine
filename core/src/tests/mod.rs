@@ -13516,6 +13516,72 @@ fn test_aaki_has_list_with_expected_items() {
     );
 }
 
+#[test]
+fn test_aaki_has_exactly_one_signature_fragment() {
+    // AAKI_019_SP has two XSD elements of type SignatureType (`ubs_europe_se`
+    // and `unterschrift_en`). With fragments enabled and only a subset-match
+    // policy, exactly one of them should be replaced with a fragment node.
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+    use crate::Blueprint;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAKI_019_SP.pdf"))
+        .expect("Failed to load AAKI_019_SP.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    // Load UBS AEM profile + templates
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    // Load full XSD config with registered types (includes SignatureType)
+    let xsd_config = helpers::load_ubs_xsd_config();
+    assert!(
+        xsd_config.registered_types.contains_key("SignatureType"),
+        "XSD config should contain SignatureType"
+    );
+    config.xsd_config = Some(xsd_config);
+
+    // Load fragments from the profile directory
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    let fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    let sig_fragments: Vec<_> = fragments
+        .iter()
+        .filter(|f| f.xsd_type_name == "SignatureType")
+        .collect();
+    assert!(
+        !sig_fragments.is_empty(),
+        "Should have at least one SignatureType fragment"
+    );
+    config.fragments = fragments;
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // Collect all Fragment nodes from the AemNode tree
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+
+    // Assert exactly one fragment was produced
+    assert_eq!(
+        fragment_refs.len(),
+        1,
+        "Expected exactly 1 fragment node, found {}.\nFragments: {:?}",
+        fragment_refs.len(),
+        fragment_refs
+    );
+
+    // The fragment should reference the Signature fragment
+    let (frag_ref, _) = &fragment_refs[0];
+    assert!(
+        frag_ref.contains("Signature"),
+        "Fragment should reference a Signature fragment. Got: {}",
+        frag_ref
+    );
+}
+
 // ============================================================================
 // XSD generation tests
 // ============================================================================

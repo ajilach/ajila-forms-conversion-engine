@@ -400,3 +400,94 @@ fn check_no_unescaped_angle_brackets_in_attributes(xml: &str) {
         i += 1;
     }
 }
+
+/// Load the UBS XSD config from `profiles/ubs/xsd/`, including registered types.
+pub fn load_ubs_xsd_config() -> crate::xsd::XsdConfig {
+    let dir_path = profiles_path("ubs/xsd");
+    let dir = std::path::Path::new(&dir_path);
+
+    let profile: crate::xsd::XsdProfile = {
+        let config_path = dir.join("config.toml");
+        if config_path.exists() {
+            let toml_str = std::fs::read_to_string(&config_path)
+                .expect("Failed to read profiles/ubs/xsd/config.toml");
+            toml::from_str(&toml_str).expect("Failed to parse XSD config.toml")
+        } else {
+            crate::xsd::XsdProfile::default()
+        }
+    };
+
+    let mut type_to_file = std::collections::HashMap::new();
+    let mut parsed_schemas = Vec::new();
+    let types_dir = dir.join("types");
+    if types_dir.is_dir() {
+        let mut xsd_files: Vec<std::path::PathBuf> = Vec::new();
+        walk_xsd_files(&types_dir, &mut xsd_files);
+        xsd_files.sort();
+        for xsd_path in &xsd_files {
+            let rel = xsd_path
+                .strip_prefix(&types_dir)
+                .unwrap_or(xsd_path)
+                .to_string_lossy();
+            let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
+            let content = std::fs::read_to_string(xsd_path)
+                .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
+            for name in crate::xsd::extract_declared_names(&content) {
+                type_to_file.insert(name, schema_location.clone());
+            }
+            parsed_schemas.push((crate::xsd::parse_schema(&content), schema_location));
+        }
+    }
+
+    let (registered_types, type_to_element_name) =
+        crate::xsd::build_registered_types(&parsed_schemas);
+    crate::xsd::XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    )
+}
+
+/// Recursively collect all `.xsd` files from a directory.
+fn walk_xsd_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_xsd_files(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("xsd") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// Recursively walk an AemNode tree, calling `callback` on every node.
+pub fn walk_aem_nodes(node: &crate::aem::AemNode, callback: &mut impl FnMut(&crate::aem::AemNode)) {
+    callback(node);
+    match node {
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                walk_aem_nodes(child, callback);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Count `AemNode::Fragment` nodes in the tree and collect their details.
+pub fn collect_aem_fragment_refs(root: &crate::aem::AemNode) -> Vec<(String, Option<String>)> {
+    let mut fragments = Vec::new();
+    walk_aem_nodes(root, &mut |node| {
+        if let crate::aem::AemNode::Fragment {
+            frag_ref, bind_ref, ..
+        } = node
+        {
+            fragments.push((frag_ref.clone(), bind_ref.clone()));
+        }
+    });
+    fragments
+}

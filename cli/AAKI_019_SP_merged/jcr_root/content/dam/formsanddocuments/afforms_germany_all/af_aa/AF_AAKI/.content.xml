@@ -21,14 +21,14 @@
             jcr:primaryType="nt:unstructured"
             allowedRenderFormat="HTML"
             author="blueprint"
-            dorTemplateRef="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAAI/jcr:content/renditions/dorTemplate"
+            dorTemplateRef="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAKI/jcr:content/renditions/dorTemplate"
             dorType="generate"
-            formmodel="none"
-            
+            formmodel="xsd"
+            xsdRef="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAKI/schema.xsd"
             hasCustomThumbnail="{Boolean}false"
             redactoSummary="true"
             themeRef="/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
             availableStylings="[ajila-forms-ubs-ebanking-styling]"
-            title="AAAI"/>
+            title="AAKI"/>
     </jcr:content>
 </jcr:root>

@@ -997,14 +997,12 @@ fn collect_child_bind_ref_leaves(children: &[AemNode]) -> Vec<String> {
     leaves
 }
 
-/// Count the overlap between a fragment's bound elements and a set of
-/// leaf element names from a panel's children.
-fn fragment_overlap(fragment: &ParsedFragment, panel_leaves: &[String]) -> usize {
-    fragment
-        .bound_elements
+/// Check whether all panel leaf element names are contained in the
+/// fragment's bound elements (i.e. panel leaves ⊆ fragment elements).
+fn panel_leaves_subset_of_fragment(fragment: &ParsedFragment, panel_leaves: &[String]) -> bool {
+    panel_leaves
         .iter()
-        .filter(|elem| panel_leaves.iter().any(|l| l == *elem))
-        .count()
+        .all(|leaf| fragment.bound_elements.iter().any(|elem| elem == leaf))
 }
 
 /// Find the best matching fragment for a panel, given its children's bind_ref
@@ -1012,9 +1010,11 @@ fn fragment_overlap(fragment: &ParsedFragment, panel_leaves: &[String]) -> usize
 ///
 /// Matching logic:
 /// 1. Collect the panel children's bind_ref leaf element names.
-/// 2. For each registered XSD type, check if its elements overlap with the
-///    panel's leaves. If so, find fragments with the same `xsd_type_name`.
-/// 3. Among matching fragments, pick the one with the highest element overlap.
+/// 2. For each registered XSD type, check if **all** panel leaves are
+///    contained in the type's elements (subset check).
+/// 3. Among matching fragments, verify that all panel leaves are also
+///    contained in the fragment's bound elements, then pick the most
+///    specific fragment.
 fn find_best_fragment<'a>(
     panel_leaves: &[String],
     fragments: &'a [ParsedFragment],
@@ -1023,14 +1023,14 @@ fn find_best_fragment<'a>(
     let xsd_config = xsd_config?;
 
     // Determine which registered XSD types match this panel's leaf elements.
+    // All panel leaves must be contained in the type's elements (subset check).
     let mut matching_types: Vec<&str> = Vec::new();
     for (type_name, reg_type) in &xsd_config.registered_types {
         let type_elements: Vec<&str> = reg_type.elements.iter().map(|e| e.name.as_str()).collect();
-        let overlap = panel_leaves
+        let all_present = panel_leaves
             .iter()
-            .filter(|l| type_elements.contains(&l.as_str()))
-            .count();
-        if overlap > 0 {
+            .all(|l| type_elements.contains(&l.as_str()));
+        if all_present {
             matching_types.push(type_name);
         }
     }
@@ -1039,22 +1039,25 @@ fn find_best_fragment<'a>(
         return None;
     }
 
-    // Find fragments whose xsd_type_name is in the matching types.
-    let mut best: Option<(&ParsedFragment, usize)> = None;
+    // Find fragments whose xsd_type_name is in the matching types and
+    // whose bound elements contain all panel leaves.
+    let mut best: Option<&ParsedFragment> = None;
     for fragment in fragments {
-        if matching_types.contains(&fragment.xsd_type_name.as_str()) {
-            let overlap = fragment_overlap(fragment, panel_leaves);
-            if let Some((_, best_overlap)) = &best {
-                if overlap > *best_overlap {
-                    best = Some((fragment, overlap));
+        if matching_types.contains(&fragment.xsd_type_name.as_str())
+            && panel_leaves_subset_of_fragment(fragment, panel_leaves)
+        {
+            // Prefer the fragment with the most bound elements (most specific).
+            if let Some(prev) = best {
+                if fragment.bound_elements.len() > prev.bound_elements.len() {
+                    best = Some(fragment);
                 }
             } else {
-                best = Some((fragment, overlap));
+                best = Some(fragment);
             }
         }
     }
 
-    best.map(|(f, _)| f)
+    best
 }
 
 /// Recursively walk the `AemNode` tree and replace panels whose child fields
@@ -2282,5 +2285,32 @@ mod tests {
             }
             other => panic!("Expected Root, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn panel_leaves_subset_of_fragment_requires_all_leaves() {
+        let fragment = ParsedFragment {
+            dir_name: "frag1".to_string(),
+            frag_ref: "/content/forms/af/frag1".to_string(),
+            name: "Frag1".to_string(),
+            xsd_type_name: "SomeType".to_string(),
+            bound_elements: vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()],
+        };
+
+        // Subset: all leaves exist in fragment → true
+        let leaves = vec!["IBAN".to_string(), "Name".to_string()];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Exact match → true
+        let leaves = vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Not a subset: "Company" is NOT in fragment → false
+        let leaves = vec!["IBAN".to_string(), "Company".to_string()];
+        assert!(!panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Empty leaves → trivially true (empty set is subset of any set)
+        let leaves: Vec<String> = vec![];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
     }
 }
