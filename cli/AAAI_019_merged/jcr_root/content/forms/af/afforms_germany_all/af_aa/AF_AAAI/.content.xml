@@ -1,0 +1,1049 @@
+<jcr:root
+    xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+    xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+    xmlns:cq="http://www.day.com/jcr/cq/1.0"
+    xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:deviceGroups="[/etc/mobile/groups/responsive]"
+        cq:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+        cq:lastModifiedBy="blueprint"
+        cq:template="/conf/ajila-forms-ubs/settings/wcm/templates/basic"
+        jcr:language="en"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="AAAI"
+        sling:resourceType="/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
+        ignoreTranslationInvalidation="{Boolean}true">
+        <parsys1 jcr:primaryType="nt:unstructured"
+                 sling:resourceType="wcm/foundation/components/responsivegrid">
+            <guideheader jcr:primaryType="nt:unstructured"
+                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/guideheader"/>
+            <guideformtitle jcr:primaryType="nt:unstructured"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/formtitle"
+                            _value="&lt;p&gt;Agreement for the placement of payment orders via the Electronic Funds Transfer (EFT) service&lt;/p&gt;"
+                            css="guideformtitle container"
+                            guideNodeClass="guideTextDraw"
+                            name="formTitle"
+                            textIsRich="true"/>
+        </parsys1>
+        <guideContainer
+            fd:version="1.1"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+            jcr:lastModifiedBy="blueprint"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideContainer"
+            actionType="ajila-forms-customers/ajila-forms-ubs/components/actions/submit"
+            autoSaveStrategyType="fd/fp/components/actions/autosave/timebased"
+            clientLibRef="ajila-forms-ubs"
+            disableSwipeGesture="{Boolean}false"
+            dorTemplateRef="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAAI/jcr:content/renditions/dorTemplate"
+            dorType="generate"
+            enableFocusOnFirstField="{Boolean}true"
+            enableLayoutLayer="false"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="guide1"
+            redirect="/content/forms/af/afforms_global_common/confirm-successful-submission"
+            textIsRich="true"
+            thankYouMessage="Thank you for submitting the form."
+            thankYouOption="page"
+            themeRef="/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
+            useExistingAF="false">
+            <layout jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                    mobileLayout="fd/af/layouts/mobile/step"
+                    toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                jcr:lastModifiedBy="blueprint"
+                jcr:primaryType="nt:unstructured"
+                jcr:title="Root Panel"
+                sling:resourceType="fd/af/components/rootPanel"
+                completionExpReq="{Boolean}true"
+                dorExcludeDescription="true"
+                dorExcludeTitle="true"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable"
+                validateOnStepCompletion="{Boolean}true">
+                <layout jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard"
+                        enableLayoutOptimization="true"
+                        guideNavigatorTab="wizard-tab"
+                        toolbarPosition="Bottom"/>
+                <items jcr:primaryType="nt:unstructured"
+                       sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_6d30cdc8aeec496182c3cf1e9ec3acec
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Client"
+    sling:resourceType="fd/af/components/panel"
+    css="stepTitle"
+    
+    dorExcludeDescription="true"
+    dorExcludeTitle="true"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="PN_Client_f1c329c4"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/signature_s/client"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <textbox_ceffc64138e64bafad8f46e25cbcfc64
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Company"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_Company_496845a6"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/Company"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textbox_ceffc64138e64bafad8f46e25cbcfc64>
+<titledraw_b85904fcdd844e2da7d884c4bdbf817c
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
+    _value="&lt;p&gt;Authorized representative(s)&lt;/p&gt;"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextDraw"
+    headingLevel="4"
+    name="TTL_AuthorizedRepresentativeS_928b78e2"
+    textIsRich="true">
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</titledraw_b85904fcdd844e2da7d884c4bdbf817c>
+<panel_5a3ade668fef4a1aac68b876ac46bded
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    
+    sling:resourceType="fd/af/components/panel"
+    
+    
+    dorExcludeDescription="true"
+    
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="GRID_523b29d8"
+    
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <textbox_26bf0a6da2f04b2db8b15efb6e6c8894
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Last name"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="1"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_LastName_c5ee8756"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/IndividualBasic/LastName"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="6"/>
+    </cq:responsive>
+</textbox_26bf0a6da2f04b2db8b15efb6e6c8894>
+<textbox_6a44bcac9e4b4cc3b5726a96e69dfb9f
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="First name(s)"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="1"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_FirstNameS_724eba55"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/IndividualBasic/FirstName"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="6"/>
+    </cq:responsive>
+</textbox_6a44bcac9e4b4cc3b5726a96e69dfb9f>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            dorNumCols="2"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_5a3ade668fef4a1aac68b876ac46bded>
+<panel_ac6b87069fa54cb0ac591748ddea21d9
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    
+    sling:resourceType="fd/af/components/panel"
+    
+    
+    dorExcludeDescription="true"
+    
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="GRID_c31f4835"
+    
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <textbox_755bd6f7da65407188d690957c2976ae
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Street"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="8"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_Street_f91fa344"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/Address/Street"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="8"/>
+    </cq:responsive>
+</textbox_755bd6f7da65407188d690957c2976ae>
+<textbox_1a453151551b424c9ec8da621dd63e57
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="No."
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="4"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_No_afad17a2"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/Address/StreetNumber"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="4"/>
+    </cq:responsive>
+</textbox_1a453151551b424c9ec8da621dd63e57>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            dorNumCols="12"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_ac6b87069fa54cb0ac591748ddea21d9>
+<panel_b8958a4131ce4bab8d585cce576e0a16
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    
+    sling:resourceType="fd/af/components/panel"
+    
+    
+    dorExcludeDescription="true"
+    
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="GRID_74d61ded"
+    
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <textbox_9391149be8bc46c79c3ab3c04069cb9e
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Postal code"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="1"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_PostalCode_35a5fa09"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/Address/PostalCode"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="1"/>
+    </cq:responsive>
+</textbox_9391149be8bc46c79c3ab3c04069cb9e>
+<textbox_9df4b780467f4079bf4ed9bc1c1ed277
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="City"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="5"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_City_ac342805"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/Address/City"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="5"/>
+    </cq:responsive>
+</textbox_9df4b780467f4079bf4ed9bc1c1ed277>
+<textbox_0acfb8755b20494383877319b288d2e1
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Country"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    dorColspan="6"
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_Country_20f0c109"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/client/authorized_representative_s/Address/Country"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="6"/>
+    </cq:responsive>
+</textbox_0acfb8755b20494383877319b288d2e1>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            dorNumCols="12"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_b8958a4131ce4bab8d585cce576e0a16>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_6d30cdc8aeec496182c3cf1e9ec3acec>
+<panel_17b12c8cedda4696a31bd3dc8a5135b0
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Agreement"
+    sling:resourceType="fd/af/components/panel"
+    css="stepTitle"
+    
+    dorExcludeDescription="true"
+    dorExcludeTitle="true"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="PN_Agreement_aba767cd"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/agreement"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <panel_ea45e71731d94663a00adc06b3a87cd1
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    
+    sling:resourceType="fd/af/components/panel"
+    
+    
+    dorExcludeDescription="true"
+    
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="PN_6dd1a935"
+    
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <textdraw_9bd4985b7f784506b4bd5babe88cc7ca
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+    _value="&lt;p&gt;The customer authorises UBS Europe SE (hereinafter referred to as UBS) to execute all orders arriving from the &lt;/p&gt;"
+    css=""
+    
+    dorFieldStyling="Default"
+    
+    guideNodeClass="guideTextDraw"
+    name="ST_TheCustomerAuthorisesUbs_8c8817b6"
+    textIsRich="true">
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textdraw_9bd4985b7f784506b4bd5babe88cc7ca>
+<textbox_da3eb6100c494c039512799a2595ca74
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="UNKNOWN"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_Unknown_e5d079d1"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/agreement/StreetNumber"
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textbox_da3eb6100c494c039512799a2595ca74>
+<textdraw_930aec0eb1994b439b3fff23a3d2c7a6
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+    _value="&lt;p&gt;(hereinafter referred to as the Contracted Bank) via the SWIFT network debited to its accounts managed by UBS. The accounts activated for the EFT service are determined separately via the account form EFT by the customer.&lt;/p&gt;"
+    css=""
+    
+    dorFieldStyling="Default"
+    
+    guideNodeClass="guideTextDraw"
+    name="ST_HereinafterReferredToAsThe_d9a8d994"
+    textIsRich="true">
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textdraw_930aec0eb1994b439b3fff23a3d2c7a6>
+<textdraw_09b29dfc0adf458da1a261171c2fdd71
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+    _value="&lt;p&gt;The customer acknowledges explicitly the following provisions applying accordingly:&lt;/p&gt;"
+    css=""
+    
+    dorFieldStyling="Default"
+    
+    guideNodeClass="guideTextDraw"
+    name="ST_TheCustomerAcknowledges_a21e7087"
+    textIsRich="true">
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textdraw_09b29dfc0adf458da1a261171c2fdd71>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_ea45e71731d94663a00adc06b3a87cd1>
+<textdraw_c39213a138884466a502f3eb90ac0a4a
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+    _value="&lt;ol&gt;&lt;li&gt;The orders transferred by the Contracted Bank are processed on the business days published in the &amp;quot;Schedule of prices and services&amp;quot; on the handling of the order type &amp;quot;credit transfer&amp;quot; in the course of normal operations. If the order arrives according to the time specified in the &amp;quot;Schedule of prices and services” (term of acceptance), or if the time of the arrival fails to fall on a business day according to &amp;quot;Schedule of prices and services&amp;quot; the order is considered received on the following business day. The order will only begin to be processed on that day.&lt;/li&gt;&lt;li&gt;UBS is entitled to execute orders for the customer provided by the Contracted Bank via SWIFT.&lt;/li&gt;&lt;li&gt;The revocation of an order transferred by the Contracted Bank and received by UBS is excluded.&lt;/li&gt;&lt;li&gt;The communication between the Contracted Bank and UBS is performed unsecured via the public not specifically protected data communications network. UBS is not liable for losses resulting from transmission errors, technical defects, cyberattacks or malfunctions, unless the changes were performed by UBS systems. In this case, UBS&amp;#39; liability is limited to losses caused directly intentionally or as a result of gross negligence by UBS. The liability on account of culpable injury to life, body or health remains unaffected.&lt;/li&gt;&lt;li&gt;If required for providing the EFT services, the customer releases UBS from the banking secrecy and agrees explicitly to the data transfer to the Contracted Bank. The customer is aware that the German law only applies within Germany and data transmitted abroad are no longer subject to this protection.&lt;/li&gt;&lt;li&gt;The fees depend on the Schedule of prices and services. The customer authorises UBS to withdraw the fees for the UBS Multibanking Services from its account via IBAN&lt;/li&gt;&lt;li&gt;This agreement can be terminated mutually in writing at any time subject to a term of 7 days. The right to an extraordinary termination remains unaffected.&lt;/li&gt;&lt;li&gt;This agreement shall be subject exclusively to the Laws of Germany. The place of performance and place of jurisdiction shall be Frankfurt am Main. UBS is authorised to assert its rights also at the location of the customer or before any other competent authority or court. The agreements concluded upon opening the banking relationship shall apply accordingly.&lt;/li&gt;&lt;/ol&gt;"
+    css=""
+    
+    dorFieldStyling="Default"
+    
+    guideNodeClass="guideTextDraw"
+    name="ST_TheOrdersTransferredByThe_c32f1ae3"
+    textIsRich="true">
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textdraw_c39213a138884466a502f3eb90ac0a4a>
+<textbox_7b1e205a7d0d47eeab8753cbd0fb3e01
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+    assistPriority="label"
+    css="widget_ajila-forms-ubs-textbox"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextBox"
+    mandatory="false"
+    
+    name="TXT_Iban_d5c2b20a"
+    
+    textIsRich="[true,true,true]"
+    >
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</textbox_7b1e205a7d0d47eeab8753cbd0fb3e01>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_17b12c8cedda4696a31bd3dc8a5135b0>
+<panel_94d0238868974738923de34be5124348
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Signature(s)"
+    sling:resourceType="fd/af/components/panel"
+    css="stepTitle"
+    
+    dorExcludeDescription="true"
+    dorExcludeTitle="true"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guidePanel"
+    name="PN_SignatureS_0c40d510"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/signature_s"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false"
+    >
+    <items jcr:primaryType="nt:unstructured"
+           sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <titledraw_3899db1de3ad4cd8a09dc4ff4cb457fa
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
+    _value="&lt;p&gt;Client&lt;/p&gt;"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextDraw"
+    headingLevel="4"
+    name="TTL_Client_9d0b8446"
+    textIsRich="true">
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</titledraw_3899db1de3ad4cd8a09dc4ff4cb457fa>
+<fragment_778741e47a984809bae4b1b7fcb2c733
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/components/controls/panel"
+    dorExcludeDescription="true"
+    dorExcludeTitle="true"
+    dorExclusion="true"
+    dorFieldStyling="Default"
+    fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_Signature1"
+    guideNodeClass="guidePanel"
+    name="PN_affrg_AffrgSignature1_ebd19085"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/signature_s/client"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false">
+    <layout
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="fd/af/layouts/gridFluidLayout2"
+        columns="1"
+        dorLayoutType="columnar"
+        dorNumCols="1"
+        nonNavigable="{Boolean}true"
+        toolbarPosition="Bottom"/>
+    <items
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="fd/af/layouts/gridFluidLayout2"/>
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <fd:scripts jcr:primaryType="nt:unstructured"/>
+</fragment_778741e47a984809bae4b1b7fcb2c733>
+<titledraw_8825e587beaa426f9268a8af8f784871
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
+    _value="&lt;p&gt;UBS Europe SE&lt;/p&gt;"
+    
+    dorFieldStyling="Default"
+    guideNodeClass="guideTextDraw"
+    headingLevel="4"
+    name="TTL_UbsEuropeSe_a07498c2"
+    textIsRich="true">
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</titledraw_8825e587beaa426f9268a8af8f784871>
+<fragment_ea4fdb99e1e5499fade9d201171467c8
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+    jcr:lastModifiedBy="blueprint"
+    jcr:primaryType="nt:unstructured"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/components/controls/panel"
+    dorExcludeDescription="true"
+    dorExcludeTitle="true"
+    dorExclusion="true"
+    dorFieldStyling="Default"
+    fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_Signature1"
+    guideNodeClass="guidePanel"
+    name="PN_affrg_AffrgSignature1_a459218d"
+    bindRef="/form/agreement_for_the_placement_of_payment_orders_via_the_electronic_funds_transfer_eft_service/signature_s/ubs_europe_se"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false">
+    <layout
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="fd/af/layouts/gridFluidLayout2"
+        columns="1"
+        dorLayoutType="columnar"
+        dorNumCols="1"
+        nonNavigable="{Boolean}true"
+        toolbarPosition="Bottom"/>
+    <items
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="fd/af/layouts/gridFluidLayout2"/>
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <fd:scripts jcr:primaryType="nt:unstructured"/>
+</fragment_ea4fdb99e1e5499fade9d201171467c8>
+
+    </items>
+    <layout jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+            columns="1"
+            dorLayoutType="columnar"
+            nonNavigable="{Boolean}true"
+            toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured"
+                 offset="0"
+                 width="12"/>
+    </cq:responsive>
+</panel_94d0238868974738923de34be5124348>
+
+                    
+                    <previewpanel_copy
+                        jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                        jcr:createdBy="blueprint"
+                        jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                        jcr:lastModifiedBy="blueprint"
+                        jcr:primaryType="nt:unstructured"
+                        jcr:title="Summary of form information"
+                        sling:resourceType="fd/af/components/panel"
+                        dorExclusion="true"
+                        guideNodeClass="guidePanel"
+                        name="summaryPanel"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <items jcr:primaryType="nt:unstructured"
+                               sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <messagebox_ElsigCheck
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/messagebox"
+                                css="messagebox-ElsigCheck ubs-margin-10"
+                                guideNodeClass="guideTextDraw"
+                                hideTitle="{Boolean}true"
+                                i18nBodyId="ajila-forms-ubs-signature-level-error"
+                                name="messagebox_ElsigCheck"
+                                visible="{Boolean}true"/>
+                            <summary
+                                jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:createdBy="blueprint"
+                                jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:lastModifiedBy="blueprint"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Summary"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/summary"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila_forms_summary"
+                                dorFieldStyling="Default"
+                                guideNodeClass="guideTextBox"
+                                name="summaryComponent"
+                                replaceEmptyValues="true"
+                                showStaticText="true"
+                                textIsRich="[true,true,true]"/>
+                            <messagebox_SubmissionError
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/messagebox"
+                                guideNodeClass="guideTextDraw"
+                                messageboxBody="&lt;p&gt;The form could not be sent. Please try again later.&lt;/p&gt;"
+                                messageboxTitle="Submission failed"
+                                messageboxType="{Long}4"
+                                name="submitErrorMessage"
+                                visible="{Boolean}false"/>
+                    
+                            <doroptionsubs
+                                jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:createdBy="blueprint"
+                                jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:lastModifiedBy="blueprint"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/dorOptionsUBS"
+                                _value="Further configurations for the document of record"
+                                dorExclusion="true"
+                                guideNodeClass="guideTextDraw"
+                                name="doroptionsubs"
+                                visible="false"/>
+                            <metadata
+                                jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:createdBy="blueprint"
+                                jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                jcr:lastModifiedBy="blueprint"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/metadata"
+                                _value="Metadata"
+                                dorExclusion="true"
+                                formrange_afmasterlanguage="EN"
+                                formrange_aftype="Single"
+                                formrange_code="AAAI"
+                                guideNodeClass="guideTextDraw"
+                                name="metadata"
+                                visible="false">
+                                <entities jcr:primaryType="nt:unstructured">
+                                    <item0
+                                        jcr:primaryType="nt:unstructured"
+                                        formrange_clpmandatory="false"
+                                        formrange_entity="019"
+                                        formrange_language="EN">
+                                        <cdoks jcr:primaryType="nt:unstructured">
+                                            <item0
+                                                jcr:primaryType="nt:unstructured"
+                                                formrange_cdokinfo="61137"
+                                                formrange_partnerlevel="No"
+                                                formrange_releasedate="31.10.2019"
+                                                formrange_version="V0"/>
+                                        </cdoks>
+                                    </item0>
+                                </entities>
+                            </metadata>
+                        </items>
+                        <layout jcr:primaryType="nt:unstructured"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                columns="1"
+                                dorLayoutType="columnar"
+                                dorNumCols="1"
+                                nonNavigable="{Boolean}true"
+                                toolbarPosition="Bottom"/>
+                    </previewpanel_copy>
+                    
+                    
+                </items>
+                <toolbar
+                    jcr:primaryType="nt:unstructured"
+                    jcr:title="Toolbar"
+                    sling:resourceType="fd/af/components/toolbar"
+                    css=""
+                    guideNodeClass="guideToolbar"
+                    name="toolbar">
+                    <items jcr:primaryType="nt:unstructured"
+                           sling:resourceType="fd/af/layouts/toolbar/defaultToolbarLayout">
+                        <previtemnav
+                            fd:targetVersion="1.1"
+                            jcr:primaryType="nt:unstructured"
+                            jcr:title="Back"
+                            sling:resourceType="fd/af/components/actions/previtemnav"
+                            dorExclusion="true"
+                            guideNodeClass="guideButton"
+                            name="previtemnav"
+                            type="movePrev"/>
+                        <nextitemnav
+                            fd:targetVersion="1.1"
+                            jcr:primaryType="nt:unstructured"
+                            jcr:title="Next"
+                            sling:resourceType="fd/af/components/actions/nextitemnav"
+                            dorExclusion="true"
+                            guideNodeClass="guideButton"
+                            name="nextitemnav"
+                            type="moveNext">
+                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                            <fd:scripts
+                                fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.nextitemnav&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.ajila.forms.ubs.control.summary.setSummaryData(guideRootPanel);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.nextitemnav&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.com.ajila.forms.ubs.navigation.nextStep(this);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                jcr:primaryType="nt:unstructured"/>
+                        </nextitemnav>
+                        <submit
+                            jcr:primaryType="nt:unstructured"
+                            jcr:title="Submit"
+                            sling:resourceType="fd/af/components/actions/submit"
+                            dorExclusion="true"
+                            guideNodeClass="guideButton"
+                            name="submit"
+                            type="submit">
+                            <fd:rules
+                                fd:click="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EVENT_CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.toolbar.submit&quot;\,&quot;type&quot;:&quot;BUTTON&quot;\,&quot;name&quot;:&quot;submit&quot;}}\,{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON_OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;is clicked&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;PRIMITIVE_EXPRESSION&quot;\,&quot;choice&quot;:null}]}\,&quot;nested&quot;:false}\,{&quot;nodeName&quot;:&quot;Then&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;BLOCK_STATEMENTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;BLOCK_STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SUBMIT_FORM&quot;\,&quot;items&quot;:[]}}]}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nguideBridge.submit();\\n\\n&quot;\,&quot;eventName&quot;:&quot;Click&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                                jcr:primaryType="nt:unstructured"/>
+                            <fd:scripts
+                                fd:navigationChange="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.submit&quot;\,&quot;event&quot;:&quot;Navigation&quot;\,&quot;content&quot;:&quot;this.visible=(!this.panel.navigationContext.hasNextItem);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                jcr:primaryType="nt:unstructured"/>
+                        </submit>
+                        
+                    </items>
+                    <layout jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/toolbar/defaultToolbarLayout"/>
+                </toolbar>
+            </rootPanel>
+            <autoSaveInfo jcr:primaryType="nt:unstructured"
+                          metadataselector="global"/>
+            <signerInfo jcr:primaryType="nt:unstructured"
+                        firstSignerFormFiller="false"
+                        workflowType="SEQUENTIAL">
+                <signer0 jcr:primaryType="nt:unstructured"
+                         countryCode="undefined"
+                         countryCodeSource="undefined"
+                         email="undefined"
+                         emailSource="undefined"
+                         phone="undefined"
+                         phoneSource="undefined"
+                         securityOption="undefined"
+                         signerTitle="Signer One"/>
+            </signerInfo>
+            <view jcr:primaryType="nt:unstructured">
+                <print
+                    jcr:created="{Date}2025-01-01T00:00:00.000+01:00"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                    jcr:lastModifiedBy="blueprint"
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/authoring/components/dor/dorProperties"
+                    accentColor="#04a6cb"
+                    alignment="dorFieldVerticalAlignment"
+                    fontFamily="Arial"
+                    hidePanelDescriptions="true"
+                    includeUnboundFields="true"
+                    metaTemplateRef="/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp"
+                    optionSeparator=", "
+                    optionsNumberInHorizontalAlign="4"
+                    showSelectedOptions="false">
+                    <branding jcr:primaryType="nt:unstructured">
+                        <items jcr:primaryType="nt:unstructured">
+                            <masterpage0 jcr:primaryType="nt:unstructured">
+                                <items jcr:primaryType="nt:unstructured">
+                                    <txtBankingRelationship jcr:primaryType="nt:unstructured"/>
+                                    <ShowBankingRelationship jcr:primaryType="nt:unstructured"
+                                                             value="1"/>
+                                    <Header jcr:primaryType="nt:unstructured">
+                                        <items jcr:primaryType="nt:unstructured">
+                                            <AF_LOGO_IMAGE jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                                                           jcr:lastModifiedBy="blueprint"
+                                                           jcr:primaryType="nt:unstructured"
+                                                           valueFrom="template"/>
+                                            <FormType jcr:primaryType="nt:unstructured"
+                                                      resourceType="granite/ui/components/coral/foundation/form/textarea"
+                                                      value=" "
+                                                      valueFrom="     "/>
+                                            <HeaderInfo jcr:primaryType="nt:unstructured">
+                                                <items jcr:primaryType="nt:unstructured">
+                                                    <AF_HEADER_TEXT jcr:primaryType="nt:unstructured"
+                                                                    resourceType="granite/ui/components/coral/foundation/form/textarea"
+                                                                    valueFrom="template"/>
+                                                    <AF_FORM_TITLE jcr:primaryType="nt:unstructured"
+                                                                   resourceType="granite/ui/components/coral/foundation/form/textarea"
+                                                                   valueFrom="formTitle"/>
+                                                </items>
+                                            </HeaderInfo>
+                                            <Adressblock jcr:primaryType="nt:unstructured">
+                                                <items jcr:primaryType="nt:unstructured">
+                                                    <senderAddressTitle jcr:primaryType="nt:unstructured"
+                                                                        resourceType="granite/ui/components/coral/foundation/form/textarea"
+                                                                        valueFrom="template"/>
+                                                </items>
+                                            </Adressblock>
+                                        </items>
+                                    </Header>
+                                    <formId jcr:primaryType="nt:unstructured"/>
+                                    <displayLanguage jcr:primaryType="nt:unstructured"/>
+                                    <language jcr:primaryType="nt:unstructured"/>
+                                    <footerVersion jcr:primaryType="nt:unstructured"/>
+                                    <mandator jcr:primaryType="nt:unstructured"/>
+                                    <footerFormCode jcr:primaryType="nt:unstructured"/>
+                                    <footerFormVersionDate jcr:primaryType="nt:unstructured"/>
+                                    <APPCode jcr:primaryType="nt:unstructured"
+                                             value="AFC"/>
+                                    <footerFreeText jcr:primaryType="nt:unstructured"/>
+                                </items>
+                            </masterpage0>
+                        </items>
+                    </branding>
+                </print>
+            </view>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <en/>
+                    
+                </dictionary>
+            </assets>
+        </guideContainer>
+        <parsys2 jcr:primaryType="nt:unstructured"
+                 sling:resourceType="wcm/foundation/components/responsivegrid">
+            <guidefooter jcr:primaryType="nt:unstructured"
+                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/guidefooter"/>
+        </parsys2>
+    </jcr:content>
+</jcr:root>

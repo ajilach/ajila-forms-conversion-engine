@@ -984,6 +984,14 @@ fn collect_child_bind_ref_leaves(children: &[AemNode]) -> Vec<String> {
                 leaves.extend(collect_child_bind_ref_leaves(sub_children));
                 bind_ref.as_deref()
             }
+            AemNode::Repeatable {
+                children: sub_children,
+                ..
+            } => {
+                // Recurse into repeatable items to collect their leaves too
+                leaves.extend(collect_child_bind_ref_leaves(sub_children));
+                None
+            }
             _ => None,
         };
         if let Some(br) = bind_ref {
@@ -1060,8 +1068,60 @@ fn find_best_fragment<'a>(
     best
 }
 
+/// Collect full `bindRef` paths from a node's children (recursively).
+///
+/// Unlike `collect_child_bind_ref_leaves` which returns only leaf names,
+/// this returns the complete bind_ref strings.
+fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
+    let mut paths = Vec::new();
+    for child in children {
+        match child {
+            AemNode::TextField { bind_ref, .. }
+            | AemNode::NumberField { bind_ref, .. }
+            | AemNode::DatePicker { bind_ref, .. }
+            | AemNode::Dropdown { bind_ref, .. }
+            | AemNode::Checkbox { bind_ref, .. }
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::TextBoxMultiline { bind_ref, .. } => {
+                if let Some(br) = bind_ref {
+                    paths.push(br.clone());
+                }
+            }
+            AemNode::Panel {
+                bind_ref,
+                children: sub_children,
+                ..
+            } => {
+                paths.extend(collect_child_bind_ref_full_paths(sub_children));
+                if let Some(br) = bind_ref {
+                    paths.push(br.clone());
+                }
+            }
+            AemNode::Repeatable {
+                children: sub_children,
+                ..
+            } => {
+                paths.extend(collect_child_bind_ref_full_paths(sub_children));
+            }
+            _ => {}
+        }
+    }
+    paths
+}
+
 /// Recursively walk the `AemNode` tree and replace panels whose child fields
 /// match a known fragment's XSD type with `AemNode::Fragment` nodes.
+///
+/// Handles two cases:
+/// 1. **Direct match**: A panel's immediate children directly correspond to a
+///    single XSD type (bind_ref paths are one level deep relative to the panel).
+///    The entire panel is replaced with a Fragment.
+/// 2. **Multi-instance match**: A panel's children's bind_ref paths have
+///    intermediate segments (e.g. `kunde/Name` and `ubs_europe_se/Name`),
+///    indicating multiple type instances. Each child that contributes fields
+///    for a matched type is individually replaced.
+///
+/// Recurses depth-first so inner nodes are processed before parents.
 fn replace_with_fragments(
     nodes: &mut Vec<AemNode>,
     fragments: &[ParsedFragment],
@@ -1080,47 +1140,139 @@ fn replace_with_fragments(
             _ => {}
         }
 
-        // Then check if this panel should be replaced by a fragment
-        let should_replace = if let AemNode::Panel {
-            children, bind_ref, ..
+        // Only check panels with bind_ref
+        if let AemNode::Panel {
+            children,
+            bind_ref: Some(br),
+            ..
         } = &nodes[i]
         {
-            if bind_ref.is_some() {
+            let full_paths = collect_child_bind_ref_full_paths(children);
+            let br_prefix = format!("{}/", br);
+
+            // Compute relative paths from this panel's bind_ref
+            let relative_paths: Vec<&str> = full_paths
+                .iter()
+                .filter_map(|p| p.strip_prefix(&br_prefix))
+                .collect();
+
+            // Check if any relative path has an intermediate segment
+            // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
+            let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
+
+            if !has_intermediates {
+                // Direct match: all paths are single-segment → try to replace
+                // the whole panel.
                 let leaves = collect_child_bind_ref_leaves(children);
                 if !leaves.is_empty() {
-                    find_best_fragment(&leaves, fragments, xsd_config).map(|f| f.clone())
-                } else {
-                    None
+                    if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
+                        let fragment = fragment.clone();
+                        let bind_ref = Some(br.clone());
+                        let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+                        let uuid = ctx.uuid(&name);
+                        nodes[i] = AemNode::Fragment {
+                            uuid,
+                            name,
+                            frag_ref: fragment.frag_ref,
+                            bind_ref,
+                        };
+                    }
                 }
             } else {
-                None
+                // Multi-instance: group by the first intermediate segment;
+                // find which children contribute to each group and replace.
+                let replacements =
+                    compute_child_replacements(children, &br_prefix, fragments, xsd_config);
+                if !replacements.is_empty() {
+                    // Must re-borrow mutably to apply replacements
+                    if let AemNode::Panel {
+                        children,
+                        bind_ref: Some(br),
+                        ..
+                    } = &mut nodes[i]
+                    {
+                        // Apply replacements in reverse order so indices stay valid
+                        for (child_idx, fragment, sub_bind_ref) in replacements.into_iter().rev() {
+                            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+                            let uuid = ctx.uuid(&name);
+                            children[child_idx] = AemNode::Fragment {
+                                uuid,
+                                name,
+                                frag_ref: fragment.frag_ref.clone(),
+                                bind_ref: Some(format!("{}/{}", br, sub_bind_ref)),
+                            };
+                        }
+                    }
+                }
             }
-        } else {
-            None
-        };
-
-        if let Some(fragment) = should_replace {
-            // Extract the bind_ref from the panel we're replacing
-            let bind_ref = if let AemNode::Panel { bind_ref, .. } = &nodes[i] {
-                bind_ref.clone()
-            } else {
-                None
-            };
-
-            // Use make_name to ensure unique name/UUID even when the same
-            // fragment type is used multiple times.
-            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
-            let uuid = ctx.uuid(&name);
-            nodes[i] = AemNode::Fragment {
-                uuid,
-                name,
-                frag_ref: fragment.frag_ref.clone(),
-                bind_ref,
-            };
         }
 
         i += 1;
     }
+}
+
+/// For a panel whose children span multiple XSD type instances, compute which
+/// children should be replaced with fragments.
+///
+/// Returns a vec of `(child_index, fragment, intermediate_segment)` sorted by
+/// child_index ascending.
+fn compute_child_replacements(
+    children: &[AemNode],
+    br_prefix: &str,
+    fragments: &[ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+) -> Vec<(usize, ParsedFragment, String)> {
+    // Group relative paths by their first intermediate segment
+    let mut groups: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let full_paths = collect_child_bind_ref_full_paths(children);
+    for fp in &full_paths {
+        if let Some(relative) = fp.strip_prefix(br_prefix) {
+            if let Some((first, rest)) = relative.split_once('/') {
+                let leaf = rest.rsplit('/').next().unwrap_or(rest);
+                groups
+                    .entry(first.to_string())
+                    .or_default()
+                    .push(leaf.to_string());
+            }
+        }
+    }
+
+    // For each group with a matching fragment, find which children contribute
+    let mut matched_groups: std::collections::HashMap<String, ParsedFragment> =
+        std::collections::HashMap::new();
+    for (intermediate, leaves) in &groups {
+        if let Some(fragment) = find_best_fragment(leaves, fragments, xsd_config) {
+            matched_groups.insert(intermediate.clone(), fragment.clone());
+        }
+    }
+
+    if matched_groups.is_empty() {
+        return Vec::new();
+    }
+
+    // Map each child to its intermediate group (if any)
+    let mut replacements: Vec<(usize, ParsedFragment, String)> = Vec::new();
+    let mut used_groups: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (child_idx, child) in children.iter().enumerate() {
+        let child_paths = collect_child_bind_ref_full_paths(std::slice::from_ref(child));
+        // Determine which group this child belongs to
+        for cp in &child_paths {
+            if let Some(relative) = cp.strip_prefix(br_prefix) {
+                if let Some((first, _)) = relative.split_once('/') {
+                    if !used_groups.contains(first) {
+                        if let Some(fragment) = matched_groups.get(first) {
+                            replacements.push((child_idx, fragment.clone(), first.to_string()));
+                            used_groups.insert(first.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    replacements
 }
 
 // ============================================================================

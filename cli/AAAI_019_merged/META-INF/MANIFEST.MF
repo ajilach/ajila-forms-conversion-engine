@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Content-Package-Id: fd/export:BlueprintFormsPackage_AAAI
+Content-Package-Roots: /content/forms/af/afforms_germany_all/af_aa/AF_AA
+ AI,/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAAI
+Content-Package-Type: mixed
+
