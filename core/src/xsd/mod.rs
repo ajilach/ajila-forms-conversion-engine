@@ -348,6 +348,13 @@ pub struct XsdConfig {
     /// E.g. `"AddressType" → "Address"`, `"IndividualBasicType" → "IndividualBasic"`.
     /// Built from global element declarations in the parsed XSD files.
     pub type_to_element_name: HashMap<String, String>,
+
+    /// Optional master language code (e.g. `"en"`).
+    ///
+    /// When set, element names derived from headings and field labels will
+    /// prefer the translation in this language instead of picking an
+    /// arbitrary first entry from the translation map.
+    pub master_language: Option<String>,
 }
 
 impl XsdConfig {
@@ -363,6 +370,7 @@ impl XsdConfig {
             type_to_file,
             registered_types,
             type_to_element_name,
+            master_language: None,
         }
     }
 
@@ -373,6 +381,22 @@ impl XsdConfig {
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
+            master_language: None,
+        }
+    }
+
+    /// Set the master language for element name resolution.
+    pub fn with_master_language(mut self, lang: impl Into<String>) -> Self {
+        self.master_language = Some(lang.into());
+        self
+    }
+
+    /// Get the plain text from an `InlineText`, preferring the master
+    /// language when available.
+    pub fn label_text(&self, text: &crate::structured::InlineText) -> String {
+        match &self.master_language {
+            Some(lang) => text.plain_text_in(lang),
+            None => text.as_plain_text(),
         }
     }
 }

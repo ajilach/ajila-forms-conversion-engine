@@ -198,6 +198,11 @@ pub fn run_blueprint_pipeline(
             } else {
                 XsdConfig::from_profile(XsdProfile::default())
             };
+            let xsd_config = if let Some(lang) = aem_profile.master_language.as_deref() {
+                xsd_config.with_master_language(lang)
+            } else {
+                xsd_config
+            };
             let xsd = blueprint::to_xsd(&merged.content, &xsd_config);
             state.xsd_schema = Some(xsd);
 

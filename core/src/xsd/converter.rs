@@ -268,7 +268,7 @@ fn flatten_group_for_hierarchy(group: &GroupNode) -> Vec<FlatItem> {
 fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) {
     match &section.heading {
         Some(heading) => {
-            let label = heading.content.as_plain_text();
+            let label = config.label_text(&heading.content);
             let name = to_snake_case(&label);
 
             // Collect child (name, type) pairs and try auto-matching
@@ -369,7 +369,7 @@ fn collect_node_name_type_pairs(
             let label = field
                 .label
                 .as_ref()
-                .map(|l| l.as_plain_text())
+                .map(|l| config.label_text(l))
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),
@@ -490,7 +490,7 @@ fn build_field(
     let label = field
         .label
         .as_ref()
-        .map(|l| l.as_plain_text())
+        .map(|l| config.label_text(l))
         .unwrap_or_default();
 
     let (name, type_ref) = match resolve_element(&label, &config.profile) {
@@ -668,7 +668,7 @@ fn collect_section_bind_refs(
 ) {
     let current_path = match &section.heading {
         Some(heading) => {
-            let label = heading.content.as_plain_text();
+            let label = config.label_text(&heading.content);
             let name = to_snake_case(&label);
             let path = format!("{}/{}", parent_path, name);
             maps.sections.insert(label.trim().to_string(), path.clone());
@@ -768,7 +768,7 @@ fn collect_node_bind_refs(
             let label = field
                 .label
                 .as_ref()
-                .map(|l| l.as_plain_text())
+                .map(|l| config.label_text(l))
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),

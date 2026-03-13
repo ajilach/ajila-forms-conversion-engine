@@ -240,7 +240,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // XSD schema
     if args.xsd {
-        let xsd_config = load_xsd_config(args.profile.as_deref())?;
+        let mut xsd_config = load_xsd_config(args.profile.as_deref())?;
+        // Use the AEM master_language for XSD element naming when available
+        if let Some(base) = args.profile.as_deref() {
+            let aem_cfg_path = base.join("aem/config.toml");
+            if let Ok(toml_str) = std::fs::read_to_string(&aem_cfg_path)
+                && let Ok(aem_profile) = toml::from_str::<blueprint::AemProfile>(&toml_str)
+                && let Some(lang) = aem_profile.master_language
+            {
+                xsd_config = xsd_config.with_master_language(lang);
+            }
+        }
         let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;

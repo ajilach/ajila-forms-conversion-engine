@@ -13576,8 +13576,8 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     use crate::aem::{AemConfig, convert_to_aem};
     use crate::Blueprint;
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
-        .expect("Failed to load AAAI_019_DE.pdf");
+    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
@@ -13596,6 +13596,44 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 
     let config = crate::resolve_aem_languages(&content, &config);
     let root = convert_to_aem(&content, &config);
+
+    // Diagnostic: print full AEM tree
+    fn print_tree_aaai(node: &crate::aem::AemNode, depth: usize) {
+        let indent = "  ".repeat(depth);
+        match node {
+            crate::aem::AemNode::Root { children, .. } => {
+                eprintln!("{}Root", indent);
+                for c in children { print_tree_aaai(c, depth + 1); }
+            }
+            crate::aem::AemNode::Panel { name, bind_ref, children, .. } => {
+                eprintln!("{}Panel({}) bind_ref={:?}", indent, name, bind_ref);
+                for c in children { print_tree_aaai(c, depth + 1); }
+            }
+            crate::aem::AemNode::Repeatable { name, children, .. } => {
+                eprintln!("{}Repeatable({})", indent, name);
+                for c in children { print_tree_aaai(c, depth + 1); }
+            }
+            crate::aem::AemNode::TextField { name, bind_ref, .. } => {
+                eprintln!("{}TextField({}) bind_ref={:?}", indent, name, bind_ref);
+            }
+            crate::aem::AemNode::DatePicker { name, bind_ref, .. } => {
+                eprintln!("{}DatePicker({}) bind_ref={:?}", indent, name, bind_ref);
+            }
+            crate::aem::AemNode::Fragment { name, frag_ref, bind_ref, .. } => {
+                eprintln!("{}Fragment({}) frag={} bind_ref={:?}", indent, name, frag_ref, bind_ref);
+            }
+            crate::aem::AemNode::TitleDraw { name, .. } => {
+                eprintln!("{}TitleDraw({})", indent, name);
+            }
+            crate::aem::AemNode::TextDraw { name, .. } => {
+                eprintln!("{}TextDraw({})", indent, name);
+            }
+            _ => {
+                eprintln!("{}Other", indent);
+            }
+        }
+    }
+    print_tree_aaai(&root, 0);
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
@@ -15173,5 +15211,89 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
         has_wrapper_paths,
         "Multi-type section authorized_representative_s should have wrapper paths. Got: {:?}",
         auth_rep_fields
+    );
+}
+
+#[test]
+fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
+    // When merging DE + EN PDFs and generating an XSD, element names
+    // derived from headings and field labels should use the master
+    // language ("en") rather than whichever translation happens to be
+    // first in the map.
+    //
+    // Before the fix, `as_plain_text()` was used, which picks the first
+    // available translation (often "de" due to HashMap ordering), so
+    // headings like "Kunde" appeared instead of "client".
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+    use crate::xsd::{
+        XsdNode, generate_xsd_schema,
+    };
+
+    // 1) Merge DE + EN (DE first so it appears first in maps)
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
+        .expect("Failed to process AAAI DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_EN.pdf"), "en")
+        .expect("Failed to process AAAI EN");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+        .expect("Failed to merge translations");
+
+    // 2) Load XSD config with master_language = "en"
+    let config = helpers::load_ubs_xsd_config().with_master_language("en");
+
+    // 3) Generate XSD schema from merged content
+    let schema = generate_xsd_schema(&merged.content, &config);
+
+    // 4) Collect all element names from the XSD tree
+    fn collect_element_names(node: &XsdNode, out: &mut Vec<String>) {
+        match node {
+            XsdNode::Element { name, content, .. } => {
+                out.push(name.clone());
+                if let Some(child) = content {
+                    collect_element_names(child, out);
+                }
+            }
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    collect_element_names(child, out);
+                }
+            }
+            XsdNode::SimpleType { .. } => {}
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        collect_element_names(child, out);
+                    }
+                }
+            }
+        }
+    }
+    let mut names = Vec::new();
+    collect_element_names(&schema.root, &mut names);
+
+    // 5) The heading "Kunde" (DE) / "Client" (EN) should produce "client",
+    //    not "kunde", when the master language is "en".
+    assert!(
+        names.contains(&"client".to_string()),
+        "XSD should contain element 'client' (English), not 'kunde' (German). Got: {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"kunde".to_string()),
+        "XSD should NOT contain element 'kunde' (German) when master language is 'en'. Got: {:?}",
+        names
+    );
+
+    // 6) Similarly, "Unterschrift(en)" / "Signature(s)" should produce
+    //    "signature_s" not "unterschrift_en".
+    assert!(
+        names.contains(&"signature_s".to_string()),
+        "XSD should contain element 'signature_s' (English). Got: {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"unterschrift_en".to_string()),
+        "XSD should NOT contain element 'unterschrift_en' (German). Got: {:?}",
+        names
     );
 }
