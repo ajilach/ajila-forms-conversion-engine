@@ -53,4 +53,21 @@ pub struct AemProfile {
     /// Requires an XSD profile (`xsd/config.toml`) to be present alongside the
     /// AEM profile so that name resolution is consistent.  Default: `false`.
     pub bind_to_xsd: Option<bool>,
+
+    /// When `true`, recursively scan the `fragments/` subdirectory of the AEM
+    /// profile for fragment `.content.xml` files. Matched XSD types in the
+    /// generated AEM node tree are replaced by fragment references.
+    /// Default: `false`.
+    pub use_fragments: Option<bool>,
+
+    /// The DAM path prefix used in fragment `xsdRef` attributes
+    /// (e.g. `"/content/dam/formsanddocuments/afforms_xsd/"`).
+    /// This prefix is replaced with `xsd/types/` when resolving fragment
+    /// XSD files locally.
+    pub fragment_xsd_ref: Option<String>,
+
+    /// JCR path prefix for constructing fragment `fragRef` values
+    /// (e.g. `"/content/forms/af/"`).
+    /// The `fragRef` is built as `{prefix}{relative_fragment_dir_path}`.
+    pub fragment_ref_prefix: Option<String>,
 }

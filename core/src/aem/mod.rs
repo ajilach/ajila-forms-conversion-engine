@@ -22,12 +22,14 @@
 //! ```
 
 mod converter;
+pub mod fragment_parser;
 mod package_writer;
 pub mod profile;
 pub mod template;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
+pub use fragment_parser::{ParsedFragment, scan_fragments};
 pub use package_writer::{collect_languages, generate_aem_package};
 pub use profile::AemProfile;
 pub use xml_writer::generate_aem_xml;
@@ -126,6 +128,17 @@ pub struct AemConfig {
     /// XSD configuration used both for schema generation and for computing
     /// `bindRef` paths.  Must be `Some` when `bind_to_xsd` is `true`.
     pub xsd_config: Option<XsdConfig>,
+
+    // -- Fragment support ----------------------------------------------------
+    /// When `true`, panels whose XSD type matches a known fragment are
+    /// replaced by `AemNode::Fragment` references.
+    pub use_fragments: bool,
+
+    /// JCR path prefix for constructing fragment `fragRef` values.
+    pub fragment_ref_prefix: String,
+
+    /// Parsed fragments loaded from the `fragments/` subdirectory.
+    pub fragments: Vec<ParsedFragment>,
 }
 
 impl AemConfig {
@@ -198,6 +211,13 @@ impl AemConfig {
 
             bind_to_xsd: profile.bind_to_xsd.unwrap_or(false),
             xsd_config: None,
+
+            use_fragments: profile.use_fragments.unwrap_or(false),
+            fragment_ref_prefix: profile
+                .fragment_ref_prefix
+                .clone()
+                .unwrap_or_else(|| "/content/forms/af/".into()),
+            fragments: Vec::new(),
         })
     }
 
@@ -272,6 +292,10 @@ impl AemConfig {
 
             bind_to_xsd: false,
             xsd_config: None,
+
+            use_fragments: false,
+            fragment_ref_prefix: "/content/forms/af/".into(),
+            fragments: Vec::new(),
         }
     }
 }
@@ -493,6 +517,19 @@ pub enum AemNode {
         min_occur: u32,
         max_occur: u32,
     },
+
+    /// Fragment reference — replaces a panel whose XSD type matches a
+    /// known fragment. The fragment's internal structure is loaded by AEM
+    /// at runtime from the `fragRef` path.
+    Fragment {
+        uuid: Uuid,
+        name: String,
+        /// JCR path to the fragment (e.g.
+        /// `"/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1"`).
+        frag_ref: String,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -517,6 +554,7 @@ impl AemNode {
                 format!("textboxmultiline_{}", uuid.as_simple())
             }
             AemNode::Repeatable { uuid, .. } => format!("repeatable_{}", uuid.as_simple()),
+            AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
         }
     }
 }

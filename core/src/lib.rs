@@ -108,8 +108,8 @@ pub use structured::{
 
 // AEM generation
 pub use aem::{
-    AemConfig, AemNode, AemProfile, collect_languages, convert_to_aem, generate_aem_package,
-    generate_aem_xml,
+    AemConfig, AemNode, AemProfile, ParsedFragment, collect_languages, convert_to_aem,
+    generate_aem_package, generate_aem_xml, scan_fragments,
 };
 
 // GraphViz decision-flow output

@@ -11,6 +11,7 @@ use crate::structured::{
     RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
+use super::fragment_parser::ParsedFragment;
 use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
 
 // ============================================================================
@@ -315,6 +316,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let conditions = std::mem::take(&mut ctx.collected_conditions);
     if !conditions.is_empty() {
         wire_conditions(&mut children, &conditions);
+    }
+
+    // --- Third pass: replace panels with fragment references ---
+    if config.use_fragments && !config.fragments.is_empty() {
+        let xsd_config = config.xsd_config.as_ref();
+        replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
 
     AemNode::Root {
@@ -946,6 +953,167 @@ fn wire_conditions_recursive(
             }
         }
         _ => {}
+    }
+}
+
+// ============================================================================
+// Fragment replacement
+// ============================================================================
+
+/// Collect leaf element names from `bindRef` values of a node's children.
+///
+/// For each child that has a `bindRef`, extract the last path segment
+/// (the element name). E.g. `/form/section/Street` → `"Street"`.
+fn collect_child_bind_ref_leaves(children: &[AemNode]) -> Vec<String> {
+    let mut leaves = Vec::new();
+    for child in children {
+        let bind_ref = match child {
+            AemNode::TextField { bind_ref, .. }
+            | AemNode::NumberField { bind_ref, .. }
+            | AemNode::DatePicker { bind_ref, .. }
+            | AemNode::Dropdown { bind_ref, .. }
+            | AemNode::Checkbox { bind_ref, .. }
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::TextBoxMultiline { bind_ref, .. } => bind_ref.as_deref(),
+            AemNode::Panel {
+                bind_ref,
+                children: sub_children,
+                ..
+            } => {
+                // Recurse into sub-panels to collect their leaves too
+                leaves.extend(collect_child_bind_ref_leaves(sub_children));
+                bind_ref.as_deref()
+            }
+            _ => None,
+        };
+        if let Some(br) = bind_ref {
+            if let Some(leaf) = br.rsplit('/').next() {
+                if !leaf.is_empty() {
+                    leaves.push(leaf.to_string());
+                }
+            }
+        }
+    }
+    leaves
+}
+
+/// Count the overlap between a fragment's bound elements and a set of
+/// leaf element names from a panel's children.
+fn fragment_overlap(fragment: &ParsedFragment, panel_leaves: &[String]) -> usize {
+    fragment
+        .bound_elements
+        .iter()
+        .filter(|elem| panel_leaves.iter().any(|l| l == *elem))
+        .count()
+}
+
+/// Find the best matching fragment for a panel, given its children's bind_ref
+/// leaf element names and the XSD config's registered types.
+///
+/// Matching logic:
+/// 1. Collect the panel children's bind_ref leaf element names.
+/// 2. For each registered XSD type, check if its elements overlap with the
+///    panel's leaves. If so, find fragments with the same `xsd_type_name`.
+/// 3. Among matching fragments, pick the one with the highest element overlap.
+fn find_best_fragment<'a>(
+    panel_leaves: &[String],
+    fragments: &'a [ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+) -> Option<&'a ParsedFragment> {
+    let xsd_config = xsd_config?;
+
+    // Determine which registered XSD types match this panel's leaf elements.
+    let mut matching_types: Vec<&str> = Vec::new();
+    for (type_name, reg_type) in &xsd_config.registered_types {
+        let type_elements: Vec<&str> = reg_type.elements.iter().map(|e| e.name.as_str()).collect();
+        let overlap = panel_leaves
+            .iter()
+            .filter(|l| type_elements.contains(&l.as_str()))
+            .count();
+        if overlap > 0 {
+            matching_types.push(type_name);
+        }
+    }
+
+    if matching_types.is_empty() {
+        return None;
+    }
+
+    // Find fragments whose xsd_type_name is in the matching types.
+    let mut best: Option<(&ParsedFragment, usize)> = None;
+    for fragment in fragments {
+        if matching_types.contains(&fragment.xsd_type_name.as_str()) {
+            let overlap = fragment_overlap(fragment, panel_leaves);
+            if let Some((_, best_overlap)) = &best {
+                if overlap > *best_overlap {
+                    best = Some((fragment, overlap));
+                }
+            } else {
+                best = Some((fragment, overlap));
+            }
+        }
+    }
+
+    best.map(|(f, _)| f)
+}
+
+/// Recursively walk the `AemNode` tree and replace panels whose child fields
+/// match a known fragment's XSD type with `AemNode::Fragment` nodes.
+fn replace_with_fragments(
+    nodes: &mut Vec<AemNode>,
+    fragments: &[ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+    ctx: &mut ConversionContext,
+) {
+    let mut i = 0;
+    while i < nodes.len() {
+        // First, recurse into children of container nodes
+        match &mut nodes[i] {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                replace_with_fragments(children, fragments, xsd_config, ctx);
+            }
+            _ => {}
+        }
+
+        // Then check if this panel should be replaced by a fragment
+        let should_replace = if let AemNode::Panel {
+            children, bind_ref, ..
+        } = &nodes[i]
+        {
+            if bind_ref.is_some() {
+                let leaves = collect_child_bind_ref_leaves(children);
+                if !leaves.is_empty() {
+                    find_best_fragment(&leaves, fragments, xsd_config).map(|f| f.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(fragment) = should_replace {
+            // Extract the bind_ref from the panel we're replacing
+            let bind_ref = if let AemNode::Panel { bind_ref, .. } = &nodes[i] {
+                bind_ref.clone()
+            } else {
+                None
+            };
+
+            let uuid = ctx.uuid(&fragment.name);
+            nodes[i] = AemNode::Fragment {
+                uuid,
+                name: fragment.name.clone(),
+                frag_ref: fragment.frag_ref.clone(),
+                bind_ref,
+            };
+        }
+
+        i += 1;
     }
 }
 

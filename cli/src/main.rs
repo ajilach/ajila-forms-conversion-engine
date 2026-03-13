@@ -328,6 +328,18 @@ fn load_aem_config(
         let xsd_config = load_xsd_config(Some(base))?;
         config.xsd_config = Some(xsd_config);
     }
+    if config.use_fragments {
+        let fragments_dir = dir.join("fragments");
+        if fragments_dir.is_dir() {
+            config.fragments =
+                blueprint::scan_fragments(&fragments_dir, &config.fragment_ref_prefix);
+            info!(
+                "Loaded {} fragment(s) from {}",
+                config.fragments.len(),
+                fragments_dir.display()
+            );
+        }
+    }
     Ok(config)
 }
 

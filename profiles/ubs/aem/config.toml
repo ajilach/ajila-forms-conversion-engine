@@ -21,6 +21,10 @@ master_language = "en"
 
 bind_to_xsd = true
 
+use_fragments = true
+fragment_xsd_ref = "/content/dam/formsanddocuments/afforms_xsd/"
+fragment_ref_prefix = "/content/forms/af/"
+
 form_path = "{{ variables.entity_dir }}/{{ variables.prefix_dir }}"
 
 form_dir = "AF_{{ xfa.formrange_code }}"

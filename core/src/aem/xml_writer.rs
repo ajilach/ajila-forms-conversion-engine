@@ -48,6 +48,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::TitleDraw { .. } => "titledraw",
         AemNode::TextBoxMultiline { .. } => "textbox_multiline",
         AemNode::Repeatable { .. } => "repeatable",
+        AemNode::Fragment { .. } => "fragment",
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -355,6 +356,18 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             let panel_name = format!("PN_{}", name);
             ctx.insert("panel_name", &panel_name);
             insert_repeatable_scripts(&mut ctx, &panel_name, *max_occur);
+        }
+
+        AemNode::Fragment {
+            uuid,
+            name,
+            frag_ref,
+            bind_ref,
+        } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
+            ctx.insert("frag_ref", frag_ref);
+            ctx.insert("bind_ref", bind_ref);
         }
     }
 

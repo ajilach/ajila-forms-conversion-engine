@@ -137,6 +137,9 @@ pub fn run_blueprint_pipeline(
                                 variables: HashMap::new(),
                                 language_synonyms: HashMap::new(),
                                 bind_to_xsd: None,
+                                use_fragments: None,
+                                fragment_xsd_ref: None,
+                                fragment_ref_prefix: None,
                             },
                             HashMap::new(),
                         )
@@ -152,6 +155,9 @@ pub fn run_blueprint_pipeline(
                         variables: HashMap::new(),
                         language_synonyms: HashMap::new(),
                         bind_to_xsd: None,
+                        use_fragments: None,
+                        fragment_xsd_ref: None,
+                        fragment_ref_prefix: None,
                     },
                     HashMap::new(),
                 )
