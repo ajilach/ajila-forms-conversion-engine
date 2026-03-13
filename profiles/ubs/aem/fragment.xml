@@ -12,6 +12,7 @@
     fragRef="{{ frag_ref }}"
     guideNodeClass="guidePanel"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false">
     <layout

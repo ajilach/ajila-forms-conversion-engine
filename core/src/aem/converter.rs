@@ -1104,10 +1104,13 @@ fn replace_with_fragments(
                 None
             };
 
-            let uuid = ctx.uuid(&fragment.name);
+            // Use make_name to ensure unique name/UUID even when the same
+            // fragment type is used multiple times.
+            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+            let uuid = ctx.uuid(&name);
             nodes[i] = AemNode::Fragment {
                 uuid,
-                name: fragment.name.clone(),
+                name,
                 frag_ref: fragment.frag_ref.clone(),
                 bind_ref,
             };

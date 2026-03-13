@@ -1,7 +1,7 @@
 //! Fragment scanner and parser for AEM fragment `.content.xml` files.
 //!
 //! Scans a `fragments/` directory tree for `.content.xml` files,
-//! extracts `fragmentModelRoot`, `xsdRef`, and `bindRef` attributes,
+//! extracts `fragmentModelRoot` and `bindRef` attributes,
 //! and produces a list of [`ParsedFragment`] structs used for matching
 //! against XSD types during AEM conversion.
 
@@ -37,7 +37,12 @@ pub struct ParsedFragment {
 /// (e.g. `"/content/forms/af/"`).
 pub fn scan_fragments(fragments_dir: &Path, fragment_ref_prefix: &str) -> Vec<ParsedFragment> {
     let mut fragments = Vec::new();
-    walk_fragments(fragments_dir, fragments_dir, fragment_ref_prefix, &mut fragments);
+    walk_fragments(
+        fragments_dir,
+        fragments_dir,
+        fragment_ref_prefix,
+        &mut fragments,
+    );
     fragments
 }
 
@@ -201,10 +206,7 @@ mod tests {
     #[test]
     fn test_parse_fragment_name_generation() {
         assert_eq!(
-            format!(
-                "PN_affrg_{}",
-                "affrg_Address1".trim_start_matches("affrg_")
-            ),
+            format!("PN_affrg_{}", "affrg_Address1".trim_start_matches("affrg_")),
             "PN_affrg_Address1"
         );
         assert_eq!(
@@ -219,8 +221,7 @@ mod tests {
     #[test]
     fn test_scan_fragments_with_real_directory() {
         // Test with the actual fragments directory if it exists
-        let fragments_dir =
-            Path::new("../profiles/ubs/aem/fragments");
+        let fragments_dir = Path::new("../profiles/ubs/aem/fragments");
         if !fragments_dir.is_dir() {
             return; // Skip if not running from expected working directory
         }
@@ -236,7 +237,10 @@ mod tests {
         assert!(
             address.is_some(),
             "Expected AddressType fragment; found types: {:?}",
-            fragments.iter().map(|f| &f.xsd_type_name).collect::<Vec<_>>()
+            fragments
+                .iter()
+                .map(|f| &f.xsd_type_name)
+                .collect::<Vec<_>>()
         );
         let address = address.unwrap();
         assert!(
