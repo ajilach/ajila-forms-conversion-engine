@@ -8,7 +8,7 @@
 //!
 //! 1. Take the first language as the base tree structure.
 //! 2. For each subsequent language, align its node list against the base using
-//!    LCS (longest common subsequence) on `structural_eq_ignore_text`.
+//!    LCS (longest common subsequence) on `node_matches_for_similarity`.
 //! 3. For matched nodes, recursively merge text content by combining translations.
 //! 4. Unmatched nodes are kept with only their source language populated.
 
@@ -257,10 +257,12 @@ fn lcs_table_with(
 /// Backtrack through the LCS table to produce aligned pairs.
 /// Returns a list of (Option<idx_in_a>, Option<idx_in_b>) pairs.
 /// Both Some → matched pair. Only one Some → unmatched node from that side.
-fn lcs_align(
+/// The `eq` predicate must be the same one used to build the `dp` table.
+fn lcs_align_with(
     a: &[StructuredNode],
     b: &[StructuredNode],
     dp: &[Vec<usize>],
+    eq: impl Fn(&StructuredNode, &StructuredNode) -> bool,
 ) -> Vec<(Option<usize>, Option<usize>)> {
     let mut result = Vec::new();
     let mut i = a.len();
@@ -269,7 +271,7 @@ fn lcs_align(
     // Backtrack to find the LCS alignment
     let mut matches = Vec::new();
     while i > 0 && j > 0 {
-        if a[i - 1].structural_eq_ignore_text(&b[j - 1]) {
+        if eq(&a[i - 1], &b[j - 1]) {
             matches.push((i - 1, j - 1));
             i -= 1;
             j -= 1;
@@ -331,14 +333,21 @@ enum AlignedEntry<'a> {
 }
 
 /// Merge two node lists from different languages using LCS alignment.
+///
+/// Uses a relaxed structural-similarity predicate (the same one used by the
+/// pre-check) so that nodes whose counts differ (GridLayouts with different
+/// element counts, Lists with different item counts, Tables with different row
+/// counts, and Radio/Select fields with different option counts) are still
+/// paired and merged via best-effort rather than being left as separate
+/// single-language nodes in the output.
 fn merge_node_lists(
     base: &[StructuredNode],
     base_lang: &str,
     other: &[StructuredNode],
     other_lang: &str,
 ) -> Vec<StructuredNode> {
-    let dp = lcs_table_with(base, other, StructuredNode::structural_eq_ignore_text);
-    let alignment = lcs_align(base, other, &dp);
+    let dp = lcs_table_with(base, other, node_matches_for_similarity);
+    let alignment = lcs_align_with(base, other, &dp, node_matches_for_similarity);
 
     let mut entries: Vec<AlignedEntry> = Vec::new();
     for (ai, bi) in &alignment {
@@ -619,27 +628,14 @@ fn merge_node(
         }
         (StructuredNode::Empty, StructuredNode::Empty) => StructuredNode::Empty,
         (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
-            let elements: Vec<GridLayoutElement> = a
-                .elements
-                .iter()
-                .zip(b.elements.iter())
-                .map(|(ea, eb)| GridLayoutElement {
-                    span: ea.span,
-                    node: merge_node(&ea.node, base_lang, &eb.node, other_lang),
-                })
-                .collect();
+            let elements = merge_grid_elements(&a.elements, base_lang, &b.elements, other_lang);
             StructuredNode::GridLayout(GridLayout {
                 columns: a.columns,
                 elements,
             })
         }
         (StructuredNode::List(a), StructuredNode::List(b)) => {
-            let items = a
-                .items
-                .iter()
-                .zip(b.items.iter())
-                .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
-                .collect();
+            let items = merge_list_items(&a.items, base_lang, &b.items, other_lang);
             StructuredNode::List(ListNode {
                 list_style: a.list_style,
                 items,
@@ -841,20 +837,145 @@ fn merge_field_type(
     }
 }
 
+/// Merge two `GridLayout` element vectors.
+///
+/// Paired elements (by position) are merged recursively. When counts differ,
+/// the unmatched tail from the longer side is appended as-is and a warning is
+/// logged, so no elements are silently dropped.
+fn merge_grid_elements(
+    base: &[GridLayoutElement],
+    base_lang: &str,
+    other: &[GridLayoutElement],
+    other_lang: &str,
+) -> Vec<GridLayoutElement> {
+    if base.len() != other.len() {
+        log::warn!(
+            "GridLayout element count mismatch when merging {} and {} translations: \
+             {} vs {} elements; unmatched elements will be preserved from the longer side",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut elements: Vec<GridLayoutElement> = base
+        .iter()
+        .zip(other.iter())
+        .map(|(ea, eb)| GridLayoutElement {
+            span: ea.span,
+            node: merge_node(&ea.node, base_lang, &eb.node, other_lang),
+        })
+        .collect();
+    elements.extend(base[paired..].iter().cloned());
+    elements.extend(other[paired..].iter().cloned());
+    elements
+}
+
+/// Merge two `List` item vectors.
+///
+/// Paired items (by position) are merged via `merge_inline_text`. When counts
+/// differ, the unmatched tail from the longer side is preserved as
+/// single-language translated nodes and a warning is logged.
+fn merge_list_items(
+    base: &[InlineText],
+    base_lang: &str,
+    other: &[InlineText],
+    other_lang: &str,
+) -> Vec<InlineText> {
+    if base.len() != other.len() {
+        log::warn!(
+            "List item count mismatch when merging {} and {} translations: \
+             {} vs {} items; unmatched items will be preserved from the longer side",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut items: Vec<InlineText> = base
+        .iter()
+        .zip(other.iter())
+        .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
+        .collect();
+    for ia in &base[paired..] {
+        let map = inline_text_to_text_map(ia, base_lang);
+        items.push(if map.is_empty() {
+            ia.clone()
+        } else {
+            InlineText(vec![InlineNode::TranslatedText(map)])
+        });
+    }
+    for ib in &other[paired..] {
+        let map = inline_text_to_text_map(ib, other_lang);
+        items.push(if map.is_empty() {
+            ib.clone()
+        } else {
+            InlineText(vec![InlineNode::TranslatedText(map)])
+        });
+    }
+    items
+}
+
 /// Merge two `NameValue` vectors by zipping and merging names.
+///
+/// When counts differ, unmatched entries from the longer side are preserved as
+/// single-language `TranslatableString::Translated` entries and a warning is
+/// logged — no options are silently dropped.
 fn merge_name_values(
     base: &[NameValue],
     base_lang: &str,
     other: &[NameValue],
     other_lang: &str,
 ) -> Vec<NameValue> {
-    base.iter()
+    if base.len() != other.len() {
+        log::warn!(
+            "Option count mismatch when merging {} and {} translations: \
+             {} vs {} options; unmatched options will be preserved as \
+             single-language entries",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut options: Vec<NameValue> = base
+        .iter()
         .zip(other.iter())
         .map(|(a, b)| NameValue {
             name: a.name.merge(base_lang, &b.name, other_lang),
             value: a.value.clone(),
         })
-        .collect()
+        .collect();
+    // Preserve unmatched base options with a single-language translated name.
+    for a in &base[paired..] {
+        let name = match &a.name {
+            TranslatableString::Plain(s) => {
+                TranslatableString::Translated(HashMap::from([(base_lang.to_string(), s.clone())]))
+            }
+            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
+        };
+        options.push(NameValue {
+            name,
+            value: a.value.clone(),
+        });
+    }
+    // Preserve unmatched other options with a single-language translated name.
+    for b in &other[paired..] {
+        let name = match &b.name {
+            TranslatableString::Plain(s) => {
+                TranslatableString::Translated(HashMap::from([(other_lang.to_string(), s.clone())]))
+            }
+            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
+        };
+        options.push(NameValue {
+            name,
+            value: b.value.clone(),
+        });
+    }
+    options
 }
 
 // ============================================================================
@@ -873,15 +994,31 @@ fn merge_table(
         TableHeader { cells }
     });
 
-    let rows: Vec<TableRow> = base
-        .rows
-        .iter()
-        .zip(other.rows.iter())
-        .map(|(r1, r2)| {
-            let cells = merge_node_lists(&r1.cells, base_lang, &r2.cells, other_lang);
-            TableRow { cells }
-        })
-        .collect();
+    let rows: Vec<TableRow> = {
+        if base.rows.len() != other.rows.len() {
+            log::warn!(
+                "Table row count mismatch when merging {} and {} translations: \
+                 {} vs {} rows; unmatched rows will be preserved from the longer side",
+                base_lang,
+                other_lang,
+                base.rows.len(),
+                other.rows.len()
+            );
+        }
+        let paired = base.rows.len().min(other.rows.len());
+        let mut rows: Vec<TableRow> = base
+            .rows
+            .iter()
+            .zip(other.rows.iter())
+            .map(|(r1, r2)| {
+                let cells = merge_node_lists(&r1.cells, base_lang, &r2.cells, other_lang);
+                TableRow { cells }
+            })
+            .collect();
+        rows.extend(base.rows[paired..].iter().cloned());
+        rows.extend(other.rows[paired..].iter().cloned());
+        rows
+    };
 
     let caption = merge_option(&base.caption, &other.caption, |a, b| {
         merge_inline_text(a, base_lang, b, other_lang)
@@ -898,7 +1035,8 @@ fn merge_table(
 mod tests {
     use super::*;
     use crate::structured::{
-        HeadingLevel, HeadingNode, InlineText, ParagraphNode, TableHeader, TableNode, TableRow,
+        HeadingLevel, HeadingNode, InlineText, ListNode, ParagraphNode, TableHeader, TableNode,
+        TableRow,
     };
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
@@ -1759,5 +1897,272 @@ mod tests {
             merged.header.is_some(),
             "Header from 'en' should not be dropped when base has None"
         );
+    }
+
+    // =========================================================================
+    // Regression tests for zip-truncation bug (asymmetric collection counts)
+    // =========================================================================
+
+    #[test]
+    fn test_merge_grid_layout_asymmetric_element_count_preserves_all() {
+        // DE has 4 grid elements, EN has 2.  Before the fix, merge_node used .zip()
+        // which silently drops the DE elements at index 2 and 3.
+        use crate::structured::{GridLayout, GridLayoutElement};
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::GridLayout(GridLayout {
+                columns: 12,
+                elements: vec![
+                    GridLayoutElement {
+                        span: 3,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("A"),
+                        }),
+                    },
+                    GridLayoutElement {
+                        span: 3,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("B"),
+                        }),
+                    },
+                    GridLayoutElement {
+                        span: 3,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("C"),
+                        }),
+                    },
+                    GridLayoutElement {
+                        span: 3,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("D"),
+                        }),
+                    },
+                ],
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::GridLayout(GridLayout {
+                columns: 12,
+                elements: vec![
+                    GridLayoutElement {
+                        span: 6,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("X"),
+                        }),
+                    },
+                    GridLayoutElement {
+                        span: 6,
+                        node: StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Y"),
+                        }),
+                    },
+                ],
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(
+            result.content.len(),
+            1,
+            "Asymmetric grids must be merged into a single node, got {}",
+            result.content.len()
+        );
+        if let StructuredNode::GridLayout(g) = &result.content[0] {
+            assert_eq!(
+                g.elements.len(),
+                4,
+                "All 4 DE elements must be preserved, got {}",
+                g.elements.len()
+            );
+        } else {
+            panic!("Expected GridLayout");
+        }
+    }
+
+    #[test]
+    fn test_merge_list_asymmetric_item_count_preserves_all() {
+        // DE has 3 list items, EN has 2.  Before the fix the third DE item was dropped.
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::List(ListNode {
+                list_style: crate::document::ListStyleType::Disc,
+                items: vec![
+                    InlineText::plain("Eins"),
+                    InlineText::plain("Zwei"),
+                    InlineText::plain("Drei"),
+                ],
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::List(ListNode {
+                list_style: crate::document::ListStyleType::Disc,
+                items: vec![InlineText::plain("One"), InlineText::plain("Two")],
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(
+            result.content.len(),
+            1,
+            "Asymmetric lists must be merged into a single node, got {}",
+            result.content.len()
+        );
+        if let StructuredNode::List(l) = &result.content[0] {
+            assert_eq!(
+                l.items.len(),
+                3,
+                "All 3 items must be preserved, got {}",
+                l.items.len()
+            );
+        } else {
+            panic!("Expected List");
+        }
+    }
+
+    #[test]
+    fn test_merge_radio_options_asymmetric_count_preserves_all() {
+        // DE has 3 radio options, EN has 2.  Before the fix the third option was dropped.
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Field(FieldNode {
+                name: "q".into(),
+                som_path: None,
+                label: None,
+                input_type: FieldType::Radio {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("Ja".into()),
+                            value: crate::structured::InputValue::Text("Y".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("Nein".into()),
+                            value: crate::structured::InputValue::Text("N".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("Enthaltung".into()),
+                            value: crate::structured::InputValue::Text("A".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::Field(FieldNode {
+                name: "q".into(),
+                som_path: None,
+                label: None,
+                input_type: FieldType::Radio {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("Yes".into()),
+                            value: crate::structured::InputValue::Text("Y".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("No".into()),
+                            value: crate::structured::InputValue::Text("N".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        if let StructuredNode::Field(f) = &result.content[0] {
+            if let FieldType::Radio { options } = &f.input_type {
+                assert_eq!(
+                    options.len(),
+                    3,
+                    "All 3 options must be preserved, got {}",
+                    options.len()
+                );
+                // The third option should carry DE text (no EN counterpart).
+                if let TranslatableString::Translated(map) = &options[2].name {
+                    assert_eq!(map.get("de").unwrap(), "Enthaltung");
+                    assert!(
+                        !map.contains_key("en"),
+                        "Third option should not have an EN translation"
+                    );
+                } else {
+                    panic!("Expected translated option name for third entry");
+                }
+            } else {
+                panic!("Expected Radio");
+            }
+        } else {
+            panic!("Expected Field");
+        }
+    }
+
+    #[test]
+    fn test_merge_table_row_asymmetric_count_preserves_all() {
+        // DE table has 3 rows, EN has 2.  Before the fix the third row was dropped.
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Table(TableNode {
+                header: None,
+                rows: vec![
+                    TableRow {
+                        cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("R1"),
+                        })],
+                    },
+                    TableRow {
+                        cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("R2"),
+                        })],
+                    },
+                    TableRow {
+                        cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("R3"),
+                        })],
+                    },
+                ],
+                caption: None,
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::Table(TableNode {
+                header: None,
+                rows: vec![
+                    TableRow {
+                        cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Row1"),
+                        })],
+                    },
+                    TableRow {
+                        cells: vec![StructuredNode::Paragraph(ParagraphNode {
+                            content: InlineText::plain("Row2"),
+                        })],
+                    },
+                ],
+                caption: None,
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(
+            result.content.len(),
+            1,
+            "Asymmetric tables must be merged into a single node, got {}",
+            result.content.len()
+        );
+        if let StructuredNode::Table(t) = &result.content[0] {
+            assert_eq!(
+                t.rows.len(),
+                3,
+                "All 3 rows must be preserved, got {}",
+                t.rows.len()
+            );
+        } else {
+            panic!("Expected Table");
+        }
     }
 }
