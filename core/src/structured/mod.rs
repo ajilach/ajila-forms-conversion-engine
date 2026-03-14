@@ -662,7 +662,11 @@ impl StructuredNode {
                     // languages, even when content structure differs.
                     a.condition == b.condition
                 } else {
-                    a.content.structural_cmp(&b.content, mode)
+                    // In Full mode (exhaustive state merging), two ConditionalNodes
+                    // are structurally equal only when both their condition AND their
+                    // content match.  Comparing only content would silently equate
+                    // Cond(fieldA, P) with Cond(fieldB, P) and drop one.
+                    a.condition == b.condition && a.content.structural_cmp(&b.content, mode)
                 }
             }
             (StructuredNode::Empty, StructuredNode::Empty) => true,

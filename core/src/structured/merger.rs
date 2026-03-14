@@ -555,9 +555,56 @@ impl RecursiveMerger {
             return inputs[0].nodes.clone();
         }
 
-        // For structural merging, we just take the first input's nodes
-        // since all inputs should be structurally similar at this point
-        inputs[0].nodes.clone()
+        // Fast path: if all inputs are structurally identical, return the first.
+        let reference = &inputs[0].nodes;
+        let all_equal = inputs[1..].iter().all(|input| {
+            input.nodes.len() == reference.len()
+                && input
+                    .nodes
+                    .iter()
+                    .zip(reference.iter())
+                    .all(|(a, b)| a.structural_eq(b))
+        });
+
+        if all_equal {
+            return reference.clone();
+        }
+
+        // Branches diverged despite sharing the same selection path.
+        // Produce a best-effort union: extract the common structural prefix and
+        // suffix, then collect all structurally unique divergent nodes from every
+        // branch so that no content is silently dropped.
+        log::warn!(
+            "Structurally divergent branches share the same selection path \
+             ({} branches); content from all branches will be preserved",
+            inputs.len()
+        );
+
+        let groups: Vec<DivergentGroup> = inputs
+            .iter()
+            .map(|input| (None, input.nodes.clone()))
+            .collect();
+
+        let (common_prefix, common_suffix, divergent_groups) =
+            Self::extract_common_prefix_and_suffix(groups);
+
+        // Union divergent content, skipping structural duplicates.
+        let mut unique_divergent: Vec<StructuredNode> = Vec::new();
+        for (_, nodes) in divergent_groups {
+            for node in nodes {
+                if !unique_divergent
+                    .iter()
+                    .any(|existing| existing.structural_eq(&node))
+                {
+                    unique_divergent.push(node);
+                }
+            }
+        }
+
+        let mut result = common_prefix;
+        result.extend(unique_divergent);
+        result.extend(common_suffix);
+        Self::merge_duplicate_conditionals(result)
     }
 
     /// Merge a single node across multiple inputs with the same structure.
@@ -764,8 +811,9 @@ mod tests {
 
     #[test]
     fn test_merge_same_selection_different_structure() {
-        // Two inputs with the same selection but different structure
-        // Should merge into one (taking the first input's structure)
+        // Two inputs with the same selection but different structure.
+        // Before the fix: only branch 1 was kept (first-branch-wins).
+        // After the fix: both branches are preserved via structural union.
         let nodes1 = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Version A"),
         })];
@@ -795,8 +843,10 @@ mod tests {
         let merger = RecursiveMerger::new(vec![input1, input2]);
         let result = merger.merge();
 
-        // Same selection → merged into one (no conditional since same selection)
-        assert_eq!(result.len(), 1);
+        // No common prefix — Paragraph ≠ Heading. Divergent union: both nodes.
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], StructuredNode::Paragraph(_)));
+        assert!(matches!(result[1], StructuredNode::Heading(_)));
     }
 
     #[test]
@@ -1000,5 +1050,78 @@ mod tests {
         let merger = RecursiveMerger::new(vec![]);
         let result = merger.merge();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_merge_same_selection_divergent_content_preserves_both_branches() {
+        // Regression test: when two inputs share the same selection path but produce
+        // structurally different content, the branch with identical selection used to
+        // silently drop all but the first branch. The fix must preserve both.
+        //
+        // Both inputs have selection=[RB_1], but:
+        //   Branch 1: [Paragraph("Common"), Paragraph("Branch A only")]
+        //   Branch 2: [Paragraph("Common"), Heading("Branch B only")]
+        //
+        // Expected output after fix:
+        //   [Paragraph("Common"), Paragraph("Branch A only"), Heading("Branch B only")]
+        //   (common prefix extracted, divergent union, no silent drop)
+        let nodes1 = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Common"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Branch A only"),
+            }),
+        ];
+        let nodes2 = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Common"),
+            }),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H1,
+                content: InlineText::plain("Branch B only"),
+            }),
+        ];
+
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes1,
+        );
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes2,
+        );
+
+        let merger = RecursiveMerger::new(vec![input1, input2]);
+        let result = merger.merge();
+
+        // Before the fix: result.len() == 1 (only branch A, branch B dropped).
+        // After the fix: 3 nodes — common prefix, branch A divergent, branch B divergent.
+        assert_eq!(
+            result.len(),
+            3,
+            "Both branches must be preserved, got {} node(s)",
+            result.len()
+        );
+        assert!(
+            matches!(result[0], StructuredNode::Paragraph(_)),
+            "First node must be the common paragraph"
+        );
+        assert!(
+            matches!(result[1], StructuredNode::Paragraph(_)),
+            "Second node must be branch A paragraph"
+        );
+        assert!(
+            matches!(result[2], StructuredNode::Heading(_)),
+            "Third node must be branch B heading"
+        );
     }
 }
