@@ -1,7 +1,6 @@
 use blueprint::{
-    FieldLabelMap, GraphSelection, GraphState, HtmlConfig, HtmlCustomStyles, PipelineConfig,
-    PipelineEvent, PipelineStep, XsdConfig, XsdProfile, build_field_label_map,
-    build_registered_types, extract_declared_names, generate_dot, parse_schema, run_pipeline,
+    FieldLabelMap, GraphSelection, GraphState, HtmlConfig, PipelineConfig, PipelineEvent,
+    PipelineStep, build_field_label_map, generate_dot, run_pipeline,
 };
 use clap::{Parser, ValueEnum};
 use log::info;
@@ -55,10 +54,9 @@ struct Args {
     #[arg(long)]
     xsd: bool,
 
-    /// Path to a profile directory containing per-output configs.
-    /// Expected layout: {profile}/aem/config.toml, {profile}/html/config.toml.
+    /// Name of an embedded profile containing per-output configs.
     #[arg(long)]
-    profile: Option<PathBuf>,
+    profile: Option<String>,
 
     /// Export a GraphViz DOT file showing the interactive decision flow
     #[arg(long)]
@@ -195,7 +193,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // HTML
     if args.html {
-        let custom_styles = load_html_config(args.profile.as_deref())?;
+        let profile_name = require_profile_name(args.profile.as_deref())?;
+        let custom_styles = Some(
+            blueprint::load_html_custom_styles(profile_name)
+                .map_err(|e| format!("Failed to load HTML profile: {e}"))?,
+        );
         let html_config = HtmlConfig {
             custom_styles,
             ..HtmlConfig::default()
@@ -208,16 +210,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // AEM package
     if args.aem {
-        match load_aem_config(args.profile.as_deref(), &output.merged.context) {
-            Ok(aem_config) => {
-                let aem_zip = blueprint::to_aem_package(&output.merged.content, &aem_config);
-                let aem_path = PathBuf::from(format!("{}_{}.zip", merged_name, suffix));
-                std::fs::write(&aem_path, aem_zip)
-                    .map_err(|e| format!("Failed to write AEM package: {}", e))?;
-                info!("AEM package: {}", aem_path.display());
-            }
-            Err(e) => info!("AEM export skipped: {}", e),
-        }
+        let profile_name = require_profile_name(args.profile.as_deref())?;
+        let aem_config = blueprint::load_aem_config(profile_name, &output.merged.context)
+            .map_err(|e| format!("Failed to load AEM profile: {e}"))?;
+        let aem_zip = blueprint::to_aem_package(&output.merged.content, &aem_config);
+        let aem_path = PathBuf::from(format!("{}_{}.zip", merged_name, suffix));
+        std::fs::write(&aem_path, aem_zip)
+            .map_err(|e| format!("Failed to write AEM package: {}", e))?;
+        info!("AEM package: {}", aem_path.display());
     }
 
     // GraphViz decision-flow DOT file
@@ -240,19 +240,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // XSD schema
     if args.xsd {
-        let mut xsd_config = load_xsd_config(args.profile.as_deref())?;
-        // Use the AEM master_language for XSD element naming when available
-        if let Some(base) = args.profile.as_deref() {
-            let aem_cfg_path = base.join("aem/config.toml");
-            if let Ok(toml_str) = std::fs::read_to_string(&aem_cfg_path)
-                && let Ok(aem_profile) = toml::from_str::<blueprint::AemProfile>(&toml_str)
-            {
-                xsd_config = apply_master_language_to_xsd(
-                    xsd_config,
-                    aem_profile.master_language.as_deref(),
-                );
-            }
-        }
+        let profile_name = require_profile_name(args.profile.as_deref())?;
+        let xsd_config = blueprint::load_xsd_config(profile_name)
+            .map_err(|e| format!("Failed to load XSD profile: {e}"))?;
         let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;
@@ -285,298 +275,43 @@ fn strip_language_suffix(name: &str) -> &str {
     name
 }
 
-fn apply_master_language_to_xsd(xsd_config: XsdConfig, master_language: Option<&str>) -> XsdConfig {
-    if let Some(lang) = master_language {
-        xsd_config.with_master_language(lang)
-    } else {
-        xsd_config
-    }
+// ─── Profile loading ──────────────────────────────────────────────────────────
+
+fn require_profile_name(profile_name: Option<&str>) -> Result<&str, Box<dyn std::error::Error>> {
+    profile_name.ok_or_else(|| "No profile specified (use --profile <name>)".into())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::apply_master_language_to_xsd;
-    use blueprint::{XsdConfig, XsdProfile};
+    use super::require_profile_name;
 
     #[test]
-    fn apply_master_language_sets_language_when_present() {
-        let cfg = XsdConfig::from_profile(XsdProfile::default());
-        let cfg = apply_master_language_to_xsd(cfg, Some("en"));
-        assert_eq!(cfg.master_language.as_deref(), Some("en"));
+    fn embedded_xsd_loader_succeeds_for_existing_profile() {
+        let config = blueprint::load_xsd_config("ubs").expect("load embedded xsd config");
+        assert!(
+            config.registered_types.contains_key("AddressType"),
+            "expected AddressType from embedded ubs xsd/types"
+        );
     }
 
     #[test]
-    fn apply_master_language_keeps_language_none_when_absent() {
-        let cfg = XsdConfig::from_profile(XsdProfile::default());
-        let cfg = apply_master_language_to_xsd(cfg, None);
-        assert_eq!(cfg.master_language.as_deref(), None);
-    }
-}
-
-// ─── Profile loading ──────────────────────────────────────────────────────────
-
-/// Load AEM config from the `aem/` subdirectory of a profile.
-///
-/// The directory must contain a `config.toml` file and may contain `*.xml`
-/// template files. Each `.xml` file's stem (e.g. `root` from `root.xml`)
-/// becomes a key in `component_templates`.
-fn load_aem_config(
-    profile_path: Option<&Path>,
-    ctx: &blueprint::Context,
-) -> Result<blueprint::AemConfig, Box<dyn std::error::Error>> {
-    let base = profile_path.ok_or("No profile directory specified (use --profile <dir>)")?;
-
-    let dir = base.join("aem");
-    if !dir.is_dir() {
-        return Err(format!(
-            "AEM profile directory '{}' not found inside profile '{}'",
-            dir.display(),
-            base.display()
-        )
-        .into());
+    fn require_profile_name_errors_when_missing() {
+        let err = require_profile_name(None).expect_err("expected missing profile error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("No profile specified"),
+            "unexpected error message: {msg}"
+        );
     }
 
-    // Read config.toml
-    let config_path = dir.join("config.toml");
-    let toml_str = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config.toml in '{}': {}", dir.display(), e))?;
-    let profile: blueprint::AemProfile = toml::from_str(&toml_str)
-        .map_err(|e| format!("Failed to parse config.toml in '{}': {}", dir.display(), e))?;
-
-    // Scan for *.xml template files
-    let mut templates = std::collections::HashMap::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| {
-        format!(
-            "Failed to read profile directory '{}': {}",
-            dir.display(),
-            e
-        )
-    })? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("xml")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("Failed to read template '{}': {}", path.display(), e))?;
-            templates.insert(stem.to_string(), content);
-        }
+    #[test]
+    fn embedded_html_loader_errors_when_profile_missing() {
+        let err = blueprint::load_html_custom_styles("missing-profile")
+            .expect_err("expected missing html profile error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("has no html/ subdirectory") || msg.contains("has no config.toml"),
+            "unexpected error message: {msg}"
+        );
     }
-
-    let mut config = blueprint::AemConfig::from_profile(&profile, templates, ctx)?;
-    if config.bind_to_xsd {
-        let xsd_config = load_xsd_config(Some(base))?;
-        let xsd_config =
-            apply_master_language_to_xsd(xsd_config, profile.master_language.as_deref());
-        config.xsd_config = Some(xsd_config);
-    }
-    if config.use_fragments {
-        let fragments_dir = dir.join("fragments");
-        if fragments_dir.is_dir() {
-            config.fragments =
-                blueprint::scan_fragments(&fragments_dir, &config.fragment_ref_prefix);
-            info!(
-                "Loaded {} fragment(s) from {}",
-                config.fragments.len(),
-                fragments_dir.display()
-            );
-        }
-    }
-    Ok(config)
-}
-
-/// Load HTML custom styles from the `html/` subdirectory of a profile.
-///
-/// Returns `None` if no profile is specified or the `html/` subdirectory
-/// does not exist within the profile.
-fn load_html_config(
-    profile_path: Option<&Path>,
-) -> Result<Option<HtmlCustomStyles>, Box<dyn std::error::Error>> {
-    let base = match profile_path {
-        Some(p) => p,
-        None => return Ok(None),
-    };
-
-    let dir = base.join("html");
-    if !dir.is_dir() {
-        return Ok(None);
-    }
-
-    // Read config.toml
-    let config_path = dir.join("config.toml");
-    if !config_path.exists() {
-        return Ok(None);
-    }
-
-    let toml_str = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config.toml in '{}': {}", dir.display(), e))?;
-    let profile: blueprint::HtmlProfile = toml::from_str(&toml_str)
-        .map_err(|e| format!("Failed to parse config.toml in '{}': {}", dir.display(), e))?;
-
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD;
-
-    // Resolve stylesheet
-    let stylesheet_css = match &profile.stylesheet {
-        Some(path) => {
-            let full = dir.join(path);
-            let css = std::fs::read_to_string(&full)
-                .map_err(|e| format!("Failed to read stylesheet '{}': {}", full.display(), e))?;
-            Some(css)
-        }
-        None => None,
-    };
-
-    // Resolve logo
-    let logo_data_uri = match &profile.logo {
-        Some(path) => {
-            let full = dir.join(path);
-            let bytes = std::fs::read(&full)
-                .map_err(|e| format!("Failed to read logo '{}': {}", full.display(), e))?;
-            let mime = mime_from_extension(&full);
-            let encoded = b64.encode(&bytes);
-            Some(format!("data:{};base64,{}", mime, encoded))
-        }
-        None => None,
-    };
-
-    // Resolve fonts
-    let mut font_faces = Vec::new();
-    for font_profile in &profile.fonts {
-        use blueprint::ResolvedFontVariant;
-
-        let mut variants = Vec::new();
-
-        let variant_specs: &[(
-            &Option<std::path::PathBuf>,
-            &str, // weight
-            &str, // style
-        )] = &[
-            (&font_profile.regular, "normal", "normal"),
-            (&font_profile.bold, "bold", "normal"),
-            (&font_profile.italic, "normal", "italic"),
-            (&font_profile.bold_italic, "bold", "italic"),
-        ];
-
-        for (opt_path, weight, style) in variant_specs {
-            if let Some(path) = opt_path {
-                let full = dir.join(path);
-                let bytes = std::fs::read(&full)
-                    .map_err(|e| format!("Failed to read font '{}': {}", full.display(), e))?;
-                let encoded = b64.encode(&bytes);
-                variants.push(ResolvedFontVariant {
-                    weight: weight.to_string(),
-                    style: style.to_string(),
-                    data_uri: format!("data:font/ttf;base64,{}", encoded),
-                });
-            }
-        }
-
-        font_faces.push(blueprint::ResolvedFontFamily {
-            family: font_profile.family.clone(),
-            variants,
-        });
-    }
-
-    Ok(Some(HtmlCustomStyles {
-        stylesheet_css,
-        logo_data_uri,
-        font_faces,
-    }))
-}
-
-/// Guess MIME type from file extension.
-fn mime_from_extension(path: &Path) -> &'static str {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("svg") => "image/svg+xml",
-        Some("webp") => "image/webp",
-        Some("ico") => "image/x-icon",
-        _ => "application/octet-stream",
-    }
-}
-
-/// Recursively collect all `*.xsd` files under `dir` into `out`.
-fn walk_xsd_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            walk_xsd_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("xsd") {
-            out.push(path);
-        }
-    }
-}
-
-/// Load XSD config from the `xsd/` subdirectory of a profile.
-///
-/// Reads `config.toml` for synonym mappings and auto-discovers all `*.xsd`
-/// files in the `types/` subdirectory as predefined type definitions.
-fn load_xsd_config(profile_path: Option<&Path>) -> Result<XsdConfig, Box<dyn std::error::Error>> {
-    let base = match profile_path {
-        Some(p) => p,
-        None => {
-            // No profile specified — return default (empty) config
-            return Ok(XsdConfig::from_profile(XsdProfile::default()));
-        }
-    };
-
-    let dir = base.join("xsd");
-
-    // Read config.toml (optional — missing file means empty profile)
-    let profile = {
-        let config_path = dir.join("config.toml");
-        if config_path.exists() {
-            let toml_str = std::fs::read_to_string(&config_path)
-                .map_err(|e| format!("Failed to read xsd/config.toml: {}", e))?;
-            toml::from_str::<XsdProfile>(&toml_str)
-                .map_err(|e| format!("Failed to parse xsd/config.toml: {}", e))?
-        } else {
-            XsdProfile::default()
-        }
-    };
-
-    // Auto-discover and index all *.xsd files in the types/ subdirectory.
-    // For each declared type/element name, record the schemaLocation path.
-    // Also parse complex types for auto-matching.
-    let mut type_to_file = std::collections::HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    let types_dir = dir.join("types");
-    if types_dir.is_dir() {
-        let mut xsd_files: Vec<PathBuf> = Vec::new();
-        walk_xsd_files(&types_dir, &mut xsd_files);
-        xsd_files.sort();
-        for xsd_path in &xsd_files {
-            // Relative path from types_dir (e.g. "AFFragments/Signature.xsd")
-            let rel = xsd_path
-                .strip_prefix(&types_dir)
-                .unwrap_or(xsd_path)
-                .to_string_lossy();
-            let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-            let content = std::fs::read_to_string(xsd_path)
-                .map_err(|e| format!("Failed to read type file '{}': {}", xsd_path.display(), e))?;
-            for name in extract_declared_names(&content) {
-                type_to_file.insert(name, schema_location.clone());
-            }
-            parsed_schemas.push((parse_schema(&content), schema_location));
-        }
-    }
-
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    Ok(XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    ))
 }

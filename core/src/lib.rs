@@ -75,6 +75,7 @@ pub mod graphviz;
 pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
+pub mod profiles;
 pub mod structured;
 pub mod util;
 pub mod xfa;
@@ -89,6 +90,12 @@ mod tests;
 
 // Context
 pub use context::Context;
+
+// Embedded profile loading
+pub use profiles::{
+    has_aem_config, has_html_config, has_xsd_config, list_profiles, load_aem_config,
+    load_aem_fragments, load_aem_profile, load_html_custom_styles, load_xsd_config,
+};
 
 // Flattened layer
 pub use flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
@@ -109,7 +116,7 @@ pub use structured::{
 // AEM generation
 pub use aem::{
     AemConfig, AemNode, AemProfile, ParsedFragment, collect_languages, convert_to_aem,
-    generate_aem_package, generate_aem_xml, scan_fragments,
+    generate_aem_package, generate_aem_xml, parse_fragment_content, scan_fragments,
 };
 
 // GraphViz decision-flow output
@@ -127,8 +134,10 @@ pub use html::{
 // XSD generation
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdNode,
-    XsdProfile, XsdRestriction, XsdSchema, build_registered_types, compute_bind_refs,
-    extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema, parse_schema,
+    XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
+    build_xsd_config_from_type_sources, compute_bind_refs, extract_declared_names,
+    collect_xsd_type_sources_from_dir, load_xsd_config_from_dir,
+    find_matching_types, generate_xsd, generate_xsd_schema, parse_schema,
 };
 
 // XFA layer
@@ -689,6 +698,14 @@ fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<Structur
         structured_outputs.push((state.selections.clone(), envelope.content));
     }
 
+    merge_structured_outputs(structured_outputs)
+}
+
+/// Merge per-state structured outputs into a single tree.
+pub(crate) fn merge_structured_outputs(
+    structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)>,
+) -> Vec<StructuredNode> {
+
     if structured_outputs.is_empty() {
         return Vec::new();
     }
@@ -721,6 +738,7 @@ pub fn to_html(content: &[StructuredNode], config: &HtmlConfig) -> String {
 
 /// Convert structured nodes to an AEM node tree and serialize to XML.
 pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
+    ensure_aem_bind_config(config);
     let config = resolve_aem_languages(content, config);
     let root = convert_to_aem(content, &config);
     generate_aem_xml(&root, &config)
@@ -735,9 +753,17 @@ pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
 ///
 /// Returns the raw ZIP bytes ready to be written to disk.
 pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8> {
+    ensure_aem_bind_config(config);
     let config = resolve_aem_languages(content, config);
     let root = convert_to_aem(content, &config);
     generate_aem_package(&root, &config, content)
+}
+
+fn ensure_aem_bind_config(config: &AemConfig) {
+    assert!(
+        !config.bind_to_xsd || config.xsd_config.is_some(),
+        "bind_to_xsd=true requires xsd_config to be set"
+    );
 }
 
 /// Detect available languages from content, applying them to a clone of the

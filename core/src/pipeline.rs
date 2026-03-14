@@ -51,8 +51,7 @@
 use std::sync::Arc;
 
 use crate::{
-    Blueprint, Context, DocumentEnvelope, Error, MergeInput, RecursiveMerger, RgbaImage,
-    Selection, StructuredNode,
+    Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection, StructuredNode,
 };
 
 // ============================================================================
@@ -382,11 +381,7 @@ pub fn run_pipeline(
 
         // Merge all states for this document into one envelope
         if !structured_outputs.is_empty() {
-            let merge_inputs: Vec<MergeInput> = structured_outputs
-                .into_iter()
-                .map(|(selections, nodes)| MergeInput::new(selections, nodes))
-                .collect();
-            let merged_content = RecursiveMerger::new(merge_inputs).merge();
+            let merged_content = crate::merge_structured_outputs(structured_outputs);
             all_envelopes.push(DocumentEnvelope {
                 context: context.clone(),
                 content: merged_content,

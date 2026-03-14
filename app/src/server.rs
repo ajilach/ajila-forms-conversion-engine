@@ -25,8 +25,7 @@ pub fn next_session_id() -> String {
 /// Return the names of all embedded profiles.
 #[server]
 pub async fn get_profiles() -> Result<Vec<String>, ServerFnError> {
-    use crate::profiles;
-    Ok(profiles::list_profiles())
+    Ok(blueprint::list_profiles())
 }
 
 #[server]

@@ -88,30 +88,48 @@ fn parse_fragment_xml(
 ) -> Option<ParsedFragment> {
     let content = std::fs::read_to_string(xml_path).ok()?;
 
+    // Build relative directory path and delegate parsing.
+    let rel_path = fragment_dir.strip_prefix(base_dir).ok()?;
+    let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+    parse_fragment_content(&rel_str, fragment_ref_prefix, &content)
+}
+
+/// Parse fragment metadata from `.content.xml` text and a known relative
+/// fragment directory path.
+///
+/// `relative_dir_path` is path-like (e.g. `"afforms_ubs_fragmentlib/affrg_Address1"`).
+pub fn parse_fragment_content(
+    relative_dir_path: &str,
+    fragment_ref_prefix: &str,
+    content: &str,
+) -> Option<ParsedFragment> {
+    let relative_dir_path = relative_dir_path.trim_matches('/');
+    if relative_dir_path.is_empty() {
+        return None;
+    }
+
     // Extract fragmentModelRoot (e.g. fragmentModelRoot="/AddressType")
-    let xsd_type_name = extract_attr_value(&content, "fragmentModelRoot")?;
+    let xsd_type_name = extract_attr_value(content, "fragmentModelRoot")?;
     let xsd_type_name = xsd_type_name.trim_start_matches('/').to_string();
     if xsd_type_name.is_empty() {
         return None;
     }
 
-    // Build fragRef from the relative directory path
-    let rel_path = fragment_dir.strip_prefix(base_dir).ok()?;
-    let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+    // Build fragRef from the relative directory path.
     let prefix = fragment_ref_prefix.trim_end_matches('/');
-    let frag_ref = format!("{}/{}", prefix, rel_str);
+    let frag_ref = format!("{}/{}", prefix, relative_dir_path);
 
-    // Directory name for identity
-    let dir_name = fragment_dir
-        .file_name()
-        .and_then(|n| n.to_str())
+    // Directory name for identity.
+    let dir_name = relative_dir_path
+        .rsplit('/')
+        .next()
         .unwrap_or("")
         .to_string();
 
     let name = format!("PN_affrg_{}", dir_name.trim_start_matches("affrg_"));
 
     // Extract all bindRef values to collect bound element names
-    let bound_elements = extract_bind_ref_elements(&content, &xsd_type_name);
+    let bound_elements = extract_bind_ref_elements(content, &xsd_type_name);
 
     Some(ParsedFragment {
         dir_name,

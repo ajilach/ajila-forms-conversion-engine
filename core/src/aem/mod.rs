@@ -29,7 +29,7 @@ pub mod template;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
-pub use fragment_parser::{ParsedFragment, scan_fragments};
+pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{collect_languages, generate_aem_package};
 pub use profile::AemProfile;
 pub use xml_writer::generate_aem_xml;

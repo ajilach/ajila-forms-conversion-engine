@@ -38,6 +38,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 // ============================================================================
 // XSD node types (intermediate representation)
@@ -271,6 +272,14 @@ pub struct XsdProfile {
     /// Defaults to `"../"`.
     #[serde(default = "default_schema_location_prefix")]
     pub schema_location_prefix: String,
+
+    /// Optional master language code used for element name resolution.
+    ///
+    /// When set (for example via `masterLanguage = "en"` in
+    /// `xsd/config.toml`), element names derived from multilingual labels
+    /// prefer that language.
+    #[serde(default)]
+    pub master_language: Option<String>,
 }
 
 /// Configuration for an element synonym mapping.
@@ -365,23 +374,25 @@ impl XsdConfig {
         registered_types: HashMap<String, RegisteredComplexType>,
         type_to_element_name: HashMap<String, String>,
     ) -> Self {
+        let master_language = profile.master_language.clone();
         Self {
             profile,
             type_to_file,
             registered_types,
             type_to_element_name,
-            master_language: None,
+            master_language,
         }
     }
 
     /// Build an `XsdConfig` from just a profile (empty type index and registry).
     pub fn from_profile(profile: XsdProfile) -> Self {
+        let master_language = profile.master_language.clone();
         Self {
             profile,
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
-            master_language: None,
+            master_language,
         }
     }
 
@@ -720,6 +731,128 @@ pub fn build_registered_types(
     }
 
     (resolved, type_to_element_name)
+}
+
+/// Build a full [`XsdConfig`] from pre-discovered type source files.
+///
+/// `sources` is a list of `(relative_path_from_types_dir, xsd_content)` pairs,
+/// for example `("AFFragments/Address.xsd", "<xs:schema ...")`.
+pub fn build_xsd_config_from_type_sources(
+    profile: XsdProfile,
+    sources: &[(String, String)],
+) -> XsdConfig {
+    let mut type_to_file = HashMap::new();
+    let mut parsed_schemas = Vec::new();
+
+    for (relative_path, content) in sources {
+        let schema_location = format!("{}{}", profile.schema_location_prefix, relative_path);
+        for name in extract_declared_names(content) {
+            type_to_file.insert(name, schema_location.clone());
+        }
+        parsed_schemas.push((parse_schema(content), schema_location));
+    }
+
+    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    )
+}
+
+/// Collect all `*.xsd` files recursively from `types_dir` and return
+/// `(relative_path_from_types_dir, file_content)` tuples.
+pub fn collect_xsd_type_sources_from_dir(
+    types_dir: &Path,
+) -> Result<Vec<(String, String)>, String> {
+    let mut xsd_files: Vec<PathBuf> = Vec::new();
+    walk_xsd_files(types_dir, &mut xsd_files);
+    xsd_files.sort();
+
+    let mut sources = Vec::new();
+    for xsd_path in &xsd_files {
+        let rel = xsd_path.strip_prefix(types_dir).unwrap_or(xsd_path);
+        let rel = path_to_forward_slash_string(rel);
+        let content = std::fs::read_to_string(xsd_path)
+            .map_err(|e| format!("Failed to read type file '{}': {}", xsd_path.display(), e))?;
+        sources.push((rel, content));
+    }
+
+    Ok(sources)
+}
+
+/// Load an [`XsdConfig`] from a filesystem `xsd/` directory.
+///
+/// The directory may contain an optional `config.toml` and an optional
+/// `types/` subtree with `*.xsd` files.
+pub fn load_xsd_config_from_dir(xsd_dir: &Path) -> Result<XsdConfig, String> {
+    let profile = {
+        let config_path = xsd_dir.join("config.toml");
+        if config_path.exists() {
+            let toml_str = std::fs::read_to_string(&config_path)
+                .map_err(|e| format!("Failed to read {}: {}", config_path.display(), e))?;
+            toml::from_str::<XsdProfile>(&toml_str)
+                .map_err(|e| format!("Failed to parse {}: {}", config_path.display(), e))?
+        } else {
+            XsdProfile::default()
+        }
+    };
+
+    let type_sources = {
+        let types_dir = xsd_dir.join("types");
+        if types_dir.is_dir() {
+            collect_xsd_type_sources_from_dir(&types_dir)?
+        } else {
+            Vec::new()
+        }
+    };
+
+    Ok(build_xsd_config_from_type_sources(profile, &type_sources))
+}
+
+fn walk_xsd_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_xsd_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("xsd") {
+            out.push(path);
+        }
+    }
+}
+
+fn path_to_forward_slash_string(path: &Path) -> String {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_to_forward_slash_string;
+
+    #[test]
+    fn path_to_forward_slash_string_uses_forward_slashes() {
+        let path = std::path::PathBuf::from("AFFragments")
+            .join("Nested")
+            .join("Address.xsd");
+        assert_eq!(
+            path_to_forward_slash_string(&path),
+            "AFFragments/Nested/Address.xsd"
+        );
+    }
+
+    #[test]
+    fn path_to_forward_slash_string_keeps_single_file_name() {
+        let path = std::path::PathBuf::from("Address.xsd");
+        assert_eq!(path_to_forward_slash_string(&path), "Address.xsd");
+    }
 }
 
 // ============================================================================

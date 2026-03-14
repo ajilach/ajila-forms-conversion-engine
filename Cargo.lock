@@ -588,6 +588,7 @@ dependencies = [
  "criterion",
  "image",
  "imageproc",
+ "include_dir",
  "log",
  "lopdf",
  "quick-xml",
@@ -615,12 +616,10 @@ dependencies = [
  "futures-util",
  "gloo-timers",
  "image",
- "include_dir",
  "js-sys",
  "serde",
  "serde_json",
  "tokio",
- "toml",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -629,13 +628,11 @@ dependencies = [
 name = "blueprint-cli"
 version = "0.1.0"
 dependencies = [
- "base64",
  "blueprint",
  "clap",
  "env_logger",
  "log",
  "serde_json",
- "toml",
 ]
 
 [[package]]

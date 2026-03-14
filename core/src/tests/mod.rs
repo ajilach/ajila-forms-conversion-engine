@@ -13637,23 +13637,26 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
+    // Should have 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    let sig_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Signature"))
+        .collect();
     assert_eq!(
-        fragment_refs.len(),
+        sig_frags.len(),
         2,
-        "Expected exactly 2 fragment nodes, found {}.\nFragments: {:?}",
-        fragment_refs.len(),
+        "Expected exactly 2 Signature fragment nodes, found {}.\nAll fragments: {:?}",
+        sig_frags.len(),
         fragment_refs
     );
 
-    // Both fragments should reference Signature
-    for (i, (frag_ref, _)) in fragment_refs.iter().enumerate() {
-        assert!(
-            frag_ref.contains("Signature"),
-            "Fragment {} should reference a Signature fragment. Got: {}",
-            i,
-            frag_ref
-        );
-    }
+    assert_eq!(
+        fragment_refs.len(),
+        4,
+        "Expected exactly 4 fragment nodes (2 Signature + 1 Address + 1 IndividualBasic), found {}.\nFragments: {:?}",
+        fragment_refs.len(),
+        fragment_refs
+    );
 }
 
 // ============================================================================
@@ -15299,6 +15302,43 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
 }
 
 #[test]
+fn test_xsd_profile_master_language_from_toml_is_applied() {
+    use crate::xsd::{XsdConfig, XsdProfile};
+
+    let toml_str = r#"
+schemaLocationPrefix = "../"
+masterLanguage = "en"
+"#;
+
+    let profile: XsdProfile = toml::from_str(toml_str).expect("parse xsd profile");
+    let config = XsdConfig::from_profile(profile);
+
+    assert_eq!(config.master_language.as_deref(), Some("en"));
+}
+
+#[test]
+fn test_xsd_profile_master_language_defaults_to_none() {
+    use crate::xsd::{XsdConfig, XsdProfile};
+
+    let profile = XsdProfile::default();
+    let config = XsdConfig::from_profile(profile);
+
+    assert_eq!(config.master_language.as_deref(), None);
+}
+
+#[test]
+#[should_panic(expected = "bind_to_xsd=true requires xsd_config to be set")]
+fn test_to_aem_panics_when_bind_to_xsd_without_xsd_config() {
+    use crate::aem::AemConfig;
+
+    let mut cfg = AemConfig::test_default("AAAI");
+    cfg.bind_to_xsd = true;
+    cfg.xsd_config = None;
+
+    let _ = crate::to_aem(&[], &cfg);
+}
+
+#[test]
 fn test_aaai_section_bind_ref_client_not_under_signature() {
     // The heading "Client" appears both as an H2 section (directly under
     // the main H1) and as a sub-heading under "Signature(s)".
@@ -15327,5 +15367,95 @@ fn test_aaai_section_bind_ref_client_not_under_signature() {
         client_path.ends_with("/client"),
         "Client section bind_ref should end with /client. Got: {}",
         client_path
+    );
+}
+
+#[test]
+fn test_aaai_has_address_and_individual_fragments() {
+    // AAAI has an "Authorized Representative(s)" section under "Client"
+    // whose fields span two XSD types: IndividualBasicType (LastName,
+    // FirstName) and AddressType (Street, StreetNumber, PostalCode, City,
+    // Country).  The fragment replacement logic should insert Fragment
+    // nodes for each matched type as children of the wrapping panel,
+    // rather than replacing the wrapping panel itself.
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+    use crate::Blueprint;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_EN.pdf"))
+        .expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+
+    // Should have at least 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    let address_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Address"))
+        .collect();
+    let individual_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("IndividualBasic"))
+        .collect();
+
+    assert!(
+        !address_frags.is_empty(),
+        "Should have at least one Address fragment. All fragments: {:?}",
+        fragment_refs
+    );
+    assert!(
+        !individual_frags.is_empty(),
+        "Should have at least one IndividualBasic fragment. All fragments: {:?}",
+        fragment_refs
+    );
+
+    // The Address fragment bind_ref should contain "authorized_representative_s/Address"
+    for (_, bind_ref) in &address_frags {
+        let br = bind_ref.as_deref().unwrap_or("");
+        assert!(
+            br.contains("/authorized_representative_s/Address"),
+            "Address fragment bind_ref should include authorized_representative_s/Address. Got: {}",
+            br
+        );
+    }
+
+    // The IndividualBasic fragment bind_ref should contain "authorized_representative_s/IndividualBasic"
+    for (_, bind_ref) in &individual_frags {
+        let br = bind_ref.as_deref().unwrap_or("");
+        assert!(
+            br.contains("/authorized_representative_s/IndividualBasic"),
+            "IndividualBasic fragment bind_ref should include authorized_representative_s/IndividualBasic. Got: {}",
+            br
+        );
+    }
+
+    // The Client panel should still exist (not be replaced)
+    let mut client_panel_exists = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Panel { bind_ref: Some(br), .. } = node {
+            if br.ends_with("/client") {
+                client_panel_exists = true;
+            }
+        }
+    });
+    assert!(
+        client_panel_exists,
+        "Client panel should still exist and not be replaced by a fragment"
     );
 }

@@ -4,8 +4,6 @@ mod models;
 mod pipeline;
 mod platform;
 mod processing;
-#[cfg(not(target_arch = "wasm32"))]
-mod profiles;
 #[cfg(any(feature = "web", feature = "server"))]
 mod server;
 
@@ -46,7 +44,7 @@ fn App() -> Element {
         }
         #[cfg(feature = "desktop")]
         {
-            return crate::profiles::list_profiles();
+            return blueprint::list_profiles();
         }
         #[allow(unreachable_code)]
         Vec::<String>::new()
