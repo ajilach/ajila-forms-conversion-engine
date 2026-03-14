@@ -332,6 +332,218 @@ enum AlignedEntry<'a> {
     OtherOnly(StructuredNode),
 }
 
+fn localize_inline_node(node: &InlineNode, lang: &str) -> InlineNode {
+    match node {
+        InlineNode::Text(text) => {
+            InlineNode::TranslatedText(HashMap::from([(lang.to_string(), text.clone())]))
+        }
+        InlineNode::TranslatedText(map) => InlineNode::TranslatedText(map.clone()),
+        InlineNode::Link(link) => InlineNode::Link(crate::structured::LinkNode {
+            href: link.href.clone(),
+            content: localize_inline_text(&link.content, lang),
+        }),
+        InlineNode::Strong(inner) => {
+            InlineNode::Strong(Box::new(localize_inline_node(inner, lang)))
+        }
+        InlineNode::Emphasis(inner) => {
+            InlineNode::Emphasis(Box::new(localize_inline_node(inner, lang)))
+        }
+    }
+}
+
+fn localize_inline_text(text: &InlineText, lang: &str) -> InlineText {
+    InlineText(
+        text.0
+            .iter()
+            .map(|node| localize_inline_node(node, lang))
+            .collect(),
+    )
+}
+
+fn localize_translatable_string(value: &TranslatableString, lang: &str) -> TranslatableString {
+    match value {
+        TranslatableString::Plain(text) => {
+            TranslatableString::Translated(HashMap::from([(lang.to_string(), text.clone())]))
+        }
+        TranslatableString::Translated(map) => TranslatableString::Translated(map.clone()),
+    }
+}
+
+fn localize_field_type(field_type: &FieldType, lang: &str) -> FieldType {
+    match field_type {
+        FieldType::Radio { options } => FieldType::Radio {
+            options: options
+                .iter()
+                .map(|option| NameValue {
+                    name: localize_translatable_string(&option.name, lang),
+                    value: option.value.clone(),
+                })
+                .collect(),
+        },
+        FieldType::Select { options } => FieldType::Select {
+            options: options
+                .iter()
+                .map(|option| NameValue {
+                    name: localize_translatable_string(&option.name, lang),
+                    value: option.value.clone(),
+                })
+                .collect(),
+        },
+        _ => field_type.clone(),
+    }
+}
+
+fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode {
+    match node {
+        StructuredNode::Heading(heading) => StructuredNode::Heading(HeadingNode {
+            level: heading.level,
+            content: localize_inline_text(&heading.content, lang),
+        }),
+        StructuredNode::Paragraph(paragraph) => StructuredNode::Paragraph(ParagraphNode {
+            content: localize_inline_text(&paragraph.content, lang),
+        }),
+        StructuredNode::Image(image) => StructuredNode::Image(image.clone()),
+        StructuredNode::Table(table) => StructuredNode::Table(TableNode {
+            header: table.header.as_ref().map(|header| TableHeader {
+                cells: header
+                    .cells
+                    .iter()
+                    .map(|cell| localize_structured_node(cell, lang))
+                    .collect(),
+            }),
+            rows: table
+                .rows
+                .iter()
+                .map(|row| TableRow {
+                    cells: row
+                        .cells
+                        .iter()
+                        .map(|cell| localize_structured_node(cell, lang))
+                        .collect(),
+                })
+                .collect(),
+            caption: table
+                .caption
+                .as_ref()
+                .map(|caption| localize_inline_text(caption, lang)),
+        }),
+        StructuredNode::Field(field) => StructuredNode::Field(FieldNode {
+            name: field.name.clone(),
+            som_path: field.som_path.clone(),
+            label: field
+                .label
+                .as_ref()
+                .map(|label| localize_inline_text(label, lang)),
+            input_type: localize_field_type(&field.input_type, lang),
+            value: field.value.clone(),
+            placeholder: field
+                .placeholder
+                .as_ref()
+                .map(|placeholder| localize_translatable_string(placeholder, lang)),
+        }),
+        StructuredNode::Repeatable(repeatable) => StructuredNode::Repeatable(RepeatableNode {
+            item: Box::new(localize_structured_node(&repeatable.item, lang)),
+            min_occurrences: repeatable.min_occurrences,
+            max_occurrences: repeatable.max_occurrences,
+        }),
+        StructuredNode::Group(group) => StructuredNode::Group(GroupNode {
+            children: group
+                .children
+                .iter()
+                .map(|child| localize_structured_node(child, lang))
+                .collect(),
+        }),
+        StructuredNode::Conditional(conditional) => StructuredNode::Conditional(ConditionalNode {
+            condition: conditional.condition.clone(),
+            content: Box::new(localize_structured_node(&conditional.content, lang)),
+        }),
+        StructuredNode::Empty => StructuredNode::Empty,
+        StructuredNode::GridLayout(grid) => StructuredNode::GridLayout(GridLayout {
+            columns: grid.columns,
+            elements: grid
+                .elements
+                .iter()
+                .map(|element| GridLayoutElement {
+                    span: element.span,
+                    node: localize_structured_node(&element.node, lang),
+                })
+                .collect(),
+        }),
+        StructuredNode::List(list) => StructuredNode::List(ListNode {
+            list_style: list.list_style,
+            items: list
+                .items
+                .iter()
+                .map(|item| localize_inline_text(item, lang))
+                .collect(),
+        }),
+    }
+}
+
+fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
+    match node {
+        InlineNode::TranslatedText(map) => {
+            for lang in map.keys() {
+                if !langs.contains(lang) {
+                    langs.push(lang.clone());
+                }
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.content.0 {
+                collect_inline_languages(child, langs);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_inline_languages(inner, langs);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+fn collect_inline_text_languages(text: &InlineText) -> Vec<String> {
+    let mut langs = Vec::new();
+    for node in &text.0 {
+        collect_inline_languages(node, &mut langs);
+    }
+    langs
+}
+
+fn prepend_orphan_text_to_matched_paragraph(
+    entry: &mut AlignedEntry,
+    text: &str,
+    lang: &str,
+    base_lang: &str,
+    other_lang: &str,
+) -> bool {
+    if let AlignedEntry::Matched {
+        node: StructuredNode::Paragraph(para),
+        ..
+    } = entry
+    {
+        if let Some(InlineNode::TranslatedText(map)) = para.content.0.first_mut() {
+            map.entry(base_lang.to_string()).or_default();
+            map.entry(other_lang.to_string()).or_default();
+            let existing = map.entry(lang.to_string()).or_default();
+            *existing = format!("{}{}", text, existing);
+            return true;
+        }
+
+        let mut map: HashMap<String, String> = collect_inline_text_languages(&para.content)
+            .into_iter()
+            .map(|existing_lang| (existing_lang, String::new()))
+            .collect();
+        map.entry(base_lang.to_string()).or_default();
+        map.entry(other_lang.to_string()).or_default();
+        map.insert(lang.to_string(), text.to_string());
+
+        para.content.0.insert(0, InlineNode::TranslatedText(map));
+        return true;
+    }
+
+    false
+}
+
 /// Merge two node lists from different languages using LCS alignment.
 ///
 /// Uses a relaxed structural-similarity predicate (the same one used by the
@@ -377,8 +589,8 @@ fn merge_node_lists(
         .into_iter()
         .map(|e| match e {
             AlignedEntry::Matched { node, .. } => node,
-            AlignedEntry::BaseOnly(node) => node,
-            AlignedEntry::OtherOnly(node) => node,
+            AlignedEntry::BaseOnly(node) => localize_structured_node(&node, base_lang),
+            AlignedEntry::OtherOnly(node) => localize_structured_node(&node, other_lang),
         })
         .collect()
 }
@@ -455,23 +667,18 @@ fn consolidate_orphan_paragraphs(
 
         if let Some(j) = target {
             prepend_ops.push((i, j, orphan_text, orphan_lang.to_string()));
-            absorbed[i] = true;
         }
     }
 
-    for (_, target, text, lang) in prepend_ops {
-        if let AlignedEntry::Matched {
-            node: StructuredNode::Paragraph(para),
-            ..
-        } = &mut entries[target]
-        {
-            for inline in &mut para.content.0 {
-                if let InlineNode::TranslatedText(map) = inline {
-                    let entry = map.entry(lang.clone()).or_default();
-                    *entry = format!("{}{}", text, entry);
-                    break;
-                }
-            }
+    for (orphan_idx, target, text, lang) in prepend_ops.into_iter().rev() {
+        if prepend_orphan_text_to_matched_paragraph(
+            &mut entries[target],
+            &text,
+            &lang,
+            base_lang,
+            other_lang,
+        ) {
+            absorbed[orphan_idx] = true;
         }
     }
 
@@ -2163,6 +2370,209 @@ mod tests {
             );
         } else {
             panic!("Expected Table");
+        }
+    }
+
+    #[test]
+    fn test_merge_unmatched_nodes_are_tagged_with_source_language() {
+        let de = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Gemeinsam"),
+                }),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Nur Deutsch"),
+                }),
+            ],
+        );
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Shared"),
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(result.content.len(), 2);
+
+        if let StructuredNode::Heading(heading) = &result.content[1] {
+            assert_eq!(heading.content.0.len(), 1);
+            if let InlineNode::TranslatedText(map) = &heading.content.0[0] {
+                assert_eq!(map.get("de").unwrap(), "Nur Deutsch");
+                assert!(
+                    !map.contains_key("en"),
+                    "Unmatched DE-only heading should not gain EN text"
+                );
+            } else {
+                panic!("Expected unmatched heading to be localized as TranslatedText");
+            }
+        } else {
+            panic!("Expected unmatched node to remain a Heading");
+        }
+    }
+
+    #[test]
+    fn test_orphan_paragraph_absorption_does_not_drop_formatted_content() {
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                    "Basis".to_string(),
+                )))]),
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Intro"),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                        "Other".to_string(),
+                    )))]),
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(
+            result.content.len(),
+            1,
+            "The orphan EN paragraph should be absorbed into the matched paragraph"
+        );
+
+        if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
+            assert_eq!(paragraph.content.plain_text_in("de"), "Basis");
+            assert_eq!(paragraph.content.plain_text_in("en"), "IntroOther");
+            assert!(matches!(
+                paragraph.content.0[0],
+                InlineNode::TranslatedText(_)
+            ));
+            assert!(matches!(paragraph.content.0[1], InlineNode::Strong(_)));
+        } else {
+            panic!("Expected merged paragraph");
+        }
+    }
+
+    #[test]
+    fn test_orphan_paragraph_absorption_preserves_start_order_with_formatted_prefix() {
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText(vec![
+                    InlineNode::Strong(Box::new(InlineNode::Text("Basis".to_string()))),
+                    InlineNode::Text(" Ende".to_string()),
+                ]),
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Intro "),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText(vec![
+                        InlineNode::Strong(Box::new(InlineNode::Text("Other".to_string()))),
+                        InlineNode::Text(" tail".to_string()),
+                    ]),
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(result.content.len(), 1);
+
+        if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
+            assert_eq!(paragraph.content.plain_text_in("de"), "Basis Ende");
+            assert_eq!(
+                paragraph.content.plain_text_in("en"),
+                "Intro Other tail",
+                "Absorbed orphan text must stay at the beginning of the rendered paragraph"
+            );
+            assert!(matches!(
+                paragraph.content.0[0],
+                InlineNode::TranslatedText(_)
+            ));
+            assert!(matches!(paragraph.content.0[1], InlineNode::Strong(_)));
+        } else {
+            panic!("Expected merged paragraph");
+        }
+    }
+
+    #[test]
+    fn test_orphan_paragraph_absorption_preserves_multiple_orphan_order() {
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Basis"),
+            })],
+        );
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("First "),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Second "),
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Other"),
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+        assert_eq!(result.content.len(), 1);
+
+        if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
+            assert_eq!(paragraph.content.plain_text_in("en"), "First Second Other");
+        } else {
+            panic!("Expected merged paragraph");
+        }
+    }
+
+    #[test]
+    fn test_prepend_orphan_seeds_missing_language_keys_on_existing_prefix_node() {
+        let base = StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::empty(),
+        });
+        let other = StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText::empty(),
+        });
+
+        let mut entry = AlignedEntry::Matched {
+            node: StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText(vec![InlineNode::TranslatedText(HashMap::from([(
+                    "en".to_string(),
+                    "Other".to_string(),
+                )]))]),
+            }),
+            base: &base,
+            other: &other,
+        };
+
+        assert!(prepend_orphan_text_to_matched_paragraph(
+            &mut entry, "Intro ", "en", "de", "en",
+        ));
+
+        if let AlignedEntry::Matched {
+            node: StructuredNode::Paragraph(paragraph),
+            ..
+        } = &entry
+        {
+            assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
+            assert_eq!(
+                paragraph.content.plain_text_in("de"),
+                "",
+                "Missing DE key should be seeded to avoid falling back to EN text"
+            );
+        } else {
+            panic!("Expected matched paragraph entry");
         }
     }
 }
