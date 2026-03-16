@@ -1284,12 +1284,19 @@ impl XfaForm {
             .resolve_node(radio_button_path, None)
             .ok_or_else(|| format!("Could not resolve radio button: {}", radio_button_path))?;
 
-        let button_name = resolved_path.name();
-
-        let button_value = button_name
-            .strip_prefix("RB_")
-            .or_else(|| button_name.rsplit('_').next())
-            .unwrap_or(button_name);
+        // Determine the value this radio button contributes to its exclGroup.
+        // Per XFA 3.3 §4: the on-value comes from the <items> element.
+        // Fall back to deriving from the field name only if no <items> exist.
+        let button_value = Self::find_xfa_node_by_path(&self.nodes, &resolved_path)
+            .and_then(|node| node.extract_item_values().0)
+            .unwrap_or_else(|| {
+                let button_name = resolved_path.name();
+                button_name
+                    .strip_prefix("RB_")
+                    .or_else(|| button_name.rsplit('_').next())
+                    .unwrap_or(button_name)
+                    .to_string()
+            });
 
         // Capture the previous value before updating for change event context.
         let _prev_value = self
@@ -1314,7 +1321,7 @@ impl XfaForm {
                 .unwrap_or_default();
 
             self.script_engine
-                .update_field_value(excl_path, button_value);
+                .update_field_value(excl_path, &button_value);
 
             if let Some(excl_node) = Self::find_xfa_node_by_path_mut(&mut self.nodes, excl_path) {
                 excl_node
@@ -1515,6 +1522,19 @@ impl XfaForm {
             let target_name = parts[idx];
 
             for node in nodes {
+                // Skip PageSet nodes and the XDP "form" data tree — they
+                // contain duplicates of template subform names with different
+                // (or default) presence values that would produce false
+                // positives.
+                if matches!(&node.kind, XfaNodeKind::PageSet) {
+                    continue;
+                }
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                    if tag_name == "form" {
+                        continue;
+                    }
+                }
+
                 let node_presence = node.get_presence();
                 let is_hidden = node_presence.should_skip_layout();
 
