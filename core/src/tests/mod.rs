@@ -9295,6 +9295,199 @@ fn test_aacj_dropdown_conditional_field_visibility() {
     assert_has("GbR", &["Name des Vertretungsberechtigten"]);
 }
 
+fn build_aaam_default_merged() -> crate::DocumentEnvelope {
+    use crate::structured;
+
+    let make_default_envelope = |file: &str, lang: &str| {
+        let mut nodes = parse_xfa_from_pdf(input_path(file));
+        let flattened = flatten_with_scripts(&mut nodes)
+            .unwrap_or_else(|e| panic!("Failed to flatten {file}: {e}"));
+        let mut doc = crate::Document::from_flattened(&flattened);
+        crate::run_analysis_pipeline(&mut doc);
+        crate::structured::convert_with_context(&doc, crate::Context::with_language(lang))
+    };
+
+    let de = make_default_envelope("AAAM_019_DE.pdf", "de");
+    let en = make_default_envelope("AAAM_019_EN.pdf", "en");
+    let sp = make_default_envelope("AAAM_019_SP.pdf", "sp");
+    structured::merge_translations(vec![de, en, sp]).expect("Failed to merge AAAM DE/EN/SP")
+}
+
+fn contains_lang(ts: &crate::TranslatableString, lang: &str, needle: &str) -> bool {
+    ts.get(lang).map(|s| s.contains(needle)).unwrap_or(false)
+}
+
+#[test]
+fn test_aaam_exhaustive_state_counts_consistent_across_languages() {
+    use crate::xfa::scripting::XfaForm;
+
+    let mut counts = Vec::new();
+    for file in ["AAAM_019_DE.pdf", "AAAM_019_EN.pdf", "AAAM_019_SP.pdf"] {
+        let nodes = parse_xfa_from_pdf(input_path(file));
+        let xfa_bytes = std::fs::read(input_path(file)).unwrap();
+        let mut form = XfaForm::new(nodes).expect("form");
+        let states = crate::exhaustive::collect_states(&mut form, &xfa_bytes).expect("collect");
+        counts.push((file, states.len()));
+    }
+
+    // All three languages should produce the same number of states
+    // (3 radio options × 2 dropdown visibility = 6 states each)
+    for (file, count) in &counts {
+        assert_eq!(*count, 6, "{file} should produce 6 exhaustive states, got {count}");
+    }
+    assert_eq!(
+        counts[0].1, counts[1].1,
+        "DE and EN state counts should match"
+    );
+    assert_eq!(
+        counts[1].1, counts[2].1,
+        "EN and SP state counts should match"
+    );
+}
+
+#[test]
+fn test_aaam_multilingual_merge_radio_options_de_en_sp() {
+    use crate::structured::FieldType;
+
+    let merged = build_aaam_default_merged();
+
+    let radio_field = collect_radio_fields(&merged.content)
+        .into_iter()
+        .find(|f| {
+            let FieldType::Radio { options } = &f.input_type else {
+                return false;
+            };
+
+            let has_first = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "Kontoinhaber")
+                    && contains_lang(&o.name, "en", "Account holder")
+                    && contains_lang(&o.name, "sp", "Titular de la cuenta")
+            });
+
+            let has_second = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "wirtschaftlich Berechtigter")
+                    && contains_lang(&o.name, "en", "beneficial Owner")
+                    && contains_lang(&o.name, "sp", "beneficiario económico")
+            });
+
+            let has_third = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "ohne Custody")
+                    && contains_lang(&o.name, "en", "without Custody")
+                    && contains_lang(&o.name, "sp", "sin Custody")
+            });
+
+            has_first && has_second && has_third
+        })
+        .expect("Expected merged AAAM radio group with DE/EN/SP option translations");
+
+    let FieldType::Radio { options } = &radio_field.input_type else {
+        panic!("Expected radio field in merged AAAM tree");
+    };
+
+    assert!(
+        options.len() >= 3,
+        "Expected at least 3 options in AAAM radio group, got {}",
+        options.len()
+    );
+
+    let dropdown = collect_fields(&merged.content)
+        .into_iter()
+        .find(|f| {
+            let FieldType::Select { options } = &f.input_type else {
+                return false;
+            };
+            let has_private = options.iter().any(|o| o.name.contains("Private Person"));
+            let has_minor = options.iter().any(|o| o.name.contains("Minderjährige"));
+            has_private && has_minor
+        })
+        .expect("Expected merged AAAM dropdown with 'Private Person' and 'Minderjährige'");
+
+    let FieldType::Select { options } = &dropdown.input_type else {
+        panic!("Expected select field");
+    };
+
+    assert!(
+        options.iter().any(|o| o.name.contains("Private Person")),
+        "Merged dropdown should contain 'Private Person'"
+    );
+    assert!(
+        options.iter().any(|o| o.name.contains("Minderjährige")),
+        "Merged dropdown should contain 'Minderjährige'"
+    );
+}
+
+#[test]
+fn test_aaam_multilingual_merge_formular_adressat_visible_only_for_first_radio_option() {
+    use crate::structured::FieldType;
+
+    let merged = build_aaam_default_merged();
+
+    let radio_field = collect_radio_fields(&merged.content)
+        .into_iter()
+        .find(|f| {
+            let FieldType::Radio { options } = &f.input_type else {
+                return false;
+            };
+            let has_first = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "Kontoinhaber")
+                    && contains_lang(&o.name, "en", "Account holder")
+                    && contains_lang(&o.name, "sp", "Titular de la cuenta")
+            });
+            let has_second = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "wirtschaftlich Berechtigter")
+                    && contains_lang(&o.name, "en", "beneficial Owner")
+                    && contains_lang(&o.name, "sp", "beneficiario económico")
+            });
+            let has_third = options.iter().any(|o| {
+                contains_lang(&o.name, "de", "ohne Custody")
+                    && contains_lang(&o.name, "en", "without Custody")
+                    && contains_lang(&o.name, "sp", "sin Custody")
+            });
+            has_first && has_second && has_third
+        })
+        .expect("Expected merged AAAM radio group with DE/EN/SP option translations");
+
+    let dropdown = collect_fields(&merged.content)
+        .into_iter()
+        .find(|f| {
+            let FieldType::Select { options } = &f.input_type else {
+                return false;
+            };
+            options.iter().any(|o| o.name.contains("Private Person"))
+                && options.iter().any(|o| o.name.contains("Minderjährige"))
+        })
+        .expect("Expected merged AAAM dropdown with 'Private Person' and 'Minderjährige'");
+
+    let FieldType::Radio { options } = &radio_field.input_type else {
+        panic!("Expected radio field");
+    };
+    assert!(
+        !options.is_empty(),
+        "AAAM radio group should have at least one option"
+    );
+
+    let selected_text = match &radio_field.value {
+        Some(crate::structured::InputValue::Text(v)) => v.as_str(),
+        other => panic!(
+            "Expected AAAM radio field value to be text in merged default state, got {:?}",
+            other
+        ),
+    };
+    assert!(
+        selected_text.contains("Kontoinhaber") || selected_text.contains("Account holder") || selected_text.contains("Titular de la cuenta"),
+        "Expected merged default selected AAAM radio text to match first option semantics, got '{}'",
+        selected_text
+    );
+
+    let FieldType::Select { options: dropdown_options } = &dropdown.input_type else {
+        panic!("Expected select field");
+    };
+    assert!(
+        dropdown_options.len() >= 2,
+        "Expected 'Formular Adressat' dropdown to expose at least two options in merged AAAM"
+    );
+}
+
 // ========================================================================
 // Flattened dedup key tests
 // ========================================================================
