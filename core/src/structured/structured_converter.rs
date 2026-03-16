@@ -1263,7 +1263,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                     best_split = Some(approx_char + delta);
                     break;
                 }
-                if approx_char >= delta && chars[approx_char - delta].is_whitespace() {
+                if approx_char >= delta
+                    && approx_char - delta < chars.len()
+                    && chars[approx_char - delta].is_whitespace()
+                {
                     best_split = Some(approx_char - delta);
                     break;
                 }
