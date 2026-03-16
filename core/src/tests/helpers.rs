@@ -1,11 +1,8 @@
 #![allow(dead_code)] // Helpers may not all be used in current tests
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, HeadingNode, InlineNode, ListNode,
-    StructuredNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode, StructuredNode,
 };
-use crate::xfa::script_executor::ScriptExecutor;
-use crate::{Flattened, XfaNode, extract_xfa_from_pdf};
 
 /// Build a path to a file in the `input/` test data directory.
 ///
@@ -208,34 +205,6 @@ pub fn find_field_by_name(nodes: &[StructuredNode], name: &str) -> Option<FieldN
     collect_fields(nodes)
         .into_iter()
         .find(|f| f.som_path_str().contains(name))
-}
-
-// ============================================================================
-// XFA loading and parsing helpers
-// ============================================================================
-
-/// Flatten XFA with script execution.
-pub fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> {
-    let script_result = ScriptExecutor::execute(nodes);
-    ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
-    Flattened::merge_form_items_into_template(nodes);
-    Flattened::merge_form_presence_into_template(nodes, &script_result.presence_changes);
-    Flattened::from_xfa(nodes, &script_result.computed_values)
-}
-
-/// Extract XFA from a PDF file and parse it into `XfaNode`s.
-/// Panics if the PDF cannot be read, contains no XFA, or parsing fails.
-pub fn parse_xfa_from_pdf(path: impl AsRef<std::path::Path>) -> Vec<XfaNode> {
-    let xfa_data = extract_xfa_from_pdf(path.as_ref()).expect("Failed to read PDF");
-    let xfa_buffer = xfa_data.expect("PDF should contain XFA data");
-    XfaNode::parse(&xfa_buffer).expect("Failed to parse XFA structure")
-}
-
-/// Extract XFA from a PDF file, parse it, and flatten with script execution.
-/// Panics if any step fails.
-pub fn flatten_from_pdf(path: impl AsRef<std::path::Path>) -> Flattened {
-    let mut nodes = parse_xfa_from_pdf(path);
-    flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts")
 }
 
 /// Load the UBS profile (config.toml + XML templates) from `profiles/ubs/aem/`.
