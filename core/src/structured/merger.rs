@@ -680,7 +680,18 @@ impl RecursiveMerger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structured::{HeadingLevel, HeadingNode, InlineText, ParagraphNode};
+    use crate::structured::{
+        HeadingLevel, HeadingNode, InlineNode, InlineText, ParagraphNode, StructuredNode,
+    };
+    use std::collections::HashMap;
+
+    fn translated_text(entries: &[(&str, &str)]) -> InlineText {
+        let map: HashMap<String, String> = entries
+            .iter()
+            .map(|(lang, text)| ((*lang).to_string(), (*text).to_string()))
+            .collect();
+        InlineText(vec![InlineNode::TranslatedText(map)])
+    }
 
     #[test]
     fn test_merge_identical_structures() {
@@ -1091,5 +1102,70 @@ mod tests {
             matches!(result[2], StructuredNode::Heading(_)),
             "Third node must be branch B heading"
         );
+    }
+
+    #[test]
+    fn test_merge_same_selection_without_shared_language_keeps_both() {
+        // Regression for language-aware structural equality: these two nodes
+        // carry the same literal text but in disjoint language keys.
+        // They must not be treated as equal.
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("en", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let result = RecursiveMerger::new(vec![input1, input2]).merge();
+
+        assert_eq!(
+            result.len(),
+            2,
+            "No shared language means nodes must not collapse to one"
+        );
+    }
+
+    #[test]
+    fn test_merge_same_selection_with_shared_language_can_merge() {
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let result = RecursiveMerger::new(vec![input1, input2]).merge();
+
+        assert_eq!(result.len(), 1, "Shared language match should merge");
     }
 }
