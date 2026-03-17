@@ -16317,3 +16317,28 @@ fn test_aaai_has_address_and_individual_fragments() {
         "Client panel should still exist and not be replaced by a fragment"
     );
 }
+
+#[test]
+fn test_aaal_explore_structure() {
+    // Diagnostic test to explore the structure of AAAL_019 forms per state.
+    for (file, lang) in [
+        ("AAAL_019_DE.pdf", "de"),
+        ("AAAL_019_EN.pdf", "en"),
+        ("AAAL_019_SP.pdf", "sp"),
+    ] {
+        let mut bp = Blueprint::from_pdf(helpers::input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {file}: {e}"));
+        let ctx = bp.context();
+        let states = bp
+            .states()
+            .unwrap_or_else(|e| panic!("Failed to get states for {file}: {e}"));
+
+        println!("\n=== {file} ({lang}) — {} states ===", states.len());
+        for (i, state) in states.iter().enumerate() {
+            let envelope = state.structured(ctx.clone());
+            println!("  State {i}: label={:?}", state.label);
+            let fields = helpers::collect_field_labels_trimmed(&envelope.content);
+            println!("  Fields: {fields:?}");
+        }
+    }
+}
