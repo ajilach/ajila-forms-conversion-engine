@@ -7051,6 +7051,25 @@ impl Flattened {
                                 italic,
                                 underline: false,
                             });
+                        } else if !preserve_spaces
+                            && segment.contains(|c: char| {
+                                c.is_ascii_whitespace() || c == '\u{00A0}'
+                            })
+                        {
+                            // Whitespace-only text node between inline elements
+                            // (e.g. "<span>text1</span>   <span>text2</span>").
+                            // normalize_whitespace drops it entirely, but HTML
+                            // rules require the whitespace to collapse to a
+                            // single space between the adjacent runs.  Append
+                            // that space to the last run when we are already
+                            // in the middle of paragraph content.
+                            if let Some(para) = paragraphs.last_mut() {
+                                if let Some(last_run) = para.runs.last_mut() {
+                                    if !last_run.text.ends_with(' ') {
+                                        last_run.text.push(' ');
+                                    }
+                                }
+                            }
                         }
                     }
                 }
