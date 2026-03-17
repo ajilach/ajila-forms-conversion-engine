@@ -8716,6 +8716,115 @@ fn test_aaam_multilingual_translation_triplet_same_node() {
     );
 }
 
+fn assert_aaam_translation_triplet_on_same_node(
+    de_snippet: &str,
+    en_snippet: &str,
+    sp_snippet: &str,
+) {
+    use crate::structured::{InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let merged = build_aaam_default_merged();
+
+    let normalize_ws_ci = |s: &str| {
+        let normalized = s
+            .to_lowercase()
+            .replace('\u{0308}', "")
+            .replace('ä', "a")
+            .replace('ö', "o")
+            .replace('ü', "u")
+            .replace('á', "a")
+            .replace('à', "a")
+            .replace('é', "e")
+            .replace('è', "e")
+            .replace('í', "i")
+            .replace('ì', "i")
+            .replace('ó', "o")
+            .replace('ò', "o")
+            .replace('ú', "u")
+            .replace('ù', "u")
+            .replace('ñ', "n")
+            .replace('ß', "ss")
+            .replace('-', "");
+        normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+
+    let contains_normalized =
+        |haystack: &str, needle: &str| normalize_ws_ci(haystack).contains(&normalize_ws_ci(needle));
+
+    let mut triplet_found = false;
+    let mut partial_hits: Vec<(String, String, String)> = Vec::new();
+    let mut de_only_hits: Vec<(String, String, String)> = Vec::new();
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+
+                    if contains_normalized(de_text, de_snippet)
+                        && !contains_normalized(en_text, en_snippet)
+                        && !contains_normalized(sp_text, sp_snippet)
+                    {
+                        de_only_hits.push((
+                            de_text[..de_text.len().min(220)].to_string(),
+                            en_text[..en_text.len().min(220)].to_string(),
+                            sp_text[..sp_text.len().min(220)].to_string(),
+                        ));
+                    }
+
+                    if contains_normalized(de_text, de_snippet)
+                        || contains_normalized(en_text, en_snippet)
+                        || contains_normalized(sp_text, sp_snippet)
+                    {
+                        if contains_normalized(de_text, de_snippet)
+                            && contains_normalized(en_text, en_snippet)
+                            && contains_normalized(sp_text, sp_snippet)
+                        {
+                            triplet_found = true;
+                        } else {
+                            partial_hits.push((
+                                de_text[..de_text.len().min(220)].to_string(),
+                                en_text[..en_text.len().min(220)].to_string(),
+                                sp_text[..sp_text.len().min(220)].to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        triplet_found,
+        "AAAM translation triplet was not found in merged tree.\n  DE: {:?}\n  EN: {:?}\n  SP: {:?}\n  \
+         Partial hits (up to 3): {:?}\n  DE-only hits (up to 3): {:?}",
+        de_snippet,
+        en_snippet,
+        sp_snippet,
+        partial_hits.iter().take(3).collect::<Vec<_>>(),
+        de_only_hits.iter().take(3).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_aaam_multilingual_translation_triplet_same_node_ubs_status_change() {
+    assert_aaam_translation_triplet_on_same_node(
+        "Sie verpflichten sich, UBS umgehend zu informieren, wenn sich Ihr oben angegebener Status ändert.",
+        "You undertake and agree to promptly inform UBS if your status above changes.",
+        "El abajo firmante se compromete y acepta informar de inmediato a UBS si su condición anterior no estadounidense cambia",
+    );
+}
+
 fn build_aagg_default_merged() -> crate::DocumentEnvelope {
     let de = crate::run_exhaustive_to_envelope(input_path("AAGG_019_DE.pdf"), "de")
         .expect("Failed to process AAGG DE");
