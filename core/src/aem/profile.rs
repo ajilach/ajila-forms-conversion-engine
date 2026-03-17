@@ -37,6 +37,14 @@ pub struct AemProfile {
     /// (e.g. `"AF_{{ xfa.formrange_code }}"`).
     pub form_dir: Option<String>,
 
+    /// Tera template for the generated form XSD file path.
+    ///
+    /// This is a full JCR file path used in DAM metadata `xsdRef`
+    /// (e.g. `"/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{{ variables.form_code }}.xsd"`).
+    ///
+    /// Required when `bind_to_xsd = true`.
+    pub xsd_path: Option<String>,
+
     /// Reusable intermediate variables. Each value is a Tera template that
     /// can reference `xfa.*` and previously resolved `variables.*`.
     #[serde(default)]

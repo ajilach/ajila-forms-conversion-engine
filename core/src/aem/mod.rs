@@ -96,6 +96,10 @@ pub struct AemConfig {
     /// instead of computing `"AF_" + form_code`.
     pub form_dir_override: Option<String>,
 
+    /// JCR file path of the generated XSD used in DAM metadata `xsdRef`
+    /// (e.g. `/content/dam/formsanddocuments/.../AF_AAAI.xsd`).
+    pub xsd_path: String,
+
     // -- Package writer metadata (derived from profile variables) -------------
     /// DOR template reference path (from `variables.dor_template_ref`).
     pub dor_template_ref: String,
@@ -176,6 +180,17 @@ impl AemConfig {
             None => None,
         };
 
+        let bind_to_xsd = profile.bind_to_xsd.unwrap_or(false);
+        let xsd_path = match &profile.xsd_path {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None if bind_to_xsd => {
+                return Err(crate::Error::AemConfig(
+                    "bind_to_xsd=true requires xsd_path to be set in aem/config.toml".into(),
+                ));
+            }
+            None => String::new(),
+        };
+
         Ok(Self {
             form_title,
             form_code,
@@ -194,6 +209,7 @@ impl AemConfig {
 
             form_path,
             form_dir_override,
+            xsd_path,
 
             dor_template_ref: user_vars
                 .get("dor_template_ref")
@@ -209,7 +225,7 @@ impl AemConfig {
             xfa_vars,
             user_vars,
 
-            bind_to_xsd: profile.bind_to_xsd.unwrap_or(false),
+            bind_to_xsd,
             xsd_config: None,
 
             use_fragments: profile.use_fragments.unwrap_or(false),
@@ -231,6 +247,20 @@ impl AemConfig {
         } else {
             format!("AF_{}", self.form_code)
         }
+    }
+
+    /// Return the canonical DAM XSD reference path for metadata attributes.
+    pub fn xsd_ref(&self) -> String {
+        if self.xsd_path.starts_with('/') {
+            self.xsd_path.clone()
+        } else {
+            format!("/{}", self.xsd_path)
+        }
+    }
+
+    /// Return the ZIP entry path where the XSD file should be written.
+    pub fn xsd_zip_path(&self) -> String {
+        format!("jcr_root/{}", self.xsd_ref().trim_start_matches('/'))
     }
 
     /// Expand `languages` to include synonyms.
@@ -281,6 +311,7 @@ impl AemConfig {
 
             form_path: "test/path".into(),
             form_dir_override: None,
+            xsd_path: "/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into(),
 
             dor_template_ref: String::new(),
             dor_type: "generate".into(),

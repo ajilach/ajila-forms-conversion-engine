@@ -8629,6 +8629,12 @@ fn test_aaab_aem_config_form_path_title_code() {
         "AF_AAAB",
         "form_dir() should be 'AF_AAAB'"
     );
+
+    assert_eq!(
+        config.xsd_path,
+        "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd",
+        "xsd_path should resolve to the configured UBS AFForms location"
+    );
 }
 
 #[test]
@@ -11307,6 +11313,31 @@ fn test_ubs_profile_entity_folder_mapping() {
     let ctx = crate::Context::new("en".to_string(), vars);
     let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_global_all/af_te");
+}
+
+#[test]
+fn test_aem_profile_requires_xsd_path_when_bind_to_xsd_enabled() {
+    use crate::aem::{AemConfig, AemProfile};
+
+    let toml_str = r#"
+title = "{{ xfa.formrange_code }}"
+bind_to_xsd = true
+"#;
+
+    let profile: AemProfile = toml::from_str(toml_str).expect("parse aem profile");
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".to_string(), "AAAB".to_string());
+    let ctx = crate::Context::new("en".to_string(), vars);
+
+    let err = AemConfig::from_profile(&profile, HashMap::new(), &ctx)
+        .expect_err("bind_to_xsd=true without xsd_path should fail");
+
+    assert!(
+        err.to_string()
+            .contains("bind_to_xsd=true requires xsd_path to be set in aem/config.toml"),
+        "unexpected error message: {}",
+        err
+    );
 }
 
 #[test]
