@@ -7369,6 +7369,186 @@ fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
 }
 
 #[test]
+fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldNode, FieldType, InputValue, StructuredNode};
+
+    fn normalize_text(text: &str) -> String {
+        text.split_whitespace().collect::<String>()
+    }
+
+    fn node_contains_text(node: &StructuredNode, needle: &str) -> bool {
+        let normalized_needle = normalize_text(needle);
+
+        match node {
+            StructuredNode::Paragraph(p) => {
+                normalize_text(&p.content.as_plain_text()).contains(&normalized_needle)
+            }
+            StructuredNode::Heading(h) => {
+                normalize_text(&h.content.as_plain_text()).contains(&normalized_needle)
+            }
+            StructuredNode::Field(field) => field
+                .label
+                .as_ref()
+                .map(|label| normalize_text(&label.as_plain_text()).contains(&normalized_needle))
+                .unwrap_or(false),
+            StructuredNode::Group(group) => group.children.iter().any(|child| node_contains_text(child, needle)),
+            StructuredNode::Conditional(cond) => node_contains_text(cond.content.as_ref(), needle),
+            StructuredNode::Repeatable(rep) => node_contains_text(rep.item.as_ref(), needle),
+            StructuredNode::GridLayout(grid) => grid
+                .elements
+                .iter()
+                .any(|element| node_contains_text(&element.node, needle)),
+            StructuredNode::Table(table) => {
+                table
+                    .header
+                    .as_ref()
+                    .map(|header| header.cells.iter().any(|cell| node_contains_text(cell, needle)))
+                    .unwrap_or(false)
+                    || table
+                        .rows
+                        .iter()
+                        .any(|row| row.cells.iter().any(|cell| node_contains_text(cell, needle)))
+            }
+            _ => false,
+        }
+    }
+
+    fn collect_radios(node: &StructuredNode, radios: &mut Vec<FieldNode>) {
+        match node {
+            StructuredNode::Field(field) => {
+                if matches!(field.input_type, FieldType::Radio { .. }) {
+                    radios.push(field.clone());
+                }
+            }
+            StructuredNode::Group(group) => {
+                for child in &group.children {
+                    collect_radios(child, radios);
+                }
+            }
+            StructuredNode::Conditional(cond) => collect_radios(cond.content.as_ref(), radios),
+            StructuredNode::Repeatable(rep) => collect_radios(rep.item.as_ref(), radios),
+            StructuredNode::GridLayout(grid) => {
+                for element in &grid.elements {
+                    collect_radios(&element.node, radios);
+                }
+            }
+            StructuredNode::Table(table) => {
+                if let Some(header) = &table.header {
+                    for cell in &header.cells {
+                        collect_radios(cell, radios);
+                    }
+                }
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        collect_radios(cell, radios);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let all_fields = collect_fields(&structured);
+
+    let checkbox = all_fields
+        .into_iter()
+        .find(|field| {
+            matches!(field.input_type, FieldType::Bool)
+                && field
+                    .label
+                    .as_ref()
+                    .map(|label| label.as_plain_text().contains("Zahlungsaufträge erfassen"))
+                    .unwrap_or(false)
+        })
+        .expect("Expected checkbox labeled 'Zahlungsaufträge erfassen'");
+
+    let checked_conditionals: Vec<_> = collect_conditionals(&structured)
+        .into_iter()
+        .filter(|cond| {
+            cond.condition.field_name == checkbox.name
+                && cond.condition.value == InputValue::Bool(true)
+        })
+        .collect();
+
+    assert!(
+        !checked_conditionals.is_empty(),
+        "Expected checked-only conditional content for checkbox '{}'",
+        checkbox.name,
+    );
+
+    assert!(
+        checked_conditionals.iter().any(|cond| {
+            node_contains_text(
+                cond.content.as_ref(),
+                "Erfasste Zahlungsaufträge freigeben (Bedingt Zahlungsaufträge erfassen)",
+            )
+        }),
+        "Expected checked checkbox content to contain the approval text"
+    );
+
+    let nested_radios: Vec<FieldNode> = checked_conditionals
+        .iter()
+        .flat_map(|cond| {
+            let mut radios = Vec::new();
+            collect_radios(cond.content.as_ref(), &mut radios);
+            radios
+        })
+        .collect();
+
+    let authorization_radio = nested_radios
+        .iter()
+        .find(|field| {
+            let FieldType::Radio { options } = &field.input_type else {
+                return false;
+            };
+            options
+                .iter()
+                .any(|option| option.name.contains("Einzelzeichnungsberechtigung"))
+                && options.iter().any(|option| {
+                    option.name.contains(
+                        "Kollektive Zeichnungsberechtigung zu zweien (gilt in Verbindung mit jedem anderen Zugriffsberechtigten)",
+                    )
+                })
+        })
+        .expect("Expected nested radio group in checked checkbox content");
+
+    let FieldType::Radio { options } = &authorization_radio.input_type else {
+        unreachable!()
+    };
+
+    assert!(
+        options
+            .iter()
+            .any(|option| option.name.contains("Einzelzeichnungsberechtigung")),
+        "Expected nested radio option 'Einzelzeichnungsberechtigung'"
+    );
+    assert!(
+        options.iter().any(|option| {
+            option.name.contains(
+                "Kollektive Zeichnungsberechtigung zu zweien (gilt in Verbindung mit jedem anderen Zugriffsberechtigten)",
+            )
+        }),
+        "Expected nested radio option for collective authorization"
+    );
+
+    assert!(
+        !collect_conditionals(&structured).into_iter().any(|cond| {
+            cond.condition.field_name == checkbox.name
+                && cond.condition.value == InputValue::Bool(false)
+                && node_contains_text(
+                    cond.content.as_ref(),
+                    "Erfasste Zahlungsaufträge freigeben (Bedingt Zahlungsaufträge erfassen)",
+                )
+        }),
+        "Approval content must not be visible in the unchecked checkbox branch"
+    );
+}
+
+#[test]
 fn test_aaab_has_no_vertical_field_table() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;

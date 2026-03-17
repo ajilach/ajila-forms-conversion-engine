@@ -417,6 +417,26 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }))
             }
 
+            // CheckboxContent → ConditionalNode wrapping the child content
+            GroupKind::CheckboxContent { checkbox_som_path } => {
+                let children = self.convert_children(group_idx);
+                if children.is_empty() {
+                    return None;
+                }
+                let content = if children.len() == 1 {
+                    children.into_iter().next().unwrap()
+                } else {
+                    StructuredNode::Group(GroupNode { children })
+                };
+                Some(StructuredNode::Conditional(ConditionalNode {
+                    condition: FieldCondition {
+                        field_name: FieldId::from_som_path(checkbox_som_path),
+                        value: InputValue::Bool(true),
+                    },
+                    content: Box::new(content),
+                }))
+            }
+
             // List → ListNode
             GroupKind::List { list_style } => {
                 let group = self.doc.get_group(group_idx)?;

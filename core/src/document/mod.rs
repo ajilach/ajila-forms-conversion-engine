@@ -276,6 +276,15 @@ pub enum GroupKind {
         /// triggers this content (matches the `value` stored in `NameValue`).
         option_field_name: String,
     },
+
+    /// Inset content that belongs to a checkbox and is only visible when checked.
+    ///
+    /// Created by `CheckboxContentDetector` for content appearing below a checkbox.
+    /// Converted to `ConditionalNode` in the structured output.
+    CheckboxContent {
+        /// SOM path of the checkbox field.
+        checkbox_som_path: SomPath,
+    },
 }
 
 impl<'a> Document<'a> {
@@ -924,6 +933,9 @@ impl<'a> Document<'a> {
                 option_field_name, ..
             } => {
                 format!("RadioButtonContent[{}]", option_field_name)
+            }
+            GroupKind::CheckboxContent { checkbox_som_path } => {
+                format!("CheckboxContent[{}]", checkbox_som_path.as_str())
             }
         }
     }

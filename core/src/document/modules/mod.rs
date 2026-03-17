@@ -82,6 +82,7 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
+mod checkbox_content;
 mod checkbox_detector;
 mod date_field_detector;
 mod field_grouper;
@@ -103,6 +104,7 @@ mod repeatable_detector;
 mod text_block;
 mod text_block_merger;
 
+pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
@@ -193,6 +195,7 @@ pub fn run_analysis_pipeline_with_context(
     ListDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
+    CheckboxContentDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);
 
     FieldTableDetector::new().process_with_context(doc, ctx);
