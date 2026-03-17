@@ -1,3 +1,4 @@
+mod merge_engine;
 mod merger;
 mod structured_converter;
 mod translation_merger;

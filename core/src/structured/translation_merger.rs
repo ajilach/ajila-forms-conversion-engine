@@ -15,6 +15,9 @@
 use std::collections::HashMap;
 
 use crate::context::Context;
+use crate::structured::merge_engine::{
+    MISSING_TRANSLATION_TEXT, fill_missing_translation_placeholders, lcs_align_with, lcs_table_with,
+};
 use crate::structured::{
     ConditionalNode, DocumentEnvelope, FieldNode, FieldType, GridLayout, GridLayoutElement,
     GroupNode, HeadingNode, InlineNode, InlineText, ListNode, NameValue, ParagraphNode,
@@ -147,6 +150,14 @@ pub fn merge_translations(
             merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
     }
 
+    // Best-effort optimistic normalization: mark missing language entries explicitly.
+    fill_missing_translation_placeholders(
+        &mut merged_content,
+        &languages,
+        &base_lang,
+        MISSING_TRANSLATION_TEXT,
+    );
+
     // Create merged context — start from the base context to preserve variables
     // and modules, then update the language to the combined list.
     let mut context = base.context;
@@ -229,91 +240,8 @@ fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
 // ============================================================================
 // LCS-based alignment for node lists
 // ============================================================================
-
-/// Compute the LCS (longest common subsequence) table for two node slices,
-/// using the given equality predicate.
-fn lcs_table_with(
-    a: &[StructuredNode],
-    b: &[StructuredNode],
-    eq: impl Fn(&StructuredNode, &StructuredNode) -> bool,
-) -> Vec<Vec<usize>> {
-    let m = a.len();
-    let n = b.len();
-    let mut dp = vec![vec![0usize; n + 1]; m + 1];
-
-    for i in 1..=m {
-        for j in 1..=n {
-            if eq(&a[i - 1], &b[j - 1]) {
-                dp[i][j] = dp[i - 1][j - 1] + 1;
-            } else {
-                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
-            }
-        }
-    }
-
-    dp
-}
-
-/// Backtrack through the LCS table to produce aligned pairs.
-/// Returns a list of (Option<idx_in_a>, Option<idx_in_b>) pairs.
-/// Both Some → matched pair. Only one Some → unmatched node from that side.
-/// The `eq` predicate must be the same one used to build the `dp` table.
-fn lcs_align_with(
-    a: &[StructuredNode],
-    b: &[StructuredNode],
-    dp: &[Vec<usize>],
-    eq: impl Fn(&StructuredNode, &StructuredNode) -> bool,
-) -> Vec<(Option<usize>, Option<usize>)> {
-    let mut result = Vec::new();
-    let mut i = a.len();
-    let mut j = b.len();
-
-    // Backtrack to find the LCS alignment
-    let mut matches = Vec::new();
-    while i > 0 && j > 0 {
-        if eq(&a[i - 1], &b[j - 1]) {
-            matches.push((i - 1, j - 1));
-            i -= 1;
-            j -= 1;
-        } else if dp[i - 1][j] >= dp[i][j - 1] {
-            i -= 1;
-        } else {
-            j -= 1;
-        }
-    }
-    matches.reverse();
-
-    // Build the full alignment with unmatched nodes
-    let mut ai = 0;
-    let mut bi = 0;
-    for (ma, mb) in &matches {
-        // Emit unmatched nodes from a before this match
-        while ai < *ma {
-            result.push((Some(ai), None));
-            ai += 1;
-        }
-        // Emit unmatched nodes from b before this match
-        while bi < *mb {
-            result.push((None, Some(bi)));
-            bi += 1;
-        }
-        // Emit the matched pair
-        result.push((Some(*ma), Some(*mb)));
-        ai = ma + 1;
-        bi = mb + 1;
-    }
-    // Emit remaining unmatched nodes
-    while ai < a.len() {
-        result.push((Some(ai), None));
-        ai += 1;
-    }
-    while bi < b.len() {
-        result.push((None, Some(bi)));
-        bi += 1;
-    }
-
-    result
-}
+// Alignment helpers are provided by structured::merge_engine and reused by
+// both translation and structural merge stages.
 
 /// Tracks the origin of each entry produced by the alignment phase,
 /// so the post-processing step knows which language an unmatched paragraph
@@ -900,15 +828,17 @@ fn merge_inline_text(
 /// If it contains a single `TranslatedText` node, returns that map.
 /// Otherwise returns a single-entry map from the given language to the plain text.
 fn inline_text_to_text_map(text: &InlineText, lang: &str) -> HashMap<String, String> {
-    if let Some(InlineNode::TranslatedText(existing)) = text.0.first() {
-        existing.clone()
-    } else {
-        let plain = text.as_plain_text();
-        if plain.is_empty() {
-            HashMap::new()
-        } else {
-            HashMap::from([(lang.to_string(), plain)])
+    if text.0.len() == 1 {
+        if let Some(InlineNode::TranslatedText(existing)) = text.0.first() {
+            return existing.clone();
         }
+    }
+
+    let plain = text.as_plain_text();
+    if plain.is_empty() {
+        HashMap::new()
+    } else {
+        HashMap::from([(lang.to_string(), plain)])
     }
 }
 
@@ -2229,6 +2159,49 @@ mod tests {
     }
 
     #[test]
+    fn test_unmatched_list_item_with_prefixed_translated_text_keeps_full_content() {
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::List(ListNode {
+                list_style: crate::document::ListStyleType::Disc,
+                items: vec![InlineText(vec![
+                    InlineNode::TranslatedText(HashMap::from([(
+                        "de".to_string(),
+                        "Prefix ".to_string(),
+                    )])),
+                    InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
+                ])],
+            })],
+        );
+
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::List(ListNode {
+                list_style: crate::document::ListStyleType::Disc,
+                items: vec![],
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+
+        let list = match &result.content[0] {
+            StructuredNode::List(list) => list,
+            _ => panic!("Expected list node"),
+        };
+
+        let map = match &list.items[0].0[0] {
+            InlineNode::TranslatedText(map) => map,
+            _ => panic!("Expected translated list item text"),
+        };
+
+        assert_eq!(map.get("de").map(String::as_str), Some("Prefix Suffix"));
+        assert_eq!(
+            map.get("en").map(String::as_str),
+            Some(MISSING_TRANSLATION_TEXT)
+        );
+    }
+
+    #[test]
     fn test_merge_radio_options_asymmetric_count_preserves_all() {
         // DE has 3 radio options, EN has 2.  Before the fix the third option was dropped.
         let de = make_envelope(
@@ -2289,12 +2262,12 @@ mod tests {
                     "All 3 options must be preserved, got {}",
                     options.len()
                 );
-                // The third option should carry DE text (no EN counterpart).
+                // The third option should carry DE text and explicit EN placeholder.
                 if let TranslatableString::Translated(map) = &options[2].name {
                     assert_eq!(map.get("de").unwrap(), "Enthaltung");
-                    assert!(
-                        !map.contains_key("en"),
-                        "Third option should not have an EN translation"
+                    assert_eq!(
+                        map.get("en").map(String::as_str),
+                        Some(MISSING_TRANSLATION_TEXT)
                     );
                 } else {
                     panic!("Expected translated option name for third entry");
@@ -2401,9 +2374,10 @@ mod tests {
             assert_eq!(heading.content.0.len(), 1);
             if let InlineNode::TranslatedText(map) = &heading.content.0[0] {
                 assert_eq!(map.get("de").unwrap(), "Nur Deutsch");
-                assert!(
-                    !map.contains_key("en"),
-                    "Unmatched DE-only heading should not gain EN text"
+                assert_eq!(
+                    map.get("en").map(String::as_str),
+                    Some(MISSING_TRANSLATION_TEXT),
+                    "Unmatched DE-only heading should be flagged for EN"
                 );
             } else {
                 panic!("Expected unmatched heading to be localized as TranslatedText");
@@ -2445,7 +2419,10 @@ mod tests {
         );
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(paragraph.content.plain_text_in("de"), "Basis");
+            assert_eq!(
+                paragraph.content.plain_text_in("de"),
+                format!("{}Basis", MISSING_TRANSLATION_TEXT)
+            );
             assert_eq!(paragraph.content.plain_text_in("en"), "IntroOther");
             assert!(matches!(
                 paragraph.content.0[0],
@@ -2487,7 +2464,10 @@ mod tests {
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(paragraph.content.plain_text_in("de"), "Basis Ende");
+            assert_eq!(
+                paragraph.content.plain_text_in("de"),
+                format!("{}Basis Ende", MISSING_TRANSLATION_TEXT)
+            );
             assert_eq!(
                 paragraph.content.plain_text_in("en"),
                 "Intro Other tail",
@@ -2569,10 +2549,87 @@ mod tests {
             assert_eq!(
                 paragraph.content.plain_text_in("de"),
                 "",
-                "Missing DE key should be seeded to avoid falling back to EN text"
+                "Local helper keeps empty key; final normalization fills placeholders"
             );
         } else {
             panic!("Expected matched paragraph entry");
+        }
+    }
+
+    #[test]
+    fn test_unmatched_option_gets_missing_translation_placeholder() {
+        let de = make_envelope(
+            "de",
+            vec![StructuredNode::Field(FieldNode {
+                name: crate::structured::FieldId::from("gender"),
+                som_path: None,
+                label: None,
+                input_type: FieldType::Select {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("Ja".into()),
+                            value: crate::structured::InputValue::Text("yes".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("Nein".into()),
+                            value: crate::structured::InputValue::Text("no".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("Vielleicht".into()),
+                            value: crate::structured::InputValue::Text("maybe".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            })],
+        );
+
+        let en = make_envelope(
+            "en",
+            vec![StructuredNode::Field(FieldNode {
+                name: crate::structured::FieldId::from("gender"),
+                som_path: None,
+                label: None,
+                input_type: FieldType::Select {
+                    options: vec![
+                        NameValue {
+                            name: TranslatableString::Plain("Yes".into()),
+                            value: crate::structured::InputValue::Text("yes".into()),
+                        },
+                        NameValue {
+                            name: TranslatableString::Plain("No".into()),
+                            value: crate::structured::InputValue::Text("no".into()),
+                        },
+                    ],
+                },
+                value: None,
+                placeholder: None,
+            })],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+
+        let field = match &result.content[0] {
+            StructuredNode::Field(field) => field,
+            _ => panic!("Expected field node"),
+        };
+
+        let options = match &field.input_type {
+            FieldType::Select { options } => options,
+            _ => panic!("Expected select field"),
+        };
+
+        let unmatched = &options[2];
+        match &unmatched.name {
+            TranslatableString::Translated(map) => {
+                assert_eq!(map.get("de").map(String::as_str), Some("Vielleicht"));
+                assert_eq!(
+                    map.get("en").map(String::as_str),
+                    Some(MISSING_TRANSLATION_TEXT)
+                );
+            }
+            _ => panic!("Expected translated name map"),
         }
     }
 }
