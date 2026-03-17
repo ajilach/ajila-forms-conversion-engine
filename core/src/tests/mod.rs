@@ -7549,6 +7549,171 @@ fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
 }
 
 #[test]
+fn debug_aagz_xfa_freigeben_structure() {
+    fn find_parent_of<'a>(nodes: &'a [XfaNode], text: &str, out: &mut Vec<&'a XfaNode>) {
+        for node in nodes {
+            // Check if any direct child contains the text
+            let child_has_it = node.children.iter().any(|c| match &c.kind {
+                xfa::XfaNodeKind::Text { content } => content.contains(text),
+                xfa::XfaNodeKind::Element { text_content: Some(tc), .. } => tc.contains(text),
+                _ => false,
+            });
+            if child_has_it {
+                out.push(node);
+            }
+            find_parent_of(&node.children, text, out);
+        }
+    }
+
+    fn dump_node(node: &XfaNode, depth: usize) {
+        let pad = "  ".repeat(depth);
+        match &node.kind {
+            xfa::XfaNodeKind::Text { content } => {
+                println!("{}[Text] {:?}", pad, content);
+            }
+            xfa::XfaNodeKind::Element { tag_name, text_content } => {
+                let attrs: Vec<String> = node.attributes.iter()
+                    .map(|(k, v)| format!("{}={:?}", k, v))
+                    .collect();
+                println!("{}[Element <{}>] attrs=[{}] text_content={:?} children={}", 
+                    pad, tag_name, attrs.join(", "), text_content, node.children.len());
+                for c in &node.children {
+                    dump_node(c, depth + 1);
+                }
+            }
+            _ => {
+                println!("{}[Other {:?}] children={}", pad, std::mem::discriminant(&node.kind), node.children.len());
+            }
+        }
+    }
+
+    let bp = Blueprint::from_pdf(input_path("AAGZ_019_DE.pdf")).unwrap();
+    let form = bp.form().expect("XFA form expected");
+    let nodes = form.xfa_nodes();
+
+    // Find PARENT of node containing "freigeben" to see siblings
+    let mut found = vec![];
+    find_parent_of(nodes, "freigeben", &mut found);
+    // Only first unique occurrence
+    found.dedup_by_key(|n| n as *const _);
+    println!("Found {} parent nodes of 'freigeben' nodes", found.len());
+    // Show just the first one
+    if let Some(n) = found.first() {
+        dump_node(n, 0);
+    }
+}
+
+
+/// e.g. "freigeben                                  (Bedingt". After whitespace
+/// normalisation these must be collapsed to exactly one space – not dropped
+/// entirely – so the rendered text reads
+/// "Erfasste Zahlungsaufträge freigeben (Bedingt Zahlungsaufträge erfassen)".
+#[test]
+fn test_aagz_approval_text_preserves_space_before_parenthesis() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, InputValue, StructuredNode};
+
+    fn find_approval_text(node: &StructuredNode) -> Option<String> {
+        match node {
+            StructuredNode::Paragraph(p) => {
+                let text = p.content.as_plain_text();
+                if text.contains("Erfasste Zahlungsaufträge freigeben") {
+                    return Some(text);
+                }
+            }
+            StructuredNode::Heading(h) => {
+                let text = h.content.as_plain_text();
+                if text.contains("Erfasste Zahlungsaufträge freigeben") {
+                    return Some(text);
+                }
+            }
+            StructuredNode::Field(field) => {
+                if let Some(label) = &field.label {
+                    let text = label.as_plain_text();
+                    if text.contains("Erfasste Zahlungsaufträge freigeben") {
+                        return Some(text);
+                    }
+                }
+            }
+            StructuredNode::Group(group) => {
+                for child in &group.children {
+                    if let Some(t) = find_approval_text(child) {
+                        return Some(t);
+                    }
+                }
+            }
+            StructuredNode::Conditional(cond) => {
+                return find_approval_text(cond.content.as_ref());
+            }
+            StructuredNode::Repeatable(rep) => {
+                return find_approval_text(rep.item.as_ref());
+            }
+            StructuredNode::GridLayout(grid) => {
+                for element in &grid.elements {
+                    if let Some(t) = find_approval_text(&element.node) {
+                        return Some(t);
+                    }
+                }
+            }
+            StructuredNode::Table(table) => {
+                if let Some(header) = &table.header {
+                    for cell in &header.cells {
+                        if let Some(t) = find_approval_text(cell) {
+                            return Some(t);
+                        }
+                    }
+                }
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        if let Some(t) = find_approval_text(cell) {
+                            return Some(t);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let all_fields = collect_fields(&structured);
+    let checkbox = all_fields
+        .into_iter()
+        .find(|field| {
+            matches!(field.input_type, FieldType::Bool)
+                && field
+                    .label
+                    .as_ref()
+                    .map(|label| label.as_plain_text().contains("Zahlungsaufträge erfassen"))
+                    .unwrap_or(false)
+        })
+        .expect("Expected checkbox labeled 'Zahlungsaufträge erfassen'");
+
+    let checked_conditionals: Vec<_> = collect_conditionals(&structured)
+        .into_iter()
+        .filter(|cond| {
+            cond.condition.field_name == checkbox.name
+                && cond.condition.value == InputValue::Bool(true)
+        })
+        .collect();
+
+    let approval_text = checked_conditionals
+        .iter()
+        .find_map(|cond| find_approval_text(cond.content.as_ref()))
+        .expect("Expected to find text containing 'Erfasste Zahlungsaufträge freigeben'");
+
+    assert!(
+        approval_text.contains("freigeben (Bedingt"),
+        "Expected a space between 'freigeben' and '(Bedingt' in the approval text, \
+         but got: {:?}",
+        approval_text
+    );
+}
+
+#[test]
 fn test_aaab_has_no_vertical_field_table() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;

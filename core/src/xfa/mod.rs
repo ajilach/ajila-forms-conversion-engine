@@ -1081,7 +1081,10 @@ impl XfaNode {
     /// Parse XFA XML structure from a buffer
     pub fn parse(buffer: &[u8]) -> Result<Vec<XfaNode>, String> {
         let mut reader = Reader::from_reader(buffer);
-        reader.config_mut().trim_text(true);
+        // Do NOT trim_text here: leading/trailing whitespace in HTML text
+        // content (e.g. "<span> word</span>") is semantically significant
+        // and must be preserved so that inter-element spaces are not lost.
+        // Whitespace-only indentation nodes are handled downstream.
 
         let mut root_nodes = Vec::new();
 
