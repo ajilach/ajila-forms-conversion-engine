@@ -13764,7 +13764,10 @@ fn test_all_form_codes_pipeline() {
         &[("AAHO_019_DE.pdf", "de")],
         &[("AAHQ_019_DE.pdf", "de")],
         &[("AAIR_019_DE.pdf", "de"), ("AAIR_019_EN.pdf", "en"), ("AAIR_019_SP.pdf", "es")],
-        &[("AAIS_019_DE.pdf", "de")],
+        // AAIS_019: EN uses a different conditional field (commission-type) from DE and SP
+        // (client-type), so EN must be processed independently.
+        &[("AAIS_019_DE.pdf", "de"), ("AAIS_019_SP.pdf", "es")],
+        &[("AAIS_019_EN.pdf", "en")],
         &[("AAKI_019_SP.pdf", "es")],
         &[("AAKS_019_DE.pdf", "de"), ("AAKS_019_EN.pdf", "en"), ("AAKS_019_SP.pdf", "es")],
         &[("AALH_019_DE.pdf", "de"), ("AALH_019_EN.pdf", "en"), ("AALH_019_SP.pdf", "es")],
@@ -13852,6 +13855,107 @@ fn test_aags_de_en_state_counts_match() {
 
     let result = structured::merge_translations(vec![de_envelope, en_envelope]);
     assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
+}
+
+/// Diagnostic test: investigate why AAIS_019 DE+EN (and DE+EN+SP) fails with
+/// `InsufficientStructuralSimilarity` (42 % < 50 % threshold).
+///
+/// This test never panics — it prints all diagnostics and then records the
+/// observed similarity values in assertions so that regressions are caught.
+#[test]
+fn test_aais_019_structural_similarity_diagnostic() {
+    use crate::structured::StructuredNode;
+    use crate::{run_exhaustive_to_envelope, structured};
+
+    /// Return a short human-readable label for a structured node.
+    fn node_label(n: &StructuredNode) -> String {
+        match n {
+            StructuredNode::Heading(h) => format!("Heading(H{})", h.level.as_u8()),
+            StructuredNode::Paragraph(_) => "Paragraph".to_string(),
+            StructuredNode::Image(_) => "Image".to_string(),
+            StructuredNode::Table(_) => "Table".to_string(),
+            StructuredNode::Field(f) => {
+                format!("Field({:?})", std::mem::discriminant(&f.input_type))
+            }
+            StructuredNode::Repeatable(_) => "Repeatable".to_string(),
+            StructuredNode::Group(_) => "Group".to_string(),
+            StructuredNode::Conditional(c) => format!(
+                "Conditional({}=={:?})",
+                c.condition.field_name, c.condition.value
+            ),
+            StructuredNode::Empty => "Empty".to_string(),
+            StructuredNode::GridLayout(g) => format!("GridLayout(cols={})", g.columns),
+            StructuredNode::List(_) => "List".to_string(),
+        }
+    }
+
+    // ── Load all three language envelopes ────────────────────────────────────
+    let de = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AAIS_019_EN.pdf"), "en")
+        .expect("Failed to process AAIS_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AAIS_019_SP.pdf"), "es")
+        .expect("Failed to process AAIS_019_SP");
+
+    // ── Print state counts ────────────────────────────────────────────────────
+    println!("\n=== AAIS_019 state counts ===");
+    println!("  DE: {} states, {} top-level nodes", de.state_count, de.content.len());
+    println!("  EN: {} states, {} top-level nodes", en.state_count, en.content.len());
+    println!("  SP: {} states, {} top-level nodes", sp.state_count, sp.content.len());
+
+    // ── Print top-level node lists ────────────────────────────────────────────
+    for (lang, env) in [("DE", &de), ("EN", &en), ("SP", &sp)] {
+        println!("\n=== AAIS_019 {} top-level nodes ({} total) ===", lang, env.content.len());
+        for (i, node) in env.content.iter().enumerate() {
+            println!("  [{:02}] {}", i, node_label(node));
+        }
+    }
+
+    // ── Attempt each pair via merge_translations ───────────────────────────────
+    let merge_de_en = structured::merge_translations(vec![de.clone(), en.clone()]);
+    let merge_de_sp = structured::merge_translations(vec![de.clone(), sp.clone()]);
+    let merge_en_sp = structured::merge_translations(vec![en.clone(), sp.clone()]);
+
+    println!("\n=== AAIS_019 merge results ===");
+    println!(
+        "  DE+EN: {}",
+        match &merge_de_en {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+    println!(
+        "  DE+SP: {}",
+        match &merge_de_sp {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+    println!(
+        "  EN+SP: {}",
+        match &merge_en_sp {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+
+    // ── Assertions: document the current observed behaviour ───────────────────
+    // DE and SP share the same conditional field (client-type field bbe42e19-...)
+    // and merge successfully. EN drives its conditionals from a completely different
+    // field (commission-type field 16c1f4fd-...) so it is structurally incompatible
+    // with DE and SP and cannot be merged with either of them.
+    assert!(
+        merge_de_en.is_err(),
+        "Expected DE+EN to fail with InsufficientStructuralSimilarity"
+    );
+    assert!(
+        merge_de_sp.is_ok(),
+        "Expected DE+SP to succeed — they share the same conditional field"
+    );
+    assert!(
+        merge_en_sp.is_err(),
+        "Expected EN+SP to fail with InsufficientStructuralSimilarity"
+    );
 }
 
 #[test]
