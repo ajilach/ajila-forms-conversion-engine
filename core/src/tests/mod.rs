@@ -13721,6 +13721,116 @@ fn test_aem_xml_valid_acav() {
     assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
 }
 
+/// Runs the complete pipeline (parsing → exhaustive state search → structuring
+/// → translation merging → AEM XML generation) for every form code available
+/// in the input directory and validates the resulting AEM content.xml using
+/// the existing XML validator.
+///
+/// Each entry is a *group* of `(filename, language_code)` pairs. Files in the
+/// same group share a form code **and** entity number, so their translations
+/// can be merged into a single multilingual envelope before XML generation.
+///
+/// ACAV_001 is intentionally excluded: it lacks the XFA variables required by
+/// the UBS AEM profile templates (see `test_aem_xml_valid_acav` above).
+/// Non-UBS forms (antrag_*, anordnung_*) are also excluded.
+#[test]
+fn test_all_form_codes_pipeline() {
+    let all_forms: &[&[(&str, &str)]] = &[
+        // ── entity 019 ────────────────────────────────────────────────────────
+        &[("AAAA_019_DE.pdf", "de"), ("AAAA_019_EN.pdf", "en"), ("AAAA_019_SP.pdf", "es")],
+        &[("AAAB_019_DE.pdf", "de")],
+        &[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")],
+        &[("AAAL_019_DE.pdf", "de"), ("AAAL_019_EN.pdf", "en"), ("AAAL_019_SP.pdf", "es")],
+        &[("AAAM_019_DE.pdf", "de"), ("AAAM_019_EN.pdf", "en"), ("AAAM_019_SP.pdf", "es")],
+        &[("AAAQ_019_DE.pdf", "de")],
+        &[("AAAU_019_EN.pdf", "en")],
+        &[("AAAV_019_DE.pdf", "de")],
+        &[("AABK_019_DE.pdf", "de")],
+        &[("AACC_019_DE.pdf", "de"), ("AACC_019_EN.pdf", "en")],
+        &[("AACE_019_DE.pdf", "de"), ("AACE_019_EN.pdf", "en"), ("AACE_019_SP.pdf", "es")],
+        &[("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en"), ("AACJ_019_SP.pdf", "es")],
+        &[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")],
+        &[("AACS_019_DE.pdf", "de"), ("AACS_019_EN.pdf", "en"), ("AACS_019_SP.pdf", "es")],
+        &[("AACW_019_DE.pdf", "de"), ("AACW_019_EN.pdf", "en"), ("AACW_019_SP.pdf", "es")],
+        &[("AAEI_019_DE.pdf", "de")],
+        &[("AAEV_019_EN.pdf", "en")],
+        &[("AAFK_019_DE.pdf", "de")],
+        &[("AAGF_019_DE.pdf", "de"), ("AAGF_019_EN.pdf", "en"), ("AAGF_019_SP.pdf", "es")],
+        &[("AAGG_019_DE.pdf", "de"), ("AAGG_019_EN.pdf", "en"), ("AAGG_019_SP.pdf", "es")],
+        &[("AAGS_019_DE.pdf", "de"), ("AAGS_019_EN.pdf", "en")],
+        &[("AAGZ_019_DE.pdf", "de"), ("AAGZ_019_EN.pdf", "en")],
+        &[("AAHA_019_DE.pdf", "de"), ("AAHA_019_EN.pdf", "en")],
+        &[("AAHM_019_DE.pdf", "de")],
+        &[("AAHO_019_DE.pdf", "de")],
+        &[("AAHQ_019_DE.pdf", "de")],
+        &[("AAIR_019_DE.pdf", "de"), ("AAIR_019_EN.pdf", "en"), ("AAIR_019_SP.pdf", "es")],
+        &[("AAIS_019_DE.pdf", "de")],
+        &[("AAKI_019_SP.pdf", "es")],
+        &[("AAKS_019_DE.pdf", "de"), ("AAKS_019_EN.pdf", "en"), ("AAKS_019_SP.pdf", "es")],
+        &[("AALH_019_DE.pdf", "de"), ("AALH_019_EN.pdf", "en"), ("AALH_019_SP.pdf", "es")],
+        &[("AALP_019_DE.pdf", "de"), ("AALP_019_EN.pdf", "en")],
+        &[("AALQ_019_DE.pdf", "de"), ("AALQ_019_EN.pdf", "en")],
+        &[("AALR_019_DE.pdf", "de"), ("AALR_019_EN.pdf", "en")],
+        &[("AAMB_019_DE.pdf", "de")],
+        &[("AANE_019_DE.pdf", "de"), ("AANE_019_EN.pdf", "en"), ("AANE_019_SP.pdf", "es")],
+        &[("AAXC_019_DE.pdf", "de"), ("AAXC_019_EN.pdf", "en")],
+        &[("ABRS_019_EN.pdf", "en")],
+        &[("ADDS_019_DE.pdf", "de")],
+        &[("BAGE_019_DE.pdf", "de"), ("BAGE_019_EN.pdf", "en")],
+        &[("BAGO_019_DE.pdf", "de"), ("BAGO_019_EN.pdf", "en"), ("BAGO_019_SP.pdf", "es")],
+        &[("BAGQ_019_DE.pdf", "de"), ("BAGQ_019_EN.pdf", "en"), ("BAGQ_019_SP.pdf", "es")],
+        &[("BAGU_019_DE.pdf", "de"), ("BAGU_019_EN.pdf", "en"), ("BAGU_019_SP.pdf", "es")],
+        &[("BAGW_019_DE.pdf", "de"), ("BAGW_019_EN.pdf", "en"), ("BAGW_019_SP.pdf", "es")],
+        // ── entity 033 ────────────────────────────────────────────────────────
+        &[("AACB_033_IT.pdf", "it")],
+        &[("AADQ_033_IT.pdf", "it")],
+        &[("AAEA_033_IT.pdf", "it")],
+        &[("AAGZ_033_IT.pdf", "it")],
+        &[("AAKP_033_IT.pdf", "it")],
+        &[("AAMK_033_IT.pdf", "it")],
+        &[("AAOC_033_IT.pdf", "it")],
+        &[("AAOE_033_IT.pdf", "it")],
+        &[("AAOF_033_IT.pdf", "it")],
+        &[("AAOI_033_IT.pdf", "it")],
+        &[("AAOK_033_EN.pdf", "en")],
+        &[("AAOM_033_IT.pdf", "it")],
+        &[("AAOO_033_EN.pdf", "en")],
+        &[("AAOS_033_IT.pdf", "it")],
+        &[("AAOV_033_IT.pdf", "it")],
+        &[("AAPD_033_IT.pdf", "it")],
+        &[("AAPM_033_IT.pdf", "it")],
+        &[("AAPQ_033_IT.pdf", "it")],
+        &[("AAPR_033_IT.pdf", "it")],
+        &[("AAPS_033_IT.pdf", "it")],
+        &[("AAPT_033_IT.pdf", "it")],
+        &[("AAQB_033_IT.pdf", "it")],
+        &[("AAQD_033_IT.pdf", "it")],
+        &[("AAQG_033_IT.pdf", "it")],
+        &[("AAQJ_033_IT.pdf", "it")],
+        &[("AAQK_033_IT.pdf", "it")],
+        &[("AAQM_033_IT.pdf", "it")],
+        &[("AAQQ_033_IT.pdf", "it")],
+        &[("AARB_033_IT.pdf", "it")],
+        &[("AARI_033_IT.pdf", "it")],
+        &[("AARM_033_IT.pdf", "it")],
+        &[("AARN_033_IT.pdf", "it")],
+        &[("AARV_033_IT.pdf", "it")],
+        &[("AATK_033_IT.pdf", "it")],
+        &[("BAQM_033_IT.pdf", "it")],
+        &[("BAUL_033_IT.pdf", "it")],
+    ];
+
+    for form_pdfs in all_forms {
+        let label = form_pdfs
+            .iter()
+            .map(|(f, l)| format!("{f}({l})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("Processing: {label}");
+        assert_aem_xml_valid_for(form_pdfs);
+    }
+}
+
 #[test]
 fn test_aags_de_en_state_counts_match() {
     // After fixing non-deterministic HashMap iteration in the script engine,
