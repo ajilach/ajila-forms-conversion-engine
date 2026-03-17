@@ -33,11 +33,7 @@ pub fn ImageGrid(
 }
 
 #[component]
-pub fn ImageModal(
-    name: String,
-    data: String,
-    on_close: EventHandler<()>,
-) -> Element {
+pub fn ImageModal(name: String, data: String, on_close: EventHandler<()>) -> Element {
     rsx! {
         div { class: "modal-overlay", onclick: move |_| on_close.call(()),
 

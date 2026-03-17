@@ -219,8 +219,12 @@ impl RadioButtonGrouper {
                     };
 
                     // Check if horizontally aligned and close
-                    if last_bounds.is_horizontally_aligned(&candidate_bounds, self.alignment_tolerance) {
-                        let distance = last_bounds.horizontal_gap_to(&candidate_bounds).unwrap_or(Decimal::MAX);
+                    if last_bounds
+                        .is_horizontally_aligned(&candidate_bounds, self.alignment_tolerance)
+                    {
+                        let distance = last_bounds
+                            .horizontal_gap_to(&candidate_bounds)
+                            .unwrap_or(Decimal::MAX);
 
                         if distance <= self.max_horizontal_gap
                             && !self.has_elements_between(
@@ -258,8 +262,12 @@ impl RadioButtonGrouper {
                     };
 
                     // Check if vertically aligned
-                    if last_bounds.is_vertically_aligned(&candidate_bounds, self.alignment_tolerance) {
-                        let distance = last_bounds.vertical_gap_to(&candidate_bounds).unwrap_or(Decimal::MAX);
+                    if last_bounds
+                        .is_vertically_aligned(&candidate_bounds, self.alignment_tolerance)
+                    {
+                        let distance = last_bounds
+                            .vertical_gap_to(&candidate_bounds)
+                            .unwrap_or(Decimal::MAX);
                         let inset_threshold = Decimal::from_str("10.0").unwrap();
 
                         // Check if there's only inset content between (no blocking elements)
@@ -396,8 +404,10 @@ impl RadioButtonGrouper {
                         continue;
                     };
 
-                    if rb_field_bounds.is_vertically_aligned(&other_field_bounds, self.alignment_tolerance)
-                        || rb_field_bounds.is_horizontally_aligned(&other_field_bounds, self.alignment_tolerance)
+                    if rb_field_bounds
+                        .is_vertically_aligned(&other_field_bounds, self.alignment_tolerance)
+                        || rb_field_bounds
+                            .is_horizontally_aligned(&other_field_bounds, self.alignment_tolerance)
                     {
                         group.push(other_idx);
                         assigned.insert(other_idx);

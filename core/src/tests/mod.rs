@@ -1,4 +1,3 @@
-
 pub mod helpers;
 
 use helpers::{
@@ -8,10 +7,9 @@ use helpers::{
     input_path, load_ubs_profile,
 };
 
-use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode};
+use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
-
 
 #[test]
 fn test_parse_xfa_from_aaab_document() {
@@ -132,7 +130,10 @@ fn test_flatten_aaab_xfa() {
     // Test flattening a real XFA document via public API
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     println!("\nFlattened AAAB document:");
@@ -173,12 +174,21 @@ fn test_debug_fim_company_font() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     println!("\n=== Font weights for key text elements ===");
     for node in flattened.iter_nodes() {
-        if let FlattenedNodeKind::Text { content, font_size, font_name, .. } = &node.kind {
+        if let FlattenedNodeKind::Text {
+            content,
+            font_size,
+            font_name,
+            ..
+        } = &node.kind
+        {
             let text = content.trim();
             // Check key headings
             if text.contains("FIM Company")
@@ -230,7 +240,10 @@ fn test_aaab_fim_company_has_correct_font() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the FIM Company text node
@@ -242,12 +255,24 @@ fn test_aaab_fim_company_has_correct_font() {
         }
     });
 
-    assert!(fim_company_node.is_some(), "Should find 'FIM Company' text node");
+    assert!(
+        fim_company_node.is_some(),
+        "Should find 'FIM Company' text node"
+    );
     let node = fim_company_node.unwrap();
 
-    if let FlattenedNodeKind::Text { font_size, font_name, .. } = &node.kind {
-        let font = node.style.font.as_ref().expect("FIM Company should have font info");
-        
+    if let FlattenedNodeKind::Text {
+        font_size,
+        font_name,
+        ..
+    } = &node.kind
+    {
+        let font = node
+            .style
+            .font
+            .as_ref()
+            .expect("FIM Company should have font info");
+
         // Debug output
         println!("FIM Company font properties:");
         println!("  kind.font_name: {}", font_name);
@@ -255,7 +280,7 @@ fn test_aaab_fim_company_has_correct_font() {
         println!("  style.typeface: {}", font.typeface);
         println!("  style.size: {}", font.size);
         println!("  style.weight: {:?}", font.weight);
-        
+
         // Check typeface - should be Frutiger 45 Light, not Myriad Pro
         assert!(
             font.typeface.contains("Frutiger"),
@@ -272,11 +297,7 @@ fn test_aaab_fim_company_has_correct_font() {
         );
 
         // Check weight - should be bold
-        assert_eq!(
-            font.weight,
-            FontWeight::Bold,
-            "FIM Company should be bold"
-        );
+        assert_eq!(font.weight, FontWeight::Bold, "FIM Company should be bold");
     }
 }
 
@@ -288,7 +309,10 @@ fn test_aaab_disclaimer_text_not_bold() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the disclaimer text node
@@ -301,19 +325,36 @@ fn test_aaab_disclaimer_text_not_bold() {
         }
     });
 
-    assert!(disclaimer_node.is_some(), "Should find disclaimer text node containing '{}'", disclaimer_text);
+    assert!(
+        disclaimer_node.is_some(),
+        "Should find disclaimer text node containing '{}'",
+        disclaimer_text
+    );
     let node = disclaimer_node.unwrap();
 
-    if let FlattenedNodeKind::Text { content, font_size, font_name, .. } = &node.kind {
-        let font = node.style.font.as_ref().expect("Disclaimer should have font info");
-        
-        println!("Disclaimer text: '{}'", content.chars().take(60).collect::<String>());
+    if let FlattenedNodeKind::Text {
+        content,
+        font_size,
+        font_name,
+        ..
+    } = &node.kind
+    {
+        let font = node
+            .style
+            .font
+            .as_ref()
+            .expect("Disclaimer should have font info");
+
+        println!(
+            "Disclaimer text: '{}'",
+            content.chars().take(60).collect::<String>()
+        );
         println!("  kind.font_name: {}", font_name);
         println!("  kind.font_size: {}", font_size);
         println!("  style.typeface: {}", font.typeface);
         println!("  style.size: {}", font.size);
         println!("  style.weight: {:?}", font.weight);
-        
+
         // Check weight - should NOT be bold (it's body text, not a heading)
         assert_ne!(
             font.weight,
@@ -337,25 +378,31 @@ fn test_debug_aaab_fim_company_xfa_structure() {
     fn find_and_print_draw(nodes: &[XfaNode], target_name: &str, _depth: usize) {
         for node in nodes {
             let node_name = node.name.as_deref().unwrap_or("");
-            
+
             if node_name == target_name && matches!(node.kind, XfaNodeKind::Draw) {
                 println!("\n=== Found {} ===", target_name);
                 println!("Font element: {:?}", node.font);
                 println!("Attributes: {:?}", node.attributes);
-                
+
                 // Print all children recursively
                 fn print_children(children: &[XfaNode], indent: usize) {
                     let prefix = "  ".repeat(indent);
                     for child in children {
                         match &child.kind {
-                            XfaNodeKind::Element { tag_name, text_content } => {
-                                let text_preview = text_content.as_ref()
-                                    .map(|t| format!(": \"{}\"", t.chars().take(50).collect::<String>()))
+                            XfaNodeKind::Element {
+                                tag_name,
+                                text_content,
+                            } => {
+                                let text_preview = text_content
+                                    .as_ref()
+                                    .map(|t| {
+                                        format!(": \"{}\"", t.chars().take(50).collect::<String>())
+                                    })
                                     .unwrap_or_default();
-                                let attrs = if child.attributes.is_empty() { 
-                                    String::new() 
-                                } else { 
-                                    format!(" attrs={:?}", child.attributes) 
+                                let attrs = if child.attributes.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" attrs={:?}", child.attributes)
                                 };
                                 println!("{}<{}>{}{}", prefix, tag_name, attrs, text_preview);
                             }
@@ -369,7 +416,7 @@ fn test_debug_aaab_fim_company_xfa_structure() {
                 print_children(&node.children, 1);
                 return;
             }
-            
+
             find_and_print_draw(&node.children, target_name, _depth + 1);
         }
     }
@@ -389,10 +436,7 @@ fn test_aaai_title_is_h1() {
     let headings = collect_headings(&merged);
 
     // Find the H1 heading
-    let h1_headings: Vec<_> = headings
-        .iter()
-        .filter(|(level, _)| *level == 1)
-        .collect();
+    let h1_headings: Vec<_> = headings.iter().filter(|(level, _)| *level == 1).collect();
 
     assert!(
         !h1_headings.is_empty(),
@@ -418,10 +462,7 @@ fn test_aaai_kunde_is_h2() {
     let headings = collect_headings(&merged);
 
     // Find the H2 heading "Kunde"
-    let h2_headings: Vec<_> = headings
-        .iter()
-        .filter(|(level, _)| *level == 2)
-        .collect();
+    let h2_headings: Vec<_> = headings.iter().filter(|(level, _)| *level == 2).collect();
 
     // "Kunde" should be detected as H2
     let kunde_heading = h2_headings.iter().find(|(_, text)| text.contains("Kunde"));
@@ -537,7 +578,10 @@ fn test_aaai_field_alignment() {
     // Test that specific fields that should be on the same line have the same Y coordinate
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Helper function to find field by name
@@ -675,7 +719,10 @@ fn test_aaai_t_left_font_properties() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the T_Left text node
@@ -858,7 +905,10 @@ fn test_aaab_des_label_alignment() {
     // Use AAAI which has these fields
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Helper function to find text node by source_name (Draw element name)
@@ -920,8 +970,7 @@ fn test_aaab_des_label_alignment() {
     let des_postal =
         find_draw_by_name(&flattened, "DES_PostalCode").expect("DES_PostalCode not found");
     let des_city = find_draw_by_name(&flattened, "DES_City").expect("DES_City not found");
-    let des_country =
-        find_draw_by_name(&flattened, "DES_Country").expect("DES_Country not found");
+    let des_country = find_draw_by_name(&flattened, "DES_Country").expect("DES_Country not found");
 
     println!("\n=== DES Label Alignment Test ===");
     println!(
@@ -1511,8 +1560,8 @@ fn test_aaai_header_positioning() {
     }
 
     // Find UBS Europe SE text (company name in header)
-    let ubs_text = find_text_containing(&flattened, "UBS Europe SE")
-        .expect("UBS Europe SE text not found");
+    let ubs_text =
+        find_text_containing(&flattened, "UBS Europe SE").expect("UBS Europe SE text not found");
 
     // Find form title text
     let title_text = find_text_containing(&flattened, "Vereinbarung")
@@ -1557,7 +1606,10 @@ fn test_aaai_subform_no_overlap() {
     // These are separate sections that should be stacked vertically
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // "Kunde" is the first h2 section header in the document.
@@ -1852,10 +1904,7 @@ fn test_flattened_with_scripts_has_vorname() {
     let nodes = form.xfa_nodes();
 
     // Find the node and check its presence
-    fn find_node_info(
-        nodes: &[xfa::XfaNode],
-        target: &str,
-    ) -> Option<(String, String, String)> {
+    fn find_node_info(nodes: &[xfa::XfaNode], target: &str) -> Option<(String, String, String)> {
         for node in nodes {
             if node.name.as_deref() == Some(target) {
                 let presence = node
@@ -2008,7 +2057,10 @@ fn test_des_firstname_gets_vorname_via_embed() {
     // Extract and parse XFA from AAAB via Blueprint
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find DES_FirstName in the flattened output
@@ -2090,7 +2142,10 @@ fn test_vorname_label_visible_in_flattened_output() {
     // Extract and parse XFA from AAAB via Blueprint
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Search for any text node containing "Vorname"
@@ -2255,7 +2310,11 @@ fn test_aaai_label_attachment() {
     // Count fields with labels
     let labeled_count = fields
         .iter()
-        .filter(|f| f.label.as_ref().map_or(false, |l| !l.as_plain_text().is_empty()))
+        .filter(|f| {
+            f.label
+                .as_ref()
+                .map_or(false, |l| !l.as_plain_text().is_empty())
+        })
         .count();
 
     assert!(
@@ -2274,7 +2333,10 @@ fn test_aaai_signature_labels_present() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Expected signature labels (set by scripts)
@@ -2326,7 +2388,10 @@ fn test_aaai_unterschrift_en_section_header() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Search for "Unterschrift(en)" in text nodes
@@ -2743,9 +2808,9 @@ fn test_aaab_hidden_field_with_computed_value_not_visible() {
     let flattened = form.flattened();
 
     // Check if ffClientDetails appears in flattened output
-    let has_client_details_field = flattened.iter_nodes().any(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "ffClientDetails")
-    });
+    let has_client_details_field = flattened.iter_nodes().any(
+        |n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "ffClientDetails"),
+    );
 
     // Also check for any text node with "Endkunde" content that came DIRECTLY from ffClientDetails
     // Note: Text from OTHER Draw elements (like T_Client_Details) that embed ffClientDetails via
@@ -3044,7 +3109,10 @@ fn test_aaab_ffrb1_shows_neuanlage_text_when_rb1_selected() {
     // Extract and parse XFA from AAAB via Blueprint
     let mut bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Look for ffrb1 which should contain "Neuanlage (möglich ab dem 01. des aktuellen Monats)"
@@ -3103,30 +3171,30 @@ fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
         let form_ref = bp.form().expect("should be XFA PDF");
         let nodes = form_ref.xfa_nodes();
 
-    // Debug: Check what scripts are on RB_Group_Neuanlage
-    fn find_scripts_on_node(nodes: &[XfaNode], target_name: &str) -> Vec<(String, String)> {
-        let mut results = Vec::new();
-        for node in nodes {
-            if node.name.as_deref() == Some(target_name) {
-                // Found the node, look at events
-                let events = crate::xfa::scripting::parse_events_from_node(&node.children);
-                for event in events {
-                    results.push((
-                        format!("{:?}", event.activity),
-                        event.source.chars().take(200).collect(),
-                    ));
+        // Debug: Check what scripts are on RB_Group_Neuanlage
+        fn find_scripts_on_node(nodes: &[XfaNode], target_name: &str) -> Vec<(String, String)> {
+            let mut results = Vec::new();
+            for node in nodes {
+                if node.name.as_deref() == Some(target_name) {
+                    // Found the node, look at events
+                    let events = crate::xfa::scripting::parse_events_from_node(&node.children);
+                    for event in events {
+                        results.push((
+                            format!("{:?}", event.activity),
+                            event.source.chars().take(200).collect(),
+                        ));
+                    }
                 }
+                results.extend(find_scripts_on_node(&node.children, target_name));
             }
-            results.extend(find_scripts_on_node(&node.children, target_name));
+            results
         }
-        results
-    }
 
-    let excl_group_scripts = find_scripts_on_node(nodes, "RB_Group_Neuanlage");
-    println!("\n=== Scripts on RB_Group_Neuanlage ===");
-    for (activity, script) in &excl_group_scripts {
-        println!("  {}: {}", activity, script);
-    }
+        let excl_group_scripts = find_scripts_on_node(nodes, "RB_Group_Neuanlage");
+        println!("\n=== Scripts on RB_Group_Neuanlage ===");
+        for (activity, script) in &excl_group_scripts {
+            println!("  {}: {}", activity, script);
+        }
     } // end XFA tree inspection scope
 
     // Access the form for interactive operations
@@ -3239,8 +3307,7 @@ fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
 
     // The section title should contain "Löschung" after clicking RB_3
     assert!(
-        found_section_title.is_some()
-            && found_section_title.as_ref().unwrap().contains("Löschung"),
+        found_section_title.is_some() && found_section_title.as_ref().unwrap().contains("Löschung"),
         "After clicking RB_3, section title should contain 'Löschung'. \
             Got: {:?}. This indicates that the change event chain is not working correctly.",
         found_section_title
@@ -3264,21 +3331,17 @@ fn test_aaab_click_rb3_changes_section_title_to_loeschung() {
 /// - RB_3 selected: Löschung section visible (with nested controls)
 #[test]
 fn test_aaab_conditional_groups_section_visibility() {
-
     fn has_radio_selection(state: &crate::FormState, radio_name: &str) -> bool {
-        state
-            .selections
-            .iter()
-            .any(|selection| {
-                selection.kind == SelectionKind::Radio
-                    && selection
-                        .group_som_path
-                        .as_ref()
-                        .map(|group| group.name() == "RB_Group_Neuanlage")
-                        .unwrap_or(false)
-                    && (selection.som_path.name() == radio_name
-                        || selection.values.iter().any(|value| value == radio_name))
-            })
+        state.selections.iter().any(|selection| {
+            selection.kind == SelectionKind::Radio
+                && selection
+                    .group_som_path
+                    .as_ref()
+                    .map(|group| group.name() == "RB_Group_Neuanlage")
+                    .unwrap_or(false)
+                && (selection.som_path.name() == radio_name
+                    || selection.values.iter().any(|value| value == radio_name))
+        })
     }
 
     /// Helper to count nodes containing a specific text pattern
@@ -3299,7 +3362,10 @@ fn test_aaab_conditional_groups_section_visibility() {
     let states = bp.states().unwrap();
 
     println!("\n=== Exhaustive States Found: {} ===", states.len());
-    assert!(states.len() >= 3, "AAAB should have at least 3 exhaustive states (RB_1, RB_2, RB_3)");
+    assert!(
+        states.len() >= 3,
+        "AAAB should have at least 3 exhaustive states (RB_1, RB_2, RB_3)"
+    );
 
     let mut checked_rb1 = false;
     let mut checked_rb2 = false;
@@ -3311,7 +3377,12 @@ fn test_aaab_conditional_groups_section_visibility() {
 
         // Check section title for Änderung/Löschung
         let section_title = flattened.iter_nodes().find_map(|n| {
-            if let FlattenedNodeKind::Text { content, source_name: Some(name), .. } = &n.kind {
+            if let FlattenedNodeKind::Text {
+                content,
+                source_name: Some(name),
+                ..
+            } = &n.kind
+            {
                 if name == "T_Sectiontitle" {
                     return Some(content.clone());
                 }
@@ -3396,7 +3467,6 @@ fn test_aaab_conditional_groups_section_visibility() {
 /// and verifies they differ appropriately.
 #[test]
 fn test_aaab_conditional_groups_field_enumeration() {
-
     fn radio_name(state: &crate::FormState) -> Option<String> {
         state
             .selections
@@ -3433,7 +3503,13 @@ fn test_aaab_conditional_groups_field_enumeration() {
     // Collect field sets from all states
     let all_states_fields: Vec<(String, Option<String>, Vec<String>)> = states
         .iter()
-        .map(|s| (s.label.clone(), radio_name(&s), get_field_names(&s.flattened)))
+        .map(|s| {
+            (
+                s.label.clone(),
+                radio_name(&s),
+                get_field_names(&s.flattened),
+            )
+        })
         .collect();
 
     println!("\n=== Field Enumeration by State ===");
@@ -3442,14 +3518,18 @@ fn test_aaab_conditional_groups_field_enumeration() {
     }
 
     // Build sets for comparison – we need at least 3 states
-    assert!(all_states_fields.len() >= 3, "AAAB should have at least 3 exhaustive states");
+    assert!(
+        all_states_fields.len() >= 3,
+        "AAAB should have at least 3 exhaustive states"
+    );
 
     // Each state should have a significant number of fields
     for (label, _, fields) in &all_states_fields {
         assert!(
             fields.len() > 10,
             "State '{}' should have significant fields, got {}",
-            label, fields.len()
+            label,
+            fields.len()
         );
     }
 
@@ -3504,9 +3584,7 @@ fn test_aaab_merged_has_expected_conditionals() {
     // - One or more inside "Löschung" for nested radio selections
     // - Possibly one for the default state if different
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{
-        HeadingLevel, InlineNode, StructuredNode,
-    };
+    use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
 
     // Get merged structured nodes directly without file I/O
     let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -3602,7 +3680,7 @@ fn test_aaab_merged_signature_section_not_conditional() {
     // different values per radio state by the `change()` script, making that
     // part of the signature section state-dependent.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{StructuredNode};
+    use crate::structured::StructuredNode;
 
     // Get merged structured nodes directly without file I/O
     let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -3646,7 +3724,7 @@ fn test_aaab_merged_signature_section_not_conditional() {
         }
     }
 
-    // The signature fields should be at the root level (or in GridLayout at root level), 
+    // The signature fields should be at the root level (or in GridLayout at root level),
     // not inside any conditional
     let has_signature_date_at_root = find_at_root_or_grid(&merged, is_signature_date_field);
     let has_fullname_at_root = find_at_root_or_grid(&merged, is_fullname_field);
@@ -3733,10 +3811,7 @@ fn test_aaai_kunde_heading_not_in_repeatable() {
                     }
                 }
                 StructuredNode::Repeatable(rep) => {
-                    if heading_inside_repeatable(
-                        std::slice::from_ref(rep.item.as_ref()),
-                        true,
-                    ) {
+                    if heading_inside_repeatable(std::slice::from_ref(rep.item.as_ref()), true) {
                         return true;
                     }
                 }
@@ -3778,16 +3853,19 @@ fn test_aaai_watermark_not_recognized_as_field() {
     // Only fields with access="open" should be marked as Fields.
     // This is a regression test for the bug where protected/readOnly fields
     // were incorrectly being grouped as interactive fields.
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
-        .expect("Failed to load AAAI PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let states = bp.states().expect("Failed to explore states");
-    let first_state = states.iter().next().expect("Should have at least one state");
+    let first_state = states
+        .iter()
+        .next()
+        .expect("Should have at least one state");
 
     // Verify "Watermark" exists in the flattened output but is non-interactive
     let flattened = &first_state.flattened;
-    let watermark_node = flattened.iter_nodes().find(
-        |n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "Watermark"),
-    );
+    let watermark_node = flattened
+        .iter_nodes()
+        .find(|n| matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "Watermark"));
     assert!(
         watermark_node.is_some(),
         "Should find a Watermark field in the flattened representation"
@@ -3813,10 +3891,13 @@ fn test_aaai_has_header_and_footer_groups() {
     // from the master page (page background) content.
     use crate::flattened::{Hint, MasterPageRegion};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
-        .expect("Failed to load AAAI PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let states = bp.states().expect("Failed to explore states");
-    let first_state = states.iter().next().expect("Should have at least one state");
+    let first_state = states
+        .iter()
+        .next()
+        .expect("Should have at least one state");
     let flattened = &first_state.flattened;
 
     // Count nodes with MasterPage hints by region
@@ -4124,9 +4205,9 @@ fn test_aaab_heading_structure() {
 
     // Verify each expected heading exists with the correct level
     for (expected_level, expected_text) in &expected_headings {
-        let found = heading_info.iter().find(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let found = heading_info
+            .iter()
+            .find(|(level, text)| level == expected_level && text.contains(expected_text));
 
         assert!(
             found.is_some(),
@@ -4143,16 +4224,17 @@ fn test_aaab_heading_structure() {
     }
 
     println!("\n✓ AAAB heading structure test passed!");
-    println!("✓ All {} expected headings found with correct levels", expected_headings.len());
+    println!(
+        "✓ All {} expected headings found with correct levels",
+        expected_headings.len()
+    );
 }
 
 #[test]
 fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
     // Test using structured nodes directly instead of reading from file
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{
-        FieldNode, HeadingNode, InlineNode, StructuredNode,
-    };
+    use crate::structured::{FieldNode, HeadingNode, InlineNode, StructuredNode};
 
     // Get merged structured nodes directly
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4177,9 +4259,10 @@ fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
 
     // Helper to check if a field has ISIN as its label
     fn has_isin_label(field: &FieldNode) -> bool {
-        field.label.as_ref().is_some_and(|label_nodes| {
-            label_nodes.as_plain_text().trim() == "ISIN"
-        })
+        field
+            .label
+            .as_ref()
+            .is_some_and(|label_nodes| label_nodes.as_plain_text().trim() == "ISIN")
     }
 
     fn contains_isin_field(node: &StructuredNode) -> bool {
@@ -4406,7 +4489,10 @@ fn test_aaab_direktvereinbarung2_column_headers_absorbed() {
         column_header_headings.is_empty(),
         "Found {} column headers appearing as standalone headings: {:?}\nThese should be absorbed as column labels in the repeatable grid, not separate headings.",
         column_header_headings.len(),
-        column_header_headings.iter().map(|(_, h)| h.as_str()).collect::<Vec<_>>()
+        column_header_headings
+            .iter()
+            .map(|(_, h)| h.as_str())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -4419,7 +4505,7 @@ fn test_aaab_loeschung_radio_buttons_are_grouped() {
     // - Löschung Sonderkondition
     // - Löschung Direktvereinbarung
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{StructuredNode, FieldNode, FieldType};
+    use crate::structured::{FieldNode, FieldType, StructuredNode};
 
     // Get merged structured nodes directly without file I/O
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4441,8 +4527,10 @@ fn test_aaab_loeschung_radio_buttons_are_grouped() {
 
     // Verify we have 4 options
     assert_eq!(
-        options.len(), 4,
-        "Expected 4 radio button options, found {}", options.len()
+        options.len(),
+        4,
+        "Expected 4 radio button options, found {}",
+        options.len()
     );
 
     // Verify the expected labels are present
@@ -4453,12 +4541,12 @@ fn test_aaab_loeschung_radio_buttons_are_grouped() {
         "Löschung Direktvereinbarung",
     ];
 
-    let option_names: Vec<&str> = options.iter()
-        .map(|o| o.name.as_str())
-        .collect();
+    let option_names: Vec<&str> = options.iter().map(|o| o.name.as_str()).collect();
 
     for expected in &expected_labels {
-        let found = option_names.iter().any(|name: &&str| name.contains(expected));
+        let found = option_names
+            .iter()
+            .any(|name: &&str| name.contains(expected));
         assert!(
             found,
             "Expected to find radio option containing '{}'\nFound options: {:?}",
@@ -4505,8 +4593,7 @@ fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
     let matching: Vec<_> = conditionals
         .iter()
         .filter(|c| {
-            c.condition.field_name == retro_field.name
-                && c.condition.value == retro_rueck_value
+            c.condition.field_name == retro_field.name && c.condition.value == retro_rueck_value
         })
         .collect();
 
@@ -4546,8 +4633,7 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
                     }
                 }
                 StructuredNode::GridLayout(g) => {
-                    let child_nodes: Vec<_> =
-                        g.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
                     if has_field_with_label(&child_nodes, needle) {
                         return true;
                     }
@@ -4579,9 +4665,7 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
                         return true;
                     }
                 }
-                StructuredNode::Conditional(c)
-                    if c.condition.field_name == *retro_field_name =>
-                {
+                StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
                     // Skip: ISIN inside a Retro conditional is expected
                 }
                 StructuredNode::Conditional(c) => {
@@ -4608,9 +4692,7 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
     ) {
         for node in nodes {
             match node {
-                StructuredNode::Conditional(c)
-                    if c.condition.field_name == *retro_field_name =>
-                {
+                StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
                     if contains_isin_repeatable(std::slice::from_ref(&c.content)) {
                         out.push(c.condition.value.clone());
                     }
@@ -4686,10 +4768,9 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
                     }
                 }
                 StructuredNode::Group(g) => {
-                    if let Some(found) = find_subtree_containing_retro_field(
-                        &g.children,
-                        retro_field_name,
-                    ) {
+                    if let Some(found) =
+                        find_subtree_containing_retro_field(&g.children, retro_field_name)
+                    {
                         return Some(found);
                     }
                 }
@@ -4770,9 +4851,7 @@ fn test_aaab_fim3_text_inside_rb2_conditional() {
                         return true;
                     }
                 }
-                StructuredNode::Conditional(c)
-                    if c.condition.field_name == *retro_field_name =>
-                {
+                StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
                     // Skip: FIM3 inside a Retro conditional is expected
                 }
                 StructuredNode::Conditional(c) => {
@@ -4796,16 +4875,13 @@ fn test_aaab_fim3_text_inside_rb2_conditional() {
     ) -> Option<InputValue> {
         for node in nodes {
             match node {
-                StructuredNode::Conditional(c)
-                    if c.condition.field_name == *retro_field_name =>
-                {
+                StructuredNode::Conditional(c) if c.condition.field_name == *retro_field_name => {
                     if contains_fim3_text(std::slice::from_ref(&c.content)) {
                         return Some(c.condition.value.clone());
                     }
                 }
                 StructuredNode::Group(g) => {
-                    if let Some(found) =
-                        find_fim3_conditional_value(&g.children, retro_field_name)
+                    if let Some(found) = find_fim3_conditional_value(&g.children, retro_field_name)
                     {
                         return Some(found);
                     }
@@ -4916,9 +4992,9 @@ fn test_aaei_heading_structure() {
     ];
 
     for (expected_level, expected_text) in &expected {
-        let found = heading_info.iter().any(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let found = heading_info
+            .iter()
+            .any(|(level, text)| level == expected_level && text.contains(expected_text));
         assert!(
             found,
             "Expected to find H{} heading containing '{}', but it was not found.\n\
@@ -4936,9 +5012,9 @@ fn test_aaei_heading_structure() {
     // Verify headings appear in expected order
     let mut last_pos = 0;
     for (expected_level, expected_text) in &expected {
-        let pos = heading_info.iter().position(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let pos = heading_info
+            .iter()
+            .position(|(level, text)| level == expected_level && text.contains(expected_text));
         if let Some(p) = pos {
             assert!(
                 p >= last_pos,
@@ -4987,24 +5063,29 @@ fn test_aaei_has_repeatable_with_nachname_vorname() {
             match node {
                 StructuredNode::Repeatable(rep) => {
                     // Collect all field labels in this repeatable
-                    let found_labels = collect_field_labels_trimmed(std::slice::from_ref(rep.item.as_ref()));
-                    
+                    let found_labels =
+                        collect_field_labels_trimmed(std::slice::from_ref(rep.item.as_ref()));
+
                     // Check if all target labels are present
-                    let all_found = target_labels.iter().all(|target| {
-                        found_labels.iter().any(|label| label.contains(target))
-                    });
-                    
+                    let all_found = target_labels
+                        .iter()
+                        .all(|target| found_labels.iter().any(|label| label.contains(target)));
+
                     if all_found {
                         return Some(found_labels);
                     }
                 }
                 StructuredNode::Group(group) => {
-                    if let Some(result) = find_repeatable_with_fields(&group.children, target_labels) {
+                    if let Some(result) =
+                        find_repeatable_with_fields(&group.children, target_labels)
+                    {
                         return Some(result);
                     }
                 }
                 StructuredNode::Conditional(cond) => {
-                    if let Some(result) = find_repeatable_with_fields(&[(*cond.content).clone()], target_labels) {
+                    if let Some(result) =
+                        find_repeatable_with_fields(&[(*cond.content).clone()], target_labels)
+                    {
                         return Some(result);
                     }
                 }
@@ -5122,8 +5203,8 @@ fn test_aaaa_heading_structure() {
     // - h2: Weitere Änderung der Kommunikationskanäle
     // - h2: Unterschrift(en)
     // - h2: Nur für bankinterne Zwecke
-    let mut bp = Blueprint::from_pdf(input_path("AAAA_019_DE.pdf"))
-        .expect("Failed to load AAAA PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAA_019_DE.pdf")).expect("Failed to load AAAA PDF");
     let ctx = bp.context();
     let states = bp.states().expect("Failed to explore states");
 
@@ -5149,7 +5230,9 @@ fn test_aaaa_heading_structure() {
 
     // Verify each expected heading exists in at least one state
     for expected_text in &expected_headings_present {
-        let found = all_headings.iter().any(|(_, text)| text.contains(expected_text));
+        let found = all_headings
+            .iter()
+            .any(|(_, text)| text.contains(expected_text));
         assert!(
             found,
             "Expected to find heading containing '{}' in at least one state, but it was not found.\n\
@@ -5164,28 +5247,27 @@ fn test_aaaa_heading_structure() {
     }
 
     // Verify H3 headings (subsections) have level 3
-    let h3_headings = ["Weitere Bankbeziehung(en)", "Kollektivkonto", "Zusätzliche Adresse"];
+    let h3_headings = [
+        "Weitere Bankbeziehung(en)",
+        "Kollektivkonto",
+        "Zusätzliche Adresse",
+    ];
     for h3_text in h3_headings {
         let heading = all_headings.iter().find(|(_, text)| text.contains(h3_text));
         if let Some((level, text)) = heading {
-            assert_eq!(
-                *level, 3,
-                "'{}' should be H3, but got H{}",
-                text, level
-            );
+            assert_eq!(*level, 3, "'{}' should be H3, but got H{}", text, level);
         }
     }
 
     // Verify H2 headings have level 2
-    let h2_headings = ["Weitere Änderung der Kommunikationskanäle", "Unterschrift(en)"];
+    let h2_headings = [
+        "Weitere Änderung der Kommunikationskanäle",
+        "Unterschrift(en)",
+    ];
     for h2_text in h2_headings {
         let heading = all_headings.iter().find(|(_, text)| text.contains(h2_text));
         if let Some((level, text)) = heading {
-            assert_eq!(
-                *level, 2,
-                "'{}' should be H2, but got H{}",
-                text, level
-            );
+            assert_eq!(*level, 2, "'{}' should be H2, but got H{}", text, level);
         }
     }
 }
@@ -5193,7 +5275,7 @@ fn test_aaaa_heading_structure() {
 #[test]
 fn test_aaaa_has_repeatable_sections() {
     // Test that the AAAA document has repeatable sections
-    // According to the document structure, there are 2 repeatable sections 
+    // According to the document structure, there are 2 repeatable sections
     // containing fields like "AccountNumber"
     use crate::structured::StructuredNode;
 
@@ -5203,7 +5285,7 @@ fn test_aaaa_has_repeatable_sections() {
     // Find all repeatable sections
     fn find_repeatables(
         nodes: &[StructuredNode],
-        found: &mut Vec<(u32, Option<u32>, Vec<String>)>,  // (min, max, field_names_inside)
+        found: &mut Vec<(u32, Option<u32>, Vec<String>)>, // (min, max, field_names_inside)
     ) {
         for node in nodes {
             match node {
@@ -5229,7 +5311,13 @@ fn test_aaaa_has_repeatable_sections() {
 
     println!("\n=== All Repeatables ===");
     for (i, (min, max, fields)) in all_repeatables.iter().enumerate() {
-        println!("  {}: min={}, max={:?}, fields={:?}", i + 1, min, max, fields);
+        println!(
+            "  {}: min={}, max={:?}, fields={:?}",
+            i + 1,
+            min,
+            max,
+            fields
+        );
     }
 
     // Per user spec: 2 repeatables
@@ -5299,9 +5387,9 @@ fn test_aaaa_has_two_radio_button_groups() {
 
     let found_first_group = radio_fields.iter().any(|field| {
         if let FieldType::Radio { options } = &field.input_type {
-            first_group_options.iter().all(|expected| {
-                options.iter().any(|opt| opt.name.contains(expected))
-            })
+            first_group_options
+                .iter()
+                .all(|expected| options.iter().any(|opt| opt.name.contains(expected)))
         } else {
             false
         }
@@ -5313,16 +5401,13 @@ fn test_aaaa_has_two_radio_button_groups() {
     );
 
     // Find the second radio group (Versandadresse/Duplikatsadresse - 2 options)
-    let second_group_options = [
-        "Abweichende Versandadresse",
-        "Duplikatsadresse",
-    ];
+    let second_group_options = ["Abweichende Versandadresse", "Duplikatsadresse"];
 
     let found_second_group = radio_fields.iter().any(|field| {
         if let FieldType::Radio { options } = &field.input_type {
-            second_group_options.iter().all(|expected| {
-                options.iter().any(|opt| opt.name.contains(expected))
-            })
+            second_group_options
+                .iter()
+                .all(|expected| options.iter().any(|opt| opt.name.contains(expected)))
         } else {
             false
         }
@@ -5381,7 +5466,9 @@ fn test_aaaa_019_checkbox_detection() {
     );
 
     // Verify "Bevollmächtigter" checkbox exists
-    let has_attorney = labels.iter().any(|l| l.contains("Bevollmächtigter") || l.contains("Bevollm"));
+    let has_attorney = labels
+        .iter()
+        .any(|l| l.contains("Bevollmächtigter") || l.contains("Bevollm"));
     assert!(
         has_attorney,
         "Expected to find checkbox with label 'Bevollmächtigter'. Found: {:?}",
@@ -5401,7 +5488,10 @@ fn test_aaai_multi_paragraph_split_at_flattening() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // These are distinct paragraph starts from the German legal text.
@@ -5480,9 +5570,7 @@ fn test_aaai_multilingual_merge_de_en() {
     // Test that merging AAAI_019_DE and AAAI_019_EN produces a StructuredNode tree
     // with TranslatedText nodes containing both "de" and "en" keys.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{
-        self, FieldNode, HeadingLevel, InlineNode, StructuredNode,
-    };
+    use crate::structured::{self, FieldNode, HeadingLevel, InlineNode, StructuredNode};
     use std::collections::HashMap;
 
     // Build envelopes for both languages
@@ -5499,7 +5587,10 @@ fn test_aaai_multilingual_merge_de_en() {
 
     // The merged context should mention both languages
     println!("Merged context language: {}", merged.context.language());
-    assert!(!merged.content.is_empty(), "Merged content should not be empty");
+    assert!(
+        !merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
 
     // =====================================================================
     // Helper: collect all InlineNodes from the tree
@@ -5625,8 +5716,7 @@ fn test_aaai_multilingual_merge_de_en() {
         _ => None,
     });
 
-    let firma_map =
-        firma_label_translated.expect("Firma label should have a TranslatedText node");
+    let firma_map = firma_label_translated.expect("Firma label should have a TranslatedText node");
 
     assert!(
         firma_map.contains_key("de") && firma_map.contains_key("en"),
@@ -5693,13 +5783,21 @@ fn test_aaoe_labels_computed_from_javascript() {
     // labels and that they appear as non-empty text in the flattened output.
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Collect all text nodes by source_name for easy lookup
     let mut text_by_source: HashMap<String, String> = HashMap::new();
     for node in flattened.iter_nodes() {
-        if let FlattenedNodeKind::Text { content, source_name: Some(sn), .. } = &node.kind {
+        if let FlattenedNodeKind::Text {
+            content,
+            source_name: Some(sn),
+            ..
+        } = &node.kind
+        {
             if !content.is_empty() {
                 text_by_source.insert(sn.clone(), content.clone());
             }
@@ -5723,12 +5821,15 @@ fn test_aaoe_labels_computed_from_javascript() {
         assert!(
             actual.is_some(),
             "Label {} should be visible with text {:?}, but has empty or missing content",
-            source_name, expected_text
+            source_name,
+            expected_text
         );
         assert_eq!(
-            actual.unwrap(), expected_text,
+            actual.unwrap(),
+            expected_text,
             "Label {} should have text {:?}",
-            source_name, expected_text
+            source_name,
+            expected_text
         );
     }
 }
@@ -5741,7 +5842,10 @@ fn test_aaoe_dropdown_has_legal_entity_and_individual_options() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the CL_ClientType dropdown and verify its options
@@ -5902,7 +6006,10 @@ fn test_aaoe_company_section_hidden_when_individual_selected() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Collect all field names in the flattened output
@@ -5940,8 +6047,11 @@ fn test_aaoe_company_section_visible_when_legal_entity_selected() {
     let form = bp.form_mut().expect("should be XFA PDF");
 
     // Switch to "Legal entity"
-    form.set_value_as_user("Page.FormConfigurator_ClientType.ClientType.CL_ClientType", "Legal entity")
-        .expect("set_value_as_user should succeed");
+    form.set_value_as_user(
+        "Page.FormConfigurator_ClientType.ClientType.CL_ClientType",
+        "Legal entity",
+    )
+    .expect("set_value_as_user should succeed");
     form.refresh().expect("refresh should succeed");
 
     // After _resetPage runs, Company.presence should be "visible"
@@ -6006,21 +6116,13 @@ fn test_aaoe_merged_has_dropdown_conditionals() {
                                 found.push(v.clone());
                             }
                         }
-                        collect_conditional_values(
-                            &[(*cond.content).clone()],
-                            field_id,
-                            found,
-                        );
+                        collect_conditional_values(&[(*cond.content).clone()], field_id, found);
                     }
                     StructuredNode::Group(group) => {
                         collect_conditional_values(&group.children, field_id, found);
                     }
                     StructuredNode::Repeatable(rep) => {
-                        collect_conditional_values(
-                            &[(*rep.item).clone()],
-                            field_id,
-                            found,
-                        );
+                        collect_conditional_values(&[(*rep.item).clone()], field_id, found);
                     }
                     _ => {}
                 }
@@ -6072,7 +6174,10 @@ fn test_aaoe_merged_has_dropdown_conditionals() {
     // The conditional fieldName must match the name of an actual field in the structured output.
     // This ensures that the HTML converter's JS can find the <select> element by name
     // and evaluate the condition correctly.
-    fn collect_all_field_names(nodes: &[StructuredNode], names: &mut Vec<crate::structured::FieldId>) {
+    fn collect_all_field_names(
+        nodes: &[StructuredNode],
+        names: &mut Vec<crate::structured::FieldId>,
+    ) {
         for node in nodes {
             match node {
                 StructuredNode::Field(f) => names.push(f.name.clone()),
@@ -6094,7 +6199,10 @@ fn test_aaoe_merged_has_dropdown_conditionals() {
         }
     }
 
-    fn collect_all_condition_field_names(nodes: &[StructuredNode], names: &mut Vec<crate::structured::FieldId>) {
+    fn collect_all_condition_field_names(
+        nodes: &[StructuredNode],
+        names: &mut Vec<crate::structured::FieldId>,
+    ) {
         for node in nodes {
             match node {
                 StructuredNode::Conditional(cond) => {
@@ -6170,13 +6278,16 @@ fn test_aaei_overlapping_text_block_merger() {
     }
 
     let lists = collect_lists(&merged);
-    assert!(!lists.is_empty(), "Expected at least one list from overlapping text merger");
+    assert!(
+        !lists.is_empty(),
+        "Expected at least one list from overlapping text merger"
+    );
 
     // The merged list should contain items referencing the expected agreement text
     let has_bundesrepublik = lists.iter().any(|l| {
-        l.items.iter().any(|item| {
-            item.as_plain_text().contains("Bundesrepublik Deutschland")
-        })
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Bundesrepublik Deutschland"))
     });
     assert!(
         has_bundesrepublik,
@@ -6208,8 +6319,7 @@ fn test_aaei_has_one_unordered_list_with_two_items() {
                     lists.extend(collect_lists(&[(*c.content).clone()]));
                 }
                 StructuredNode::GridLayout(gl) => {
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     lists.extend(collect_lists(&child_nodes));
                 }
                 _ => {}
@@ -6276,8 +6386,7 @@ fn test_aaoe_has_one_ordered_list_with_three_items() {
                     lists.extend(collect_lists(&[(*c.content).clone()]));
                 }
                 StructuredNode::GridLayout(gl) => {
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     lists.extend(collect_lists(&child_nodes));
                 }
                 _ => {}
@@ -6294,11 +6403,16 @@ fn test_aaoe_has_one_ordered_list_with_three_items() {
     );
 
     // Find the ordered list with 3 items
-    let ordered_list = lists.iter().find(|l| l.list_style.is_ordered() && l.items.len() == 3);
+    let ordered_list = lists
+        .iter()
+        .find(|l| l.list_style.is_ordered() && l.items.len() == 3);
     assert!(
         ordered_list.is_some(),
         "AAOE should have an ordered list with 3 items, found lists: {:?}",
-        lists.iter().map(|l| (l.list_style, l.items.len())).collect::<Vec<_>>()
+        lists
+            .iter()
+            .map(|l| (l.list_style, l.items.len()))
+            .collect::<Vec<_>>()
     );
 
     let list = ordered_list.unwrap();
@@ -6342,8 +6456,7 @@ fn test_aapr_has_decimal_and_dash_lists() {
                     lists.extend(collect_lists(&[(*c.content).clone()]));
                 }
                 StructuredNode::GridLayout(gl) => {
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     lists.extend(collect_lists(&child_nodes));
                 }
                 _ => {}
@@ -6414,14 +6527,15 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     // on the repeatable section.
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
-        .expect("Failed to load AAEI PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
     let (profile, templates) = load_ubs_profile();
-    let config = AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
 
     let root = convert_to_aem(&content, &config);
@@ -6464,8 +6578,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
 
 #[test]
 fn test_context_extraction_from_aaei_pdf() {
-    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
-        .expect("Failed to load AAEI PDF");
+    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
     let ctx = bp.context();
 
     // Language should come from root subform locale="de_DE"
@@ -6485,8 +6598,7 @@ fn test_context_extraction_from_aaei_pdf() {
 
 #[test]
 fn test_context_extraction_from_aaoe_pdf() {
-    let bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
-        .expect("Failed to load AAOE PDF");
+    let bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).expect("Failed to load AAOE PDF");
     let ctx = bp.context();
 
     // Language should come from root subform locale="it_IT"
@@ -6501,20 +6613,27 @@ fn test_context_extraction_from_aaoe_pdf() {
 
 #[test]
 fn test_context_serialization_includes_variables() {
-    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf"))
-        .expect("Failed to load AAEI PDF");
+    let bp = Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
     let ctx = bp.context();
 
     let json = serde_json::to_string_pretty(&ctx).unwrap();
-    assert!(json.contains("\"language\": \"de\""), "JSON should contain language");
-    assert!(json.contains("\"variables\""), "JSON should contain variables");
-    assert!(json.contains("\"formrange_code\": \"AAEI\""), "JSON should contain formrange_code");
+    assert!(
+        json.contains("\"language\": \"de\""),
+        "JSON should contain language"
+    );
+    assert!(
+        json.contains("\"variables\""),
+        "JSON should contain variables"
+    );
+    assert!(
+        json.contains("\"formrange_code\": \"AAEI\""),
+        "JSON should contain formrange_code"
+    );
 }
 
 #[test]
 fn test_context_extraction_from_aaai_pdf() {
-    let bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
-        .expect("Failed to load AAAI PDF");
+    let bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let ctx = bp.context();
 
     assert_eq!(ctx.language(), "de");
@@ -6525,7 +6644,10 @@ fn test_context_extraction_from_aaai_pdf() {
 
     // Metadata fields needed for AEM preview panel
     assert_eq!(ctx.get_variable("formrange_cdokinfo"), Some("61137"));
-    assert_eq!(ctx.get_variable("formrange_releasedate"), Some("31.10.2019"));
+    assert_eq!(
+        ctx.get_variable("formrange_releasedate"),
+        Some("31.10.2019")
+    );
     assert_eq!(ctx.get_variable("formrange_partnerlevel"), Some("No"));
 }
 
@@ -6546,13 +6668,9 @@ fn test_aaoe_h2_sections() {
                 InlineNode::Text(t) => Some(t.clone()),
                 InlineNode::TranslatedText(map) => {
                     // Prefer Italian, fall back to first available
-                    map.get("it")
-                        .or_else(|| map.values().next())
-                        .cloned()
+                    map.get("it").or_else(|| map.values().next()).cloned()
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-                    extract_text(inner)
-                }
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => extract_text(inner),
                 _ => None,
             }
         }
@@ -6577,20 +6695,13 @@ fn test_aaoe_h2_sections() {
                     collect_h2_headings(&group.children, out);
                 }
                 StructuredNode::Conditional(cond) => {
-                    collect_h2_headings(
-                        std::slice::from_ref(cond.content.as_ref()),
-                        out,
-                    );
+                    collect_h2_headings(std::slice::from_ref(cond.content.as_ref()), out);
                 }
                 StructuredNode::Repeatable(rep) => {
-                    collect_h2_headings(
-                        std::slice::from_ref(rep.item.as_ref()),
-                        out,
-                    );
+                    collect_h2_headings(std::slice::from_ref(rep.item.as_ref()), out);
                 }
                 StructuredNode::GridLayout(grid) => {
-                    let nodes: Vec<_> =
-                        grid.elements.iter().map(|e| e.node.clone()).collect();
+                    let nodes: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
                     collect_h2_headings(&nodes, out);
                 }
                 _ => {}
@@ -6645,8 +6756,8 @@ fn test_aaoe_headings_consistent_across_states() {
     // at the same level. State-dependent x-alignment used to cause the same
     // heading to be detected at different levels (or not at all) depending on
     // which sections were visible, making the merge order-sensitive and flaky.
-    use crate::structured::{HeadingLevel, StructuredNode};
     use crate::context::Context;
+    use crate::structured::{HeadingLevel, StructuredNode};
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6690,8 +6801,8 @@ fn test_aaoe_dichiarazione_and_firme_in_all_states() {
     // structured output of EVERY form state. If a heading is missing
     // in one state but present in another, the merge becomes
     // order-dependent and the test_aaoe_h2_sections test flakes.
-    use crate::structured::{HeadingLevel, StructuredNode};
     use crate::context::Context;
+    use crate::structured::{HeadingLevel, StructuredNode};
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6706,10 +6817,7 @@ fn test_aaoe_dichiarazione_and_firme_in_all_states() {
         let envelope = state.structured(context.clone());
         let headings = collect_headings(&envelope.content);
 
-        println!(
-            "\n=== State {} ({}) headings ===",
-            state_idx, state.label
-        );
+        println!("\n=== State {} ({}) headings ===", state_idx, state.label);
         for (level, text) in &headings {
             println!("  h{}: {}", level, text);
         }
@@ -6733,9 +6841,10 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // Diagnostic test: check whether "Dichiarazione" and "Firma/e" text is
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
-    use crate::document::modules::{AnalysisModule, HeadingDetector, TextBlockGrouper,
-        TextBlockMerger, OverlappingTextBlockMerger, run_analysis_pipeline_with_context,
-        GlobalContext};
+    use crate::document::modules::{
+        AnalysisModule, GlobalContext, HeadingDetector, OverlappingTextBlockMerger,
+        TextBlockGrouper, TextBlockMerger, run_analysis_pipeline_with_context,
+    };
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
 
@@ -6746,21 +6855,40 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     assert_eq!(form_states.len(), 2, "AAOE should have 2 states");
 
     for (state_idx, state) in form_states.iter().enumerate() {
-        println!("\n========== State {} ({}) ==========", state_idx, state.label);
+        println!(
+            "\n========== State {} ({}) ==========",
+            state_idx, state.label
+        );
 
         // Step 1: Check raw flattened text nodes
         println!("\n--- Flattened text nodes containing 'Dichiarazione' or 'Firma' ---");
         for node in state.flattened.iter_nodes() {
-            if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+            if let FlattenedNodeKind::Text {
+                content,
+                source_name,
+                font_size,
+                ..
+            } = &node.kind
+            {
                 if content.contains("Dichiarazione") || content.contains("Firma") {
                     let size = font_size.to_f32().unwrap_or(0.0);
-                    let is_bold = node.style.font.as_ref()
+                    let is_bold = node
+                        .style
+                        .font
+                        .as_ref()
                         .map(|f| f.weight == crate::xfa::FontWeight::Bold)
                         .unwrap_or(false);
                     let x = node.x.to_f32().unwrap_or(0.0);
                     let y = node.y.to_f32().unwrap_or(0.0);
-                    println!("  text='{}' source={:?} size={:.1} bold={} x={:.1} y={:.1}",
-                        content.trim(), source_name, size, is_bold, x, y);
+                    println!(
+                        "  text='{}' source={:?} size={:.1} bold={} x={:.1} y={:.1}",
+                        content.trim(),
+                        source_name,
+                        size,
+                        is_bold,
+                        x,
+                        y
+                    );
                 }
             }
         }
@@ -6794,8 +6922,13 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
                 let group = doc.get_group(idx);
                 let bounds = doc.get_bounds(idx);
                 let kind = group.map(|g| format!("{:?}", g.kind)).unwrap_or_default();
-                println!("  idx={} kind={} text='{}' bounds={:?}",
-                    idx, kind, text.trim(), bounds);
+                println!(
+                    "  idx={} kind={} text='{}' bounds={:?}",
+                    idx,
+                    kind,
+                    text.trim(),
+                    bounds
+                );
             }
         }
     }
@@ -6816,22 +6949,41 @@ fn test_aaoe_debug_all_section_titles_in_flattened() {
     let form_states = bp.states().expect("Failed to collect exhaustive states");
 
     for (state_idx, state) in form_states.iter().enumerate() {
-        println!("\n========== State {} ({}) ==========", state_idx, state.label);
+        println!(
+            "\n========== State {} ({}) ==========",
+            state_idx, state.label
+        );
 
         // Show ALL Text_SectionTitle nodes
         println!("\n--- ALL Text_SectionTitle nodes ---");
         let mut count = 0;
         for node in state.flattened.iter_nodes() {
-            if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+            if let FlattenedNodeKind::Text {
+                content,
+                source_name,
+                font_size,
+                ..
+            } = &node.kind
+            {
                 if source_name.as_deref() == Some("Text_SectionTitle") {
                     let size = font_size.to_f32().unwrap_or(0.0);
-                    let is_bold = node.style.font.as_ref()
+                    let is_bold = node
+                        .style
+                        .font
+                        .as_ref()
                         .map(|f| f.weight == crate::xfa::FontWeight::Bold)
                         .unwrap_or(false);
                     let x = node.x.to_f32().unwrap_or(0.0);
                     let y = node.y.to_f32().unwrap_or(0.0);
-                    println!("  [{}] text='{}' size={:.1} bold={} x={:.1} y={:.1}",
-                        count, content.trim(), size, is_bold, x, y);
+                    println!(
+                        "  [{}] text='{}' size={:.1} bold={} x={:.1} y={:.1}",
+                        count,
+                        content.trim(),
+                        size,
+                        is_bold,
+                        x,
+                        y
+                    );
                     count += 1;
                 }
             }
@@ -6841,16 +6993,31 @@ fn test_aaoe_debug_all_section_titles_in_flattened() {
         // Also show all bold text with size 8.0 (the section title style)
         println!("\n--- ALL bold 8pt text nodes ---");
         for node in state.flattened.iter_nodes() {
-            if let FlattenedNodeKind::Text { content, source_name, font_size, .. } = &node.kind {
+            if let FlattenedNodeKind::Text {
+                content,
+                source_name,
+                font_size,
+                ..
+            } = &node.kind
+            {
                 let size = font_size.to_f32().unwrap_or(0.0);
-                let is_bold = node.style.font.as_ref()
+                let is_bold = node
+                    .style
+                    .font
+                    .as_ref()
                     .map(|f| f.weight == crate::xfa::FontWeight::Bold)
                     .unwrap_or(false);
                 if is_bold && (size - 8.0).abs() < 0.5 && !content.trim().is_empty() {
                     let x = node.x.to_f32().unwrap_or(0.0);
                     let y = node.y.to_f32().unwrap_or(0.0);
-                    println!("  text='{}' source={:?} size={:.1} x={:.1} y={:.1}",
-                        content.trim(), source_name, size, x, y);
+                    println!(
+                        "  text='{}' source={:?} size={:.1} x={:.1} y={:.1}",
+                        content.trim(),
+                        source_name,
+                        size,
+                        x,
+                        y
+                    );
                 }
             }
         }
@@ -6928,7 +7095,9 @@ fn test_acav_vollsaldierung_uebertrag_are_grouped() {
     let group = radio_fields.iter().find(|field| {
         if let FieldType::Radio { options } = &field.input_type {
             let has_vollsaldierung = options.iter().any(|o| o.name.contains("Vollsaldierung"));
-            let has_uebertrag = options.iter().any(|o| o.name.contains("Übertrag") || o.name.contains("Mutation"));
+            let has_uebertrag = options
+                .iter()
+                .any(|o| o.name.contains("Übertrag") || o.name.contains("Mutation"));
             has_vollsaldierung && has_uebertrag
         } else {
             false
@@ -6983,8 +7152,12 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
 
     let group = radio_fields.iter().find(|field| {
         if let FieldType::Radio { options } = &field.input_type {
-            let has_freigabe = options.iter().any(|o| o.name.contains("Freigabe der Kaution"));
-            let has_restbetrag = options.iter().any(|o| o.name.contains("Restbetrag der Kaution"));
+            let has_freigabe = options
+                .iter()
+                .any(|o| o.name.contains("Freigabe der Kaution"));
+            let has_restbetrag = options
+                .iter()
+                .any(|o| o.name.contains("Restbetrag der Kaution"));
             has_freigabe && has_restbetrag
         } else {
             false
@@ -7029,7 +7202,7 @@ fn test_acav_field_labels_are_correct() {
     // Verify that specific fields in ACAV have the correct labels attached.
     // This tests the LabelAttacher's per-field fallback behavior.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, StructuredNode, InlineText};
+    use crate::structured::{FieldNode, InlineText, StructuredNode};
 
     fn find_all_fields(nodes: &[StructuredNode], fields: &mut Vec<FieldNode>) {
         for node in nodes {
@@ -7056,7 +7229,8 @@ fn test_acav_field_labels_are_correct() {
     }
 
     fn get_label_text(label: &Option<InlineText>) -> String {
-        label.as_ref()
+        label
+            .as_ref()
             .map(|l| l.as_plain_text())
             .unwrap_or_default()
     }
@@ -7079,15 +7253,20 @@ fn test_acav_field_labels_are_correct() {
 
     for (field_name_part, expected_label_part) in expected_labels {
         let field = fields.iter().find(|f| {
-            f.som_path.as_ref()
+            f.som_path
+                .as_ref()
                 .map(|p| p.as_str().contains(field_name_part))
                 .unwrap_or(false)
         });
 
         let field = field.unwrap_or_else(|| {
-            panic!("Field containing '{}' not found in ACAV. Available fields: {:?}",
+            panic!(
+                "Field containing '{}' not found in ACAV. Available fields: {:?}",
                 field_name_part,
-                fields.iter().filter_map(|f| f.som_path.as_ref().map(|p| p.as_str())).collect::<Vec<_>>()
+                fields
+                    .iter()
+                    .filter_map(|f| f.som_path.as_ref().map(|p| p.as_str()))
+                    .collect::<Vec<_>>()
             );
         });
 
@@ -7109,9 +7288,7 @@ fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
     // The inset content below each button must be detected and wrapped in a
     // ConditionalNode keyed to that option's value.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{
-        ConditionalNode, FieldNode, FieldType, StructuredNode,
-    };
+    use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -7164,7 +7341,10 @@ fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
 
     println!("\n=== All conditionals ===");
     for c in &conditionals {
-        println!("  field={} value={:?}", c.condition.field_name, c.condition.value);
+        println!(
+            "  field={} value={:?}",
+            c.condition.field_name, c.condition.value
+        );
     }
 
     // There must be a ConditionalNode for "Vollsaldierung" content
@@ -7202,21 +7382,18 @@ fn test_aaab_has_no_vertical_field_table() {
                         count += 1;
                     }
                     for element in &grid.elements {
-                        count += count_single_column_grid_layouts(
-                            std::slice::from_ref(&element.node),
-                        );
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&element.node));
                     }
                 }
                 StructuredNode::Group(group) => {
                     count += count_single_column_grid_layouts(&group.children);
                 }
                 StructuredNode::Conditional(cond) => {
-                    count +=
-                        count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
+                    count += count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
                 }
                 StructuredNode::Repeatable(rep) => {
-                    count +=
-                        count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
+                    count += count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
                 }
                 _ => {}
             }
@@ -7248,21 +7425,18 @@ fn test_aaai_has_no_vertical_field_table() {
                         count += 1;
                     }
                     for element in &grid.elements {
-                        count += count_single_column_grid_layouts(
-                            std::slice::from_ref(&element.node),
-                        );
+                        count +=
+                            count_single_column_grid_layouts(std::slice::from_ref(&element.node));
                     }
                 }
                 StructuredNode::Group(group) => {
                     count += count_single_column_grid_layouts(&group.children);
                 }
                 StructuredNode::Conditional(cond) => {
-                    count +=
-                        count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
+                    count += count_single_column_grid_layouts(std::slice::from_ref(&cond.content));
                 }
                 StructuredNode::Repeatable(rep) => {
-                    count +=
-                        count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
+                    count += count_single_column_grid_layouts(std::slice::from_ref(&rep.item));
                 }
                 _ => {}
             }
@@ -7343,7 +7517,10 @@ fn test_aaoe_individual_street_row_below_name_row() {
     // The saved form state already has CL_ClientType = "Individual".
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Collect field positions by name
@@ -7397,7 +7574,8 @@ fn test_aaoe_individual_street_row_below_name_row() {
         street_y > fam_y,
         "TF_Street row (y={}) must be below TF_FamilyName row (y={}), \
             but they overlap at the same height",
-        street_y, fam_y
+        street_y,
+        fam_y
     );
 }
 
@@ -7421,33 +7599,53 @@ fn test_aaoe_no_extra_spacing_above_h2_headings() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the subtitle node (last paragraph of Text_FormTitle, 8pt)
-    let subtitle_node = flattened.iter_nodes().find(|n| {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
-            source_name.as_deref() == Some("Text_FormTitle")
-                && content.contains("Dichiarazione per l'esenzione")
-        } else {
-            false
-        }
-    }).expect("Subtitle node 'Dichiarazione per l'esenzione...' not found");
+    let subtitle_node = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                source_name.as_deref() == Some("Text_FormTitle")
+                    && content.contains("Dichiarazione per l'esenzione")
+            } else {
+                false
+            }
+        })
+        .expect("Subtitle node 'Dichiarazione per l'esenzione...' not found");
 
     // Find the "Form configurator" node
-    let form_conf_node = flattened.iter_nodes().find(|n| {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
-            source_name.as_deref() == Some("T_FormConfigurator")
-                && content.contains("Form configurator")
-        } else {
-            false
-        }
-    }).expect("'Form configurator' node not found");
+    let form_conf_node = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                source_name.as_deref() == Some("T_FormConfigurator")
+                    && content.contains("Form configurator")
+            } else {
+                false
+            }
+        })
+        .expect("'Form configurator' node not found");
 
     let subtitle_bounds = subtitle_node.bounds();
     let form_conf_bounds = form_conf_node.bounds();
 
-    let gap = subtitle_bounds.vertical_gap_to(&form_conf_bounds)
+    let gap = subtitle_bounds
+        .vertical_gap_to(&form_conf_bounds)
         .expect("Form configurator should be below subtitle");
 
     let expected_gap_pt = 14.9;
@@ -7480,15 +7678,23 @@ fn test_aaoe_no_extra_spacing_above_h2_headings() {
     // last Individual field content to the Dichiarazione heading, which is
     // correct per XFA spec. We just ensure the gap isn't unreasonably large
     // (which would indicate a layout bug).
-    let dichiarazione_node = flattened.iter_nodes().find(|n| {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
-            source_name.as_deref() == Some("Text_SectionTitle")
-                && content.contains("Dichiarazione")
-                && !content.contains("esenzione")
-        } else {
-            false
-        }
-    }).expect("'Dichiarazione' section title not found");
+    let dichiarazione_node = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                source_name.as_deref() == Some("Text_SectionTitle")
+                    && content.contains("Dichiarazione")
+                    && !content.contains("esenzione")
+            } else {
+                false
+            }
+        })
+        .expect("'Dichiarazione' section title not found");
 
     let dich_bounds = dichiarazione_node.bounds();
 
@@ -7512,7 +7718,8 @@ fn test_aaoe_no_extra_spacing_above_h2_headings() {
     }
 
     if let Some((prev_bounds, prev_text)) = closest {
-        let dich_gap = prev_bounds.vertical_gap_to(&dich_bounds)
+        let dich_gap = prev_bounds
+            .vertical_gap_to(&dich_bounds)
             .expect("Dichiarazione should be below previous content");
         let dich_gap_f64 = dich_gap.to_f64().unwrap_or(0.0);
         let dich_gap_mm = dich_gap_f64 * 25.4 / 72.0;
@@ -7560,34 +7767,53 @@ fn test_aaoe_nazionalita_dichiarazione_gap_not_too_large() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the "Nazionalità" label (DES_Nationality draw)
-    let nazionalita_node = flattened.iter_nodes().find(|n| {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
-            source_name.as_deref() == Some("DES_Nationality")
-                || content.contains("Nazionalità")
-        } else {
-            false
-        }
-    }).expect("'Nazionalità' label node not found");
+    let nazionalita_node = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                source_name.as_deref() == Some("DES_Nationality") || content.contains("Nazionalità")
+            } else {
+                false
+            }
+        })
+        .expect("'Nazionalità' label node not found");
 
     // Find the "Dichiarazione" section title (Text_SectionTitle, not the subtitle)
-    let dichiarazione_node = flattened.iter_nodes().find(|n| {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &n.kind {
-            source_name.as_deref() == Some("Text_SectionTitle")
-                && content.contains("Dichiarazione")
-                && !content.contains("esenzione")
-        } else {
-            false
-        }
-    }).expect("'Dichiarazione' section title not found");
+    let dichiarazione_node = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                source_name.as_deref() == Some("Text_SectionTitle")
+                    && content.contains("Dichiarazione")
+                    && !content.contains("esenzione")
+            } else {
+                false
+            }
+        })
+        .expect("'Dichiarazione' section title not found");
 
     let naz_bounds = nazionalita_node.bounds();
     let dich_bounds = dichiarazione_node.bounds();
 
-    let gap = naz_bounds.vertical_gap_to(&dich_bounds)
+    let gap = naz_bounds
+        .vertical_gap_to(&dich_bounds)
         .expect("Dichiarazione should be below Nazionalità");
     let gap_f64 = gap.to_f64().unwrap_or(0.0);
 
@@ -7615,7 +7841,10 @@ fn test_aacj_dropdown_has_expected_client_type_options() {
 
     let mut bp = Blueprint::from_pdf(input_path("AACJ_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the CL_ClientType dropdown and verify its options
@@ -7671,9 +7900,9 @@ fn test_aacj_heading_structure() {
     ];
 
     for (expected_level, expected_text) in &expected_headings {
-        let found = heading_info.iter().any(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let found = heading_info
+            .iter()
+            .any(|(level, text)| level == expected_level && text.contains(expected_text));
         assert!(
             found,
             "Expected to find H{} heading containing '{}', but it was not found.\n\
@@ -7691,9 +7920,9 @@ fn test_aacj_heading_structure() {
     // Verify headings appear in expected order
     let mut last_pos = 0;
     for (expected_level, expected_text) in &expected_headings {
-        let pos = heading_info.iter().position(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let pos = heading_info
+            .iter()
+            .position(|(level, text)| level == expected_level && text.contains(expected_text));
         if let Some(p) = pos {
             assert!(
                 p >= last_pos,
@@ -7731,10 +7960,25 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 
     // The merged context should mention all three languages
     let lang = merged.context.language();
-    assert!(lang.contains("de"), "Merged language should contain 'de', got: {}", lang);
-    assert!(lang.contains("en"), "Merged language should contain 'en', got: {}", lang);
-    assert!(lang.contains("sp"), "Merged language should contain 'sp', got: {}", lang);
-    assert!(!merged.content.is_empty(), "Merged content should not be empty");
+    assert!(
+        lang.contains("de"),
+        "Merged language should contain 'de', got: {}",
+        lang
+    );
+    assert!(
+        lang.contains("en"),
+        "Merged language should contain 'en', got: {}",
+        lang
+    );
+    assert!(
+        lang.contains("sp"),
+        "Merged language should contain 'sp', got: {}",
+        lang
+    );
+    assert!(
+        !merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
 
     // Helper: collect all InlineNodes from the tree
     fn collect_inline_nodes(nodes: &[StructuredNode], out: &mut Vec<InlineNode>) {
@@ -7836,9 +8080,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     ) {
         for inline in inlines {
             if let InlineNode::TranslatedText(map) = inline {
-                let has_de = map
-                    .get("de")
-                    .map_or(false, |t| t.contains("Ich bestätige"));
+                let has_de = map.get("de").map_or(false, |t| t.contains("Ich bestätige"));
                 let has_en = map
                     .get("en")
                     .map_or(false, |t| t.contains("I confirm that I am tax resident"));
@@ -7846,9 +8088,15 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
                     .get("sp")
                     .map_or(false, |t| t.contains("Confirmo que soy residente fiscal"));
 
-                if has_de { *found_de = true; }
-                if has_en { *found_en = true; }
-                if has_sp { *found_sp = true; }
+                if has_de {
+                    *found_de = true;
+                }
+                if has_en {
+                    *found_en = true;
+                }
+                if has_sp {
+                    *found_sp = true;
+                }
 
                 // All three translations should be in the same
                 // TranslatedText node.
@@ -7858,7 +8106,9 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
                         "Tax residency text should have all three languages \
                          in the same TranslatedText, but got: de={}, en={}, sp={}.\n\
                          Map keys: {:?}",
-                        has_de, has_en, has_sp,
+                        has_de,
+                        has_en,
+                        has_sp,
                         map.keys().collect::<Vec<_>>()
                     );
                 }
@@ -7866,25 +8116,25 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
         }
     }
 
-    walk_structured_nodes(&merged.content, &mut |node| {
-        match node {
-            StructuredNode::Field(f) => {
-                if let Some(label) = &f.label {
-                    check_inlines(&label.0, &mut found_de, &mut found_en, &mut found_sp);
-                }
+    walk_structured_nodes(&merged.content, &mut |node| match node {
+        StructuredNode::Field(f) => {
+            if let Some(label) = &f.label {
+                check_inlines(&label.0, &mut found_de, &mut found_en, &mut found_sp);
             }
-            StructuredNode::Paragraph(p) => {
-                check_inlines(&p.content.0, &mut found_de, &mut found_en, &mut found_sp);
-            }
-            _ => {}
         }
+        StructuredNode::Paragraph(p) => {
+            check_inlines(&p.content.0, &mut found_de, &mut found_en, &mut found_sp);
+        }
+        _ => {}
     });
 
     assert!(
         found_de && found_en && found_sp,
         "Should find the tax residency text with all three language translations \
          merged together. found_de={}, found_en={}, found_sp={}",
-        found_de, found_en, found_sp,
+        found_de,
+        found_en,
+        found_sp,
     );
 }
 
@@ -7908,13 +8158,11 @@ fn test_aacj_multilingual_translation_snippets() {
 
     // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
     // TranslatedText node.
-    let expected_triplets: Vec<(&str, &str, &str)> = vec![
-        (
-            "Bitte füllen Sie dieses Formular aus, wenn Sie ein Einzelkontoinhaber (natürliche Person) oder ein Einzelunternehmen sind.",
-            "Please fill in this form if you are an individual account holder (a natural person) or a sole proprietorship.",
-            "Si usted es un titular de cuenta individual (persona física) o un empresario individual, rellene este formulario.",
-        ),
-    ];
+    let expected_triplets: Vec<(&str, &str, &str)> = vec![(
+        "Bitte füllen Sie dieses Formular aus, wenn Sie ein Einzelkontoinhaber (natürliche Person) oder ein Einzelunternehmen sind.",
+        "Please fill in this form if you are an individual account holder (a natural person) or a sole proprietorship.",
+        "Si usted es un titular de cuenta individual (persona física) o un empresario individual, rellene este formulario.",
+    )];
 
     let mut triplet_found = vec![false; expected_triplets.len()];
 
@@ -7986,8 +8234,7 @@ fn test_aags_multilingual_merge_de_en() {
     let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
         .expect("Failed to process AAGS_019_EN");
 
-    let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
 
     assert_eq!(merged.context.language(), "de,en");
     assert!(!merged.content.is_empty());
@@ -8021,9 +8268,7 @@ fn test_aags_multilingual_merge_de_en() {
         let inline_texts: Vec<&InlineText> = match node {
             StructuredNode::Heading(h) => vec![&h.content],
             StructuredNode::Paragraph(p) => vec![&p.content],
-            StructuredNode::Field(f) => {
-                f.label.as_ref().into_iter().collect()
-            }
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
             _ => vec![],
         };
 
@@ -8040,7 +8285,9 @@ fn test_aags_multilingual_merge_de_en() {
                                 "Translation pair {} should have both languages in the same \
                                  TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: {:?}\n  \
                                  Actual DE: {:?}\n  Actual EN: {:?}",
-                                i, de_snippet, en_snippet,
+                                i,
+                                de_snippet,
+                                en_snippet,
                                 &de_text[..de_text.len().min(200)],
                                 &en_text[..en_text.len().min(200)],
                             );
@@ -8106,8 +8353,7 @@ fn test_aacj_dropdown_conditional_field_visibility() {
                     collect_labels(&[(*r.item).clone()], out);
                 }
                 StructuredNode::GridLayout(grid) => {
-                    let children: Vec<_> =
-                        grid.elements.iter().map(|e| e.node.clone()).collect();
+                    let children: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
                     collect_labels(&children, out);
                 }
                 StructuredNode::Table(t) => {
@@ -8186,7 +8432,10 @@ fn test_aacj_dropdown_conditional_field_visibility() {
             !all.is_empty(),
             "No conditional found for '{condition_value}'. \
                 Available: {:?}",
-            cond_labels.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>()
+            cond_labels
+                .iter()
+                .map(|(v, _)| v.as_str())
+                .collect::<Vec<_>>()
         );
         for needle in expected {
             assert!(
@@ -8235,7 +8484,10 @@ fn test_aaam_exhaustive_state_counts_consistent_across_languages() {
     // All three languages should produce the same number of states
     // (3 radio options × 2 dropdown visibility = 6 states each)
     for (file, count) in &counts {
-        assert_eq!(*count, 6, "{file} should produce 6 exhaustive states, got {count}");
+        assert_eq!(
+            *count, 6,
+            "{file} should produce 6 exhaustive states, got {count}"
+        );
     }
     assert_eq!(
         counts[0].1, counts[1].1,
@@ -8265,24 +8517,39 @@ fn test_aaam_multilingual_merge_radio_options_de_en_sp() {
             let FieldType::Radio { options } = &f.input_type else {
                 return false;
             };
-            needles.iter().all(|needle| {
-                options
-                    .iter()
-                    .any(|o| contains_lang(&o.name, lang, needle))
-            })
+            needles
+                .iter()
+                .all(|needle| options.iter().any(|o| contains_lang(&o.name, lang, needle)))
         })
     };
 
     assert!(
-        has_radio_with("de", &["Kontoinhaber", "wirtschaftlich Berechtigter", "ohne Custody"]),
+        has_radio_with(
+            "de",
+            &[
+                "Kontoinhaber",
+                "wirtschaftlich Berechtigter",
+                "ohne Custody"
+            ]
+        ),
         "Expected AAAM radio group with DE option translations"
     );
     assert!(
-        has_radio_with("en", &["Account holder", "beneficial Owner", "without Custody"]),
+        has_radio_with(
+            "en",
+            &["Account holder", "beneficial Owner", "without Custody"]
+        ),
         "Expected AAAM radio group with EN option translations"
     );
     assert!(
-        has_radio_with("sp", &["Titular de la cuenta", "beneficiario económico", "sin Custody"]),
+        has_radio_with(
+            "sp",
+            &[
+                "Titular de la cuenta",
+                "beneficiario económico",
+                "sin Custody"
+            ]
+        ),
         "Expected AAAM radio group with SP option translations"
     );
 
@@ -8328,9 +8595,15 @@ fn test_aaam_multilingual_merge_formular_adressat_visible_only_for_first_radio_o
             let FieldType::Radio { options } = &f.input_type else {
                 return false;
             };
-            options.iter().any(|o| contains_lang(&o.name, "de", "Kontoinhaber"))
-                && options.iter().any(|o| contains_lang(&o.name, "de", "wirtschaftlich Berechtigter"))
-                && options.iter().any(|o| contains_lang(&o.name, "de", "ohne Custody"))
+            options
+                .iter()
+                .any(|o| contains_lang(&o.name, "de", "Kontoinhaber"))
+                && options
+                    .iter()
+                    .any(|o| contains_lang(&o.name, "de", "wirtschaftlich Berechtigter"))
+                && options
+                    .iter()
+                    .any(|o| contains_lang(&o.name, "de", "ohne Custody"))
         })
         .expect("Expected AAAM radio group with DE option translations");
 
@@ -8353,7 +8626,10 @@ fn test_aaam_multilingual_merge_formular_adressat_visible_only_for_first_radio_o
         "AAAM radio group should have at least one option"
     );
 
-    let FieldType::Select { options: dropdown_options } = &dropdown.input_type else {
+    let FieldType::Select {
+        options: dropdown_options,
+    } = &dropdown.input_type
+    else {
         panic!("Expected select field");
     };
     assert!(
@@ -8390,7 +8666,10 @@ fn test_flattened_key_ignores_field_values() {
 
     let key_a = FlattenedKey::from_node(&make_node("value_a"));
     let key_b = FlattenedKey::from_node(&make_node("value_b"));
-    assert_eq!(key_a, key_b, "Nodes differing only in field value should have equal keys");
+    assert_eq!(
+        key_a, key_b,
+        "Nodes differing only in field value should have equal keys"
+    );
 }
 
 #[test]
@@ -8417,7 +8696,10 @@ fn test_flattened_key_ignores_checked_state() {
 
     let key_checked = FlattenedKey::from_node(&make_node(Some(true)));
     let key_unchecked = FlattenedKey::from_node(&make_node(Some(false)));
-    assert_eq!(key_checked, key_unchecked, "Nodes differing only in checked state should have equal keys");
+    assert_eq!(
+        key_checked, key_unchecked,
+        "Nodes differing only in checked state should have equal keys"
+    );
 }
 
 #[test]
@@ -8444,7 +8726,10 @@ fn test_flattened_key_different_labels() {
 
     let key_a = FlattenedKey::from_node(&make_node("Label A"));
     let key_b = FlattenedKey::from_node(&make_node("Label B"));
-    assert_ne!(key_a, key_b, "Nodes with different labels should have different keys");
+    assert_ne!(
+        key_a, key_b,
+        "Nodes with different labels should have different keys"
+    );
 }
 
 #[test]
@@ -8471,37 +8756,43 @@ fn test_flattened_key_different_text_content() {
 
     let key_a = FlattenedKey::from_node(&make_node("Hello"));
     let key_b = FlattenedKey::from_node(&make_node("World"));
-    assert_ne!(key_a, key_b, "Text nodes with different content should have different keys");
+    assert_ne!(
+        key_a, key_b,
+        "Text nodes with different content should have different keys"
+    );
 }
 
 #[test]
 fn test_flattened_key_hashing() {
-    use crate::flattened::{FlattenedKey, FlattenedNode, FlattenedNodeKind, RenderStyle, Flattened, FlattenedKind, Page};
+    use crate::flattened::{
+        Flattened, FlattenedKey, FlattenedKind, FlattenedNode, FlattenedNodeKind, Page, RenderStyle,
+    };
     use crate::xfa::num;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let make_flattened = |value: &str| {
-        Flattened {
-            page: Page { width: num(210.0), height: num(297.0) },
-            children: vec![FlattenedKind::Node(FlattenedNode {
-                kind: FlattenedNodeKind::Field {
-                    name: "f".to_string(),
-                    value: value.to_string(),
-                    label: "Label".to_string(),
-                    is_checked: None,
-                },
-                x: num(10.0),
-                y: num(20.0),
-                width: num(100.0),
-                height: num(25.0),
-                rotate: 0,
-                style: RenderStyle::default(),
-                hints: vec![],
-                no_wrap: false,
-            })],
-            cached_key: None,
-        }
+    let make_flattened = |value: &str| Flattened {
+        page: Page {
+            width: num(210.0),
+            height: num(297.0),
+        },
+        children: vec![FlattenedKind::Node(FlattenedNode {
+            kind: FlattenedNodeKind::Field {
+                name: "f".to_string(),
+                value: value.to_string(),
+                label: "Label".to_string(),
+                is_checked: None,
+            },
+            x: num(10.0),
+            y: num(20.0),
+            width: num(100.0),
+            height: num(25.0),
+            rotate: 0,
+            style: RenderStyle::default(),
+            hints: vec![],
+            no_wrap: false,
+        })],
+        cached_key: None,
     };
 
     let hash_key = |key: &[FlattenedKey]| {
@@ -8513,8 +8804,15 @@ fn test_flattened_key_hashing() {
     // Same structure, different field values → same key → same hash
     let k1 = FlattenedKey::from_flattened(&make_flattened("hello"));
     let k2 = FlattenedKey::from_flattened(&make_flattened("world"));
-    assert_eq!(k1, k2, "Keys should be equal for structurally identical layouts");
-    assert_eq!(hash_key(&k1), hash_key(&k2), "Hashes should match for equal keys");
+    assert_eq!(
+        k1, k2,
+        "Keys should be equal for structurally identical layouts"
+    );
+    assert_eq!(
+        hash_key(&k1),
+        hash_key(&k2),
+        "Hashes should match for equal keys"
+    );
 }
 
 #[test]
@@ -8541,7 +8839,10 @@ fn test_flattened_key_different_position() {
 
     let key_a = FlattenedKey::from_node(&make_node(10.0));
     let key_b = FlattenedKey::from_node(&make_node(50.0));
-    assert_ne!(key_a, key_b, "Nodes at different positions should have different keys");
+    assert_ne!(
+        key_a, key_b,
+        "Nodes at different positions should have different keys"
+    );
 }
 
 #[test]
@@ -8603,8 +8904,8 @@ fn test_aaab_aem_config_form_path_title_code() {
     let ctx = crate::Context::new("de".to_string(), variables);
 
     let (profile, templates) = load_ubs_profile();
-    let config = AemConfig::from_profile(&profile, templates, &ctx)
-        .expect("Failed to create AemConfig");
+    let config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
 
     // form_code should be the raw code (first segment)
     assert_eq!(config.form_code, "AAAB", "form_code should be 'AAAB'");
@@ -8631,8 +8932,7 @@ fn test_aaab_aem_config_form_path_title_code() {
     );
 
     assert_eq!(
-        config.xsd_path,
-        "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd",
+        config.xsd_path, "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd",
         "xsd_path should resolve to the configured UBS AFForms location"
     );
 }
@@ -8782,9 +9082,9 @@ fn test_aaks_heading_structure() {
     ];
 
     for (expected_level, expected_text) in &expected_headings {
-        let found = heading_info.iter().any(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let found = heading_info
+            .iter()
+            .any(|(level, text)| level == expected_level && text.contains(expected_text));
         assert!(
             found,
             "Expected to find H{} heading containing '{}', but it was not found.\n\
@@ -8802,9 +9102,9 @@ fn test_aaks_heading_structure() {
     // Verify headings appear in expected order
     let mut last_pos = 0;
     for (expected_level, expected_text) in &expected_headings {
-        let pos = heading_info.iter().position(|(level, text)| {
-            level == expected_level && text.contains(expected_text)
-        });
+        let pos = heading_info
+            .iter()
+            .position(|(level, text)| level == expected_level && text.contains(expected_text));
         if let Some(p) = pos {
             assert!(
                 p >= last_pos,
@@ -8815,7 +9115,6 @@ fn test_aaks_heading_structure() {
         }
     }
 }
-
 
 #[test]
 fn test_aaks_nachname_vorname_firma_on_single_row() {
@@ -8838,33 +9137,30 @@ fn test_aaks_nachname_vorname_firma_on_single_row() {
             match node {
                 StructuredNode::Field(field) => {
                     if let Some(label) = &field.label {
-                        if label.as_plain_text().contains("Nachname, Vorname(n) / Firma") {
+                        if label
+                            .as_plain_text()
+                            .contains("Nachname, Vorname(n) / Firma")
+                        {
                             return Some((in_grid, grid_cols));
                         }
                     }
                 }
                 StructuredNode::Group(g) => {
-                    if let Some(result) =
-                        find_field_context(&g.children, in_grid, grid_cols)
-                    {
+                    if let Some(result) = find_field_context(&g.children, in_grid, grid_cols) {
                         return Some(result);
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(result) = find_field_context(
-                        std::slice::from_ref(&c.content),
-                        in_grid,
-                        grid_cols,
-                    ) {
+                    if let Some(result) =
+                        find_field_context(std::slice::from_ref(&c.content), in_grid, grid_cols)
+                    {
                         return Some(result);
                     }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(result) = find_field_context(
-                        std::slice::from_ref(&r.item),
-                        in_grid,
-                        grid_cols,
-                    ) {
+                    if let Some(result) =
+                        find_field_context(std::slice::from_ref(&r.item), in_grid, grid_cols)
+                    {
                         return Some(result);
                     }
                 }
@@ -8914,11 +9210,12 @@ fn test_aaks_strasse_nr_share_row() {
             match node {
                 StructuredNode::GridLayout(gl) => {
                     if gl.elements.len() == expected_elements {
-                        let grid_labels = collect_field_labels_trimmed(&gl
-                            .elements
-                            .iter()
-                            .map(|e| e.node.clone())
-                            .collect::<Vec<_>>());
+                        let grid_labels = collect_field_labels_trimmed(
+                            &gl.elements
+                                .iter()
+                                .map(|e| e.node.clone())
+                                .collect::<Vec<_>>(),
+                        );
                         if labels
                             .iter()
                             .all(|l| grid_labels.iter().any(|gl| gl.contains(l)))
@@ -8927,8 +9224,7 @@ fn test_aaks_strasse_nr_share_row() {
                         }
                     }
                     // Also recurse into grid elements
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     if find_grid_with_fields(&child_nodes, labels, expected_elements) {
                         return true;
                     }
@@ -8986,11 +9282,12 @@ fn test_aaks_plz_stadt_land_share_row() {
             match node {
                 StructuredNode::GridLayout(gl) => {
                     if gl.elements.len() == expected_elements {
-                        let grid_labels = collect_field_labels_trimmed(&gl
-                            .elements
-                            .iter()
-                            .map(|e| e.node.clone())
-                            .collect::<Vec<_>>());
+                        let grid_labels = collect_field_labels_trimmed(
+                            &gl.elements
+                                .iter()
+                                .map(|e| e.node.clone())
+                                .collect::<Vec<_>>(),
+                        );
                         if labels
                             .iter()
                             .all(|l| grid_labels.iter().any(|gl| gl.contains(l)))
@@ -8998,8 +9295,7 @@ fn test_aaks_plz_stadt_land_share_row() {
                             return true;
                         }
                     }
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     if find_grid_with_fields(&child_nodes, labels, expected_elements) {
                         return true;
                     }
@@ -9056,7 +9352,10 @@ fn test_aaai_numbered_list_vertical_alignment() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Collect all T_Left text nodes with y-positions, filtering to content paragraphs
@@ -9157,7 +9456,11 @@ fn test_aaai_numbered_list_vertical_alignment() {
         assert!(
             diff < rust_decimal::Decimal::from_str("0.1").unwrap(),
             "Number '{}' (y={:.3}) should be vertically aligned with '{}' (y={:.3}), diff={:.3}pt",
-            number, indent_y, text_start, left_y, diff
+            number,
+            indent_y,
+            text_start,
+            left_y,
+            diff
         );
         println!(
             "  ✓ '{}' aligned with '{}...' at y={:.3}",
@@ -9183,7 +9486,10 @@ fn test_aaoe_split_paragraph_border_not_propagated() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Helper: check if a node has a visible top border
@@ -9203,17 +9509,23 @@ fn test_aaoe_split_paragraph_border_not_propagated() {
     };
 
     // Find the flattened node whose text contains "Firma/e"
-    let firma_node = flattened.iter_nodes().find(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains("Firma"))
-    });
-    assert!(firma_node.is_some(), "Should find a node containing 'Firma/e'");
+    let firma_node = flattened.iter_nodes().find(
+        |n| matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains("Firma")),
+    );
+    assert!(
+        firma_node.is_some(),
+        "Should find a node containing 'Firma/e'"
+    );
     let firma_node = firma_node.unwrap();
 
     // Find the node with "Letto, confermato e sottoscritto."
     let letto_node = flattened.iter_nodes().find(|n| {
         matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains("Letto, confermato"))
     });
-    assert!(letto_node.is_some(), "Should find a node containing 'Letto, confermato e sottoscritto.'");
+    assert!(
+        letto_node.is_some(),
+        "Should find a node containing 'Letto, confermato e sottoscritto.'"
+    );
     let letto_node = letto_node.unwrap();
 
     // "Firma/e" is the first paragraph of the draw — it SHOULD have a visible top border
@@ -9268,16 +9580,12 @@ fn test_aaoe_dichiarazione_is_bold() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(v) =
-                        find_node(std::slice::from_ref(c.content.as_ref()), pred)
-                    {
+                    if let Some(v) = find_node(std::slice::from_ref(c.content.as_ref()), pred) {
                         return Some(v);
                     }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(v) =
-                        find_node(std::slice::from_ref(r.item.as_ref()), pred)
-                    {
+                    if let Some(v) = find_node(std::slice::from_ref(r.item.as_ref()), pred) {
                         return Some(v);
                     }
                 }
@@ -9329,9 +9637,9 @@ fn test_aaoe_dichiarazione_is_bold() {
     //    (list item in draw with <font weight="bold">, no CSS font-weight override)
     let diritto_list = find_node(&merged, &|n| {
         if let StructuredNode::List(list) = n {
-            list.items.iter().any(|item| {
-                item.as_plain_text().contains("Diritto all")
-            })
+            list.items
+                .iter()
+                .any(|item| item.as_plain_text().contains("Diritto all"))
         } else {
             false
         }
@@ -9339,9 +9647,11 @@ fn test_aaoe_dichiarazione_is_bold() {
     .expect("Should find list containing 'Diritto all'applicabilità'");
 
     if let StructuredNode::List(list) = diritto_list {
-        let diritto_item = list.items.iter().find(|item| {
-            item.as_plain_text().contains("Diritto all")
-        }).expect("Should find list item with 'Diritto all'");
+        let diritto_item = list
+            .items
+            .iter()
+            .find(|item| item.as_plain_text().contains("Diritto all"))
+            .expect("Should find list item with 'Diritto all'");
         assert!(
             has_strong_with(&diritto_item.0, "Diritto all"),
             "'Diritto all'applicabilità' list item should be bold (Strong), got: {:?}",
@@ -9353,7 +9663,9 @@ fn test_aaoe_dichiarazione_is_bold() {
     //    (second <p> has font-weight:normal in CSS, overriding the XFA default)
     let in_relazione = find_node(&merged, &|n| {
         if let StructuredNode::Paragraph(p) = n {
-            p.content.as_plain_text().contains("In relazione al rapporto")
+            p.content
+                .as_plain_text()
+                .contains("In relazione al rapporto")
         } else {
             false
         }
@@ -9415,8 +9727,7 @@ fn test_grid_layout_proportional_colspan_1_to_2() {
         .with_min_size(1, 2)
         .process(&mut doc);
 
-    let grids: Vec<usize> =
-        doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+    let grids: Vec<usize> = doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
     assert_eq!(grids.len(), 1, "Expected exactly one GridLayout");
 
     if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
@@ -9477,8 +9788,7 @@ fn test_grid_layout_equal_widths_use_span_1() {
         .with_min_size(1, 2)
         .process(&mut doc);
 
-    let grids: Vec<usize> =
-        doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+    let grids: Vec<usize> = doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
     assert_eq!(grids.len(), 1);
 
     if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
@@ -9539,8 +9849,7 @@ fn test_grid_layout_proportional_colspan_1_1_2() {
         .with_min_size(1, 2)
         .process(&mut doc);
 
-    let grids: Vec<usize> =
-        doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
+    let grids: Vec<usize> = doc.find_groups(|k| matches!(k, GroupKind::GridLayout { .. }));
     assert_eq!(grids.len(), 1);
 
     if let GroupKind::GridLayout { columns, spans } = &doc.get_group(grids[0]).unwrap().kind {
@@ -9573,9 +9882,7 @@ fn test_aaai_plz_stadt_land_colspan_ordering() {
                     let elem_labels: Vec<(String, usize)> = gl
                         .elements
                         .iter()
-                        .filter_map(|e| {
-                            first_field_label(&e.node).map(|l| (l, e.span))
-                        })
+                        .filter_map(|e| first_field_label(&e.node).map(|l| (l, e.span)))
                         .collect();
                     if labels
                         .iter()
@@ -9584,8 +9891,7 @@ fn test_aaai_plz_stadt_land_colspan_ordering() {
                         return Some((gl.columns, elem_labels));
                     }
                     // Recurse into grid elements
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     if let Some(found) = find_grid_spans(&child_nodes, labels) {
                         return Some(found);
                     }
@@ -9596,16 +9902,12 @@ fn test_aaai_plz_stadt_land_colspan_ordering() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(found) =
-                        find_grid_spans(std::slice::from_ref(&c.content), labels)
-                    {
+                    if let Some(found) = find_grid_spans(std::slice::from_ref(&c.content), labels) {
                         return Some(found);
                     }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(found) =
-                        find_grid_spans(std::slice::from_ref(&r.item), labels)
-                    {
+                    if let Some(found) = find_grid_spans(std::slice::from_ref(&r.item), labels) {
                         return Some(found);
                     }
                 }
@@ -9622,20 +9924,16 @@ fn test_aaai_plz_stadt_land_colspan_ordering() {
                 .label
                 .as_ref()
                 .map(|l| l.as_plain_text().trim().to_string()),
-            StructuredNode::Group(g) => {
-                g.children.iter().find_map(|c| first_field_label(c))
+            StructuredNode::Group(g) => g.children.iter().find_map(|c| first_field_label(c)),
+            StructuredNode::GridLayout(gl) => {
+                gl.elements.iter().find_map(|e| first_field_label(&e.node))
             }
-            StructuredNode::GridLayout(gl) => gl
-                .elements
-                .iter()
-                .find_map(|e| first_field_label(&e.node)),
             _ => None,
         }
     }
 
-    let (columns, elem_labels) =
-        find_grid_spans(&structured, &["PLZ", "Stadt", "Land"])
-            .expect("Expected a GridLayout containing PLZ, Stadt, and Land in AAAI");
+    let (columns, elem_labels) = find_grid_spans(&structured, &["PLZ", "Stadt", "Land"])
+        .expect("Expected a GridLayout containing PLZ, Stadt, and Land in AAAI");
 
     assert_eq!(columns, 12, "Grid should use 12-column layout");
 
@@ -9684,19 +9982,14 @@ fn test_aaai_nachname_vorname_equal_colspan() {
     let structured = run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAAI");
 
-    fn find_grid_spans(
-        nodes: &[StructuredNode],
-        labels: &[&str],
-    ) -> Option<Vec<(String, usize)>> {
+    fn find_grid_spans(nodes: &[StructuredNode], labels: &[&str]) -> Option<Vec<(String, usize)>> {
         for node in nodes {
             match node {
                 StructuredNode::GridLayout(gl) => {
                     let elem_labels: Vec<(String, usize)> = gl
                         .elements
                         .iter()
-                        .filter_map(|e| {
-                            first_field_label(&e.node).map(|l| (l, e.span))
-                        })
+                        .filter_map(|e| first_field_label(&e.node).map(|l| (l, e.span)))
                         .collect();
                     if labels
                         .iter()
@@ -9704,8 +9997,7 @@ fn test_aaai_nachname_vorname_equal_colspan() {
                     {
                         return Some(elem_labels);
                     }
-                    let child_nodes: Vec<_> =
-                        gl.elements.iter().map(|e| e.node.clone()).collect();
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
                     if let Some(found) = find_grid_spans(&child_nodes, labels) {
                         return Some(found);
                     }
@@ -9716,16 +10008,12 @@ fn test_aaai_nachname_vorname_equal_colspan() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(found) =
-                        find_grid_spans(std::slice::from_ref(&c.content), labels)
-                    {
+                    if let Some(found) = find_grid_spans(std::slice::from_ref(&c.content), labels) {
                         return Some(found);
                     }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(found) =
-                        find_grid_spans(std::slice::from_ref(&r.item), labels)
-                    {
+                    if let Some(found) = find_grid_spans(std::slice::from_ref(&r.item), labels) {
                         return Some(found);
                     }
                 }
@@ -9741,20 +10029,16 @@ fn test_aaai_nachname_vorname_equal_colspan() {
                 .label
                 .as_ref()
                 .map(|l| l.as_plain_text().trim().to_string()),
-            StructuredNode::Group(g) => {
-                g.children.iter().find_map(|c| first_field_label(c))
+            StructuredNode::Group(g) => g.children.iter().find_map(|c| first_field_label(c)),
+            StructuredNode::GridLayout(gl) => {
+                gl.elements.iter().find_map(|e| first_field_label(&e.node))
             }
-            StructuredNode::GridLayout(gl) => gl
-                .elements
-                .iter()
-                .find_map(|e| first_field_label(&e.node)),
             _ => None,
         }
     }
 
-    let elem_labels =
-        find_grid_spans(&structured, &["Nachname", "Vorname"])
-            .expect("Expected a GridLayout containing Nachname and Vorname(n) in AAAI");
+    let elem_labels = find_grid_spans(&structured, &["Nachname", "Vorname"])
+        .expect("Expected a GridLayout containing Nachname and Vorname(n) in AAAI");
 
     let span_nachname = elem_labels
         .iter()
@@ -9778,18 +10062,24 @@ fn test_aaai_nachname_vorname_equal_colspan() {
 fn test_antrag_sozialhilfe_structured_headings_and_fields() {
     // Test that the non-XFA PDF "antrag_wirtschaftliche_sozialhilfe.pdf"
     // produces the expected headings and field labels in its structured output.
-    use crate::structured::{HeadingLevel, StructuredNode, FieldNode, HeadingNode, InlineText};
     use crate::context::Context;
+    use crate::structured::{FieldNode, HeadingLevel, HeadingNode, InlineText, StructuredNode};
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load antrag_wirtschaftliche_sozialhilfe PDF");
 
-    assert!(bp.is_acroform(), "PDF should be detected as AcroForm (non-XFA)");
+    assert!(
+        bp.is_acroform(),
+        "PDF should be detected as AcroForm (non-XFA)"
+    );
 
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
 
-    assert!(!form_states.is_empty(), "Should have at least one form state");
+    assert!(
+        !form_states.is_empty(),
+        "Should have at least one form state"
+    );
 
     let envelope = form_states.iter().next().unwrap().structured(ctx);
 
@@ -9802,14 +10092,19 @@ fn test_antrag_sozialhilfe_structured_headings_and_fields() {
 
     // Assert H1 heading
     assert!(
-        headings.iter().any(|(level, text)| *level == 1 && text.contains("Antrag auf Wirtschaftliche Sozialhilfe")),
+        headings
+            .iter()
+            .any(|(level, text)| *level == 1
+                && text.contains("Antrag auf Wirtschaftliche Sozialhilfe")),
         "Expected H1 heading 'Antrag auf Wirtschaftliche Sozialhilfe' not found.\nFound headings: {:?}",
         headings
     );
 
     // Assert H2 heading
     assert!(
-        headings.iter().any(|(level, text)| *level == 2 && text.contains("Personalien Antragssteller/in")),
+        headings
+            .iter()
+            .any(|(level, text)| *level == 2 && text.contains("Personalien Antragssteller/in")),
         "Expected H2 heading 'Personalien Antragssteller/in' not found.\nFound headings: {:?}",
         headings
     );
@@ -9844,7 +10139,14 @@ fn test_antrag_sozialhilfe_structured_headings_and_fields() {
 // ========================================================================
 
 /// Helper: build a simple text FlattenedNode at given position.
-fn make_text_node(content: &str, x: f64, y: f64, w: f64, h: f64, font_size: f64) -> crate::flattened::FlattenedNode {
+fn make_text_node(
+    content: &str,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    font_size: f64,
+) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
@@ -9877,7 +10179,10 @@ fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     Flattened::new(
-        Page { width: to(width), height: to(height) },
+        Page {
+            width: to(width),
+            height: to(height),
+        },
         nodes.into_iter().map(FlattenedKind::Node).collect(),
     )
 }
@@ -9889,9 +10194,11 @@ fn test_merge_pages_single_page_passthrough() {
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
 
-    let page = make_page(595.0, 842.0, vec![
-        make_text_node("Hello", 50.0, 100.0, 200.0, 20.0, 12.0),
-    ]);
+    let page = make_page(
+        595.0,
+        842.0,
+        vec![make_text_node("Hello", 50.0, 100.0, 200.0, 20.0, 12.0)],
+    );
 
     let merged = merge_pages(vec![page]);
 
@@ -9913,12 +10220,30 @@ fn test_merge_pages_stacks_vertically() {
 
     let to = |v: f64| Decimal::from_f64(v).unwrap();
 
-    let page1 = make_page(595.0, 842.0, vec![
-        make_text_node("Page1 content", 50.0, 400.0, 200.0, 20.0, 12.0),
-    ]);
-    let page2 = make_page(595.0, 842.0, vec![
-        make_text_node("Page2 content", 50.0, 400.0, 200.0, 20.0, 12.0),
-    ]);
+    let page1 = make_page(
+        595.0,
+        842.0,
+        vec![make_text_node(
+            "Page1 content",
+            50.0,
+            400.0,
+            200.0,
+            20.0,
+            12.0,
+        )],
+    );
+    let page2 = make_page(
+        595.0,
+        842.0,
+        vec![make_text_node(
+            "Page2 content",
+            50.0,
+            400.0,
+            200.0,
+            20.0,
+            12.0,
+        )],
+    );
 
     let merged = merge_pages(vec![page1, page2]);
 
@@ -9942,17 +10267,28 @@ fn test_merge_pages_header_detection() {
     // Three pages each with the same text node at the top → header.
     // The header boundary should be at the bottom of that repeated element.
     // All elements in the header region get the MasterPage::Header hint.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let mut pages = Vec::new();
     for i in 0..3 {
-        pages.push(make_page(595.0, 842.0, vec![
-            // Repeated header text at y=10, height=20 → bottom=30
-            make_text_node("Company Logo", 50.0, 10.0, 200.0, 20.0, 12.0),
-            // Unique body content
-            make_text_node(&format!("Body text page {}", i + 1), 50.0, 200.0, 400.0, 20.0, 10.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            842.0,
+            vec![
+                // Repeated header text at y=10, height=20 → bottom=30
+                make_text_node("Company Logo", 50.0, 10.0, 200.0, 20.0, 12.0),
+                // Unique body content
+                make_text_node(
+                    &format!("Body text page {}", i + 1),
+                    50.0,
+                    200.0,
+                    400.0,
+                    20.0,
+                    10.0,
+                ),
+            ],
+        ));
     }
 
     let merged = merge_pages(pages);
@@ -9963,22 +10299,45 @@ fn test_merge_pages_header_detection() {
     let nodes: Vec<_> = merged.collect_nodes();
 
     // Check that repeated header nodes got the Header hint
-    let header_nodes: Vec<_> = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
-    }).collect();
+    let header_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Header
+                    }
+                )
+            })
+        })
+        .collect();
 
     // 3 pages × 1 header element = 3 header-tagged nodes
-    assert_eq!(header_nodes.len(), 3, "Expected 3 header-tagged nodes, found {}", header_nodes.len());
+    assert_eq!(
+        header_nodes.len(),
+        3,
+        "Expected 3 header-tagged nodes, found {}",
+        header_nodes.len()
+    );
 
     // Body nodes should NOT have header hints
-    let body_nodes: Vec<_> = nodes.iter().filter(|n| {
-        if let FlattenedNodeKind::Text { content, .. } = &n.kind {
-            content.starts_with("Body text")
-        } else { false }
-    }).collect();
+    let body_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Body text")
+            } else {
+                false
+            }
+        })
+        .collect();
     for body in &body_nodes {
         assert!(
-            !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+            !body
+                .hints
+                .iter()
+                .any(|h| matches!(h, Hint::MasterPage { .. })),
             "Body text should not have MasterPage hint"
         );
     }
@@ -9987,18 +10346,29 @@ fn test_merge_pages_header_detection() {
 #[test]
 fn test_merge_pages_footer_detection() {
     // Three pages each with the same text node at the bottom → footer.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let page_height = 842.0;
     let mut pages = Vec::new();
     for i in 0..3 {
-        pages.push(make_page(595.0, page_height, vec![
-            // Unique body content in upper half
-            make_text_node(&format!("Content page {}", i + 1), 50.0, 200.0, 400.0, 20.0, 10.0),
-            // Repeated footer text near bottom: y=800, height=20
-            make_text_node("Page Footer", 50.0, 800.0, 200.0, 20.0, 8.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            page_height,
+            vec![
+                // Unique body content in upper half
+                make_text_node(
+                    &format!("Content page {}", i + 1),
+                    50.0,
+                    200.0,
+                    400.0,
+                    20.0,
+                    10.0,
+                ),
+                // Repeated footer text near bottom: y=800, height=20
+                make_text_node("Page Footer", 50.0, 800.0, 200.0, 20.0, 8.0),
+            ],
+        ));
     }
 
     let merged = merge_pages(pages);
@@ -10007,21 +10377,44 @@ fn test_merge_pages_footer_detection() {
 
     let nodes: Vec<_> = merged.collect_nodes();
 
-    let footer_nodes: Vec<_> = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Footer }))
-    }).collect();
+    let footer_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Footer
+                    }
+                )
+            })
+        })
+        .collect();
 
-    assert_eq!(footer_nodes.len(), 3, "Expected 3 footer-tagged nodes, found {}", footer_nodes.len());
+    assert_eq!(
+        footer_nodes.len(),
+        3,
+        "Expected 3 footer-tagged nodes, found {}",
+        footer_nodes.len()
+    );
 
     // Body nodes should NOT have footer hints
-    let body_nodes: Vec<_> = nodes.iter().filter(|n| {
-        if let FlattenedNodeKind::Text { content, .. } = &n.kind {
-            content.starts_with("Content page")
-        } else { false }
-    }).collect();
+    let body_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Content page")
+            } else {
+                false
+            }
+        })
+        .collect();
     for body in &body_nodes {
         assert!(
-            !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+            !body
+                .hints
+                .iter()
+                .any(|h| matches!(h, Hint::MasterPage { .. })),
             "Body content should not have MasterPage hint"
         );
     }
@@ -10030,20 +10423,31 @@ fn test_merge_pages_footer_detection() {
 #[test]
 fn test_merge_pages_header_and_footer_together() {
     // Three pages with both header and footer elements.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let page_height = 842.0;
     let mut pages = Vec::new();
     for i in 0..3 {
-        pages.push(make_page(595.0, page_height, vec![
-            // Header: y=5, height=15 → bottom=20
-            make_text_node("Header Line", 50.0, 5.0, 300.0, 15.0, 10.0),
-            // Body (unique per page so it's NOT a repeated candidate)
-            make_text_node(&format!("Body content {}", i), 50.0, 500.0, 400.0, 20.0, 10.0),
-            // Footer: y=810, height=20
-            make_text_node("Footer Line", 50.0, 810.0, 300.0, 20.0, 8.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            page_height,
+            vec![
+                // Header: y=5, height=15 → bottom=20
+                make_text_node("Header Line", 50.0, 5.0, 300.0, 15.0, 10.0),
+                // Body (unique per page so it's NOT a repeated candidate)
+                make_text_node(
+                    &format!("Body content {}", i),
+                    50.0,
+                    500.0,
+                    400.0,
+                    20.0,
+                    10.0,
+                ),
+                // Footer: y=810, height=20
+                make_text_node("Footer Line", 50.0, 810.0, 300.0, 20.0, 8.0),
+            ],
+        ));
     }
 
     let merged = merge_pages(pages);
@@ -10051,27 +10455,55 @@ fn test_merge_pages_header_and_footer_together() {
 
     let nodes: Vec<_> = merged.collect_nodes();
 
-    let header_count = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
-    }).count();
+    let header_count = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Header
+                    }
+                )
+            })
+        })
+        .count();
 
-    let footer_count = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Footer }))
-    }).count();
+    let footer_count = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Footer
+                    }
+                )
+            })
+        })
+        .count();
 
     assert_eq!(header_count, 3, "Expected 3 header-tagged nodes");
     assert_eq!(footer_count, 3, "Expected 3 footer-tagged nodes");
 
     // Body nodes should have neither
-    let body_nodes: Vec<_> = nodes.iter().filter(|n| {
-        if let FlattenedNodeKind::Text { content, .. } = &n.kind {
-            content.starts_with("Body content")
-        } else { false }
-    }).collect();
+    let body_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.starts_with("Body content")
+            } else {
+                false
+            }
+        })
+        .collect();
     assert_eq!(body_nodes.len(), 3);
     for body in &body_nodes {
         assert!(
-            !body.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+            !body
+                .hints
+                .iter()
+                .any(|h| matches!(h, Hint::MasterPage { .. })),
             "Body content should not have MasterPage hint"
         );
     }
@@ -10080,15 +10512,26 @@ fn test_merge_pages_header_and_footer_together() {
 #[test]
 fn test_merge_pages_no_repeated_elements_no_hints() {
     // Three pages with NO repeated elements → no header/footer hints.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let mut pages = Vec::new();
     for i in 0..3 {
-        pages.push(make_page(595.0, 842.0, vec![
-            make_text_node(&format!("Unique top {}", i), 50.0, 10.0, 200.0, 20.0, 12.0),
-            make_text_node(&format!("Unique bottom {}", i), 50.0, 800.0, 200.0, 20.0, 12.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            842.0,
+            vec![
+                make_text_node(&format!("Unique top {}", i), 50.0, 10.0, 200.0, 20.0, 12.0),
+                make_text_node(
+                    &format!("Unique bottom {}", i),
+                    50.0,
+                    800.0,
+                    200.0,
+                    20.0,
+                    12.0,
+                ),
+            ],
+        ));
     }
 
     let merged = merge_pages(pages);
@@ -10096,7 +10539,10 @@ fn test_merge_pages_no_repeated_elements_no_hints() {
 
     for node in &nodes {
         assert!(
-            !node.hints.iter().any(|h| matches!(h, Hint::MasterPage { .. })),
+            !node
+                .hints
+                .iter()
+                .any(|h| matches!(h, Hint::MasterPage { .. })),
             "No element should have MasterPage hint when nothing is repeated"
         );
     }
@@ -10106,24 +10552,39 @@ fn test_merge_pages_no_repeated_elements_no_hints() {
 fn test_merge_pages_50_percent_threshold() {
     // 4 pages, element appears on 2 pages (50%) → should be detected.
     // Element appears on 1 page (25%) → should NOT be detected.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let mut pages = Vec::new();
 
     // Pages 0 and 1: have a repeated header
     for i in 0..2 {
-        pages.push(make_page(595.0, 842.0, vec![
-            make_text_node("Repeated Header", 50.0, 10.0, 200.0, 20.0, 12.0),
-            make_text_node(&format!("Body A{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            842.0,
+            vec![
+                make_text_node("Repeated Header", 50.0, 10.0, 200.0, 20.0, 12.0),
+                make_text_node(&format!("Body A{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
+            ],
+        ));
     }
     // Pages 2 and 3: no repeated header
     for i in 0..2 {
-        pages.push(make_page(595.0, 842.0, vec![
-            make_text_node(&format!("Different header {}", i), 50.0, 10.0, 200.0, 20.0, 12.0),
-            make_text_node(&format!("Body B{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            842.0,
+            vec![
+                make_text_node(
+                    &format!("Different header {}", i),
+                    50.0,
+                    10.0,
+                    200.0,
+                    20.0,
+                    12.0,
+                ),
+                make_text_node(&format!("Body B{}", i), 50.0, 500.0, 200.0, 20.0, 10.0),
+            ],
+        ));
     }
 
     let merged = merge_pages(pages);
@@ -10132,41 +10593,62 @@ fn test_merge_pages_50_percent_threshold() {
     // "Repeated Header" appears on 2/4 pages = 50% → meets threshold
     // The header boundary is at y=30 (bottom of "Repeated Header")
     // So all elements with bottom ≤ 30 on every page should get tagged
-    let header_nodes: Vec<_> = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
-    }).collect();
+    let header_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Header
+                    }
+                )
+            })
+        })
+        .collect();
 
     // All 4 pages have an element at y=10, h=20 (within header boundary = 30)
     // so all 4 top elements should be tagged as headers
-    assert_eq!(header_nodes.len(), 4,
+    assert_eq!(
+        header_nodes.len(),
+        4,
         "All elements within header boundary should be tagged, found {}",
-        header_nodes.len());
+        header_nodes.len()
+    );
 }
 
 #[test]
 fn test_merge_pages_header_boundary_includes_all_elements_in_region() {
     // If the header candidate goes to y=50, then a non-repeated element
     // at y=30 should also be tagged as header since it's within the boundary.
-    use crate::pdf_parser::merge_pages;
     use crate::flattened::{Hint, MasterPageRegion};
+    use crate::pdf_parser::merge_pages;
 
     let mut pages = Vec::new();
     for i in 0..3 {
-        pages.push(make_page(595.0, 842.0, vec![
-            // Repeated element: y=10, h=15 → bottom=25
-            make_text_node("Logo", 50.0, 10.0, 100.0, 15.0, 12.0),
-            // Repeated element: y=30, h=20 → bottom=50
-            make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
-            // Non-repeated body (unique per page, in lower half)
-            make_text_node(&format!("Body {}", i), 50.0, 500.0, 400.0, 20.0, 10.0),
-        ]));
+        pages.push(make_page(
+            595.0,
+            842.0,
+            vec![
+                // Repeated element: y=10, h=15 → bottom=25
+                make_text_node("Logo", 50.0, 10.0, 100.0, 15.0, 12.0),
+                // Repeated element: y=30, h=20 → bottom=50
+                make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
+                // Non-repeated body (unique per page, in lower half)
+                make_text_node(&format!("Body {}", i), 50.0, 500.0, 400.0, 20.0, 10.0),
+            ],
+        ));
     }
     // Add a 4th page without "Logo" but with a unique element at y=15
-    pages.push(make_page(595.0, 842.0, vec![
-        make_text_node("Different top", 50.0, 15.0, 100.0, 10.0, 12.0),
-        make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
-        make_text_node("Body 3", 50.0, 500.0, 400.0, 20.0, 10.0),
-    ]));
+    pages.push(make_page(
+        595.0,
+        842.0,
+        vec![
+            make_text_node("Different top", 50.0, 15.0, 100.0, 10.0, 12.0),
+            make_text_node("Subtitle", 50.0, 30.0, 200.0, 20.0, 10.0),
+            make_text_node("Body 3", 50.0, 500.0, 400.0, 20.0, 10.0),
+        ],
+    ));
 
     let merged = merge_pages(pages);
     let nodes: Vec<_> = merged.collect_nodes();
@@ -10174,14 +10656,27 @@ fn test_merge_pages_header_boundary_includes_all_elements_in_region() {
     // Header boundary = bottom of lowest header candidate = 50
     // (both "Logo" at bottom=25 and "Subtitle" at bottom=50 are header candidates)
     // "Different top" at y=15, bottom=25 → within header boundary → tagged
-    let header_nodes: Vec<_> = nodes.iter().filter(|n| {
-        n.hints.iter().any(|h| matches!(h, Hint::MasterPage { region: MasterPageRegion::Header }))
-    }).collect();
+    let header_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.hints.iter().any(|h| {
+                matches!(
+                    h,
+                    Hint::MasterPage {
+                        region: MasterPageRegion::Header
+                    }
+                )
+            })
+        })
+        .collect();
 
     // 3 pages × 2 header elements + 1 page × 2 header elements = 8
-    assert_eq!(header_nodes.len(), 8,
+    assert_eq!(
+        header_nodes.len(),
+        8,
         "Expected 8 header-tagged nodes, found {}",
-        header_nodes.len());
+        header_nodes.len()
+    );
 }
 
 #[test]
@@ -10198,19 +10693,31 @@ fn test_antrag_sozialhilfe_multipage_merge() {
     let form_states = bp.states().expect("Failed to get states");
 
     // Should produce exactly one state (merged)
-    assert_eq!(form_states.len(), 1, "Expected 1 merged state, got {}", form_states.len());
+    assert_eq!(
+        form_states.len(),
+        1,
+        "Expected 1 merged state, got {}",
+        form_states.len()
+    );
 
     let state = form_states.iter().next().unwrap();
     assert_eq!(state.label, "default");
 
     // The merged flattened should have nodes from all pages
     let node_count = state.flattened.node_count();
-    assert!(node_count > 10, "Expected many nodes in merged output, got {}", node_count);
+    assert!(
+        node_count > 10,
+        "Expected many nodes in merged output, got {}",
+        node_count
+    );
 
     // Check total height is larger than a single page (842pt for A4)
     let total_height = state.flattened.page.height;
-    assert!(total_height > rust_decimal::Decimal::from(842),
-        "Merged height {} should be larger than one A4 page", total_height);
+    assert!(
+        total_height > rust_decimal::Decimal::from(842),
+        "Merged height {} should be larger than one A4 page",
+        total_height
+    );
 }
 
 // =========================================================================
@@ -10250,7 +10757,7 @@ fn test_aahq_nachname_vorname_in_same_row() {
     // Test that "Nachname" and "Vorname(n)" fields are in the same row
     // and have the same width (in a GridLayout).
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{StructuredNode, GridLayout};
+    use crate::structured::{GridLayout, StructuredNode};
 
     let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
@@ -10285,12 +10792,16 @@ fn test_aahq_nachname_vorname_in_same_row() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(grid) = find_grid_with_nachname_vorname(std::slice::from_ref(&c.content)) {
+                    if let Some(grid) =
+                        find_grid_with_nachname_vorname(std::slice::from_ref(&c.content))
+                    {
                         return Some(grid);
                     }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(grid) = find_grid_with_nachname_vorname(std::slice::from_ref(&r.item)) {
+                    if let Some(grid) =
+                        find_grid_with_nachname_vorname(std::slice::from_ref(&r.item))
+                    {
                         return Some(grid);
                     }
                 }
@@ -10373,24 +10884,32 @@ fn test_aahq_endkunde_conditional_fields_for_bereits_vorhanden() {
     // Find a conditional that shows "Nr. des Korrespondenzempfängers" field
     fn has_field_with_label_containing(node: &StructuredNode, needle: &str) -> bool {
         match node {
-            StructuredNode::Field(f) => {
-                f.label.as_ref().map(|l| l.as_plain_text().contains(needle)).unwrap_or(false)
-            }
-            StructuredNode::Group(g) => g.children.iter().any(|c| has_field_with_label_containing(c, needle)),
-            StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| has_field_with_label_containing(&e.node, needle)),
+            StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains(needle))
+                .unwrap_or(false),
+            StructuredNode::Group(g) => g
+                .children
+                .iter()
+                .any(|c| has_field_with_label_containing(c, needle)),
+            StructuredNode::GridLayout(gl) => gl
+                .elements
+                .iter()
+                .any(|e| has_field_with_label_containing(&e.node, needle)),
             StructuredNode::Conditional(c) => has_field_with_label_containing(&c.content, needle),
             StructuredNode::Repeatable(r) => has_field_with_label_containing(&r.item, needle),
             _ => false,
         }
     }
 
-    let has_korrespondenzempfaenger = conditionals.iter().any(|c| {
-        has_field_with_label_containing(&c.content, "Nr. des Korrespondenzempfängers")
-    });
+    let has_korrespondenzempfaenger = conditionals
+        .iter()
+        .any(|c| has_field_with_label_containing(&c.content, "Nr. des Korrespondenzempfängers"));
 
-    let has_adress_nummer = conditionals.iter().any(|c| {
-        has_field_with_label_containing(&c.content, "Adress Nummer")
-    });
+    let has_adress_nummer = conditionals
+        .iter()
+        .any(|c| has_field_with_label_containing(&c.content, "Adress Nummer"));
 
     assert!(
         has_korrespondenzempfaenger || has_adress_nummer,
@@ -10428,7 +10947,11 @@ fn test_aahq_endkunde_conditional_fields_for_anzulegen() {
             found,
             "Expected to find field '{}' in AAHQ form. Found labels: {:?}",
             expected,
-            field_labels.iter().filter(|l| !l.is_empty()).take(20).collect::<Vec<_>>()
+            field_labels
+                .iter()
+                .filter(|l| !l.is_empty())
+                .take(20)
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -10446,25 +10969,32 @@ fn test_aahq_anredesprache_dropdown() {
     let fields = collect_fields(&structured);
 
     // Find dropdown fields
-    let dropdown_fields: Vec<_> = fields.iter().filter(|f| {
-        matches!(f.input_type, FieldType::Select { .. })
-    }).collect();
+    let dropdown_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(f.input_type, FieldType::Select { .. }))
+        .collect();
 
     // Find the Anredesprache dropdown
     let anredesprache = dropdown_fields.iter().find(|f| {
-        f.label.as_ref().map(|l| l.as_plain_text().contains("Anrede")).unwrap_or(false)
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains("Anrede"))
+            .unwrap_or(false)
     });
 
     assert!(
         anredesprache.is_some(),
         "Expected to find 'Anredesprache' dropdown. Found dropdowns: {:?}",
-        dropdown_fields.iter().filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text())).collect::<Vec<_>>()
+        dropdown_fields
+            .iter()
+            .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
     );
 
     if let Some(field) = anredesprache {
         if let FieldType::Select { options } = &field.input_type {
             let option_names: Vec<_> = options.iter().map(|o| o.name.as_str()).collect();
-            
+
             assert!(
                 option_names.iter().any(|n| n.contains("Deutsch")),
                 "Expected 'Deutsch' in Anredesprache options. Found: {:?}",
@@ -10520,15 +11050,10 @@ fn test_aahq_h1_heading() {
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
-    
-    let h1_headings: Vec<_> = headings.iter()
-        .filter(|(level, _)| *level == 1)
-        .collect();
 
-    assert!(
-        !h1_headings.is_empty(),
-        "Expected at least one H1 heading"
-    );
+    let h1_headings: Vec<_> = headings.iter().filter(|(level, _)| *level == 1).collect();
+
+    assert!(!h1_headings.is_empty(), "Expected at least one H1 heading");
 
     let (_, h1_text) = &h1_headings[0];
     assert!(
@@ -10550,14 +11075,15 @@ fn test_aahq_h2_headings() {
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
-    
-    let h2_texts: Vec<&str> = headings.iter()
+
+    let h2_texts: Vec<&str> = headings
+        .iter()
         .filter(|(level, _)| *level == 2)
         .map(|(_, text)| text.as_str())
         .collect();
 
     let expected_h2 = ["Kundendaten", "Endkunde", "EAM"];
-    
+
     for expected in &expected_h2 {
         let found = h2_texts.iter().any(|t| t.contains(expected));
         assert!(
@@ -10581,8 +11107,9 @@ fn test_aahq_h3_headings() {
         .expect("Failed to run exhaustive merge for AAHQ");
 
     let headings = collect_headings(&structured);
-    
-    let h3_texts: Vec<&str> = headings.iter()
+
+    let h3_texts: Vec<&str> = headings
+        .iter()
         .filter(|(level, _)| *level == 3)
         .map(|(_, text)| text.as_str())
         .collect();
@@ -10593,7 +11120,7 @@ fn test_aahq_h3_headings() {
         "edoc-Korrespondenzempfänger (Connect)",
         "edoc-Korrespondenzempfänger (Assetlink)",
     ];
-    
+
     for expected in &expected_h3 {
         let found = h3_texts.iter().any(|t| t.contains(expected));
         assert!(
@@ -10639,9 +11166,15 @@ fn test_aahq_dritte_partei_is_repeatable() {
         match node {
             StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
             StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
-            StructuredNode::Field(f) => f.label.as_ref().map(|l| l.as_plain_text().contains("Dritte Partei")).unwrap_or(false),
+            StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains("Dritte Partei"))
+                .unwrap_or(false),
             StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
-            StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+            StructuredNode::GridLayout(gl) => {
+                gl.elements.iter().any(|e| contains_dritte_partei(&e.node))
+            }
             StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
             StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
             _ => false,
@@ -10649,10 +11182,8 @@ fn test_aahq_dritte_partei_is_repeatable() {
     }
 
     let repeatables = collect_repeatables(&structured);
-    
-    let dritte_partei_repeatable = repeatables.iter().find(|r| {
-        contains_dritte_partei(&r.item)
-    });
+
+    let dritte_partei_repeatable = repeatables.iter().find(|r| contains_dritte_partei(&r.item));
 
     assert!(
         dritte_partei_repeatable.is_some(),
@@ -10664,7 +11195,7 @@ fn test_aahq_dritte_partei_is_repeatable() {
 fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
     // Test that the "Dritte Partei" repeatable contains an H3 heading "Korrespondenzadresse".
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{RepeatableNode, StructuredNode, HeadingLevel};
+    use crate::structured::{HeadingLevel, RepeatableNode, StructuredNode};
 
     let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
@@ -10676,7 +11207,9 @@ fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
                 StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
                 StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
                 StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
-                StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+                StructuredNode::GridLayout(gl) => {
+                    gl.elements.iter().any(|e| contains_dritte_partei(&e.node))
+                }
                 StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
                 StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
                 _ => false,
@@ -10694,7 +11227,8 @@ fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content)) {
+                    if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content))
+                    {
                         return Some(r);
                     }
                 }
@@ -10707,10 +11241,14 @@ fn test_aahq_dritte_partei_has_korrespondenzadresse_h3() {
     fn has_korrespondenzadresse_h3(node: &StructuredNode) -> bool {
         match node {
             StructuredNode::Heading(h) => {
-                matches!(h.level, HeadingLevel::H3) && h.content.as_plain_text().contains("Korrespondenzadresse")
+                matches!(h.level, HeadingLevel::H3)
+                    && h.content.as_plain_text().contains("Korrespondenzadresse")
             }
             StructuredNode::Group(g) => g.children.iter().any(|c| has_korrespondenzadresse_h3(c)),
-            StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| has_korrespondenzadresse_h3(&e.node)),
+            StructuredNode::GridLayout(gl) => gl
+                .elements
+                .iter()
+                .any(|e| has_korrespondenzadresse_h3(&e.node)),
             StructuredNode::Conditional(c) => has_korrespondenzadresse_h3(&c.content),
             StructuredNode::Repeatable(r) => has_korrespondenzadresse_h3(&r.item),
             _ => false,
@@ -10743,7 +11281,9 @@ fn test_aahq_dritte_partei_has_radio_buttons() {
                 StructuredNode::Heading(h) => h.content.as_plain_text().contains("Dritte Partei"),
                 StructuredNode::Paragraph(p) => p.content.as_plain_text().contains("Dritte Partei"),
                 StructuredNode::Group(g) => g.children.iter().any(|c| contains_dritte_partei(c)),
-                StructuredNode::GridLayout(gl) => gl.elements.iter().any(|e| contains_dritte_partei(&e.node)),
+                StructuredNode::GridLayout(gl) => {
+                    gl.elements.iter().any(|e| contains_dritte_partei(&e.node))
+                }
                 StructuredNode::Conditional(c) => contains_dritte_partei(&c.content),
                 StructuredNode::Repeatable(r) => contains_dritte_partei(&r.item),
                 _ => false,
@@ -10761,7 +11301,8 @@ fn test_aahq_dritte_partei_has_radio_buttons() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content)) {
+                    if let Some(r) = find_dritte_partei_repeatable(std::slice::from_ref(&c.content))
+                    {
                         return Some(r);
                     }
                 }
@@ -10843,8 +11384,8 @@ fn test_antrag_sozialhilfe_font_generic_family_not_monospace() {
 fn test_antrag_debug_title_text_runs() {
     // Diagnostic: dump text runs around the title to understand why
     // "Sozialhilfe" ends up on a separate line.
-    use crate::flattened::FlattenedNodeKind;
     use crate::flattened::Flattened;
+    use crate::flattened::FlattenedNodeKind;
     use crate::xfa::font_manager::get_font_manager;
     use ab_glyph::{Font as AbFont, ScaleFont};
 
@@ -10854,19 +11395,36 @@ fn test_antrag_debug_title_text_runs() {
 
     eprintln!("\n=== Title-area text nodes (y < 250) ===");
     for node in state.flattened.iter_nodes() {
-        if let FlattenedNodeKind::Text { content, font_size, font_name, .. } = &node.kind {
+        if let FlattenedNodeKind::Text {
+            content,
+            font_size,
+            font_name,
+            ..
+        } = &node.kind
+        {
             let y = node.y.to_string().parse::<f64>().unwrap_or(0.0);
             if y < 250.0 {
-                let font_info = node.style.font.as_ref().map(|f| {
-                    format!(
-                        "typeface={}, size={}, weight={:?}, posture={:?}, generic={:?}",
-                        f.typeface, f.size, f.weight, f.posture, f.generic_family
-                    )
-                }).unwrap_or_default();
+                let font_info = node
+                    .style
+                    .font
+                    .as_ref()
+                    .map(|f| {
+                        format!(
+                            "typeface={}, size={}, weight={:?}, posture={:?}, generic={:?}",
+                            f.typeface, f.size, f.weight, f.posture, f.generic_family
+                        )
+                    })
+                    .unwrap_or_default();
                 eprintln!(
                     "  '{}' | x={} y={} w={} h={} | kind_font={} kind_size={} | style: {}",
-                    content, node.x, node.y, node.width, node.height,
-                    font_name, font_size, font_info
+                    content,
+                    node.x,
+                    node.y,
+                    node.width,
+                    node.height,
+                    font_name,
+                    font_size,
+                    font_info
                 );
 
                 // Try resolving the font via font manager and measure text width
@@ -10877,17 +11435,27 @@ fn test_antrag_debug_title_text_runs() {
                         Ok(resolved_font) => {
                             // Use xfa_px_scale (same as renderer) for accurate measurement
                             let fs = xfa_font.size.to_f32().unwrap_or(24.0);
-                            let xfa_scale = crate::xfa::text_metrics::xfa_px_scale(&resolved_font, fs);
+                            let xfa_scale =
+                                crate::xfa::text_metrics::xfa_px_scale(&resolved_font, fs);
                             let scaled_xfa = resolved_font.as_scaled(xfa_scale);
-                            let measured_xfa: f32 = content.chars().map(|c| {
-                                let gid = resolved_font.glyph_id(c);
-                                scaled_xfa.h_advance(gid)
-                            }).sum();
-                            eprintln!("    -> RESOLVED font, measured width (xfa_px_scale) = {:.2}pt (node width = {})", measured_xfa, node.width);
+                            let measured_xfa: f32 = content
+                                .chars()
+                                .map(|c| {
+                                    let gid = resolved_font.glyph_id(c);
+                                    scaled_xfa.h_advance(gid)
+                                })
+                                .sum();
+                            eprintln!(
+                                "    -> RESOLVED font, measured width (xfa_px_scale) = {:.2}pt (node width = {})",
+                                measured_xfa, node.width
+                            );
 
                             // Also call wrap_text_with_font_styled logic
                             let lines = Flattened::wrap_text_with_font_test(
-                                content, node.width.to_f32().unwrap_or(0.0), fs, &resolved_font,
+                                content,
+                                node.width.to_f32().unwrap_or(0.0),
+                                fs,
+                                &resolved_font,
                             );
                             eprintln!("    -> wrap_text_with_font lines: {:?}", lines);
                         }
@@ -10902,7 +11470,10 @@ fn test_antrag_debug_title_text_runs() {
 
     // Also check the page width
     eprintln!("\n=== Page dimensions ===");
-    eprintln!("  width={} height={}", state.flattened.page.width, state.flattened.page.height);
+    eprintln!(
+        "  width={} height={}",
+        state.flattened.page.width, state.flattened.page.height
+    );
 
     // Check embedded fonts registered
     {
@@ -10944,15 +11515,25 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     // Find the unordered (dash) list containing these items
     let dash_list = lists.iter().find(|l| {
         l.list_style == ListStyleType::Dash
-            && l.items.iter().any(|item| {
-                item.as_plain_text().contains("Antrag muss")
-            })
+            && l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains("Antrag muss"))
     });
 
     assert!(
         dash_list.is_some(),
         "Expected a Dash list containing 'Antrag muss' item.\nFound lists: {:?}",
-        lists.iter().map(|l| format!("{:?}: {:?}", l.list_style, l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())).collect::<Vec<_>>()
+        lists
+            .iter()
+            .map(|l| format!(
+                "{:?}: {:?}",
+                l.list_style,
+                l.items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>()
     );
 
     let dash_list = dash_list.unwrap();
@@ -10962,7 +11543,11 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
         3,
         "Expected 3 items in the dash list, got {}.\nItems: {:?}",
         dash_list.items.len(),
-        dash_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        dash_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
     let texts: Vec<String> = dash_list.items.iter().map(|i| i.as_plain_text()).collect();
@@ -10983,7 +11568,6 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
         texts[2]
     );
 }
-
 
 #[test]
 fn test_aacc_multilingual_merge_de_en() {
@@ -11007,21 +11591,40 @@ fn test_aacc_multilingual_merge_de_en() {
         .expect("Merging AACC_019 DE/EN should succeed");
 
     let lang = merged.context.language();
-    assert!(lang.contains("de"), "Merged language should contain 'de', got: {}", lang);
-    assert!(lang.contains("en"), "Merged language should contain 'en', got: {}", lang);
-    assert!(!merged.content.is_empty(), "Merged content should not be empty");
+    assert!(
+        lang.contains("de"),
+        "Merged language should contain 'de', got: {}",
+        lang
+    );
+    assert!(
+        lang.contains("en"),
+        "Merged language should contain 'en', got: {}",
+        lang
+    );
+    assert!(
+        !merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
 
     // At least one TranslatedText node with both languages should be present.
     fn has_translated_text(nodes: &[StructuredNode]) -> bool {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
-                    if h.content.0.iter().any(|n| matches!(n, InlineNode::TranslatedText(_))) {
+                    if h.content
+                        .0
+                        .iter()
+                        .any(|n| matches!(n, InlineNode::TranslatedText(_)))
+                    {
                         return true;
                     }
                 }
                 StructuredNode::Paragraph(p) => {
-                    if p.content.0.iter().any(|n| matches!(n, InlineNode::TranslatedText(_))) {
+                    if p.content
+                        .0
+                        .iter()
+                        .any(|n| matches!(n, InlineNode::TranslatedText(_)))
+                    {
                         return true;
                     }
                 }
@@ -11346,14 +11949,15 @@ fn test_ubs_profile_aem_output_matches_legacy() {
     // XML output for a real PDF.
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf"))
-        .expect("Failed to load AAAI PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
     let (profile, templates) = load_ubs_profile();
-    let profile_config = AemConfig::from_profile(&profile, templates, &ctx).expect("Profile config");
+    let profile_config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("Profile config");
     let profile_config = crate::resolve_aem_languages(&content, &profile_config);
     let profile_root = convert_to_aem(&content, &profile_config);
     let profile_xml = generate_aem_xml(&profile_root, &profile_config);
@@ -11445,9 +12049,12 @@ fn debug_aacj_en_flattened_text() {
                 _ => continue,
             };
             let lower = s.to_lowercase();
-            if lower.contains("please fill") || lower.contains("individual account")
-                || lower.contains("common reporting") || lower.contains("fkaustg")
-                || lower.contains("einzelkontoinhaber") || lower.contains("titular de cuenta")
+            if lower.contains("please fill")
+                || lower.contains("individual account")
+                || lower.contains("common reporting")
+                || lower.contains("fkaustg")
+                || lower.contains("einzelkontoinhaber")
+                || lower.contains("titular de cuenta")
             {
                 eprintln!("  FOUND {} -> {:?}", label, &s[..s.len().min(400)]);
             }
@@ -11466,37 +12073,49 @@ fn debug_aacj_en_flattened_text() {
     // Count total paragraphs
     let mut en_para_count = 0usize;
     let mut en_heading_count = 0usize;
-    walk_structured_nodes(&en_envelope.content, &mut |node| {
-        match node {
-            StructuredNode::Paragraph(_) => en_para_count += 1,
-            StructuredNode::Heading(_) => en_heading_count += 1,
-            _ => {}
-        }
+    walk_structured_nodes(&en_envelope.content, &mut |node| match node {
+        StructuredNode::Paragraph(_) => en_para_count += 1,
+        StructuredNode::Heading(_) => en_heading_count += 1,
+        _ => {}
     });
 
     let mut de_para_count = 0usize;
     let mut de_heading_count = 0usize;
-    walk_structured_nodes(&de_envelope.content, &mut |node| {
-        match node {
-            StructuredNode::Paragraph(_) => de_para_count += 1,
-            StructuredNode::Heading(_) => de_heading_count += 1,
-            _ => {}
-        }
+    walk_structured_nodes(&de_envelope.content, &mut |node| match node {
+        StructuredNode::Paragraph(_) => de_para_count += 1,
+        StructuredNode::Heading(_) => de_heading_count += 1,
+        _ => {}
     });
 
-    eprintln!("\n=== EN: {} paragraphs, {} headings ===", en_para_count, en_heading_count);
-    eprintln!("=== DE: {} paragraphs, {} headings ===", de_para_count, de_heading_count);
+    eprintln!(
+        "\n=== EN: {} paragraphs, {} headings ===",
+        en_para_count, en_heading_count
+    );
+    eprintln!(
+        "=== DE: {} paragraphs, {} headings ===",
+        de_para_count, de_heading_count
+    );
 
     // Also dump ALL paragraphs from EN for comparison
     eprintln!("\n=== All EN paragraphs (first 200 chars) ===");
     let mut para_idx = 0;
     walk_structured_nodes(&en_envelope.content, &mut |node| {
         if let StructuredNode::Paragraph(p) = node {
-            let text: String = p.content.0.iter().map(|i| match i {
-                InlineNode::Text(t) => t.clone(),
-                _ => String::new(),
-            }).collect();
-            let end = text.char_indices().take(200).last().map(|(i,c)| i + c.len_utf8()).unwrap_or(0);
+            let text: String = p
+                .content
+                .0
+                .iter()
+                .map(|i| match i {
+                    InlineNode::Text(t) => t.clone(),
+                    _ => String::new(),
+                })
+                .collect();
+            let end = text
+                .char_indices()
+                .take(200)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
             eprintln!("  EN Para[{}]: {:?}", para_idx, &text[..end]);
             para_idx += 1;
         }
@@ -11506,11 +12125,21 @@ fn debug_aacj_en_flattened_text() {
     let mut para_idx = 0;
     walk_structured_nodes(&de_envelope.content, &mut |node| {
         if let StructuredNode::Paragraph(p) = node {
-            let text: String = p.content.0.iter().map(|i| match i {
-                InlineNode::Text(t) => t.clone(),
-                _ => String::new(),
-            }).collect();
-            let end = text.char_indices().take(200).last().map(|(i,c)| i + c.len_utf8()).unwrap_or(0);
+            let text: String = p
+                .content
+                .0
+                .iter()
+                .map(|i| match i {
+                    InlineNode::Text(t) => t.clone(),
+                    _ => String::new(),
+                })
+                .collect();
+            let end = text
+                .char_indices()
+                .take(200)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
             eprintln!("  DE Para[{}]: {:?}", para_idx, &text[..end]);
             para_idx += 1;
         }
@@ -11520,28 +12149,41 @@ fn debug_aacj_en_flattened_text() {
     eprintln!("\n=== EN conditionals ===");
     walk_structured_nodes(&en_envelope.content, &mut |node| {
         if let StructuredNode::Conditional(c) = node {
-            eprintln!("  Conditional: field={:?} value={:?}", c.condition.field_name, c.condition.value);
+            eprintln!(
+                "  Conditional: field={:?} value={:?}",
+                c.condition.field_name, c.condition.value
+            );
         }
     });
 
     // Check single-state EN structured output via Blueprint API
     eprintln!("\n=== Single-state EN structured output (via Blueprint API) ===");
-    let mut bp = Blueprint::from_pdf(input_path("AACJ_019_EN.pdf"))
-        .expect("Failed to load AACJ_019_EN");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AACJ_019_EN.pdf")).expect("Failed to load AACJ_019_EN");
     let form_states = bp.states().expect("Failed to get form states");
     let first_state = form_states.iter().next().unwrap();
     let single_envelope = first_state.structured(bp.context());
     let single_state = single_envelope.content;
-    
+
     // Check node hints for target text in the first state's flattened
     eprintln!("\n=== Node hints for EN target text ===");
     for (i, node) in first_state.flattened.iter_nodes().enumerate() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             let lower = content.to_lowercase();
-            if lower.contains("please fill") || lower.contains("individual account")
-                || lower.contains("common reporting") || lower.contains("fkaustg")
+            if lower.contains("please fill")
+                || lower.contains("individual account")
+                || lower.contains("common reporting")
+                || lower.contains("fkaustg")
             {
-                eprintln!("  TEXT[{}] ({:.0},{:.0} {:.0}x{:.0}): {:?}", i, node.x, node.y, node.width, node.height, &content[..content.len().min(100)]);
+                eprintln!(
+                    "  TEXT[{}] ({:.0},{:.0} {:.0}x{:.0}): {:?}",
+                    i,
+                    node.x,
+                    node.y,
+                    node.width,
+                    node.height,
+                    &content[..content.len().min(100)]
+                );
                 eprintln!("    hints: {:?}", node.hints);
                 if let Some(som) = node.som_path() {
                     eprintln!("    SOM path: {:?}", som);
@@ -11549,32 +12191,49 @@ fn debug_aacj_en_flattened_text() {
             }
         }
     }
-    
+
     fn deep_search_single(nodes: &[StructuredNode], depth: usize) {
         for (idx, node) in nodes.iter().enumerate() {
             let prefix = "  ".repeat(depth);
             match node {
                 StructuredNode::Paragraph(p) => {
-                    let text: String = p.content.0.iter().filter_map(|i| match i {
-                        InlineNode::Text(t) => Some(t.as_str()),
-                        _ => None,
-                    }).collect::<Vec<_>>().join("");
-                    if text.to_lowercase().contains("please fill") || text.to_lowercase().contains("individual account") {
-                        eprintln!("  {}FOUND Para[{}]: {:?}", prefix, idx, &text[..text.len().min(300)]);
+                    let text: String = p
+                        .content
+                        .0
+                        .iter()
+                        .filter_map(|i| match i {
+                            InlineNode::Text(t) => Some(t.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if text.to_lowercase().contains("please fill")
+                        || text.to_lowercase().contains("individual account")
+                    {
+                        eprintln!(
+                            "  {}FOUND Para[{}]: {:?}",
+                            prefix,
+                            idx,
+                            &text[..text.len().min(300)]
+                        );
                     }
                 }
                 StructuredNode::Group(g) => deep_search_single(&g.children, depth + 1),
-                StructuredNode::Conditional(c) => deep_search_single(std::slice::from_ref(c.content.as_ref()), depth + 1),
+                StructuredNode::Conditional(c) => {
+                    deep_search_single(std::slice::from_ref(c.content.as_ref()), depth + 1)
+                }
                 _ => {}
             }
         }
     }
     deep_search_single(&single_state, 0);
-    
+
     // Count single-state paragraphs
     let mut single_para_count = 0;
     helpers::walk_structured_nodes(&single_state, &mut |node| {
-        if matches!(node, StructuredNode::Paragraph(_)) { single_para_count += 1; }
+        if matches!(node, StructuredNode::Paragraph(_)) {
+            single_para_count += 1;
+        }
     });
     eprintln!("  Single-state EN: {} paragraphs", single_para_count);
 }
@@ -11729,8 +12388,7 @@ fn test_aags_de_two_separate_lists_not_merged() {
     //   - Entgegennahme und Anerkennung …
     //   - Erteilung von Inkassoaufträgen.
 
-    let mut bp = Blueprint::from_pdf(input_path("AAGS_019_DE.pdf"))
-        .expect("Failed to load PDF");
+    let mut bp = Blueprint::from_pdf(input_path("AAGS_019_DE.pdf")).expect("Failed to load PDF");
 
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
@@ -11741,27 +12399,41 @@ fn test_aags_de_two_separate_lists_not_merged() {
 
     // Find the list containing "Einzelkaufleute"
     let list1 = lists.iter().find(|l| {
-        l.items.iter().any(|item| {
-            item.as_plain_text().contains("Einzelkaufleute")
-        })
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Einzelkaufleute"))
     });
     assert!(
         list1.is_some(),
         "Expected a list containing 'Einzelkaufleute'.\nFound lists: {:?}",
-        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     );
     let list1 = list1.unwrap();
 
     // Find the list containing "Verfügungen"
     let list2 = lists.iter().find(|l| {
-        l.items.iter().any(|item| {
-            item.as_plain_text().contains("Verfügungen")
-        })
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Verfügungen"))
     });
     assert!(
         list2.is_some(),
         "Expected a list containing 'Verfügungen'.\nFound lists: {:?}",
-        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     );
     let list2 = list2.unwrap();
 
@@ -11771,7 +12443,11 @@ fn test_aags_de_two_separate_lists_not_merged() {
         4,
         "List 1 (Einzelkaufleute…) should have 4 items, found {}.\nItems: {:?}",
         list1.items.len(),
-        list1.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        list1
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
     assert_eq!(
@@ -11779,13 +12455,18 @@ fn test_aags_de_two_separate_lists_not_merged() {
         5,
         "List 2 (Verfügungen…) should have 5 items, found {}.\nItems: {:?}",
         list2.items.len(),
-        list2.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        list2
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
     // They should NOT be in the same list
-    let list1_has_verfuegungen = list1.items.iter().any(|item| {
-        item.as_plain_text().contains("Verfügungen")
-    });
+    let list1_has_verfuegungen = list1
+        .items
+        .iter()
+        .any(|item| item.as_plain_text().contains("Verfügungen"));
     assert!(
         !list1_has_verfuegungen,
         "List 1 should NOT contain 'Verfügungen' — the two lists must be separate"
@@ -11912,21 +12593,14 @@ fn test_aags_en_has_expected_fields_and_labels() {
     println!("\n=== AAGS EN radio fields ===");
     for field in &radio_fields {
         if let crate::structured::FieldType::Radio { options } = &field.input_type {
-            println!(
-                "  Field: {} ({} options)",
-                field.name,
-                options.len()
-            );
+            println!("  Field: {} ({} options)", field.name, options.len());
             for opt in options {
                 println!("    - {}", opt.name);
             }
         }
     }
 
-    let expected_radio_options = [
-        "Ohne Resultat",
-        "Mit Resultat",
-    ];
+    let expected_radio_options = ["Ohne Resultat", "Mit Resultat"];
 
     let found_radio_group = radio_fields.iter().any(|field| {
         if let crate::structured::FieldType::Radio { options } = &field.input_type {
@@ -11957,11 +12631,14 @@ fn test_aags_en_has_expected_fields_and_labels() {
 #[test]
 fn test_aags_en_debug_flattened_fields() {
     // Temporary debug test to see all fields for AAGS EN
-    use crate::flattened::{FlattenedNodeKind, FlattenedKind};
+    use crate::flattened::{FlattenedKind, FlattenedNodeKind};
 
     let mut bp = Blueprint::from_pdf(input_path("AAGS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     println!("\n=== All flattened nodes (fields and text) ===");
@@ -11999,7 +12676,10 @@ fn test_aags_en_page_66439_included_in_flattened_output() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAGS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     fn collect_all_text(children: &[FlattenedKind], texts: &mut Vec<String>) {
@@ -12025,7 +12705,9 @@ fn test_aags_en_page_66439_included_in_flattened_output() {
 
     // Page_66439 should contain these labels from the "Interne Bearbeitungsvermerke" page
     assert!(
-        all_texts.iter().any(|t| t.contains("Interne Bearbeitungsvermerke")),
+        all_texts
+            .iter()
+            .any(|t| t.contains("Interne Bearbeitungsvermerke")),
         "Flattened output should contain 'Interne Bearbeitungsvermerke' from Page_66439"
     );
     assert!(
@@ -12052,7 +12734,10 @@ fn test_aacj_de_formular_adressat_dropdown_options() {
 
     let mut bp = Blueprint::from_pdf(input_path("AACJ_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find any field that carries a Hint::Dropdown and contains all four options
@@ -12075,8 +12760,8 @@ fn test_aacj_de_formular_adressat_dropdown_options() {
         }
     }
 
-    let options =
-        found_options.expect("Expected to find a dropdown containing 'Private Person' (Formular Adressat)");
+    let options = found_options
+        .expect("Expected to find a dropdown containing 'Private Person' (Formular Adressat)");
     let display_values: Vec<&str> = options.iter().map(|(d, _)| d.as_str()).collect();
 
     println!("\n=== AACJ Formular Adressat dropdown options ===");
@@ -12084,18 +12769,14 @@ fn test_aacj_de_formular_adressat_dropdown_options() {
         println!("  - '{}'", v);
     }
 
-    let expected = [
-        "Private Person",
-        "Minderjährige",
-        "Firma",
-        "GbR",
-    ];
+    let expected = ["Private Person", "Minderjährige", "Firma", "GbR"];
 
     for exp in expected {
         assert!(
             display_values.contains(&exp),
             "Expected dropdown option '{}' not found.\nFound: {:?}",
-            exp, display_values
+            exp,
+            display_values
         );
     }
 
@@ -12170,7 +12851,7 @@ fn test_aacj_de_tin_radio_button_options() {
     });
 
     let tin_radio = tin_radio.expect(
-        "Expected to find a radio field containing a 'Steuerdomizilland' option (TIN radio group)"
+        "Expected to find a radio field containing a 'Steuerdomizilland' option (TIN radio group)",
     );
 
     let FieldType::Radio { options } = &tin_radio.input_type else {
@@ -12324,7 +13005,8 @@ fn test_aacj_state_count_diagnostic() {
     for (file, lang) in [("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en")] {
         let mut bp = Blueprint::from_pdf(input_path(file))
             .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
-        let states = bp.states()
+        let states = bp
+            .states()
             .unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
 
         println!("\n=== {} ({}) — {} states ===", file, lang, states.len());
@@ -12354,11 +13036,18 @@ fn test_aacj_state_count_diagnostic() {
                             || label.contains("representative")
                             || label.contains("Representative")
                         {
-                            println!("    FIELD: name='{}', label='{}'",
-                                name, &label[..label.len().min(80)]);
+                            println!(
+                                "    FIELD: name='{}', label='{}'",
+                                name,
+                                &label[..label.len().min(80)]
+                            );
                         }
                     }
-                    FlattenedNodeKind::Text { content, source_name, .. } => {
+                    FlattenedNodeKind::Text {
+                        content,
+                        source_name,
+                        ..
+                    } => {
                         if content.contains("Kontoinhaber")
                             || content.contains("Vertreter")
                             || content.contains("Vertretungsberechtigt")
@@ -12368,8 +13057,11 @@ fn test_aacj_state_count_diagnostic() {
                             || content.contains("Representative")
                         {
                             let src = source_name.as_deref().unwrap_or("(none)");
-                            println!("    TEXT: src='{}', content='{}'",
-                                src, &content[..content.len().min(80)]);
+                            println!(
+                                "    TEXT: src='{}', content='{}'",
+                                src,
+                                &content[..content.len().min(80)]
+                            );
                         }
                     }
                 }
@@ -12388,12 +13080,16 @@ fn test_aacj_state_count_diagnostic() {
     assert_eq!(en_count, 2, "EN should produce 2 states");
 
     // Despite different state counts, merging should succeed
-    let de_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de").unwrap();
-    let en_envelope = crate::run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en").unwrap();
-    let merged = crate::merge_translations(
-        vec![de_envelope, en_envelope],
+    let de_envelope =
+        crate::run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de").unwrap();
+    let en_envelope =
+        crate::run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en").unwrap();
+    let merged = crate::merge_translations(vec![de_envelope, en_envelope]);
+    assert!(
+        merged.is_ok(),
+        "AACJ DE+EN merge should succeed despite different state counts: {:?}",
+        merged.err()
     );
-    assert!(merged.is_ok(), "AACJ DE+EN merge should succeed despite different state counts: {:?}", merged.err());
 }
 
 #[test]
@@ -12401,8 +13097,8 @@ fn test_aaki_has_list_with_expected_items() {
     // AAKI SP should contain a list with four items describing entity types.
     use crate::Blueprint;
 
-    let mut bp = Blueprint::from_pdf(input_path("AAKI_019_SP.pdf"))
-        .expect("Failed to load AAKI_019_SP.pdf");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
 
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
@@ -12413,15 +13109,22 @@ fn test_aaki_has_list_with_expected_items() {
 
     // Find the list containing "Empresarios individuales"
     let target_list = lists.iter().find(|l| {
-        l.items.iter().any(|item| {
-            item.as_plain_text().contains("Empresarios individuales")
-        })
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Empresarios individuales"))
     });
 
     assert!(
         target_list.is_some(),
         "Expected a list containing 'Empresarios individuales'.\nFound lists: {:?}",
-        lists.iter().map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()).collect::<Vec<_>>()
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     );
 
     let target_list = target_list.unwrap();
@@ -12431,26 +13134,40 @@ fn test_aaki_has_list_with_expected_items() {
         4,
         "Expected 4 items in the list, got {}.\nItems: {:?}",
         target_list.items.len(),
-        target_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        target_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
-    let texts: Vec<String> = target_list.items.iter().map(|i| i.as_plain_text()).collect();
+    let texts: Vec<String> = target_list
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
 
     assert!(
         texts.iter().any(|t| t.contains("Empresarios individuales")),
-        "List should contain 'Empresarios individuales'.\nItems: {:?}", texts
+        "List should contain 'Empresarios individuales'.\nItems: {:?}",
+        texts
     );
     assert!(
         texts.iter().any(|t| t.contains("Sociedades mercantiles")),
-        "List should contain 'Sociedades mercantiles'.\nItems: {:?}", texts
+        "List should contain 'Sociedades mercantiles'.\nItems: {:?}",
+        texts
     );
     assert!(
         texts.iter().any(|t| t.contains("Sociedades capitalistas")),
-        "List should contain 'Sociedades capitalistas'.\nItems: {:?}", texts
+        "List should contain 'Sociedades capitalistas'.\nItems: {:?}",
+        texts
     );
     assert!(
-        texts.iter().any(|t| t.contains("Sociedades de profesionales")),
-        "List should contain 'Sociedades de profesionales, inscritos en los correspondientes registros'.\nItems: {:?}", texts
+        texts
+            .iter()
+            .any(|t| t.contains("Sociedades de profesionales")),
+        "List should contain 'Sociedades de profesionales, inscritos en los correspondientes registros'.\nItems: {:?}",
+        texts
     );
 }
 
@@ -12459,11 +13176,11 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     // AAKI_019_SP has two XSD elements of type SignatureType: `ubs_europe_se`
     // inside `nombres_de_los_apoderados` and `unterschrift_en` inside
     // `anexomifid_ii_...`. Both should be replaced with fragment nodes.
-    use crate::aem::{AemConfig, convert_to_aem};
     use crate::Blueprint;
+    use crate::aem::{AemConfig, convert_to_aem};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAKI_019_SP.pdf"))
-        .expect("Failed to load AAKI_019_SP.pdf");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
@@ -12511,11 +13228,11 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 fn test_aaai_has_exactly_two_signature_fragments() {
     // AAAI_019_DE should produce exactly two SignatureType fragment nodes
     // in the AEM output.
-    use crate::aem::{AemConfig, convert_to_aem};
     use crate::Blueprint;
+    use crate::aem::{AemConfig, convert_to_aem};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to load AAAI_019_EN.pdf");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
@@ -12541,15 +13258,26 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         match node {
             crate::aem::AemNode::Root { children, .. } => {
                 eprintln!("{}Root", indent);
-                for c in children { print_tree_aaai(c, depth + 1); }
+                for c in children {
+                    print_tree_aaai(c, depth + 1);
+                }
             }
-            crate::aem::AemNode::Panel { name, bind_ref, children, .. } => {
+            crate::aem::AemNode::Panel {
+                name,
+                bind_ref,
+                children,
+                ..
+            } => {
                 eprintln!("{}Panel({}) bind_ref={:?}", indent, name, bind_ref);
-                for c in children { print_tree_aaai(c, depth + 1); }
+                for c in children {
+                    print_tree_aaai(c, depth + 1);
+                }
             }
             crate::aem::AemNode::Repeatable { name, children, .. } => {
                 eprintln!("{}Repeatable({})", indent, name);
-                for c in children { print_tree_aaai(c, depth + 1); }
+                for c in children {
+                    print_tree_aaai(c, depth + 1);
+                }
             }
             crate::aem::AemNode::TextField { name, bind_ref, .. } => {
                 eprintln!("{}TextField({}) bind_ref={:?}", indent, name, bind_ref);
@@ -12557,8 +13285,16 @@ fn test_aaai_has_exactly_two_signature_fragments() {
             crate::aem::AemNode::DatePicker { name, bind_ref, .. } => {
                 eprintln!("{}DatePicker({}) bind_ref={:?}", indent, name, bind_ref);
             }
-            crate::aem::AemNode::Fragment { name, frag_ref, bind_ref, .. } => {
-                eprintln!("{}Fragment({}) frag={} bind_ref={:?}", indent, name, frag_ref, bind_ref);
+            crate::aem::AemNode::Fragment {
+                name,
+                frag_ref,
+                bind_ref,
+                ..
+            } => {
+                eprintln!(
+                    "{}Fragment({}) frag={} bind_ref={:?}",
+                    indent, name, frag_ref, bind_ref
+                );
             }
             crate::aem::AemNode::TitleDraw { name, .. } => {
                 eprintln!("{}TitleDraw({})", indent, name);
@@ -12604,24 +13340,22 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 #[test]
 fn test_xsd_basic_field_generation() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
 
     // Build a simple structured tree with one field
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(InlineText::plain("Phone Number")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-        }),
-    ];
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: FieldId::from("test.phone"),
+        som_path: None,
+        label: Some(InlineText::plain("Phone Number")),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+    })];
 
     // Config with a matching synonym
     let mut elements = std::collections::HashMap::new();
@@ -12641,8 +13375,11 @@ fn test_xsd_basic_field_generation() {
     let xsd = generate_xsd(&nodes, &config);
 
     // Verify the output contains the expected element
-    assert!(xsd.contains("<xs:element name=\"phone\" type=\"xs:string\"/>"), 
-        "XSD should contain phone element. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:element name=\"phone\" type=\"xs:string\"/>"),
+        "XSD should contain phone element. Got:\n{}",
+        xsd
+    );
     assert!(xsd.contains("<xs:schema"), "Should have schema root");
     assert!(xsd.contains("</xs:schema>"), "Should close schema root");
 }
@@ -12650,37 +13387,40 @@ fn test_xsd_basic_field_generation() {
 #[test]
 fn test_xsd_unmatched_field_uses_snake_case() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.dob"),
-            som_path: None,
-            label: Some(InlineText::plain("Date of Birth")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-        }),
-    ];
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: FieldId::from("test.dob"),
+        som_path: None,
+        label: Some(InlineText::plain("Date of Birth")),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+    })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&nodes, &config);
 
     // Unmatched field should use snake_case name and xs:string type
-    assert!(xsd.contains("<xs:element name=\"date_of_birth\" type=\"xs:string\"/>"),
-        "Unmatched field should use snake_case name. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:element name=\"date_of_birth\" type=\"xs:string\"/>"),
+        "Unmatched field should use snake_case name. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_heading_creates_complex_type() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
+    };
 
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
@@ -12717,8 +13457,14 @@ fn test_xsd_heading_creates_complex_type() {
         RegisteredComplexType {
             name: "AccountType".to_string(),
             elements: vec![
-                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
-                TypeChildElement { name: "Currency".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement {
+                    name: "IBAN".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Currency".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
             ],
             file: "../AFFragments/Account.xsd".to_string(),
         },
@@ -12728,19 +13474,29 @@ fn test_xsd_heading_creates_complex_type() {
         elements,
         ..Default::default()
     };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
+    let config = XsdConfig::new(
+        profile,
+        std::collections::HashMap::new(),
+        registered_types,
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Should match AccountType (IBAN is a subset) and use type ref
-    assert!(xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
-        "Should create element with matched type. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        "Should create element with matched type. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_heading_with_type_ref() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
+    };
 
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
@@ -12762,10 +13518,13 @@ fn test_xsd_heading_with_type_ref() {
     ];
 
     let mut elements = std::collections::HashMap::new();
-    elements.insert("AccountNumber".to_string(), ElementMapping {
-        synonyms: vec!["Account".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "AccountNumber".to_string(),
+        ElementMapping {
+            synonyms: vec!["Account".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
 
     // Register a type that contains AccountNumber
     let mut registered_types = std::collections::HashMap::new();
@@ -12773,35 +13532,52 @@ fn test_xsd_heading_with_type_ref() {
         "AccountType".to_string(),
         RegisteredComplexType {
             name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement { name: "AccountNumber".to_string(), type_ref: "xs:string".to_string() },
-            ],
+            elements: vec![TypeChildElement {
+                name: "AccountNumber".to_string(),
+                type_ref: "xs:string".to_string(),
+            }],
             file: "../AFFragments/Account.xsd".to_string(),
         },
     );
 
     let mut type_to_file = std::collections::HashMap::new();
-    type_to_file.insert("AccountType".to_string(), "../AFFragments/Account.xsd".to_string());
+    type_to_file.insert(
+        "AccountType".to_string(),
+        "../AFFragments/Account.xsd".to_string(),
+    );
 
     let profile = XsdProfile {
         elements,
         ..Default::default()
     };
-    let config = XsdConfig::new(profile, type_to_file, registered_types, std::collections::HashMap::new());
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Should reference the registered type and emit include
-    assert!(xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
-        "Should reference registered type. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:include schemaLocation=\"../AFFragments/Account.xsd\"/>"),
-        "Should include the file for AccountType. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        "Should reference registered type. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:include schemaLocation=\"../AFFragments/Account.xsd\"/>"),
+        "Should include the file for AccountType. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_child_validation_required_present() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
+    };
 
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
@@ -12812,7 +13588,11 @@ fn test_xsd_child_validation_required_present() {
             name: FieldId::from("test.iban"),
             som_path: None,
             label: Some(InlineText::plain("IBAN")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
@@ -12820,21 +13600,31 @@ fn test_xsd_child_validation_required_present() {
             name: FieldId::from("test.phone"),
             som_path: None,
             label: Some(InlineText::plain("Phone")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
     ];
 
     let mut elements = std::collections::HashMap::new();
-    elements.insert("IBAN".to_string(), ElementMapping {
-        synonyms: vec!["IBAN".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Phone".to_string(), ElementMapping {
-        synonyms: vec!["Phone".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "IBAN".to_string(),
+        ElementMapping {
+            synonyms: vec!["IBAN".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Phone".to_string(),
+        ElementMapping {
+            synonyms: vec!["Phone".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
 
     // Register a type that includes both IBAN and Phone
     let mut registered_types = std::collections::HashMap::new();
@@ -12843,28 +13633,50 @@ fn test_xsd_child_validation_required_present() {
         RegisteredComplexType {
             name: "AccountType".to_string(),
             elements: vec![
-                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
-                TypeChildElement { name: "Phone".to_string(), type_ref: "xs:string".to_string() },
-                TypeChildElement { name: "Currency".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement {
+                    name: "IBAN".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Phone".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Currency".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
             ],
             file: "../AFFragments/Account.xsd".to_string(),
         },
     );
 
-    let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..Default::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        std::collections::HashMap::new(),
+        registered_types,
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Both children are a subset of AccountType → match
-    assert!(xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
-        "Should use type ref when children are subset. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
+        "Should use type ref when children are subset. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_child_validation_required_missing() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
+    };
 
     // Only "Phone" field; registered type requires IBAN which has a different type
     let nodes = vec![
@@ -12876,17 +13688,24 @@ fn test_xsd_child_validation_required_missing() {
             name: FieldId::from("test.phone"),
             som_path: None,
             label: Some(InlineText::plain("Phone")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
     ];
 
     let mut elements = std::collections::HashMap::new();
-    elements.insert("Phone".to_string(), ElementMapping {
-        synonyms: vec!["Phone".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "Phone".to_string(),
+        ElementMapping {
+            synonyms: vec!["Phone".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
 
     // Register a type that only has IBAN (not Phone) → no match
     let mut registered_types = std::collections::HashMap::new();
@@ -12894,31 +13713,51 @@ fn test_xsd_child_validation_required_missing() {
         "AccountType".to_string(),
         RegisteredComplexType {
             name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
-            ],
+            elements: vec![TypeChildElement {
+                name: "IBAN".to_string(),
+                type_ref: "xs:string".to_string(),
+            }],
             file: "../AFFragments/Account.xsd".to_string(),
         },
     );
 
-    let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..Default::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        std::collections::HashMap::new(),
+        registered_types,
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Phone is not in AccountType's elements → no match → fallback
-    assert!(!xsd.contains("AccountType"),
-        "Should NOT use type ref when child not in registered type. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:element name=\"account\">"),
-        "Should fall back to inline complexType. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:complexType>"),
-        "Should generate inline complexType. Got:\n{}", xsd);
+    assert!(
+        !xsd.contains("AccountType"),
+        "Should NOT use type ref when child not in registered type. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:element name=\"account\">"),
+        "Should fall back to inline complexType. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:complexType>"),
+        "Should generate inline complexType. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_child_validation_extra_child() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
+    };
 
     // Has "IBAN", "Phone", and "Email" — but registered type only has IBAN and Phone
     let nodes = vec![
@@ -12930,7 +13769,11 @@ fn test_xsd_child_validation_extra_child() {
             name: FieldId::from("test.iban"),
             som_path: None,
             label: Some(InlineText::plain("IBAN")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
@@ -12938,7 +13781,11 @@ fn test_xsd_child_validation_extra_child() {
             name: FieldId::from("test.phone"),
             som_path: None,
             label: Some(InlineText::plain("Phone")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
@@ -12953,18 +13800,27 @@ fn test_xsd_child_validation_extra_child() {
     ];
 
     let mut elements = std::collections::HashMap::new();
-    elements.insert("IBAN".to_string(), ElementMapping {
-        synonyms: vec!["IBAN".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Phone".to_string(), ElementMapping {
-        synonyms: vec!["Phone".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Email".to_string(), ElementMapping {
-        synonyms: vec!["E-Mail".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "IBAN".to_string(),
+        ElementMapping {
+            synonyms: vec!["IBAN".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Phone".to_string(),
+        ElementMapping {
+            synonyms: vec!["Phone".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Email".to_string(),
+        ElementMapping {
+            synonyms: vec!["E-Mail".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
 
     // Register a type with only IBAN and Phone (not Email)
     let mut registered_types = std::collections::HashMap::new();
@@ -12973,29 +13829,49 @@ fn test_xsd_child_validation_extra_child() {
         RegisteredComplexType {
             name: "AccountType".to_string(),
             elements: vec![
-                TypeChildElement { name: "IBAN".to_string(), type_ref: "xs:string".to_string() },
-                TypeChildElement { name: "Phone".to_string(), type_ref: "xs:string".to_string() },
+                TypeChildElement {
+                    name: "IBAN".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Phone".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
             ],
             file: "../AFFragments/Account.xsd".to_string(),
         },
     );
 
-    let profile = XsdProfile { elements, ..Default::default() };
-    let config = XsdConfig::new(profile, std::collections::HashMap::new(), registered_types, std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..Default::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        std::collections::HashMap::new(),
+        registered_types,
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Email is not in AccountType → not a subset → fallback
-    assert!(!xsd.contains("AccountType"),
-        "Should NOT use type ref when extra child not in registered type. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:element name=\"account\">"),
-        "Should fall back to inline complexType. Got:\n{}", xsd);
+    assert!(
+        !xsd.contains("AccountType"),
+        "Should NOT use type ref when extra child not in registered type. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:element name=\"account\">"),
+        "Should fall back to inline complexType. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_conditional_creates_choice() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
     let field_id = FieldId::from("test.selector");
 
@@ -13009,7 +13885,11 @@ fn test_xsd_conditional_creates_choice() {
                 name: FieldId::from("test.field_a"),
                 som_path: None,
                 label: Some(InlineText::plain("Field A")),
-                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+                input_type: FieldType::Text {
+                    regex: None,
+                    max_length: None,
+                    min_length: None,
+                },
                 value: None,
                 placeholder: None,
             })),
@@ -13023,7 +13903,11 @@ fn test_xsd_conditional_creates_choice() {
                 name: FieldId::from("test.field_b"),
                 som_path: None,
                 label: Some(InlineText::plain("Field B")),
-                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+                input_type: FieldType::Text {
+                    regex: None,
+                    max_length: None,
+                    min_length: None,
+                },
                 value: None,
                 placeholder: None,
             })),
@@ -13034,130 +13918,176 @@ fn test_xsd_conditional_creates_choice() {
     let xsd = generate_xsd(&nodes, &config);
 
     // Should produce xs:choice with two xs:sequence branches
-    assert!(xsd.contains("<xs:choice>"), "Should contain xs:choice. Got:\n{}", xsd);
-    assert!(xsd.contains("</xs:choice>"), "Should close xs:choice. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:choice>"),
+        "Should contain xs:choice. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("</xs:choice>"),
+        "Should close xs:choice. Got:\n{}",
+        xsd
+    );
 
     let sequence_count = xsd.matches("<xs:sequence>").count();
     // The root sequence + 2 branches = at least 3
-    assert!(sequence_count >= 3,
+    assert!(
+        sequence_count >= 3,
         "Should have at least 3 xs:sequence elements (root + 2 branches). Found: {}. Got:\n{}",
-        sequence_count, xsd);
+        sequence_count,
+        xsd
+    );
 
-    assert!(xsd.contains("field_a"), "Should contain field_a. Got:\n{}", xsd);
-    assert!(xsd.contains("field_b"), "Should contain field_b. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("field_a"),
+        "Should contain field_a. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("field_b"),
+        "Should contain field_b. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_repeatable_min_max_occurs() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    let nodes = vec![
-        StructuredNode::Repeatable(RepeatableNode {
-            item: Box::new(StructuredNode::Field(FieldNode {
-                name: FieldId::from("test.item"),
-                som_path: None,
-                label: Some(InlineText::plain("Item")),
-                input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-                value: None,
-                placeholder: None,
-            })),
-            min_occurrences: 0,
-            max_occurrences: None, // unbounded
-        }),
-    ];
+    let nodes = vec![StructuredNode::Repeatable(RepeatableNode {
+        item: Box::new(StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.item"),
+            som_path: None,
+            label: Some(InlineText::plain("Item")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        })),
+        min_occurrences: 0,
+        max_occurrences: None, // unbounded
+    })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&nodes, &config);
 
     // Should have minOccurs and maxOccurs attributes
-    assert!(xsd.contains("minOccurs=\"0\""), "Should have minOccurs=0. Got:\n{}", xsd);
-    assert!(xsd.contains("maxOccurs=\"unbounded\""), "Should have maxOccurs=unbounded. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("minOccurs=\"0\""),
+        "Should have minOccurs=0. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("maxOccurs=\"unbounded\""),
+        "Should have maxOccurs=unbounded. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_field_with_restrictions() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.name"),
-            som_path: None,
-            label: Some(InlineText::plain("Full Name")),
-            input_type: FieldType::Text {
-                regex: Some("[A-Za-z ]+".to_string()),
-                max_length: Some(100),
-                min_length: Some(1),
-            },
-            value: None,
-            placeholder: None,
-        }),
-    ];
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: FieldId::from("test.name"),
+        som_path: None,
+        label: Some(InlineText::plain("Full Name")),
+        input_type: FieldType::Text {
+            regex: Some("[A-Za-z ]+".to_string()),
+            max_length: Some(100),
+            min_length: Some(1),
+        },
+        value: None,
+        placeholder: None,
+    })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&nodes, &config);
 
-    assert!(xsd.contains("<xs:restriction base=\"xs:string\">"),
-        "Should have restriction. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:pattern value=\"[A-Za-z ]+\"/>"),
-        "Should have pattern. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:minLength value=\"1\"/>"),
-        "Should have minLength. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:maxLength value=\"100\"/>"),
-        "Should have maxLength. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:restriction base=\"xs:string\">"),
+        "Should have restriction. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:pattern value=\"[A-Za-z ]+\"/>"),
+        "Should have pattern. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:minLength value=\"1\"/>"),
+        "Should have minLength. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:maxLength value=\"100\"/>"),
+        "Should have maxLength. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_radio_creates_enumeration() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.color"),
-            som_path: None,
-            label: Some(InlineText::plain("Color")),
-            input_type: FieldType::Radio {
-                options: vec![
-                    NameValue {
-                        name: TranslatableString::Plain("Red".to_string()),
-                        value: InputValue::Text("red".to_string()),
-                    },
-                    NameValue {
-                        name: TranslatableString::Plain("Blue".to_string()),
-                        value: InputValue::Text("blue".to_string()),
-                    },
-                    NameValue {
-                        name: TranslatableString::Plain("Green".to_string()),
-                        value: InputValue::Text("green".to_string()),
-                    },
-                ],
-            },
-            value: None,
-            placeholder: None,
-        }),
-    ];
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: FieldId::from("test.color"),
+        som_path: None,
+        label: Some(InlineText::plain("Color")),
+        input_type: FieldType::Radio {
+            options: vec![
+                NameValue {
+                    name: TranslatableString::Plain("Red".to_string()),
+                    value: InputValue::Text("red".to_string()),
+                },
+                NameValue {
+                    name: TranslatableString::Plain("Blue".to_string()),
+                    value: InputValue::Text("blue".to_string()),
+                },
+                NameValue {
+                    name: TranslatableString::Plain("Green".to_string()),
+                    value: InputValue::Text("green".to_string()),
+                },
+            ],
+        },
+        value: None,
+        placeholder: None,
+    })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&nodes, &config);
 
-    assert!(xsd.contains("<xs:enumeration value=\"red\"/>"),
-        "Should have red enumeration. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:enumeration value=\"blue\"/>"),
-        "Should have blue enumeration. Got:\n{}", xsd);
-    assert!(xsd.contains("<xs:enumeration value=\"green\"/>"),
-        "Should have green enumeration. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:enumeration value=\"red\"/>"),
+        "Should have red enumeration. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:enumeration value=\"blue\"/>"),
+        "Should have blue enumeration. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("<xs:enumeration value=\"green\"/>"),
+        "Should have green enumeration. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_predefined_types_included() {
     use crate::structured::*;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use std::collections::HashMap;
 
     // Map CurrencyType to an external file. A field that references it should
@@ -13166,34 +14096,51 @@ fn test_xsd_predefined_types_included() {
     type_to_file.insert("CurrencyType".to_string(), "currency-types.xsd".to_string());
 
     let mut elements = HashMap::new();
-    elements.insert("currency".to_string(), ElementMapping {
-        synonyms: vec!["Currency".to_string()],
-        type_ref: "CurrencyType".to_string(),
-    });
+    elements.insert(
+        "currency".to_string(),
+        ElementMapping {
+            synonyms: vec!["Currency".to_string()],
+            type_ref: "CurrencyType".to_string(),
+        },
+    );
 
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.currency"),
-            som_path: None,
-            label: Some(InlineText::plain("Currency")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-            value: None, placeholder: None,
-        }),
-    ];
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: FieldId::from("test.currency"),
+        som_path: None,
+        label: Some(InlineText::plain("Currency")),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+    })];
 
-    let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..XsdProfile::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
-    assert!(xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
-        "Should include the file that declares CurrencyType. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
+        "Should include the file that declares CurrencyType. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_nested_heading_levels() {
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Heading(HeadingNode {
@@ -13208,7 +14155,11 @@ fn test_xsd_nested_heading_levels() {
             name: FieldId::from("test.field"),
             som_path: None,
             label: Some(InlineText::plain("Inner Field")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
             value: None,
             placeholder: None,
         }),
@@ -13218,15 +14169,30 @@ fn test_xsd_nested_heading_levels() {
     let xsd = generate_xsd(&nodes, &config);
 
     // H1 should create outer complexType, H2 should create inner complexType
-    assert!(xsd.contains("top_section"), "Should contain top_section. Got:\n{}", xsd);
-    assert!(xsd.contains("sub_section"), "Should contain sub_section. Got:\n{}", xsd);
-    assert!(xsd.contains("inner_field"), "Should contain inner_field. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("top_section"),
+        "Should contain top_section. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("sub_section"),
+        "Should contain sub_section. Got:\n{}",
+        xsd
+    );
+    assert!(
+        xsd.contains("inner_field"),
+        "Should contain inner_field. Got:\n{}",
+        xsd
+    );
 
     // Count complexType occurrences — at least 3 (root form + outer heading + inner heading)
     let ct_count = xsd.matches("<xs:complexType>").count();
-    assert!(ct_count >= 3,
+    assert!(
+        ct_count >= 3,
         "Should have at least 3 complexTypes (form root + 2 headings). Found: {}. Got:\n{}",
-        ct_count, xsd);
+        ct_count,
+        xsd
+    );
 }
 
 #[test]
@@ -13237,7 +14203,10 @@ fn test_xsd_snake_case_conversion() {
     assert_eq!(to_snake_case("Phone Number"), "phone_number");
     assert_eq!(to_snake_case("IBAN"), "iban");
     assert_eq!(to_snake_case("first name"), "first_name");
-    assert_eq!(to_snake_case("Account Details (Primary)"), "account_details_primary");
+    assert_eq!(
+        to_snake_case("Account Details (Primary)"),
+        "account_details_primary"
+    );
     assert_eq!(to_snake_case(""), "unknown");
     assert_eq!(to_snake_case("single"), "single");
 }
@@ -13265,82 +14234,128 @@ fn test_xsd_extract_declared_names() {
     let names = extract_declared_names(content);
 
     // Global declarations (complexType, simpleType, top-level element) should be found
-    assert!(names.contains(&"SignatureType".to_string()),
-        "Should extract complexType name. Got: {:?}", names);
-    assert!(names.contains(&"CurrencyCodeType".to_string()),
-        "Should extract simpleType name. Got: {:?}", names);
-    assert!(names.contains(&"Signature".to_string()),
-        "Should extract element name. Got: {:?}", names);
+    assert!(
+        names.contains(&"SignatureType".to_string()),
+        "Should extract complexType name. Got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"CurrencyCodeType".to_string()),
+        "Should extract simpleType name. Got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"Signature".to_string()),
+        "Should extract element name. Got: {:?}",
+        names
+    );
 
     // Inline child elements inside a complexType body are also matched by the
     // line scanner (they start with <xs:element); verify no crash and names found
-    assert!(names.len() >= 3, "Should find at least 3 declarations. Got: {:?}", names);
+    assert!(
+        names.len() >= 3,
+        "Should find at least 3 declarations. Got: {:?}",
+        names
+    );
 }
 
 #[test]
 fn test_xsd_includes_only_emitted_when_type_is_used() {
     use crate::structured::*;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use std::collections::HashMap;
 
     // Two types indexed, but only AddressType will be referenced
     let mut type_to_file = HashMap::new();
     type_to_file.insert("AddressType".to_string(), "address.xsd".to_string());
-    type_to_file.insert("PersonType".to_string(),  "person.xsd".to_string());
+    type_to_file.insert("PersonType".to_string(), "person.xsd".to_string());
 
     // Only "address" element uses AddressType; "name" uses xs:string (no include needed)
     let mut elements = HashMap::new();
-    elements.insert("address".to_string(), ElementMapping {
-        synonyms: vec!["Address".to_string()],
-        type_ref: "AddressType".to_string(),
-    });
-    elements.insert("name".to_string(), ElementMapping {
-        synonyms: vec!["Name".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "address".to_string(),
+        ElementMapping {
+            synonyms: vec!["Address".to_string()],
+            type_ref: "AddressType".to_string(),
+        },
+    );
+    elements.insert(
+        "name".to_string(),
+        ElementMapping {
+            synonyms: vec!["Name".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
 
     let nodes = vec![
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.address"),
             som_path: None,
             label: Some(InlineText::plain("Address")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-            value: None, placeholder: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.name"),
             som_path: None,
             label: Some(InlineText::plain("Name")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-            value: None, placeholder: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
         }),
     ];
 
-    let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..XsdProfile::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // AddressType is used → address.xsd should be included
-    assert!(xsd.contains("<xs:include schemaLocation=\"address.xsd\"/>"),
-        "Used type include should appear. Got:\n{}", xsd);
+    assert!(
+        xsd.contains("<xs:include schemaLocation=\"address.xsd\"/>"),
+        "Used type include should appear. Got:\n{}",
+        xsd
+    );
 
     // PersonType is NOT used → person.xsd should NOT be included
-    assert!(!xsd.contains("person.xsd"),
-        "Unused type include should not appear. Got:\n{}", xsd);
+    assert!(
+        !xsd.contains("person.xsd"),
+        "Unused type include should not appear. Got:\n{}",
+        xsd
+    );
 
     // Include should appear before the root form element
     let include_pos = xsd.find("<xs:include").unwrap();
     let form_pos = xsd.find("<xs:element name=\"form\">").unwrap();
-    assert!(include_pos < form_pos,
-        "Includes should appear before the root element. Got:\n{}", xsd);
+    assert!(
+        include_pos < form_pos,
+        "Includes should appear before the root element. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_includes_deduplicated_by_path() {
     use crate::structured::*;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
     use std::collections::HashMap;
 
     // Two different logical type names → same physical file
@@ -13349,70 +14364,110 @@ fn test_xsd_includes_deduplicated_by_path() {
     type_to_file.insert("TypeB".to_string(), "shared.xsd".to_string());
 
     let mut elements = HashMap::new();
-    elements.insert("field_a".to_string(), ElementMapping {
-        synonyms: vec!["Field A".to_string()],
-        type_ref: "TypeA".to_string(),
-    });
-    elements.insert("field_b".to_string(), ElementMapping {
-        synonyms: vec!["Field B".to_string()],
-        type_ref: "TypeB".to_string(),
-    });
+    elements.insert(
+        "field_a".to_string(),
+        ElementMapping {
+            synonyms: vec!["Field A".to_string()],
+            type_ref: "TypeA".to_string(),
+        },
+    );
+    elements.insert(
+        "field_b".to_string(),
+        ElementMapping {
+            synonyms: vec!["Field B".to_string()],
+            type_ref: "TypeB".to_string(),
+        },
+    );
 
     let nodes = vec![
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.a"),
             som_path: None,
             label: Some(InlineText::plain("Field A")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-            value: None, placeholder: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.b"),
             som_path: None,
             label: Some(InlineText::plain("Field B")),
-            input_type: FieldType::Text { regex: None, max_length: None, min_length: None },
-            value: None, placeholder: None,
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
         }),
     ];
 
-    let profile = XsdProfile { elements, ..XsdProfile::default() };
-    let config = XsdConfig::new(profile, type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
+    let profile = XsdProfile {
+        elements,
+        ..XsdProfile::default()
+    };
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     let xsd = generate_xsd(&nodes, &config);
 
     // Both types used, but same path → only one xs:include
-    let count = xsd.matches("<xs:include schemaLocation=\"shared.xsd\"/>").count();
-    assert_eq!(count, 1,
-        "Duplicate include path should appear only once, found {}. Got:\n{}", count, xsd);
+    let count = xsd
+        .matches("<xs:include schemaLocation=\"shared.xsd\"/>")
+        .count();
+    assert_eq!(
+        count, 1,
+        "Duplicate include path should appear only once, found {}. Got:\n{}",
+        count, xsd
+    );
 }
 
 #[test]
 fn test_xsd_unused_includes_not_emitted() {
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
     use std::collections::HashMap;
 
     let mut type_to_file = HashMap::new();
     type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
 
-    let config = XsdConfig::new(XsdProfile::default(), type_to_file, std::collections::HashMap::new(), std::collections::HashMap::new());
+    let config = XsdConfig::new(
+        XsdProfile::default(),
+        type_to_file,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     // No nodes at all → SomeType is never referenced
     let xsd = generate_xsd(&[], &config);
 
-    assert!(!xsd.contains("<xs:include"),
-        "No includes should appear when no types are used. Got:\n{}", xsd);
+    assert!(
+        !xsd.contains("<xs:include"),
+        "No includes should appear when no types are used. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
 fn test_xsd_no_includes_no_extra_whitespace() {
-    use crate::xsd::{XsdConfig, XsdProfile};
     use crate::xsd::generate_xsd;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&[], &config);
 
     // With no includes, there should be no xs:include directives
-    assert!(!xsd.contains("<xs:include"),
-        "Should not contain xs:include when none configured. Got:\n{}", xsd);
+    assert!(
+        !xsd.contains("<xs:include"),
+        "Should not contain xs:include when none configured. Got:\n{}",
+        xsd
+    );
 }
 
 #[test]
@@ -13423,8 +14478,8 @@ fn test_aaai_en_xsd_signature_type_matching() {
     // subset of SignatureType's children.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile,
-        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
+        generate_xsd_schema, parse_schema,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -13438,8 +14493,8 @@ fn test_aaai_en_xsd_signature_type_matching() {
     let profile_dir = Path::new(&profile_dir_str);
     let config_path = profile_dir.join("config.toml");
     let profile: XsdProfile = {
-        let toml_str = std::fs::read_to_string(&config_path)
-            .expect("Failed to read ubs xsd/config.toml");
+        let toml_str =
+            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
         toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
     };
 
@@ -13475,7 +14530,12 @@ fn test_aaai_en_xsd_signature_type_matching() {
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
     let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    );
 
     // 3) Generate intermediate XSD schema
     let schema = generate_xsd_schema(&nodes, &config);
@@ -13548,12 +14608,19 @@ fn test_aaai_en_xsd_signature_type_matching() {
     //    (LetterAddressType + AddressType), so it contains typed references instead
     //    of individual child elements like "LastName".
     let mut auth_rep_matches = Vec::new();
-    find_elements_by_name(&schema.root, "authorized_representative_s", &mut auth_rep_matches);
+    find_elements_by_name(
+        &schema.root,
+        "authorized_representative_s",
+        &mut auth_rep_matches,
+    );
     assert!(
         !auth_rep_matches.is_empty(),
         "Should find 'authorized_representative_s' element"
     );
-    if let XsdNode::Element { content, type_ref, .. } = auth_rep_matches[0] {
+    if let XsdNode::Element {
+        content, type_ref, ..
+    } = auth_rep_matches[0]
+    {
         assert!(
             type_ref.is_none(),
             "authorized_representative_s should have inline content (multi-type match)"
@@ -13596,8 +14663,8 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     // of type AddressType, making them non-disjoint at the leaf level.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile,
-        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
+        generate_xsd_schema, parse_schema,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -13609,8 +14676,8 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     let profile_dir = Path::new(&profile_dir_str);
     let config_path = profile_dir.join("config.toml");
     let profile: XsdProfile = {
-        let toml_str = std::fs::read_to_string(&config_path)
-            .expect("Failed to read ubs xsd/config.toml");
+        let toml_str =
+            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
         toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
     };
 
@@ -13646,7 +14713,12 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
     let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    );
 
     let schema = generate_xsd_schema(&nodes, &config);
 
@@ -13687,7 +14759,10 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     );
 
     // It should be an inline complexType containing two typed child elements
-    if let XsdNode::Element { content, type_ref, .. } = matches[0] {
+    if let XsdNode::Element {
+        content, type_ref, ..
+    } = matches[0]
+    {
         assert!(
             type_ref.is_none(),
             "authorized_representative_s should NOT have a single type_ref"
@@ -13707,7 +14782,9 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
                 .collect();
 
             assert!(
-                child_types.iter().any(|t| *t == Some("IndividualBasicType")),
+                child_types
+                    .iter()
+                    .any(|t| *t == Some("IndividualBasicType")),
                 "Should contain IndividualBasicType child. Got types: {:?}",
                 child_types
             );
@@ -13787,7 +14864,7 @@ fn test_bind_refs_single_type_match() {
     // flat paths (no wrapper level needed).
     use crate::structured::*;
     use crate::xsd::{
-        XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement,
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
         compute_bind_refs,
     };
     use std::collections::HashMap;
@@ -13800,40 +14877,72 @@ fn test_bind_refs_single_type_match() {
     ];
 
     let mut elements = HashMap::new();
-    elements.insert("Place".to_string(), ElementMapping {
-        synonyms: vec!["Place".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Name".to_string(), ElementMapping {
-        synonyms: vec!["Name".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Date".to_string(), ElementMapping {
-        synonyms: vec!["Date".to_string()],
-        type_ref: "xs:date".to_string(),
-    });
+    elements.insert(
+        "Place".to_string(),
+        ElementMapping {
+            synonyms: vec!["Place".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Name".to_string(),
+        ElementMapping {
+            synonyms: vec!["Name".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Date".to_string(),
+        ElementMapping {
+            synonyms: vec!["Date".to_string()],
+            type_ref: "xs:date".to_string(),
+        },
+    );
     let profile = XsdProfile {
         elements,
         ..Default::default()
     };
 
     let mut registered_types = HashMap::new();
-    registered_types.insert("SignatureType".to_string(), RegisteredComplexType {
-        name: "SignatureType".to_string(),
-        elements: vec![
-            TypeChildElement { name: "Place".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "Name".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "Date".to_string(), type_ref: "xs:date".to_string() },
-            TypeChildElement { name: "Role".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "OURef".to_string(), type_ref: "xs:string".to_string() },
-        ],
-        file: "Signature.xsd".to_string(),
-    });
+    registered_types.insert(
+        "SignatureType".to_string(),
+        RegisteredComplexType {
+            name: "SignatureType".to_string(),
+            elements: vec![
+                TypeChildElement {
+                    name: "Place".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Name".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Date".to_string(),
+                    type_ref: "xs:date".to_string(),
+                },
+                TypeChildElement {
+                    name: "Role".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "OURef".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+            ],
+            file: "Signature.xsd".to_string(),
+        },
+    );
 
     let mut type_to_element_name = HashMap::new();
     type_to_element_name.insert("SignatureType".to_string(), "Signature".to_string());
 
-    let config = XsdConfig::new(profile, HashMap::new(), registered_types, type_to_element_name);
+    let config = XsdConfig::new(
+        profile,
+        HashMap::new(),
+        registered_types,
+        type_to_element_name,
+    );
     let maps = compute_bind_refs(&nodes, &config);
 
     assert_eq!(
@@ -13861,7 +14970,7 @@ fn test_bind_refs_multi_type_match() {
     // the wrapper element segment in their paths.
     use crate::structured::*;
     use crate::xsd::{
-        XsdConfig, XsdProfile, ElementMapping, RegisteredComplexType, TypeChildElement,
+        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
         compute_bind_refs,
     };
     use std::collections::HashMap;
@@ -13876,55 +14985,99 @@ fn test_bind_refs_multi_type_match() {
     ];
 
     let mut elements = HashMap::new();
-    elements.insert("LastName".to_string(), ElementMapping {
-        synonyms: vec!["Last Name".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("FirstName".to_string(), ElementMapping {
-        synonyms: vec!["First Name".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Street".to_string(), ElementMapping {
-        synonyms: vec!["Street".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("City".to_string(), ElementMapping {
-        synonyms: vec!["City".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
-    elements.insert("Country".to_string(), ElementMapping {
-        synonyms: vec!["Country".to_string()],
-        type_ref: "xs:string".to_string(),
-    });
+    elements.insert(
+        "LastName".to_string(),
+        ElementMapping {
+            synonyms: vec!["Last Name".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "FirstName".to_string(),
+        ElementMapping {
+            synonyms: vec!["First Name".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Street".to_string(),
+        ElementMapping {
+            synonyms: vec!["Street".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "City".to_string(),
+        ElementMapping {
+            synonyms: vec!["City".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
+    elements.insert(
+        "Country".to_string(),
+        ElementMapping {
+            synonyms: vec!["Country".to_string()],
+            type_ref: "xs:string".to_string(),
+        },
+    );
     let profile = XsdProfile {
         elements,
         ..Default::default()
     };
 
     let mut registered_types = HashMap::new();
-    registered_types.insert("IndividualBasicType".to_string(), RegisteredComplexType {
-        name: "IndividualBasicType".to_string(),
-        elements: vec![
-            TypeChildElement { name: "LastName".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "FirstName".to_string(), type_ref: "xs:string".to_string() },
-        ],
-        file: "Individual.xsd".to_string(),
-    });
-    registered_types.insert("AddressType".to_string(), RegisteredComplexType {
-        name: "AddressType".to_string(),
-        elements: vec![
-            TypeChildElement { name: "Street".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "City".to_string(), type_ref: "xs:string".to_string() },
-            TypeChildElement { name: "Country".to_string(), type_ref: "xs:string".to_string() },
-        ],
-        file: "Address.xsd".to_string(),
-    });
+    registered_types.insert(
+        "IndividualBasicType".to_string(),
+        RegisteredComplexType {
+            name: "IndividualBasicType".to_string(),
+            elements: vec![
+                TypeChildElement {
+                    name: "LastName".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "FirstName".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+            ],
+            file: "Individual.xsd".to_string(),
+        },
+    );
+    registered_types.insert(
+        "AddressType".to_string(),
+        RegisteredComplexType {
+            name: "AddressType".to_string(),
+            elements: vec![
+                TypeChildElement {
+                    name: "Street".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "City".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+                TypeChildElement {
+                    name: "Country".to_string(),
+                    type_ref: "xs:string".to_string(),
+                },
+            ],
+            file: "Address.xsd".to_string(),
+        },
+    );
 
     let mut type_to_element_name = HashMap::new();
-    type_to_element_name.insert("IndividualBasicType".to_string(), "IndividualBasic".to_string());
+    type_to_element_name.insert(
+        "IndividualBasicType".to_string(),
+        "IndividualBasic".to_string(),
+    );
     type_to_element_name.insert("AddressType".to_string(), "Address".to_string());
 
-    let config = XsdConfig::new(profile, HashMap::new(), registered_types, type_to_element_name);
+    let config = XsdConfig::new(
+        profile,
+        HashMap::new(),
+        registered_types,
+        type_to_element_name,
+    );
     let maps = compute_bind_refs(&nodes, &config);
 
     assert_eq!(
@@ -14018,9 +15171,8 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // must appear in the bindRef field paths.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile,
-        build_registered_types, compute_bind_refs, extract_declared_names,
-        generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile, build_registered_types, compute_bind_refs,
+        extract_declared_names, generate_xsd_schema, parse_schema,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -14034,8 +15186,8 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     let profile_dir = Path::new(&profile_dir_str);
     let config_path = profile_dir.join("config.toml");
     let profile: XsdProfile = {
-        let toml_str = std::fs::read_to_string(&config_path)
-            .expect("Failed to read ubs xsd/config.toml");
+        let toml_str =
+            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
         toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
     };
 
@@ -14071,7 +15223,12 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
     let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(profile, type_to_file, registered_types, type_to_element_name);
+    let config = XsdConfig::new(
+        profile,
+        type_to_file,
+        registered_types,
+        type_to_element_name,
+    );
 
     // 3) Generate XSD schema and compute bind refs
     let schema = generate_xsd_schema(&nodes, &config);
@@ -14086,7 +15243,12 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
         registered_types: &HashMap<String, crate::RegisteredComplexType>,
     ) {
         match node {
-            XsdNode::Element { name, type_ref, content, .. } => {
+            XsdNode::Element {
+                name,
+                type_ref,
+                content,
+                ..
+            } => {
                 let path = format!("{}/{}", parent, name);
                 paths.insert(path.clone());
                 if let Some(child) = content {
@@ -14127,14 +15289,17 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
             xsd_paths.contains(bind_path),
             "Field {} has bindRef {} but no matching element in the XSD tree. \
              Available XSD element paths (sample): {:?}",
-            field_id, bind_path,
+            field_id,
+            bind_path,
             xsd_paths.iter().take(20).collect::<Vec<_>>()
         );
     }
 
     // 6) Verify specific multi-type section: authorized_representative_s
     //    Fields in this section should have wrapper paths (e.g. IndividualBasic/LastName).
-    let auth_rep_fields: Vec<_> = maps.fields.iter()
+    let auth_rep_fields: Vec<_> = maps
+        .fields
+        .iter()
         .filter(|(_, path)| path.contains("/authorized_representative_s/"))
         .collect();
     assert!(
@@ -14145,8 +15310,11 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // not be directly under authorized_representative_s.
     let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
         // Find the part after "authorized_representative_s/"
-        let after = path.split("/authorized_representative_s/").last().unwrap_or("");
-        after.contains('/')  // has another segment before the field name (= wrapper)
+        let after = path
+            .split("/authorized_representative_s/")
+            .last()
+            .unwrap_or("");
+        after.contains('/') // has another segment before the field name (= wrapper)
     });
     assert!(
         has_wrapper_paths,
@@ -14167,9 +15335,7 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
     // headings like "Kunde" appeared instead of "client".
     use crate::run_exhaustive_to_envelope;
     use crate::structured;
-    use crate::xsd::{
-        XsdNode, generate_xsd_schema,
-    };
+    use crate::xsd::{XsdNode, generate_xsd_schema};
 
     // 1) Merge DE + EN (DE first so it appears first in maps)
     let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
@@ -14285,14 +15451,15 @@ fn test_aaai_section_bind_ref_client_not_under_signature() {
     use crate::run_exhaustive_to_merged;
     use crate::xsd::compute_bind_refs;
 
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI EN");
+    let nodes =
+        run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf")).expect("Failed to process AAAI EN");
     let config = helpers::load_ubs_xsd_config().with_master_language("en");
     let maps = compute_bind_refs(&nodes, &config);
 
-    let client_path = maps.sections.get("Client").expect(
-        "sections map should contain 'Client'"
-    );
+    let client_path = maps
+        .sections
+        .get("Client")
+        .expect("sections map should contain 'Client'");
 
     // "Client" is a direct child of the H1 heading, so its path should be
     // /form/<h1_slug>/client — NOT /form/<h1_slug>/signature_s/client.
@@ -14316,11 +15483,11 @@ fn test_aaai_has_address_and_individual_fragments() {
     // Country).  The fragment replacement logic should insert Fragment
     // nodes for each matched type as children of the wrapping panel,
     // rather than replacing the wrapping panel itself.
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
     use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to load AAAI_019_EN.pdf");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
@@ -14386,7 +15553,10 @@ fn test_aaai_has_address_and_individual_fragments() {
     // The Client panel should still exist (not be replaced)
     let mut client_panel_exists = false;
     helpers::walk_aem_nodes(&root, &mut |node| {
-        if let AemNode::Panel { bind_ref: Some(br), .. } = node {
+        if let AemNode::Panel {
+            bind_ref: Some(br), ..
+        } = node
+        {
             if br.ends_with("/client") {
                 client_panel_exists = true;
             }

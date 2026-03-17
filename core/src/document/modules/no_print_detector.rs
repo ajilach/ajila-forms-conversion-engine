@@ -34,9 +34,10 @@ impl NoPrintDetector {
         let group = doc.groups.get(group_idx);
         if let Some(group) = group
             && let GroupKind::Leaf { node_index } = &group.kind
-                && let Some(node) = doc.get_node(*node_index) {
-                    return node.hints.iter().any(|h| matches!(h, Hint::NoPrint));
-                }
+            && let Some(node) = doc.get_node(*node_index)
+        {
+            return node.hints.iter().any(|h| matches!(h, Hint::NoPrint));
+        }
         false
     }
 
@@ -47,9 +48,10 @@ impl NoPrintDetector {
         for (idx, group) in doc.groups.iter().enumerate() {
             // Only process leaf groups
             if let GroupKind::Leaf { .. } = &group.kind
-                && self.has_no_print_hint(doc, idx) {
-                    groups.push(idx);
-                }
+                && self.has_no_print_hint(doc, idx)
+            {
+                groups.push(idx);
+            }
         }
 
         groups

@@ -427,11 +427,7 @@ impl SomResolver {
     ///
     /// For multi-part names (e.g., "Sub.Field"), the first part is resolved via
     /// the scope walk, then the remainder is resolved as children relative to it.
-    pub fn resolve_unqualified(
-        &self,
-        name: &str,
-        context_path: &SomPath,
-    ) -> Option<SomPath> {
+    pub fn resolve_unqualified(&self, name: &str, context_path: &SomPath) -> Option<SomPath> {
         // Handle multi-part unqualified expressions (e.g., "Sub.Field")
         if let Some(dot_pos) = name.find('.') {
             let first_part = &name[..dot_pos];

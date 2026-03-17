@@ -50,9 +50,7 @@
 
 use std::sync::Arc;
 
-use crate::{
-    Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection, StructuredNode,
-};
+use crate::{Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection, StructuredNode};
 
 // ============================================================================
 // PipelineStep
@@ -279,7 +277,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────────
-    on_event(PipelineEvent::StepChanged(PipelineStep::ExhaustiveSearching));
+    on_event(PipelineEvent::StepChanged(
+        PipelineStep::ExhaustiveSearching,
+    ));
 
     // (filename, language, form_states, context)
     let mut explored: Vec<(String, String, crate::FormStates, Context)> = Vec::new();
@@ -396,8 +396,7 @@ pub fn run_pipeline(
     let merged = if all_envelopes.is_empty() {
         return Err(Error::Conversion("No envelopes to merge".into()));
     } else if files.len() > 1 && all_envelopes.len() > 1 {
-        crate::merge_translations(all_envelopes)
-            .map_err(|e| Error::Conversion(e.to_string()))?
+        crate::merge_translations(all_envelopes).map_err(|e| Error::Conversion(e.to_string()))?
     } else {
         all_envelopes.into_iter().next().unwrap()
     };

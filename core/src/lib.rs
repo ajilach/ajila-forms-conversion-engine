@@ -135,9 +135,9 @@ pub use html::{
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdNode,
     XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
-    build_xsd_config_from_type_sources, compute_bind_refs, extract_declared_names,
-    collect_xsd_type_sources_from_dir, load_xsd_config_from_dir,
-    find_matching_types, generate_xsd, generate_xsd_schema, parse_schema,
+    build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
+    extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema,
+    load_xsd_config_from_dir, parse_schema,
 };
 
 // XFA layer
@@ -705,7 +705,6 @@ fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<Structur
 pub(crate) fn merge_structured_outputs(
     structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)>,
 ) -> Vec<StructuredNode> {
-
     if structured_outputs.is_empty() {
         return Vec::new();
     }

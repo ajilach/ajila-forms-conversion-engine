@@ -242,8 +242,7 @@ where
     let toml_str = config_file
         .contents_utf8()
         .ok_or_else(|| format!("{section}/config.toml is not valid UTF-8"))?;
-    toml::from_str::<T>(toml_str)
-        .map_err(|e| format!("Failed to parse {section}/config.toml: {e}"))
+    toml::from_str::<T>(toml_str).map_err(|e| format!("Failed to parse {section}/config.toml: {e}"))
 }
 
 fn walk_embedded_dirs(dir: &Dir<'_>, visit: &mut impl FnMut(&Dir<'_>)) {
@@ -269,7 +268,9 @@ fn normalize_embedded_path(path: &std::path::Path) -> String {
 
 fn relative_embedded_path(path: &std::path::Path, root: &std::path::Path) -> String {
     let rel = path.strip_prefix(root).unwrap_or(path);
-    normalize_embedded_path(rel).trim_start_matches('/').to_string()
+    normalize_embedded_path(rel)
+        .trim_start_matches('/')
+        .to_string()
 }
 
 fn mime_from_extension(path: &std::path::Path) -> &'static str {
