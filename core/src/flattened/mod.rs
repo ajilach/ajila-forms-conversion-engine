@@ -1949,8 +1949,21 @@ impl Flattened {
             presence_map.insert(path.clone(), presence);
         }
 
-        for child in &node.children {
-            Self::collect_form_node_presence(child, path, presence_map);
+        // Do not recurse into children of hidden/inactive containers.
+        //
+        // Per XFA 3.3 §8 (Layout): when a container is hidden, its children
+        // are also hidden through layout inheritance.  The Form DOM therefore
+        // saves child presence as "hidden" even if those children have no
+        // independently-set hidden attribute.  Blindly re-applying those
+        // saved child states to the Template DOM causes the children to
+        // remain hidden even after the parent container is made visible by a
+        // script at runtime.  Only the container's own presence needs to be
+        // preserved; children revert to their template-defined defaults once
+        // the parent is visible again.
+        if !presence.should_skip_layout() {
+            for child in &node.children {
+                Self::collect_form_node_presence(child, path, presence_map);
+            }
         }
 
         path.truncate(prev_len);
