@@ -16319,26 +16319,248 @@ fn test_aaai_has_address_and_individual_fragments() {
 }
 
 #[test]
-fn test_aaal_explore_structure() {
-    // Diagnostic test to explore the structure of AAAL_019 forms per state.
-    for (file, lang) in [
-        ("AAAL_019_DE.pdf", "de"),
-        ("AAAL_019_EN.pdf", "en"),
-        ("AAAL_019_SP.pdf", "sp"),
-    ] {
-        let mut bp = Blueprint::from_pdf(helpers::input_path(file))
-            .unwrap_or_else(|e| panic!("Failed to load {file}: {e}"));
+fn test_aaal_en_firma_company_debug() {
+    // Diagnostic test: check if Company presence is being set when Firma is selected in EN.
+    let mut bp =
+        Blueprint::from_pdf(helpers::input_path("AAAL_019_EN.pdf")).expect("Failed to load EN");
+    let form = bp.form_mut().expect("XFA PDF");
+
+    let result = form.set_value_as_user(
+        "Page.FormConfigurator_ClientType.ClientType.CL_ClientType",
+        "Firma",
+    );
+    println!("set_value_as_user result: {result:?}");
+    form.refresh().expect("refresh");
+
+    let changes = form.get_presence_changes();
+    let company_changes: std::collections::HashMap<_, _> =
+        changes.iter().filter(|(k, _)| k.contains("Company")).collect();
+    println!("Company presence changes: {company_changes:?}");
+    println!("All presence changes ({} total): {:?}", changes.len(), changes);
+}
+
+#[test]
+fn test_aaal_de_en_sp_structure() {
+    // Test that AAAL_019 in German, English, and Spanish produces:
+    //   1. An h2 heading "Kundendaten" / "Client details" / "Datos del cliente"
+    //      followed by fields "Nachname"/"Last name"/"Apellido(s)" and
+    //      "Vorname(n)"/"First name(s)"/"Nombre(s)".
+    //   2. When "Firma" is selected in the "Formular Adressat" dropdown
+    //      ("Firma" state), an additional field
+    //      "Firma" / "Company" / "Razón social" appears in the Kundendaten
+    //      section (before the last-name field).
+    //   3. An h2 heading "Ermächtigung" / "Authorization" / "Autorización"
+    //      followed by the authorized-person fields in the expected order.
+
+    struct LangExpected {
+        file: &'static str,
+        lang: &'static str,
+        kundendaten_heading: &'static str,
+        firma_field: &'static str,
+        last_name_label: &'static str,
+        first_name_label: &'static str,
+        ermaecht_heading: &'static str,
+        auth_last_name: &'static str,
+        auth_first_name: &'static str,
+        auth_birthdate: &'static str,
+        auth_company: &'static str,
+        auth_street: &'static str,
+        auth_no: &'static str,
+        auth_plz: &'static str,
+        auth_city: &'static str,
+        auth_country: &'static str,
+        auth_email: &'static str,
+    }
+
+    let cases = [
+        LangExpected {
+            file: "AAAL_019_DE.pdf",
+            lang: "de",
+            kundendaten_heading: "Kundendaten",
+            firma_field: "Firma",
+            last_name_label: "Nachname",
+            first_name_label: "Vorname(n)",
+            ermaecht_heading: "Ermächtigung",
+            auth_last_name: "Nachname",
+            auth_first_name: "Vorname(n)",
+            auth_birthdate: "Geburtsdatum",
+            auth_company: "Firma",
+            auth_street: "Straße",
+            auth_no: "Nr.",
+            auth_plz: "PLZ",
+            auth_city: "Stadt",
+            auth_country: "Land",
+            auth_email: "Email",
+        },
+        LangExpected {
+            file: "AAAL_019_EN.pdf",
+            lang: "en",
+            kundendaten_heading: "Client details",
+            firma_field: "Company",
+            last_name_label: "Last name",
+            first_name_label: "First name(s)",
+            ermaecht_heading: "Authorization",
+            auth_last_name: "Last name",
+            auth_first_name: "First name(s)",
+            auth_birthdate: "Date of birth",
+            auth_company: "Company",
+            auth_street: "Street",
+            auth_no: "No.",
+            auth_plz: "Postal code",
+            auth_city: "City",
+            auth_country: "Country",
+            auth_email: "Email",
+        },
+        LangExpected {
+            file: "AAAL_019_SP.pdf",
+            lang: "sp",
+            kundendaten_heading: "Datos del cliente",
+            firma_field: "Razón social",
+            last_name_label: "Apellido(s)",
+            first_name_label: "Nombre(s)",
+            ermaecht_heading: "Autorización",
+            auth_last_name: "Apellido(s)",
+            auth_first_name: "Nombre(s)",
+            auth_birthdate: "Fecha de nacimiento",
+            auth_company: "Razón social",
+            auth_street: "Calle",
+            auth_no: "Nº",
+            auth_plz: "Código postal",
+            auth_city: "Ciudad",
+            auth_country: "País",
+            auth_email: "Email",
+        },
+    ];
+
+    for c in &cases {
+        let mut bp = Blueprint::from_pdf(helpers::input_path(c.file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {e}", c.file));
         let ctx = bp.context();
         let states = bp
             .states()
-            .unwrap_or_else(|e| panic!("Failed to get states for {file}: {e}"));
+            .unwrap_or_else(|e| panic!("Failed to get states for {}: {e}", c.file));
 
-        println!("\n=== {file} ({lang}) — {} states ===", states.len());
-        for (i, state) in states.iter().enumerate() {
-            let envelope = state.structured(ctx.clone());
-            println!("  State {i}: label={:?}", state.label);
-            let fields = helpers::collect_field_labels_trimmed(&envelope.content);
-            println!("  Fields: {fields:?}");
+        // ── Find the "Firma" state ─────────────────────────────────────────
+        let firma_state = states
+            .iter()
+            .find(|s| s.label.contains("Firma"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "[{}] Expected a 'Firma' state. Available states: {:?}",
+                    c.file,
+                    states.iter().map(|s| s.label.clone()).collect::<Vec<_>>()
+                )
+            });
+        let firma_env = firma_state.structured(ctx.clone());
+
+        // ── 1. h2 heading "Kundendaten" ───────────────────────────────────
+        let headings = helpers::collect_headings(&firma_env.content);
+        let kundendaten_pos = headings.iter().position(|(level, text)| {
+            *level == 2 && text.contains(c.kundendaten_heading)
+        });
+        assert!(
+            kundendaten_pos.is_some(),
+            "[{}] Expected h2 heading '{}'. Found headings: {:?}",
+            c.file, c.kundendaten_heading, headings
+        );
+
+        // ── 2. "Firma" field present before "Nachname" in Firma state ─────
+        let fields = helpers::collect_field_labels_trimmed(&firma_env.content);
+        let firma_field_pos = fields.iter().position(|f| f.contains(c.firma_field));
+        assert!(
+            firma_field_pos.is_some(),
+            "[{}] Expected '{}' field in Firma state. Fields: {:?}",
+            c.file, c.firma_field, fields
+        );
+        let last_name_pos_kunden = fields.iter().position(|f| f.contains(c.last_name_label));
+        assert!(
+            last_name_pos_kunden.is_some(),
+            "[{}] Expected '{}' field. Fields: {:?}",
+            c.file, c.last_name_label, fields
+        );
+        assert!(
+            firma_field_pos.unwrap() < last_name_pos_kunden.unwrap(),
+            "[{}] '{}' field should appear before '{}'. Fields: {:?}",
+            c.file, c.firma_field, c.last_name_label, fields
+        );
+
+        // ── 3. First name appears after last name in Kundendaten ──────────
+        let first_name_pos_kunden = fields
+            .iter()
+            .enumerate()
+            .find(|(i, f)| *i > last_name_pos_kunden.unwrap() && f.contains(c.first_name_label));
+        assert!(
+            first_name_pos_kunden.is_some(),
+            "[{}] Expected '{}' field after '{}'. Fields: {:?}",
+            c.file, c.first_name_label, c.last_name_label, fields
+        );
+
+        // ── 4. h2 heading "Ermächtigung" appears after "Kundendaten" ──────
+        let ermaecht_pos = headings.iter().position(|(level, text)| {
+            *level == 2 && text.contains(c.ermaecht_heading)
+        });
+        assert!(
+            ermaecht_pos.is_some(),
+            "[{}] Expected h2 heading '{}'. Found headings: {:?}",
+            c.file, c.ermaecht_heading, headings
+        );
+        assert!(
+            ermaecht_pos.unwrap() > kundendaten_pos.unwrap(),
+            "[{}] '{}' heading should appear after '{}' heading. Headings: {:?}",
+            c.file, c.ermaecht_heading, c.kundendaten_heading, headings
+        );
+
+        // ── 5. Authorization section fields appear in expected order ───────
+        // Find the position of each expected field in the auth section.
+        // We check each field exists and that they appear in order.
+        let auth_fields_expected = [
+            c.auth_last_name,
+            c.auth_first_name,
+            c.auth_birthdate,
+            c.auth_company,
+            c.auth_street,
+            c.auth_no,
+            c.auth_plz,
+            c.auth_city,
+            c.auth_country,
+            c.auth_email,
+        ];
+
+        // Find the start of the auth section: the first occurrence of the
+        // authorization last-name field that comes after the client last-name field.
+        let auth_ln_start = last_name_pos_kunden.unwrap() + 1;
+        let auth_section_start = fields[auth_ln_start..]
+            .iter()
+            .position(|f| f.contains(c.auth_last_name))
+            .map(|p| p + auth_ln_start);
+        assert!(
+            auth_section_start.is_some(),
+            "[{}] Expected authorization '{}' field after Kundendaten section. Fields: {:?}",
+            c.file, c.auth_last_name, fields
+        );
+
+        let mut last_pos = auth_section_start.unwrap();
+        for expected_label in &auth_fields_expected {
+            let pos = fields[last_pos..]
+                .iter()
+                .position(|f| f.contains(expected_label))
+                .map(|p| p + last_pos);
+            assert!(
+                pos.is_some(),
+                "[{}] Expected auth field '{}' (after position {}). Fields from that point: {:?}",
+                c.file,
+                expected_label,
+                last_pos,
+                &fields[last_pos..]
+            );
+            assert!(
+                pos.unwrap() >= last_pos,
+                "[{}] Auth field '{}' should appear after previous field (at pos {}). Fields: {:?}",
+                c.file, expected_label, last_pos, fields
+            );
+            last_pos = pos.unwrap() + 1;
         }
+
+        println!("✓ {} ({}) structure verified", c.file, c.lang);
     }
 }
