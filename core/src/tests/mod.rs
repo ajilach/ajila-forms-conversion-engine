@@ -8852,7 +8852,9 @@ fn test_aaam_h2_headings_per_radio_option() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAAM_019_DE.pdf"))
         .expect("Failed to create Blueprint from AAAM DE PDF");
-    let form_states = bp.states().expect("Failed to collect exhaustive AAAM states");
+    let form_states = bp
+        .states()
+        .expect("Failed to collect exhaustive AAAM states");
 
     assert_eq!(
         form_states.len(),
@@ -8877,15 +8879,10 @@ fn test_aaam_h2_headings_per_radio_option() {
 
     // Find states where `positive_id` appears as H2 and none of `exclude_h2s` appear.
     // Then assert at least one such state contains all `expected` headings at their levels.
-    let check_scenario = |positive_id: &str,
-                          exclude_h2s: &[&str],
-                          expected: &[(u8, &str)]| {
+    let check_scenario = |positive_id: &str, exclude_h2s: &[&str], expected: &[(u8, &str)]| {
         let matching: Vec<&Vec<(u8, String)>> = all_state_headings
             .iter()
-            .filter(|hs| {
-                has_h2(hs, positive_id)
-                    && exclude_h2s.iter().all(|neg| !has_h2(hs, neg))
-            })
+            .filter(|hs| has_h2(hs, positive_id) && exclude_h2s.iter().all(|neg| !has_h2(hs, neg)))
             .collect();
 
         assert!(
@@ -9015,6 +9012,74 @@ fn test_aaam_statusaenderung_heading_has_visible_top_border_in_flattened() {
         status_bold_count,
         status_with_top_border_count,
         samples
+    );
+}
+
+#[test]
+fn test_subform_border_reuses_single_edge_for_bottom_propagation() {
+    use crate::flattened::FlattenedNodeKind;
+    use crate::xfa::scripting::Presence;
+    use crate::xfa::{Border, Edge, StrokeStyle, XfaNode, XfaNodeKind, num};
+    use std::collections::HashMap;
+
+    let mut subform = XfaNode::new(
+        XfaNodeKind::Subform,
+        HashMap::from([
+            ("x".to_string(), "0pt".to_string()),
+            ("y".to_string(), "0pt".to_string()),
+            ("w".to_string(), "200pt".to_string()),
+            ("h".to_string(), "40pt".to_string()),
+        ]),
+    );
+    subform.border = Some(Border {
+        edges: vec![Edge {
+            thickness: Some(num(1.0)),
+            stroke: StrokeStyle::Solid,
+            presence: "visible".to_string(),
+            color: None,
+        }],
+        presence: "visible".to_string(),
+        ..Default::default()
+    });
+
+    let mut draw = XfaNode::new(
+        XfaNodeKind::Draw,
+        HashMap::from([
+            ("x".to_string(), "0pt".to_string()),
+            ("y".to_string(), "0pt".to_string()),
+            ("w".to_string(), "200pt".to_string()),
+            ("h".to_string(), "12pt".to_string()),
+            ("name".to_string(), "TestHeading".to_string()),
+        ]),
+    );
+    draw.presence = Presence::Visible;
+    draw.children.push(XfaNode::new(
+        XfaNodeKind::Text {
+            content: "Reusable border heading".to_string(),
+        },
+        HashMap::new(),
+    ));
+
+    subform.children.push(draw);
+
+    let flattened = crate::flattened::Flattened::from_xfa_simple(&[subform])
+        .expect("flattened synthetic XFA tree");
+
+    let text_node = flattened
+        .iter_nodes()
+        .find(|node| matches!(node.kind, FlattenedNodeKind::Text { .. }))
+        .expect("flattened text node");
+
+    let border = text_node.style.border.as_ref().expect("propagated border");
+    let top = border.get_edge(0).expect("top edge");
+    let bottom = border.get_edge(2).expect("bottom edge");
+
+    assert_eq!(top.presence, "visible");
+    assert!(top.thickness.is_some(), "top edge should keep thickness");
+    assert_eq!(bottom.presence, "visible");
+    assert!(
+        bottom.thickness.is_some(),
+        "bottom edge should be propagated through XFA edge reuse"
     );
 }
 

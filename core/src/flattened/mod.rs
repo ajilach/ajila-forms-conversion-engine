@@ -3188,7 +3188,7 @@ impl Flattened {
     /// Find the last leaf `FlattenedNode` in a mutable slice of `FlattenedKind`,
     /// recursing into Groups.
     fn last_leaf_node_mut(kinds: &mut [FlattenedKind]) -> Option<&mut FlattenedNode> {
-        for kind in kinds.iter_mut().rev() {
+        for kind in  kinds.iter_mut().rev() {
             match kind {
                 FlattenedKind::Node(node) => return Some(node),
                 FlattenedKind::Group { children, .. } => {
@@ -3216,10 +3216,7 @@ impl Flattened {
         // Per XFA spec: if fewer than 4 edge elements are supplied, the last is reused.
         // Only propagate edges explicitly specified in the source to avoid applying
         // reused edge definitions to unrelated sides.
-        let explicit_count = border.edges.len();
-
-        if explicit_count >= 1 {
-            let top = &border.edges[0];
+        if let Some(top) = border.get_edge(0) {
             if top.presence == "visible" && top.thickness.is_some() {
                 if let Some(node) = Self::first_leaf_node_mut(children_range) {
                     Self::apply_edge_to_node_if_not_visible(node, top, 0);
@@ -3227,8 +3224,7 @@ impl Flattened {
             }
         }
 
-        if explicit_count >= 3 {
-            let bottom = &border.edges[2];
+        if let Some(bottom) = border.get_edge(2) {
             if bottom.presence == "visible" && bottom.thickness.is_some() {
                 if let Some(node) = Self::last_leaf_node_mut(children_range) {
                     Self::apply_edge_to_node_if_not_visible(node, bottom, 2);
