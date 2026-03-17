@@ -8716,6 +8716,81 @@ fn test_aaam_multilingual_translation_triplet_same_node() {
     );
 }
 
+fn build_aagg_default_merged() -> crate::DocumentEnvelope {
+    let de = crate::run_exhaustive_to_envelope(input_path("AAGG_019_DE.pdf"), "de")
+        .expect("Failed to process AAGG DE");
+    let en = crate::run_exhaustive_to_envelope(input_path("AAGG_019_EN.pdf"), "en")
+        .expect("Failed to process AAGG EN");
+    let sp = crate::run_exhaustive_to_envelope(input_path("AAGG_019_SP.pdf"), "sp")
+        .expect("Failed to process AAGG SP");
+    crate::merge_translations(vec![de, en, sp]).expect("Failed to merge AAGG DE/EN/SP")
+}
+
+#[test]
+fn test_aagg_multilingual_translation_triplet_same_node() {
+    use crate::structured::{InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let merged = build_aagg_default_merged();
+
+    let en_snippet = "Acknowledgement of receipt by the depositor";
+    let de_snippet = "Empfangsbestätigung durch den Einleger";
+    let sp_snippet = "Acuse de recibo del depositante";
+
+    let contains_ci =
+        |haystack: &str, needle: &str| haystack.to_lowercase().contains(&needle.to_lowercase());
+
+    let mut triplet_found = false;
+    let mut partial_hits: Vec<(String, String, String)> = Vec::new();
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+
+                    if contains_ci(de_text, de_snippet)
+                        || contains_ci(en_text, en_snippet)
+                        || contains_ci(sp_text, sp_snippet)
+                    {
+                        if contains_ci(de_text, de_snippet)
+                            && contains_ci(en_text, en_snippet)
+                            && contains_ci(sp_text, sp_snippet)
+                        {
+                            triplet_found = true;
+                        } else {
+                            partial_hits.push((
+                                de_text[..de_text.len().min(220)].to_string(),
+                                en_text[..en_text.len().min(220)].to_string(),
+                                sp_text[..sp_text.len().min(220)].to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        triplet_found,
+        "AAGG translation triplet was not found in merged tree.\n  DE: {:?}\n  EN: {:?}\n  SP: {:?}\n  \
+         Partial hits (up to 3): {:?}",
+        de_snippet,
+        en_snippet,
+        sp_snippet,
+        partial_hits.iter().take(3).collect::<Vec<_>>()
+    );
+}
+
 // ========================================================================
 // Flattened dedup key tests
 // ========================================================================

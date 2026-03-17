@@ -499,7 +499,7 @@ fn selection_signature(selections: &[Selection]) -> String {
                 "{}|{}|{}",
                 selection.condition_path(),
                 selection_kind_name(selection),
-                selection.values.join(",")
+                normalize_values(&selection.values).join(",")
             )
         })
         .collect::<Vec<_>>()
@@ -519,7 +519,13 @@ fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
         && a.iter().zip(b.iter()).all(|(left, right)| {
             left.field_path == right.field_path
                 && left.group_path == right.group_path
-                && left.values == right.values
+                && normalize_values(&left.values) == normalize_values(&right.values)
                 && left.kind == right.kind
         })
+}
+
+fn normalize_values(values: &[String]) -> Vec<String> {
+    let mut normalized = values.to_vec();
+    normalized.sort();
+    normalized
 }
