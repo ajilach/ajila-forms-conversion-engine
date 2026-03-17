@@ -8726,19 +8726,44 @@ fn build_aagg_default_merged() -> crate::DocumentEnvelope {
     crate::merge_translations(vec![de, en, sp]).expect("Failed to merge AAGG DE/EN/SP")
 }
 
-#[test]
-fn test_aagg_multilingual_translation_triplet_same_node() {
+fn assert_aagg_translation_triplet_on_same_node(
+    de_snippet: &str,
+    en_snippet: &str,
+    sp_snippet: &str,
+) {
     use crate::structured::{InlineNode, InlineText, StructuredNode};
     use helpers::walk_structured_nodes;
 
     let merged = build_aagg_default_merged();
 
-    let en_snippet = "Acknowledgement of receipt by the depositor";
-    let de_snippet = "Empfangsbestätigung durch den Einleger";
-    let sp_snippet = "Acuse de recibo del depositante";
+    let normalize_ws_ci = |s: &str| {
+        let normalized = s
+            .to_lowercase()
+            // Handle composed/decomposed umlauts and common diacritics.
+            .replace('\u{0308}', "")
+            .replace('ä', "a")
+            .replace('ö', "o")
+            .replace('ü', "u")
+            .replace('á', "a")
+            .replace('à', "a")
+            .replace('é', "e")
+            .replace('è', "e")
+            .replace('í', "i")
+            .replace('ì', "i")
+            .replace('ó', "o")
+            .replace('ò', "o")
+            .replace('ú', "u")
+            .replace('ù', "u")
+            .replace('ñ', "n")
+            .replace('ß', "ss")
+            // Be tolerant to URL hyphen variants like edb-banken vs edbbanken.
+            .replace('-', "");
 
-    let contains_ci =
-        |haystack: &str, needle: &str| haystack.to_lowercase().contains(&needle.to_lowercase());
+        normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+
+    let contains_normalized =
+        |haystack: &str, needle: &str| normalize_ws_ci(haystack).contains(&normalize_ws_ci(needle));
 
     let mut triplet_found = false;
     let mut partial_hits: Vec<(String, String, String)> = Vec::new();
@@ -8758,13 +8783,13 @@ fn test_aagg_multilingual_translation_triplet_same_node() {
                     let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
                     let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
 
-                    if contains_ci(de_text, de_snippet)
-                        || contains_ci(en_text, en_snippet)
-                        || contains_ci(sp_text, sp_snippet)
+                    if contains_normalized(de_text, de_snippet)
+                        || contains_normalized(en_text, en_snippet)
+                        || contains_normalized(sp_text, sp_snippet)
                     {
-                        if contains_ci(de_text, de_snippet)
-                            && contains_ci(en_text, en_snippet)
-                            && contains_ci(sp_text, sp_snippet)
+                        if contains_normalized(de_text, de_snippet)
+                            && contains_normalized(en_text, en_snippet)
+                            && contains_normalized(sp_text, sp_snippet)
                         {
                             triplet_found = true;
                         } else {
@@ -8788,6 +8813,33 @@ fn test_aagg_multilingual_translation_triplet_same_node() {
         en_snippet,
         sp_snippet,
         partial_hits.iter().take(3).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_aagg_multilingual_translation_triplet_same_node() {
+    assert_aagg_translation_triplet_on_same_node(
+        "Empfangsbestätigung durch den Einleger",
+        "Acknowledgement of receipt by the depositor",
+        "Acuse de recibo del depositante",
+    );
+}
+
+#[test]
+fn test_aagg_multilingual_translation_triplet_same_node_edb_website() {
+    assert_aagg_translation_triplet_on_same_node(
+        "Weitere Informationen sind erhältlich über die Webseite der Entschädigungseinrichtung deutscher Banken GmbH unter www.edb-banken.de",
+        "More information can be obtained from the website of Entschädigungseinrichtung deutscher Banken GmbH at www.edb-banken.de",
+        "Para obtener más información consulte la página web del Entschädigungseinrichtung deutscher Banken GmbH bajo www.edbbanken.de",
+    );
+}
+
+#[test]
+fn test_aagg_multilingual_translation_triplet_same_node_deposit_guarantee() {
+    assert_aagg_translation_triplet_on_same_node(
+        "Einlagen von Privatkunden und Unternehmen sind im Allgemeinen durch Einlagensicherungssysteme gedeckt. Für bestimmte Einlagen geltende Ausnahmen werden auf der Website des zuständigen Einlagensicherungssystems mitgeteilt. Ihr Kreditinstitut wird Sie auf Anfrage auch darüber informieren, ob bestimmte Produkte gedeckt sind oder nicht. Wenn Einlagen gedeckt sind, wird das Kreditinstitut dies auch auf dem Kontoauszug bestätigen.",
+        "In general, all retail depositors and businesses are covered by Deposit Guarantee Schemes. Exceptions for certain deposits are stated on the website of the responsible Deposit Guarantee Scheme. Your credit institution will also inform you on request whether certain products are covered or not. If deposits are covered, the credit institution shall also confirm this on the statement of account.",
+        "Los depósitos de clientes privados y empresas generalmente están cubiertos por los sistemas de garantía de depósitos. Las excepciones para ciertos depósitos se comunican en el sitio web del sistema de garantía de depósitos responsable. A solicitud, su banco también le informará si determinados productos están cubiertos o no. Si los depósitos están cubiertos, el banco confirma ello también en el extracto de cuenta.",
     );
 }
 
