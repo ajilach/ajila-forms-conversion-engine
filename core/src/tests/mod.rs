@@ -8638,6 +8638,84 @@ fn test_aaam_multilingual_merge_formular_adressat_visible_only_for_first_radio_o
     );
 }
 
+#[test]
+fn test_aaam_multilingual_translation_triplet_same_node() {
+    use crate::structured::{InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let merged = build_aaam_default_merged();
+
+    let de_snippet = "Kontoinhaber bzw. von jedem wirtschaftlich Berechtigten";
+    let en_snippet = "accountholder alternatively each beneficial owner";
+    let sp_snippet = "titular de la cuenta o beneficiario";
+
+    let contains_ci =
+        |haystack: &str, needle: &str| haystack.to_lowercase().contains(&needle.to_lowercase());
+
+    let mut triplet_found = false;
+    let mut partial_hits: Vec<(String, String, String)> = Vec::new();
+    let mut de_only_hits: Vec<(String, String, String)> = Vec::new();
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+
+                    if contains_ci(de_text, de_snippet)
+                        && !contains_ci(en_text, en_snippet)
+                        && !contains_ci(sp_text, sp_snippet)
+                    {
+                        de_only_hits.push((
+                            de_text[..de_text.len().min(220)].to_string(),
+                            en_text[..en_text.len().min(220)].to_string(),
+                            sp_text[..sp_text.len().min(220)].to_string(),
+                        ));
+                    }
+
+                    if contains_ci(de_text, de_snippet)
+                        || contains_ci(en_text, en_snippet)
+                        || contains_ci(sp_text, sp_snippet)
+                    {
+                        if contains_ci(de_text, de_snippet)
+                            && contains_ci(en_text, en_snippet)
+                            && contains_ci(sp_text, sp_snippet)
+                        {
+                            triplet_found = true;
+                        } else {
+                            partial_hits.push((
+                                de_text[..de_text.len().min(220)].to_string(),
+                                en_text[..en_text.len().min(220)].to_string(),
+                                sp_text[..sp_text.len().min(220)].to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        triplet_found,
+        "AAAM translation triplet was not found in merged tree.\n  DE: {:?}\n  EN: {:?}\n  SP: {:?}\n  \
+         Partial hits (up to 3): {:?}\n  DE-only hits (up to 3): {:?}",
+        de_snippet,
+        en_snippet,
+        sp_snippet,
+        partial_hits.iter().take(3).collect::<Vec<_>>(),
+        de_only_hits.iter().take(3).collect::<Vec<_>>()
+    );
+}
+
 // ========================================================================
 // Flattened dedup key tests
 // ========================================================================

@@ -446,8 +446,11 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
     match (a, b) {
         (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
             ha.level.as_u8() == hb.level.as_u8()
+                && inline_text_shape_compatible(&ha.content, &hb.content)
         }
-        (StructuredNode::Paragraph(_), StructuredNode::Paragraph(_)) => true,
+        (StructuredNode::Paragraph(pa), StructuredNode::Paragraph(pb)) => {
+            inline_text_shape_compatible(&pa.content, &pb.content)
+        }
         (StructuredNode::Image(_), StructuredNode::Image(_)) => true,
         (StructuredNode::Table(ta), StructuredNode::Table(tb)) => {
             let a_cols = ta.header.as_ref().map_or(0, |h| h.cells.len());
@@ -468,6 +471,92 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
         }
         (StructuredNode::List(la), StructuredNode::List(lb)) => la.list_style == lb.list_style,
         _ => false,
+    }
+}
+
+fn inline_text_shape_compatible(a: &InlineText, b: &InlineText) -> bool {
+    text_shape_compatible(
+        &stable_inline_text_projection(a),
+        &stable_inline_text_projection(b),
+    )
+}
+
+fn stable_inline_text_projection(text: &InlineText) -> String {
+    let mut out = String::new();
+    for node in &text.0 {
+        append_stable_inline_node_projection(node, &mut out);
+    }
+    out
+}
+
+fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
+    match node {
+        InlineNode::Text(s) => out.push_str(s),
+        InlineNode::TranslatedText(map) => {
+            if let Some((_lang, value)) = map.iter().min_by_key(|(lang, _)| *lang) {
+                out.push_str(value);
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.content.0 {
+                append_stable_inline_node_projection(child, out);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            append_stable_inline_node_projection(inner, out)
+        }
+    }
+}
+
+fn text_shape_compatible(a: &str, b: &str) -> bool {
+    let shape_a = text_shape(a);
+    let shape_b = text_shape(b);
+
+    if shape_a.chars == 0 && shape_b.chars == 0 {
+        return true;
+    }
+    if shape_a.chars == 0 || shape_b.chars == 0 {
+        return false;
+    }
+
+    // Similarity gate by coarse structure. Language content can differ,
+    // but paragraph/heading shapes should be in the same rough range.
+    let char_ratio = ratio(shape_a.chars, shape_b.chars);
+    let word_ratio = ratio(shape_a.words.max(1), shape_b.words.max(1));
+    let digit_delta = shape_a.digits.abs_diff(shape_b.digits);
+    let punct_delta = shape_a.punct.abs_diff(shape_b.punct);
+
+    let short_text = shape_a.chars.max(shape_b.chars) <= 32;
+    let max_char_ratio = if short_text { 3.5 } else { 2.2 };
+
+    char_ratio <= max_char_ratio && word_ratio <= 2.5 && digit_delta <= 3 && punct_delta <= 8
+}
+
+fn ratio(a: usize, b: usize) -> f64 {
+    let max_v = a.max(b) as f64;
+    let min_v = a.min(b).max(1) as f64;
+    max_v / min_v
+}
+
+#[derive(Clone, Copy)]
+struct TextShape {
+    chars: usize,
+    words: usize,
+    digits: usize,
+    punct: usize,
+}
+
+fn text_shape(input: &str) -> TextShape {
+    let chars = input.chars().filter(|c| !c.is_whitespace()).count();
+    let words = input.split_whitespace().count();
+    let digits = input.chars().filter(|c| c.is_ascii_digit()).count();
+    let punct = input.chars().filter(|c| c.is_ascii_punctuation()).count();
+
+    TextShape {
+        chars,
+        words,
+        digits,
+        punct,
     }
 }
 
@@ -656,6 +745,21 @@ fn collect_inline_text_languages(text: &InlineText) -> Vec<String> {
     langs
 }
 
+fn matched_paragraph_has_nonempty_language(entry: &AlignedNode, lang: &str) -> bool {
+    if let AlignedNode::Matched(StructuredNode::Paragraph(para)) = entry {
+        for inline in &para.content.0 {
+            if let InlineNode::TranslatedText(map) = inline {
+                if let Some(value) = map.get(lang) {
+                    if !value.trim().is_empty() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn prepend_orphan_text_to_matched_paragraph(
     entry: &mut AlignedNode,
     text: &str,
@@ -738,10 +842,22 @@ fn consolidate_orphan_paragraphs(
             continue;
         }
 
-        // Only absorb RightOnly paragraphs (other-language orphans).
+        // Absorb single-language orphan paragraphs from either side.
         let (orphan_lang, orphan_text) = match &entries[i] {
+            AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) => {
+                let langs = collect_inline_text_languages(&p.content);
+                if langs.len() > 1 {
+                    // Already multilingual: do not flatten it into one language key.
+                    continue;
+                }
+                let lang = langs
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| base_lang.to_string());
+                (lang, p.content.as_plain_text())
+            }
             AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
-                (other_lang, p.content.as_plain_text())
+                (other_lang.to_string(), p.content.as_plain_text())
             }
             _ => continue,
         };
@@ -757,11 +873,42 @@ fn consolidate_orphan_paragraphs(
             }
             match &entries[j] {
                 AlignedNode::Matched(StructuredNode::Paragraph(_)) => {
-                    target = Some(j);
-                    break;
+                    let is_left_orphan = orphan_lang == base_lang;
+                    if !is_left_orphan
+                        || !matched_paragraph_has_nonempty_language(&entries[j], &orphan_lang)
+                    {
+                        target = Some(j);
+                        break;
+                    }
                 }
+                AlignedNode::LeftOnly(StructuredNode::Paragraph(_)) => continue,
                 AlignedNode::RightOnly(StructuredNode::Paragraph(_)) => continue,
                 _ => break,
+            }
+        }
+
+        // If none found forward, search backward for nearest Matched(Paragraph).
+        if target.is_none() {
+            let mut j = i;
+            while j > 0 {
+                j -= 1;
+                if absorbed[j] {
+                    continue;
+                }
+                match &entries[j] {
+                    AlignedNode::Matched(StructuredNode::Paragraph(_)) => {
+                        let is_left_orphan = orphan_lang == base_lang;
+                        if !is_left_orphan
+                            || !matched_paragraph_has_nonempty_language(&entries[j], &orphan_lang)
+                        {
+                            target = Some(j);
+                            break;
+                        }
+                    }
+                    AlignedNode::LeftOnly(StructuredNode::Paragraph(_)) => continue,
+                    AlignedNode::RightOnly(StructuredNode::Paragraph(_)) => continue,
+                    _ => break,
+                }
             }
         }
 
