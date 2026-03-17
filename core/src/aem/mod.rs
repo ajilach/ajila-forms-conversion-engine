@@ -22,12 +22,14 @@
 //! ```
 
 mod converter;
+pub mod fragment_parser;
 mod package_writer;
 pub mod profile;
 pub mod template;
 mod xml_writer;
 
 pub use converter::convert_to_aem;
+pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{collect_languages, generate_aem_package};
 pub use profile::AemProfile;
 pub use xml_writer::generate_aem_xml;
@@ -36,6 +38,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{FieldId, InputValue};
+use crate::xsd::XsdConfig;
 
 // ============================================================================
 // Configuration
@@ -93,6 +96,10 @@ pub struct AemConfig {
     /// instead of computing `"AF_" + form_code`.
     pub form_dir_override: Option<String>,
 
+    /// JCR file path of the generated XSD used in DAM metadata `xsdRef`
+    /// (e.g. `/content/dam/formsanddocuments/.../AF_AAAI.xsd`).
+    pub xsd_path: String,
+
     // -- Package writer metadata (derived from profile variables) -------------
     /// DOR template reference path (from `variables.dor_template_ref`).
     pub dor_template_ref: String,
@@ -115,6 +122,27 @@ pub struct AemConfig {
 
     /// Resolved user-defined variables (`variables.*` in templates).
     pub user_vars: HashMap<String, String>,
+
+    // -- XSD binding ---------------------------------------------------------
+    /// When `true`, `bindRef` attributes are added to all form fields/panels
+    /// pointing to the matching element path in the generated XSD schema.
+    /// The XSD is also bundled into the AEM content package.
+    pub bind_to_xsd: bool,
+
+    /// XSD configuration used both for schema generation and for computing
+    /// `bindRef` paths.  Must be `Some` when `bind_to_xsd` is `true`.
+    pub xsd_config: Option<XsdConfig>,
+
+    // -- Fragment support ----------------------------------------------------
+    /// When `true`, panels whose XSD type matches a known fragment are
+    /// replaced by `AemNode::Fragment` references.
+    pub use_fragments: bool,
+
+    /// JCR path prefix for constructing fragment `fragRef` values.
+    pub fragment_ref_prefix: String,
+
+    /// Parsed fragments loaded from the `fragments/` subdirectory.
+    pub fragments: Vec<ParsedFragment>,
 }
 
 impl AemConfig {
@@ -152,6 +180,17 @@ impl AemConfig {
             None => None,
         };
 
+        let bind_to_xsd = profile.bind_to_xsd.unwrap_or(false);
+        let xsd_path = match &profile.xsd_path {
+            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
+            None if bind_to_xsd => {
+                return Err(crate::Error::AemConfig(
+                    "bind_to_xsd=true requires xsd_path to be set in aem/config.toml".into(),
+                ));
+            }
+            None => String::new(),
+        };
+
         Ok(Self {
             form_title,
             form_code,
@@ -170,6 +209,7 @@ impl AemConfig {
 
             form_path,
             form_dir_override,
+            xsd_path,
 
             dor_template_ref: user_vars
                 .get("dor_template_ref")
@@ -184,6 +224,16 @@ impl AemConfig {
             component_templates: templates,
             xfa_vars,
             user_vars,
+
+            bind_to_xsd,
+            xsd_config: None,
+
+            use_fragments: profile.use_fragments.unwrap_or(false),
+            fragment_ref_prefix: profile
+                .fragment_ref_prefix
+                .clone()
+                .unwrap_or_else(|| "/content/forms/af/".into()),
+            fragments: Vec::new(),
         })
     }
 
@@ -197,6 +247,20 @@ impl AemConfig {
         } else {
             format!("AF_{}", self.form_code)
         }
+    }
+
+    /// Return the canonical DAM XSD reference path for metadata attributes.
+    pub fn xsd_ref(&self) -> String {
+        if self.xsd_path.starts_with('/') {
+            self.xsd_path.clone()
+        } else {
+            format!("/{}", self.xsd_path)
+        }
+    }
+
+    /// Return the ZIP entry path where the XSD file should be written.
+    pub fn xsd_zip_path(&self) -> String {
+        format!("jcr_root/{}", self.xsd_ref().trim_start_matches('/'))
     }
 
     /// Expand `languages` to include synonyms.
@@ -247,6 +311,7 @@ impl AemConfig {
 
             form_path: "test/path".into(),
             form_dir_override: None,
+            xsd_path: "/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into(),
 
             dor_template_ref: String::new(),
             dor_type: "generate".into(),
@@ -255,6 +320,13 @@ impl AemConfig {
             component_templates: HashMap::new(),
             xfa_vars: HashMap::new(),
             user_vars: HashMap::new(),
+
+            bind_to_xsd: false,
+            xsd_config: None,
+
+            use_fragments: false,
+            fragment_ref_prefix: "/content/forms/af/".into(),
+            fragments: Vec::new(),
         }
     }
 }
@@ -326,6 +398,9 @@ pub enum AemNode {
         /// Column span in Document of Record layout (`dorColspan`).
         /// Set on elements that are children of a `GridLayout` panel.
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute (e.g. `/form/personal_data`).
+        /// `None` when `bind_to_xsd` is `false` or the panel has no corresponding XSD element.
+        bind_ref: Option<String>,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -339,6 +414,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Numeric input (`guideNumberBox`).
@@ -351,6 +428,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Date picker (`guideDatePicker`).
@@ -363,6 +442,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Drop-down / select list (`guideDropDownList`).
@@ -380,6 +461,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Checkbox group (`guideCheckBox`).
@@ -396,6 +479,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Radio button group (`guideRadioButton`).
@@ -414,6 +499,8 @@ pub enum AemNode {
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Static text / heading (`guideTextDraw`).
@@ -448,6 +535,8 @@ pub enum AemNode {
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 
     /// Repeatable panel with add/remove buttons.
@@ -458,6 +547,19 @@ pub enum AemNode {
         children: Vec<AemNode>,
         min_occur: u32,
         max_occur: u32,
+    },
+
+    /// Fragment reference — replaces a panel whose XSD type matches a
+    /// known fragment. The fragment's internal structure is loaded by AEM
+    /// at runtime from the `fragRef` path.
+    Fragment {
+        uuid: Uuid,
+        name: String,
+        /// JCR path to the fragment (e.g.
+        /// `"/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1"`).
+        frag_ref: String,
+        /// XSD path for `bindRef` attribute.
+        bind_ref: Option<String>,
     },
 }
 
@@ -483,6 +585,7 @@ impl AemNode {
                 format!("textboxmultiline_{}", uuid.as_simple())
             }
             AemNode::Repeatable { uuid, .. } => format!("repeatable_{}", uuid.as_simple()),
+            AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
         }
     }
 }

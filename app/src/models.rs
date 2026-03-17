@@ -22,6 +22,7 @@ pub struct ProcessingState {
     pub merged_json: Option<String>,
     pub html_preview: Option<String>,
     pub aem_package: Option<Vec<u8>>,
+    pub xsd_schema: Option<String>,
     pub error: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,

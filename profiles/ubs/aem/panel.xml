@@ -14,6 +14,7 @@
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false"
     {% if not visible %}visible="{Boolean}false"{% endif %}>

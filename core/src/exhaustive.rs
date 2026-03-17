@@ -1261,7 +1261,17 @@ fn explore_checkbox(
     field: &SelectableField,
     ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
-    let checkbox_values: &[(&str, &str)] = &[("1", "checked"), ("0", "unchecked")];
+    // Per XFA 3.3 §17 pp.758-759: use <items> on/off values when available.
+    // The items list can have up to 3 values: on (1st), off (2nd), neutral (3rd).
+    // Fall back to "1"/"0" when no <items> are defined (common Acrobat convention).
+    let (on_val, off_val) = form
+        .resolve(field.path.as_str())
+        .map(|node| node.xfa_node().extract_item_values())
+        .unwrap_or((None, None));
+    let on_value = on_val.unwrap_or_else(|| "1".to_string());
+    let off_value = off_val.unwrap_or_else(|| "0".to_string());
+    let checkbox_values: Vec<(&str, &str)> =
+        vec![(&on_value, "checked"), (&off_value, "unchecked")];
 
     // Phase A: prepare branches in parallel using rayon thread pool
     // OPTIMIZATION (Step 2): Share the script registry via Arc
@@ -1418,6 +1428,35 @@ fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
     // Filter to only include fields with interactive scripts
     let registry = form.script_registry();
     results.retain(|field| {
+        // Per XFA 3.3 §17: skip fields whose access (or parent exclGroup's access)
+        // prevents user interaction.
+        // - "protected": no events generated at all.
+        // - "readOnly": no direct user changes allowed.
+        // - "nonInteractive": behaves as rendering to paper.
+        // Only "open" (the default) allows full user interaction.
+        if let Some(resolved) = form.resolve(field.path.as_str()) {
+            let access = resolved
+                .xfa_node()
+                .attributes
+                .get("access")
+                .map(|s| s.as_str());
+            if matches!(access, Some("protected" | "readOnly" | "nonInteractive")) {
+                return false;
+            }
+        }
+
+        // For radio/checkbox in exclGroup, also check the parent exclGroup's access
+        if field.is_radio() || matches!(field.kind, SelectableFieldKind::Checkbox) {
+            if let Some(excl_group_path) = form.find_excl_group_for_field(field.path.as_str()) {
+                if let Some(eg) = form.resolve(excl_group_path.as_str()) {
+                    let eg_access = eg.xfa_node().attributes.get("access").map(|s| s.as_str());
+                    if matches!(eg_access, Some("protected" | "readOnly" | "nonInteractive")) {
+                        return false;
+                    }
+                }
+            }
+        }
+
         // Check if the field itself has interactive scripts
         if registry.has_interactive_scripts(&field.path) {
             return true;

@@ -1,3 +1,4 @@
+mod merge_engine;
 mod merger;
 mod structured_converter;
 mod translation_merger;
@@ -8,7 +9,7 @@ pub use translation_merger::{MergeError, merge_translations};
 
 use rust_decimal::Decimal;
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use crate::context::Context;
@@ -275,6 +276,36 @@ impl TranslatableString {
         }
         TranslatableString::Translated(map)
     }
+
+    /// Structural text comparison with language-aware semantics.
+    ///
+    /// Rules:
+    /// - Plain vs Plain: direct string equality.
+    /// - Translated vs Translated: at least one shared language key must exist
+    ///   and have the same value.
+    /// - Plain vs Translated: treated as a plain-text fallback and considered
+    ///   equal when any translated value matches the plain text.
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TranslatableString::Plain(a), TranslatableString::Plain(b)) => a == b,
+            (TranslatableString::Translated(a), TranslatableString::Translated(b)) => {
+                translated_maps_match_on_shared_language(a, b)
+            }
+            (TranslatableString::Plain(a), TranslatableString::Translated(b))
+            | (TranslatableString::Translated(b), TranslatableString::Plain(a)) => {
+                b.values().any(|value| value == a)
+            }
+        }
+    }
+}
+
+fn translated_maps_match_on_shared_language(
+    left: &HashMap<String, String>,
+    right: &HashMap<String, String>,
+) -> bool {
+    left.iter()
+        .filter_map(|(lang, left_text)| right.get(lang).map(|right_text| (left_text, right_text)))
+        .any(|(left_text, right_text)| left_text == right_text)
 }
 
 impl std::fmt::Display for TranslatableString {
@@ -662,7 +693,11 @@ impl StructuredNode {
                     // languages, even when content structure differs.
                     a.condition == b.condition
                 } else {
-                    a.content.structural_cmp(&b.content, mode)
+                    // In Full mode (exhaustive state merging), two ConditionalNodes
+                    // are structurally equal only when both their condition AND their
+                    // content match.  Comparing only content would silently equate
+                    // Cond(fieldA, P) with Cond(fieldB, P) and drop one.
+                    a.condition == b.condition && a.content.structural_cmp(&b.content, mode)
                 }
             }
             (StructuredNode::Empty, StructuredNode::Empty) => true,
@@ -771,7 +806,29 @@ impl StructuredNode {
 impl InlineText {
     /// Check if two InlineText are structurally equal (compare text content)
     pub fn structural_eq(&self, other: &Self) -> bool {
-        // For text content, the actual text IS the structure
+        let mut self_langs = BTreeSet::new();
+        let mut other_langs = BTreeSet::new();
+        self.collect_languages(&mut self_langs);
+        other.collect_languages(&mut other_langs);
+
+        let shared_langs: Vec<&str> = self_langs
+            .intersection(&other_langs)
+            .map(String::as_str)
+            .collect();
+
+        if !shared_langs.is_empty() {
+            return shared_langs
+                .iter()
+                .any(|lang| self.plain_text_in(lang) == other.plain_text_in(lang));
+        }
+
+        // If either side uses translated content but there is no shared
+        // language key, they are considered non-equal.
+        if !self_langs.is_empty() || !other_langs.is_empty() {
+            return false;
+        }
+
+        // Plain-text fallback for non-translated content.
         self.as_plain_text() == other.as_plain_text()
     }
 }
@@ -783,11 +840,36 @@ impl FieldNode {
     }
 
     /// Check if two fields are structurally equal.
-    /// Compares name and input type structure, but NOT label text or value.
-    /// Labels may differ across languages, so we ignore them.
+    /// Compares name, text-bearing metadata, and input type structure, but NOT value.
     pub fn structural_eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.input_type.structural_eq(&other.input_type)
-        // Note: placeholder comparison removed as they may be translated
+        self.name == other.name
+            && self.label.structural_eq(&other.label)
+            && self.placeholder.structural_eq(&other.placeholder)
+            && self.input_type.structural_eq(&other.input_type)
+    }
+}
+
+trait OptionStructuralEq<T> {
+    fn structural_eq(&self, other: &Self) -> bool;
+}
+
+impl OptionStructuralEq<InlineText> for Option<InlineText> {
+    fn structural_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a.structural_eq(b),
+            _ => false,
+        }
+    }
+}
+
+impl OptionStructuralEq<TranslatableString> for Option<TranslatableString> {
+    fn structural_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a.structural_eq(b),
+            _ => false,
+        }
     }
 }
 
@@ -825,20 +907,20 @@ impl FieldType {
             (FieldType::Tel, FieldType::Tel) => true,
             (FieldType::Bool, FieldType::Bool) => true,
             (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 }) => {
-                // Compare only by values (names may differ due to translation)
+                // Compare by values and language-aware option names.
                 opts1.len() == opts2.len()
                     && opts1
                         .iter()
                         .zip(opts2.iter())
-                        .all(|(o1, o2)| o1.value == o2.value)
+                        .all(|(o1, o2)| o1.value == o2.value && o1.name.structural_eq(&o2.name))
             }
             (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
-                // Compare only by values (names may differ due to translation)
+                // Compare by values and language-aware option names.
                 opts1.len() == opts2.len()
                     && opts1
                         .iter()
                         .zip(opts2.iter())
-                        .all(|(o1, o2)| o1.value == o2.value)
+                        .all(|(o1, o2)| o1.value == o2.value && o1.name.structural_eq(&o2.name))
             }
             _ => false,
         }
@@ -885,9 +967,8 @@ impl TableNode {
             });
 
         // Caption is only compared in Full mode
-        let caption_eq = mode == CompareMode::IgnoreText
-            || self.caption.as_ref().map(|c| c.as_plain_text())
-                == other.caption.as_ref().map(|c| c.as_plain_text());
+        let caption_eq =
+            mode == CompareMode::IgnoreText || self.caption.structural_eq(&other.caption);
 
         header_eq && rows_eq && caption_eq
     }

@@ -12,6 +12,7 @@
     guideNodeClass="guideDropDownList"
     mandatory="{{ mandatory }}"
     name="{{ name }}"
+    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     options="{{ options_attr }}"
     textIsRich="[true,true]"
     {% if not visible %}visible="{Boolean}false"

@@ -49,11 +49,9 @@
 //! ```
 
 use std::sync::Arc;
+use std::{collections::BTreeSet, collections::HashMap};
 
-use crate::{
-    Blueprint, Context, DocumentEnvelope, Error, MergeInput, RecursiveMerger, RgbaImage,
-    Selection, StructuredNode,
-};
+use crate::{Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection};
 
 // ============================================================================
 // PipelineStep
@@ -280,7 +278,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────────
-    on_event(PipelineEvent::StepChanged(PipelineStep::ExhaustiveSearching));
+    on_event(PipelineEvent::StepChanged(
+        PipelineStep::ExhaustiveSearching,
+    ));
 
     // (filename, language, form_states, context)
     let mut explored: Vec<(String, String, crate::FormStates, Context)> = Vec::new();
@@ -346,11 +346,14 @@ pub fn run_pipeline(
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
-    let mut all_envelopes: Vec<DocumentEnvelope> = Vec::new();
+    let mut per_language_state_maps: Vec<(
+        String,
+        HashMap<String, (Vec<Selection>, DocumentEnvelope)>,
+    )> = Vec::new();
     let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
-        let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
+        let mut state_map: HashMap<String, (Vec<Selection>, DocumentEnvelope)> = HashMap::new();
 
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let label = format!("{}_{}", language, state_idx);
@@ -377,34 +380,104 @@ pub fn run_pipeline(
 
             // Structured output
             let envelope = form_state.structured(context.clone());
-            structured_outputs.push((form_state.selections.clone(), envelope.content));
+            let signature = selection_signature(&form_state.selections);
+
+            if state_map
+                .insert(signature.clone(), (form_state.selections.clone(), envelope))
+                .is_some()
+            {
+                return Err(Error::Conversion(format!(
+                    "Duplicate state signature '{signature}' found in language '{language}'"
+                )));
+            }
         }
 
-        // Merge all states for this document into one envelope
-        if !structured_outputs.is_empty() {
-            let merge_inputs: Vec<MergeInput> = structured_outputs
-                .into_iter()
-                .map(|(selections, nodes)| MergeInput::new(selections, nodes))
-                .collect();
-            let merged_content = RecursiveMerger::new(merge_inputs).merge();
-            all_envelopes.push(DocumentEnvelope {
-                context: context.clone(),
-                content: merged_content,
-                state_count: form_states.len(),
-            });
-        }
+        per_language_state_maps.push((language.clone(), state_map));
     }
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Merging));
 
-    let merged = if all_envelopes.is_empty() {
+    if per_language_state_maps.is_empty() {
         return Err(Error::Conversion("No envelopes to merge".into()));
-    } else if files.len() > 1 && all_envelopes.len() > 1 {
-        crate::merge_translations(all_envelopes)
-            .map_err(|e| Error::Conversion(e.to_string()))?
-    } else {
-        all_envelopes.into_iter().next().unwrap()
+    }
+
+    let mut expected_signatures = BTreeSet::new();
+    if let Some((_, first_map)) = per_language_state_maps.first() {
+        expected_signatures.extend(first_map.keys().cloned());
+    }
+
+    for (language, state_map) in per_language_state_maps.iter().skip(1) {
+        let signatures: BTreeSet<String> = state_map.keys().cloned().collect();
+        if signatures != expected_signatures {
+            let missing: Vec<String> = expected_signatures
+                .difference(&signatures)
+                .cloned()
+                .collect();
+            let extra: Vec<String> = signatures
+                .difference(&expected_signatures)
+                .cloned()
+                .collect();
+
+            return Err(Error::Conversion(format!(
+                "State signature mismatch for language '{language}'. Missing: [{}], Extra: [{}]",
+                missing.join(", "),
+                extra.join(", ")
+            )));
+        }
+    }
+
+    let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();
+    for signature in &expected_signatures {
+        let mut canonical_selections: Option<Vec<Selection>> = None;
+        let mut state_envelopes: Vec<DocumentEnvelope> = Vec::new();
+
+        for (language, state_map) in &per_language_state_maps {
+            let (selections, envelope) = state_map.get(signature).ok_or_else(|| {
+                Error::Conversion(format!(
+                    "State signature '{signature}' missing for language '{language}'"
+                ))
+            })?;
+
+            if let Some(existing) = &canonical_selections {
+                if !selections_exact_match(existing, selections) {
+                    return Err(Error::Conversion(format!(
+                        "Selection mismatch for state signature '{signature}' between languages"
+                    )));
+                }
+            } else {
+                canonical_selections = Some(selections.clone());
+            }
+
+            state_envelopes.push(envelope.clone());
+        }
+
+        let merged_state = if state_envelopes.len() > 1 {
+            crate::merge_translations(state_envelopes)
+                .map_err(|e| Error::Conversion(e.to_string()))?
+        } else {
+            state_envelopes.into_iter().next().unwrap()
+        };
+
+        translated_states.push((canonical_selections.unwrap_or_default(), merged_state));
+    }
+
+    if translated_states.is_empty() {
+        return Err(Error::Conversion("No translated states to merge".into()));
+    }
+
+    let merged_context = translated_states[0].1.context.clone();
+    let merged_content = crate::merge_structured_outputs(
+        translated_states
+            .iter()
+            .map(|(selections, envelope)| (selections.clone(), envelope.content.clone()))
+            .collect(),
+    );
+
+    let merged = DocumentEnvelope {
+        context: merged_context,
+        content: merged_content,
+        state_count: translated_states.len(),
     };
 
     on_event(PipelineEvent::StepChanged(PipelineStep::Complete));
@@ -416,4 +489,43 @@ pub fn run_pipeline(
         state_labels,
         merged,
     })
+}
+
+fn selection_signature(selections: &[Selection]) -> String {
+    selections
+        .iter()
+        .map(|selection| {
+            format!(
+                "{}|{}|{}",
+                selection.condition_path(),
+                selection_kind_name(selection),
+                normalize_values(&selection.values).join(",")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("->")
+}
+
+fn selection_kind_name(selection: &Selection) -> &'static str {
+    match selection.kind {
+        crate::structured::SelectionKind::Radio => "radio",
+        crate::structured::SelectionKind::Checkbox => "checkbox",
+        crate::structured::SelectionKind::Dropdown => "dropdown",
+    }
+}
+
+fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b.iter()).all(|(left, right)| {
+            left.field_path == right.field_path
+                && left.group_path == right.group_path
+                && normalize_values(&left.values) == normalize_values(&right.values)
+                && left.kind == right.kind
+        })
+}
+
+fn normalize_values(values: &[String]) -> Vec<String> {
+    let mut normalized = values.to_vec();
+    normalized.sort();
+    normalized
 }

@@ -198,6 +198,15 @@ pub fn generate_aem_package(
         }
     }
 
+    // ── XSD schema (when bind_to_xsd = true) ───────────────────────────
+    if config.bind_to_xsd {
+        if let Some(ref xsd_config) = config.xsd_config {
+            let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
+            let xsd_zip_path = config.xsd_zip_path();
+            write_entry(&mut zip, &opts, &xsd_zip_path, &xsd_content);
+        }
+    }
+
     zip.finish().expect("finalize zip").into_inner()
 }
 
@@ -253,6 +262,8 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("languages", &config.languages.join(","));
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
+        ctx.insert("bind_to_xsd", &config.bind_to_xsd);
+        ctx.insert("xsd_ref", &config.xsd_ref());
 
         match template::render_string(dam_template, &ctx) {
             Ok(rendered) => return reformat_attributes(&rendered),
@@ -303,7 +314,11 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
             meta.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
         }
         meta.push_attribute(("dorType", config.dor_type.as_str()));
-        meta.push_attribute(("formmodel", "none"));
+        meta.push_attribute(("formmodel", if config.bind_to_xsd { "xsd" } else { "none" }));
+        if config.bind_to_xsd {
+            let xsd_ref = config.xsd_ref();
+            meta.push_attribute(("xsdRef", xsd_ref.as_str()));
+        }
         meta.push_attribute(("hasCustomThumbnail", "{Boolean}false"));
         if !config.theme_ref.is_empty() {
             meta.push_attribute(("themeRef", config.theme_ref.as_str()));
@@ -1003,6 +1018,7 @@ const NODETYPES_CND: &str = r#"<'sling'='http://sling.apache.org/jcr/sling/1.0'>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::xsd::{XsdConfig, XsdProfile};
     use std::io::Read;
 
     #[test]
@@ -1095,6 +1111,117 @@ mod tests {
             dam_folder_xml.contains("lcFolder"),
             "DAM folder must have lcFolder"
         );
+    }
+
+    #[test]
+    fn package_uses_configured_xsd_zip_path() {
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
+        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).expect("zip entry by index");
+            names.push(entry.name().to_string());
+        }
+
+        let expected = "jcr_root/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd";
+        let legacy = "jcr_root/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd";
+
+        assert!(
+            names.iter().any(|n| n == expected),
+            "package must contain configured xsd path '{}'. Entries: {:?}",
+            expected,
+            names
+        );
+        assert!(
+            names.iter().all(|n| n != legacy),
+            "package must not contain legacy xsd path '{}'. Entries: {:?}",
+            legacy,
+            names
+        );
+    }
+
+    #[test]
+    fn dam_asset_xml_uses_configured_xsd_ref() {
+        let mut config = AemConfig::test_default("TEST_FORM");
+        config.bind_to_xsd = true;
+        config.xsd_path =
+            "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST_FORM.xsd".into();
+
+        let xml = generate_dam_asset_xml(&config);
+
+        assert!(
+            xml.contains("formmodel=\"xsd\""),
+            "DAM metadata should use xsd model when bind_to_xsd=true"
+        );
+        assert!(
+            xml.contains(
+                "xsdRef=\"/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST_FORM.xsd\""
+            ),
+            "DAM metadata should reference configured xsd path, got: {}",
+            xml
+        );
+    }
+
+    #[test]
+    fn dam_template_receives_resolved_xsd_ref() {
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.component_templates.insert(
+            "dam".into(),
+            "<jcr:root><jcr:content><metadata {% if bind_to_xsd %}xsdRef=\"{{ xsd_ref }}\"{% endif %}/></jcr:content></jcr:root>".into(),
+        );
+
+        let xml = generate_dam_xml(&config);
+
+        assert!(
+            xml.contains(
+                "xsdRef=\"/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd\""
+            ),
+            "DAM template rendering should use resolved xsd_ref, got: {}",
+            xml
+        );
+    }
+
+    #[test]
+    fn xsd_path_without_leading_slash_is_normalized() {
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
+        config.xsd_path = "content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+
+        let xml = generate_dam_asset_xml(&config);
+        assert!(
+            xml.contains(
+                "xsdRef=\"/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd\""
+            ),
+            "xsdRef should be normalized with leading slash, got: {}",
+            xml
+        );
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        archive
+            .by_name("jcr_root/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd")
+            .expect("normalized xsd path should be present in zip");
     }
 
     #[test]

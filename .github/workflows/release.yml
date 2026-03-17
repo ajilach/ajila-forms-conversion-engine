@@ -153,9 +153,9 @@ jobs:
       - name: Build with Dioxus CLI
         run: |
           if [ "${{ matrix.platform }}" == "desktop" ]; then
-            dx build --release --platform desktop
+            dx build --release --platform desktop --package blueprint-app
           else
-            dx build --release --platform ${{ matrix.platform }} --fullstack
+            dx build --release --platform ${{ matrix.platform }} --fullstack --package blueprint-app
           fi
         shell: bash
 

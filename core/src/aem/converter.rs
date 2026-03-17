@@ -11,6 +11,7 @@ use crate::structured::{
     RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
+use super::fragment_parser::ParsedFragment;
 use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
 
 // ============================================================================
@@ -53,6 +54,8 @@ struct ConversionContext {
     grid_columns: u32,
     /// Conditions collected during the first pass.
     collected_conditions: Vec<CollectedCondition>,
+    /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` is true.
+    bind_refs: Option<crate::xsd::BindRefMaps>,
 }
 
 impl ConversionContext {
@@ -63,6 +66,7 @@ impl ConversionContext {
             language: config.master_language.clone(),
             grid_columns: config.grid_columns,
             collected_conditions: Vec::new(),
+            bind_refs: None,
         }
     }
 
@@ -213,6 +217,14 @@ fn short_uuid(uuid: &Uuid) -> String {
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
 
+    // If bind_to_xsd is enabled, pre-compute XSD bind-ref paths so that each
+    // field / section panel can receive a `bindRef` attribute.
+    if config.bind_to_xsd {
+        if let Some(ref xsd_config) = config.xsd_config {
+            ctx.bind_refs = Some(crate::xsd::compute_bind_refs(nodes, xsd_config));
+        }
+    }
+
     // Extract H1 heading text to use as the display title (guideformtitle _value).
     // Falls back to form_title (form code) if no H1 is present.
     let form_display_title = nodes
@@ -257,7 +269,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             .collect();
 
         if let Some(title) = title {
-            // H2 section → wrap in a Panel
+            // H2 section → wrap in a Panel; look up XSD bindRef if enabled.
+            let bind_ref = ctx
+                .bind_refs
+                .as_ref()
+                .and_then(|br| br.sections.get(title.as_str()))
+                .cloned();
             let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
             children.push(AemNode::Panel {
@@ -271,6 +288,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 dor_num_cols: None,
                 colspan: config.grid_columns,
                 dor_colspan: None,
+                bind_ref,
             });
         } else {
             // Preamble (before first H2) → also wrap in a Panel
@@ -288,6 +306,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     dor_num_cols: None,
                     colspan: config.grid_columns,
                     dor_colspan: None,
+                    bind_ref: None,
                 });
             }
         }
@@ -297,6 +316,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let conditions = std::mem::take(&mut ctx.collected_conditions);
     if !conditions.is_empty() {
         wire_conditions(&mut children, &conditions);
+    }
+
+    // --- Third pass: replace panels with fragment references ---
+    if config.use_fragments && !config.fragments.is_empty() {
+        let xsd_config = config.xsd_config.as_ref();
+        replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
 
     AemNode::Root {
@@ -512,6 +537,7 @@ fn convert_table(
             dor_num_cols: None,
             colspan: config.grid_columns,
             dor_colspan: None,
+            bind_ref: None,
         });
     }
 
@@ -537,6 +563,7 @@ fn convert_table(
             dor_num_cols: None,
             colspan: config.grid_columns,
             dor_colspan: None,
+            bind_ref: None,
         });
     }
 
@@ -551,6 +578,7 @@ fn convert_table(
         dor_num_cols: None,
         colspan: config.grid_columns,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -584,6 +612,13 @@ fn convert_field(
         })
         .unwrap_or_default();
 
+    // Look up the XSD bindRef path for this field when bind_to_xsd is enabled.
+    let bind_ref: Option<String> = ctx
+        .bind_refs
+        .as_ref()
+        .and_then(|br| br.fields.get(&f.name))
+        .cloned();
+
     match &f.input_type {
         FieldType::Text { max_length, .. } => {
             let name = ctx.make_name("TXT", &source_text);
@@ -597,6 +632,7 @@ fn convert_field(
                 max_chars: *max_length,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -611,6 +647,7 @@ fn convert_field(
                 visible: true,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -625,6 +662,7 @@ fn convert_field(
                 visible: true,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -640,6 +678,7 @@ fn convert_field(
                 max_chars: None,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -655,6 +694,7 @@ fn convert_field(
                 max_chars: None,
                 colspan,
                 dor_colspan,
+                bind_ref,
             }
         }
 
@@ -675,6 +715,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
 
@@ -694,6 +735,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
 
@@ -712,6 +754,7 @@ fn convert_field(
                 dor_colspan,
                 field_id: Some(f.name.clone()),
                 conditions: Vec::new(),
+                bind_ref,
             }
         }
     }
@@ -763,6 +806,7 @@ fn convert_group(
         dor_num_cols: None,
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -803,6 +847,7 @@ fn convert_conditional(
         dor_num_cols: None,
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -836,6 +881,7 @@ fn convert_grid_layout(
         dor_num_cols: Some(gl.columns as u32),
         colspan,
         dor_colspan,
+        bind_ref: None,
     }
 }
 
@@ -908,6 +954,356 @@ fn wire_conditions_recursive(
         }
         _ => {}
     }
+}
+
+// ============================================================================
+// Fragment replacement
+// ============================================================================
+
+/// Collect leaf element names from `bindRef` values of a node's children.
+///
+/// For each child that has a `bindRef`, extract the last path segment
+/// (the element name). E.g. `/form/section/Street` → `"Street"`.
+fn collect_child_bind_ref_leaves(children: &[AemNode]) -> Vec<String> {
+    let mut leaves = Vec::new();
+    for child in children {
+        let bind_ref = match child {
+            AemNode::TextField { bind_ref, .. }
+            | AemNode::NumberField { bind_ref, .. }
+            | AemNode::DatePicker { bind_ref, .. }
+            | AemNode::Dropdown { bind_ref, .. }
+            | AemNode::Checkbox { bind_ref, .. }
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::TextBoxMultiline { bind_ref, .. } => bind_ref.as_deref(),
+            AemNode::Panel {
+                bind_ref,
+                children: sub_children,
+                ..
+            } => {
+                // Recurse into sub-panels to collect their leaves too
+                leaves.extend(collect_child_bind_ref_leaves(sub_children));
+                bind_ref.as_deref()
+            }
+            AemNode::Repeatable {
+                children: sub_children,
+                ..
+            } => {
+                // Recurse into repeatable items to collect their leaves too
+                leaves.extend(collect_child_bind_ref_leaves(sub_children));
+                None
+            }
+            _ => None,
+        };
+        if let Some(br) = bind_ref {
+            if let Some(leaf) = br.rsplit('/').next() {
+                if !leaf.is_empty() {
+                    leaves.push(leaf.to_string());
+                }
+            }
+        }
+    }
+    leaves
+}
+
+/// Check whether all panel leaf element names are contained in the
+/// fragment's bound elements (i.e. panel leaves ⊆ fragment elements).
+fn panel_leaves_subset_of_fragment(fragment: &ParsedFragment, panel_leaves: &[String]) -> bool {
+    panel_leaves
+        .iter()
+        .all(|leaf| fragment.bound_elements.iter().any(|elem| elem == leaf))
+}
+
+/// Find the best matching fragment for a panel, given its children's bind_ref
+/// leaf element names and the XSD config's registered types.
+///
+/// Matching logic:
+/// 1. Collect the panel children's bind_ref leaf element names.
+/// 2. For each registered XSD type, check if **all** panel leaves are
+///    contained in the type's elements (subset check).
+/// 3. Among matching fragments, verify that all panel leaves are also
+///    contained in the fragment's bound elements, then pick the most
+///    specific fragment.
+fn find_best_fragment<'a>(
+    panel_leaves: &[String],
+    fragments: &'a [ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+) -> Option<&'a ParsedFragment> {
+    find_best_fragment_inner(panel_leaves, fragments, xsd_config, true)
+}
+
+/// Like [`find_best_fragment`], but when `strict` is false, the second check
+/// (panel leaves ⊆ fragment bound_elements) is skipped.  This is used in
+/// the multi-instance path where the panel is kept and only some of its
+/// children are replaced; unmatched leaves remain as regular children.
+fn find_best_fragment_inner<'a>(
+    panel_leaves: &[String],
+    fragments: &'a [ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+    strict: bool,
+) -> Option<&'a ParsedFragment> {
+    let xsd_config = xsd_config?;
+
+    // Determine which registered XSD types match this panel's leaf elements.
+    // All panel leaves must be contained in the type's elements (subset check).
+    let mut matching_types: Vec<&str> = Vec::new();
+    for (type_name, reg_type) in &xsd_config.registered_types {
+        let type_elements: Vec<&str> = reg_type.elements.iter().map(|e| e.name.as_str()).collect();
+        let all_present = panel_leaves
+            .iter()
+            .all(|l| type_elements.contains(&l.as_str()));
+        if all_present {
+            matching_types.push(type_name);
+        }
+    }
+
+    if matching_types.is_empty() {
+        return None;
+    }
+
+    // Find fragments whose xsd_type_name is in the matching types.
+    // In strict mode, also require all panel leaves ⊆ fragment bound_elements.
+    let mut best: Option<&ParsedFragment> = None;
+    for fragment in fragments {
+        if !matching_types.contains(&fragment.xsd_type_name.as_str()) {
+            continue;
+        }
+        if strict && !panel_leaves_subset_of_fragment(fragment, panel_leaves) {
+            continue;
+        }
+        // Prefer the fragment with the most bound elements (most specific).
+        if let Some(prev) = best {
+            if fragment.bound_elements.len() > prev.bound_elements.len() {
+                best = Some(fragment);
+            }
+        } else {
+            best = Some(fragment);
+        }
+    }
+
+    best
+}
+
+/// Collect full `bindRef` paths from a node's children (recursively).
+///
+/// Unlike `collect_child_bind_ref_leaves` which returns only leaf names,
+/// this returns the complete bind_ref strings.
+fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
+    let mut paths = Vec::new();
+    for child in children {
+        match child {
+            AemNode::TextField { bind_ref, .. }
+            | AemNode::NumberField { bind_ref, .. }
+            | AemNode::DatePicker { bind_ref, .. }
+            | AemNode::Dropdown { bind_ref, .. }
+            | AemNode::Checkbox { bind_ref, .. }
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::TextBoxMultiline { bind_ref, .. } => {
+                if let Some(br) = bind_ref {
+                    paths.push(br.clone());
+                }
+            }
+            AemNode::Panel {
+                bind_ref,
+                children: sub_children,
+                ..
+            } => {
+                paths.extend(collect_child_bind_ref_full_paths(sub_children));
+                if let Some(br) = bind_ref {
+                    paths.push(br.clone());
+                }
+            }
+            AemNode::Repeatable {
+                children: sub_children,
+                ..
+            } => {
+                paths.extend(collect_child_bind_ref_full_paths(sub_children));
+            }
+            _ => {}
+        }
+    }
+    paths
+}
+
+/// Recursively walk the `AemNode` tree and replace panels whose child fields
+/// match a known fragment's XSD type with `AemNode::Fragment` nodes.
+///
+/// Handles two cases:
+/// 1. **Direct match**: A panel's immediate children directly correspond to a
+///    single XSD type (bind_ref paths are one level deep relative to the panel).
+///    The entire panel is replaced with a Fragment.
+/// 2. **Multi-instance match**: A panel's children's bind_ref paths have
+///    intermediate segments (e.g. `kunde/Name` and `ubs_europe_se/Name`),
+///    indicating multiple type instances. Each child that contributes fields
+///    for a matched type is individually replaced.
+///
+/// Recurses depth-first so inner nodes are processed before parents.
+fn replace_with_fragments(
+    nodes: &mut Vec<AemNode>,
+    fragments: &[ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+    ctx: &mut ConversionContext,
+) {
+    let mut i = 0;
+    while i < nodes.len() {
+        // First, recurse into children of container nodes
+        match &mut nodes[i] {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                replace_with_fragments(children, fragments, xsd_config, ctx);
+            }
+            _ => {}
+        }
+
+        // Only check panels with bind_ref
+        if let AemNode::Panel {
+            children,
+            bind_ref: Some(br),
+            ..
+        } = &nodes[i]
+        {
+            let full_paths = collect_child_bind_ref_full_paths(children);
+            let br_prefix = format!("{}/", br);
+
+            // Compute relative paths from this panel's bind_ref
+            let relative_paths: Vec<&str> = full_paths
+                .iter()
+                .filter_map(|p| p.strip_prefix(&br_prefix))
+                .collect();
+
+            // Check if any relative path has an intermediate segment
+            // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
+            let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
+
+            if !has_intermediates {
+                // Direct match: all paths are single-segment → try to replace
+                // the whole panel.
+                let leaves = collect_child_bind_ref_leaves(children);
+                if !leaves.is_empty() {
+                    if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
+                        let fragment = fragment.clone();
+                        let bind_ref = Some(br.clone());
+                        let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+                        let uuid = ctx.uuid(&name);
+                        nodes[i] = AemNode::Fragment {
+                            uuid,
+                            name,
+                            frag_ref: fragment.frag_ref,
+                            bind_ref,
+                        };
+                    }
+                }
+            } else {
+                // Multi-instance: group children's bind_ref paths by the
+                // intermediate parent path (everything between the panel's
+                // bind_ref and the leaf element name).  For each group that
+                // matches a fragment, remove the children whose fields all
+                // belong to that group and insert a Fragment node instead.
+                let mut matched =
+                    compute_intermediate_matches(&full_paths, &br_prefix, fragments, xsd_config);
+
+                if !matched.is_empty() {
+                    // Sort for deterministic output order
+                    matched.sort_by(|a, b| a.0.cmp(&b.0));
+
+                    if let AemNode::Panel {
+                        children,
+                        bind_ref: Some(br),
+                        ..
+                    } = &mut nodes[i]
+                    {
+                        // For each matched group, determine which children are
+                        // fully covered (all their bind_ref paths belong to
+                        // matched groups) and collect Fragment nodes to insert.
+                        let matched_prefixes: Vec<String> = matched
+                            .iter()
+                            .map(|(int_path, _)| format!("{}{}", br_prefix, int_path))
+                            .collect();
+
+                        // Identify children to remove: a child is removed when
+                        // every one of its bind_ref paths falls under a matched
+                        // intermediate prefix (exact match or starts_with prefix + "/").
+                        let mut keep = Vec::new();
+                        for child in children.drain(..) {
+                            let child_paths =
+                                collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
+                            let all_covered = !child_paths.is_empty()
+                                && child_paths.iter().all(|cp| {
+                                    matched_prefixes
+                                        .iter()
+                                        .any(|mp| cp == mp || cp.starts_with(&format!("{}/", mp)))
+                                });
+                            if !all_covered {
+                                keep.push(child);
+                            }
+                        }
+
+                        // Insert Fragment nodes for each matched group
+                        let mut frag_nodes: Vec<AemNode> = Vec::new();
+                        for (int_path, fragment) in &matched {
+                            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+                            let uuid = ctx.uuid(&name);
+                            frag_nodes.push(AemNode::Fragment {
+                                uuid,
+                                name,
+                                frag_ref: fragment.frag_ref.clone(),
+                                bind_ref: Some(format!("{}/{}", br, int_path)),
+                            });
+                        }
+
+                        // Rebuild children: kept nodes + new fragment nodes
+                        *children = keep;
+                        children.extend(frag_nodes);
+                    }
+                }
+            }
+        }
+
+        i += 1;
+    }
+}
+
+/// For a panel whose children's bind_ref paths have intermediate segments,
+/// group by the full intermediate parent path (all segments between the
+/// panel's bind_ref and the leaf) and find matching fragments for each group.
+///
+/// Returns a vec of `(intermediate_path, fragment)` for each matched group.
+fn compute_intermediate_matches(
+    full_paths: &[String],
+    br_prefix: &str,
+    fragments: &[ParsedFragment],
+    xsd_config: Option<&crate::xsd::XsdConfig>,
+) -> Vec<(String, ParsedFragment)> {
+    // Group leaf element names by their full intermediate path.
+    // E.g. for relative path "authorized_representative_s/IndividualBasic/LastName",
+    // the intermediate path is "authorized_representative_s/IndividualBasic"
+    // and the leaf is "LastName".
+    let mut groups: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for fp in full_paths {
+        if let Some(relative) = fp.strip_prefix(br_prefix) {
+            if let Some((parent, leaf)) = relative.rsplit_once('/') {
+                // Only consider paths with at least one intermediate segment
+                if !parent.is_empty() {
+                    groups
+                        .entry(parent.to_string())
+                        .or_default()
+                        .push(leaf.to_string());
+                }
+            }
+        }
+    }
+
+    // Try to match each group's leaves to a fragment (non-strict: the
+    // fragment doesn't need to cover all leaves, just match the XSD type)
+    let mut matched = Vec::new();
+    for (int_path, leaves) in &groups {
+        if let Some(fragment) = find_best_fragment_inner(leaves, fragments, xsd_config, false) {
+            matched.push((int_path.clone(), fragment.clone()));
+        }
+    }
+
+    matched
 }
 
 // ============================================================================
@@ -2072,5 +2468,32 @@ mod tests {
             }
             other => panic!("Expected Root, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn panel_leaves_subset_of_fragment_requires_all_leaves() {
+        let fragment = ParsedFragment {
+            dir_name: "frag1".to_string(),
+            frag_ref: "/content/forms/af/frag1".to_string(),
+            name: "Frag1".to_string(),
+            xsd_type_name: "SomeType".to_string(),
+            bound_elements: vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()],
+        };
+
+        // Subset: all leaves exist in fragment → true
+        let leaves = vec!["IBAN".to_string(), "Name".to_string()];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Exact match → true
+        let leaves = vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Not a subset: "Company" is NOT in fragment → false
+        let leaves = vec!["IBAN".to_string(), "Company".to_string()];
+        assert!(!panel_leaves_subset_of_fragment(&fragment, &leaves));
+
+        // Empty leaves → trivially true (empty set is subset of any set)
+        let leaves: Vec<String> = vec![];
+        assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
     }
 }

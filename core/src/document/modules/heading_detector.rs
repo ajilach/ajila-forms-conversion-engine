@@ -413,7 +413,13 @@ impl HeadingDetector {
                 if let Some(first_char) = remaining.chars().next()
                     && first_char.is_uppercase()
                 {
-                    return false;
+                    // Allow abbreviation patterns: uppercase letters followed by a dot
+                    // (e.g., "UU." in "EE. UU.")
+                    let upper_prefix_len =
+                        remaining.chars().take_while(|c| c.is_uppercase()).count();
+                    if remaining.chars().nth(upper_prefix_len) != Some('.') {
+                        return false;
+                    }
                 }
             }
         }
@@ -1502,6 +1508,12 @@ mod tests {
         assert!(HeadingDetector::is_single_sentence("Hello World?"));
         assert!(HeadingDetector::is_single_sentence("Section 1.2")); // decimal
         assert!(HeadingDetector::is_single_sentence("Price: $1.50")); // decimal
+
+        // Abbreviations with uppercase + dot (e.g., "EE. UU.")
+        assert!(HeadingDetector::is_single_sentence(
+            "Declaración de la condición del titular de la cuenta como persona «No Estadounidense» o «Persona Estadounidense» por ingresos procedentes de los EE. UU."
+        ));
+        assert!(HeadingDetector::is_single_sentence("Located in the U.S.A."));
 
         // Multiple sentences
         assert!(!HeadingDetector::is_single_sentence("First. Second"));

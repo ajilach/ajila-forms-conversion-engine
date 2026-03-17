@@ -1,0 +1,145 @@
+# XSD Output Profile Configuration
+#
+# This file configures how structured form content maps to XSD schema elements.
+#
+# [elements.<name>]       — field → xs:element mappings
+#   synonyms              — list of strings to match (case-insensitive substring)
+#   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
+#
+# All *.xsd files in the types/ subdirectory are automatically indexed.
+# An <xs:include> directive is emitted for every indexed file that declares a
+# type actually referenced by the generated schema.
+#
+# Complex types are auto-matched: xs:complexType definitions from the types/
+# directory are parsed (including xs:extension inheritance and xs:element ref
+# resolution). During generation, a heading's resolved children are compared
+# against the registry — if all children (name + type) form a subset of a
+# registered type's elements, the best-matching type is used.
+#
+# schemaLocationPrefix — prefix prepended to the relative path of each types/
+#   file when constructing the schemaLocation attribute (default: "../")
+
+schemaLocationPrefix = "../"
+
+# ─── Elements ──────────────────────────────────────────────────────────────────
+
+# --- Name fields ---
+
+[elements.LastName]
+synonyms = ["Last Name", "Nachname", "Cognome", "Apellido(s)",]
+type = "xs:string"
+
+[elements.FirstName]
+synonyms = ["First Name(s)", "Vorname(n)", "Nome(i)", "Nombre(s)", "Vorname"]
+type = "xs:string"
+
+[elements.Name]
+synonyms = ["Name", "Nome", "Nombre", "Nome della società", "Name des Kunden", "Name of client", "Nome del cliente"]
+type = "xs:string"
+
+[elements.Company]
+synonyms = ["Company", "Firma", "Società"]
+type = "xs:string"
+
+# --- Address fields ---
+
+[elements.Street]
+synonyms = ["Street", "Straße", "Strasse/Nr.", "Via", "Calle"]
+type = "xs:string"
+
+[elements.PostalCode]
+synonyms = ["Postal Code", "PLZ", "ZIP", "CAP", "Código postal"]
+type = "xs:string"
+
+[elements.Place]
+synonyms = ["Ort", "Località", "Place", "Lugar"]
+type = "xs:string"
+
+[elements.City]
+synonyms = ["City", "Stadt"]
+type = "xs:string"
+
+[elements.Country]
+synonyms = ["Country", "Land", "Paese", "País"]
+type = "xs:string"
+
+[elements.StreetNumber]
+synonyms = ["Nr.", "Nr", "No.", "No", "Nº", "Adress-Nr.", "Adress-Nummer"]
+type = "xs:string"
+
+# --- Contact fields ---
+
+[elements.Phone]
+synonyms = ["Telephone", "Phone", "Mobile", "Telefon", "Telefax privat", "Telefax beruflich"]
+type = "xs:string"
+
+[elements.Email]
+synonyms = ["E-Mail", "Email"]
+type = "xs:string"
+
+# --- Financial fields ---
+
+[elements.Currency]
+synonyms = ["Currency", "Währung"]
+type = "xs:string"
+
+[elements.IBAN]
+synonyms = ["IBAN"]
+type = "xs:string"
+
+[elements.AccountNumber]
+synonyms = ["Account No", "Konto-Nr", "Konto Nr"]
+type = "xs:string"
+
+# --- Date / time fields ---
+
+[elements.Date]
+synonyms = ["Date", "Datum", "Data", "Fecha"]
+type = "xs:date"
+
+# --- Other common fields ---
+
+[elements.Role]
+synonyms = ["Role", "Rolle", "Funktion"]
+type = "xs:string"
+
+[elements.MaritalStatus]
+synonyms = ["Marital Status", "Zivilstand", "Familienstand", "Estado civil"]
+type = "xs:string"
+
+[elements.DateOfBirth]
+synonyms = ["Date of Birth", "Geburtsdatum", "Fecha de nacimiento"]
+type = "xs:date"
+
+[elements.FormOfAddress]
+synonyms = ["Form of Address", "Anrede", "Anredesprache"]
+type = "xs:string"
+
+[elements.OURef]
+synonyms = ["OU Ref", "OURef", "OU-Ref"]
+type = "xs:string"
+
+[elements.Nationality]
+synonyms = ["Nationality", "Nationalität", "Nazionalità", "Nacionalidad"]
+type = "xs:string"
+
+[elements.Title]
+synonyms = ["Title", "Titel", "Titolo", "Título"]
+type = "xs:string"
+
+[elements.Gender]
+synonyms = ["Gender", "Geschlecht", "Genere", "Género"]
+type = "xs:string"
+
+[elements.Domicile]
+synonyms = ["Domicile", "Domizil", "Domicilio"]
+type = "xs:string"
+
+[elements.FullName]
+synonyms = ["Full Name", "Vollständiger Name"]
+type = "xs:string"
+
+[elements.CorrespondenceLanguage]
+synonyms = ["Correspondence Language", "Korrespondenzsprache"]
+type = "xs:string"
+ 

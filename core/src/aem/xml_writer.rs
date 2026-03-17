@@ -48,6 +48,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::TitleDraw { .. } => "titledraw",
         AemNode::TextBoxMultiline { .. } => "textbox_multiline",
         AemNode::Repeatable { .. } => "repeatable",
+        AemNode::Fragment { .. } => "fragment",
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -108,6 +109,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             dor_num_cols,
             colspan,
             dor_colspan,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -118,6 +120,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("colspan", colspan);
             ctx.insert("dor_num_cols", dor_num_cols);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
             ctx.insert("children", &render_children(children, config));
         }
 
@@ -130,6 +133,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             max_chars,
             colspan,
             dor_colspan,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -139,6 +143,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("colspan", colspan);
             ctx.insert("max_chars", max_chars);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
         }
 
         AemNode::NumberField {
@@ -149,6 +154,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             visible,
             colspan,
             dor_colspan,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -157,6 +163,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
         }
 
         AemNode::DatePicker {
@@ -167,6 +174,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             visible,
             colspan,
             dor_colspan,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -175,6 +183,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
         }
 
         AemNode::Dropdown {
@@ -188,6 +197,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             dor_colspan,
             field_id: _,
             conditions,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -196,6 +206,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
             insert_options_context(&mut ctx, options);
             insert_conditions_context(&mut ctx, name, conditions);
         }
@@ -210,12 +221,14 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             dor_colspan,
             field_id: _,
             conditions,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
             ctx.insert("alignment", alignment_str(*alignment));
             insert_options_context(&mut ctx, options);
             insert_conditions_context(&mut ctx, name, conditions);
@@ -244,6 +257,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             dor_colspan,
             field_id: _,
             conditions,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -252,6 +266,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
             ctx.insert("alignment", alignment_str(*alignment));
             insert_options_context(&mut ctx, options);
             insert_conditions_context(&mut ctx, name, conditions);
@@ -308,6 +323,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             visible,
             colspan,
             dor_colspan,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -316,6 +332,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
         }
 
         AemNode::Repeatable {
@@ -339,6 +356,18 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             let panel_name = format!("PN_{}", name);
             ctx.insert("panel_name", &panel_name);
             insert_repeatable_scripts(&mut ctx, &panel_name, *max_occur);
+        }
+
+        AemNode::Fragment {
+            uuid,
+            name,
+            frag_ref,
+            bind_ref,
+        } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
+            ctx.insert("frag_ref", frag_ref);
+            ctx.insert("bind_ref", bind_ref);
         }
     }
 
@@ -789,6 +818,7 @@ mod tests {
                 max_chars: Some(100),
                 colspan: 6,
                 dor_colspan: None,
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -820,6 +850,7 @@ mod tests {
                 dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -870,6 +901,7 @@ mod tests {
                 dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -892,6 +924,7 @@ mod tests {
                 dor_num_cols: None,
                 colspan: 12,
                 dor_colspan: None,
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -938,6 +971,7 @@ mod tests {
                     value: InputValue::Text("yes".into()),
                     show: true,
                 }],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -977,6 +1011,7 @@ mod tests {
                 dor_colspan: None,
                 field_id: None,
                 conditions: vec![],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1017,6 +1052,7 @@ mod tests {
                     value: InputValue::Text("a".into()),
                     show: true,
                 }],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1055,6 +1091,7 @@ mod tests {
                     value: InputValue::Bool(true),
                     show: true,
                 }],
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1148,6 +1185,7 @@ mod tests {
                 dor_num_cols: Some(3),
                 colspan: 12,
                 dor_colspan: None,
+                bind_ref: None,
                 children: vec![
                     AemNode::TextField {
                         uuid: fixed_uuid(),
@@ -1158,6 +1196,7 @@ mod tests {
                         max_chars: None,
                         colspan: 8,
                         dor_colspan: Some(2),
+                        bind_ref: None,
                     },
                     AemNode::TextField {
                         uuid: fixed_uuid(),
@@ -1168,6 +1207,7 @@ mod tests {
                         max_chars: None,
                         colspan: 4,
                         dor_colspan: Some(1),
+                        bind_ref: None,
                     },
                 ],
             }],
@@ -1203,6 +1243,7 @@ mod tests {
                 max_chars: None,
                 colspan: 12,
                 dor_colspan: None,
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());

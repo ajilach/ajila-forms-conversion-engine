@@ -20,10 +20,8 @@ pub fn run_blueprint_pipeline(
     on_progress: impl Fn(&ProcessingState),
 ) -> ProcessingState {
     use blueprint::{
-        AemConfig, AemProfile, HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep,
-        run_pipeline,
+        HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep, run_pipeline,
     };
-    use std::collections::HashMap;
 
     let mut state = ProcessingState::new();
     let config = PipelineConfig::default();
@@ -97,74 +95,58 @@ pub fn run_blueprint_pipeline(
                 }
             };
 
-            // Generate HTML, applying a profile's custom styles when provided.
-            let html = {
-                let html_config = if let Some(ref profile_name) = profile {
-                    match crate::profiles::load_html_custom_styles(profile_name) {
-                        Ok(Some(styles)) => HtmlConfig {
+            // Generate HTML only when an explicit html/config.toml exists.
+            if let Some(ref profile_name) = profile {
+                if blueprint::has_html_config(profile_name) {
+                    let html_config = match blueprint::load_html_custom_styles(profile_name) {
+                        Ok(styles) => HtmlConfig {
                             custom_styles: Some(styles),
                             ..HtmlConfig::default()
                         },
-                        Ok(None) => HtmlConfig::default(),
                         Err(e) => {
-                            state
-                                .warnings
-                                .push(format!("Failed to load HTML profile: {e}"));
-                            HtmlConfig::default()
+                            state.error = Some(format!("Failed to load HTML profile: {e}"));
+                            on_progress(&state);
+                            return state;
                         }
-                    }
-                } else {
-                    HtmlConfig::default()
-                };
-                blueprint::to_html(&merged.content, &html_config)
-            };
-
-            // AEM package generation — load profile config when provided, fall back
-            // to empty defaults otherwise.  Fails gracefully for non-XFA PDFs.
-            let (aem_profile, templates) = if let Some(ref profile_name) = profile {
-                match crate::profiles::load_aem_profile(profile_name) {
-                    Ok((p, t)) => (p, t),
-                    Err(e) => {
-                        state
-                            .warnings
-                            .push(format!("Failed to load AEM profile: {e}"));
-                        (
-                            AemProfile {
-                                master_language: None,
-                                title: None,
-                                form_path: None,
-                                form_dir: None,
-                                variables: HashMap::new(),
-                                language_synonyms: HashMap::new(),
-                            },
-                            HashMap::new(),
-                        )
-                    }
+                    };
+                    state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
                 }
-            } else {
-                (
-                    AemProfile {
-                        master_language: None,
-                        title: None,
-                        form_path: None,
-                        form_dir: None,
-                        variables: HashMap::new(),
-                        language_synonyms: HashMap::new(),
-                    },
-                    HashMap::new(),
-                )
-            };
-            if let Ok(aem_config) =
-                AemConfig::from_profile(&aem_profile, templates, &merged.context)
+            }
+
+            // AEM package generation requires an explicit aem/config.toml.
+            if let Some(ref profile_name) = profile
+                && blueprint::has_aem_config(profile_name)
             {
+                let aem_config = match blueprint::load_aem_config(profile_name, &merged.context) {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        state.error = Some(format!("Failed to load AEM profile: {e}"));
+                        on_progress(&state);
+                        return state;
+                    }
+                };
                 let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
                 state.form_code = Some(aem_config.form_code.clone());
                 state.aem_package = Some(aem_zip);
             }
 
+            // XSD schema generation requires an explicit xsd/config.toml.
+            if let Some(ref profile_name) = profile
+                && blueprint::has_xsd_config(profile_name)
+            {
+                let xsd_config = match blueprint::load_xsd_config(profile_name) {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        state.error = Some(format!("Failed to load XSD profile: {e}"));
+                        on_progress(&state);
+                        return state;
+                    }
+                };
+                state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
+            }
+
             state.step = ProcessingStep::Complete;
             state.merged_json = Some(json);
-            state.html_preview = Some(html);
             on_progress(&state);
         }
         Err(e) => {

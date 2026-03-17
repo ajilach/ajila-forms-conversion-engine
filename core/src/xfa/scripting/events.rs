@@ -181,9 +181,10 @@ pub fn parse_events_from_node(children: &[XfaNode]) -> Vec<XfaScript> {
     for child in children {
         if let XfaNodeKind::Element { tag_name, .. } = &child.kind
             && tag_name == "event"
-                && let Some(script) = parse_event_element(child) {
-                    scripts.push(script);
-                }
+            && let Some(script) = parse_event_element(child)
+        {
+            scripts.push(script);
+        }
     }
 
     scripts
@@ -215,33 +216,34 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
             tag_name,
             text_content,
         } = &child.kind
-            && tag_name == "script" {
-                let content_type = child
-                    .attributes
-                    .get("contentType")
-                    .and_then(|s| ScriptContentType::from_content_type(s))
-                    .unwrap_or(ScriptContentType::FormCalc);
+            && tag_name == "script"
+        {
+            let content_type = child
+                .attributes
+                .get("contentType")
+                .and_then(|s| ScriptContentType::from_content_type(s))
+                .unwrap_or(ScriptContentType::FormCalc);
 
-                let run_at = child
-                    .attributes
-                    .get("runAt")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_default();
+            let run_at = child
+                .attributes
+                .get("runAt")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_default();
 
-                let source = text_content.clone().unwrap_or_default();
+            let source = text_content.clone().unwrap_or_default();
 
-                if !source.trim().is_empty() {
-                    return Some(XfaScript {
-                        source,
-                        content_type,
-                        activity,
-                        event_ref,
-                        name,
-                        run_at,
-                        listen,
-                    });
-                }
+            if !source.trim().is_empty() {
+                return Some(XfaScript {
+                    source,
+                    content_type,
+                    activity,
+                    event_ref,
+                    name,
+                    run_at,
+                    listen,
+                });
             }
+        }
     }
 
     None
@@ -255,17 +257,19 @@ pub fn parse_variables_from_node(
 
     for child in children {
         if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-            && tag_name == "variables" {
-                for var_child in &child.children {
-                    if let XfaNodeKind::Element {
-                        tag_name: var_tag, ..
-                    } = &var_child.kind
-                        && var_tag == "script"
-                            && let Some(name) = var_child.attributes.get("name") {
-                                variables.insert(name.clone(), std::collections::HashMap::new());
-                            }
+            && tag_name == "variables"
+        {
+            for var_child in &child.children {
+                if let XfaNodeKind::Element {
+                    tag_name: var_tag, ..
+                } = &var_child.kind
+                    && var_tag == "script"
+                    && let Some(name) = var_child.attributes.get("name")
+                {
+                    variables.insert(name.clone(), std::collections::HashMap::new());
                 }
             }
+        }
     }
 
     variables

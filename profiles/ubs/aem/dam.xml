@@ -23,7 +23,8 @@
             author="{{ author }}"
             {% if variables.dor_template_ref is defined and variables.dor_template_ref != "" %}dorTemplateRef="{{ variables.dor_template_ref }}"{% endif %}
             dorType="{{ variables.dor_type | default(value='generate') }}"
-            formmodel="none"
+            formmodel="{% if bind_to_xsd %}xsd{% else %}none{% endif %}"
+            {% if bind_to_xsd %}xsdRef="{{ xsd_ref }}"{% endif %}
             hasCustomThumbnail="{Boolean}false"
             {% if variables.use_summary == "true" %}redactoSummary="true"{% endif %}
             {% if variables.theme_ref is defined and variables.theme_ref != "" %}themeRef="{{ variables.theme_ref }}"{% endif %}

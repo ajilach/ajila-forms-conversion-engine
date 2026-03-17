@@ -699,13 +699,14 @@ impl TextMeasurer {
             for (i, &ch) in chars.iter().enumerate() {
                 // Add kerning from previous character if enabled
                 if let Some(prev) = prev_char
-                    && kerning_mode == KerningMode::Pair {
-                        let prev_glyph = font.glyph_id(prev);
-                        let curr_glyph = font.glyph_id(ch);
-                        if prev_glyph.0 != 0 && curr_glyph.0 != 0 {
-                            width += font.as_scaled(scale).kern(prev_glyph, curr_glyph);
-                        }
+                    && kerning_mode == KerningMode::Pair
+                {
+                    let prev_glyph = font.glyph_id(prev);
+                    let curr_glyph = font.glyph_id(ch);
+                    if prev_glyph.0 != 0 && curr_glyph.0 != 0 {
+                        width += font.as_scaled(scale).kern(prev_glyph, curr_glyph);
                     }
+                }
 
                 // Add character width
                 let glyph_id = font.glyph_id(ch);
@@ -823,7 +824,8 @@ impl TextMeasurer {
         let first_line_indent = text_indent.to_f32().unwrap_or(0.0);
 
         // Wrap text using the styled font, accounting for text-indent on first line
-        let wrapped_lines = self.wrap_text_styled_with_indent(text, effective_width, &xfa_font, first_line_indent)?;
+        let wrapped_lines =
+            self.wrap_text_styled_with_indent(text, effective_width, &xfa_font, first_line_indent)?;
         let num_lines = wrapped_lines.len();
 
         // Get base font metrics for this style

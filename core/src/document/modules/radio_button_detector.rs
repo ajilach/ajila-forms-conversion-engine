@@ -258,15 +258,30 @@ mod tests {
         let detector = RadioButtonDetector::new();
 
         // Perfect square
-        assert!(Bounds::new(num(0.0), num(0.0), num(10.0), num(10.0)).is_square(detector.square_tolerance));
+        assert!(
+            Bounds::new(num(0.0), num(0.0), num(10.0), num(10.0))
+                .is_square(detector.square_tolerance)
+        );
 
         // Within tolerance (10%)
-        assert!(Bounds::new(num(0.0), num(0.0), num(10.0), num(10.5)).is_square(detector.square_tolerance));
-        assert!(Bounds::new(num(0.0), num(0.0), num(10.5), num(10.0)).is_square(detector.square_tolerance));
+        assert!(
+            Bounds::new(num(0.0), num(0.0), num(10.0), num(10.5))
+                .is_square(detector.square_tolerance)
+        );
+        assert!(
+            Bounds::new(num(0.0), num(0.0), num(10.5), num(10.0))
+                .is_square(detector.square_tolerance)
+        );
 
         // Outside tolerance
-        assert!(!Bounds::new(num(0.0), num(0.0), num(10.0), num(12.0)).is_square(detector.square_tolerance));
-        assert!(!Bounds::new(num(0.0), num(0.0), num(10.0), num(20.0)).is_square(detector.square_tolerance));
+        assert!(
+            !Bounds::new(num(0.0), num(0.0), num(10.0), num(12.0))
+                .is_square(detector.square_tolerance)
+        );
+        assert!(
+            !Bounds::new(num(0.0), num(0.0), num(10.0), num(20.0))
+                .is_square(detector.square_tolerance)
+        );
     }
 
     #[test]

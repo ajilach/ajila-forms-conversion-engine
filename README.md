@@ -66,7 +66,7 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --html
 cargo run --release -p blueprint-cli -- path/to/form.pdf --aem
 
 # Use a profile for output-specific configuration
-cargo run --release -p blueprint-cli -- path/to/form.pdf --aem --profile profiles/ubs
+cargo run --release -p blueprint-cli -- path/to/form.pdf --aem --profile path/to/profiles/ubs
 
 # Render images (modes: plain, labelled, annotated; repeatable)
 cargo run --release -p blueprint-cli -- path/to/form.pdf --render plain --render labelled
@@ -81,7 +81,7 @@ cargo run --release -p blueprint-cli -- form_DE.pdf form_EN.pdf --structured --h
 cargo run --release -p blueprint-cli -- path/to/form.pdf --dump-xfa
 ```
 
-## Web App
+## App
 
 The app is built with [Dioxus](https://dioxuslabs.com/) and supports web (WASM + server) and desktop targets.
 
@@ -97,6 +97,13 @@ dx serve --platform web --fullstack
 ```sh
 cd app
 dx build --release --platform web --fullstack
+```
+
+### Desktop App
+
+```sh
+cd app
+dx serve --release --platform macos
 ```
 
 ### Docker

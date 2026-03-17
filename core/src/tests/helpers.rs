@@ -1,11 +1,8 @@
 #![allow(dead_code)] // Helpers may not all be used in current tests
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, HeadingNode, InlineNode, ListNode,
-    StructuredNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode, StructuredNode,
 };
-use crate::xfa::script_executor::ScriptExecutor;
-use crate::{Flattened, XfaNode, extract_xfa_from_pdf};
 
 /// Build a path to a file in the `input/` test data directory.
 ///
@@ -210,34 +207,6 @@ pub fn find_field_by_name(nodes: &[StructuredNode], name: &str) -> Option<FieldN
         .find(|f| f.som_path_str().contains(name))
 }
 
-// ============================================================================
-// XFA loading and parsing helpers
-// ============================================================================
-
-/// Flatten XFA with script execution.
-pub fn flatten_with_scripts(nodes: &mut [XfaNode]) -> Result<Flattened, String> {
-    let script_result = ScriptExecutor::execute(nodes);
-    ScriptExecutor::apply_presence_changes(nodes, &script_result.presence_changes);
-    Flattened::merge_form_items_into_template(nodes);
-    Flattened::merge_form_presence_into_template(nodes, &script_result.presence_changes);
-    Flattened::from_xfa(nodes, &script_result.computed_values)
-}
-
-/// Extract XFA from a PDF file and parse it into `XfaNode`s.
-/// Panics if the PDF cannot be read, contains no XFA, or parsing fails.
-pub fn parse_xfa_from_pdf(path: impl AsRef<std::path::Path>) -> Vec<XfaNode> {
-    let xfa_data = extract_xfa_from_pdf(path.as_ref()).expect("Failed to read PDF");
-    let xfa_buffer = xfa_data.expect("PDF should contain XFA data");
-    XfaNode::parse(&xfa_buffer).expect("Failed to parse XFA structure")
-}
-
-/// Extract XFA from a PDF file, parse it, and flatten with script execution.
-/// Panics if any step fails.
-pub fn flatten_from_pdf(path: impl AsRef<std::path::Path>) -> Flattened {
-    let mut nodes = parse_xfa_from_pdf(path);
-    flatten_with_scripts(&mut nodes).expect("Failed to flatten XFA with scripts")
-}
-
 /// Load the UBS profile (config.toml + XML templates) from `profiles/ubs/aem/`.
 ///
 /// Returns `(AemProfile, templates)` ready for `AemConfig::from_profile`.
@@ -399,4 +368,41 @@ fn check_no_unescaped_angle_brackets_in_attributes(xml: &str) {
         }
         i += 1;
     }
+}
+
+/// Load the UBS XSD config from `profiles/ubs/xsd/`, including registered types.
+pub fn load_ubs_xsd_config() -> crate::xsd::XsdConfig {
+    let dir_path = profiles_path("ubs/xsd");
+    let dir = std::path::Path::new(&dir_path);
+    crate::xsd::load_xsd_config_from_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to load UBS XSD config: {e}"))
+}
+
+/// Recursively walk an AemNode tree, calling `callback` on every node.
+pub fn walk_aem_nodes(node: &crate::aem::AemNode, callback: &mut impl FnMut(&crate::aem::AemNode)) {
+    callback(node);
+    match node {
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                walk_aem_nodes(child, callback);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Count `AemNode::Fragment` nodes in the tree and collect their details.
+pub fn collect_aem_fragment_refs(root: &crate::aem::AemNode) -> Vec<(String, Option<String>)> {
+    let mut fragments = Vec::new();
+    walk_aem_nodes(root, &mut |node| {
+        if let crate::aem::AemNode::Fragment {
+            frag_ref, bind_ref, ..
+        } = node
+        {
+            fragments.push((frag_ref.clone(), bind_ref.clone()));
+        }
+    });
+    fragments
 }

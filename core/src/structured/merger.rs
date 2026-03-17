@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 
+use crate::structured::merge_engine::merge_duplicate_conditionals;
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, GroupNode, InputValue, StructuredNode,
 };
@@ -335,21 +336,11 @@ impl RecursiveMerger {
                             }));
                         }
                     } else {
-                        let content = if remaining_nodes.len() == 1 {
-                            remaining_nodes.into_iter().next().unwrap()
-                        } else {
-                            StructuredNode::Group(GroupNode {
-                                children: remaining_nodes,
-                            })
-                        };
-
-                        result.push(StructuredNode::Conditional(ConditionalNode {
-                            condition: FieldCondition {
-                                field_name: FieldId::from_som_path(&SomPath::new("unknown")),
-                                value: InputValue::Text("default".to_string()),
-                            },
-                            content: Box::new(content),
-                        }));
+                        // No concrete selection at this depth means this branch is the
+                        // default/unconditional path for the current parent selection.
+                        // Keep it as plain content instead of wrapping it in an
+                        // unreachable synthetic conditional.
+                        result.extend(remaining_nodes);
                     }
                 }
             }
@@ -362,94 +353,9 @@ impl RecursiveMerger {
         // This can happen when RadioButtonContentDetector creates a ConditionalNode for
         // inset content and the merger creates another ConditionalNode for the same
         // field+value pair. Both should be combined into a single ConditionalNode.
-        result = Self::merge_duplicate_conditionals(result);
+        result = merge_duplicate_conditionals(result);
 
         result
-    }
-
-    /// Merge any ConditionalNodes in `nodes` that have the same `condition`
-    /// (same `field_name` and `value`) into a single ConditionalNode whose
-    /// content is the union of all their individual contents.
-    fn merge_duplicate_conditionals(nodes: Vec<StructuredNode>) -> Vec<StructuredNode> {
-        // Fast path: nothing to merge if fewer than 2 nodes.
-        if nodes.len() < 2 {
-            return nodes;
-        }
-
-        // Detect whether any deduplication is needed at all.
-        let has_dup = {
-            let mut found = false;
-            'outer: for (i, ni) in nodes.iter().enumerate() {
-                if let StructuredNode::Conditional(ci) = ni {
-                    for nj in nodes[i + 1..].iter() {
-                        if let StructuredNode::Conditional(cj) = nj {
-                            if ci.condition == cj.condition {
-                                found = true;
-                                break 'outer;
-                            }
-                        }
-                    }
-                }
-            }
-            found
-        };
-        if !has_dup {
-            return nodes;
-        }
-
-        // Build merged output, combining duplicate conditionals.
-        // A "representative" is the first occurrence of each condition; subsequent
-        // occurrences are marked as duplicates and their content is folded in.
-        let mut skip = vec![false; nodes.len()];
-        // Collect contents to add to each representative (by index).
-        let mut extra: Vec<Vec<StructuredNode>> = nodes.iter().map(|_| Vec::new()).collect();
-
-        for j in 1..nodes.len() {
-            if let StructuredNode::Conditional(cj) = &nodes[j] {
-                // Look for an earlier representative with the same condition.
-                for i in 0..j {
-                    if skip[i] {
-                        continue;
-                    }
-                    if let StructuredNode::Conditional(ci) = &nodes[i] {
-                        if ci.condition == cj.condition {
-                            // j is a duplicate of i; fold j's content into i.
-                            skip[j] = true;
-                            match cj.content.as_ref() {
-                                StructuredNode::Group(g) => extra[i].extend(g.children.clone()),
-                                other => extra[i].push(other.clone()),
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Rebuild the list, expanding kept ConditionalNodes with their extra content.
-        nodes
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _)| !skip[*i])
-            .map(|(i, node)| {
-                if extra[i].is_empty() {
-                    return node;
-                }
-                if let StructuredNode::Conditional(c) = node {
-                    let mut children = match *c.content {
-                        StructuredNode::Group(g) => g.children,
-                        other => vec![other],
-                    };
-                    children.append(&mut extra[i]);
-                    StructuredNode::Conditional(ConditionalNode {
-                        condition: c.condition,
-                        content: Box::new(StructuredNode::Group(GroupNode { children })),
-                    })
-                } else {
-                    node
-                }
-            })
-            .collect()
     }
 
     /// Extract common structural prefix AND suffix from all groups.
@@ -555,9 +461,56 @@ impl RecursiveMerger {
             return inputs[0].nodes.clone();
         }
 
-        // For structural merging, we just take the first input's nodes
-        // since all inputs should be structurally similar at this point
-        inputs[0].nodes.clone()
+        // Fast path: if all inputs are structurally identical, return the first.
+        let reference = &inputs[0].nodes;
+        let all_equal = inputs[1..].iter().all(|input| {
+            input.nodes.len() == reference.len()
+                && input
+                    .nodes
+                    .iter()
+                    .zip(reference.iter())
+                    .all(|(a, b)| a.structural_eq(b))
+        });
+
+        if all_equal {
+            return reference.clone();
+        }
+
+        // Branches diverged despite sharing the same selection path.
+        // Produce a best-effort union: extract the common structural prefix and
+        // suffix, then collect all structurally unique divergent nodes from every
+        // branch so that no content is silently dropped.
+        log::warn!(
+            "Structurally divergent branches share the same selection path \
+             ({} branches); content from all branches will be preserved",
+            inputs.len()
+        );
+
+        let groups: Vec<DivergentGroup> = inputs
+            .iter()
+            .map(|input| (None, input.nodes.clone()))
+            .collect();
+
+        let (common_prefix, common_suffix, divergent_groups) =
+            Self::extract_common_prefix_and_suffix(groups);
+
+        // Union divergent content, skipping structural duplicates.
+        let mut unique_divergent: Vec<StructuredNode> = Vec::new();
+        for (_, nodes) in divergent_groups {
+            for node in nodes {
+                if !unique_divergent
+                    .iter()
+                    .any(|existing| existing.structural_eq(&node))
+                {
+                    unique_divergent.push(node);
+                }
+            }
+        }
+
+        let mut result = common_prefix;
+        result.extend(unique_divergent);
+        result.extend(common_suffix);
+        merge_duplicate_conditionals(result)
     }
 
     /// Merge a single node across multiple inputs with the same structure.
@@ -727,7 +680,18 @@ impl RecursiveMerger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structured::{HeadingLevel, HeadingNode, InlineText, ParagraphNode};
+    use crate::structured::{
+        HeadingLevel, HeadingNode, InlineNode, InlineText, ParagraphNode, StructuredNode,
+    };
+    use std::collections::HashMap;
+
+    fn translated_text(entries: &[(&str, &str)]) -> InlineText {
+        let map: HashMap<String, String> = entries
+            .iter()
+            .map(|(lang, text)| ((*lang).to_string(), (*text).to_string()))
+            .collect();
+        InlineText(vec![InlineNode::TranslatedText(map)])
+    }
 
     #[test]
     fn test_merge_identical_structures() {
@@ -764,8 +728,9 @@ mod tests {
 
     #[test]
     fn test_merge_same_selection_different_structure() {
-        // Two inputs with the same selection but different structure
-        // Should merge into one (taking the first input's structure)
+        // Two inputs with the same selection but different structure.
+        // Before the fix: only branch 1 was kept (first-branch-wins).
+        // After the fix: both branches are preserved via structural union.
         let nodes1 = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Version A"),
         })];
@@ -795,8 +760,10 @@ mod tests {
         let merger = RecursiveMerger::new(vec![input1, input2]);
         let result = merger.merge();
 
-        // Same selection → merged into one (no conditional since same selection)
-        assert_eq!(result.len(), 1);
+        // No common prefix — Paragraph ≠ Heading. Divergent union: both nodes.
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], StructuredNode::Paragraph(_)));
+        assert!(matches!(result[1], StructuredNode::Heading(_)));
     }
 
     #[test]
@@ -920,6 +887,68 @@ mod tests {
     }
 
     #[test]
+    fn test_no_selection_group_content_stays_unconditional() {
+        // One state ends at depth 1 while another has an additional nested selection.
+        // The shorter path content at the deeper depth must remain unconditional,
+        // not wrapped in a synthetic unknown/default conditional.
+        let base_nodes = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("shared"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("base only"),
+            }),
+        ];
+
+        let nested_nodes = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("shared"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("nested only"),
+            }),
+        ];
+
+        let input_base = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_3"),
+                "RB_3".to_string(),
+                SelectionKind::Radio,
+            )],
+            base_nodes,
+        );
+
+        let input_nested = MergeInput::new(
+            vec![
+                Selection::standalone(
+                    SomPath::new("RB_3"),
+                    "RB_3".to_string(),
+                    SelectionKind::Radio,
+                ),
+                Selection::standalone(
+                    SomPath::new("inner.RB_1"),
+                    "RB_1".to_string(),
+                    SelectionKind::Radio,
+                ),
+            ],
+            nested_nodes,
+        );
+
+        let result = RecursiveMerger::new(vec![input_base, input_nested]).merge();
+
+        assert_eq!(result.len(), 3);
+        assert!(matches!(result[0], StructuredNode::Paragraph(_)));
+        assert!(matches!(result[1], StructuredNode::Paragraph(_)));
+        assert!(matches!(result[2], StructuredNode::Conditional(_)));
+
+        if let StructuredNode::Paragraph(p) = &result[1] {
+            assert_eq!(p.content.as_plain_text(), "base only");
+        } else {
+            panic!("Expected unconditional base-only paragraph");
+        }
+    }
+
+    #[test]
     fn test_merge_three_top_level_selections() {
         // Three different top-level selections (like Neuanlage, Änderung, Löschung)
         let nodes1 = vec![StructuredNode::Heading(HeadingNode {
@@ -1000,5 +1029,143 @@ mod tests {
         let merger = RecursiveMerger::new(vec![]);
         let result = merger.merge();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_merge_same_selection_divergent_content_preserves_both_branches() {
+        // Regression test: when two inputs share the same selection path but produce
+        // structurally different content, the branch with identical selection used to
+        // silently drop all but the first branch. The fix must preserve both.
+        //
+        // Both inputs have selection=[RB_1], but:
+        //   Branch 1: [Paragraph("Common"), Paragraph("Branch A only")]
+        //   Branch 2: [Paragraph("Common"), Heading("Branch B only")]
+        //
+        // Expected output after fix:
+        //   [Paragraph("Common"), Paragraph("Branch A only"), Heading("Branch B only")]
+        //   (common prefix extracted, divergent union, no silent drop)
+        let nodes1 = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Common"),
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Branch A only"),
+            }),
+        ];
+        let nodes2 = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Common"),
+            }),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H1,
+                content: InlineText::plain("Branch B only"),
+            }),
+        ];
+
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes1,
+        );
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            nodes2,
+        );
+
+        let merger = RecursiveMerger::new(vec![input1, input2]);
+        let result = merger.merge();
+
+        // Before the fix: result.len() == 1 (only branch A, branch B dropped).
+        // After the fix: 3 nodes — common prefix, branch A divergent, branch B divergent.
+        assert_eq!(
+            result.len(),
+            3,
+            "Both branches must be preserved, got {} node(s)",
+            result.len()
+        );
+        assert!(
+            matches!(result[0], StructuredNode::Paragraph(_)),
+            "First node must be the common paragraph"
+        );
+        assert!(
+            matches!(result[1], StructuredNode::Paragraph(_)),
+            "Second node must be branch A paragraph"
+        );
+        assert!(
+            matches!(result[2], StructuredNode::Heading(_)),
+            "Third node must be branch B heading"
+        );
+    }
+
+    #[test]
+    fn test_merge_same_selection_without_shared_language_keeps_both() {
+        // Regression for language-aware structural equality: these two nodes
+        // carry the same literal text but in disjoint language keys.
+        // They must not be treated as equal.
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("en", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let result = RecursiveMerger::new(vec![input1, input2]).merge();
+
+        assert_eq!(
+            result.len(),
+            2,
+            "No shared language means nodes must not collapse to one"
+        );
+    }
+
+    #[test]
+    fn test_merge_same_selection_with_shared_language_can_merge() {
+        let input1 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let input2 = MergeInput::new(
+            vec![Selection::standalone(
+                SomPath::new("RB_1"),
+                "RB_1".to_string(),
+                SelectionKind::Radio,
+            )],
+            vec![StructuredNode::Paragraph(ParagraphNode {
+                content: translated_text(&[("de", "Gemeinsamer Text")]),
+            })],
+        );
+
+        let result = RecursiveMerger::new(vec![input1, input2]).merge();
+
+        assert_eq!(result.len(), 1, "Shared language match should merge");
     }
 }

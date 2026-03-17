@@ -10,6 +10,7 @@
 - When making an architectural decision, always ask the user first with all possible options.
 - When asked to find the issue of a failing test, do not simplify the test itself without the users consent.
 - As soon as you have implemented a feature and all tests pass, commit it. Use a simple one-sentence commit message.
+- After finishing the implementation, review the code from a separate subagent that only knows the plan but not the actual implementation. The subagent should review the code (cleanliness, code duplication, potential bugs or missing implementation details, run clippy lints, removed or changed tests ...) and provide feedback to the main agent.
 
 ## Project-specific
 

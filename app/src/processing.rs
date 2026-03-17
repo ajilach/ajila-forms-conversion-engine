@@ -44,28 +44,25 @@ pub async fn run_and_track(
         use crate::server::{poll_progress, start_processing};
 
         match start_processing(files, profile).await {
-            Ok(session_id) => {
-                loop {
-                    async_sleep_ms(500).await;
-                    match poll_progress(session_id.clone()).await {
-                        Ok(state) => {
-                            let done = state.step == ProcessingStep::Complete
-                                || state.error.is_some();
-                            processing_state.set(state);
-                            if done {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            processing_state.set(ProcessingState {
-                                error: Some(format!("{e}")),
-                                ..ProcessingState::new()
-                            });
+            Ok(session_id) => loop {
+                async_sleep_ms(500).await;
+                match poll_progress(session_id.clone()).await {
+                    Ok(state) => {
+                        let done = state.step == ProcessingStep::Complete || state.error.is_some();
+                        processing_state.set(state);
+                        if done {
                             break;
                         }
                     }
+                    Err(e) => {
+                        processing_state.set(ProcessingState {
+                            error: Some(format!("{e}")),
+                            ..ProcessingState::new()
+                        });
+                        break;
+                    }
                 }
-            }
+            },
             Err(e) => {
                 processing_state.set(ProcessingState {
                     error: Some(format!("{e}")),

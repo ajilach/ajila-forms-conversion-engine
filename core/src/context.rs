@@ -29,7 +29,10 @@ pub struct Context {
 impl Context {
     /// Create a new context with the specified language and XFA variables.
     pub fn new(language: String, variables: HashMap<String, String>) -> Self {
-        Self { language, variables }
+        Self {
+            language,
+            variables,
+        }
     }
 
     /// Create a new context with only a language (no XFA variables).
