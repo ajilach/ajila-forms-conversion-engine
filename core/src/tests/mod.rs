@@ -16320,23 +16320,38 @@ fn test_aaai_has_address_and_individual_fragments() {
 
 #[test]
 fn test_aaal_en_firma_company_debug() {
-    // Diagnostic test: check if Company presence is being set when Firma is selected in EN.
-    let mut bp =
-        Blueprint::from_pdf(helpers::input_path("AAAL_019_EN.pdf")).expect("Failed to load EN");
-    let form = bp.form_mut().expect("XFA PDF");
+    // Debug: find Company nodes in XFA tree and check their parsed structure
+    for file in ["AAAL_019_DE.pdf", "AAAL_019_EN.pdf"] {
+        let mut bp = Blueprint::from_pdf(helpers::input_path(file)).expect("load");
+        let form = bp.form_mut().expect("XFA PDF");
 
-    let result = form.set_value_as_user(
-        "Page.FormConfigurator_ClientType.ClientType.CL_ClientType",
-        "Firma",
-    );
-    println!("set_value_as_user result: {result:?}");
-    form.refresh().expect("refresh");
+        fn find_company_nodes(nodes: &[crate::xfa::XfaNode], path: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            for node in nodes {
+                let node_path = match &node.name {
+                    Some(n) if path.is_empty() => n.clone(),
+                    Some(n) => format!("{path}.{n}"),
+                    None => path.to_string(),
+                };
+                if node.name.as_deref() == Some("Company") {
+                    let kind = format!("{:?}", node.kind).chars().take(20).collect::<String>();
+                    let presence = format!("{:?}", node.presence);
+                    let child_names: Vec<_> = node.children.iter()
+                        .filter_map(|c| c.name.as_deref())
+                        .collect();
+                    out.push(format!("  path={node_path} kind={kind} presence={presence} children={child_names:?}"));
+                }
+                out.extend(find_company_nodes(&node.children, &node_path));
+            }
+            out
+        }
 
-    let changes = form.get_presence_changes();
-    let company_changes: std::collections::HashMap<_, _> =
-        changes.iter().filter(|(k, _)| k.contains("Company")).collect();
-    println!("Company presence changes: {company_changes:?}");
-    println!("All presence changes ({} total): {:?}", changes.len(), changes);
+        let company_nodes = find_company_nodes(form.xfa_nodes(), "");
+        println!("\n[{file}] Company nodes in XFA tree ({}):", company_nodes.len());
+        for s in &company_nodes {
+            println!("{s}");
+        }
+    }
 }
 
 #[test]
