@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::structured::{
-    ConditionalNode, FieldType, GroupNode, InlineNode, InlineText, NameValue, StructuredNode,
-    TranslatableString,
+    ConditionalNode, FieldNode, FieldType, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
+    InlineNode, InlineText, ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode,
+    TableHeader, TableNode, TableRow, TranslatableString,
 };
 
 pub(crate) const MISSING_TRANSLATION_TEXT: &str = "MISSING TRANSLATION";
@@ -334,5 +335,959 @@ fn ensure_all_languages(map: &mut HashMap<String, String>, langs: &[String], pla
                 map.insert(lang.clone(), placeholder.to_string());
             }
         }
+    }
+}
+
+// ============================================================================
+// Policy infrastructure for parameterised merge strategies
+// ============================================================================
+
+/// Context for a pairwise node-list merge.
+pub(crate) struct PairwiseMergeCtx<'a> {
+    pub base_lang: &'a str,
+    pub other_lang: &'a str,
+}
+
+/// Aligned entry produced by LCS alignment, tagged with its origin.
+///
+/// The inner `StructuredNode` is already merged (for `Matched`) but NOT
+/// localised (for `LeftOnly` / `RightOnly`).  Consolidation passes can
+/// therefore inspect un-localised content before the final collection step
+/// applies [`localize_structured_node`].
+pub(crate) enum AlignedNode {
+    /// Both sides matched — contains the already-merged node.
+    Matched(StructuredNode),
+    /// Present only on the left (base) side.  Contains the original node.
+    LeftOnly(StructuredNode),
+    /// Present only on the right (other) side.  Contains the original node.
+    RightOnly(StructuredNode),
+}
+
+/// Policy trait for resolving conflicts during LCS-based node alignment.
+///
+/// Implementors define how nodes are matched and how matched pairs are merged.
+/// Unmatched nodes are kept raw in [`AlignedNode`] and processed by the caller.
+pub(crate) trait MergePolicy {
+    /// Decide whether two nodes should be paired during LCS alignment.
+    fn nodes_match(a: &StructuredNode, b: &StructuredNode) -> bool;
+
+    /// Combine two paired nodes into one.
+    fn merge_matched(
+        ctx: &PairwiseMergeCtx,
+        a: &StructuredNode,
+        b: &StructuredNode,
+    ) -> StructuredNode;
+}
+
+/// Align two node lists via LCS and resolve each entry through the given
+/// [`MergePolicy`].  Returns tagged [`AlignedNode`] entries so callers can
+/// post-process (e.g. orphan consolidation) before collecting the final list.
+pub(crate) fn align_and_tag<P: MergePolicy>(
+    ctx: &PairwiseMergeCtx,
+    base: &[StructuredNode],
+    other: &[StructuredNode],
+) -> Vec<AlignedNode> {
+    let dp = lcs_table_with(base, other, P::nodes_match);
+    let alignment = lcs_align_with(base, other, &dp, P::nodes_match);
+
+    alignment
+        .into_iter()
+        .map(|(ai, bi)| match (ai, bi) {
+            (Some(a), Some(b)) => AlignedNode::Matched(P::merge_matched(ctx, &base[a], &other[b])),
+            (Some(a), None) => AlignedNode::LeftOnly(base[a].clone()),
+            (None, Some(b)) => AlignedNode::RightOnly(other[b].clone()),
+            (None, None) => unreachable!(),
+        })
+        .collect()
+}
+
+// ============================================================================
+// Translation merge policy
+// ============================================================================
+
+/// Policy that merges two single-language trees into a bilingual tree.
+///
+/// * Matching uses relaxed type/shape comparison ([`node_matches_for_similarity`]).
+/// * Matched nodes are merged recursively by combining text into `TranslatedText`.
+/// * Unmatched nodes are kept raw for later localisation.
+pub(crate) struct TranslationPolicy;
+
+impl MergePolicy for TranslationPolicy {
+    fn nodes_match(a: &StructuredNode, b: &StructuredNode) -> bool {
+        node_matches_for_similarity(a, b)
+    }
+
+    fn merge_matched(
+        ctx: &PairwiseMergeCtx,
+        a: &StructuredNode,
+        b: &StructuredNode,
+    ) -> StructuredNode {
+        merge_node(a, ctx.base_lang, b, ctx.other_lang)
+    }
+}
+
+// ============================================================================
+// Node matching (relaxed, for translation alignment)
+// ============================================================================
+
+/// Relaxed node matching for translation alignment and similarity pre-check.
+///
+/// Matches nodes based on their high-level type and shape without requiring
+/// identical deep structure.  This allows translation pairs with minor layout
+/// differences to be correctly aligned.
+///
+/// Rules:
+/// - Headings: same level required
+/// - Fields: same `FieldType` variant required (FieldIds may differ across languages)
+/// - Tables: same header column count required
+/// - GridLayouts: same column count required (element count may differ)
+/// - Paragraphs, Images, Groups, Conditionals, Repeatables, Lists, Empty: match by type only
+pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
+    match (a, b) {
+        (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
+            ha.level.as_u8() == hb.level.as_u8()
+        }
+        (StructuredNode::Paragraph(_), StructuredNode::Paragraph(_)) => true,
+        (StructuredNode::Image(_), StructuredNode::Image(_)) => true,
+        (StructuredNode::Table(ta), StructuredNode::Table(tb)) => {
+            let a_cols = ta.header.as_ref().map_or(0, |h| h.cells.len());
+            let b_cols = tb.header.as_ref().map_or(0, |h| h.cells.len());
+            a_cols == b_cols
+        }
+        (StructuredNode::Field(fa), StructuredNode::Field(fb)) => {
+            std::mem::discriminant(&fa.input_type) == std::mem::discriminant(&fb.input_type)
+        }
+        (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
+        (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
+        (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
+            a.condition == b.condition
+        }
+        (StructuredNode::Empty, StructuredNode::Empty) => true,
+        (StructuredNode::GridLayout(ga), StructuredNode::GridLayout(gb)) => {
+            ga.columns == gb.columns
+        }
+        (StructuredNode::List(la), StructuredNode::List(lb)) => la.list_style == lb.list_style,
+        _ => false,
+    }
+}
+
+// ============================================================================
+// Localisation — tag a node tree with a single source language
+// ============================================================================
+
+fn localize_inline_node(node: &InlineNode, lang: &str) -> InlineNode {
+    match node {
+        InlineNode::Text(text) => {
+            InlineNode::TranslatedText(HashMap::from([(lang.to_string(), text.clone())]))
+        }
+        InlineNode::TranslatedText(map) => InlineNode::TranslatedText(map.clone()),
+        InlineNode::Link(link) => InlineNode::Link(crate::structured::LinkNode {
+            href: link.href.clone(),
+            content: localize_inline_text(&link.content, lang),
+        }),
+        InlineNode::Strong(inner) => {
+            InlineNode::Strong(Box::new(localize_inline_node(inner, lang)))
+        }
+        InlineNode::Emphasis(inner) => {
+            InlineNode::Emphasis(Box::new(localize_inline_node(inner, lang)))
+        }
+    }
+}
+
+fn localize_inline_text(text: &InlineText, lang: &str) -> InlineText {
+    InlineText(
+        text.0
+            .iter()
+            .map(|node| localize_inline_node(node, lang))
+            .collect(),
+    )
+}
+
+fn localize_translatable_string(value: &TranslatableString, lang: &str) -> TranslatableString {
+    match value {
+        TranslatableString::Plain(text) => {
+            TranslatableString::Translated(HashMap::from([(lang.to_string(), text.clone())]))
+        }
+        TranslatableString::Translated(map) => TranslatableString::Translated(map.clone()),
+    }
+}
+
+fn localize_field_type(field_type: &FieldType, lang: &str) -> FieldType {
+    match field_type {
+        FieldType::Radio { options } => FieldType::Radio {
+            options: options
+                .iter()
+                .map(|option| NameValue {
+                    name: localize_translatable_string(&option.name, lang),
+                    value: option.value.clone(),
+                })
+                .collect(),
+        },
+        FieldType::Select { options } => FieldType::Select {
+            options: options
+                .iter()
+                .map(|option| NameValue {
+                    name: localize_translatable_string(&option.name, lang),
+                    value: option.value.clone(),
+                })
+                .collect(),
+        },
+        _ => field_type.clone(),
+    }
+}
+
+fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode {
+    match node {
+        StructuredNode::Heading(heading) => StructuredNode::Heading(HeadingNode {
+            level: heading.level,
+            content: localize_inline_text(&heading.content, lang),
+        }),
+        StructuredNode::Paragraph(paragraph) => StructuredNode::Paragraph(ParagraphNode {
+            content: localize_inline_text(&paragraph.content, lang),
+        }),
+        StructuredNode::Image(image) => StructuredNode::Image(image.clone()),
+        StructuredNode::Table(table) => StructuredNode::Table(TableNode {
+            header: table.header.as_ref().map(|header| TableHeader {
+                cells: header
+                    .cells
+                    .iter()
+                    .map(|cell| localize_structured_node(cell, lang))
+                    .collect(),
+            }),
+            rows: table
+                .rows
+                .iter()
+                .map(|row| TableRow {
+                    cells: row
+                        .cells
+                        .iter()
+                        .map(|cell| localize_structured_node(cell, lang))
+                        .collect(),
+                })
+                .collect(),
+            caption: table
+                .caption
+                .as_ref()
+                .map(|caption| localize_inline_text(caption, lang)),
+        }),
+        StructuredNode::Field(field) => StructuredNode::Field(FieldNode {
+            name: field.name.clone(),
+            som_path: field.som_path.clone(),
+            label: field
+                .label
+                .as_ref()
+                .map(|label| localize_inline_text(label, lang)),
+            input_type: localize_field_type(&field.input_type, lang),
+            value: field.value.clone(),
+            placeholder: field
+                .placeholder
+                .as_ref()
+                .map(|placeholder| localize_translatable_string(placeholder, lang)),
+        }),
+        StructuredNode::Repeatable(repeatable) => StructuredNode::Repeatable(RepeatableNode {
+            item: Box::new(localize_structured_node(&repeatable.item, lang)),
+            min_occurrences: repeatable.min_occurrences,
+            max_occurrences: repeatable.max_occurrences,
+        }),
+        StructuredNode::Group(group) => StructuredNode::Group(GroupNode {
+            children: group
+                .children
+                .iter()
+                .map(|child| localize_structured_node(child, lang))
+                .collect(),
+        }),
+        StructuredNode::Conditional(conditional) => StructuredNode::Conditional(ConditionalNode {
+            condition: conditional.condition.clone(),
+            content: Box::new(localize_structured_node(&conditional.content, lang)),
+        }),
+        StructuredNode::Empty => StructuredNode::Empty,
+        StructuredNode::GridLayout(grid) => StructuredNode::GridLayout(GridLayout {
+            columns: grid.columns,
+            elements: grid
+                .elements
+                .iter()
+                .map(|element| GridLayoutElement {
+                    span: element.span,
+                    node: localize_structured_node(&element.node, lang),
+                })
+                .collect(),
+        }),
+        StructuredNode::List(list) => StructuredNode::List(ListNode {
+            list_style: list.list_style,
+            items: list
+                .items
+                .iter()
+                .map(|item| localize_inline_text(item, lang))
+                .collect(),
+        }),
+    }
+}
+
+// ============================================================================
+// Translation merge — node list with consolidation
+// ============================================================================
+
+fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
+    match node {
+        InlineNode::TranslatedText(map) => {
+            for lang in map.keys() {
+                if !langs.contains(lang) {
+                    langs.push(lang.clone());
+                }
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.content.0 {
+                collect_inline_languages(child, langs);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_inline_languages(inner, langs);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+fn collect_inline_text_languages(text: &InlineText) -> Vec<String> {
+    let mut langs = Vec::new();
+    for node in &text.0 {
+        collect_inline_languages(node, &mut langs);
+    }
+    langs
+}
+
+pub(crate) fn prepend_orphan_text_to_matched_paragraph(
+    entry: &mut AlignedNode,
+    text: &str,
+    lang: &str,
+    base_lang: &str,
+    other_lang: &str,
+) -> bool {
+    if let AlignedNode::Matched(StructuredNode::Paragraph(para)) = entry {
+        if let Some(InlineNode::TranslatedText(map)) = para.content.0.first_mut() {
+            map.entry(base_lang.to_string()).or_default();
+            map.entry(other_lang.to_string()).or_default();
+            let existing = map.entry(lang.to_string()).or_default();
+            *existing = format!("{}{}", text, existing);
+            return true;
+        }
+
+        let mut map: HashMap<String, String> = collect_inline_text_languages(&para.content)
+            .into_iter()
+            .map(|existing_lang| (existing_lang, String::new()))
+            .collect();
+        map.entry(base_lang.to_string()).or_default();
+        map.entry(other_lang.to_string()).or_default();
+        map.insert(lang.to_string(), text.to_string());
+
+        para.content.0.insert(0, InlineNode::TranslatedText(map));
+        return true;
+    }
+
+    false
+}
+
+/// Merge two node lists from different languages using LCS alignment.
+///
+/// Uses the [`TranslationPolicy`] for alignment and merging, then runs
+/// orphan consolidation passes to absorb split-paragraph artifacts and
+/// reorder-mismatched conditionals.
+pub(crate) fn merge_node_lists(
+    base: &[StructuredNode],
+    base_lang: &str,
+    other: &[StructuredNode],
+    other_lang: &str,
+) -> Vec<StructuredNode> {
+    let ctx = PairwiseMergeCtx {
+        base_lang,
+        other_lang,
+    };
+    let mut entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
+
+    consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
+    consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
+
+    entries
+        .into_iter()
+        .map(|e| match e {
+            AlignedNode::Matched(node) => node,
+            AlignedNode::LeftOnly(node) => localize_structured_node(&node, base_lang),
+            AlignedNode::RightOnly(node) => localize_structured_node(&node, other_lang),
+        })
+        .collect()
+}
+
+/// Post-process aligned entries to absorb orphaned (unmatched) `Paragraph`
+/// nodes into an adjacent matched `Paragraph`.
+///
+/// When one language splits text into multiple paragraphs while another keeps
+/// it as a single paragraph, LCS alignment leaves some paragraphs unmatched.
+/// This step detects such orphans and prepends their text to the nearest
+/// matched paragraph's `TranslatedText` map.
+fn consolidate_orphan_paragraphs(
+    entries: &mut Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+) {
+    let len = entries.len();
+    let mut absorbed = vec![false; len];
+
+    let mut prepend_ops: Vec<(usize, usize, String, String)> = Vec::new();
+    for i in 0..len {
+        if absorbed[i] {
+            continue;
+        }
+
+        // Only absorb RightOnly paragraphs (other-language orphans).
+        let (orphan_lang, orphan_text) = match &entries[i] {
+            AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
+                (other_lang, p.content.as_plain_text())
+            }
+            _ => continue,
+        };
+        if orphan_text.is_empty() {
+            continue;
+        }
+
+        // Search forward for the nearest Matched(Paragraph).
+        let mut target = None;
+        for j in (i + 1)..len {
+            if absorbed[j] {
+                continue;
+            }
+            match &entries[j] {
+                AlignedNode::Matched(StructuredNode::Paragraph(_)) => {
+                    target = Some(j);
+                    break;
+                }
+                AlignedNode::RightOnly(StructuredNode::Paragraph(_)) => continue,
+                _ => break,
+            }
+        }
+
+        if let Some(j) = target {
+            prepend_ops.push((i, j, orphan_text, orphan_lang.to_string()));
+        }
+    }
+
+    for (orphan_idx, target, text, lang) in prepend_ops.into_iter().rev() {
+        if prepend_orphan_text_to_matched_paragraph(
+            &mut entries[target],
+            &text,
+            &lang,
+            base_lang,
+            other_lang,
+        ) {
+            absorbed[orphan_idx] = true;
+        }
+    }
+
+    for i in (0..len).rev() {
+        if absorbed[i] {
+            entries.remove(i);
+        }
+    }
+}
+
+/// Post-process aligned entries to merge orphaned `Conditional` nodes that
+/// have the same `FieldCondition` but ended up unmatched because the two
+/// languages emitted them in a different order.
+fn consolidate_orphan_conditionals(
+    entries: &mut Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+) {
+    let len = entries.len();
+    let mut other_only_indices: Vec<usize> = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        if let AlignedNode::RightOnly(StructuredNode::Conditional(_)) = entry {
+            other_only_indices.push(i);
+        }
+    }
+
+    if other_only_indices.is_empty() {
+        return;
+    }
+
+    let mut merge_ops: Vec<(usize, usize)> = Vec::new();
+    let mut consumed_other: Vec<bool> = vec![false; other_only_indices.len()];
+
+    for i in 0..len {
+        if let AlignedNode::LeftOnly(StructuredNode::Conditional(base_cond)) = &entries[i] {
+            for (k, &other_idx) in other_only_indices.iter().enumerate() {
+                if consumed_other[k] {
+                    continue;
+                }
+                if let AlignedNode::RightOnly(StructuredNode::Conditional(other_cond)) =
+                    &entries[other_idx]
+                {
+                    if base_cond.condition == other_cond.condition {
+                        merge_ops.push((i, other_idx));
+                        consumed_other[k] = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if merge_ops.is_empty() {
+        return;
+    }
+
+    let mut to_remove = vec![false; len];
+    for (base_idx, other_idx) in merge_ops {
+        let base_node = std::mem::replace(
+            &mut entries[base_idx],
+            AlignedNode::LeftOnly(StructuredNode::Empty),
+        );
+        let other_node = std::mem::replace(
+            &mut entries[other_idx],
+            AlignedNode::RightOnly(StructuredNode::Empty),
+        );
+
+        if let (AlignedNode::LeftOnly(base_sn), AlignedNode::RightOnly(other_sn)) =
+            (&base_node, &other_node)
+        {
+            let merged = merge_node(base_sn, base_lang, other_sn, other_lang);
+            entries[base_idx] = AlignedNode::Matched(merged);
+        }
+        to_remove[other_idx] = true;
+    }
+
+    for i in (0..len).rev() {
+        if to_remove[i] {
+            entries.remove(i);
+        }
+    }
+}
+
+// ============================================================================
+// Recursive node merging (translation)
+// ============================================================================
+
+/// Merge two structurally-equivalent nodes from different languages.
+/// Combines text content into multilingual `TranslatedText` / `TranslatableString`.
+fn merge_node(
+    base: &StructuredNode,
+    base_lang: &str,
+    other: &StructuredNode,
+    other_lang: &str,
+) -> StructuredNode {
+    match (base, other) {
+        (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
+            StructuredNode::Heading(HeadingNode {
+                level: a.level,
+                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+            })
+        }
+        (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
+            StructuredNode::Paragraph(ParagraphNode {
+                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+            })
+        }
+        (StructuredNode::Image(a), StructuredNode::Image(_b)) => StructuredNode::Image(a.clone()),
+        (StructuredNode::Table(a), StructuredNode::Table(b)) => {
+            StructuredNode::Table(merge_table(a, base_lang, b, other_lang))
+        }
+        (StructuredNode::Field(a), StructuredNode::Field(b)) => {
+            StructuredNode::Field(merge_field(a, base_lang, b, other_lang))
+        }
+        (StructuredNode::Repeatable(a), StructuredNode::Repeatable(b)) => {
+            StructuredNode::Repeatable(RepeatableNode {
+                item: Box::new(merge_node(&a.item, base_lang, &b.item, other_lang)),
+                min_occurrences: a.min_occurrences,
+                max_occurrences: a.max_occurrences,
+            })
+        }
+        (StructuredNode::Group(a), StructuredNode::Group(b)) => {
+            let children = merge_node_lists(&a.children, base_lang, &b.children, other_lang);
+            StructuredNode::Group(GroupNode { children })
+        }
+        (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
+            StructuredNode::Conditional(ConditionalNode {
+                condition: a.condition.clone(),
+                content: Box::new(merge_node(&a.content, base_lang, &b.content, other_lang)),
+            })
+        }
+        (StructuredNode::Empty, StructuredNode::Empty) => StructuredNode::Empty,
+        (StructuredNode::GridLayout(a), StructuredNode::GridLayout(b)) => {
+            let elements = merge_grid_elements(&a.elements, base_lang, &b.elements, other_lang);
+            StructuredNode::GridLayout(GridLayout {
+                columns: a.columns,
+                elements,
+            })
+        }
+        (StructuredNode::List(a), StructuredNode::List(b)) => {
+            let items = merge_list_items(&a.items, base_lang, &b.items, other_lang);
+            StructuredNode::List(ListNode {
+                list_style: a.list_style,
+                items,
+            })
+        }
+        // Mismatched variants can occur in recursive cases (e.g. different
+        // sub-structures inside Repeatable or Conditional content).  Keep base.
+        _ => base.clone(),
+    }
+}
+
+// ============================================================================
+// InlineText merging
+// ============================================================================
+
+/// Merge two `InlineText`s from different languages.
+///
+/// If both have the same number of inline nodes with matching types, merge
+/// element-wise.  Otherwise, produce a single `TranslatedText` node from each
+/// side's plain text.
+fn merge_inline_text(
+    base: &InlineText,
+    base_lang: &str,
+    other: &InlineText,
+    other_lang: &str,
+) -> InlineText {
+    if base.0.len() == other.0.len()
+        && base
+            .0
+            .iter()
+            .zip(other.0.iter())
+            .all(|(a, b)| inline_node_variant_eq(a, b))
+    {
+        let nodes: Vec<InlineNode> = base
+            .0
+            .iter()
+            .zip(other.0.iter())
+            .map(|(a, b)| merge_inline_node(a, base_lang, b, other_lang))
+            .collect();
+        return InlineText(nodes);
+    }
+
+    let mut map = inline_text_to_text_map(base, base_lang);
+    map.extend(inline_text_to_text_map(other, other_lang));
+
+    if map.is_empty() {
+        InlineText::empty()
+    } else {
+        InlineText(vec![InlineNode::TranslatedText(map)])
+    }
+}
+
+/// Extract a language→text map from an `InlineText`.
+fn inline_text_to_text_map(text: &InlineText, lang: &str) -> HashMap<String, String> {
+    if text.0.len() == 1 {
+        if let Some(InlineNode::TranslatedText(existing)) = text.0.first() {
+            return existing.clone();
+        }
+    }
+
+    let plain = text.as_plain_text();
+    if plain.is_empty() {
+        HashMap::new()
+    } else {
+        HashMap::from([(lang.to_string(), plain)])
+    }
+}
+
+/// Extract a language→text map from an `InlineNode`.
+fn into_text_map(node: &InlineNode, lang: &str) -> HashMap<String, String> {
+    match node {
+        InlineNode::Text(s) => HashMap::from([(lang.to_string(), s.clone())]),
+        InlineNode::TranslatedText(m) => m.clone(),
+        _ => HashMap::new(),
+    }
+}
+
+/// Check if two `InlineNode`s have the same variant (ignoring content).
+fn inline_node_variant_eq(a: &InlineNode, b: &InlineNode) -> bool {
+    matches!(
+        (a, b),
+        (InlineNode::Text(_), InlineNode::Text(_))
+            | (InlineNode::TranslatedText(_), InlineNode::Text(_))
+            | (InlineNode::Text(_), InlineNode::TranslatedText(_))
+            | (InlineNode::TranslatedText(_), InlineNode::TranslatedText(_))
+            | (InlineNode::Link(_), InlineNode::Link(_))
+            | (InlineNode::Strong(_), InlineNode::Strong(_))
+            | (InlineNode::Emphasis(_), InlineNode::Emphasis(_))
+    )
+}
+
+/// Merge two `InlineNode`s from different languages.
+fn merge_inline_node(
+    base: &InlineNode,
+    base_lang: &str,
+    other: &InlineNode,
+    other_lang: &str,
+) -> InlineNode {
+    match (base, other) {
+        (
+            InlineNode::Text(_) | InlineNode::TranslatedText(_),
+            InlineNode::Text(_) | InlineNode::TranslatedText(_),
+        ) => {
+            let mut map = into_text_map(base, base_lang);
+            map.extend(into_text_map(other, other_lang));
+            InlineNode::TranslatedText(map)
+        }
+        (InlineNode::Strong(a), InlineNode::Strong(b)) => {
+            InlineNode::Strong(Box::new(merge_inline_node(a, base_lang, b, other_lang)))
+        }
+        (InlineNode::Emphasis(a), InlineNode::Emphasis(b)) => {
+            InlineNode::Emphasis(Box::new(merge_inline_node(a, base_lang, b, other_lang)))
+        }
+        (InlineNode::Link(a), InlineNode::Link(b)) => {
+            InlineNode::Link(crate::structured::LinkNode {
+                href: a.href.clone(),
+                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+            })
+        }
+        // Mismatched variants — shouldn't happen after variant check, but
+        // keep base as a safe fallback.
+        _ => base.clone(),
+    }
+}
+
+// ============================================================================
+// Field merging
+// ============================================================================
+
+/// Merge two `Option<T>` values, using a merge function when both are `Some`.
+fn merge_option<T: Clone>(
+    base: &Option<T>,
+    other: &Option<T>,
+    merge_fn: impl FnOnce(&T, &T) -> T,
+) -> Option<T> {
+    match (base, other) {
+        (Some(a), Some(b)) => Some(merge_fn(a, b)),
+        (Some(a), None) => Some(a.clone()),
+        (None, Some(b)) => Some(b.clone()),
+        (None, None) => None,
+    }
+}
+
+/// Merge two `FieldNode`s from different languages.
+fn merge_field(
+    base: &FieldNode,
+    base_lang: &str,
+    other: &FieldNode,
+    other_lang: &str,
+) -> FieldNode {
+    let label = merge_option(&base.label, &other.label, |a, b| {
+        merge_inline_text(a, base_lang, b, other_lang)
+    });
+
+    let placeholder = merge_option(&base.placeholder, &other.placeholder, |a, b| {
+        a.merge(base_lang, b, other_lang)
+    });
+
+    let input_type = merge_field_type(&base.input_type, base_lang, &other.input_type, other_lang);
+
+    FieldNode {
+        name: base.name.clone(),
+        som_path: base.som_path.clone(),
+        label,
+        input_type,
+        value: base.value.clone(),
+        placeholder,
+    }
+}
+
+/// Merge two `FieldType`s, combining option names for Radio/Select.
+fn merge_field_type(
+    base: &FieldType,
+    base_lang: &str,
+    other: &FieldType,
+    other_lang: &str,
+) -> FieldType {
+    match (base, other) {
+        (FieldType::Radio { options: opts_a }, FieldType::Radio { options: opts_b }) => {
+            FieldType::Radio {
+                options: merge_name_values(opts_a, base_lang, opts_b, other_lang),
+            }
+        }
+        (FieldType::Select { options: opts_a }, FieldType::Select { options: opts_b }) => {
+            FieldType::Select {
+                options: merge_name_values(opts_a, base_lang, opts_b, other_lang),
+            }
+        }
+        _ => base.clone(),
+    }
+}
+
+/// Merge two `GridLayout` element vectors.
+fn merge_grid_elements(
+    base: &[GridLayoutElement],
+    base_lang: &str,
+    other: &[GridLayoutElement],
+    other_lang: &str,
+) -> Vec<GridLayoutElement> {
+    if base.len() != other.len() {
+        log::warn!(
+            "GridLayout element count mismatch when merging {} and {} translations: \
+             {} vs {} elements; unmatched elements will be preserved from the longer side",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut elements: Vec<GridLayoutElement> = base
+        .iter()
+        .zip(other.iter())
+        .map(|(ea, eb)| GridLayoutElement {
+            span: ea.span,
+            node: merge_node(&ea.node, base_lang, &eb.node, other_lang),
+        })
+        .collect();
+    elements.extend(base[paired..].iter().cloned());
+    elements.extend(other[paired..].iter().cloned());
+    elements
+}
+
+/// Merge two `List` item vectors.
+fn merge_list_items(
+    base: &[InlineText],
+    base_lang: &str,
+    other: &[InlineText],
+    other_lang: &str,
+) -> Vec<InlineText> {
+    if base.len() != other.len() {
+        log::warn!(
+            "List item count mismatch when merging {} and {} translations: \
+             {} vs {} items; unmatched items will be preserved from the longer side",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut items: Vec<InlineText> = base
+        .iter()
+        .zip(other.iter())
+        .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
+        .collect();
+    for ia in &base[paired..] {
+        let map = inline_text_to_text_map(ia, base_lang);
+        items.push(if map.is_empty() {
+            ia.clone()
+        } else {
+            InlineText(vec![InlineNode::TranslatedText(map)])
+        });
+    }
+    for ib in &other[paired..] {
+        let map = inline_text_to_text_map(ib, other_lang);
+        items.push(if map.is_empty() {
+            ib.clone()
+        } else {
+            InlineText(vec![InlineNode::TranslatedText(map)])
+        });
+    }
+    items
+}
+
+/// Merge two `NameValue` vectors by zipping and merging names.
+fn merge_name_values(
+    base: &[NameValue],
+    base_lang: &str,
+    other: &[NameValue],
+    other_lang: &str,
+) -> Vec<NameValue> {
+    if base.len() != other.len() {
+        log::warn!(
+            "Option count mismatch when merging {} and {} translations: \
+             {} vs {} options; unmatched options will be preserved as \
+             single-language entries",
+            base_lang,
+            other_lang,
+            base.len(),
+            other.len()
+        );
+    }
+    let paired = base.len().min(other.len());
+    let mut options: Vec<NameValue> = base
+        .iter()
+        .zip(other.iter())
+        .map(|(a, b)| NameValue {
+            name: a.name.merge(base_lang, &b.name, other_lang),
+            value: a.value.clone(),
+        })
+        .collect();
+    for a in &base[paired..] {
+        let name = match &a.name {
+            TranslatableString::Plain(s) => {
+                TranslatableString::Translated(HashMap::from([(base_lang.to_string(), s.clone())]))
+            }
+            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
+        };
+        options.push(NameValue {
+            name,
+            value: a.value.clone(),
+        });
+    }
+    for b in &other[paired..] {
+        let name = match &b.name {
+            TranslatableString::Plain(s) => {
+                TranslatableString::Translated(HashMap::from([(other_lang.to_string(), s.clone())]))
+            }
+            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
+        };
+        options.push(NameValue {
+            name,
+            value: b.value.clone(),
+        });
+    }
+    options
+}
+
+// ============================================================================
+// Table merging
+// ============================================================================
+
+/// Merge two `TableNode`s from different languages.
+pub(crate) fn merge_table(
+    base: &TableNode,
+    base_lang: &str,
+    other: &TableNode,
+    other_lang: &str,
+) -> TableNode {
+    let header = merge_option(&base.header, &other.header, |h1, h2| {
+        let cells = merge_node_lists(&h1.cells, base_lang, &h2.cells, other_lang);
+        TableHeader { cells }
+    });
+
+    let rows: Vec<TableRow> = {
+        if base.rows.len() != other.rows.len() {
+            log::warn!(
+                "Table row count mismatch when merging {} and {} translations: \
+                 {} vs {} rows; unmatched rows will be preserved from the longer side",
+                base_lang,
+                other_lang,
+                base.rows.len(),
+                other.rows.len()
+            );
+        }
+        let paired = base.rows.len().min(other.rows.len());
+        let mut rows: Vec<TableRow> = base
+            .rows
+            .iter()
+            .zip(other.rows.iter())
+            .map(|(r1, r2)| {
+                let cells = merge_node_lists(&r1.cells, base_lang, &r2.cells, other_lang);
+                TableRow { cells }
+            })
+            .collect();
+        rows.extend(base.rows[paired..].iter().cloned());
+        rows.extend(other.rows[paired..].iter().cloned());
+        rows
+    };
+
+    let caption = merge_option(&base.caption, &other.caption, |a, b| {
+        merge_inline_text(a, base_lang, b, other_lang)
+    });
+
+    TableNode {
+        header,
+        rows,
+        caption,
     }
 }
