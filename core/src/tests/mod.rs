@@ -8825,6 +8825,199 @@ fn test_aaam_multilingual_translation_triplet_same_node_ubs_status_change() {
     );
 }
 
+#[test]
+fn test_aaam_h2_headings_per_radio_option() {
+    // Verify the correct headings are present for each radio selection.
+    //
+    // "Kontoinhaber" (RB_1):
+    //   h2: Kontoinhaber
+    //   h2: Wirtschaftliche Berechtigung
+    //   h2: Erklärung Nicht-US-Person (natürliche Personen)
+    //   h2: Statusänderung oder Veränderung der Umstände
+    //   h2: Unterschrift(en)
+    //
+    // "Weiterer wirtschaftlich Berechtigter" (RB_2):
+    //   h2: Weiterer wirtschaftlich Berechtigter
+    //   h2: Wirtschaftliche Berechtigung
+    //   h2: Erklärung über den Status der Relevanten Person als Nicht-US-/US-Person
+    //   h2: Statusänderung oder Veränderung der Umstände
+    //   h2: Unterschrift(en)
+    //
+    // "Kontoinhaber ohne Custody" / PIC (RB_3):
+    //   h2: PIC
+    //   h2: Erklärung über den Status als Nicht-US/US-Person (natürliche Personen)
+    //   h2: Statusänderung oder Veränderung der Umstände
+    //   h2: Unterschrift(en)
+    use crate::context::Context;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAM_019_DE.pdf"))
+        .expect("Failed to create Blueprint from AAAM DE PDF");
+    let form_states = bp.states().expect("Failed to collect exhaustive AAAM states");
+
+    assert_eq!(
+        form_states.len(),
+        6,
+        "AAAM should have 6 exhaustive states (3 radio options × 2 dropdown states)"
+    );
+
+    let context = Context::new("de".to_string(), HashMap::new());
+
+    // Collect ALL headings (H2 and H3) per state, across all pages.
+    let all_state_headings: Vec<Vec<(u8, String)>> = form_states
+        .iter()
+        .map(|state| collect_headings(&state.structured(context.clone()).content))
+        .collect();
+
+    let has_h2 = |hs: &Vec<(u8, String)>, needle: &str| -> bool {
+        hs.iter().any(|(l, t)| *l == 2 && t.contains(needle))
+    };
+    let has_heading = |hs: &Vec<(u8, String)>, level: u8, needle: &str| -> bool {
+        hs.iter().any(|(l, t)| *l == level && t.contains(needle))
+    };
+
+    // Find states where `positive_id` appears as H2 and none of `exclude_h2s` appear.
+    // Then assert at least one such state contains all `expected` headings at their levels.
+    let check_scenario = |positive_id: &str,
+                          exclude_h2s: &[&str],
+                          expected: &[(u8, &str)]| {
+        let matching: Vec<&Vec<(u8, String)>> = all_state_headings
+            .iter()
+            .filter(|hs| {
+                has_h2(hs, positive_id)
+                    && exclude_h2s.iter().all(|neg| !has_h2(hs, neg))
+            })
+            .collect();
+
+        assert!(
+            !matching.is_empty(),
+            "No state found with H2 '{positive_id}' (excluding: {exclude_h2s:?}).\n\
+             All state headings: {all_state_headings:?}",
+        );
+
+        let found = matching.iter().any(|hs| {
+            expected
+                .iter()
+                .all(|(lvl, needle)| has_heading(hs, *lvl, needle))
+        });
+
+        assert!(
+            found,
+            "No state matching '{positive_id}' has all expected headings.\n\
+             Expected: {expected:?}\n\
+             Matching states (up to 2): {:?}",
+            matching.iter().take(2).collect::<Vec<_>>(),
+        );
+    };
+
+    // Scenario 1: "Kontoinhaber" selected.
+    // Exclude "Weiterer" and "PIC" because those radio-option states also render
+    // "Kontoinhaber" on their secondary pages.
+    check_scenario(
+        "Kontoinhaber",
+        &["Weiterer wirtschaftlich Berechtigter", "PIC"],
+        &[
+            (2, "Kontoinhaber"),
+            (2, "Wirtschaftliche Berechtigung"),
+            (2, "Erklärung Nicht-US-Person"),
+            (2, "Statusänderung oder Veränderung der Umstände"),
+            (2, "Unterschrift"),
+        ],
+    );
+
+    // Scenario 2: "Weiterer wirtschaftlich Berechtigter" selected.
+    check_scenario(
+        "Weiterer wirtschaftlich Berechtigter",
+        &[],
+        &[
+            (2, "Weiterer wirtschaftlich Berechtigter"),
+            (2, "Wirtschaftliche Berechtigung"),
+            (2, "Erklärung über den Status der Relevanten Person"),
+            (2, "Statusänderung oder Veränderung der Umstände"),
+            (2, "Unterschrift"),
+        ],
+    );
+
+    // Scenario 3: "Kontoinhaber ohne Custody" (PIC section) selected.
+    check_scenario(
+        "PIC",
+        &[],
+        &[
+            (2, "PIC"),
+            (2, "Erklärung über den Status"),
+            (2, "Statusänderung oder Veränderung der Umstände"),
+            (2, "Unterschrift"),
+        ],
+    );
+}
+
+#[test]
+fn test_aaam_statusaenderung_heading_has_visible_top_border_in_flattened() {
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAM_019_DE.pdf"))
+        .expect("Failed to create Blueprint from AAAM DE PDF");
+    let states = bp.states().expect("Failed to collect AAAM states");
+
+    let mut status_bold_count = 0usize;
+    let mut status_with_top_border_count = 0usize;
+    let mut samples: Vec<(bool, bool, bool)> = Vec::new();
+
+    for state in states.iter() {
+        for node in state.flattened.iter_nodes() {
+            let FlattenedNodeKind::Text { content, .. } = &node.kind else {
+                continue;
+            };
+
+            if !content.contains("Statusänderung oder Veränderung der Umstände") {
+                continue;
+            }
+
+            let is_bold = node.is_bold();
+            let has_top_border = match node.style.border.as_ref() {
+                Some(b) => match b.get_edge(0) {
+                    Some(e) => e.presence == "visible" && e.thickness.is_some(),
+                    None => false,
+                },
+                None => false,
+            };
+            let has_bottom_border = match node.style.border.as_ref() {
+                Some(b) => match b.get_edge(2) {
+                    Some(e) => e.presence == "visible" && e.thickness.is_some(),
+                    None => false,
+                },
+                None => false,
+            };
+
+            if is_bold {
+                status_bold_count += 1;
+                if has_top_border {
+                    status_with_top_border_count += 1;
+                }
+            }
+
+            if samples.len() < 5 {
+                samples.push((is_bold, has_top_border, has_bottom_border));
+            }
+        }
+    }
+
+    assert!(
+        status_bold_count > 0,
+        "Expected at least one bold 'Statusänderung ...' heading in AAAM flattened output"
+    );
+
+    assert!(
+        status_with_top_border_count > 0,
+        "Expected a visible top border on the bold 'Statusänderung ...' heading.\n\
+         bold occurrences: {}\n\
+         with top border: {}\n\
+         samples (is_bold, top, bottom): {:?}",
+        status_bold_count,
+        status_with_top_border_count,
+        samples
+    );
+}
+
 fn build_aagg_default_merged() -> crate::DocumentEnvelope {
     let de = crate::run_exhaustive_to_envelope(input_path("AAGG_019_DE.pdf"), "de")
         .expect("Failed to process AAGG DE");
@@ -8848,7 +9041,6 @@ fn assert_aagg_translation_triplet_on_same_node(
     let normalize_ws_ci = |s: &str| {
         let normalized = s
             .to_lowercase()
-            // Handle composed/decomposed umlauts and common diacritics.
             .replace('\u{0308}', "")
             .replace('ä', "a")
             .replace('ö', "o")
@@ -8865,7 +9057,6 @@ fn assert_aagg_translation_triplet_on_same_node(
             .replace('ù', "u")
             .replace('ñ', "n")
             .replace('ß', "ss")
-            // Be tolerant to URL hyphen variants like edb-banken vs edbbanken.
             .replace('-', "");
 
         normalized.split_whitespace().collect::<Vec<_>>().join(" ")

@@ -3169,6 +3169,117 @@ impl Flattened {
             .unwrap_or(FieldAccess::Open)
     }
 
+    /// Find the first leaf `FlattenedNode` in a mutable slice of `FlattenedKind`,
+    /// recursing into Groups.
+    fn first_leaf_node_mut(kinds: &mut [FlattenedKind]) -> Option<&mut FlattenedNode> {
+        for kind in kinds.iter_mut() {
+            match kind {
+                FlattenedKind::Node(node) => return Some(node),
+                FlattenedKind::Group { children, .. } => {
+                    if let Some(node) = Self::first_leaf_node_mut(children) {
+                        return Some(node);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the last leaf `FlattenedNode` in a mutable slice of `FlattenedKind`,
+    /// recursing into Groups.
+    fn last_leaf_node_mut(kinds: &mut [FlattenedKind]) -> Option<&mut FlattenedNode> {
+        for kind in kinds.iter_mut().rev() {
+            match kind {
+                FlattenedKind::Node(node) => return Some(node),
+                FlattenedKind::Group { children, .. } => {
+                    if let Some(node) = Self::last_leaf_node_mut(children) {
+                        return Some(node);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Propagate a subform's explicitly-specified visible border edges to the first and last
+    /// leaf child nodes produced during that subform's flattening.
+    ///
+    /// Per XFA spec, a `<border>` element on a `subform` draws a box around the subform's
+    /// content area. For heading detection and visual fidelity we materialise this by
+    /// applying the subform's top border edge to the first enclosed leaf node and the
+    /// bottom edge to the last, but only when the node's own corresponding edge is not
+    /// already visible and only for edges explicitly specified in the XFA source.
+    fn propagate_subform_border_to_children(
+        border: &crate::xfa::Border,
+        children_range: &mut [FlattenedKind],
+    ) {
+        // Per XFA spec: if fewer than 4 edge elements are supplied, the last is reused.
+        // Only propagate edges explicitly specified in the source to avoid applying
+        // reused edge definitions to unrelated sides.
+        let explicit_count = border.edges.len();
+
+        if explicit_count >= 1 {
+            let top = &border.edges[0];
+            if top.presence == "visible" && top.thickness.is_some() {
+                if let Some(node) = Self::first_leaf_node_mut(children_range) {
+                    Self::apply_edge_to_node_if_not_visible(node, top, 0);
+                }
+            }
+        }
+
+        if explicit_count >= 3 {
+            let bottom = &border.edges[2];
+            if bottom.presence == "visible" && bottom.thickness.is_some() {
+                if let Some(node) = Self::last_leaf_node_mut(children_range) {
+                    Self::apply_edge_to_node_if_not_visible(node, bottom, 2);
+                }
+            }
+        }
+    }
+
+    /// Apply `edge` to `edge_index` in `node`'s border when that edge is not already visible.
+    /// If the node has no border, create a minimal border with just this edge materialised.
+    fn apply_edge_to_node_if_not_visible(
+        node: &mut FlattenedNode,
+        edge: &crate::xfa::Edge,
+        edge_index: usize,
+    ) {
+        match &mut node.style.border {
+            Some(border) => {
+                let already_visible = border
+                    .get_edge(edge_index)
+                    .map(|e| e.presence == "visible" && e.thickness.is_some())
+                    .unwrap_or(false);
+
+                if !already_visible {
+                    if border.edges.len() < 4 {
+                        let materialised: Vec<_> = (0..4)
+                            .map(|i| border.get_edge(i).cloned().unwrap_or_default())
+                            .collect();
+                        border.edges = materialised;
+                    }
+                    border.edges[edge_index] = edge.clone();
+                    if border.presence == "hidden" || border.presence == "inactive" {
+                        border.presence = "visible".to_string();
+                    }
+                }
+            }
+            None => {
+                let hidden = crate::xfa::Edge {
+                    presence: "hidden".to_string(),
+                    ..Default::default()
+                };
+                let mut edges = vec![hidden; 4];
+                edges[edge_index] = edge.clone();
+                node.style.border = Some(crate::xfa::Border {
+                    edges,
+                    presence: "visible".to_string(),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
     /// Extract widget kind from a field's <ui> child element.
     /// Per XFA spec, the <ui> element contains the widget type (textEdit, checkButton, etc.)
     /// and the shape attribute distinguishes radio buttons (round) from checkboxes (square/default).
@@ -3699,6 +3810,11 @@ impl Flattened {
                         max_extent_y = max_extent_y.max(node_bottom);
                     }
 
+                    // Snapshot the current output length so we can locate the children
+                    // added by this subform during border propagation below.
+                    let subform_border = node.border.clone();
+                    let subform_children_start = flattened_children.len();
+
                     // Check if this subform has an <occur> element (repeatable section)
                     // If so, create a group to contain its children
                     let children_height = if let Some(occur) = Self::extract_occur_constraints(node)
@@ -3746,6 +3862,16 @@ impl Flattened {
                             &child_ctx,
                         )?
                     };
+
+                    // Per XFA spec: a subform's <border> draws a visual box around the subform.
+                    // Propagate visible border edges to the first/last enclosed child nodes so
+                    // heading detection and rendering reflect the subform border.
+                    if let Some(ref border) = subform_border {
+                        if border.is_visible() {
+                            let range = &mut flattened_children[subform_children_start..];
+                            Self::propagate_subform_border_to_children(border, range);
+                        }
+                    }
 
                     // For tb layout, update current_y based on actual content height if no explicit height
                     if parent_layout == Layout::TopToBottom && node.h.is_none() {
@@ -8035,6 +8161,23 @@ impl Flattened {
             }
         }
 
+        // Determine first/last non-empty paragraph indices.
+        // Border edges should be anchored to visible content paragraphs, not
+        // to leading/trailing empty paragraphs introduced by rich-text markup.
+        let is_non_empty_para = |p: &RichParagraph| {
+            !p.is_empty && p.runs.iter().any(|r| !r.text.trim().is_empty())
+        };
+        let first_non_empty_idx = rich_text
+            .paragraphs
+            .iter()
+            .position(is_non_empty_para)
+            .unwrap_or(0);
+        let last_non_empty_idx = rich_text
+            .paragraphs
+            .iter()
+            .rposition(is_non_empty_para)
+            .unwrap_or_else(|| rich_text.paragraphs.len().saturating_sub(1));
+
         // Now create one FlattenedNode per paragraph, distributing y-positions
         let mut result = Vec::with_capacity(rich_text.paragraphs.len());
         let mut current_y = node.y;
@@ -8076,13 +8219,26 @@ impl Flattened {
             //   - Middle paragraphs: hide top and bottom
             //   - Last paragraph:   hide top, keep bottom
             // Left and right edges are preserved on all paragraphs.
-            let last_idx = rich_text.paragraphs.len() - 1;
             if let Some(ref border) = para_style.border {
-                let adjusted = match i {
-                    0 if last_idx > 0 => border.with_edges_hidden(&[2]), // first: hide bottom
-                    _ if i == last_idx && i > 0 => border.with_edges_hidden(&[0]), // last: hide top
-                    _ if i > 0 => border.with_edges_hidden(&[0, 2]),     // middle: hide both
-                    _ => border.clone(), // single (shouldn't happen, but safe)
+                let adjusted = if first_non_empty_idx == last_non_empty_idx {
+                    // Single non-empty paragraph: keep full border only there.
+                    if i == first_non_empty_idx {
+                        border.clone()
+                    } else {
+                        border.with_edges_hidden(&[0, 2])
+                    }
+                } else if i < first_non_empty_idx || i > last_non_empty_idx {
+                    // Leading/trailing empty paragraphs: hide top/bottom edges.
+                    border.with_edges_hidden(&[0, 2])
+                } else if i == first_non_empty_idx {
+                    // First visible paragraph: keep top edge, hide bottom.
+                    border.with_edges_hidden(&[2])
+                } else if i == last_non_empty_idx {
+                    // Last visible paragraph: hide top edge, keep bottom.
+                    border.with_edges_hidden(&[0])
+                } else {
+                    // Middle visible paragraphs: hide top and bottom.
+                    border.with_edges_hidden(&[0, 2])
                 };
                 para_style.border = Some(adjusted);
             }
