@@ -13895,6 +13895,116 @@ fn test_aem_xml_valid_acav() {
     assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
 }
 
+/// Runs the complete pipeline (parsing → exhaustive state search → structuring
+/// → translation merging → AEM XML generation) for every form code available
+/// in the input directory and validates the resulting AEM content.xml using
+/// the existing XML validator.
+///
+/// Each entry is a *group* of `(filename, language_code)` pairs. Files in the
+/// same group share a form code **and** entity number, so their translations
+/// can be merged into a single multilingual envelope before XML generation.
+///
+/// ACAV_001 is intentionally excluded: it lacks the XFA variables required by
+/// the UBS AEM profile templates (see `test_aem_xml_valid_acav` above).
+/// Non-UBS forms (antrag_*, anordnung_*) are also excluded.
+#[test]
+fn test_all_form_codes_pipeline() {
+    let all_forms: &[&[(&str, &str)]] = &[
+        // ── entity 019 ────────────────────────────────────────────────────────
+        &[("AAAA_019_DE.pdf", "de"), ("AAAA_019_EN.pdf", "en"), ("AAAA_019_SP.pdf", "es")],
+        &[("AAAB_019_DE.pdf", "de")],
+        &[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")],
+        &[("AAAL_019_DE.pdf", "de"), ("AAAL_019_EN.pdf", "en"), ("AAAL_019_SP.pdf", "es")],
+        &[("AAAM_019_DE.pdf", "de"), ("AAAM_019_EN.pdf", "en"), ("AAAM_019_SP.pdf", "es")],
+        &[("AAAQ_019_DE.pdf", "de")],
+        &[("AAAU_019_EN.pdf", "en")],
+        &[("AAAV_019_DE.pdf", "de")],
+        &[("AABK_019_DE.pdf", "de")],
+        &[("AACC_019_DE.pdf", "de"), ("AACC_019_EN.pdf", "en")],
+        &[("AACE_019_DE.pdf", "de"), ("AACE_019_EN.pdf", "en"), ("AACE_019_SP.pdf", "es")],
+        &[("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en"), ("AACJ_019_SP.pdf", "es")],
+        &[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")],
+        &[("AACS_019_DE.pdf", "de"), ("AACS_019_EN.pdf", "en"), ("AACS_019_SP.pdf", "es")],
+        &[("AACW_019_DE.pdf", "de"), ("AACW_019_EN.pdf", "en"), ("AACW_019_SP.pdf", "es")],
+        &[("AAEI_019_DE.pdf", "de")],
+        &[("AAEV_019_EN.pdf", "en")],
+        &[("AAFK_019_DE.pdf", "de")],
+        &[("AAGF_019_DE.pdf", "de"), ("AAGF_019_EN.pdf", "en"), ("AAGF_019_SP.pdf", "es")],
+        &[("AAGG_019_DE.pdf", "de"), ("AAGG_019_EN.pdf", "en"), ("AAGG_019_SP.pdf", "es")],
+        &[("AAGS_019_DE.pdf", "de"), ("AAGS_019_EN.pdf", "en")],
+        &[("AAGZ_019_DE.pdf", "de"), ("AAGZ_019_EN.pdf", "en")],
+        &[("AAHA_019_DE.pdf", "de"), ("AAHA_019_EN.pdf", "en")],
+        &[("AAHM_019_DE.pdf", "de")],
+        &[("AAHO_019_DE.pdf", "de")],
+        &[("AAHQ_019_DE.pdf", "de")],
+        &[("AAIR_019_DE.pdf", "de"), ("AAIR_019_EN.pdf", "en"), ("AAIR_019_SP.pdf", "es")],
+        &[("AAIS_019_DE.pdf", "de"), ("AAIS_019_EN.pdf", "en"), ("AAIS_019_SP.pdf", "es")],
+        &[("AAKI_019_SP.pdf", "es")],
+        &[("AAKS_019_DE.pdf", "de"), ("AAKS_019_EN.pdf", "en"), ("AAKS_019_SP.pdf", "es")],
+        &[("AALH_019_DE.pdf", "de"), ("AALH_019_EN.pdf", "en"), ("AALH_019_SP.pdf", "es")],
+        &[("AALP_019_DE.pdf", "de"), ("AALP_019_EN.pdf", "en")],
+        &[("AALQ_019_DE.pdf", "de"), ("AALQ_019_EN.pdf", "en")],
+        &[("AALR_019_DE.pdf", "de"), ("AALR_019_EN.pdf", "en")],
+        &[("AAMB_019_DE.pdf", "de")],
+        &[("AANE_019_DE.pdf", "de"), ("AANE_019_EN.pdf", "en"), ("AANE_019_SP.pdf", "es")],
+        &[("AAXC_019_DE.pdf", "de"), ("AAXC_019_EN.pdf", "en")],
+        &[("ABRS_019_EN.pdf", "en")],
+        &[("ADDS_019_DE.pdf", "de")],
+        &[("BAGE_019_DE.pdf", "de"), ("BAGE_019_EN.pdf", "en")],
+        &[("BAGO_019_DE.pdf", "de"), ("BAGO_019_EN.pdf", "en"), ("BAGO_019_SP.pdf", "es")],
+        &[("BAGQ_019_DE.pdf", "de"), ("BAGQ_019_EN.pdf", "en"), ("BAGQ_019_SP.pdf", "es")],
+        &[("BAGU_019_DE.pdf", "de"), ("BAGU_019_EN.pdf", "en"), ("BAGU_019_SP.pdf", "es")],
+        &[("BAGW_019_DE.pdf", "de"), ("BAGW_019_EN.pdf", "en"), ("BAGW_019_SP.pdf", "es")],
+        // ── entity 033 ────────────────────────────────────────────────────────
+        &[("AACB_033_IT.pdf", "it")],
+        &[("AADQ_033_IT.pdf", "it")],
+        &[("AAEA_033_IT.pdf", "it")],
+        &[("AAGZ_033_IT.pdf", "it")],
+        &[("AAKP_033_IT.pdf", "it")],
+        &[("AAMK_033_IT.pdf", "it")],
+        &[("AAOC_033_IT.pdf", "it")],
+        &[("AAOE_033_IT.pdf", "it")],
+        &[("AAOF_033_IT.pdf", "it")],
+        &[("AAOI_033_IT.pdf", "it")],
+        &[("AAOK_033_EN.pdf", "en")],
+        &[("AAOM_033_IT.pdf", "it")],
+        &[("AAOO_033_EN.pdf", "en")],
+        &[("AAOS_033_IT.pdf", "it")],
+        &[("AAOV_033_IT.pdf", "it")],
+        &[("AAPD_033_IT.pdf", "it")],
+        &[("AAPM_033_IT.pdf", "it")],
+        &[("AAPQ_033_IT.pdf", "it")],
+        &[("AAPR_033_IT.pdf", "it")],
+        &[("AAPS_033_IT.pdf", "it")],
+        &[("AAPT_033_IT.pdf", "it")],
+        &[("AAQB_033_IT.pdf", "it")],
+        &[("AAQD_033_IT.pdf", "it")],
+        &[("AAQG_033_IT.pdf", "it")],
+        &[("AAQJ_033_IT.pdf", "it")],
+        &[("AAQK_033_IT.pdf", "it")],
+        &[("AAQM_033_IT.pdf", "it")],
+        &[("AAQQ_033_IT.pdf", "it")],
+        &[("AARB_033_IT.pdf", "it")],
+        &[("AARI_033_IT.pdf", "it")],
+        &[("AARM_033_IT.pdf", "it")],
+        &[("AARN_033_IT.pdf", "it")],
+        &[("AARV_033_IT.pdf", "it")],
+        &[("AATK_033_IT.pdf", "it")],
+        &[("BAQM_033_IT.pdf", "it")],
+        &[("BAUL_033_IT.pdf", "it")],
+    ];
+
+    for form_pdfs in all_forms {
+        let label = form_pdfs
+            .iter()
+            .map(|(f, l)| format!("{f}({l})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("Processing: {label}");
+        assert_aem_xml_valid_for(form_pdfs);
+    }
+}
+
 #[test]
 fn test_aags_de_en_state_counts_match() {
     // After fixing non-deterministic HashMap iteration in the script engine,
@@ -13916,6 +14026,392 @@ fn test_aags_de_en_state_counts_match() {
 
     let result = structured::merge_translations(vec![de_envelope, en_envelope]);
     assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
+}
+
+/// Diagnostic test: investigate why AAIS_019 DE+EN (and DE+EN+SP) fails with
+/// `InsufficientStructuralSimilarity` (42 % < 50 % threshold).
+///
+/// This test never panics — it prints all diagnostics and then records the
+/// observed similarity values in assertions so that regressions are caught.
+#[test]
+fn test_aais_019_structural_similarity_diagnostic() {
+    use crate::structured::StructuredNode;
+    use crate::{run_exhaustive_to_envelope, structured};
+
+    /// Return a short human-readable label for a structured node.
+    fn node_label(n: &StructuredNode) -> String {
+        match n {
+            StructuredNode::Heading(h) => format!("Heading(H{})", h.level.as_u8()),
+            StructuredNode::Paragraph(_) => "Paragraph".to_string(),
+            StructuredNode::Image(_) => "Image".to_string(),
+            StructuredNode::Table(_) => "Table".to_string(),
+            StructuredNode::Field(f) => {
+                format!("Field({:?})", std::mem::discriminant(&f.input_type))
+            }
+            StructuredNode::Repeatable(_) => "Repeatable".to_string(),
+            StructuredNode::Group(_) => "Group".to_string(),
+            StructuredNode::Conditional(c) => format!(
+                "Conditional({}=={:?})",
+                c.condition.field_name, c.condition.value
+            ),
+            StructuredNode::Empty => "Empty".to_string(),
+            StructuredNode::GridLayout(g) => format!("GridLayout(cols={})", g.columns),
+            StructuredNode::List(_) => "List".to_string(),
+        }
+    }
+
+    // ── Load all three language envelopes ────────────────────────────────────
+    let de = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AAIS_019_EN.pdf"), "en")
+        .expect("Failed to process AAIS_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AAIS_019_SP.pdf"), "es")
+        .expect("Failed to process AAIS_019_SP");
+
+    // ── Print state counts ────────────────────────────────────────────────────
+    println!("\n=== AAIS_019 state counts ===");
+    println!("  DE: {} states, {} top-level nodes", de.state_count, de.content.len());
+    println!("  EN: {} states, {} top-level nodes", en.state_count, en.content.len());
+    println!("  SP: {} states, {} top-level nodes", sp.state_count, sp.content.len());
+
+    // ── Print top-level node lists ────────────────────────────────────────────
+    for (lang, env) in [("DE", &de), ("EN", &en), ("SP", &sp)] {
+        println!("\n=== AAIS_019 {} top-level nodes ({} total) ===", lang, env.content.len());
+        for (i, node) in env.content.iter().enumerate() {
+            println!("  [{:02}] {}", i, node_label(node));
+        }
+    }
+
+    // ── Attempt each pair via merge_translations ───────────────────────────────
+    let merge_de_en = structured::merge_translations(vec![de.clone(), en.clone()]);
+    let merge_de_sp = structured::merge_translations(vec![de.clone(), sp.clone()]);
+    let merge_en_sp = structured::merge_translations(vec![en.clone(), sp.clone()]);
+
+    println!("\n=== AAIS_019 merge results ===");
+    println!(
+        "  DE+EN: {}",
+        match &merge_de_en {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+    println!(
+        "  DE+SP: {}",
+        match &merge_de_sp {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+    println!(
+        "  EN+SP: {}",
+        match &merge_en_sp {
+            Ok(_) => "OK".to_string(),
+            Err(e) => format!("FAILED — {e}"),
+        }
+    );
+
+    // ── Assertions: all three language pairs should now merge successfully ──────
+    // After adding `console` stub to the JS engine, EN's CL_ClientType change
+    // script executes correctly and produces 9 states (matching DE and SP).
+    assert!(
+        merge_de_en.is_ok(),
+        "Expected DE+EN to succeed after console fix: {:?}",
+        merge_de_en.err()
+    );
+    assert!(
+        merge_de_sp.is_ok(),
+        "Expected DE+SP to succeed — they share the same conditional field"
+    );
+    assert!(
+        merge_en_sp.is_ok(),
+        "Expected EN+SP to succeed after console fix: {:?}",
+        merge_en_sp.err()
+    );
+}
+
+/// Deep investigation: find out WHY AAIS_019 EN only explores the "Fall" dropdown
+/// and not the "Form Addressee" dropdown.
+///
+/// Hypotheses (tested in order):
+///   A) Form Addressee dropdown has no interactive (change/click/calculate) scripts in EN
+///      → filtered out by get_all_selectable_fields_ordered, never explored
+///   B) Form Addressee dropdown IS explored but all its options produce identical
+///      visible layouts → deduplicated to one state, no conditional generated
+#[test]
+fn test_aais_019_en_form_addressee_investigation() {
+    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::{XfaNode, XfaNodeKind};
+    use crate::{Blueprint, SomPath};
+
+    // ── Helper: recursively find all choiceList (dropdown) fields with SOM paths ──
+    fn find_dropdowns(nodes: &[XfaNode], current_path: &str, out: &mut Vec<String>) {
+        for node in nodes {
+            let node_path = match &node.name {
+                Some(name) if !name.is_empty() => {
+                    if current_path.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}.{}", current_path, name)
+                    }
+                }
+                _ => current_path.to_string(),
+            };
+
+            if matches!(&node.kind, XfaNodeKind::Field) {
+                let is_dropdown = node.children.iter().any(|c| {
+                    if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
+                        if tag_name == "ui" {
+                            return c.children.iter().any(|ui_c| {
+                                matches!(
+                                    &ui_c.kind,
+                                    XfaNodeKind::Element { tag_name, .. } if tag_name == "choiceList"
+                                )
+                            });
+                        }
+                    }
+                    false
+                });
+                if is_dropdown {
+                    out.push(node_path.clone());
+                }
+            }
+
+            find_dropdowns(&node.children, &node_path, out);
+        }
+    }
+
+    // ── Helper: recursively find a node by name ────────────────────────────────
+    fn find_node_by_name<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
+        for node in nodes {
+            if node.name.as_deref() == Some(name) {
+                return Some(node);
+            }
+            if let Some(found) = find_node_by_name(&node.children, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    // ── Helper: collect script objects from <variables><script> nodes ─────────
+    fn collect_xfa_script_objects(nodes: &[XfaNode]) -> std::collections::HashMap<String, String> {
+        let mut result = std::collections::HashMap::new();
+        fn walk(nodes: &[XfaNode], result: &mut std::collections::HashMap<String, String>) {
+            for node in nodes {
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                    if tag_name == "variables" {
+                        for child in &node.children {
+                            if let XfaNodeKind::Element {
+                                tag_name: child_tag,
+                                text_content,
+                                ..
+                            } = &child.kind
+                            {
+                                if child_tag == "script" {
+                                    if let Some(name) = &child.name {
+                                        let mut content = String::new();
+                                        if let Some(tc) = text_content {
+                                            content.push_str(tc);
+                                        }
+                                        for sc in &child.children {
+                                            match &sc.kind {
+                                                XfaNodeKind::Text { content: c } => {
+                                                    content.push_str(c);
+                                                }
+                                                XfaNodeKind::Element {
+                                                    text_content: Some(c),
+                                                    ..
+                                                } => {
+                                                    content.push_str(c);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        result.entry(name.clone()).or_default().push_str(&content);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                walk(&node.children, result);
+            }
+        }
+        walk(nodes, &mut result);
+        result
+    }
+
+    // ── Print CL_ClientType change script for each language ───────────────────
+    for (file, lang) in [
+        ("AAIS_019_DE.pdf", "de"),
+        ("AAIS_019_EN.pdf", "en"),
+        ("AAIS_019_SP.pdf", "es"),
+    ] {
+        let bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+
+        let form = bp.form().expect("should be XFA PDF");
+        let xfa_nodes = form.xfa_nodes();
+
+        // Find the CL_ClientType node and print its change script
+        if let Some(cl_node) = find_node_by_name(xfa_nodes, "CL_ClientType") {
+            let events = parse_events_from_node(&cl_node.children);
+            println!("\n=== {} ({}) — CL_ClientType change scripts ===", file, lang);
+            for event in &events {
+                if event.activity == EventActivity::Change {
+                    println!(
+                        "  [change] source ({} chars):\n{}",
+                        event.source.len(),
+                        // Print first 2000 chars to see the key logic
+                        &event.source[..event.source.len().min(2000)]
+                    );
+                }
+            }
+            if events.iter().all(|e| e.activity != EventActivity::Change) {
+                println!("  NO change event found!");
+            }
+        } else {
+            println!("\n=== {} ({}) — CL_ClientType NOT FOUND in XFA tree ===", file, lang);
+        }
+
+        // ── Print soConfigClientType script object content ────────────────────
+        // This is the actual logic that controls what changes when CL_ClientType changes.
+        let so_objects = collect_xfa_script_objects(xfa_nodes);
+        if let Some(content) = so_objects.get("soConfigClientType") {
+            println!(
+                "\n=== {} ({}) — soConfigClientType ({} chars) ===\n{}",
+                file,
+                lang,
+                content.len(),
+                &content[..content.len().min(3000)]
+            );
+        } else {
+            println!("\n=== {} ({}) — soConfigClientType NOT FOUND ===", file, lang);
+        }
+
+        // ── Print soLocalLabelDefinition script object content ────────────────
+        // This is the function called by soConfigClientType.onChange which
+        // actually changes element visibility based on the selected client type.
+        if let Some(content) = so_objects.get("soLocalLabelDefinition") {
+            println!(
+                "\n=== {} ({}) — soLocalLabelDefinition ({} chars) ===\n{}",
+                file,
+                lang,
+                content.len(),
+                &content[..content.len().min(5000)]
+            );
+        } else {
+            println!("\n=== {} ({}) — soLocalLabelDefinition NOT FOUND ===", file, lang);
+        }
+
+        // ── List ALL script objects ───────────────────────────────────────────
+        println!("\n=== {} ({}) — all script objects ===", file, lang);
+        let mut names: Vec<&String> = so_objects.keys().collect();
+        names.sort();
+        for name in names {
+            println!("  {} ({} chars)", name, so_objects[name].len());
+        }
+    }
+
+    // ── Check each language ────────────────────────────────────────────────────
+    for (file, lang) in [
+        ("AAIS_019_DE.pdf", "de"),
+        ("AAIS_019_EN.pdf", "en"),
+        ("AAIS_019_SP.pdf", "es"),
+    ] {
+        let mut bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+
+        // ── (A) Find all dropdown fields and check their script coverage ──────
+        let form = bp.form().expect("should be XFA PDF");
+        let registry = form.script_registry();
+        let xfa_nodes = form.xfa_nodes().to_vec();
+
+        let mut dropdowns: Vec<String> = Vec::new();
+        find_dropdowns(&xfa_nodes, "", &mut dropdowns);
+
+        println!("\n=== {} ({}) — {} dropdown fields ===", file, lang, dropdowns.len());
+        for path in &dropdowns {
+            let som = SomPath::new(path.clone());
+            let has_change = registry.has_interactive_scripts(&som);
+            let change_owners = registry.get_owners_with_activity(&EventActivity::Change);
+            let is_change_owner = change_owners.iter().any(|p| p.as_str() == path.as_str());
+            println!(
+                "  {} → has_interactive_scripts={}, is_change_owner={}",
+                path, has_change, is_change_owner
+            );
+        }
+
+        // ── (B) Check state selections to see which fields were actually explored ──
+        let states = bp.states().unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
+        println!("\n  States: {} total", states.len());
+        for state in states.iter() {
+            let sel_summary: Vec<String> = state
+                .selections
+                .iter()
+                .map(|s| format!("{}={:?}", s.field_path, s.values))
+                .collect();
+            println!("    [{}] {}", state.label, sel_summary.join(", "));
+        }
+    }
+
+    // ── Assertions ────────────────────────────────────────────────────────────
+    {
+        let bp_en = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+        let form_en = bp_en.form().expect("should be XFA PDF");
+        let registry_en = form_en.script_registry();
+        let xfa_nodes_en = form_en.xfa_nodes().to_vec();
+
+        let mut dropdowns_en: Vec<String> = Vec::new();
+        find_dropdowns(&xfa_nodes_en, "", &mut dropdowns_en);
+
+        // There must be at least 2 dropdowns in EN (Form Addressee + Fall)
+        assert!(
+            dropdowns_en.len() >= 2,
+            "EN should have at least 2 dropdown fields, found: {:?}",
+            dropdowns_en
+        );
+
+        // Both dropdowns have interactive scripts — so the problem was not (A)
+        let interactive_count = dropdowns_en
+            .iter()
+            .filter(|path| registry_en.has_interactive_scripts(&SomPath::new(path.as_str())))
+            .count();
+        assert_eq!(
+            interactive_count,
+            dropdowns_en.len(),
+            "All EN dropdowns should have interactive scripts"
+        );
+
+        // Root cause was (B): EN's `soLocalLabelDefinition.reset()` called
+        // `console.println("** 00")` before the visibility-changing `_resetPage()`
+        // call. Without a `console` stub in the JS engine, this threw a TypeError
+        // that was silently swallowed by the `try/catch` in
+        // `soConfigClientType.onChange`, so `_resetPage` never ran and all
+        // CL_ClientType options produced identical visible layouts.
+        //
+        // After adding a `console` stub (setup_console()), `console.println` is a
+        // no-op and the layout-changing code executes.  EN should now produce
+        // the same 9 states as DE and SP.
+        let mut bp_en2 = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+        let states_en = bp_en2.states().expect("Failed to get EN states");
+        assert_eq!(
+            states_en.len(),
+            9,
+            "EN should now have 9 states (matching DE and SP) after console fix"
+        );
+
+        // Each EN state should have separate CL_ClientType selections (not merged)
+        // because now each option produces a different visible layout
+        for state in states_en.iter() {
+            let cl_sel = state.selections.iter().find(|s| s.field_path.to_string().contains("bbe42e19"));
+            assert!(
+                cl_sel.is_some(),
+                "Each EN state should have a CL_ClientType selection, got: {:?}",
+                state.selections.iter().map(|s| s.field_path.to_string()).collect::<Vec<_>>()
+            );
+        }
+    }
 }
 
 #[test]

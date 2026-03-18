@@ -91,6 +91,7 @@ impl XfaScriptEngine {
         self.setup_field_registry();
         self.setup_som_fallback();
         self.setup_instance_helpers();
+        self.setup_console();
     }
 
     /// Register global JavaScript helpers for XFA dynamic subform instantiation.
@@ -884,6 +885,42 @@ function _xfa_cloneSubform(original, depth) {
                 .register_global_property(js_string!("$xfa"), xfa, Attribute::all())
                 .ok();
         }
+    }
+
+    /// Register a `console` object with no-op logging methods.
+    ///
+    /// Adobe Acrobat's XFA JavaScript environment provides `console.println()` for
+    /// debug output to the Acrobat JavaScript console.  Some forms use it inside
+    /// script objects; without a `console` stub those calls throw a TypeError that
+    /// propagates through the call stack and can silently abort layout-affecting
+    /// code that is wrapped in a `try/catch`.
+    ///
+    /// We register `console` with all common methods (`log`, `warn`, `error`,
+    /// `info`, `debug`, `println`) as no-ops so that debug prints in form scripts
+    /// are silently ignored instead of aborting execution.
+    fn setup_console(&mut self) {
+        let noop = NativeFunction::from_fn_ptr(|_this, args, context| {
+            // Optionally log at trace level so developers can see the output
+            let parts: Vec<String> = args
+                .iter()
+                .filter_map(|a| a.to_string(context).ok().map(|s| s.to_std_string_escaped()))
+                .collect();
+            log::trace!("[XFA console]: {}", parts.join(" "));
+            Ok(JsValue::undefined())
+        });
+
+        let console = ObjectInitializer::new(&mut self.context)
+            .function(noop.clone(), js_string!("log"), 0)
+            .function(noop.clone(), js_string!("warn"), 0)
+            .function(noop.clone(), js_string!("error"), 0)
+            .function(noop.clone(), js_string!("info"), 0)
+            .function(noop.clone(), js_string!("debug"), 0)
+            .function(noop, js_string!("println"), 0)
+            .build();
+
+        self.context
+            .register_global_property(js_string!("console"), console, Attribute::all())
+            .ok();
     }
 
     /// Register a field with SOM resolver
