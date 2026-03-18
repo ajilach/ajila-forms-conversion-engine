@@ -13764,10 +13764,7 @@ fn test_all_form_codes_pipeline() {
         &[("AAHO_019_DE.pdf", "de")],
         &[("AAHQ_019_DE.pdf", "de")],
         &[("AAIR_019_DE.pdf", "de"), ("AAIR_019_EN.pdf", "en"), ("AAIR_019_SP.pdf", "es")],
-        // AAIS_019: EN uses a different conditional field (commission-type) from DE and SP
-        // (client-type), so EN must be processed independently.
-        &[("AAIS_019_DE.pdf", "de"), ("AAIS_019_SP.pdf", "es")],
-        &[("AAIS_019_EN.pdf", "en")],
+        &[("AAIS_019_DE.pdf", "de"), ("AAIS_019_EN.pdf", "en"), ("AAIS_019_SP.pdf", "es")],
         &[("AAKI_019_SP.pdf", "es")],
         &[("AAKS_019_DE.pdf", "de"), ("AAKS_019_EN.pdf", "en"), ("AAKS_019_SP.pdf", "es")],
         &[("AALH_019_DE.pdf", "de"), ("AALH_019_EN.pdf", "en"), ("AALH_019_SP.pdf", "es")],
@@ -13939,23 +13936,308 @@ fn test_aais_019_structural_similarity_diagnostic() {
         }
     );
 
-    // ── Assertions: document the current observed behaviour ───────────────────
-    // DE and SP share the same conditional field (client-type field bbe42e19-...)
-    // and merge successfully. EN drives its conditionals from a completely different
-    // field (commission-type field 16c1f4fd-...) so it is structurally incompatible
-    // with DE and SP and cannot be merged with either of them.
+    // ── Assertions: all three language pairs should now merge successfully ──────
+    // After adding `console` stub to the JS engine, EN's CL_ClientType change
+    // script executes correctly and produces 9 states (matching DE and SP).
     assert!(
-        merge_de_en.is_err(),
-        "Expected DE+EN to fail with InsufficientStructuralSimilarity"
+        merge_de_en.is_ok(),
+        "Expected DE+EN to succeed after console fix: {:?}",
+        merge_de_en.err()
     );
     assert!(
         merge_de_sp.is_ok(),
         "Expected DE+SP to succeed — they share the same conditional field"
     );
     assert!(
-        merge_en_sp.is_err(),
-        "Expected EN+SP to fail with InsufficientStructuralSimilarity"
+        merge_en_sp.is_ok(),
+        "Expected EN+SP to succeed after console fix: {:?}",
+        merge_en_sp.err()
     );
+}
+
+/// Deep investigation: find out WHY AAIS_019 EN only explores the "Fall" dropdown
+/// and not the "Form Addressee" dropdown.
+///
+/// Hypotheses (tested in order):
+///   A) Form Addressee dropdown has no interactive (change/click/calculate) scripts in EN
+///      → filtered out by get_all_selectable_fields_ordered, never explored
+///   B) Form Addressee dropdown IS explored but all its options produce identical
+///      visible layouts → deduplicated to one state, no conditional generated
+#[test]
+fn test_aais_019_en_form_addressee_investigation() {
+    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::{XfaNode, XfaNodeKind};
+    use crate::{Blueprint, SomPath};
+
+    // ── Helper: recursively find all choiceList (dropdown) fields with SOM paths ──
+    fn find_dropdowns(nodes: &[XfaNode], current_path: &str, out: &mut Vec<String>) {
+        for node in nodes {
+            let node_path = match &node.name {
+                Some(name) if !name.is_empty() => {
+                    if current_path.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}.{}", current_path, name)
+                    }
+                }
+                _ => current_path.to_string(),
+            };
+
+            if matches!(&node.kind, XfaNodeKind::Field) {
+                let is_dropdown = node.children.iter().any(|c| {
+                    if let XfaNodeKind::Element { tag_name, .. } = &c.kind {
+                        if tag_name == "ui" {
+                            return c.children.iter().any(|ui_c| {
+                                matches!(
+                                    &ui_c.kind,
+                                    XfaNodeKind::Element { tag_name, .. } if tag_name == "choiceList"
+                                )
+                            });
+                        }
+                    }
+                    false
+                });
+                if is_dropdown {
+                    out.push(node_path.clone());
+                }
+            }
+
+            find_dropdowns(&node.children, &node_path, out);
+        }
+    }
+
+    // ── Helper: recursively find a node by name ────────────────────────────────
+    fn find_node_by_name<'a>(nodes: &'a [XfaNode], name: &str) -> Option<&'a XfaNode> {
+        for node in nodes {
+            if node.name.as_deref() == Some(name) {
+                return Some(node);
+            }
+            if let Some(found) = find_node_by_name(&node.children, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    // ── Helper: collect script objects from <variables><script> nodes ─────────
+    fn collect_xfa_script_objects(nodes: &[XfaNode]) -> std::collections::HashMap<String, String> {
+        let mut result = std::collections::HashMap::new();
+        fn walk(nodes: &[XfaNode], result: &mut std::collections::HashMap<String, String>) {
+            for node in nodes {
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+                    if tag_name == "variables" {
+                        for child in &node.children {
+                            if let XfaNodeKind::Element {
+                                tag_name: child_tag,
+                                text_content,
+                                ..
+                            } = &child.kind
+                            {
+                                if child_tag == "script" {
+                                    if let Some(name) = &child.name {
+                                        let mut content = String::new();
+                                        if let Some(tc) = text_content {
+                                            content.push_str(tc);
+                                        }
+                                        for sc in &child.children {
+                                            match &sc.kind {
+                                                XfaNodeKind::Text { content: c } => {
+                                                    content.push_str(c);
+                                                }
+                                                XfaNodeKind::Element {
+                                                    text_content: Some(c),
+                                                    ..
+                                                } => {
+                                                    content.push_str(c);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        result.entry(name.clone()).or_default().push_str(&content);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                walk(&node.children, result);
+            }
+        }
+        walk(nodes, &mut result);
+        result
+    }
+
+    // ── Print CL_ClientType change script for each language ───────────────────
+    for (file, lang) in [
+        ("AAIS_019_DE.pdf", "de"),
+        ("AAIS_019_EN.pdf", "en"),
+        ("AAIS_019_SP.pdf", "es"),
+    ] {
+        let bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+
+        let form = bp.form().expect("should be XFA PDF");
+        let xfa_nodes = form.xfa_nodes();
+
+        // Find the CL_ClientType node and print its change script
+        if let Some(cl_node) = find_node_by_name(xfa_nodes, "CL_ClientType") {
+            let events = parse_events_from_node(&cl_node.children);
+            println!("\n=== {} ({}) — CL_ClientType change scripts ===", file, lang);
+            for event in &events {
+                if event.activity == EventActivity::Change {
+                    println!(
+                        "  [change] source ({} chars):\n{}",
+                        event.source.len(),
+                        // Print first 2000 chars to see the key logic
+                        &event.source[..event.source.len().min(2000)]
+                    );
+                }
+            }
+            if events.iter().all(|e| e.activity != EventActivity::Change) {
+                println!("  NO change event found!");
+            }
+        } else {
+            println!("\n=== {} ({}) — CL_ClientType NOT FOUND in XFA tree ===", file, lang);
+        }
+
+        // ── Print soConfigClientType script object content ────────────────────
+        // This is the actual logic that controls what changes when CL_ClientType changes.
+        let so_objects = collect_xfa_script_objects(xfa_nodes);
+        if let Some(content) = so_objects.get("soConfigClientType") {
+            println!(
+                "\n=== {} ({}) — soConfigClientType ({} chars) ===\n{}",
+                file,
+                lang,
+                content.len(),
+                &content[..content.len().min(3000)]
+            );
+        } else {
+            println!("\n=== {} ({}) — soConfigClientType NOT FOUND ===", file, lang);
+        }
+
+        // ── Print soLocalLabelDefinition script object content ────────────────
+        // This is the function called by soConfigClientType.onChange which
+        // actually changes element visibility based on the selected client type.
+        if let Some(content) = so_objects.get("soLocalLabelDefinition") {
+            println!(
+                "\n=== {} ({}) — soLocalLabelDefinition ({} chars) ===\n{}",
+                file,
+                lang,
+                content.len(),
+                &content[..content.len().min(5000)]
+            );
+        } else {
+            println!("\n=== {} ({}) — soLocalLabelDefinition NOT FOUND ===", file, lang);
+        }
+
+        // ── List ALL script objects ───────────────────────────────────────────
+        println!("\n=== {} ({}) — all script objects ===", file, lang);
+        let mut names: Vec<&String> = so_objects.keys().collect();
+        names.sort();
+        for name in names {
+            println!("  {} ({} chars)", name, so_objects[name].len());
+        }
+    }
+
+    // ── Check each language ────────────────────────────────────────────────────
+    for (file, lang) in [
+        ("AAIS_019_DE.pdf", "de"),
+        ("AAIS_019_EN.pdf", "en"),
+        ("AAIS_019_SP.pdf", "es"),
+    ] {
+        let mut bp = Blueprint::from_pdf(input_path(file))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+
+        // ── (A) Find all dropdown fields and check their script coverage ──────
+        let form = bp.form().expect("should be XFA PDF");
+        let registry = form.script_registry();
+        let xfa_nodes = form.xfa_nodes().to_vec();
+
+        let mut dropdowns: Vec<String> = Vec::new();
+        find_dropdowns(&xfa_nodes, "", &mut dropdowns);
+
+        println!("\n=== {} ({}) — {} dropdown fields ===", file, lang, dropdowns.len());
+        for path in &dropdowns {
+            let som = SomPath::new(path.clone());
+            let has_change = registry.has_interactive_scripts(&som);
+            let change_owners = registry.get_owners_with_activity(&EventActivity::Change);
+            let is_change_owner = change_owners.iter().any(|p| p.as_str() == path.as_str());
+            println!(
+                "  {} → has_interactive_scripts={}, is_change_owner={}",
+                path, has_change, is_change_owner
+            );
+        }
+
+        // ── (B) Check state selections to see which fields were actually explored ──
+        let states = bp.states().unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
+        println!("\n  States: {} total", states.len());
+        for state in states.iter() {
+            let sel_summary: Vec<String> = state
+                .selections
+                .iter()
+                .map(|s| format!("{}={:?}", s.field_path, s.values))
+                .collect();
+            println!("    [{}] {}", state.label, sel_summary.join(", "));
+        }
+    }
+
+    // ── Assertions ────────────────────────────────────────────────────────────
+    {
+        let bp_en = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+        let form_en = bp_en.form().expect("should be XFA PDF");
+        let registry_en = form_en.script_registry();
+        let xfa_nodes_en = form_en.xfa_nodes().to_vec();
+
+        let mut dropdowns_en: Vec<String> = Vec::new();
+        find_dropdowns(&xfa_nodes_en, "", &mut dropdowns_en);
+
+        // There must be at least 2 dropdowns in EN (Form Addressee + Fall)
+        assert!(
+            dropdowns_en.len() >= 2,
+            "EN should have at least 2 dropdown fields, found: {:?}",
+            dropdowns_en
+        );
+
+        // Both dropdowns have interactive scripts — so the problem was not (A)
+        let interactive_count = dropdowns_en
+            .iter()
+            .filter(|path| registry_en.has_interactive_scripts(&SomPath::new(path.as_str())))
+            .count();
+        assert_eq!(
+            interactive_count,
+            dropdowns_en.len(),
+            "All EN dropdowns should have interactive scripts"
+        );
+
+        // Root cause was (B): EN's `soLocalLabelDefinition.reset()` called
+        // `console.println("** 00")` before the visibility-changing `_resetPage()`
+        // call. Without a `console` stub in the JS engine, this threw a TypeError
+        // that was silently swallowed by the `try/catch` in
+        // `soConfigClientType.onChange`, so `_resetPage` never ran and all
+        // CL_ClientType options produced identical visible layouts.
+        //
+        // After adding a `console` stub (setup_console()), `console.println` is a
+        // no-op and the layout-changing code executes.  EN should now produce
+        // the same 9 states as DE and SP.
+        let mut bp_en2 = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+        let states_en = bp_en2.states().expect("Failed to get EN states");
+        assert_eq!(
+            states_en.len(),
+            9,
+            "EN should now have 9 states (matching DE and SP) after console fix"
+        );
+
+        // Each EN state should have separate CL_ClientType selections (not merged)
+        // because now each option produces a different visible layout
+        for state in states_en.iter() {
+            let cl_sel = state.selections.iter().find(|s| s.field_path.to_string().contains("bbe42e19"));
+            assert!(
+                cl_sel.is_some(),
+                "Each EN state should have a CL_ClientType selection, got: {:?}",
+                state.selections.iter().map(|s| s.field_path.to_string()).collect::<Vec<_>>()
+            );
+        }
+    }
 }
 
 #[test]
