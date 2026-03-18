@@ -7392,7 +7392,10 @@ fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
                 .as_ref()
                 .map(|label| normalize_text(&label.as_plain_text()).contains(&normalized_needle))
                 .unwrap_or(false),
-            StructuredNode::Group(group) => group.children.iter().any(|child| node_contains_text(child, needle)),
+            StructuredNode::Group(group) => group
+                .children
+                .iter()
+                .any(|child| node_contains_text(child, needle)),
             StructuredNode::Conditional(cond) => node_contains_text(cond.content.as_ref(), needle),
             StructuredNode::Repeatable(rep) => node_contains_text(rep.item.as_ref(), needle),
             StructuredNode::GridLayout(grid) => grid
@@ -7403,12 +7406,18 @@ fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
                 table
                     .header
                     .as_ref()
-                    .map(|header| header.cells.iter().any(|cell| node_contains_text(cell, needle)))
+                    .map(|header| {
+                        header
+                            .cells
+                            .iter()
+                            .any(|cell| node_contains_text(cell, needle))
+                    })
                     .unwrap_or(false)
-                    || table
-                        .rows
-                        .iter()
-                        .any(|row| row.cells.iter().any(|cell| node_contains_text(cell, needle)))
+                    || table.rows.iter().any(|row| {
+                        row.cells
+                            .iter()
+                            .any(|cell| node_contains_text(cell, needle))
+                    })
             }
             _ => false,
         }
@@ -16317,3 +16326,41 @@ fn test_aaai_has_address_and_individual_fragments() {
         "Client panel should still exist and not be replaced by a fragment"
     );
 }
+
+    #[test]
+    fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
+        // Regression test: the "Nachname" field in AAHA_019_DE should have the label
+        // "Nachname" only. The agreement text ("Hiermit erkläre ich...") belongs to a
+        // separate paragraph and must NOT be concatenated into that label.
+        use crate::run_exhaustive_to_merged;
+
+        let structured = run_exhaustive_to_merged(input_path("AAHA_019_DE.pdf"))
+            .expect("Failed to process AAHA_019_DE.pdf");
+
+        let field_labels = collect_field_labels_trimmed(&structured);
+
+        println!("\n=== AAHA_019_DE field labels ===");
+        for label in &field_labels {
+            println!("  - '{}'", &label[..label.len().min(120)]);
+        }
+
+        // The "Nachname" label must not contain the agreement text
+        let contaminated = field_labels.iter().find(|l| {
+            l.contains("Nachname") && l.contains("Hiermit erkläre")
+        });
+        assert!(
+            contaminated.is_none(),
+            "Nachname field label should not include agreement text, but got: '{}'",
+            contaminated.map(|s| &s[..s.len().min(200)]).unwrap_or("")
+        );
+
+        // The "Nachname" label must be present with a clean value
+        let nachname_label = field_labels.iter().find(|l| l.contains("Nachname"));
+        assert!(
+            nachname_label.is_some(),
+            "Expected a field with label containing 'Nachname', but found none. Labels: {:?}",
+            field_labels.iter().map(|l| &l[..l.len().min(60)]).collect::<Vec<_>>()
+        );
+
+        println!("\n✓ AAHA_019_DE Nachname label is clean: '{}'", nachname_label.unwrap());
+    }

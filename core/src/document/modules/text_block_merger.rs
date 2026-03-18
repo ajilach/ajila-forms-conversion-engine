@@ -142,6 +142,48 @@ impl TextBlockMerger {
 
         true
     }
+
+    /// Check whether `idx_b` sits in the same text flow lane as `idx_a`.
+    ///
+    /// This is used to decide whether a non-mergeable block should stop
+    /// scanning for later merge candidates. In multi-column layouts, unrelated
+    /// blocks in another column should not block merging within the current
+    /// column.
+    fn is_same_flow_lane(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
+        let bounds_a = match doc.get_bounds(idx_a) {
+            Some(b) => b,
+            None => return false,
+        };
+        let bounds_b = match doc.get_bounds(idx_b) {
+            Some(b) => b,
+            None => return false,
+        };
+
+        let overlap_left = bounds_a.x.max(bounds_b.x);
+        let overlap_right = bounds_a.right().min(bounds_b.right());
+
+        let horizontal_aligned = if overlap_right >= overlap_left {
+            true
+        } else {
+            let horiz_gap = overlap_left - overlap_right;
+            let max_width = bounds_a.width.max(bounds_b.width);
+            horiz_gap <= max_width / Decimal::from(5)
+        };
+
+        if !horizontal_aligned {
+            return false;
+        }
+
+        let (top, bottom) = if bounds_a.y <= bounds_b.y {
+            (&bounds_a, &bounds_b)
+        } else {
+            (&bounds_b, &bounds_a)
+        };
+        let vertical_gap = bottom.y - top.bottom();
+        let line_height = bounds_a.height.max(bounds_b.height);
+
+        vertical_gap <= line_height
+    }
 }
 
 impl AnalysisModule for TextBlockMerger {
@@ -173,7 +215,9 @@ impl AnalysisModule for TextBlockMerger {
             }
         });
 
-        // Greedy merge: iterate and merge consecutive blocks with same properties
+        // Greedy merge: only merge contiguous runs in reading order.
+        // If a block with different properties or non-mergeable spacing appears
+        // between candidates, do not merge across it.
         let mut merge_groups: Vec<Vec<usize>> = Vec::new();
         let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
@@ -186,15 +230,21 @@ impl AnalysisModule for TextBlockMerger {
             let mut group = vec![idx_a];
             used.insert(idx_a);
 
-            // Try to merge with subsequent blocks
+            // Try to merge with immediately subsequent blocks only.
             for j in (i + 1)..text_blocks.len() {
                 let (idx_b, ref props_b) = text_blocks[j];
                 if used.contains(&idx_b) {
                     continue;
                 }
 
-                // Must have matching font properties
+                // A different-style block in the same flow lane acts as a
+                // barrier (e.g. heading line between two labels). Blocks in
+                // other columns should not block scanning.
                 if props_a != props_b {
+                    let last_in_group = *group.last().unwrap();
+                    if Self::is_same_flow_lane(doc, last_in_group, idx_b) {
+                        break;
+                    }
                     continue;
                 }
 
@@ -203,6 +253,10 @@ impl AnalysisModule for TextBlockMerger {
                 if Self::should_merge(doc, last_in_group, idx_b) {
                     group.push(idx_b);
                     used.insert(idx_b);
+                } else {
+                    // Same visual style but no longer contiguous/close enough;
+                    // don't skip ahead and merge later blocks.
+                    break;
                 }
             }
 
@@ -439,5 +493,120 @@ mod tests {
         assert!(text.contains("Line one"));
         assert!(text.contains("Line two"));
         assert!(text.contains("Line three"));
+    }
+
+    #[test]
+    fn test_does_not_merge_across_intervening_text_block() {
+        // "Line A" and "Line C" have matching style and could merge by distance,
+        // but "Middle heading" is between them and should block cross-merge.
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                FlattenedNode::new_text(
+                    "Line A".to_string(),
+                    num(12.0),
+                    "Helvetica".to_string(),
+                    num(10.0),
+                    num(100.0),
+                    num(100.0),
+                    num(14.0),
+                ),
+                FlattenedNode::new_text(
+                    "Middle heading".to_string(),
+                    num(14.0), // different size => different text block props
+                    "Helvetica".to_string(),
+                    num(10.0),
+                    num(116.0),
+                    num(140.0),
+                    num(16.0),
+                ),
+                FlattenedNode::new_text(
+                    "Line C".to_string(),
+                    num(12.0),
+                    "Helvetica".to_string(),
+                    num(10.0),
+                    num(134.0),
+                    num(100.0),
+                    num(14.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        TextBlockMerger::new().process(&mut doc);
+
+        let root_text_blocks = doc.root_text_blocks();
+        assert_eq!(
+            root_text_blocks.len(),
+            3,
+            "Text blocks separated by an intervening block must not be merged"
+        );
+    }
+
+    #[test]
+    fn test_multi_column_interleaving_does_not_block_same_column_merge() {
+        // Left-column lines should still merge even if a right-column text block
+        // appears between them in global y/x sort order.
+        let flattened = Flattened::from_nodes(
+            Page {
+                width: num(595.0),
+                height: num(842.0),
+            },
+            vec![
+                FlattenedNode::new_text(
+                    "Left line 1".to_string(),
+                    num(12.0),
+                    "Helvetica".to_string(),
+                    num(10.0),
+                    num(100.0),
+                    num(100.0),
+                    num(14.0),
+                ),
+                FlattenedNode::new_text(
+                    "Right heading".to_string(),
+                    num(14.0),
+                    "Helvetica".to_string(),
+                    num(250.0),
+                    num(100.0),
+                    num(120.0),
+                    num(16.0),
+                ),
+                FlattenedNode::new_text(
+                    "Left line 2".to_string(),
+                    num(12.0),
+                    "Helvetica".to_string(),
+                    num(10.0),
+                    num(116.0),
+                    num(100.0),
+                    num(14.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+        TextBlockGrouper::new().process(&mut doc);
+        TextBlockMerger::new().process(&mut doc);
+
+        let root_text_blocks = doc.root_text_blocks();
+        assert_eq!(
+            root_text_blocks.len(),
+            2,
+            "Left column lines should merge; right column text remains separate"
+        );
+
+        let merged_texts: Vec<String> = root_text_blocks
+            .iter()
+            .map(|&idx| doc.get_text_content(idx))
+            .collect();
+        assert!(
+            merged_texts
+                .iter()
+                .any(|t| t.contains("Left line 1") && t.contains("Left line 2")),
+            "Expected merged left-column text block"
+        );
     }
 }
