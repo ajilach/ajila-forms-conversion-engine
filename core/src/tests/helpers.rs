@@ -385,7 +385,7 @@ struct ParsedXmlNode {
     children: Vec<usize>,
 }
 
-fn build_aem_test_output(
+pub(super) fn build_aem_test_output(
     pdfs: &[(&str, &str)],
 ) -> (
     Vec<StructuredNode>,

@@ -14015,6 +14015,61 @@ fn test_aem_package_valid_aacq() {
     assert_aem_package_valid_for(&[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")]);
 }
 
+#[test]
+fn test_aem_aacq_title_translated() {
+    // Verify that the guideformtitle _value is properly translated in the
+    // AEM package dictionary for the AACQ form (DE/EN).
+    use std::io::Read;
+
+    let (content, root, config) =
+        helpers::build_aem_test_output(&[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")]);
+
+    // master_language is "en", so the root title should be the EN text
+    if let crate::aem::AemNode::Root { ref title, .. } = root {
+        assert!(
+            title.contains("Manageable accounts"),
+            "Root title should contain EN title text, got: {:?}",
+            title
+        );
+    } else {
+        panic!("Expected AemNode::Root");
+    }
+
+    let zip_bytes = crate::aem::generate_aem_package(&root, &config, &content);
+    let reader = std::io::Cursor::new(zip_bytes);
+    let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+    // Find the DE dictionary file in the package (master is EN, so DE gets translated)
+    let dict_base = format!(
+        "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
+        config.form_path,
+        config.form_dir()
+    );
+    let de_dict_path = format!("{}/de.xml", dict_base);
+
+    let mut de_dict_xml = String::new();
+    archive
+        .by_name(&de_dict_path)
+        .unwrap_or_else(|_| panic!("package missing DE dictionary entry: {de_dict_path}"))
+        .read_to_string(&mut de_dict_xml)
+        .expect("read DE dictionary xml");
+
+    // The dictionary must contain a translation entry whose sling:key matches
+    // the guideformtitle _value format (fd_<p>…</p>) and whose sling:message
+    // is the DE translation wrapped in <p>…</p>.
+    // In the XML the angle brackets are escaped as &lt; / &gt;.
+    assert!(
+        de_dict_xml.contains("fd_&lt;p&gt;Manageable accounts"),
+        "DE dictionary should contain the EN title as sling:key with fd_ prefix and <p> wrapping.\n\
+         Dictionary XML:\n{de_dict_xml}"
+    );
+    assert!(
+        de_dict_xml.contains("&lt;p&gt;Bewirtschaftbare Konten"),
+        "DE dictionary should contain the DE title translation wrapped in <p>.\n\
+         Dictionary XML:\n{de_dict_xml}"
+    );
+}
+
 /// Runs the complete pipeline (parsing → exhaustive state search → structuring
 /// → translation merging → AEM XML generation) for every form code available
 /// in the input directory and validates the resulting AEM content.xml using

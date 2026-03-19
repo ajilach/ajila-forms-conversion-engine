@@ -558,8 +558,14 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut Transla
     match node {
         StructuredNode::Heading(h) => {
             match h.level {
-                // H1/H2 become panel jcr:title (plain text), so use plain text keys
-                HeadingLevel::H1 | HeadingLevel::H2 => {
+                // H1 becomes guideformtitle _value (HTML-wrapped <p>…</p>)
+                HeadingLevel::H1 => {
+                    extract_rich_text_translations(&h.content, master_lang, map, |html| {
+                        format!("<p>{html}</p>")
+                    });
+                }
+                // H2 becomes panel jcr:title (plain text), so use plain text keys
+                HeadingLevel::H2 => {
                     extract_from_inline_text(&h.content, master_lang, map);
                 }
                 // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys
@@ -1260,6 +1266,48 @@ mod tests {
         assert_eq!(
             sling_key, "fd_<p>Authorized representative(s)</p>",
             "sling:key must be fd_ prefixed _value content"
+        );
+    }
+
+    #[test]
+    fn translation_key_for_h1_guideformtitle_includes_html_wrapping() {
+        // H1 headings become guideformtitle _value (HTML-wrapped <p>…</p>)
+        use crate::structured::{
+            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+        };
+        use std::collections::HashMap;
+
+        let mut tmap = HashMap::new();
+        tmap.insert("de".into(), "Bewirtschaftbare Konten".into());
+        tmap.insert("en".into(), "Manageable accounts".into());
+
+        let node = StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H1,
+            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+        });
+
+        let translations = extract_translations(&[node], "de");
+
+        // H1 guideformtitle uses _value with <p> wrapping, so the key must be HTML-wrapped
+        let expected_key = "<p>Bewirtschaftbare Konten</p>";
+        assert!(
+            translations.contains_key(expected_key),
+            "H1 guideformtitle key must include <p> wrapping, got keys: {:?}",
+            translations.keys().collect::<Vec<_>>()
+        );
+
+        let sling_key = format!("fd_{}", expected_key);
+        assert_eq!(sling_key, "fd_<p>Bewirtschaftbare Konten</p>");
+
+        assert_eq!(
+            translations[expected_key]["en"],
+            "<p>Manageable accounts</p>"
+        );
+
+        // Must NOT have plain-text key
+        assert!(
+            !translations.contains_key("Bewirtschaftbare Konten"),
+            "H1 guideformtitle key must NOT be plain text"
         );
     }
 
