@@ -1190,7 +1190,8 @@ fn explore_radio(
         // OPTIMIZATION (Step 2): Share the script registry via Arc
         let branches: Result<Vec<PreparedBranch>, crate::Error> = group_fields
             .par_iter()
-            .map(|radio_field| {
+            .enumerate()
+            .map(|(option_index, radio_field)| {
                 let nodes = ctx.post_init_nodes.as_ref().clone();
                 let mut new_form = XfaForm::from_post_init_with_registry(
                     nodes,
@@ -1204,11 +1205,12 @@ fn explore_radio(
                 let mut state = exploration_state.clone();
                 // OPTIMIZATION (Step 1): Use precomputed excl-group map
                 let group_path = ctx.excl_group_map.get(&radio_field.path).cloned().flatten();
-                state.selections.push(Selection::new(
+                state.selections.push(Selection::new_with_index(
                     radio_field.path.clone(),
                     group_path.clone(),
                     radio_field.path.name().to_string(),
                     SelectionKind::Radio,
+                    option_index,
                 ));
 
                 // Mark all fields in this radio group as processed
@@ -1277,7 +1279,8 @@ fn explore_checkbox(
     // OPTIMIZATION (Step 2): Share the script registry via Arc
     let branches: Result<Vec<PreparedBranch>, crate::Error> = checkbox_values
         .par_iter()
-        .map(|(raw_value, label)| {
+        .enumerate()
+        .map(|(option_index, (raw_value, label))| {
             let nodes = ctx.post_init_nodes.as_ref().clone();
             let mut new_form = XfaForm::from_post_init_with_registry(
                 nodes,
@@ -1289,10 +1292,11 @@ fn explore_checkbox(
             let _ = new_form.set_value_as_user(field.path.as_str(), raw_value);
 
             let mut state = exploration_state.clone();
-            state.selections.push(Selection::standalone(
+            state.selections.push(Selection::standalone_with_index(
                 field.path.clone(),
                 label.to_string(),
                 SelectionKind::Checkbox,
+                option_index,
             ));
             state.field_actions[field_index] = Some(FieldAction::Selected(label.to_string()));
             state.next_field_index = field_index + 1;
@@ -1335,7 +1339,8 @@ fn explore_dropdown(
     // OPTIMIZATION (Step 2): Share the script registry via Arc
     let branches: Result<Vec<PreparedBranch>, crate::Error> = options
         .par_iter()
-        .map(|(display_value, save_value)| {
+        .enumerate()
+        .map(|(option_index, (display_value, save_value))| {
             let nodes = ctx.post_init_nodes.as_ref().clone();
             let mut new_form = XfaForm::from_post_init_with_registry(
                 nodes,
@@ -1347,10 +1352,11 @@ fn explore_dropdown(
             let _ = new_form.set_value_as_user(field.path.as_str(), save_value);
 
             let mut state = exploration_state.clone();
-            state.selections.push(Selection::standalone(
+            state.selections.push(Selection::standalone_with_index(
                 field.path.clone(),
                 display_value.clone(),
                 SelectionKind::Dropdown,
+                option_index,
             ));
             state.field_actions[field_index] = Some(FieldAction::Selected(save_value.clone()));
             state.next_field_index = field_index + 1;

@@ -65,6 +65,11 @@ pub struct Selection {
     pub values: Vec<String>,
     /// The kind of selection (radio, checkbox, or dropdown)
     pub kind: SelectionKind,
+    /// Language-agnostic positional index of the selected option within its
+    /// field's option list (0-based).  Used by the pipeline to match
+    /// corresponding states across languages without relying on
+    /// language-dependent value strings.
+    pub option_index: usize,
 }
 
 impl Selection {
@@ -83,6 +88,26 @@ impl Selection {
             group_som_path: group_path,
             values: vec![value],
             kind,
+            option_index: 0,
+        }
+    }
+
+    /// Create a new selection with an explicit option index.
+    pub fn new_with_index(
+        field_path: SomPath,
+        group_path: Option<SomPath>,
+        value: String,
+        kind: SelectionKind,
+        option_index: usize,
+    ) -> Self {
+        Self {
+            field_path: FieldId::from_som_path(&field_path),
+            group_path: group_path.as_ref().map(FieldId::from_som_path),
+            som_path: field_path,
+            group_som_path: group_path,
+            values: vec![value],
+            kind,
+            option_index,
         }
     }
 
@@ -96,6 +121,25 @@ impl Selection {
             group_som_path: None,
             values: vec![value],
             kind,
+            option_index: 0,
+        }
+    }
+
+    /// Create a standalone selection with an explicit option index.
+    pub fn standalone_with_index(
+        field_path: SomPath,
+        value: String,
+        kind: SelectionKind,
+        option_index: usize,
+    ) -> Self {
+        Self {
+            field_path: FieldId::from_som_path(&field_path),
+            group_path: None,
+            som_path: field_path,
+            group_som_path: None,
+            values: vec![value],
+            kind,
+            option_index,
         }
     }
 

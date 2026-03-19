@@ -8840,6 +8840,53 @@ fn build_aaam_default_merged() -> crate::DocumentEnvelope {
     crate::merge_translations(vec![de, en, sp]).expect("Failed to merge AAAM DE/EN/SP")
 }
 
+#[test]
+fn test_aaam_pipeline_multilingual_merge_succeeds() {
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+    use std::collections::BTreeSet;
+
+    let files = vec![
+        (
+            "AAAM_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AAAM_019_DE.pdf")).expect("Failed to read AAAM DE PDF"),
+        ),
+        (
+            "AAAM_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AAAM_019_EN.pdf")).expect("Failed to read AAAM EN PDF"),
+        ),
+        (
+            "AAAM_019_SP.pdf".to_string(),
+            std::fs::read(input_path("AAAM_019_SP.pdf")).expect("Failed to read AAAM SP PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let output =
+        run_pipeline(&files, &config, |_| {}).expect("AAAM pipeline should merge successfully");
+
+    // Verify that all three languages are present in the merged output
+    let mut langs = BTreeSet::new();
+    for node in &output.merged.content {
+        node.collect_languages(&mut langs);
+    }
+
+    assert!(
+        !output.merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
+    assert!(
+        langs.len() >= 2,
+        "Merged AAAM output should contain at least two languages, got: {:?}",
+        langs
+    );
+}
+
 fn contains_lang(ts: &crate::TranslatableString, lang: &str, needle: &str) -> bool {
     ts.get(lang).map(|s| s.contains(needle)).unwrap_or(false)
 }
