@@ -145,7 +145,11 @@ impl TextBlockMerger {
 
     /// Check whether `idx_b` sits in the same text flow lane as `idx_a`.
     ///
-    /// This is used to decide whether a non-mergeable block should stop
+    /// "Same lane" means the blocks share horizontal extent (with a small
+    /// gap tolerance for slight misalignment within a single column) **and**
+    /// are no more than one line-height apart vertically.
+    ///
+    /// This is used to decide whether a different-style block should stop
     /// scanning for later merge candidates. In multi-column layouts, unrelated
     /// blocks in another column should not block merging within the current
     /// column.
@@ -166,8 +170,8 @@ impl TextBlockMerger {
             true
         } else {
             let horiz_gap = overlap_left - overlap_right;
-            let max_width = bounds_a.width.max(bounds_b.width);
-            horiz_gap <= max_width / Decimal::from(5)
+            let min_width = bounds_a.width.min(bounds_b.width);
+            horiz_gap <= min_width / Decimal::from(5)
         };
 
         if !horizontal_aligned {
@@ -183,6 +187,26 @@ impl TextBlockMerger {
         let line_height = bounds_a.height.max(bounds_b.height);
 
         vertical_gap <= line_height
+    }
+
+    /// Check whether `idx_b` is in the same column as `idx_a` based on
+    /// strict horizontal overlap (no gap tolerance).
+    ///
+    /// Used when deciding whether a same-style block that doesn't merge
+    /// should act as a barrier.  Two blocks in separate columns (no x
+    /// overlap) must not block continuation scanning in the other column.
+    fn is_same_column(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
+        let bounds_a = match doc.get_bounds(idx_a) {
+            Some(b) => b,
+            None => return false,
+        };
+        let bounds_b = match doc.get_bounds(idx_b) {
+            Some(b) => b,
+            None => return false,
+        };
+        let overlap_left = bounds_a.x.max(bounds_b.x);
+        let overlap_right = bounds_a.right().min(bounds_b.right());
+        overlap_right > overlap_left
     }
 }
 
@@ -254,9 +278,14 @@ impl AnalysisModule for TextBlockMerger {
                     group.push(idx_b);
                     used.insert(idx_b);
                 } else {
-                    // Same visual style but no longer contiguous/close enough;
-                    // don't skip ahead and merge later blocks.
-                    break;
+                    // Same visual style but not close enough.
+                    // Only treat as a barrier when the block is in the same
+                    // column (strict horizontal overlap).  Blocks in a
+                    // different column must not prevent scanning further in
+                    // the current column.
+                    if Self::is_same_column(doc, last_in_group, idx_b) {
+                        break;
+                    }
                 }
             }
 

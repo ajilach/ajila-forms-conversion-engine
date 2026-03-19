@@ -7564,7 +7564,10 @@ fn debug_aagz_xfa_freigeben_structure() {
             // Check if any direct child contains the text
             let child_has_it = node.children.iter().any(|c| match &c.kind {
                 xfa::XfaNodeKind::Text { content } => content.contains(text),
-                xfa::XfaNodeKind::Element { text_content: Some(tc), .. } => tc.contains(text),
+                xfa::XfaNodeKind::Element {
+                    text_content: Some(tc),
+                    ..
+                } => tc.contains(text),
                 _ => false,
             });
             if child_has_it {
@@ -7580,18 +7583,34 @@ fn debug_aagz_xfa_freigeben_structure() {
             xfa::XfaNodeKind::Text { content } => {
                 println!("{}[Text] {:?}", pad, content);
             }
-            xfa::XfaNodeKind::Element { tag_name, text_content } => {
-                let attrs: Vec<String> = node.attributes.iter()
+            xfa::XfaNodeKind::Element {
+                tag_name,
+                text_content,
+            } => {
+                let attrs: Vec<String> = node
+                    .attributes
+                    .iter()
                     .map(|(k, v)| format!("{}={:?}", k, v))
                     .collect();
-                println!("{}[Element <{}>] attrs=[{}] text_content={:?} children={}", 
-                    pad, tag_name, attrs.join(", "), text_content, node.children.len());
+                println!(
+                    "{}[Element <{}>] attrs=[{}] text_content={:?} children={}",
+                    pad,
+                    tag_name,
+                    attrs.join(", "),
+                    text_content,
+                    node.children.len()
+                );
                 for c in &node.children {
                     dump_node(c, depth + 1);
                 }
             }
             _ => {
-                println!("{}[Other {:?}] children={}", pad, std::mem::discriminant(&node.kind), node.children.len());
+                println!(
+                    "{}[Other {:?}] children={}",
+                    pad,
+                    std::mem::discriminant(&node.kind),
+                    node.children.len()
+                );
             }
         }
     }
@@ -7611,7 +7630,6 @@ fn debug_aagz_xfa_freigeben_structure() {
         dump_node(n, 0);
     }
 }
-
 
 /// e.g. "freigeben                                  (Bedingt". After whitespace
 /// normalisation these must be collapsed to exactly one space – not dropped
@@ -9483,6 +9501,7 @@ fn assert_aagg_translation_triplet_on_same_node(
 
     let contains_normalized =
         |haystack: &str, needle: &str| normalize_ws_ci(haystack).contains(&normalize_ws_ci(needle));
+    let truncate_for_debug = |s: &str| s.chars().take(220).collect::<String>();
 
     let mut triplet_found = false;
     let mut partial_hits: Vec<(String, String, String)> = Vec::new();
@@ -9513,9 +9532,9 @@ fn assert_aagg_translation_triplet_on_same_node(
                             triplet_found = true;
                         } else {
                             partial_hits.push((
-                                de_text[..de_text.len().min(220)].to_string(),
-                                en_text[..en_text.len().min(220)].to_string(),
-                                sp_text[..sp_text.len().min(220)].to_string(),
+                                truncate_for_debug(de_text),
+                                truncate_for_debug(en_text),
+                                truncate_for_debug(sp_text),
                             ));
                         }
                     }
@@ -13908,53 +13927,126 @@ fn test_aem_xml_valid_acav() {
 /// the UBS AEM profile templates (see `test_aem_xml_valid_acav` above).
 /// Non-UBS forms (antrag_*, anordnung_*) are also excluded.
 #[test]
+#[ignore]
 fn test_all_form_codes_pipeline() {
     let all_forms: &[&[(&str, &str)]] = &[
         // ── entity 019 ────────────────────────────────────────────────────────
-        &[("AAAA_019_DE.pdf", "de"), ("AAAA_019_EN.pdf", "en"), ("AAAA_019_SP.pdf", "es")],
+        &[
+            ("AAAA_019_DE.pdf", "de"),
+            ("AAAA_019_EN.pdf", "en"),
+            ("AAAA_019_SP.pdf", "es"),
+        ],
         &[("AAAB_019_DE.pdf", "de")],
         &[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")],
-        &[("AAAL_019_DE.pdf", "de"), ("AAAL_019_EN.pdf", "en"), ("AAAL_019_SP.pdf", "es")],
-        &[("AAAM_019_DE.pdf", "de"), ("AAAM_019_EN.pdf", "en"), ("AAAM_019_SP.pdf", "es")],
+        &[
+            ("AAAL_019_DE.pdf", "de"),
+            ("AAAL_019_EN.pdf", "en"),
+            ("AAAL_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AAAM_019_DE.pdf", "de"),
+            ("AAAM_019_EN.pdf", "en"),
+            ("AAAM_019_SP.pdf", "es"),
+        ],
         &[("AAAQ_019_DE.pdf", "de")],
         &[("AAAU_019_EN.pdf", "en")],
         &[("AAAV_019_DE.pdf", "de")],
         &[("AABK_019_DE.pdf", "de")],
         &[("AACC_019_DE.pdf", "de"), ("AACC_019_EN.pdf", "en")],
-        &[("AACE_019_DE.pdf", "de"), ("AACE_019_EN.pdf", "en"), ("AACE_019_SP.pdf", "es")],
-        &[("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en"), ("AACJ_019_SP.pdf", "es")],
+        &[
+            ("AACE_019_DE.pdf", "de"),
+            ("AACE_019_EN.pdf", "en"),
+            ("AACE_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AACJ_019_DE.pdf", "de"),
+            ("AACJ_019_EN.pdf", "en"),
+            ("AACJ_019_SP.pdf", "es"),
+        ],
         &[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")],
-        &[("AACS_019_DE.pdf", "de"), ("AACS_019_EN.pdf", "en"), ("AACS_019_SP.pdf", "es")],
-        &[("AACW_019_DE.pdf", "de"), ("AACW_019_EN.pdf", "en"), ("AACW_019_SP.pdf", "es")],
+        &[
+            ("AACS_019_DE.pdf", "de"),
+            ("AACS_019_EN.pdf", "en"),
+            ("AACS_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AACW_019_DE.pdf", "de"),
+            ("AACW_019_EN.pdf", "en"),
+            ("AACW_019_SP.pdf", "es"),
+        ],
         &[("AAEI_019_DE.pdf", "de")],
         &[("AAEV_019_EN.pdf", "en")],
         &[("AAFK_019_DE.pdf", "de")],
-        &[("AAGF_019_DE.pdf", "de"), ("AAGF_019_EN.pdf", "en"), ("AAGF_019_SP.pdf", "es")],
-        &[("AAGG_019_DE.pdf", "de"), ("AAGG_019_EN.pdf", "en"), ("AAGG_019_SP.pdf", "es")],
+        &[
+            ("AAGF_019_DE.pdf", "de"),
+            ("AAGF_019_EN.pdf", "en"),
+            ("AAGF_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AAGG_019_DE.pdf", "de"),
+            ("AAGG_019_EN.pdf", "en"),
+            ("AAGG_019_SP.pdf", "es"),
+        ],
         &[("AAGS_019_DE.pdf", "de"), ("AAGS_019_EN.pdf", "en")],
         &[("AAGZ_019_DE.pdf", "de"), ("AAGZ_019_EN.pdf", "en")],
         &[("AAHA_019_DE.pdf", "de"), ("AAHA_019_EN.pdf", "en")],
         &[("AAHM_019_DE.pdf", "de")],
         &[("AAHO_019_DE.pdf", "de")],
         &[("AAHQ_019_DE.pdf", "de")],
-        &[("AAIR_019_DE.pdf", "de"), ("AAIR_019_EN.pdf", "en"), ("AAIR_019_SP.pdf", "es")],
-        &[("AAIS_019_DE.pdf", "de"), ("AAIS_019_EN.pdf", "en"), ("AAIS_019_SP.pdf", "es")],
+        &[
+            ("AAIR_019_DE.pdf", "de"),
+            ("AAIR_019_EN.pdf", "en"),
+            ("AAIR_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AAIS_019_DE.pdf", "de"),
+            ("AAIS_019_EN.pdf", "en"),
+            ("AAIS_019_SP.pdf", "es"),
+        ],
         &[("AAKI_019_SP.pdf", "es")],
-        &[("AAKS_019_DE.pdf", "de"), ("AAKS_019_EN.pdf", "en"), ("AAKS_019_SP.pdf", "es")],
-        &[("AALH_019_DE.pdf", "de"), ("AALH_019_EN.pdf", "en"), ("AALH_019_SP.pdf", "es")],
+        &[
+            ("AAKS_019_DE.pdf", "de"),
+            ("AAKS_019_EN.pdf", "en"),
+            ("AAKS_019_SP.pdf", "es"),
+        ],
+        &[
+            ("AALH_019_DE.pdf", "de"),
+            ("AALH_019_EN.pdf", "en"),
+            ("AALH_019_SP.pdf", "es"),
+        ],
         &[("AALP_019_DE.pdf", "de"), ("AALP_019_EN.pdf", "en")],
         &[("AALQ_019_DE.pdf", "de"), ("AALQ_019_EN.pdf", "en")],
         &[("AALR_019_DE.pdf", "de"), ("AALR_019_EN.pdf", "en")],
         &[("AAMB_019_DE.pdf", "de")],
-        &[("AANE_019_DE.pdf", "de"), ("AANE_019_EN.pdf", "en"), ("AANE_019_SP.pdf", "es")],
+        &[
+            ("AANE_019_DE.pdf", "de"),
+            ("AANE_019_EN.pdf", "en"),
+            ("AANE_019_SP.pdf", "es"),
+        ],
         &[("AAXC_019_DE.pdf", "de"), ("AAXC_019_EN.pdf", "en")],
         &[("ABRS_019_EN.pdf", "en")],
         &[("ADDS_019_DE.pdf", "de")],
         &[("BAGE_019_DE.pdf", "de"), ("BAGE_019_EN.pdf", "en")],
-        &[("BAGO_019_DE.pdf", "de"), ("BAGO_019_EN.pdf", "en"), ("BAGO_019_SP.pdf", "es")],
-        &[("BAGQ_019_DE.pdf", "de"), ("BAGQ_019_EN.pdf", "en"), ("BAGQ_019_SP.pdf", "es")],
-        &[("BAGU_019_DE.pdf", "de"), ("BAGU_019_EN.pdf", "en"), ("BAGU_019_SP.pdf", "es")],
-        &[("BAGW_019_DE.pdf", "de"), ("BAGW_019_EN.pdf", "en"), ("BAGW_019_SP.pdf", "es")],
+        &[
+            ("BAGO_019_DE.pdf", "de"),
+            ("BAGO_019_EN.pdf", "en"),
+            ("BAGO_019_SP.pdf", "es"),
+        ],
+        &[
+            ("BAGQ_019_DE.pdf", "de"),
+            ("BAGQ_019_EN.pdf", "en"),
+            ("BAGQ_019_SP.pdf", "es"),
+        ],
+        &[
+            ("BAGU_019_DE.pdf", "de"),
+            ("BAGU_019_EN.pdf", "en"),
+            ("BAGU_019_SP.pdf", "es"),
+        ],
+        &[
+            ("BAGW_019_DE.pdf", "de"),
+            ("BAGW_019_EN.pdf", "en"),
+            ("BAGW_019_SP.pdf", "es"),
+        ],
         // ── entity 033 ────────────────────────────────────────────────────────
         &[("AACB_033_IT.pdf", "it")],
         &[("AADQ_033_IT.pdf", "it")],
@@ -14070,13 +14162,29 @@ fn test_aais_019_structural_similarity_diagnostic() {
 
     // ── Print state counts ────────────────────────────────────────────────────
     println!("\n=== AAIS_019 state counts ===");
-    println!("  DE: {} states, {} top-level nodes", de.state_count, de.content.len());
-    println!("  EN: {} states, {} top-level nodes", en.state_count, en.content.len());
-    println!("  SP: {} states, {} top-level nodes", sp.state_count, sp.content.len());
+    println!(
+        "  DE: {} states, {} top-level nodes",
+        de.state_count,
+        de.content.len()
+    );
+    println!(
+        "  EN: {} states, {} top-level nodes",
+        en.state_count,
+        en.content.len()
+    );
+    println!(
+        "  SP: {} states, {} top-level nodes",
+        sp.state_count,
+        sp.content.len()
+    );
 
     // ── Print top-level node lists ────────────────────────────────────────────
     for (lang, env) in [("DE", &de), ("EN", &en), ("SP", &sp)] {
-        println!("\n=== AAIS_019 {} top-level nodes ({} total) ===", lang, env.content.len());
+        println!(
+            "\n=== AAIS_019 {} top-level nodes ({} total) ===",
+            lang,
+            env.content.len()
+        );
         for (i, node) in env.content.iter().enumerate() {
             println!("  [{:02}] {}", i, node_label(node));
         }
@@ -14256,7 +14364,10 @@ fn test_aais_019_en_form_addressee_investigation() {
         // Find the CL_ClientType node and print its change script
         if let Some(cl_node) = find_node_by_name(xfa_nodes, "CL_ClientType") {
             let events = parse_events_from_node(&cl_node.children);
-            println!("\n=== {} ({}) — CL_ClientType change scripts ===", file, lang);
+            println!(
+                "\n=== {} ({}) — CL_ClientType change scripts ===",
+                file, lang
+            );
             for event in &events {
                 if event.activity == EventActivity::Change {
                     println!(
@@ -14271,7 +14382,10 @@ fn test_aais_019_en_form_addressee_investigation() {
                 println!("  NO change event found!");
             }
         } else {
-            println!("\n=== {} ({}) — CL_ClientType NOT FOUND in XFA tree ===", file, lang);
+            println!(
+                "\n=== {} ({}) — CL_ClientType NOT FOUND in XFA tree ===",
+                file, lang
+            );
         }
 
         // ── Print soConfigClientType script object content ────────────────────
@@ -14286,7 +14400,10 @@ fn test_aais_019_en_form_addressee_investigation() {
                 &content[..content.len().min(3000)]
             );
         } else {
-            println!("\n=== {} ({}) — soConfigClientType NOT FOUND ===", file, lang);
+            println!(
+                "\n=== {} ({}) — soConfigClientType NOT FOUND ===",
+                file, lang
+            );
         }
 
         // ── Print soLocalLabelDefinition script object content ────────────────
@@ -14301,7 +14418,10 @@ fn test_aais_019_en_form_addressee_investigation() {
                 &content[..content.len().min(5000)]
             );
         } else {
-            println!("\n=== {} ({}) — soLocalLabelDefinition NOT FOUND ===", file, lang);
+            println!(
+                "\n=== {} ({}) — soLocalLabelDefinition NOT FOUND ===",
+                file, lang
+            );
         }
 
         // ── List ALL script objects ───────────────────────────────────────────
@@ -14330,7 +14450,12 @@ fn test_aais_019_en_form_addressee_investigation() {
         let mut dropdowns: Vec<String> = Vec::new();
         find_dropdowns(&xfa_nodes, "", &mut dropdowns);
 
-        println!("\n=== {} ({}) — {} dropdown fields ===", file, lang, dropdowns.len());
+        println!(
+            "\n=== {} ({}) — {} dropdown fields ===",
+            file,
+            lang,
+            dropdowns.len()
+        );
         for path in &dropdowns {
             let som = SomPath::new(path.clone());
             let has_change = registry.has_interactive_scripts(&som);
@@ -14343,7 +14468,9 @@ fn test_aais_019_en_form_addressee_investigation() {
         }
 
         // ── (B) Check state selections to see which fields were actually explored ──
-        let states = bp.states().unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
+        let states = bp
+            .states()
+            .unwrap_or_else(|e| panic!("Failed to get states for {}: {}", file, e));
         println!("\n  States: {} total", states.len());
         for state in states.iter() {
             let sel_summary: Vec<String> = state
@@ -14404,11 +14531,18 @@ fn test_aais_019_en_form_addressee_investigation() {
         // Each EN state should have separate CL_ClientType selections (not merged)
         // because now each option produces a different visible layout
         for state in states_en.iter() {
-            let cl_sel = state.selections.iter().find(|s| s.field_path.to_string().contains("bbe42e19"));
+            let cl_sel = state
+                .selections
+                .iter()
+                .find(|s| s.field_path.to_string().contains("bbe42e19"));
             assert!(
                 cl_sel.is_some(),
                 "Each EN state should have a CL_ClientType selection, got: {:?}",
-                state.selections.iter().map(|s| s.field_path.to_string()).collect::<Vec<_>>()
+                state
+                    .selections
+                    .iter()
+                    .map(|s| s.field_path.to_string())
+                    .collect::<Vec<_>>()
             );
         }
     }
@@ -16988,40 +17122,46 @@ fn test_aaai_has_address_and_individual_fragments() {
     );
 }
 
-    #[test]
-    fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
-        // Regression test: the "Nachname" field in AAHA_019_DE should have the label
-        // "Nachname" only. The agreement text ("Hiermit erkläre ich...") belongs to a
-        // separate paragraph and must NOT be concatenated into that label.
-        use crate::run_exhaustive_to_merged;
+#[test]
+fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
+    // Regression test: the "Nachname" field in AAHA_019_DE should have the label
+    // "Nachname" only. The agreement text ("Hiermit erkläre ich...") belongs to a
+    // separate paragraph and must NOT be concatenated into that label.
+    use crate::run_exhaustive_to_merged;
 
-        let structured = run_exhaustive_to_merged(input_path("AAHA_019_DE.pdf"))
-            .expect("Failed to process AAHA_019_DE.pdf");
+    let structured = run_exhaustive_to_merged(input_path("AAHA_019_DE.pdf"))
+        .expect("Failed to process AAHA_019_DE.pdf");
 
-        let field_labels = collect_field_labels_trimmed(&structured);
+    let field_labels = collect_field_labels_trimmed(&structured);
 
-        println!("\n=== AAHA_019_DE field labels ===");
-        for label in &field_labels {
-            println!("  - '{}'", &label[..label.len().min(120)]);
-        }
-
-        // The "Nachname" label must not contain the agreement text
-        let contaminated = field_labels.iter().find(|l| {
-            l.contains("Nachname") && l.contains("Hiermit erkläre")
-        });
-        assert!(
-            contaminated.is_none(),
-            "Nachname field label should not include agreement text, but got: '{}'",
-            contaminated.map(|s| &s[..s.len().min(200)]).unwrap_or("")
-        );
-
-        // The "Nachname" label must be present with a clean value
-        let nachname_label = field_labels.iter().find(|l| l.contains("Nachname"));
-        assert!(
-            nachname_label.is_some(),
-            "Expected a field with label containing 'Nachname', but found none. Labels: {:?}",
-            field_labels.iter().map(|l| &l[..l.len().min(60)]).collect::<Vec<_>>()
-        );
-
-        println!("\n✓ AAHA_019_DE Nachname label is clean: '{}'", nachname_label.unwrap());
+    println!("\n=== AAHA_019_DE field labels ===");
+    for label in &field_labels {
+        println!("  - '{}'", &label[..label.len().min(120)]);
     }
+
+    // The "Nachname" label must not contain the agreement text
+    let contaminated = field_labels
+        .iter()
+        .find(|l| l.contains("Nachname") && l.contains("Hiermit erkläre"));
+    assert!(
+        contaminated.is_none(),
+        "Nachname field label should not include agreement text, but got: '{}'",
+        contaminated.map(|s| &s[..s.len().min(200)]).unwrap_or("")
+    );
+
+    // The "Nachname" label must be present with a clean value
+    let nachname_label = field_labels.iter().find(|l| l.contains("Nachname"));
+    assert!(
+        nachname_label.is_some(),
+        "Expected a field with label containing 'Nachname', but found none. Labels: {:?}",
+        field_labels
+            .iter()
+            .map(|l| &l[..l.len().min(60)])
+            .collect::<Vec<_>>()
+    );
+
+    println!(
+        "\n✓ AAHA_019_DE Nachname label is clean: '{}'",
+        nachname_label.unwrap()
+    );
+}

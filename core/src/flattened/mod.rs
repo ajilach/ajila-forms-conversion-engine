@@ -7035,6 +7035,25 @@ impl Flattened {
                         };
 
                         if !text.is_empty() || preserve_spaces {
+                            // If the original segment led with whitespace and
+                            // normalize_whitespace stripped it, HTML collapsing
+                            // rules still require a single space between
+                            // adjacent inline runs.  Append it to the last run.
+                            if !preserve_spaces
+                                && segment.starts_with(|c: char| {
+                                    c.is_ascii_whitespace() || c == '\u{00A0}'
+                                })
+                                && !text.starts_with(' ')
+                            {
+                                if let Some(para) = paragraphs.last_mut() {
+                                    if let Some(last_run) = para.runs.last_mut() {
+                                        if !last_run.text.ends_with(' ') {
+                                            last_run.text.push(' ');
+                                        }
+                                    }
+                                }
+                            }
+
                             // Ensure we have a paragraph
                             if paragraphs.is_empty() {
                                 paragraphs.push(RichParagraph {
@@ -7224,35 +7243,16 @@ impl Flattened {
                             if !has_text_children_span {
                                 if let Some(text) = text_content {
                                     if new_preserve {
-                                        // For xfa-spacerun, count spaces but still handle U+2029
-                                        let segments: Vec<&str> = text.split('\u{2029}').collect();
-                                        for (seg_idx, segment) in segments.iter().enumerate() {
-                                            if seg_idx > 0 {
-                                                paragraphs.push(RichParagraph {
-                                                    h_align: default_h_align,
-                                                    ..RichParagraph::default()
-                                                });
-                                            }
-                                            let space_count = segment
-                                                .chars()
-                                                .filter(|c| *c == ' ' || *c == '\u{00A0}')
-                                                .count();
-                                            if space_count > 0 {
-                                                if paragraphs.is_empty() {
-                                                    paragraphs.push(RichParagraph {
-                                                        h_align: default_h_align,
-                                                        ..RichParagraph::default()
-                                                    });
-                                                }
-                                                paragraphs.last_mut().unwrap().runs.push(RichRun {
-                                                    text: " ".repeat(space_count),
-                                                    preserve_spaces: true,
-                                                    bold,
-                                                    italic,
-                                                    underline: false,
-                                                });
-                                            }
-                                        }
+                                        // Preserve all characters and whitespace exactly
+                                        // (except NBSP -> space), while still honoring U+2029.
+                                        Self::add_text_with_paragraph_splits(
+                                            text,
+                                            paragraphs,
+                                            true,
+                                            bold,
+                                            italic,
+                                            default_h_align,
+                                        );
                                     } else {
                                         Self::add_text_with_paragraph_splits(
                                             text,
@@ -8596,7 +8596,7 @@ impl Flattened {
 mod tests {
     use super::*;
     use crate::xfa::font_manager::get_font_manager;
-    use crate::xfa::{Para, VAlign, num};
+    use crate::xfa::{HAlign, Para, VAlign, XfaNode, XfaNodeKind, num};
 
     /// Test that line height from para element is properly scaled.
     /// This tests the fix for the "Vereinbarung" title line spacing issue.
@@ -8738,5 +8738,49 @@ mod tests {
             "Space above at scale 2.0 should add ~20px, got {}",
             space_diff
         );
+    }
+
+    #[test]
+    fn test_parse_rich_text_spacerun_preserves_non_space_characters() {
+        let mut span_attrs = std::collections::HashMap::new();
+        span_attrs.insert("style".to_string(), "xfa-spacerun:yes".to_string());
+        let span = XfaNode {
+            children: vec![],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "span".to_string(),
+                    text_content: Some("AB  CD".to_string()),
+                },
+                span_attrs,
+            )
+        };
+
+        let body = XfaNode {
+            children: vec![span],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "body".to_string(),
+                    text_content: None,
+                },
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let rich = Flattened::parse_rich_text_from_html(
+            &[body],
+            HAlign::Left,
+            None,
+            None,
+            false,
+            false,
+        );
+
+        let text: String = rich
+            .paragraphs
+            .iter()
+            .flat_map(|p| p.runs.iter())
+            .map(|r| r.text.clone())
+            .collect();
+        assert_eq!(text, "AB  CD");
     }
 }
