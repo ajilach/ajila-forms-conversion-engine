@@ -797,7 +797,7 @@ fn validate_guide_node_classes(doc: &ParsedXmlDocument, violations: &mut Vec<Str
         "guideDropDownList",
         "guideDatePicker",
         "guideButton",
-        "guideNumberBox",
+        "guideNumericBox",
         "guideToolbar",
     ];
 

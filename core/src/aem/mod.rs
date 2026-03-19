@@ -418,7 +418,7 @@ pub enum AemNode {
         bind_ref: Option<String>,
     },
 
-    /// Numeric input (`guideNumberBox`).
+    /// Numeric input (`guideNumericBox`).
     NumberField {
         uuid: Uuid,
         name: String,
