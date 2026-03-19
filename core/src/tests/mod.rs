@@ -9435,6 +9435,45 @@ fn test_aaam_statusaenderung_heading_has_visible_top_border_in_flattened() {
 }
 
 #[test]
+fn test_aaam_nachname_label_not_merged_with_adjacent_text_block() {
+    // The "Nachname" field label must be exactly "Nachname". Previously the
+    // TextBlockMerger fused it with the adjacent "Bezugnehmend ..." paragraph
+    // because they shared the same font properties and the vertical gap was
+    // within the line-height threshold (the paragraph's large height inflated
+    // the threshold). The fix adds a width-ratio guard in TextBlockMerger so
+    // blocks with very different widths are not merged.
+    let de = crate::run_exhaustive_to_envelope(input_path("AAAM_019_DE.pdf"), "de")
+        .expect("Failed to process AAAM DE");
+
+    let fields = collect_fields(&de.content);
+
+    let nachname_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            f.label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains("Nachname"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    assert!(
+        !nachname_fields.is_empty(),
+        "Expected at least one field with 'Nachname' in its label"
+    );
+
+    for field in &nachname_fields {
+        let label_text = field.label.as_ref().unwrap().as_plain_text();
+        assert_eq!(
+            label_text.trim(),
+            "Nachname",
+            "Field label should be exactly 'Nachname', not merged with adjacent text.\n\
+             Got: {label_text}"
+        );
+    }
+}
+
+#[test]
 fn test_subform_border_reuses_single_edge_for_bottom_propagation() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::scripting::Presence;

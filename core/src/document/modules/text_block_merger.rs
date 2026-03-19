@@ -140,6 +140,16 @@ impl TextBlockMerger {
             }
         }
 
+        // Don't merge blocks with very different widths. A short label
+        // (e.g. "Nachname") and a full-width paragraph may share the same
+        // font properties and be vertically close, but they are separate
+        // logical elements and must not be fused into a single TextBlock.
+        let narrow = bounds_a.width.min(bounds_b.width);
+        let wide = bounds_a.width.max(bounds_b.width);
+        if wide > Decimal::ZERO && narrow * Decimal::TWO < wide {
+            return false;
+        }
+
         true
     }
 
