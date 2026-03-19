@@ -1,10 +1,10 @@
 pub mod helpers;
 
 use helpers::{
-    assert_aem_xml_valid_for, collect_conditionals, collect_field_labels,
-    collect_field_labels_trimmed, collect_field_names, collect_fields, collect_headings,
-    collect_radio_fields, count_conditionals, find_field_by_name, find_field_id_by_suffix,
-    input_path, load_ubs_profile,
+    assert_aem_package_valid_for, assert_aem_xml_valid_for, collect_conditionals,
+    collect_field_labels, collect_field_labels_trimmed, collect_field_names, collect_fields,
+    collect_headings, collect_radio_fields, count_conditionals, find_field_by_name,
+    find_field_id_by_suffix, input_path, load_ubs_profile,
 };
 
 use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
@@ -13869,6 +13869,11 @@ fn test_aem_xml_valid_aacj() {
 }
 
 #[test]
+fn test_aem_xml_valid_aacq() {
+    assert_aem_xml_valid_for(&[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")]);
+}
+
+#[test]
 fn test_aem_xml_valid_aaei() {
     assert_aem_xml_valid_for(&[("AAEI_019_DE.pdf", "de")]);
 }
@@ -13912,6 +13917,16 @@ fn test_aem_xml_valid_aaqm() {
 #[ignore] // ACAV_001 lacks XFA variables required by the UBS AEM profile templates
 fn test_aem_xml_valid_acav() {
     assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
+}
+
+#[test]
+fn test_aem_package_valid_aaai() {
+    assert_aem_package_valid_for(&[("AAAI_019_DE.pdf", "de"), ("AAAI_019_EN.pdf", "en")]);
+}
+
+#[test]
+fn test_aem_package_valid_aacq() {
+    assert_aem_package_valid_for(&[("AACQ_019_DE.pdf", "de"), ("AACQ_019_EN.pdf", "en")]);
 }
 
 /// Runs the complete pipeline (parsing → exhaustive state search → structuring
