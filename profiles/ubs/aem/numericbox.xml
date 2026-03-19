@@ -10,7 +10,7 @@
     css="{{ variables.css_numericbox }}"
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
-    guideNodeClass="guideNumberBox"
+    guideNodeClass="guideNumericBox"
     mandatory="{{ mandatory }}"
     name="{{ name }}"
     {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
