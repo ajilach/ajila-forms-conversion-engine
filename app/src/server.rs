@@ -47,10 +47,21 @@ pub async fn start_processing(
 
     let sid = session_id.clone();
     std::thread::spawn(move || {
-        let final_state = run_blueprint_pipeline(&files, profile, |state| {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                let mut err_state = ProcessingState::new();
+                err_state.error = Some(format!("Failed to start processing runtime: {e}"));
+                SESSIONS.lock().unwrap().insert(sid, err_state);
+                return;
+            }
+        };
+        rt.block_on(run_blueprint_pipeline(&files, profile, |state| {
             SESSIONS.lock().unwrap().insert(sid.clone(), state.clone());
-        });
-        SESSIONS.lock().unwrap().insert(sid, final_state);
+        }));
     });
 
     Ok(session_id)
