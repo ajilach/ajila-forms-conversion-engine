@@ -228,8 +228,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         let group = self.doc.get_group(group_idx)?;
 
         match &group.kind {
-            // Skip header/footer for now
-            GroupKind::Header | GroupKind::Footer => None,
+            // Skip header/footer/background (master page content)
+            GroupKind::Header | GroupKind::Footer | GroupKind::Background => None,
 
             // InlineField → Paragraph(before) + Field("UNKNOWN") + Paragraph(after)
             GroupKind::InlineField {

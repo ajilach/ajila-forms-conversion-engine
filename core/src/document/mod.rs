@@ -211,6 +211,10 @@ pub enum GroupKind {
     /// Page footer content
     Footer,
 
+    /// Page background content (master page elements that overlap the content area)
+    /// These are decorations, watermarks, or footnotes placed on the master page.
+    Background,
+
     /// A repeatable section (dynamic array/table) per XFA occur element
     RepeatableSection {
         /// Minimum occurrences required
@@ -909,6 +913,7 @@ impl<'a> Document<'a> {
             GroupKind::Section => "Section".to_string(),
             GroupKind::Header => "Header".to_string(),
             GroupKind::Footer => "Footer".to_string(),
+            GroupKind::Background => "Background".to_string(),
             GroupKind::RepeatableSection {
                 min_occurrences,
                 max_occurrences,

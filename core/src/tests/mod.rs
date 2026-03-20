@@ -17567,3 +17567,49 @@ fn test_aagg_debug_edb_structure() {
         });
     }
 }
+
+/// Master page background elements (like footnotes placed on the pageArea) must not
+/// appear in structured output. In AAGG, the 'LastPageOnly' subform contains footnotes
+/// and bank-internal fields positioned on the master page that overlap the contentArea.
+/// These should be classified as Background and excluded.
+#[test]
+fn test_aagg_master_page_background_excluded_from_structured() {
+    use crate::structured::StructuredNode;
+    use helpers::walk_structured_nodes;
+
+    let de = crate::run_exhaustive_to_envelope(input_path("AAGG_019_DE.pdf"), "de").expect("DE");
+
+    // "ForInternalBankUse" and "SignatureVerified" are fields inside the LastPageOnly
+    // master page subform. They should NOT appear in structured output.
+    let mut found_internal_bank_use = false;
+    let mut found_signature_verified = false;
+
+    walk_structured_nodes(&de.content, &mut |node| {
+        if let StructuredNode::Field(f) = node {
+            let label_text = f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default();
+            if label_text.contains("For Internal Bank Use")
+                || label_text.contains("For internal bank use")
+            {
+                found_internal_bank_use = true;
+            }
+            if label_text.contains("Signature Verified")
+                || label_text.contains("signature verified")
+            {
+                found_signature_verified = true;
+            }
+        }
+    });
+
+    assert!(
+        !found_internal_bank_use,
+        "Master page 'ForInternalBankUse' field should not appear in structured output"
+    );
+    assert!(
+        !found_signature_verified,
+        "Master page 'SignatureVerified' field should not appear in structured output"
+    );
+}

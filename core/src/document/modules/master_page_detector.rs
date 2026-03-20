@@ -153,8 +153,21 @@ impl AnalysisModule for MasterPageDetector {
             }
         }
 
-        // Note: Background region groups are not explicitly grouped.
-        // They remain as leaf groups or get picked up by other analysis modules.
+        // Find all background region groups and cluster per page
+        let bg_groups = self.find_groups_by_region(doc, MasterPageRegion::Background);
+        let bg_clusters = self.cluster_by_vertical_proximity(doc, bg_groups, max_gap);
+
+        for cluster in bg_clusters {
+            if !cluster.is_empty() {
+                doc.merge(
+                    cluster,
+                    GroupKind::Background,
+                    GroupSource::Inferred {
+                        module: self.name().to_string(),
+                    },
+                );
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
