@@ -3,11 +3,10 @@ FROM --platform=linux/amd64 ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System deps for the server-side build + Rust prerequisites
+# System deps for Rust + wasm build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl build-essential git \
-    pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
-    libayatana-appindicator3-dev libxdo-dev libssl-dev \
+    pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust + wasm32 target
@@ -22,27 +21,23 @@ WORKDIR /app
 COPY . .
 
 RUN cargo fetch
-RUN dx build --release --platform web --fullstack --package blueprint-app
+RUN dx build --release --platform web --package blueprint-app
 
 # ── Runtime stage ─────────────────────────────────────────
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM --platform=linux/amd64 nginx:alpine
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3t64 \
-    fonts-dejavu-core fontconfig \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/dx/blueprint-app/release/web/public /usr/share/nginx/html
 
-WORKDIR /app
-
-COPY --from=builder /app/fonts /usr/local/share/fonts/custom/
-RUN fc-cache -f -v
-
-COPY --from=builder /app/target/dx/blueprint-app/release/web/server ./server
-COPY --from=builder /app/target/dx/blueprint-app/release/web/public ./public
+# SPA fallback: serve index.html for all routes
+RUN printf 'server {\n\
+    listen 8080;\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+    location / {\n\
+        try_files $uri $uri/ /index.html;\n\
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
 
-ENV IP=0.0.0.0
-ENV PORT=8080
-
-CMD ["./server"]
+CMD ["nginx", "-g", "daemon off;"]
