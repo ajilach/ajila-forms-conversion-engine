@@ -3903,6 +3903,20 @@ impl Flattened {
                         let effective_height = actual_height.max(consumed_height);
                         max_height_in_row = max_height_in_row.max(effective_height);
                     }
+
+                    // For positioned layout, update max_extent_y after recursion.
+                    // Per XFA spec, a container without explicit h grows to fit
+                    // its children's nominal extents. The pre-recursion update
+                    // used outer_pos.height which is 0 for growable containers.
+                    if parent_layout == Layout::Position && node.h.is_none() {
+                        let actual_height = children_height
+                            + node.margin_top.unwrap_or(Decimal::ZERO)
+                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                        let effective_height = actual_height.max(consumed_height);
+                        let node_bottom =
+                            (outer_pos.y - parent_position.y) + effective_height;
+                        max_extent_y = max_extent_y.max(node_bottom);
+                    }
                 }
                 XfaNodeKind::Field => {
                     let (outer_pos, content_pos, _layout, _) =
@@ -4177,6 +4191,19 @@ impl Flattened {
                             current_y = outer_pos.y + effective_height;
                         }
                     }
+
+                    // For positioned layout, update max_extent_y after recursion.
+                    // Per XFA spec, a container without explicit h grows to fit
+                    // its children's nominal extents.
+                    if parent_layout == Layout::Position && node.h.is_none() {
+                        let actual_height = children_height
+                            + node.margin_top.unwrap_or(Decimal::ZERO)
+                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                        let effective_height = actual_height.max(consumed_height);
+                        let node_bottom =
+                            (outer_pos.y - parent_position.y) + effective_height;
+                        max_extent_y = max_extent_y.max(node_bottom);
+                    }
                 }
                 XfaNodeKind::Element { tag_name, .. } => {
                     // Handle generic elements that might be containers
@@ -4277,6 +4304,19 @@ impl Flattened {
                                 // Skip .max(min_h) — see comment above for Subform.
                                 let effective_height = actual_height.max(consumed_height);
                                 max_height_in_row = max_height_in_row.max(effective_height);
+                            }
+
+                            // For positioned layout, update max_extent_y after recursion.
+                            // Per XFA spec, a container without explicit h grows to fit
+                            // its children's nominal extents.
+                            if parent_layout == Layout::Position && node.h.is_none() {
+                                let actual_height = children_height
+                                    + node.margin_top.unwrap_or(Decimal::ZERO)
+                                    + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                                let effective_height = actual_height.max(consumed_height);
+                                let node_bottom =
+                                    (outer_pos.y - parent_position.y) + effective_height;
+                                max_extent_y = max_extent_y.max(node_bottom);
                             }
                         }
                         "field" => {

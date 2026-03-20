@@ -173,7 +173,7 @@ pub fn merge_translations(
 /// The relaxed matching treats container nodes (Conditional, Group, GridLayout, Repeatable)
 /// as matching by type/shape rather than requiring identical deep structure. This correctly
 /// handles translation pairs where layout details differ slightly between languages.
-fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -> f64 {
+pub fn calculate_structural_similarity(a: &[StructuredNode], b: &[StructuredNode]) -> f64 {
     if a.is_empty() && b.is_empty() {
         return 1.0;
     }

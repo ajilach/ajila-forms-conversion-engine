@@ -5,7 +5,7 @@ mod translation_merger;
 
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
-pub use translation_merger::{MergeError, merge_translations};
+pub use translation_merger::{MergeError, calculate_structural_similarity, merge_translations};
 
 use rust_decimal::Decimal;
 use serde::Serialize;

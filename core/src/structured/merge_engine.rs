@@ -470,6 +470,15 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
             ga.columns == gb.columns
         }
         (StructuredNode::List(la), StructuredNode::List(lb)) => la.list_style == lb.list_style,
+        // Conditional vs non-Conditional: when one language wraps content in a
+        // Conditional (due to exhaustive-state differences) and the other doesn't,
+        // try matching the conditional's inner content against the bare node.
+        (StructuredNode::Conditional(c), other) => {
+            node_matches_for_similarity(&c.content, other)
+        }
+        (other, StructuredNode::Conditional(c)) => {
+            node_matches_for_similarity(other, &c.content)
+        }
         _ => false,
     }
 }
@@ -1074,6 +1083,22 @@ fn merge_node(
         }
         // Mismatched variants can occur in recursive cases (e.g. different
         // sub-structures inside Repeatable or Conditional content).  Keep base.
+        //
+        // Conditional vs non-Conditional: one language may wrap content in a
+        // Conditional due to exhaustive-state differences. Merge the inner
+        // content and preserve the Conditional wrapper.
+        (StructuredNode::Conditional(c), other) => {
+            StructuredNode::Conditional(ConditionalNode {
+                condition: c.condition.clone(),
+                content: Box::new(merge_node(&c.content, base_lang, other, other_lang)),
+            })
+        }
+        (other, StructuredNode::Conditional(c)) => {
+            StructuredNode::Conditional(ConditionalNode {
+                condition: c.condition.clone(),
+                content: Box::new(merge_node(other, base_lang, &c.content, other_lang)),
+            })
+        }
         _ => base.clone(),
     }
 }

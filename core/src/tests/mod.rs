@@ -9668,6 +9668,119 @@ fn test_aagg_multilingual_translation_triplet_same_node_deposit_guarantee() {
 }
 
 // ========================================================================
+// Diagnostic: AAGG heightless subforms inside areas
+// ========================================================================
+
+#[test]
+fn test_aagg_diag_heightless_subforms_in_areas() {
+    use crate::xfa::XfaNodeKind;
+
+    let bp = Blueprint::from_pdf(input_path("AAGG_019_DE.pdf")).unwrap();
+    let form = bp.form().expect("should be XFA");
+    let nodes = form.xfa_nodes();
+
+    // Only walk the template tree
+    fn find_template(nodes: &[XfaNode]) -> Option<&XfaNode> {
+        for node in nodes {
+            if matches!(node.kind, XfaNodeKind::Template)
+                || matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "template")
+            {
+                return Some(node);
+            }
+            if let Some(found) = find_template(&node.children) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    // Walk template tree for heightless subforms in positioned parents
+    fn walk_template(nodes: &[XfaNode], parent_layout: &str, parent_name: &str, depth: usize) {
+        for node in nodes {
+            let is_subform = match &node.kind {
+                XfaNodeKind::Subform => true,
+                XfaNodeKind::Element { tag_name, .. } if tag_name == "subform" => true,
+                _ => false,
+            };
+            let is_area =
+                matches!(&node.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "area");
+
+            let name = node.name.as_deref().unwrap_or("(unnamed)");
+
+            if is_subform
+                && node.h.is_none()
+                && parent_layout == "position"
+                && !node.children.is_empty()
+            {
+                println!(
+                    "TEMPLATE HEIGHTLESS POSITIONED SUBFORM '{}' (parent='{}', depth={}, {} children, own_layout={})",
+                    name,
+                    parent_name,
+                    depth,
+                    node.children.len(),
+                    node.layout.as_deref().unwrap_or("(none/pos)")
+                );
+            }
+
+            let next_layout = if is_subform {
+                node.layout.as_deref().unwrap_or("position")
+            } else if is_area {
+                "position" // areas always use positioned layout internally
+            } else {
+                parent_layout
+            };
+
+            walk_template(&node.children, next_layout, name, depth + 1);
+        }
+    }
+
+    if let Some(template) = find_template(nodes) {
+        println!("--- Walking TEMPLATE tree only ---");
+        let template_layout = template.layout.as_deref().unwrap_or("position");
+        walk_template(&template.children, template_layout, "template", 0);
+    } else {
+        println!("NO TEMPLATE NODE FOUND");
+    }
+
+    // Search for FamilyName_FirstName and DYN_FamilyName_FirstName in full tree
+    fn find_nodes_by_name(nodes: &[XfaNode], target: &str, breadcrumb: &str) {
+        for node in nodes {
+            let name = node.name.as_deref().unwrap_or("");
+            let path = format!("{}/{}", breadcrumb, name);
+            if name == target {
+                let kind_str = match &node.kind {
+                    XfaNodeKind::Subform => "Subform",
+                    XfaNodeKind::Element { tag_name, .. } => tag_name.as_str(),
+                    _ => "other",
+                };
+                let layout = node.layout.as_deref().unwrap_or("(none)");
+                let h_str = match node.h {
+                    Some(h) => format!("{}", h),
+                    None => "None".to_string(),
+                };
+                println!(
+                    "FOUND '{}' at path={} kind={} layout={} h={} children={}",
+                    target,
+                    path,
+                    kind_str,
+                    layout,
+                    h_str,
+                    node.children.len()
+                );
+            }
+            find_nodes_by_name(&node.children, target, &path);
+        }
+    }
+
+    println!("\n--- Searching for FamilyName_FirstName ---");
+    find_nodes_by_name(nodes, "FamilyName_FirstName", "");
+    println!("\n--- Searching for DYN_FamilyName_FirstName ---");
+    find_nodes_by_name(nodes, "DYN_FamilyName_FirstName", "");
+    println!("\n--- Searching for ClientDetails ---");
+    find_nodes_by_name(nodes, "ClientDetails", "");
+}
+
+// ========================================================================
 // Flattened dedup key tests
 // ========================================================================
 
@@ -17320,4 +17433,137 @@ fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
         "\n✓ AAHA_019_DE Nachname label is clean: '{}'",
         nachname_label.unwrap()
     );
+}
+
+#[test]
+fn test_aaaq_de_field_row_ordering() {
+    // In AAAQ DE, the fields under the first section should be on separate rows:
+    //   Row 1: Nachname, Vorname(n)
+    //   Row 2: Bankbeziehung, Zusätzliche Objekte
+    //   Row 3: Auszuschließende Objekte
+    //
+    // A bug in the XFA flattening caused heightless subforms inside areas
+    // to not advance the y-cursor in positioned layout, making Nachname
+    // overlap with Bankbeziehung and Vorname(n) overlap with Zusätzliche Objekte.
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAQ_019_DE.pdf")).expect("Failed to load AAAQ_019_DE.pdf");
+    let states = bp.states().expect("Failed to get form states");
+    let state = states
+        .iter()
+        .next()
+        .expect("Expected at least one form state");
+
+    // Collect field label → y-coordinate from the flattened output
+    let field_positions: Vec<(String, Decimal)> = state
+        .flattened
+        .iter_nodes()
+        .filter_map(|node| {
+            if let FlattenedNodeKind::Field { ref label, .. } = node.kind {
+                let trimmed = label.trim().to_string();
+                if !trimmed.is_empty() {
+                    Some((trimmed, node.y))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let find_y = |name: &str| -> Decimal {
+        field_positions
+            .iter()
+            .find(|(label, _)| label == name)
+            .unwrap_or_else(|| panic!("Field '{}' not found in flattened output", name))
+            .1
+    };
+
+    let y_familyname = find_y("TF_FamilyName");
+    let y_firstname = find_y("TF_FirstName");
+    let y_account = find_y("AccountNumber");
+    let y_zusaetzliche = find_y("Zusatzliche_Objekte");
+    let y_auszuschliessende = find_y("Auszuschlie");
+
+    // Row 1: TF_FamilyName (Nachname) and TF_FirstName (Vorname) should share the same row
+    let tolerance = Decimal::from_str("5.0").unwrap();
+    assert!(
+        (y_familyname - y_firstname).abs() <= tolerance,
+        "Nachname (y={}) and Vorname (y={}) should be on the same row",
+        y_familyname,
+        y_firstname
+    );
+
+    // Row 2: AccountNumber (Bankbeziehung) and Zusätzliche Objekte should share the same row
+    assert!(
+        (y_account - y_zusaetzliche).abs() <= tolerance,
+        "Bankbeziehung (y={}) and Zusätzliche Objekte (y={}) should be on the same row",
+        y_account,
+        y_zusaetzliche
+    );
+
+    // Row 1 must be ABOVE Row 2 (lower y value) with meaningful separation
+    assert!(
+        y_account > y_familyname + tolerance,
+        "Row 2 (Bankbeziehung y={}) must be below Row 1 (Nachname y={}) — fields should not overlap",
+        y_account,
+        y_familyname
+    );
+
+    // Row 3: Auszuschließende Objekte must be below Row 2
+    assert!(
+        y_auszuschliessende > y_account + tolerance,
+        "Row 3 (Auszuschließende Objekte y={}) must be below Row 2 (Bankbeziehung y={})",
+        y_auszuschliessende,
+        y_account
+    );
+}
+
+#[test]
+fn test_aagg_debug_edb_structure() {
+    use crate::structured::StructuredNode;
+    use helpers::walk_structured_nodes;
+
+    let de = crate::run_exhaustive_to_envelope(input_path("AAGG_019_DE.pdf"), "de").expect("DE");
+    let en = crate::run_exhaustive_to_envelope(input_path("AAGG_019_EN.pdf"), "en").expect("EN");
+    let sp = crate::run_exhaustive_to_envelope(input_path("AAGG_019_SP.pdf"), "sp").expect("SP");
+
+    // Dump ALL text nodes (paragraph/heading/conditional) per language for analysis
+    for (lang_name, envelope) in [("DE", &de), ("EN", &en), ("SP", &sp)] {
+        println!("\n=== {} ALL TEXT NODES ===", lang_name);
+        let mut node_idx = 0usize;
+        walk_structured_nodes(&envelope.content, &mut |node| {
+            let text = match node {
+                StructuredNode::Paragraph(p) => Some(("P", p.content.as_plain_text())),
+                StructuredNode::Heading(h) => Some(("H", h.content.as_plain_text())),
+                StructuredNode::Conditional(c) => match c.content.as_ref() {
+                    StructuredNode::Paragraph(p) => Some(("CP", p.content.as_plain_text())),
+                    _ => Some((
+                        "C?",
+                        format!("{:?}", std::mem::discriminant(c.content.as_ref())),
+                    )),
+                },
+                StructuredNode::Field(f) => {
+                    let label = f
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text())
+                        .unwrap_or_default();
+                    Some(("F", label))
+                }
+                StructuredNode::Group(_) => Some(("G", String::new())),
+                _ => None,
+            };
+            if let Some((kind, text)) = text {
+                if !text.is_empty() {
+                    let t = &text[..text.len().min(120)];
+                    println!("  [{}#{:>3}] {}: {}", lang_name, node_idx, kind, t);
+                }
+            }
+            node_idx += 1;
+        });
+    }
 }
