@@ -1614,6 +1614,7 @@ mod tests {
 
         let content = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Conditional content"),
+            som_path: None,
         });
 
         let conditional = ConditionalNode {
@@ -1743,6 +1744,7 @@ mod tests {
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello"),
+            som_path: None,
         })];
         let html = generate_html(&nodes, &config);
 
@@ -1781,6 +1783,7 @@ mod tests {
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello"),
+            som_path: None,
         })];
         let html = generate_html(&nodes, &config);
 
@@ -1816,6 +1819,7 @@ mod tests {
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello"),
+            som_path: None,
         })];
         let html = generate_html(&nodes, &config);
 
@@ -1839,6 +1843,7 @@ mod tests {
         let config = HtmlConfig::default();
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello"),
+            som_path: None,
         })];
         let html = generate_html(&nodes, &config);
 

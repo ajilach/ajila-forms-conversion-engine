@@ -352,6 +352,8 @@ pub struct FieldNode {
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphNode {
     pub content: InlineText,
+    #[serde(skip)]
+    pub som_path: Option<SomPath>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -359,6 +361,8 @@ pub struct ParagraphNode {
 pub struct HeadingNode {
     pub level: HeadingLevel,
     pub content: InlineText,
+    #[serde(skip)]
+    pub som_path: Option<SomPath>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -610,6 +614,19 @@ pub enum CompareMode {
 }
 
 impl StructuredNode {
+    /// Returns the SOM path of this node, if it carries one.
+    ///
+    /// SOM paths are available on Field, Paragraph, and Heading nodes.
+    pub fn som_path(&self) -> Option<&SomPath> {
+        match self {
+            StructuredNode::Field(f) => f.som_path.as_ref(),
+            StructuredNode::Paragraph(p) => p.som_path.as_ref(),
+            StructuredNode::Heading(h) => h.som_path.as_ref(),
+            StructuredNode::Conditional(c) => c.content.som_path(),
+            _ => None,
+        }
+    }
+
     /// Check if two nodes are structurally equal.
     ///
     /// Structural equality compares:

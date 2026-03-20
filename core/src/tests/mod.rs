@@ -15249,6 +15249,7 @@ fn test_xsd_heading_creates_complex_type() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Account Details"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.iban"),
@@ -15325,6 +15326,7 @@ fn test_xsd_heading_with_type_ref() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Account Details"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.num"),
@@ -15406,6 +15408,7 @@ fn test_xsd_child_validation_required_present() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Account"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.iban"),
@@ -15506,6 +15509,7 @@ fn test_xsd_child_validation_required_missing() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Account"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.phone"),
@@ -15587,6 +15591,7 @@ fn test_xsd_child_validation_extra_child() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Account"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.iban"),
@@ -15969,10 +15974,12 @@ fn test_xsd_nested_heading_levels() {
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
             content: InlineText::plain("Top Section"),
+            som_path: None,
         }),
         StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Sub Section"),
+            som_path: None,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.field"),
@@ -16649,6 +16656,7 @@ fn make_heading(level: u8, text: &str) -> crate::structured::HeadingNode {
     HeadingNode {
         level: HeadingLevel::from_u8(level),
         content: InlineText::plain(text),
+        som_path: None,
     }
 }
 

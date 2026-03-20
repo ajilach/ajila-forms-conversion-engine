@@ -382,7 +382,51 @@ pub(crate) trait MergePolicy {
 /// Align two node lists via LCS and resolve each entry through the given
 /// [`MergePolicy`].  Returns tagged [`AlignedNode`] entries so callers can
 /// post-process (e.g. orphan consolidation) before collecting the final list.
+///
+/// When nodes carry SOM path hints, matching SOM paths act as hard anchors
+/// that force alignment.  The algorithm:
+///  1. Collect monotonically-increasing anchor pairs from unique SOM matches.
+///  2. Run LCS independently on each segment between anchors.
+///  3. Anchors always produce `Matched` entries.
 pub(crate) fn align_and_tag<P: MergePolicy>(
+    ctx: &PairwiseMergeCtx,
+    base: &[StructuredNode],
+    other: &[StructuredNode],
+) -> Vec<AlignedNode> {
+    let anchors = find_som_anchors(base, other);
+
+    if anchors.is_empty() {
+        // No anchors — plain LCS over the whole lists.
+        return align_segment::<P>(ctx, base, other);
+    }
+
+    let mut result = Vec::new();
+    let mut ai = 0usize;
+    let mut bi = 0usize;
+
+    for (anchor_a, anchor_b) in &anchors {
+        // Align the segment before this anchor.
+        result.extend(align_segment::<P>(ctx, &base[ai..*anchor_a], &other[bi..*anchor_b]));
+
+        // Emit the anchor pair as Matched.
+        result.push(AlignedNode::Matched(P::merge_matched(
+            ctx,
+            &base[*anchor_a],
+            &other[*anchor_b],
+        )));
+
+        ai = anchor_a + 1;
+        bi = anchor_b + 1;
+    }
+
+    // Align the tail after the last anchor.
+    result.extend(align_segment::<P>(ctx, &base[ai..], &other[bi..]));
+
+    result
+}
+
+/// Run LCS alignment on a single segment (sub-slice) of nodes.
+fn align_segment<P: MergePolicy>(
     ctx: &PairwiseMergeCtx,
     base: &[StructuredNode],
     other: &[StructuredNode],
@@ -399,6 +443,87 @@ pub(crate) fn align_and_tag<P: MergePolicy>(
             (None, None) => unreachable!(),
         })
         .collect()
+}
+
+/// Find monotonically-increasing anchor pairs where both sides share the same
+/// SOM path.  Only SOM paths that appear exactly once in each list qualify.
+fn find_som_anchors(
+    base: &[StructuredNode],
+    other: &[StructuredNode],
+) -> Vec<(usize, usize)> {
+    use std::collections::HashMap;
+
+    // Build index: som_path → position (only keep paths that appear exactly once).
+    let collect_unique = |nodes: &[StructuredNode]| -> HashMap<String, usize> {
+        let mut counts: HashMap<String, (usize, usize)> = HashMap::new(); // path → (first_index, count)
+        for (i, node) in nodes.iter().enumerate() {
+            if let Some(sp) = node.som_path() {
+                counts
+                    .entry(sp.as_str().to_owned())
+                    .and_modify(|(_, c)| *c += 1)
+                    .or_insert((i, 1));
+            }
+        }
+        counts
+            .into_iter()
+            .filter(|(_, (_, c))| *c == 1)
+            .map(|(path, (idx, _))| (path, idx))
+            .collect()
+    };
+
+    let base_unique = collect_unique(base);
+    let other_unique = collect_unique(other);
+
+    // Collect matching pairs where the SOM path is unique in both lists.
+    let mut pairs: Vec<(usize, usize)> = base_unique
+        .iter()
+        .filter_map(|(path, &a_idx)| other_unique.get(path).map(|&b_idx| (a_idx, b_idx)))
+        .collect();
+
+    // Sort by base index for LIS computation.
+    pairs.sort_by_key(|(a, _)| *a);
+
+    // Compute longest increasing subsequence on b-indices using patience sorting.
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+
+    let b_vals: Vec<usize> = pairs.iter().map(|(_, b)| *b).collect();
+    let n = b_vals.len();
+    // tails[i] = smallest tail element for IS of length i+1
+    let mut tails: Vec<usize> = Vec::new();
+    // parent tracking for reconstruction
+    let mut indices: Vec<usize> = Vec::new(); // index into tails
+    let mut parent: Vec<Option<usize>> = vec![None; n];
+
+    for i in 0..n {
+        let pos = tails.partition_point(|&t| t < b_vals[i]);
+        if pos == tails.len() {
+            tails.push(b_vals[i]);
+            indices.push(i);
+        } else {
+            tails[pos] = b_vals[i];
+            indices[pos] = i;
+        }
+        if pos > 0 {
+            parent[i] = Some(indices[pos - 1]);
+        }
+    }
+
+    // Reconstruct the LIS
+    let mut lis = Vec::with_capacity(tails.len());
+    let mut idx = *indices.last().unwrap();
+    loop {
+        lis.push(pairs[idx]);
+        if let Some(p) = parent[idx] {
+            idx = p;
+        } else {
+            break;
+        }
+    }
+    lis.reverse();
+
+    lis
 }
 
 // ============================================================================
@@ -443,6 +568,16 @@ impl MergePolicy for TranslationPolicy {
 /// - GridLayouts: same column count required (element count may differ)
 /// - Paragraphs, Images, Groups, Conditionals, Repeatables, Lists, Empty: match by type only
 pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
+    // If both nodes carry the same SOM path and the same top-level variant,
+    // they match regardless of content/shape differences.
+    if std::mem::discriminant(a) == std::mem::discriminant(b) {
+        if let (Some(sa), Some(sb)) = (a.som_path(), b.som_path()) {
+            if sa.as_str() == sb.as_str() {
+                return true;
+            }
+        }
+    }
+
     match (a, b) {
         (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
             ha.level.as_u8() == hb.level.as_u8()
@@ -639,9 +774,11 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
         StructuredNode::Heading(heading) => StructuredNode::Heading(HeadingNode {
             level: heading.level,
             content: localize_inline_text(&heading.content, lang),
+            som_path: heading.som_path.clone(),
         }),
         StructuredNode::Paragraph(paragraph) => StructuredNode::Paragraph(ParagraphNode {
             content: localize_inline_text(&paragraph.content, lang),
+            som_path: paragraph.som_path.clone(),
         }),
         StructuredNode::Image(image) => StructuredNode::Image(image.clone()),
         StructuredNode::Table(table) => StructuredNode::Table(TableNode {
@@ -1035,11 +1172,13 @@ fn merge_node(
             StructuredNode::Heading(HeadingNode {
                 level: a.level,
                 content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+                som_path: a.som_path.clone(),
             })
         }
         (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
             StructuredNode::Paragraph(ParagraphNode {
                 content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+                som_path: a.som_path.clone(),
             })
         }
         (StructuredNode::Image(a), StructuredNode::Image(_b)) => StructuredNode::Image(a.clone()),

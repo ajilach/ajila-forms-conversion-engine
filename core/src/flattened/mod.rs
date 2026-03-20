@@ -2997,6 +2997,13 @@ impl Flattened {
                         kind.add_hint(Hint::NoPrint);
                     }
                 }
+                // Add SomPath hint to draw nodes (same pattern as fields)
+                if let Some(name) = &node.name {
+                    let som_path = ctx.get_full_path(name);
+                    for kind in &mut draw_kinds {
+                        kind.add_hint(Hint::SomPath(SomPath::new(som_path.clone())));
+                    }
+                }
                 flattened_children.extend(draw_kinds);
             }
             XfaNodeKind::Field => {
@@ -4108,6 +4115,13 @@ impl Flattened {
                                 kind.add_hint(Hint::NoPrint);
                             }
                         }
+                        // Add SomPath hint to draw nodes (same pattern as fields)
+                        if !child_ctx.current_path.is_empty() {
+                            let som = SomPath::new(child_ctx.current_path.clone());
+                            for kind in &mut draw_kinds {
+                                kind.add_hint(Hint::SomPath(som.clone()));
+                            }
+                        }
                         flattened_children.extend(draw_kinds);
                     }
 
@@ -4515,6 +4529,13 @@ impl Flattened {
                                 {
                                     for kind in &mut draw_kinds {
                                         kind.add_hint(Hint::NoPrint);
+                                    }
+                                }
+                                // Add SomPath hint to draw nodes (same pattern as fields)
+                                if !child_ctx.current_path.is_empty() {
+                                    let som = SomPath::new(child_ctx.current_path.clone());
+                                    for kind in &mut draw_kinds {
+                                        kind.add_hint(Hint::SomPath(som.clone()));
                                     }
                                 }
                                 flattened_children.extend(draw_kinds);

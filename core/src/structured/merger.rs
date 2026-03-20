@@ -741,6 +741,7 @@ mod tests {
     fn test_merge_identical_structures() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello"),
+            som_path: None,
         })];
 
         let input1 = MergeInput::new(
@@ -777,11 +778,13 @@ mod tests {
         // After the fix: both branches are preserved via structural union.
         let nodes1 = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Version A"),
+            som_path: None,
         })];
 
         let nodes2 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
             content: InlineText::plain("Version B"),
+            som_path: None,
         })];
 
         let input1 = MergeInput::new(
@@ -816,19 +819,23 @@ mod tests {
         let nodes1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("shared"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Option A"),
+                som_path: None,
             }),
         ];
 
         let nodes2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("shared"),
+                som_path: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
                 content: InlineText::plain("Option B"),
+                som_path: None,
             }),
         ];
 
@@ -864,21 +871,26 @@ mod tests {
         // Simulate nested selections like RB_3 with inner RB_1/RB_2
         let nodes_base = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("RB_3 content"),
+            som_path: None,
         })];
         let nodes_inner1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("RB_3 content"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Inner RB_1"),
+                som_path: None,
             }),
         ];
         let nodes_inner2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("RB_3 content"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Inner RB_2"),
+                som_path: None,
             }),
         ];
 
@@ -938,18 +950,22 @@ mod tests {
         let base_nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("shared"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("base only"),
+                som_path: None,
             }),
         ];
 
         let nested_nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("shared"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("nested only"),
+                som_path: None,
             }),
         ];
 
@@ -998,14 +1014,17 @@ mod tests {
         let nodes1 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Neuanlage"),
+            som_path: None,
         })];
         let nodes2 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Änderung"),
+            som_path: None,
         })];
         let nodes3 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText::plain("Löschung"),
+            som_path: None,
         })];
 
         let input1 = MergeInput::new(
@@ -1049,6 +1068,7 @@ mod tests {
     fn test_merge_single_input() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Only one"),
+            som_path: None,
         })];
 
         let input = MergeInput::new(
@@ -1091,18 +1111,22 @@ mod tests {
         let nodes1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Common"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Branch A only"),
+                som_path: None,
             }),
         ];
         let nodes2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Common"),
+                som_path: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
                 content: InlineText::plain("Branch B only"),
+                som_path: None,
             }),
         ];
 
@@ -1161,6 +1185,7 @@ mod tests {
             )],
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: translated_text(&[("de", "Gemeinsamer Text")]),
+                som_path: None,
             })],
         );
 
@@ -1172,6 +1197,7 @@ mod tests {
             )],
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: translated_text(&[("en", "Gemeinsamer Text")]),
+                som_path: None,
             })],
         );
 
@@ -1194,6 +1220,7 @@ mod tests {
             )],
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: translated_text(&[("de", "Gemeinsamer Text")]),
+                som_path: None,
             })],
         );
 
@@ -1205,6 +1232,7 @@ mod tests {
             )],
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: translated_text(&[("de", "Gemeinsamer Text")]),
+                som_path: None,
             })],
         );
 

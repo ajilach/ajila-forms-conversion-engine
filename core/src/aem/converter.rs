@@ -1458,6 +1458,7 @@ mod tests {
         let nodes = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
             content: InlineText::plain("Sub Title"),
+            som_path: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -1531,10 +1532,12 @@ mod tests {
         let nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Preamble"),
+                som_path: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
                 content: InlineText::plain("Section A"),
+                som_path: None,
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldA".into(),
@@ -1551,6 +1554,7 @@ mod tests {
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
                 content: InlineText::plain("Section B"),
+                som_path: None,
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldB".into(),
@@ -1566,6 +1570,7 @@ mod tests {
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Footer text"),
+                som_path: None,
             }),
         ];
         let root = convert_to_aem(&nodes, &default_config());
@@ -1631,6 +1636,7 @@ mod tests {
     fn convert_paragraph_produces_textdraw() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Hello world"),
+            som_path: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -1831,6 +1837,7 @@ mod tests {
             children: vec![
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Info"),
+                    som_path: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "x".into(),
@@ -1863,6 +1870,7 @@ mod tests {
             StructuredNode::Empty,
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("visible"),
+                som_path: None,
             }),
             StructuredNode::Empty,
         ];
@@ -1875,6 +1883,7 @@ mod tests {
     fn deterministic_uuids_are_reproducible() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("test"),
+            som_path: None,
         })];
         let config = default_config();
         let root1 = convert_to_aem(&nodes, &config);
@@ -2201,6 +2210,7 @@ mod tests {
         let nodes = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
             content: InlineText::plain("Client Details"),
+            som_path: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2216,6 +2226,7 @@ mod tests {
     fn paragraph_name_uses_text_content() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Please fill in the form below."),
+            som_path: None,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2233,9 +2244,11 @@ mod tests {
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
                 content: InlineText::plain("Personal Information"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("details"),
+                som_path: None,
             }),
         ];
         let root = convert_to_aem(&nodes, &default_config());
@@ -2292,6 +2305,7 @@ mod tests {
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Shown when yes"),
+                    som_path: None,
                 })),
             }),
         ];
@@ -2382,6 +2396,7 @@ mod tests {
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Content A"),
+                    som_path: None,
                 })),
             }),
             StructuredNode::Conditional(ConditionalNode {
@@ -2391,6 +2406,7 @@ mod tests {
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Content B"),
+                    som_path: None,
                 })),
             }),
         ];
@@ -2434,9 +2450,11 @@ mod tests {
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
                 content: InlineText::plain("My Form Display Title"),
+                som_path: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Some text"),
+                som_path: None,
             }),
         ];
         let config = default_config(); // form_title == "TEST" (form code)
@@ -2456,6 +2474,7 @@ mod tests {
     fn root_title_falls_back_to_form_code_without_h1() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("No heading here"),
+            som_path: None,
         })];
         let config = default_config();
         let root = convert_to_aem(&nodes, &config);

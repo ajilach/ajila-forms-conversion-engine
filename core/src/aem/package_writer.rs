@@ -1241,6 +1241,7 @@ mod tests {
 
         let node = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            som_path: None,
         });
 
         let translations = extract_translations(&[node], "en");
@@ -1284,6 +1285,7 @@ mod tests {
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            som_path: None,
         });
 
         let translations = extract_translations(&[node], "de");
@@ -1326,6 +1328,7 @@ mod tests {
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            som_path: None,
         });
 
         let translations = extract_translations(&[node], "en");
@@ -1365,6 +1368,7 @@ mod tests {
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            som_path: None,
         });
 
         let translations = extract_translations(&[node], "en");

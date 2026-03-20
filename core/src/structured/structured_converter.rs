@@ -244,20 +244,24 @@ impl<'a, 'b> Converter<'a, 'b> {
             // Heading → HeadingNode
             GroupKind::Heading { level } => {
                 let text = self.extract_inline_text(group_idx);
+                let som_path = self.extract_group_som_path(group_idx);
                 Some(StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::from_u8(*level),
                     content: text,
+                    som_path,
                 }))
             }
 
             // TextBlock / Paragraph → ParagraphNode (or multiple if rich text with multiple paragraphs)
             GroupKind::TextBlock | GroupKind::Paragraph => {
+                let som_path = self.extract_group_som_path(group_idx);
+
                 // Check if this is a single-node group with rich text containing multiple paragraphs
                 let nodes = self.doc.collect_nodes(group_idx);
                 if nodes.len() == 1 {
                     let node = nodes[0];
                     if let Some(rich_text) = node.rich_text() {
-                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text, som_path.clone());
                         if paragraphs.len() > 1 {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
@@ -277,7 +281,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 if text.is_empty() {
                     None
                 } else {
-                    Some(StructuredNode::Paragraph(ParagraphNode { content: text }))
+                    Some(StructuredNode::Paragraph(ParagraphNode { content: text, som_path }))
                 }
             }
 
@@ -500,9 +504,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                 if content.trim().is_empty() {
                     None
                 } else {
+                    let som_path = node.som_path().cloned();
                     // Check if this node has rich text with multiple paragraphs
                     if let Some(rich_text) = node.rich_text() {
-                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text);
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text, som_path.clone());
                         if paragraphs.len() > 1 {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
@@ -519,7 +524,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     if text.is_empty() {
                         None
                     } else {
-                        Some(StructuredNode::Paragraph(ParagraphNode { content: text }))
+                        Some(StructuredNode::Paragraph(ParagraphNode { content: text, som_path }))
                     }
                 }
             }
@@ -535,6 +540,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     } else {
                         Some(StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain(text),
+                            som_path: node.som_path().cloned(),
                         }))
                     }
                 }
@@ -561,6 +567,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
             return Some(StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain(text),
+                som_path: field_node.som_path().cloned(),
             }));
         }
 
@@ -746,6 +753,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         {
             let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain(suffix.clone()),
+                som_path: None,
             });
             return Some(StructuredNode::Group(GroupNode {
                 children: vec![field_node, suffix_paragraph],
@@ -821,11 +829,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 if !before_str.is_empty() {
                                     before.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: InlineText::plain(before_str),
+                                        som_path: None,
                                     }));
                                 }
                                 if !after_str.is_empty() {
                                     after.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: InlineText::plain(after_str),
+                                        som_path: None,
                                     }));
                                 }
                                 continue;
@@ -846,9 +856,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                         };
 
                         if is_after {
-                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                         } else {
-                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                         }
                     }
                 }
@@ -870,11 +880,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 if !before_str.is_empty() {
                                     before.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: InlineText::plain(before_str),
+                                        som_path: None,
                                     }));
                                 }
                                 if !after_str.is_empty() {
                                     after.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: InlineText::plain(after_str),
+                                        som_path: None,
                                     }));
                                 }
                                 return (before, after);
@@ -891,9 +903,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                         // If text starts after field ends, it's "after"
                         // Otherwise, classify by center position
                         if text_bounds.x + text_bounds.width <= fb.x {
-                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            before.push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                         } else if text_bounds.x >= fb.x + fb.width {
-                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            after.push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                         } else {
                             // Overlapping: use center
                             let text_center = text_bounds.x + text_bounds.width / Decimal::TWO;
@@ -901,16 +913,18 @@ impl<'a, 'b> Converter<'a, 'b> {
                             if text_center < field_center {
                                 before.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
+                                    som_path: None,
                                 }));
                             } else {
                                 after.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
+                                    som_path: None,
                                 }));
                             }
                         }
                     } else {
                         // No bounds, fall back to original classification
-                        before.push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                        before.push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                     }
                 }
             }
@@ -929,7 +943,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
                         before_nodes
-                            .push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            .push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                     }
                 }
             }
@@ -947,7 +961,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
                         after_nodes
-                            .push(StructuredNode::Paragraph(ParagraphNode { content: text }));
+                            .push(StructuredNode::Paragraph(ParagraphNode { content: text, som_path: None }));
                     }
                 }
             }
@@ -1125,6 +1139,14 @@ impl<'a, 'b> Converter<'a, 'b> {
     /// Extract the SOM path from a field's hints.
     fn get_som_path<'n>(&self, node: &'n FlattenedNode) -> Option<&'n SomPath> {
         node.som_path()
+    }
+
+    /// Extract the SOM path from the first FlattenedNode in a group.
+    fn extract_group_som_path(&self, group_idx: usize) -> Option<SomPath> {
+        self.doc
+            .collect_nodes(group_idx)
+            .first()
+            .and_then(|n| n.som_path().cloned())
     }
 
     /// Get a FieldId from a FlattenedNode's SOM path hint, falling back to node name.
@@ -1352,7 +1374,7 @@ impl<'a, 'b> Converter<'a, 'b> {
 
     /// Convert RichText to multiple ParagraphNodes (one per RichParagraph).
     /// Skips empty paragraphs.
-    fn convert_rich_text_to_paragraph_nodes(&self, rich_text: &RichText) -> Vec<StructuredNode> {
+    fn convert_rich_text_to_paragraph_nodes(&self, rich_text: &RichText, som_path: Option<SomPath>) -> Vec<StructuredNode> {
         rich_text
             .paragraphs
             .iter()
@@ -1370,6 +1392,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     Some(StructuredNode::Paragraph(ParagraphNode {
                         content: InlineText::new(inline_nodes),
+                        som_path: som_path.clone(),
                     }))
                 }
             })
