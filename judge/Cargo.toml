@@ -1,0 +1,15 @@
+[package]
+name = "judge"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "judge"
+path = "src/main.rs"
+
+[dependencies]
+blueprint = { path = "../core" }
+anyhow = "1"
+csv = "1"
+env_logger = "0.11"
+log = "0.4"

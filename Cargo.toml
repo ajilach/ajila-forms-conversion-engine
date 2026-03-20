@@ -2,7 +2,8 @@
 members = [
     "core",
     "cli",
-    "app"
+    "app",
+    "judge"
 ]
 resolver = "3"
 
