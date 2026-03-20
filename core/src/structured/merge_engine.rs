@@ -406,7 +406,11 @@ pub(crate) fn align_and_tag<P: MergePolicy>(
 
     for (anchor_a, anchor_b) in &anchors {
         // Align the segment before this anchor.
-        result.extend(align_segment::<P>(ctx, &base[ai..*anchor_a], &other[bi..*anchor_b]));
+        result.extend(align_segment::<P>(
+            ctx,
+            &base[ai..*anchor_a],
+            &other[bi..*anchor_b],
+        ));
 
         // Emit the anchor pair as Matched.
         result.push(AlignedNode::Matched(P::merge_matched(
@@ -447,10 +451,7 @@ fn align_segment<P: MergePolicy>(
 
 /// Find monotonically-increasing anchor pairs where both sides share the same
 /// SOM path.  Only SOM paths that appear exactly once in each list qualify.
-fn find_som_anchors(
-    base: &[StructuredNode],
-    other: &[StructuredNode],
-) -> Vec<(usize, usize)> {
+fn find_som_anchors(base: &[StructuredNode], other: &[StructuredNode]) -> Vec<(usize, usize)> {
     use std::collections::HashMap;
 
     // Build index: som_path → position (only keep paths that appear exactly once).
@@ -608,12 +609,8 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
         // Conditional vs non-Conditional: when one language wraps content in a
         // Conditional (due to exhaustive-state differences) and the other doesn't,
         // try matching the conditional's inner content against the bare node.
-        (StructuredNode::Conditional(c), other) => {
-            node_matches_for_similarity(&c.content, other)
-        }
-        (other, StructuredNode::Conditional(c)) => {
-            node_matches_for_similarity(other, &c.content)
-        }
+        (StructuredNode::Conditional(c), other) => node_matches_for_similarity(&c.content, other),
+        (other, StructuredNode::Conditional(c)) => node_matches_for_similarity(other, &c.content),
         _ => false,
     }
 }
@@ -1226,18 +1223,14 @@ fn merge_node(
         // Conditional vs non-Conditional: one language may wrap content in a
         // Conditional due to exhaustive-state differences. Merge the inner
         // content and preserve the Conditional wrapper.
-        (StructuredNode::Conditional(c), other) => {
-            StructuredNode::Conditional(ConditionalNode {
-                condition: c.condition.clone(),
-                content: Box::new(merge_node(&c.content, base_lang, other, other_lang)),
-            })
-        }
-        (other, StructuredNode::Conditional(c)) => {
-            StructuredNode::Conditional(ConditionalNode {
-                condition: c.condition.clone(),
-                content: Box::new(merge_node(other, base_lang, &c.content, other_lang)),
-            })
-        }
+        (StructuredNode::Conditional(c), other) => StructuredNode::Conditional(ConditionalNode {
+            condition: c.condition.clone(),
+            content: Box::new(merge_node(&c.content, base_lang, other, other_lang)),
+        }),
+        (other, StructuredNode::Conditional(c)) => StructuredNode::Conditional(ConditionalNode {
+            condition: c.condition.clone(),
+            content: Box::new(merge_node(other, base_lang, &c.content, other_lang)),
+        }),
         _ => base.clone(),
     }
 }

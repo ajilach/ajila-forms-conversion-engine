@@ -504,7 +504,6 @@ impl<'a, 'b> Converter<'a, 'b> {
                 if content.trim().is_empty() {
                     None
                 } else {
-                    let som_path = node.som_path().cloned();
                     // Check if this node has rich text with multiple paragraphs
                     if let Some(rich_text) = node.rich_text() {
                         let paragraphs = self.convert_rich_text_to_paragraph_nodes(rich_text, som_path.clone());
