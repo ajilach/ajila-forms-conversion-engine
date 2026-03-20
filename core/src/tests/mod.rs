@@ -17591,13 +17591,16 @@ fn test_aagg_master_page_background_excluded_from_structured() {
                 .as_ref()
                 .map(|l| l.as_plain_text())
                 .unwrap_or_default();
+            let field_name = f.som_path_str();
             if label_text.contains("For Internal Bank Use")
                 || label_text.contains("For internal bank use")
+                || field_name.contains("ForInternalBankUse")
             {
                 found_internal_bank_use = true;
             }
             if label_text.contains("Signature Verified")
                 || label_text.contains("signature verified")
+                || field_name.contains("SignatureVerified")
             {
                 found_signature_verified = true;
             }

@@ -1,11 +1,11 @@
 //! Master page detector module.
 //!
-//! Detects header and footer groups based on the MasterPage hint.
+//! Detects header, footer, and background groups based on the MasterPage hint.
 //! Master page content is content that appears on the page background (outside
 //! the contentArea) in XFA forms, or is repeated across multiple pages in
 //! AcroForm PDFs — typically headers, footers, or background decorations.
 //!
-//! For multi-page merged documents, this module creates **separate** Header/Footer
+//! For multi-page merged documents, this module creates **separate** Header/Footer/Background
 //! groups per page by clustering spatially adjacent master-page nodes. Nodes on
 //! different pages are far apart vertically (separated by at least a page height),
 //! so a simple gap-based clustering splits them correctly.
@@ -14,10 +14,10 @@ use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
 use crate::flattened::{Hint, MasterPageRegion};
 
-/// Detects header and footer groups based on MasterPage hints.
+/// Detects header, footer, and background groups based on MasterPage hints.
 ///
-/// Creates one `GroupKind::Header` and one `GroupKind::Footer` group **per page**
-/// by clustering master-page leaf nodes that are spatially adjacent.
+/// Creates one `GroupKind::Header`, one `GroupKind::Footer`, and one `GroupKind::Background`
+/// group **per page** by clustering master-page leaf nodes that are spatially adjacent.
 pub struct MasterPageDetector;
 
 impl Default for MasterPageDetector {

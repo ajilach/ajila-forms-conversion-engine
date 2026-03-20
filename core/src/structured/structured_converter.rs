@@ -17,7 +17,7 @@
 //! - Leaf (Field, non-interactive) → `ParagraphNode` (readonly → text)
 //! - Leaf (Field, interactive) → `FieldNode`
 //!
-//! Header and Footer groups are ignored for now.
+//! Header, Footer, and Background groups are excluded from output.
 
 use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
