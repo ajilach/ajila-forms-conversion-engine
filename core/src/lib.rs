@@ -94,7 +94,8 @@ pub use context::Context;
 // Embedded profile loading
 pub use profiles::{
     has_aem_config, has_html_config, has_xsd_config, list_profiles, load_aem_config,
-    load_aem_fragments, load_aem_profile, load_html_custom_styles, load_xsd_config,
+    load_aem_fragments, load_aem_profile, load_html_custom_styles, load_profile_fonts,
+    load_xsd_config,
 };
 
 // Flattened layer

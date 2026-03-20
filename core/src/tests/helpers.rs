@@ -2,16 +2,31 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
+use std::sync::Once;
 
 use crate::structured::{
     ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode, StructuredNode,
 };
 
+/// Ensure UBS profile fonts are loaded into the global font manager.
+///
+/// This is safe to call from many tests — the loading happens exactly once.
+pub fn ensure_ubs_fonts_loaded() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        crate::profiles::load_profile_fonts("ubs")
+            .expect("Failed to load UBS profile fonts for tests");
+    });
+}
+
 /// Build a path to a file in the `input/` test data directory.
 ///
 /// Uses `CARGO_MANIFEST_DIR` so tests work regardless of the current working
 /// directory (e.g. running from workspace root vs. package directory).
+///
+/// Also ensures UBS profile fonts are loaded (lazily, once).
 pub fn input_path(filename: &str) -> String {
+    ensure_ubs_fonts_loaded();
     format!("{}/input/{}", env!("CARGO_MANIFEST_DIR"), filename)
 }
 

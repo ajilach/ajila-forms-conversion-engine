@@ -6,8 +6,9 @@ edition = "2024"
 [features]
 default = []
 desktop = ["dioxus/desktop"]
-server = ["dioxus/fullstack", "dioxus/server"]
-web = ["dioxus/fullstack", "dioxus/web"]
+server = ["fullstack", "dioxus/server"]
+web = ["dioxus/web"]
+fullstack = ["dioxus/fullstack"]
 
 [dependencies]
 dioxus = { version = "0.6" }
@@ -15,13 +16,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures-util = "0.3"
 base64 = "0.22"
+blueprint = { path = "../core" }
+image = { version = "0.25", features = ["png"] }
 
 # Server/Desktop-only deps (not available in WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["full"] }
-blueprint = { path = "../core" }
 dirs = "5.0"
-image = { version = "0.25", features = ["png"] }
 
 # WASM-only deps (browser downloads)
 [target.'cfg(target_arch = "wasm32")'.dependencies]

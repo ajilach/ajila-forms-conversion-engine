@@ -6,7 +6,6 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::{Cursor, Write};
-use std::time::SystemTime;
 
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
@@ -484,11 +483,19 @@ fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -
 
 /// Produce an ISO 8601 timestamp like `2026-02-16T12:00:00.000+00:00`.
 fn iso_now() -> String {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    let millis = now.subsec_millis();
+    #[cfg(not(target_arch = "wasm32"))]
+    let (secs, millis) = {
+        use std::time::SystemTime;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        (now.as_secs(), now.subsec_millis())
+    };
+    #[cfg(target_arch = "wasm32")]
+    let (secs, millis) = {
+        let ms = js_sys::Date::now() as u64;
+        (ms / 1000, (ms % 1000) as u32)
+    };
 
     // Simple UTC timestamp (no chrono dependency)
     let days = secs / 86400;

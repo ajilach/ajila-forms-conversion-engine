@@ -1,8 +1,9 @@
 //! Unified processing invocation — shared between desktop and web.
 //!
 //! The `run_and_track` function abstracts away the platform-specific mechanism
-//! (in-process pipeline on desktop vs server function polling on web) so that
-//! the `App` component stays completely platform-agnostic.
+//! (in-process pipeline on desktop, server function polling on fullstack web,
+//! or direct in-browser pipeline on standalone web) so that the `App` component
+//! stays completely platform-agnostic.
 
 use dioxus::prelude::*;
 
@@ -12,8 +13,10 @@ use crate::models::{ProcessingState, ProcessingStep};
 ///
 /// * **Desktop** (`feature = "desktop"`): spawns a blocking task with an mpsc
 ///   channel and receives updates directly.
-/// * **Web** (default): calls the `start_processing` server function and polls
-///   `poll_progress` every 200 ms.
+/// * **Fullstack web** (`feature = "fullstack"`): calls the `start_processing`
+///   server function and polls `poll_progress` every 500 ms.
+/// * **Standalone web** (WASM without fullstack): runs the pipeline directly
+///   in the browser.
 pub async fn run_and_track(
     files: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
@@ -38,7 +41,7 @@ pub async fn run_and_track(
         }
     }
 
-    #[cfg(feature = "web")]
+    #[cfg(feature = "fullstack")]
     {
         use crate::platform::async_sleep_ms;
         use crate::server::{poll_progress, start_processing};
@@ -70,5 +73,17 @@ pub async fn run_and_track(
                 });
             }
         }
+    }
+
+    #[cfg(all(feature = "web", not(feature = "fullstack"), not(feature = "desktop")))]
+    {
+        use crate::pipeline::run_blueprint_pipeline;
+        use std::cell::RefCell;
+
+        let ps = RefCell::new(processing_state);
+        let state = run_blueprint_pipeline(&files, profile, |state| {
+            ps.borrow_mut().set(state.clone());
+        });
+        ps.into_inner().set(state);
     }
 }

@@ -1,10 +1,9 @@
 mod components;
 mod models;
-#[cfg(not(target_arch = "wasm32"))]
 mod pipeline;
 mod platform;
 mod processing;
-#[cfg(any(feature = "web", feature = "server"))]
+#[cfg(feature = "fullstack")]
 mod server;
 
 use dioxus::prelude::*;
@@ -38,11 +37,11 @@ fn App() -> Element {
 
     // Fetch available profiles on mount
     let profiles_resource = use_resource(|| async {
-        #[cfg(any(feature = "web", feature = "server"))]
+        #[cfg(feature = "fullstack")]
         {
             return crate::server::get_profiles().await.unwrap_or_default();
         }
-        #[cfg(feature = "desktop")]
+        #[cfg(not(feature = "fullstack"))]
         {
             return blueprint::list_profiles();
         }

@@ -12,7 +12,6 @@ const MISSING_TRANSLATION: &str = "MISSING TRANSLATION";
 struct FormResult {
     form_code: String,
     status: String,
-    structural_rating: f64,
     translation_rating: f64,
     missing_translation_score: f64,
     labelled_fields_score: f64,
@@ -21,6 +20,10 @@ struct FormResult {
 
 fn main() -> Result<()> {
     env_logger::init();
+
+    // Load UBS profile fonts before processing any forms
+    blueprint::load_profile_fonts("ubs")
+        .map_err(|e| format!("Failed to load profile fonts: {e}"))?;
 
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
     let forms = discover_forms(&input_dir)?;
@@ -46,7 +49,6 @@ fn main() -> Result<()> {
     wtr.write_record([
         "form_code",
         "status",
-        "structural_rating",
         "translation_rating",
         "missing_translation_score",
         "labelled_fields_score",
@@ -56,13 +58,30 @@ fn main() -> Result<()> {
         wtr.write_record([
             &r.form_code,
             &r.status,
-            &format!("{:.3}", r.structural_rating),
             &format!("{:.3}", r.translation_rating),
             &format!("{:.3}", r.missing_translation_score),
             &format!("{:.3}", r.labelled_fields_score),
             &format!("{:.3}", r.total_score),
         ])?;
     }
+
+    // Write average row
+    if !results.is_empty() {
+        let n = results.len() as f64;
+        let avg_translation = results.iter().map(|r| r.translation_rating).sum::<f64>() / n;
+        let avg_missing = results.iter().map(|r| r.missing_translation_score).sum::<f64>() / n;
+        let avg_labelled = results.iter().map(|r| r.labelled_fields_score).sum::<f64>() / n;
+        let avg_total = results.iter().map(|r| r.total_score).sum::<f64>() / n;
+        wtr.write_record([
+            "AVERAGE",
+            "",
+            &format!("{:.3}", avg_translation),
+            &format!("{:.3}", avg_missing),
+            &format!("{:.3}", avg_labelled),
+            &format!("{:.3}", avg_total),
+        ])?;
+    }
+
     wtr.flush()?;
 
     eprintln!("Results written to {}", output_path.display());
@@ -114,7 +133,6 @@ fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> Form
     let fail = |msg: &str| FormResult {
         form_code: form_code.to_string(),
         status: format!("fail: {msg}"),
-        structural_rating: 0.0,
         translation_rating: 0.0,
         missing_translation_score: 0.0,
         labelled_fields_score: 0.0,
@@ -134,16 +152,7 @@ fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> Form
         return fail("no envelopes");
     }
 
-    // Step 2: Structural rating — average across all envelopes
-    let structural_rating = {
-        let ratings: Vec<f64> = envelopes
-            .iter()
-            .map(|env| compute_structural_rating(&env.content))
-            .collect();
-        ratings.iter().sum::<f64>() / ratings.len() as f64
-    };
-
-    // Step 3: Labelled fields score — average across all envelopes
+    // Step 2: Labelled fields score — average across all envelopes
     let labelled_fields_score = {
         let scores: Vec<f64> = envelopes
             .iter()
@@ -152,7 +161,7 @@ fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> Form
         scores.iter().sum::<f64>() / scores.len() as f64
     };
 
-    // Step 4: Translation rating and merge
+    // Step 3: Translation rating and merge
     let (translation_rating, missing_translation_score) = if envelopes.len() == 1 {
         (1.0, 1.0)
     } else {
@@ -184,88 +193,16 @@ fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> Form
     };
 
     let total_score =
-        structural_rating * translation_rating * missing_translation_score * labelled_fields_score;
+        translation_rating * missing_translation_score * labelled_fields_score;
 
     FormResult {
         form_code: form_code.to_string(),
         status: "pass".to_string(),
-        structural_rating,
         translation_rating,
         missing_translation_score,
         labelled_fields_score,
         total_score,
     }
-}
-
-// =============================================================================
-// Structural rating: ratio of non-conditional nodes to total nodes
-// =============================================================================
-
-fn compute_structural_rating(nodes: &[StructuredNode]) -> f64 {
-    let (total, conditional) = count_nodes(nodes, false);
-    if total == 0 {
-        return 1.0;
-    }
-    (total - conditional) as f64 / total as f64
-}
-
-/// Count total nodes and conditional nodes. `in_conditional` tracks whether
-/// we're inside a ConditionalNode to count its children as conditional too.
-fn count_nodes(nodes: &[StructuredNode], in_conditional: bool) -> (usize, usize) {
-    let mut total = 0;
-    let mut conditional = 0;
-
-    for node in nodes {
-        total += 1;
-        if in_conditional {
-            conditional += 1;
-        }
-
-        match node {
-            StructuredNode::Group(g) => {
-                let (t, c) = count_nodes(&g.children, in_conditional);
-                total += t;
-                conditional += c;
-            }
-            StructuredNode::Conditional(cond) => {
-                if !in_conditional {
-                    conditional += 1; // count the conditional node itself
-                }
-                let (t, c) = count_nodes(std::slice::from_ref(&cond.content), true);
-                total += t;
-                conditional += c;
-            }
-            StructuredNode::Repeatable(r) => {
-                let (t, c) = count_nodes(std::slice::from_ref(&r.item), in_conditional);
-                total += t;
-                conditional += c;
-            }
-            StructuredNode::Table(table) => {
-                if let Some(header) = &table.header {
-                    let (t, c) = count_nodes(&header.cells, in_conditional);
-                    total += t;
-                    conditional += c;
-                }
-                for row in &table.rows {
-                    let (t, c) = count_nodes(&row.cells, in_conditional);
-                    total += t;
-                    conditional += c;
-                }
-            }
-            StructuredNode::GridLayout(grid) => {
-                let children: Vec<&StructuredNode> =
-                    grid.elements.iter().map(|e| &e.node).collect();
-                for child in children {
-                    let (t, c) = count_nodes(std::slice::from_ref(child), in_conditional);
-                    total += t;
-                    conditional += c;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    (total, conditional)
 }
 
 // =============================================================================

@@ -28,6 +28,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use regex_lite::Regex;
 
@@ -1188,9 +1189,11 @@ fn explore_radio(
 
         // Phase A: prepare branches in parallel using rayon thread pool
         // OPTIMIZATION (Step 2): Share the script registry via Arc
-        let branches: Result<Vec<PreparedBranch>, crate::Error> = group_fields
-            .par_iter()
-            .enumerate()
+        #[cfg(not(target_arch = "wasm32"))]
+        let iter = group_fields.par_iter().enumerate();
+        #[cfg(target_arch = "wasm32")]
+        let iter = group_fields.iter().enumerate();
+        let branches: Result<Vec<PreparedBranch>, crate::Error> = iter
             .map(|(option_index, radio_field)| {
                 let nodes = ctx.post_init_nodes.as_ref().clone();
                 let mut new_form = XfaForm::from_post_init_with_registry(
@@ -1277,9 +1280,11 @@ fn explore_checkbox(
 
     // Phase A: prepare branches in parallel using rayon thread pool
     // OPTIMIZATION (Step 2): Share the script registry via Arc
-    let branches: Result<Vec<PreparedBranch>, crate::Error> = checkbox_values
-        .par_iter()
-        .enumerate()
+    #[cfg(not(target_arch = "wasm32"))]
+    let iter = checkbox_values.par_iter().enumerate();
+    #[cfg(target_arch = "wasm32")]
+    let iter = checkbox_values.iter().enumerate();
+    let branches: Result<Vec<PreparedBranch>, crate::Error> = iter
         .map(|(option_index, (raw_value, label))| {
             let nodes = ctx.post_init_nodes.as_ref().clone();
             let mut new_form = XfaForm::from_post_init_with_registry(
@@ -1337,9 +1342,11 @@ fn explore_dropdown(
 ) -> Result<(), crate::Error> {
     // Phase A: prepare branches in parallel using rayon thread pool
     // OPTIMIZATION (Step 2): Share the script registry via Arc
-    let branches: Result<Vec<PreparedBranch>, crate::Error> = options
-        .par_iter()
-        .enumerate()
+    #[cfg(not(target_arch = "wasm32"))]
+    let iter = options.par_iter().enumerate();
+    #[cfg(target_arch = "wasm32")]
+    let iter = options.iter().enumerate();
+    let branches: Result<Vec<PreparedBranch>, crate::Error> = iter
         .map(|(option_index, (display_value, save_value))| {
             let nodes = ctx.post_init_nodes.as_ref().clone();
             let mut new_form = XfaForm::from_post_init_with_registry(

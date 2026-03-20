@@ -225,6 +225,80 @@ pub fn load_aem_fragments(
     Ok(fragments)
 }
 
+/// Load font files from `{profile}/parser/fonts/` and register them with the
+/// global font manager.
+///
+/// Scans for `.ttf` / `.otf` files, reads their metadata via ttf-parser, and
+/// registers each as a loaded font variant. The first font found is also set
+/// as the fallback font.
+pub fn load_profile_fonts(name: &str) -> Result<(), String> {
+    let fonts_dir = PROFILES_DIR
+        .get_dir(format!("{name}/parser/fonts"))
+        .ok_or_else(|| format!("Profile '{name}' has no parser/fonts/ subdirectory"))?;
+
+    use crate::xfa::font_manager::{get_font_manager, register_profile_font_data};
+
+    let manager = get_font_manager();
+    let mut manager = manager
+        .lock()
+        .map_err(|e| format!("Font manager lock error: {e}"))?;
+
+    let mut first_font: Option<&'static [u8]> = None;
+
+    for file in fonts_dir.files() {
+        let path = file.path();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase());
+        if ext.as_deref() != Some("ttf") && ext.as_deref() != Some("otf") {
+            continue;
+        }
+
+        let data: &'static [u8] = file.contents();
+        register_profile_font_data(&mut manager, data);
+
+        if first_font.is_none() {
+            first_font = Some(data);
+        }
+    }
+
+    if let Some(data) = first_font {
+        manager.set_fallback(data);
+    }
+
+    Ok(())
+}
+
+/// Load UBS profile fonts directly into a FontManager instance.
+/// Used during test initialization to avoid re-entrant calls to get_font_manager().
+#[cfg(test)]
+pub fn load_ubs_fonts_into(manager: &mut crate::xfa::font_manager::FontManager) {
+    use crate::xfa::font_manager::register_profile_font_data;
+
+    if let Some(fonts_dir) = PROFILES_DIR.get_dir("ubs/parser/fonts") {
+        let mut first_font: Option<&'static [u8]> = None;
+        for file in fonts_dir.files() {
+            let ext = file
+                .path()
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase());
+            if ext.as_deref() != Some("ttf") && ext.as_deref() != Some("otf") {
+                continue;
+            }
+            let data: &'static [u8] = file.contents();
+            register_profile_font_data(manager, data);
+            if first_font.is_none() {
+                first_font = Some(data);
+            }
+        }
+        if let Some(data) = first_font {
+            manager.set_fallback(data);
+        }
+    }
+}
+
 fn has_profile_config(name: &str, section: &str) -> bool {
     PROFILES_DIR
         .get_file(format!("{name}/{section}/config.toml"))

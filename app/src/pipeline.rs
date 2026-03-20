@@ -1,4 +1,4 @@
-//! Core blueprint processing pipeline (native only).
+//! Core blueprint processing pipeline.
 //!
 //! Delegates the heavy lifting to [`blueprint::run_pipeline`] and translates
 //! the resulting [`blueprint::PipelineEvent`]s into incremental updates to
@@ -7,12 +7,9 @@
 
 use crate::models::{ProcessingState, ProcessingStep};
 
-#[cfg(not(target_arch = "wasm32"))]
 use base64::Engine;
-#[cfg(not(target_arch = "wasm32"))]
 use image::ImageEncoder;
 
-#[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub fn run_blueprint_pipeline(
     files: &[(String, Vec<u8>)],
@@ -25,6 +22,16 @@ pub fn run_blueprint_pipeline(
 
     let mut state = ProcessingState::new();
     let config = PipelineConfig::default();
+
+    // Load profile fonts before running the pipeline so the font manager
+    // has the right typefaces available during PDF parsing.
+    if let Some(ref profile_name) = profile {
+        if let Err(e) = blueprint::load_profile_fonts(profile_name) {
+            state
+                .warnings
+                .push(format!("Failed to load profile fonts: {e}"));
+        }
+    }
 
     let result = run_pipeline(files, &config, |event| match event {
         PipelineEvent::StepChanged(step) => {
@@ -159,7 +166,6 @@ pub fn run_blueprint_pipeline(
 }
 
 /// Encode an RGBA image to PNG bytes.
-#[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> Result<(), String> {
     use image::ExtendedColorType;
