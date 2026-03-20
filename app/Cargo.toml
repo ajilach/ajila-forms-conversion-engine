@@ -6,9 +6,7 @@ edition = "2024"
 [features]
 default = []
 desktop = ["dioxus/desktop"]
-server = ["fullstack", "dioxus/server"]
 web = ["dioxus/web"]
-fullstack = ["dioxus/fullstack"]
 
 [dependencies]
 dioxus = { version = "0.6" }

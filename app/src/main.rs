@@ -3,8 +3,6 @@ mod models;
 mod pipeline;
 mod platform;
 mod processing;
-#[cfg(feature = "fullstack")]
-mod server;
 
 use dioxus::prelude::*;
 
@@ -35,24 +33,7 @@ fn App() -> Element {
     let mut enlarged_image = use_signal(|| None::<(String, String)>);
     let selected_profile = use_signal(|| None::<String>);
 
-    // Fetch available profiles on mount
-    let profiles_resource = use_resource(|| async {
-        #[cfg(feature = "fullstack")]
-        {
-            return crate::server::get_profiles().await.unwrap_or_default();
-        }
-        #[cfg(not(feature = "fullstack"))]
-        {
-            return blueprint::list_profiles();
-        }
-        #[allow(unreachable_code)]
-        Vec::<String>::new()
-    });
-    let profiles: Vec<String> = profiles_resource
-        .read()
-        .as_ref()
-        .cloned()
-        .unwrap_or_default();
+    let profiles = blueprint::list_profiles();
 
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
