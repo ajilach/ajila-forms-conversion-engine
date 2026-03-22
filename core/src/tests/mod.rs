@@ -8593,6 +8593,83 @@ fn test_aacj_multilingual_translation_snippets() {
     }
 }
 
+/// Regression test: AANE has an H2 heading "Kundenerklärungen" (DE, 1 word)
+/// / "Client representations" (EN, 2 words) / "Declaraciones del Cliente"
+/// (ES, 3 words).  The word-ratio between DE and ES exceeds the shape-
+/// compatibility threshold when only the DE projection is considered.
+/// After the fix, `inline_text_shape_compatible` checks ALL language
+/// projections, so the EN projection (2 words) matches ES (3 words).
+#[test]
+fn test_aane_multilingual_merge_no_duplicate_h2() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, HeadingLevel, InlineNode, StructuredNode};
+
+    let de = run_exhaustive_to_envelope(input_path("AANE_019_DE.pdf"), "de")
+        .expect("Failed to process AANE_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AANE_019_EN.pdf"), "en")
+        .expect("Failed to process AANE_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AANE_019_SP.pdf"), "es")
+        .expect("Failed to process AANE_019_SP");
+
+    let merged = structured::merge_translations(vec![de, en, sp]).unwrap();
+
+    // Collect all H2 headings from the merged tree (including inside
+    // conditionals, groups, etc.).
+    fn collect_h2s(
+        nodes: &[StructuredNode],
+        out: &mut Vec<std::collections::HashMap<String, String>>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8() => {
+                    for inline in &h.content.0 {
+                        if let InlineNode::TranslatedText(map) = inline {
+                            out.push(map.clone());
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => collect_h2s(&g.children, out),
+                StructuredNode::Conditional(c) => collect_h2s(&[(*c.content).clone()], out),
+                StructuredNode::Repeatable(r) => collect_h2s(&[(*r.item).clone()], out),
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_h2s(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut h2_maps = Vec::new();
+    collect_h2s(&merged.content, &mut h2_maps);
+
+    // No H2 should have MISSING TRANSLATION in any language.
+    for map in &h2_maps {
+        for (lang, val) in map {
+            assert_ne!(
+                val, "MISSING TRANSLATION",
+                "H2 heading has MISSING TRANSLATION for lang '{}': {:?}",
+                lang, map
+            );
+        }
+    }
+
+    // The heading "Kundenerklärungen" / "Client representations" /
+    // "Declaraciones del Cliente" must appear exactly once.
+    let matching = h2_maps
+        .iter()
+        .filter(|map| {
+            map.get("de")
+                .map_or(false, |v| v.contains("Kundenerklärungen"))
+        })
+        .count();
+    assert_eq!(
+        matching, 1,
+        "Expected exactly 1 H2 containing 'Kundenerklärungen', got {}",
+        matching
+    );
+}
+
 #[test]
 fn test_aags_multilingual_merge_de_en() {
     // Test that merging AAGS DE and EN produces correct bilingual translations

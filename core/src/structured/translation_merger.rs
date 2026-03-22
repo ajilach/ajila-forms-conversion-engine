@@ -2145,4 +2145,134 @@ mod tests {
             panic!("Expected Table");
         }
     }
+
+    /// Regression test: when merging 3 languages iteratively, a compound-word
+    /// language (DE, 1 word) merged with EN (2 words) should still match
+    /// against SP (3 words).  Previously `stable_inline_text_projection`
+    /// picked only the alphabetically-first language key, causing a
+    /// word-ratio mismatch and duplicate headings with MISSING TRANSLATION.
+    #[test]
+    fn test_merge_three_languages_compound_word_heading_no_duplicate() {
+        // DE: single compound word; EN: 2 words; SP: 3 words.
+        // word_ratio(DE, SP) = 3/1 = 3.0 > 2.5 threshold → would fail
+        // word_ratio(EN, SP) = 3/2 = 1.5              → passes
+        let de = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Kundenerklärungen"),
+                    som_path: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field1".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Client representations"),
+                    som_path: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field1".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        let sp = make_envelope(
+            "es",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Declaraciones del Cliente"),
+                    som_path: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "field1".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Nombre")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en, sp]).unwrap();
+
+        // There must be exactly one H2, not two.
+        let h2_count = result
+            .content
+            .iter()
+            .filter(|n| matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8()))
+            .count();
+        assert_eq!(
+            h2_count, 1,
+            "Expected exactly 1 H2 heading after 3-language merge, got {}",
+            h2_count
+        );
+
+        // The single H2 must carry all three translations.
+        if let StructuredNode::Heading(h) = &result.content[0] {
+            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
+                assert_eq!(map.get("de").unwrap(), "Kundenerklärungen");
+                assert_eq!(map.get("en").unwrap(), "Client representations");
+                assert_eq!(map.get("es").unwrap(), "Declaraciones del Cliente");
+            } else {
+                panic!("Expected TranslatedText in heading");
+            }
+        } else {
+            panic!("Expected Heading as first node");
+        }
+
+        // No node should contain MISSING TRANSLATION.
+        fn assert_no_missing(nodes: &[StructuredNode]) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Heading(h) => {
+                        for inline in &h.content.0 {
+                            if let InlineNode::TranslatedText(map) = inline {
+                                for (lang, val) in map {
+                                    assert!(
+                                        val != "MISSING TRANSLATION",
+                                        "H2 has MISSING TRANSLATION for lang '{}'",
+                                        lang
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => assert_no_missing(&g.children),
+                    StructuredNode::Conditional(c) => assert_no_missing(&[*c.content.clone()]),
+                    _ => {}
+                }
+            }
+        }
+        assert_no_missing(&result.content);
+    }
 }

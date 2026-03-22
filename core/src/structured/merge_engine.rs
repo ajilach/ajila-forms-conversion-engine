@@ -616,18 +616,98 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 }
 
 fn inline_text_shape_compatible(a: &InlineText, b: &InlineText) -> bool {
-    text_shape_compatible(
-        &stable_inline_text_projection(a),
-        &stable_inline_text_projection(b),
-    )
+    let a_projections = all_inline_text_projections(a);
+    let b_projections = all_inline_text_projections(b);
+
+    for a_proj in &a_projections {
+        for b_proj in &b_projections {
+            if text_shape_compatible(a_proj, b_proj) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
-fn stable_inline_text_projection(text: &InlineText) -> String {
-    let mut out = String::new();
+/// Collect all per-language text projections from an `InlineText`.
+///
+/// When merging 3+ languages iteratively, already-merged nodes contain
+/// `TranslatedText` maps with multiple language keys.  A single projection
+/// (e.g. a compound-word language) may fail the shape-compatibility check
+/// against the next language even though another translation in the map
+/// would pass.  By producing one projection per language we let the caller
+/// succeed if ANY pair is compatible.
+fn all_inline_text_projections(text: &InlineText) -> Vec<String> {
+    // Collect all language keys that appear in any TranslatedText node.
+    let mut langs: Vec<String> = Vec::new();
     for node in &text.0 {
-        append_stable_inline_node_projection(node, &mut out);
+        collect_projection_languages(node, &mut langs);
     }
-    out
+
+    if langs.is_empty() {
+        // Plain text only — single projection.
+        let mut out = String::new();
+        for node in &text.0 {
+            append_stable_inline_node_projection(node, &mut out);
+        }
+        return vec![out];
+    }
+
+    langs
+        .iter()
+        .map(|lang| {
+            let mut out = String::new();
+            for node in &text.0 {
+                append_inline_node_projection_for_lang(node, lang, &mut out);
+            }
+            out
+        })
+        .collect()
+}
+
+/// Collect all language keys present in `TranslatedText` nodes.
+fn collect_projection_languages(node: &InlineNode, langs: &mut Vec<String>) {
+    match node {
+        InlineNode::TranslatedText(map) => {
+            for lang in map.keys() {
+                if !langs.contains(lang) {
+                    langs.push(lang.clone());
+                }
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.content.0 {
+                collect_projection_languages(child, langs);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_projection_languages(inner, langs);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+/// Project an inline node using a specific language's text from TranslatedText maps.
+fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &mut String) {
+    match node {
+        InlineNode::Text(s) => out.push_str(s),
+        InlineNode::TranslatedText(map) => {
+            if let Some(value) = map.get(lang) {
+                out.push_str(value);
+            } else if let Some((_k, value)) = map.iter().min_by_key(|(k, _)| *k) {
+                // Fallback to alphabetically-first key if this lang is missing.
+                out.push_str(value);
+            }
+        }
+        InlineNode::Link(link) => {
+            for child in &link.content.0 {
+                append_inline_node_projection_for_lang(child, lang, out);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            append_inline_node_projection_for_lang(inner, lang, out)
+        }
+    }
 }
 
 fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
