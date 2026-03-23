@@ -1188,8 +1188,8 @@ impl<'a, 'b> Converter<'a, 'b> {
     /// Extract dropdown options from a Hint::Dropdown, mapping to NameValue pairs.
     fn get_dropdown_options(&self, node: &FlattenedNode) -> Vec<NameValue> {
         node.dropdown()
-            .map(|(options, _, _)| {
-                options
+            .map(|info| {
+                info.options
                     .iter()
                     .filter(|(display, _)| !display.trim().is_empty())
                     .map(|(display, save)| NameValue {

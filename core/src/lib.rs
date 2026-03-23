@@ -99,7 +99,7 @@ pub use profiles::{
 };
 
 // Flattened layer
-pub use flattened::{Flattened, FlattenedNode, FlattenedNodeKind};
+pub use flattened::{DropdownInfo, Flattened, FlattenedNode, FlattenedNodeKind};
 
 // Document / analysis layer
 pub use document::modules::{
@@ -149,7 +149,7 @@ pub use xfa::{XfaNode, XfaNodeKind};
 pub use image::RgbaImage;
 
 // Pipeline
-pub use pipeline::{PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, run_pipeline};
+pub use pipeline::{PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, StateMap, run_pipeline};
 
 use std::path::Path;
 use std::sync::Arc;

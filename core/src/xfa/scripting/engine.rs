@@ -22,6 +22,9 @@ use boa_engine::{
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+/// A dynamically instantiated subform: (SOM path, instance count, per-instance field values).
+pub type DynamicInstance = (String, usize, Vec<HashMap<String, String>>);
+
 /// Read a string property from a JS object, returning `None` if the property
 /// is undefined, null, or cannot be converted to a string.
 ///
@@ -2085,7 +2088,7 @@ _xfa_tmp_im_.removeInstance = function() {};
     ///
     /// This allows the form layer to duplicate XFA nodes and set per-instance
     /// values after script execution.
-    pub fn get_dynamic_instances(&mut self) -> Vec<(String, usize, Vec<HashMap<String, String>>)> {
+    pub fn get_dynamic_instances(&mut self) -> Vec<DynamicInstance> {
         let mut results = Vec::new();
 
         // Walk all registered field_objects looking for subforms with _instances

@@ -22,8 +22,7 @@ fn main() -> Result<()> {
     env_logger::init();
 
     // Load UBS profile fonts before processing any forms
-    blueprint::load_profile_fonts("ubs")
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    blueprint::load_profile_fonts("ubs").map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
     let forms = discover_forms(&input_dir)?;
@@ -94,8 +93,11 @@ fn main() -> Result<()> {
 }
 
 /// Discover all PDFs matching {CODE}_{VERSION}_{LANG}.pdf and group by form code.
-fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<(String, String, PathBuf)>>> {
-    let mut forms: BTreeMap<String, Vec<(String, String, PathBuf)>> = BTreeMap::new();
+/// A discovered form variant: (version, language, path).
+type FormVariant = (String, String, PathBuf);
+
+fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<FormVariant>>> {
+    let mut forms: BTreeMap<String, Vec<FormVariant>> = BTreeMap::new();
 
     for entry in std::fs::read_dir(input_dir).context("Failed to read input directory")? {
         let entry = entry?;
@@ -133,7 +135,7 @@ fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<(String, Stri
 }
 
 /// Process a single form code: run pipeline, compute all ratings.
-fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> FormResult {
+fn process_form(form_code: &str, variants: &[FormVariant]) -> FormResult {
     let fail = |msg: &str| FormResult {
         form_code: form_code.to_string(),
         status: format!("fail: {msg}"),

@@ -53,6 +53,9 @@ use std::{collections::BTreeSet, collections::HashMap};
 
 use crate::{Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection};
 
+/// Per-state map from label to its selections and structured envelope.
+pub type StateMap = HashMap<String, (Vec<Selection>, DocumentEnvelope)>;
+
 // ============================================================================
 // PipelineStep
 // ============================================================================
@@ -346,14 +349,11 @@ pub fn run_pipeline(
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
-    let mut per_language_state_maps: Vec<(
-        String,
-        HashMap<String, (Vec<Selection>, DocumentEnvelope)>,
-    )> = Vec::new();
+    let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
     let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
-        let mut state_map: HashMap<String, (Vec<Selection>, DocumentEnvelope)> = HashMap::new();
+        let mut state_map: StateMap = HashMap::new();
 
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let label = format!("{}_{}", language, state_idx);

@@ -25,7 +25,7 @@ pub async fn run_blueprint_pipeline(
 ) {
     use blueprint::{
         Blueprint, Context, DocumentEnvelope, HtmlConfig, MergeInput, RecursiveMerger, Selection,
-        merge_translations,
+        StateMap, merge_translations,
     };
     use std::collections::{BTreeSet, HashMap};
 
@@ -121,13 +121,10 @@ pub async fn run_blueprint_pipeline(
     on_progress(&state);
     async_sleep_ms(0).await;
 
-    let mut per_language_state_maps: Vec<(
-        String,
-        HashMap<String, (Vec<Selection>, DocumentEnvelope)>,
-    )> = Vec::new();
+    let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
-        let mut state_map: HashMap<String, (Vec<Selection>, DocumentEnvelope)> = HashMap::new();
+        let mut state_map: StateMap = HashMap::new();
 
         for (state_idx, form_state) in form_states.iter().enumerate() {
             let label = format!("{}_{}", language, state_idx);

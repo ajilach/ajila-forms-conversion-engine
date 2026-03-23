@@ -360,6 +360,17 @@ impl FieldAccess {
     }
 }
 
+/// Dropdown information extracted from a [`Hint::Dropdown`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct DropdownInfo<'a> {
+    /// Pairs of (display text, save value)
+    pub options: &'a [(String, String)],
+    /// Whether the user can type a custom value
+    pub text_entry: bool,
+    /// Whether multiple selections are allowed
+    pub multi_select: bool,
+}
+
 /// Semantic hints that can be attached to any flattened node.
 /// These are format-agnostic concepts applicable to XFA, PDF AcroForms, HTML forms, etc.
 /// Multiple hints can be attached to a single node; they are deduplicated by discriminant.
@@ -1036,13 +1047,17 @@ impl FlattenedNode {
     }
 
     /// Get dropdown options if present
-    pub fn dropdown(&self) -> Option<(&[(String, String)], bool, bool)> {
+    pub fn dropdown(&self) -> Option<DropdownInfo<'_>> {
         self.hints.iter().find_map(|h| match h {
             Hint::Dropdown {
                 options,
                 text_entry,
                 multi_select,
-            } => Some((options.as_slice(), *text_entry, *multi_select)),
+            } => Some(DropdownInfo {
+                options: options.as_slice(),
+                text_entry: *text_entry,
+                multi_select: *multi_select,
+            }),
             _ => None,
         })
     }
