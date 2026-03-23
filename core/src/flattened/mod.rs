@@ -945,6 +945,28 @@ impl FlattenedNode {
         })
     }
 
+    /// Return the leading plain-text content of this node (if any).
+    ///
+    /// Prefers rich-text content when available; falls back to the plain
+    /// `Text` content string.
+    pub fn leading_text(&self) -> Option<&str> {
+        if let Some(rt) = self.rich_text() {
+            for para in &rt.paragraphs {
+                for run in &para.runs {
+                    if !run.text.is_empty() {
+                        return Some(run.text.as_str());
+                    }
+                }
+            }
+        }
+        if let FlattenedNodeKind::Text { content, .. } = &self.kind {
+            if !content.is_empty() {
+                return Some(content.as_str());
+            }
+        }
+        None
+    }
+
     /// Get field behavior hint if present
     pub fn field_behavior(&self) -> Option<(FieldAccess, bool, Option<u32>, Option<u32>)> {
         self.hints.iter().find_map(|h| match h {

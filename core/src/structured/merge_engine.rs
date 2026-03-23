@@ -939,6 +939,38 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
 // Translation merge — node list with consolidation
 // ============================================================================
 
+/// Prepend a space to the leading text of the first inline node in the content.
+///
+/// This is used when prepending an orphan `TranslatedText` node before existing
+/// content: the space must live inside the existing nodes so that it applies to
+/// every language rather than being a standalone `Text(" ")` node that
+/// `fill_missing_translation_placeholders` would corrupt.
+fn prepend_space_to_first_inline_node(text: &mut InlineText) {
+    fn prepend(node: &mut InlineNode) {
+        match node {
+            InlineNode::Text(s) => {
+                s.insert(0, ' ');
+            }
+            InlineNode::TranslatedText(map) => {
+                for v in map.values_mut() {
+                    v.insert(0, ' ');
+                }
+            }
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                prepend(inner);
+            }
+            InlineNode::Link(link) => {
+                if let Some(first) = link.content.0.first_mut() {
+                    prepend(first);
+                }
+            }
+        }
+    }
+    if let Some(first) = text.0.first_mut() {
+        prepend(first);
+    }
+}
+
 fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
     match node {
         InlineNode::TranslatedText(map) => {
@@ -995,9 +1027,24 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
             map.entry(base_lang.to_string()).or_default();
             map.entry(other_lang.to_string()).or_default();
             let existing = map.entry(lang.to_string()).or_default();
-            *existing = format!("{}{}", text, existing);
+            if super::needs_separator(text, existing) {
+                *existing = format!("{} {}", text, existing);
+            } else {
+                *existing = format!("{}{}", text, existing);
+            }
             return true;
         }
+
+        let following_text = para
+            .content
+            .0
+            .first()
+            .and_then(|n| n.leading_text())
+            .unwrap_or(" ");
+        let following_starts_with_space = following_text
+            .as_bytes()
+            .first()
+            .is_none_or(|b| b.is_ascii_whitespace());
 
         let mut map: HashMap<String, String> = collect_inline_text_languages(&para.content)
             .into_iter()
@@ -1005,7 +1052,17 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
             .collect();
         map.entry(base_lang.to_string()).or_default();
         map.entry(other_lang.to_string()).or_default();
-        map.insert(lang.to_string(), text.to_string());
+
+        if !following_starts_with_space {
+            // Prepend a space to the existing content so that all languages
+            // (including placeholders filled later) get the separator.
+            prepend_space_to_first_inline_node(&mut para.content);
+            // Trim trailing whitespace from the orphan text to avoid double
+            // spaces when the orphan text already has trailing whitespace.
+            map.insert(lang.to_string(), text.trim_end().to_string());
+        } else {
+            map.insert(lang.to_string(), text.to_string());
+        }
 
         para.content.0.insert(0, InlineNode::TranslatedText(map));
         return true;

@@ -1516,14 +1516,13 @@ mod tests {
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
             assert_eq!(
                 paragraph.content.plain_text_in("de"),
-                format!("{}Basis", MISSING_TRANSLATION_TEXT)
+                format!("{} Basis", MISSING_TRANSLATION_TEXT)
             );
-            assert_eq!(paragraph.content.plain_text_in("en"), "IntroOther");
+            assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
             assert!(matches!(
                 paragraph.content.0[0],
                 InlineNode::TranslatedText(_)
             ));
-            assert!(matches!(paragraph.content.0[1], InlineNode::Strong(_)));
         } else {
             panic!("Expected merged paragraph");
         }
@@ -1564,7 +1563,7 @@ mod tests {
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
             assert_eq!(
                 paragraph.content.plain_text_in("de"),
-                format!("{}Basis Ende", MISSING_TRANSLATION_TEXT)
+                format!("{} Basis Ende", MISSING_TRANSLATION_TEXT)
             );
             assert_eq!(
                 paragraph.content.plain_text_in("en"),

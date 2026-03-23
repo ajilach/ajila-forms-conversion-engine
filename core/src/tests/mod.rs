@@ -17736,3 +17736,154 @@ fn test_aagg_master_page_background_excluded_from_structured() {
         "Master page 'SignatureVerified' field should not appear in structured output"
     );
 }
+
+/// Regression: AAAQ heading "Vollmachten(Auszufüllen durch Antragsteller)"
+/// was missing a space before the parenthesis.  The space must be preserved
+/// when multiple rich-text paragraphs or text nodes are merged into inline
+/// text.
+#[test]
+fn test_aaaq_vollmachten_heading_has_space_before_parenthesis() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::StructuredNode;
+
+    let structured = run_exhaustive_to_merged(input_path("AAAQ_019_DE.pdf"))
+        .expect("Failed to process AAAQ PDF");
+
+    fn find_vollmachten_text(nodes: &[StructuredNode]) -> Option<String> {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    let text = h.content.as_plain_text();
+                    if text.contains("Vollmachten") {
+                        return Some(text);
+                    }
+                }
+                StructuredNode::Paragraph(p) => {
+                    let text = p.content.as_plain_text();
+                    if text.contains("Vollmachten") {
+                        return Some(text);
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if let Some(t) = find_vollmachten_text(&g.children) {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if let Some(t) =
+                        find_vollmachten_text(std::slice::from_ref(c.content.as_ref()))
+                    {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::Repeatable(r) => {
+                    if let Some(t) = find_vollmachten_text(std::slice::from_ref(r.item.as_ref())) {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        if let Some(t) = find_vollmachten_text(std::slice::from_ref(&el.node)) {
+                            return Some(t);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    let text = find_vollmachten_text(&structured)
+        .expect("Expected to find text containing 'Vollmachten'");
+
+    assert!(
+        text.contains("Vollmachten (Auszufüllen"),
+        "Expected a space between 'Vollmachten' and '(Auszufüllen' in the heading, but got: {:?}",
+        text
+    );
+}
+
+/// Regression: AACC EN label "RelationshipDescribe the current relationship..."
+/// was missing a space between "Relationship" and "Describe".  The space must
+/// be preserved when orphan paragraphs are absorbed during translation merge.
+#[test]
+fn test_aacc_relationship_label_has_space() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, StructuredNode};
+
+    let de = run_exhaustive_to_envelope(input_path("AACC_019_DE.pdf"), "de")
+        .expect("Failed to process AACC DE");
+    let en = run_exhaustive_to_envelope(input_path("AACC_019_EN.pdf"), "en")
+        .expect("Failed to process AACC EN");
+
+    let merged =
+        structured::merge_translations(vec![de, en]).expect("Merging AACC DE/EN should succeed");
+
+    fn find_relationship_label(nodes: &[StructuredNode], lang: &str) -> Option<String> {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(f) => {
+                    if let Some(label) = &f.label {
+                        let text = label.plain_text_in(lang);
+                        if text.contains("Relationship") || text.contains("relationship") {
+                            return Some(text);
+                        }
+                    }
+                }
+                StructuredNode::Paragraph(p) => {
+                    let text = p.content.plain_text_in(lang);
+                    if text.contains("Relationship") || text.contains("relationship") {
+                        return Some(text);
+                    }
+                }
+                StructuredNode::Heading(h) => {
+                    let text = h.content.plain_text_in(lang);
+                    if text.contains("Relationship") || text.contains("relationship") {
+                        return Some(text);
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if let Some(t) = find_relationship_label(&g.children, lang) {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if let Some(t) = find_relationship_label(
+                        std::slice::from_ref(c.content.as_ref()),
+                        lang,
+                    ) {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::Repeatable(r) => {
+                    if let Some(t) =
+                        find_relationship_label(std::slice::from_ref(r.item.as_ref()), lang)
+                    {
+                        return Some(t);
+                    }
+                }
+                StructuredNode::GridLayout(g) => {
+                    for el in &g.elements {
+                        if let Some(t) =
+                            find_relationship_label(std::slice::from_ref(&el.node), lang)
+                        {
+                            return Some(t);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    let text = find_relationship_label(&merged.content, "en")
+        .expect("Expected to find text containing 'Relationship' in EN");
+
+    assert!(
+        text.contains("Relationship Describe") || text.contains("Relationship\nDescribe"),
+        "Expected a space between 'Relationship' and 'Describe', but got: {:?}",
+        text
+    );
+}

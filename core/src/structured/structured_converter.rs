@@ -1363,6 +1363,17 @@ impl<'a, 'b> Converter<'a, 'b> {
         let mut result = Vec::new();
 
         for node in nodes {
+            // Before appending new content from a separate flattened node,
+            // check whether a separator space is needed.
+            if !result.is_empty() {
+                let prev_trailing = result.last().and_then(|n: &InlineNode| n.trailing_text());
+                let next_leading = node.leading_text();
+                if let (Some(l), Some(r)) = (prev_trailing, next_leading) {
+                    if super::needs_separator(l, r) {
+                        result.push(InlineNode::Text(" ".to_string()));
+                    }
+                }
+            }
             self.append_inline_nodes_from_node(node, &mut result);
         }
 
@@ -1431,12 +1442,31 @@ impl<'a, 'b> Converter<'a, 'b> {
     }
 
     /// Convert RichText to InlineNodes.
+    ///
+    /// When flattening multiple paragraphs into a single inline sequence,
+    /// inserts a space between paragraphs when neither side already provides
+    /// whitespace at the boundary.
     fn append_inline_nodes_from_rich_text(
         &self,
         rich_text: &RichText,
         result: &mut Vec<InlineNode>,
     ) {
-        for para in &rich_text.paragraphs {
+        for (para_idx, para) in rich_text.paragraphs.iter().enumerate() {
+            // Before appending the first run of a new paragraph (after the
+            // first), check whether a separator space is needed.
+            if para_idx > 0 && !result.is_empty() {
+                let last_text = result.last().and_then(|n| n.trailing_text());
+                let first_text = para
+                    .runs
+                    .iter()
+                    .map(|r| r.text.as_str())
+                    .find(|t| !t.is_empty());
+                if let (Some(l), Some(r)) = (last_text, first_text) {
+                    if super::needs_separator(l, r) {
+                        result.push(InlineNode::Text(" ".to_string()));
+                    }
+                }
+            }
             for run in &para.runs {
                 let inline_node = self.rich_run_to_inline_node(run);
                 result.push(inline_node);

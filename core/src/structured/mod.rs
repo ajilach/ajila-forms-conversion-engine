@@ -15,6 +15,18 @@ use uuid::Uuid;
 use crate::context::Context;
 use crate::xfa::scripting::SomPath;
 
+/// Check whether a space separator is needed between two adjacent text
+/// segments that are being concatenated.  Returns `true` when neither side
+/// already provides whitespace at the boundary.
+pub(crate) fn needs_separator(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    let l = left.as_bytes().last().copied().unwrap_or(b' ');
+    let r = right.as_bytes().first().copied().unwrap_or(b' ');
+    !l.is_ascii_whitespace() && !r.is_ascii_whitespace()
+}
+
 // ============================================================================
 // FieldId — deterministic UUID derived from SOM path
 // ============================================================================
@@ -550,6 +562,55 @@ pub enum InlineNode {
     Link(LinkNode),
     Strong(Box<InlineNode>),
     Emphasis(Box<InlineNode>),
+}
+
+impl InlineNode {
+    /// Return the trailing plain-text content of this node (if any).
+    ///
+    /// For `TranslatedText` nodes, returns the first value that would cause
+    /// a separator to be needed (i.e., does not end with whitespace). Falls
+    /// back to the first available value.
+    pub(crate) fn trailing_text(&self) -> Option<&str> {
+        match self {
+            InlineNode::Text(s) => Some(s.as_str()),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => inner.trailing_text(),
+            InlineNode::TranslatedText(map) => {
+                // Prefer a value that doesn't end with whitespace (worst case
+                // for separator decisions) to avoid nondeterminism.
+                map.values()
+                    .find(|s| {
+                        !s.is_empty() && !s.as_bytes().last().unwrap_or(&b' ').is_ascii_whitespace()
+                    })
+                    .or_else(|| map.values().find(|s| !s.is_empty()))
+                    .map(|s| s.as_str())
+            }
+            InlineNode::Link(link) => link.content.0.last().and_then(|n| n.trailing_text()),
+        }
+    }
+
+    /// Return the leading plain-text content of this node (if any).
+    ///
+    /// For `TranslatedText` nodes, returns the first value that would cause
+    /// a separator to be needed (i.e., does not start with whitespace). Falls
+    /// back to the first available value.
+    pub(crate) fn leading_text(&self) -> Option<&str> {
+        match self {
+            InlineNode::Text(s) => Some(s.as_str()),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => inner.leading_text(),
+            InlineNode::TranslatedText(map) => {
+                // Prefer a value that doesn't start with whitespace (worst case
+                // for separator decisions) to avoid nondeterminism.
+                map.values()
+                    .find(|s| {
+                        !s.is_empty()
+                            && !s.as_bytes().first().unwrap_or(&b' ').is_ascii_whitespace()
+                    })
+                    .or_else(|| map.values().find(|s| !s.is_empty()))
+                    .map(|s| s.as_str())
+            }
+            InlineNode::Link(link) => link.content.0.first().and_then(|n| n.leading_text()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
