@@ -153,6 +153,7 @@ pub use pipeline::{PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, 
 
 use std::path::Path;
 use std::sync::Arc;
+use thiserror::Error;
 
 // ============================================================================
 // Render mode
@@ -174,57 +175,35 @@ pub enum RenderMode {
 // ============================================================================
 
 /// Errors that can occur during blueprint processing.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     /// The PDF could not be parsed.
+    #[error("PDF parse error: {0}")]
     PdfParse(String),
     /// The PDF does not contain XFA data.
+    #[error("PDF does not contain XFA data")]
     NoXfaData,
     /// The raw XFA XML could not be parsed into an XFA node tree.
+    #[error("XFA parse error: {0}")]
     XfaParse(String),
     /// XFA form creation / scripting failed.
+    #[error("Form creation error: {0}")]
     FormCreation(String),
     /// The exhaustive state exploration failed.
+    #[error("State exploration error: {0}")]
     StateExploration(String),
     /// Rendering to an image buffer failed.
+    #[error("Render error: {0}")]
     Render(String),
     /// Structured conversion failed.
+    #[error("Conversion error: {0}")]
     Conversion(String),
     /// AEM configuration could not be constructed (missing XFA variables).
+    #[error("AEM config error: {0}")]
     AemConfig(String),
     /// Generic I/O error (e.g. file not found).
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::PdfParse(msg) => write!(f, "PDF parse error: {}", msg),
-            Error::NoXfaData => write!(f, "PDF does not contain XFA data"),
-            Error::XfaParse(msg) => write!(f, "XFA parse error: {}", msg),
-            Error::FormCreation(msg) => write!(f, "Form creation error: {}", msg),
-            Error::StateExploration(msg) => write!(f, "State exploration error: {}", msg),
-            Error::Render(msg) => write!(f, "Render error: {}", msg),
-            Error::Conversion(msg) => write!(f, "Conversion error: {}", msg),
-            Error::AemConfig(msg) => write!(f, "AEM config error: {}", msg),
-            Error::Io(err) => write!(f, "I/O error: {}", err),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::Io(err)
-    }
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 // ============================================================================
