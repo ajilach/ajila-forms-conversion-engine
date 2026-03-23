@@ -622,6 +622,13 @@ impl<'a> Document<'a> {
         self.is_group_kind(group_idx, |k| matches!(k, GroupKind::Heading { .. }))
     }
 
+    /// Check if a group is a RadioButtonGroup or ExclGroup.
+    pub fn is_radio_or_excl_group(&self, group_idx: usize) -> bool {
+        self.is_group_kind(group_idx, |k| {
+            matches!(k, GroupKind::RadioButtonGroup | GroupKind::ExclGroup { .. })
+        })
+    }
+
     /// Check if a group (or any of its descendants) contains a field node.
     pub fn contains_field(&self, group_idx: usize) -> bool {
         let nodes = self.collect_nodes(group_idx);

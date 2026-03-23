@@ -205,29 +205,44 @@ impl AnalysisModule for LabelAttacher {
             .copied()
             .collect();
 
+        if text_groups.is_empty() {
+            return;
+        }
+
         let field_groups: Vec<usize> = roots
             .iter()
             .filter(|&&idx| doc.is_field(idx))
             .copied()
             .collect();
 
-        if text_groups.is_empty() || field_groups.is_empty() {
-            return;
+        // Steps 1-3: attach labels to regular fields
+        if !field_groups.is_empty() {
+            if let Some(dominant_position) =
+                self.analyze_label_positions(doc, &text_groups, &field_groups)
+            {
+                self.attach_labels_to_fields(doc, &text_groups, &field_groups, dominant_position);
+            }
         }
 
-        // Step 1: Statistical analysis - determine dominant label position
-        let Some(dominant_position) =
-            self.analyze_label_positions(doc, &text_groups, &field_groups)
-        else {
-            return;
-        };
+        // Step 4: attach labels to radio/excl groups
+        self.attach_labels_to_radio_groups(doc);
+    }
+}
 
-        // Step 2: Match labels to fields using the dominant position
-        let mut pairs: Vec<(usize, usize)> = Vec::new(); // (label_idx, field_idx)
+impl LabelAttacher {
+    /// Attach labels to regular fields using the dominant position.
+    fn attach_labels_to_fields(
+        &self,
+        doc: &mut Document,
+        text_groups: &[usize],
+        field_groups: &[usize],
+        dominant_position: LabelPosition,
+    ) {
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
         let mut used_labels: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
         // Sort fields by position for consistent processing
-        let mut sorted_fields = field_groups.clone();
+        let mut sorted_fields = field_groups.to_vec();
         sorted_fields.sort_by(|&a, &b| {
             let bounds_a = doc.get_bounds(a);
             let bounds_b = doc.get_bounds(b);
@@ -274,10 +289,77 @@ impl AnalysisModule for LabelAttacher {
             }
         }
 
-        // Step 3: Create LabeledField groups
+        // Create LabeledField groups
         for (label_idx, field_idx) in pairs {
             doc.merge(
                 vec![label_idx, field_idx],
+                GroupKind::LabeledField { label: 0, field: 1 },
+                GroupSource::Inferred {
+                    module: self.name().to_string(),
+                },
+            );
+        }
+    }
+
+    /// Attach labels to radio button / exclusion groups.
+    ///
+    /// Runs after regular field label attachment. Uses remaining unclaimed
+    /// text blocks and tries Above, Left, Below in order.
+    fn attach_labels_to_radio_groups(&self, doc: &mut Document) {
+        let roots_after = doc.roots();
+
+        let remaining_text_groups: Vec<usize> = roots_after
+            .iter()
+            .filter(|&&idx| {
+                doc.is_text_block(idx)
+                    && !doc.is_heading(idx)
+                    && !doc.get_text_content(idx).trim().is_empty()
+            })
+            .copied()
+            .collect();
+
+        let radio_groups: Vec<usize> = roots_after
+            .iter()
+            .filter(|&&idx| doc.is_radio_or_excl_group(idx))
+            .copied()
+            .collect();
+
+        if remaining_text_groups.is_empty() || radio_groups.is_empty() {
+            return;
+        }
+
+        let mut radio_pairs: Vec<(usize, usize)> = Vec::new();
+        let mut used_radio_labels: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
+
+        let directions = [LabelPosition::Above, LabelPosition::Left, LabelPosition::Below];
+
+        for &radio_idx in &radio_groups {
+            let available: Vec<_> = remaining_text_groups
+                .iter()
+                .filter(|idx| !used_radio_labels.contains(idx))
+                .copied()
+                .collect();
+
+            let mut matched = None;
+            for &dir in &directions {
+                if let Some(result) =
+                    self.find_label_at_position(doc, radio_idx, &available, dir)
+                {
+                    matched = Some(result);
+                    break;
+                }
+            }
+
+            if let Some((label_idx, _gap)) = matched {
+                radio_pairs.push((label_idx, radio_idx));
+                used_radio_labels.insert(label_idx);
+            }
+        }
+
+        for (label_idx, radio_idx) in radio_pairs {
+            doc.merge(
+                vec![label_idx, radio_idx],
                 GroupKind::LabeledField { label: 0, field: 1 },
                 GroupSource::Inferred {
                     module: self.name().to_string(),

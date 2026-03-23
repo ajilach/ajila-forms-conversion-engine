@@ -117,8 +117,19 @@ impl TextBlockMerger {
             return false;
         }
 
-        // Use the max height of the two blocks as line height proxy
-        let line_height = bounds_a.height.max(bounds_b.height);
+        // Use the height of the smaller block as line-height proxy when the
+        // two blocks differ significantly in height (ratio > 2:1).  This
+        // prevents a tall multi-line paragraph from absorbing a nearby
+        // single-line text that is visually separated.  When both blocks are
+        // similar in height, the max is used so that normal multi-line
+        // paragraph continuations still merge.
+        let min_h = bounds_a.height.min(bounds_b.height);
+        let max_h = bounds_a.height.max(bounds_b.height);
+        let line_height = if max_h > min_h * Decimal::TWO {
+            min_h
+        } else {
+            max_h
+        };
         let threshold = line_height / Decimal::TWO;
 
         if gap > threshold {

@@ -18182,8 +18182,8 @@ fn test_aaaq_selection_inline_fields_structured_output() {
 
 #[test]
 fn test_aaea_has_radio_button_group_a_tal_fine() {
-    // Test that AAEA_033_IT.pdf has a radio button group with
-    // options "Dà il consenso" and "Nega i consenso".
+    // Test that AAEA_033_IT.pdf has a radio button group with label
+    // "A tal fine, il Cliente" and options "Dà il consenso" and "Nega i consenso".
     use crate::structured::FieldType;
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAEA_033_IT.pdf"))
@@ -18209,6 +18209,19 @@ fn test_aaea_has_radio_button_group_a_tal_fine() {
     );
 
     let group = group.unwrap();
+
+    // Assert that the radio group has the expected label
+    let label_text = group
+        .label
+        .as_ref()
+        .expect("Radio button group should have a label attached")
+        .as_plain_text();
+    assert!(
+        label_text.contains("A tal fine, il Cliente"),
+        "Expected label to contain 'A tal fine, il Cliente', got: '{}'",
+        label_text
+    );
+
     if let FieldType::Radio { options } = &group.input_type {
         assert_eq!(
             options.len(),
@@ -18217,4 +18230,44 @@ fn test_aaea_has_radio_button_group_a_tal_fine() {
             options.len()
         );
     }
+}
+
+#[test]
+fn test_aags_en_ohne_resultat_radio_has_no_label() {
+    // The AAGS_019_EN.pdf radio button group with options "Ohne Resultat" and
+    // "Mit Resultat (s. unten stehende Erklärung)" has no label text.
+    use crate::structured::FieldType;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAGS_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AAGS_019_EN.pdf");
+
+    let radio_fields = collect_radio_fields(&structured_nodes);
+
+    let expected_options = ["Ohne Resultat", "Mit Resultat"];
+
+    let group = radio_fields
+        .iter()
+        .find(|field| {
+            if let FieldType::Radio { options } = &field.input_type {
+                expected_options
+                    .iter()
+                    .all(|expected| options.iter().any(|opt| opt.name.contains(expected)))
+            } else {
+                false
+            }
+        })
+        .expect(
+            "Expected to find a radio button group with options 'Ohne Resultat' and 'Mit Resultat'",
+        );
+
+    assert!(
+        group.label.is_none(),
+        "Expected no label on the Ohne Resultat / Mit Resultat radio button group, \
+         but found: '{}'",
+        group
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default()
+    );
 }

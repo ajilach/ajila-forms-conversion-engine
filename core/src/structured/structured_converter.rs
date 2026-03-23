@@ -295,7 +295,18 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let field_group = group.children.get(*field).copied()?;
 
                 let label_text = self.extract_inline_text(label_group);
-                self.convert_field_group(field_group, Some(label_text))
+
+                // Dispatch based on the kind of the wrapped field group
+                let field_kind = self.doc.get_group(field_group).map(|g| g.kind.clone());
+                match field_kind {
+                    Some(GroupKind::RadioButtonGroup) => {
+                        self.convert_radio_button_group(field_group, Some(label_text))
+                    }
+                    Some(GroupKind::ExclGroup { selected_value }) => {
+                        self.convert_excl_group(field_group, selected_value, Some(label_text))
+                    }
+                    _ => self.convert_field_group(field_group, Some(label_text)),
+                }
             }
 
             // RadioButton → FieldNode (single option, usually wrapped in RadioButtonGroup)
@@ -317,11 +328,11 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
 
             // RadioButtonGroup → FieldNode with Radio type
-            GroupKind::RadioButtonGroup => self.convert_radio_button_group(group_idx),
+            GroupKind::RadioButtonGroup => self.convert_radio_button_group(group_idx, None),
 
             // ExclGroup → FieldNode with Radio type
             GroupKind::ExclGroup { selected_value } => {
-                self.convert_excl_group(group_idx, selected_value.clone())
+                self.convert_excl_group(group_idx, selected_value.clone(), None)
             }
 
             // DateField → FieldNode with Date type
@@ -614,7 +625,11 @@ impl<'a, 'b> Converter<'a, 'b> {
     }
 
     /// Convert a RadioButtonGroup to a single FieldNode with Radio type.
-    fn convert_radio_button_group(&self, group_idx: usize) -> Option<StructuredNode> {
+    fn convert_radio_button_group(
+        &self,
+        group_idx: usize,
+        label: Option<InlineText>,
+    ) -> Option<StructuredNode> {
         let group = self.doc.get_group(group_idx)?;
 
         // Collect all radio button labels as options
@@ -677,7 +692,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name,
             som_path: Some(som_path),
-            label: None, // Radio groups typically have options as labels
+            label,
             input_type: FieldType::Radio {
                 options: name_values,
             },
@@ -691,6 +706,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         &self,
         group_idx: usize,
         selected_value: Option<String>,
+        label: Option<InlineText>,
     ) -> Option<StructuredNode> {
         let nodes = self.doc.collect_nodes(group_idx);
 
@@ -723,7 +739,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: self.get_field_id(field_node),
             som_path: self.get_som_path(field_node).cloned(),
-            label: None,
+            label,
             input_type: FieldType::Radio {
                 options: name_values,
             },
