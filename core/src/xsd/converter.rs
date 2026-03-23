@@ -129,13 +129,11 @@ fn build_heading_hierarchy(nodes: &[StructuredNode]) -> Vec<Section> {
 
     // Track the top-level items before any heading
     let mut preamble_items: Vec<SectionItem> = Vec::new();
-    let mut seen_heading = false;
 
     for node in nodes {
         match node {
             StructuredNode::Heading(heading) => {
                 let level = heading.level.as_u8();
-                seen_heading = true;
 
                 // Pop sections from the stack that are at the same or deeper level
                 while let Some((stack_level, _)) = stack.last() {
@@ -169,7 +167,6 @@ fn build_heading_hierarchy(nodes: &[StructuredNode]) -> Vec<Section> {
                     match item {
                         FlatItem::Heading(heading) => {
                             let level = heading.level.as_u8();
-                            seen_heading = true;
 
                             while let Some((stack_level, _)) = stack.last() {
                                 if *stack_level >= level {
@@ -195,8 +192,6 @@ fn build_heading_hierarchy(nodes: &[StructuredNode]) -> Vec<Section> {
                         FlatItem::Node(n) => {
                             if let Some((_, section)) = stack.last_mut() {
                                 section.children.push(SectionItem::Node(n));
-                            } else if !seen_heading {
-                                preamble_items.push(SectionItem::Node(n));
                             } else {
                                 preamble_items.push(SectionItem::Node(n));
                             }

@@ -899,11 +899,13 @@ static GLOBAL_FONT_MANAGER: OnceLock<std::sync::Mutex<FontManager>> = OnceLock::
 /// Get the global font manager
 pub fn get_font_manager() -> &'static std::sync::Mutex<FontManager> {
     GLOBAL_FONT_MANAGER.get_or_init(|| {
-        let mut manager = FontManager::new();
+        let manager = FontManager::new();
         #[cfg(test)]
-        {
+        let manager = {
+            let mut manager = manager;
             crate::profiles::load_ubs_fonts_into(&mut manager);
-        }
+            manager
+        };
         std::sync::Mutex::new(manager)
     })
 }
