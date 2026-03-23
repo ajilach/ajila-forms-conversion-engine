@@ -289,6 +289,24 @@ pub enum GroupKind {
         /// SOM path of the checkbox field.
         checkbox_som_path: SomPath,
     },
+
+    /// Inline conditional field on the same line as a radio button or checkbox.
+    ///
+    /// Pattern: `[checkbox/radio] [label] [field]` on one line.
+    /// Created by `SelectionInlineFieldDetector`. The field is conditional on
+    /// the checkbox being checked or the radio option being selected.
+    /// The label from the checkbox/radio is shared with the field.
+    SelectionInlineField {
+        /// SOM path for the condition (checkbox SOM path or exclGroup SOM path).
+        condition_som_path: SomPath,
+        /// For radio buttons: the option field name (condition value is `Text(name)`).
+        /// For checkboxes: `None` (condition value is `Bool(true)`).
+        option_field_name: Option<String>,
+        /// Label text from the checkbox/radio button, used as the field label.
+        label_text: String,
+        /// Index into children vec for the field group.
+        field: usize,
+    },
 }
 
 impl<'a> Document<'a> {
@@ -941,6 +959,9 @@ impl<'a> Document<'a> {
             }
             GroupKind::CheckboxContent { checkbox_som_path } => {
                 format!("CheckboxContent[{}]", checkbox_som_path.as_str())
+            }
+            GroupKind::SelectionInlineField { label_text, .. } => {
+                format!("SelectionInlineField[{}]", label_text)
             }
         }
     }

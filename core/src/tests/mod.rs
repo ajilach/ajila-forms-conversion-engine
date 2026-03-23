@@ -17971,3 +17971,211 @@ fn test_aaaq_radio_button_groups() {
         );
     }
 }
+
+#[test]
+fn test_aaaq_selection_inline_fields() {
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::document::{Document, GroupKind};
+
+    let pdf_path = input_path("AAAQ_019_DE.pdf");
+    let mut bp = crate::Blueprint::from_pdf(&pdf_path).expect("Failed to parse PDF");
+    let states = bp.states().expect("Failed to get states");
+    let first_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &first_state.flattened;
+
+    let mut doc = Document::from_flattened(flattened);
+    run_analysis_pipeline(&mut doc);
+
+    // Collect all SelectionInlineField groups
+    let selection_inline_fields =
+        doc.find_groups(|k| matches!(k, GroupKind::SelectionInlineField { .. }));
+
+    // Extract label texts from the detected selection inline fields
+    let mut labels: Vec<String> = selection_inline_fields
+        .iter()
+        .filter_map(|&idx| {
+            let group = doc.get_group(idx)?;
+            if let GroupKind::SelectionInlineField { label_text, .. } = &group.kind {
+                Some(label_text.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    labels.sort();
+
+    // Assert the four expected elements are detected:
+    // 1. Checkbox "Aufschalten wie Vertrag" + field
+    assert!(
+        labels.iter().any(|l| l.contains("Aufschalten wie Vertrag")),
+        "Expected SelectionInlineField for 'Aufschalten wie Vertrag', found: {:?}",
+        labels
+    );
+
+    // 2. Checkbox "Neuer Benutzer" + field
+    assert!(
+        labels.iter().any(|l| l.contains("Neuer Benutzer")),
+        "Expected SelectionInlineField for 'Neuer Benutzer', found: {:?}",
+        labels
+    );
+
+    // 3. Radio button "Für alle Benutzer" + field
+    assert!(
+        labels.iter().any(|l| l.contains("Für alle Benutzer")),
+        "Expected SelectionInlineField for 'Für alle Benutzer', found: {:?}",
+        labels
+    );
+
+    // 4. Radio button "Nur für Benutzer Nr." + field
+    assert!(
+        labels.iter().any(|l| l.contains("Nur für Benutzer")),
+        "Expected SelectionInlineField for 'Nur für Benutzer', found: {:?}",
+        labels
+    );
+
+    // Verify the SelectionInlineField groups have correct condition types:
+    // Checkboxes should have option_field_name = None
+    // Radio buttons should have option_field_name = Some(...)
+    for &idx in &selection_inline_fields {
+        let group = doc.get_group(idx).unwrap();
+        if let GroupKind::SelectionInlineField {
+            option_field_name,
+            label_text,
+            ..
+        } = &group.kind
+        {
+            if label_text.contains("Aufschalten wie Vertrag")
+                || label_text.contains("Neuer Benutzer")
+            {
+                assert!(
+                    option_field_name.is_none(),
+                    "Checkbox SelectionInlineField '{}' should have option_field_name=None",
+                    label_text
+                );
+            }
+            if label_text.contains("Für alle Benutzer") || label_text.contains("Nur für Benutzer")
+            {
+                assert!(
+                    option_field_name.is_some(),
+                    "Radio SelectionInlineField '{}' should have option_field_name=Some(..)",
+                    label_text
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_aaab_debug_selection_inline_fields() {
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::document::{Document, GroupKind};
+
+    // Verify no false positives in AAAB (radio buttons with inset content).
+    let pdf_path = input_path("AAAB_019_DE.pdf");
+    let mut bp = crate::Blueprint::from_pdf(&pdf_path).expect("Failed to parse PDF");
+    let states = bp.states().expect("Failed to get states");
+
+    for state in states.iter() {
+        let flattened = &state.flattened;
+        let mut doc = Document::from_flattened(flattened);
+        run_analysis_pipeline(&mut doc);
+
+        let sifs = doc.find_groups(|k| matches!(k, GroupKind::SelectionInlineField { .. }));
+        assert!(
+            sifs.is_empty(),
+            "AAAB should not produce SelectionInlineField groups, found {} in state",
+            sifs.len()
+        );
+    }
+}
+
+#[test]
+fn test_aaaq_selection_inline_fields_structured_output() {
+    // Verify that SelectionInlineField groups produce correct ConditionalNodes
+    // in the structured output with proper labels and conditions.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, InputValue};
+
+    let structured = run_exhaustive_to_merged(input_path("AAAQ_019_DE.pdf"))
+        .expect("Failed to process AAAQ PDF");
+
+    let conditionals = collect_conditionals(&structured);
+    let all_fields = collect_fields(&structured);
+
+    // Checkbox "Aufschalten wie Vertrag": should have a conditional with Bool(true)
+    // where the content is a field labeled "Aufschalten wie Vertrag".
+    let aufschalten_cond = conditionals.iter().find(|c| {
+        c.condition.value == InputValue::Bool(true)
+            && match c.content.as_ref() {
+                crate::structured::StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains("Aufschalten wie Vertrag"))
+                    .unwrap_or(false),
+                _ => false,
+            }
+    });
+    assert!(
+        aufschalten_cond.is_some(),
+        "Expected a ConditionalNode with Bool(true) containing a field labeled \
+         'Aufschalten wie Vertrag'. Conditionals: {:?}",
+        conditionals
+            .iter()
+            .filter(|c| c.condition.value == InputValue::Bool(true))
+            .count()
+    );
+
+    // Checkbox "Neuer Benutzer": similar pattern
+    let neuer_benutzer_cond = conditionals.iter().find(|c| {
+        c.condition.value == InputValue::Bool(true)
+            && match c.content.as_ref() {
+                crate::structured::StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains("Neuer Benutzer"))
+                    .unwrap_or(false),
+                _ => false,
+            }
+    });
+    assert!(
+        neuer_benutzer_cond.is_some(),
+        "Expected a ConditionalNode with Bool(true) containing a field labeled 'Neuer Benutzer'"
+    );
+
+    // Radio "Für alle Benutzer": should have a conditional with Text(option_name)
+    let fuer_alle_cond = conditionals.iter().find(|c| {
+        matches!(&c.condition.value, InputValue::Text(_))
+            && match c.content.as_ref() {
+                crate::structured::StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains("Für alle Benutzer"))
+                    .unwrap_or(false),
+                _ => false,
+            }
+    });
+    assert!(
+        fuer_alle_cond.is_some(),
+        "Expected a ConditionalNode with Text(..) containing a field labeled 'Für alle Benutzer'"
+    );
+
+    // Radio "Nur für Benutzer": should have a conditional with Text(option_name)
+    let nur_fuer_cond = conditionals.iter().find(|c| {
+        matches!(&c.condition.value, InputValue::Text(_))
+            && match c.content.as_ref() {
+                crate::structured::StructuredNode::Field(f) => f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains("Nur für Benutzer"))
+                    .unwrap_or(false),
+                _ => false,
+            }
+    });
+    assert!(
+        nur_fuer_cond.is_some(),
+        "Expected a ConditionalNode with Text(..) containing a field labeled 'Nur für Benutzer'"
+    );
+}

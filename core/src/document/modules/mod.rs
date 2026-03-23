@@ -39,6 +39,9 @@
 //! RadioButtonGrouper          ─── groups radio buttons on same line
 //!     │
 //!     ▼
+//! SelectionInlineFieldDetector ── detects inline fields next to checkboxes/radio buttons
+//!     │
+//!     ▼
 //! OverlappingTextBlockMerger  ─── merges text blocks contained within others
 //!     │
 //!     ▼
@@ -101,6 +104,7 @@ mod radio_button_content;
 mod radio_button_detector;
 mod radio_button_grouper;
 mod repeatable_detector;
+mod selection_inline_field;
 mod text_block;
 mod text_block_merger;
 
@@ -123,6 +127,7 @@ pub use radio_button_content::RadioButtonContentDetector;
 pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
 pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
+pub use selection_inline_field::SelectionInlineFieldDetector;
 pub use text_block::TextBlockGrouper;
 pub use text_block_merger::TextBlockMerger;
 
@@ -194,6 +199,7 @@ pub fn run_analysis_pipeline_with_context(
     CheckboxDetector::new().process_with_context(doc, ctx);
     ListDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
+    SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);

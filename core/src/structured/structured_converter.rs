@@ -445,6 +445,37 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }))
             }
 
+            // SelectionInlineField → ConditionalNode wrapping a labeled FieldNode
+            GroupKind::SelectionInlineField {
+                condition_som_path,
+                option_field_name,
+                label_text,
+                field,
+            } => {
+                let group = self.doc.get_group(group_idx)?;
+                let field_group = *group.children.get(*field)?;
+
+                let label = InlineText::plain(label_text.clone());
+                let field_node = self.convert_field_group(field_group, Some(label))?;
+
+                let condition = if let Some(option_name) = option_field_name {
+                    FieldCondition {
+                        field_name: FieldId::from_som_path(condition_som_path),
+                        value: InputValue::Text(option_name.clone()),
+                    }
+                } else {
+                    FieldCondition {
+                        field_name: FieldId::from_som_path(condition_som_path),
+                        value: InputValue::Bool(true),
+                    }
+                };
+
+                Some(StructuredNode::Conditional(ConditionalNode {
+                    condition,
+                    content: Box::new(field_node),
+                }))
+            }
+
             // List → ListNode
             GroupKind::List { list_style } => {
                 let group = self.doc.get_group(group_idx)?;
