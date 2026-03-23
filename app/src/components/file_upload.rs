@@ -52,17 +52,15 @@ pub fn FileUploadSection(
                 multiple: true,
                 accept: ".pdf",
                 disabled: is_processing,
-                onchange: move |evt| {
+                onchange: move |evt: Event<FormData>| {
                     async move {
-                        if let Some(file_engine) = evt.files() {
-                            let mut files_data = Vec::new();
-                            for filename in file_engine.files() {
-                                if let Some(bytes) = file_engine.read_file(&filename).await {
-                                    files_data.push((filename, bytes));
-                                }
+                        let mut files_data = Vec::new();
+                        for file in evt.files() {
+                            if let Ok(bytes) = file.read_bytes().await {
+                                files_data.push((file.name(), bytes.to_vec()));
                             }
-                            uploaded_files.set(files_data);
                         }
+                        uploaded_files.set(files_data);
                     }
                 },
             }

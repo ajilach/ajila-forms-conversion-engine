@@ -14,7 +14,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     . "$HOME/.cargo/env" && \
     rustup target add wasm32-unknown-unknown
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN curl -L "https://github.com/DioxusLabs/dioxus/releases/download/v0.6.3/dx-x86_64-unknown-linux-gnu-v0.6.3.tar.gz" \
+RUN curl -L "https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-x86_64-unknown-linux-gnu.tar.gz" \
     | tar xz && mv dx /usr/local/bin/
 
 WORKDIR /app

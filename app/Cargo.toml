@@ -9,7 +9,7 @@ desktop = ["dioxus/desktop"]
 web = ["dioxus/web"]
 
 [dependencies]
-dioxus = { version = "0.6" }
+dioxus = { version = "0.7" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures-util = "0.3"

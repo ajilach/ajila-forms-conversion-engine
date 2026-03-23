@@ -11,19 +11,14 @@ use models::{ProcessingState, ProcessingStep};
 use processing::run_and_track;
 
 fn main() {
-    #[cfg(feature = "desktop")]
-    {
-        dioxus::LaunchBuilder::desktop()
-            .with_cfg(dioxus::desktop::Config::new().with_window(
-                dioxus::desktop::WindowBuilder::new().with_title("Ajila Forms Conversion Engine"),
-            ))
-            .launch(App);
-    }
-
-    #[cfg(not(feature = "desktop"))]
-    {
-        dioxus::launch(App);
-    }
+    dioxus::LaunchBuilder::new()
+        .with_cfg(desktop! {
+            dioxus::desktop::Config::new().with_window(
+                dioxus::desktop::WindowBuilder::new()
+                    .with_title("Ajila Forms Conversion Engine"),
+            )
+        })
+        .launch(App);
 }
 
 #[component]
@@ -50,13 +45,13 @@ fn App() -> Element {
     };
 
     rsx! {
-        document::Stylesheet { href: asset!("./assets/styles.css") }
+        document::Stylesheet { href: asset!("/assets/styles.css") }
 
         // App Header
         header { class: "app-header",
             img {
                 class: "app-header-logo",
-                src: asset!("./assets/company-logo.webp"),
+                src: asset!("/assets/company-logo.webp"),
                 alt: "Company Logo",
             }
             h1 { class: "app-header-title", "Forms Conversion Engine" }
