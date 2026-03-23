@@ -12870,6 +12870,41 @@ fn test_aacc_multilingual_merge_de_en() {
 }
 
 #[test]
+fn test_aacc_dropdown_no_missing_translation_in_options() {
+    // Regression: the "Form of address" dropdown had an empty first option ("" placeholder)
+    // in both PDFs.  After merging, fill_missing_translation_placeholders replaced the empty
+    // strings with "MISSING TRANSLATION", creating a spurious third option.
+    // The fix filters out blank-display dropdown entries at the structured-converter level.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, FieldType, TranslatableString};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACC_019_DE.pdf"), "de")
+        .expect("Failed to process AACC_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACC_019_EN.pdf"), "en")
+        .expect("Failed to process AACC_019_EN");
+
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+        .expect("Merging AACC_019 DE/EN should succeed");
+
+    let merged_fields = collect_fields(&merged.content);
+    for f in &merged_fields {
+        if let FieldType::Select { options } = &f.input_type {
+            for opt in options {
+                if let TranslatableString::Translated(map) = &opt.name {
+                    for (lang, val) in map {
+                        assert_ne!(
+                            val, "MISSING TRANSLATION",
+                            "Select field {:?} has MISSING TRANSLATION for lang '{}' in option {:?}",
+                            f.name, lang, opt
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn test_aaai_inline_field_vertragsbank() {
     // The AAAI form has an inline field "Vertragsbank" embedded in flowing text.
     // The text before it is: "Der Kunde beauftragt hiermit UBS Europe SE (nachstehend UBS),

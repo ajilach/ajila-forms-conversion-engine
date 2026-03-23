@@ -1144,6 +1144,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             .map(|(options, _, _)| {
                 options
                     .iter()
+                    .filter(|(display, _)| !display.trim().is_empty())
                     .map(|(display, save)| NameValue {
                         name: TranslatableString::Plain(display.clone()),
                         value: InputValue::Text(save.clone()),
