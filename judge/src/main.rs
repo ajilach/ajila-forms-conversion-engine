@@ -23,7 +23,7 @@ fn main() -> Result<()> {
 
     // Load UBS profile fonts before processing any forms
     blueprint::load_profile_fonts("ubs")
-        .map_err(|e| format!("Failed to load profile fonts: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
     let forms = discover_forms(&input_dir)?;
@@ -69,7 +69,11 @@ fn main() -> Result<()> {
     if !results.is_empty() {
         let n = results.len() as f64;
         let avg_translation = results.iter().map(|r| r.translation_rating).sum::<f64>() / n;
-        let avg_missing = results.iter().map(|r| r.missing_translation_score).sum::<f64>() / n;
+        let avg_missing = results
+            .iter()
+            .map(|r| r.missing_translation_score)
+            .sum::<f64>()
+            / n;
         let avg_labelled = results.iter().map(|r| r.labelled_fields_score).sum::<f64>() / n;
         let avg_total = results.iter().map(|r| r.total_score).sum::<f64>() / n;
         wtr.write_record([
@@ -192,8 +196,7 @@ fn process_form(form_code: &str, variants: &[(String, String, PathBuf)]) -> Form
         (translation_rating, missing_translation_score)
     };
 
-    let total_score =
-        translation_rating * missing_translation_score * labelled_fields_score;
+    let total_score = translation_rating * missing_translation_score * labelled_fields_score;
 
     FormResult {
         form_code: form_code.to_string(),

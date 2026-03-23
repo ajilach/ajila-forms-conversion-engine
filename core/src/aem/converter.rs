@@ -1138,7 +1138,7 @@ fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
 ///
 /// Recurses depth-first so inner nodes are processed before parents.
 fn replace_with_fragments(
-    nodes: &mut Vec<AemNode>,
+    nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
     xsd_config: Option<&crate::xsd::XsdConfig>,
     ctx: &mut ConversionContext,

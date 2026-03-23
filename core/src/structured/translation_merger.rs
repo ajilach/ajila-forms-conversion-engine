@@ -197,10 +197,9 @@ mod tests {
         AlignedNode, merge_table, prepend_orphan_text_to_matched_paragraph,
     };
     use crate::structured::{
-        ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GridLayout,
-        GridLayoutElement, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText,
-        InputValue, ListNode, NameValue, ParagraphNode, TableHeader, TableNode, TableRow,
-        TranslatableString,
+        ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode,
+        InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode, TableHeader,
+        TableNode, TableRow, TranslatableString,
     };
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {

@@ -231,17 +231,21 @@ pub fn load_aem_fragments(
 /// Scans for `.ttf` / `.otf` files, reads their metadata via ttf-parser, and
 /// registers each as a loaded font variant. The first font found is also set
 /// as the fallback font.
-pub fn load_profile_fonts(name: &str) -> Result<(), String> {
+pub fn load_profile_fonts(name: &str) -> Result<(), crate::Error> {
     let fonts_dir = PROFILES_DIR
         .get_dir(format!("{name}/parser/fonts"))
-        .ok_or_else(|| format!("Profile '{name}' has no parser/fonts/ subdirectory"))?;
+        .ok_or_else(|| {
+            crate::Error::Profile(format!(
+                "Profile '{name}' has no parser/fonts/ subdirectory"
+            ))
+        })?;
 
     use crate::xfa::font_manager::{get_font_manager, register_profile_font_data};
 
     let manager = get_font_manager();
     let mut manager = manager
         .lock()
-        .map_err(|e| format!("Font manager lock error: {e}"))?;
+        .map_err(|e| crate::Error::Profile(format!("Font manager lock error: {e}")))?;
 
     let mut first_font: Option<&'static [u8]> = None;
 

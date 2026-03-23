@@ -128,8 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ─── Load profile fonts ────────────────────────────────────────────────
     if let Some(ref profile_name) = args.profile {
-        blueprint::load_profile_fonts(profile_name)
-            .map_err(|e| format!("Failed to load profile fonts: {e}"))?;
+        blueprint::load_profile_fonts(profile_name)?;
     }
 
     // ─── Run the pipeline ────────────────────────────────────────────────────

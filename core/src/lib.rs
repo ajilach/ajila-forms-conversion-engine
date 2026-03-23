@@ -201,6 +201,9 @@ pub enum Error {
     /// AEM configuration could not be constructed (missing XFA variables).
     #[error("AEM config error: {0}")]
     AemConfig(String),
+    /// Profile loading failed (fonts, config, etc.).
+    #[error("Profile error: {0}")]
+    Profile(String),
     /// Generic I/O error (e.g. file not found).
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

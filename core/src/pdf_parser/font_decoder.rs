@@ -628,7 +628,7 @@ pub fn extract_embedded_fonts(doc: &Document) -> Vec<RawEmbeddedFont> {
 
     let pages = doc.get_pages();
 
-    for (_page_num, page_id) in &pages {
+    for page_id in pages.values() {
         let page_obj = match doc.get_object(*page_id) {
             Ok(obj) => obj,
             Err(_) => continue,

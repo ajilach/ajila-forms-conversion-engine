@@ -1070,7 +1070,3 @@ pub struct DocumentEnvelope {
     #[serde(default = "default_state_count")]
     pub state_count: usize,
 }
-
-fn default_state_count() -> usize {
-    1
-}
