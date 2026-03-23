@@ -79,6 +79,21 @@ impl RadioButtonDetector {
         false
     }
 
+    /// Check if a field has an ExclGroupSomPath hint.
+    fn has_excl_group_hint(&self, doc: &Document, field_idx: usize) -> bool {
+        let node_indices = doc.collect_node_indices(field_idx);
+        for &node_idx in &node_indices {
+            if let Some(node) = doc.get_node(node_idx) {
+                for hint in &node.hints {
+                    if matches!(hint, Hint::ExclGroupSomPath(_)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a field has a Radio widget type hint (and NOT Checkbox).
     /// If no widget hint is present, assume it could be a radio button (legacy behavior).
     /// But explicitly reject fields with Checkbox widget hint.
@@ -110,7 +125,17 @@ impl RadioButtonDetector {
     }
 
     /// Check if text is to the right of the field and on the same line.
-    fn is_label_on_right(&self, field_bounds: &Bounds, text_bounds: &Bounds) -> Option<Decimal> {
+    ///
+    /// When `allow_overlapping_caption` is true, also accepts text blocks that
+    /// start at approximately the field's x position and extend beyond the field's
+    /// right edge. This handles XFA horizontal radio layouts where the caption
+    /// text is placed overlapping the radio-button widget rather than to its right.
+    fn is_label_on_right(
+        &self,
+        field_bounds: &Bounds,
+        text_bounds: &Bounds,
+        allow_overlapping_caption: bool,
+    ) -> Option<Decimal> {
         // Text must be to the right of field (allowing a small overlap for XFA forms
         // that position the caption text slightly inside the button widget's right edge).
         let gap = if text_bounds.x >= field_bounds.right() - self.label_overlap_tolerance {
@@ -121,6 +146,25 @@ impl RadioButtonDetector {
                 Decimal::ZERO
             } else {
                 raw
+            }
+        } else if allow_overlapping_caption {
+            // Check for overlapping caption: text starts at approximately the field's
+            // x position (within 2pt) and extends beyond the field's right edge.
+            // This handles XFA horizontal radio layouts where the caption text is placed
+            // overlapping the radio-button widget rather than to its right.
+            //
+            // Extra guard: the text must be narrow (short label), not a full-width
+            // paragraph that happens to start at the same left margin as the field.
+            let x_diff = (text_bounds.x - field_bounds.x).abs();
+            let x_tolerance = Decimal::from_str("2.0").unwrap();
+            let max_caption_width = Decimal::from_str("100.0").unwrap();
+            if x_diff <= x_tolerance
+                && text_bounds.right() > field_bounds.right()
+                && text_bounds.width <= max_caption_width
+            {
+                Decimal::ZERO
+            } else {
+                return None;
             }
         } else {
             return None;
@@ -144,6 +188,7 @@ impl RadioButtonDetector {
         doc: &Document,
         field_idx: usize,
         text_candidates: &[usize],
+        allow_overlapping_caption: bool,
     ) -> Option<usize> {
         let field_bounds = doc.get_bounds(field_idx)?;
 
@@ -154,7 +199,8 @@ impl RadioButtonDetector {
                 continue;
             };
 
-            if let Some(gap) = self.is_label_on_right(&field_bounds, &text_bounds)
+            if let Some(gap) =
+                self.is_label_on_right(&field_bounds, &text_bounds, allow_overlapping_caption)
                 && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true)
             {
                 best = Some((text_idx, gap));
@@ -220,14 +266,19 @@ impl AnalysisModule for RadioButtonDetector {
                 continue;
             }
 
-            // Find label on the right
+            // Find label on the right, or at the same position for explicit radios
+            // in ExclGroups where the caption overlaps the field widget.
             let available_labels: Vec<_> = text_groups
                 .iter()
                 .filter(|idx| !used_labels.contains(idx))
                 .copied()
                 .collect();
 
-            if let Some(label_idx) = self.find_label_on_right(doc, field_idx, &available_labels) {
+            let has_excl_group = is_explicit_radio && self.has_excl_group_hint(doc, field_idx);
+
+            if let Some(label_idx) =
+                self.find_label_on_right(doc, field_idx, &available_labels, has_excl_group)
+            {
                 radio_buttons.push((field_idx, label_idx));
                 used_labels.insert(label_idx);
             }

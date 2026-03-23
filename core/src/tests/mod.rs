@@ -17770,8 +17770,7 @@ fn test_aaaq_vollmachten_heading_has_space_before_parenthesis() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(t) =
-                        find_vollmachten_text(std::slice::from_ref(c.content.as_ref()))
+                    if let Some(t) = find_vollmachten_text(std::slice::from_ref(c.content.as_ref()))
                     {
                         return Some(t);
                     }
@@ -17794,8 +17793,8 @@ fn test_aaaq_vollmachten_heading_has_space_before_parenthesis() {
         None
     }
 
-    let text = find_vollmachten_text(&structured)
-        .expect("Expected to find text containing 'Vollmachten'");
+    let text =
+        find_vollmachten_text(&structured).expect("Expected to find text containing 'Vollmachten'");
 
     assert!(
         text.contains("Vollmachten (Auszufüllen"),
@@ -17849,10 +17848,9 @@ fn test_aacc_relationship_label_has_space() {
                     }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(t) = find_relationship_label(
-                        std::slice::from_ref(c.content.as_ref()),
-                        lang,
-                    ) {
+                    if let Some(t) =
+                        find_relationship_label(std::slice::from_ref(c.content.as_ref()), lang)
+                    {
                         return Some(t);
                     }
                 }
@@ -17886,4 +17884,90 @@ fn test_aacc_relationship_label_has_space() {
         "Expected a space between 'Relationship' and 'Describe', but got: {:?}",
         text
     );
+}
+
+#[test]
+fn test_aaaq_radio_button_groups() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAAQ_019_DE.pdf"))
+        .expect("Failed to process AAAQ PDF");
+
+    let radios = collect_radio_fields(&structured);
+
+    // First radio group: FIM = Financial Intermediaries, I = Interne Kunden
+    let customer_type_radio = radios
+        .iter()
+        .find(|field| {
+            let FieldType::Radio { options } = &field.input_type else {
+                return false;
+            };
+            options.iter().any(|o| o.name.as_str() == "FIM")
+                || options
+                    .iter()
+                    .any(|o| o.name.as_str().contains("Financial Internediaries"))
+                || options
+                    .iter()
+                    .any(|o| o.name.as_str().contains("Interne Kunden"))
+        })
+        .expect("Expected radio group with FIM / Financial Internediaries and I / Interne Kunden");
+
+    let FieldType::Radio { options } = &customer_type_radio.input_type else {
+        unreachable!()
+    };
+
+    assert_eq!(
+        options.len(),
+        2,
+        "Expected exactly 2 options in FIM/I radio group, got: {:?}",
+        options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+    );
+    let option_names: Vec<&str> = options.iter().map(|o| o.name.as_str()).collect();
+    assert!(
+        option_names
+            .iter()
+            .any(|n| n.contains("Financial Internediaries") || n.contains("FIM")),
+        "Expected option for 'Financial Internediaries' / 'FIM', got: {:?}",
+        option_names
+    );
+    assert!(
+        option_names
+            .iter()
+            .any(|n| n.contains("Interne Kunden") || *n == "I"),
+        "Expected option for 'Interne Kunden' / 'I', got: {:?}",
+        option_names
+    );
+
+    // Second radio group: EAM, MFO, BBI, PLF, KVG
+    let category_radio = radios
+        .iter()
+        .find(|field| {
+            let FieldType::Radio { options } = &field.input_type else {
+                return false;
+            };
+            options.iter().any(|o| o.name.as_str().contains("EAM"))
+                && options.iter().any(|o| o.name.as_str().contains("MFO"))
+        })
+        .expect("Expected radio group with EAM, MFO, BBI, PLF, KVG options");
+
+    let FieldType::Radio { options } = &category_radio.input_type else {
+        unreachable!()
+    };
+
+    assert_eq!(
+        options.len(),
+        5,
+        "Expected exactly 5 options in EAM/MFO/BBI/PLF/KVG radio group, got: {:?}",
+        options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+    );
+    let option_names: Vec<&str> = options.iter().map(|o| o.name.as_str()).collect();
+    for expected in &["EAM", "MFO", "BBI", "PLF", "KVG"] {
+        assert!(
+            option_names.iter().any(|n| n.contains(expected)),
+            "Expected option containing '{}', got: {:?}",
+            expected,
+            option_names
+        );
+    }
 }
