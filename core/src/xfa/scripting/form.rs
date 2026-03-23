@@ -139,6 +139,30 @@ impl<'a> XfaNodeRef<'a> {
         self.xfa_node
     }
 
+    /// Find a child element inside this node's `<ui>` element by tag name.
+    ///
+    /// XFA fields store their widget type as a child of the `<ui>` element
+    /// (e.g. `<ui><checkButton .../></ui>`).  This helper traverses
+    /// `children → ui → children` and returns the first match.
+    fn find_ui_child(&self, target_tag: &str) -> Option<&XfaNode> {
+        for child in &self.xfa_node.children {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                && tag_name == "ui"
+            {
+                for ui_child in &child.children {
+                    if let XfaNodeKind::Element {
+                        tag_name: ui_tag, ..
+                    } = &ui_child.kind
+                        && ui_tag == target_tag
+                    {
+                        return Some(ui_child);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Check if this is a dropdown/choicelist field
     pub fn is_dropdown(&self) -> bool {
         self.has_choice_list()
@@ -174,22 +198,7 @@ impl<'a> XfaNodeRef<'a> {
 
     /// Check if this field has a choiceList UI element
     fn has_choice_list(&self) -> bool {
-        for child in &self.xfa_node.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui"
-            {
-                for ui_child in &child.children {
-                    if let XfaNodeKind::Element {
-                        tag_name: ui_tag, ..
-                    } = &ui_child.kind
-                        && ui_tag == "choiceList"
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.find_ui_child("choiceList").is_some()
     }
 
     /// Check if this is a radio button field
@@ -212,22 +221,7 @@ impl<'a> XfaNodeRef<'a> {
     }
 
     fn has_button_ui(&self) -> bool {
-        for child in &self.xfa_node.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui"
-            {
-                for ui_child in &child.children {
-                    if let XfaNodeKind::Element {
-                        tag_name: ui_tag, ..
-                    } = &ui_child.kind
-                        && ui_tag == "button"
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.find_ui_child("button").is_some()
     }
 
     /// Check if this field has a checkButton UI element
@@ -241,22 +235,7 @@ impl<'a> XfaNodeRef<'a> {
     }
 
     fn find_check_button(&self) -> Option<&XfaNode> {
-        for child in &self.xfa_node.children {
-            if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-                && tag_name == "ui"
-            {
-                for ui_child in &child.children {
-                    if let XfaNodeKind::Element {
-                        tag_name: ui_tag, ..
-                    } = &ui_child.kind
-                        && ui_tag == "checkButton"
-                    {
-                        return Some(ui_child);
-                    }
-                }
-            }
-        }
-        None
+        self.find_ui_child("checkButton")
     }
 
     /// Get the dropdown options (display values and save values)
