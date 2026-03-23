@@ -18179,3 +18179,42 @@ fn test_aaaq_selection_inline_fields_structured_output() {
         "Expected a ConditionalNode with Text(..) containing a field labeled 'Nur für Benutzer'"
     );
 }
+
+#[test]
+fn test_aaea_has_radio_button_group_a_tal_fine() {
+    // Test that AAEA_033_IT.pdf has a radio button group with
+    // options "Dà il consenso" and "Nega i consenso".
+    use crate::structured::FieldType;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAEA_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on AAEA_033_IT.pdf");
+
+    let radio_fields = collect_radio_fields(&structured_nodes);
+
+    let expected_options = ["Dà il consenso", "Nega i consenso"];
+
+    let group = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            expected_options
+                .iter()
+                .all(|expected| options.iter().any(|opt| opt.name.contains(expected)))
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        group.is_some(),
+        "Expected to find a radio button group with options 'Dà il consenso' and 'Nega i consenso'"
+    );
+
+    let group = group.unwrap();
+    if let FieldType::Radio { options } = &group.input_type {
+        assert_eq!(
+            options.len(),
+            2,
+            "Expected exactly 2 options, found {}",
+            options.len()
+        );
+    }
+}
