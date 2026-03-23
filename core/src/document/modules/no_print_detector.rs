@@ -31,14 +31,7 @@ impl NoPrintDetector {
 
     /// Check if a leaf group has the NoPrint hint.
     fn has_no_print_hint(&self, doc: &Document, group_idx: usize) -> bool {
-        let group = doc.groups.get(group_idx);
-        if let Some(group) = group
-            && let GroupKind::Leaf { node_index } = &group.kind
-            && let Some(node) = doc.get_node(*node_index)
-        {
-            return node.hints.iter().any(|h| matches!(h, Hint::NoPrint));
-        }
-        false
+        doc.has_hint(group_idx, |h| matches!(h, Hint::NoPrint))
     }
 
     /// Find all leaf groups with the NoPrint hint.

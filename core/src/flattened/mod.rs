@@ -2838,7 +2838,7 @@ impl Flattened {
             result
         }
 
-        fn search_recursive<'a>(nodes: &'a [XfaNode]) -> Vec<(&'a XfaNode, String)> {
+        fn search_recursive(nodes: &[XfaNode]) -> Vec<(&XfaNode, String)> {
             for node in nodes {
                 if is_data_element(node) {
                     continue;
@@ -4848,15 +4848,15 @@ impl Flattened {
                     // use per-paragraph measurement so the height accurately reflects
                     // different font sizes and CSS space_above/space_below per paragraph.
                     let natural_content_height = if Self::has_html_exdata(&node.children) {
-                        let result = Self::calculate_rich_text_draw_height(
+                        
+                        Self::calculate_rich_text_draw_height(
                             &node.children,
                             &node.font,
                             &node.para,
                             width,
                             ctx.computed_values,
                             ctx.id_to_field,
-                        );
-                        result
+                        )
                     } else {
                         None
                     }

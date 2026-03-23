@@ -26,7 +26,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint};
+use crate::flattened::Bounds;
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -50,14 +50,7 @@ impl SelectionInlineFieldDetector {
         let group = doc.get_group(cb_idx)?;
         if let GroupKind::Checkbox { field, .. } = &group.kind {
             let field_group_idx = *group.children.get(*field)?;
-            let nodes = doc.collect_nodes(field_group_idx);
-            for node in &nodes {
-                for hint in &node.hints {
-                    if let Hint::SomPath(path) = hint {
-                        return Some(path.clone());
-                    }
-                }
-            }
+            return doc.som_path(field_group_idx);
         }
         None
     }
@@ -71,24 +64,16 @@ impl SelectionInlineFieldDetector {
         let group = doc.get_group(rb_idx)?;
         if let GroupKind::RadioButton { field, .. } = &group.kind {
             let field_group_idx = *group.children.get(*field)?;
+            let excl_path = doc.excl_group_som_path(field_group_idx)?;
             let nodes = doc.collect_nodes(field_group_idx);
-            let mut excl_path: Option<SomPath> = None;
-            let mut field_name: Option<String> = None;
-            for node in &nodes {
+            let field_name = nodes.iter().find_map(|node| {
                 if let crate::flattened::FlattenedNodeKind::Field { name, .. } = &node.kind {
-                    if field_name.is_none() {
-                        field_name = Some(name.clone());
-                    }
+                    Some(name.clone())
+                } else {
+                    None
                 }
-                for hint in &node.hints {
-                    if let Hint::ExclGroupSomPath(path) = hint {
-                        if excl_path.is_none() {
-                            excl_path = Some(path.clone());
-                        }
-                    }
-                }
-            }
-            excl_path.zip(field_name)
+            })?;
+            Some((excl_path, field_name))
         } else {
             None
         }

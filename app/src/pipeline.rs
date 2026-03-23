@@ -33,12 +33,12 @@ pub async fn run_blueprint_pipeline(
 
     // Load profile fonts before running the pipeline so the font manager
     // has the right typefaces available during PDF parsing.
-    if let Some(ref profile_name) = profile {
-        if let Err(e) = blueprint::load_profile_fonts(profile_name) {
-            state
-                .warnings
-                .push(format!("Failed to load profile fonts: {e}"));
-        }
+    if let Some(ref profile_name) = profile
+        && let Err(e) = blueprint::load_profile_fonts(profile_name)
+    {
+        state
+            .warnings
+            .push(format!("Failed to load profile fonts: {e}"));
     }
 
     // Helper: report an error and return early.
@@ -269,17 +269,17 @@ pub async fn run_blueprint_pipeline(
         Err(e) => fail!(format!("Failed to serialize JSON: {e}")),
     };
 
-    if let Some(ref profile_name) = profile {
-        if blueprint::has_html_config(profile_name) {
-            let html_config = match blueprint::load_html_custom_styles(profile_name) {
-                Ok(styles) => HtmlConfig {
-                    custom_styles: Some(styles),
-                    ..HtmlConfig::default()
-                },
-                Err(e) => fail!(format!("Failed to load HTML profile: {e}")),
-            };
-            state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
-        }
+    if let Some(ref profile_name) = profile
+        && blueprint::has_html_config(profile_name)
+    {
+        let html_config = match blueprint::load_html_custom_styles(profile_name) {
+            Ok(styles) => HtmlConfig {
+                custom_styles: Some(styles),
+                ..HtmlConfig::default()
+            },
+            Err(e) => fail!(format!("Failed to load HTML profile: {e}")),
+        };
+        state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
     }
 
     if let Some(ref profile_name) = profile

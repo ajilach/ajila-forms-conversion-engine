@@ -8,7 +8,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint, WidgetKind};
+use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -104,21 +104,7 @@ impl CheckboxDetector {
 
     /// Check if a field has a Checkbox widget type hint.
     fn is_checkbox_field(&self, doc: &Document, field_idx: usize) -> bool {
-        // Get the leaf node indices from this group
-        let node_indices = doc.collect_node_indices(field_idx);
-
-        // Check if any node has a Checkbox widget type hint
-        for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx)
-                && node
-                    .hints
-                    .iter()
-                    .any(|hint| matches!(hint, Hint::WidgetType(WidgetKind::Checkbox)))
-            {
-                return true;
-            }
-        }
-        false
+        doc.widget_kind(field_idx) == Some(WidgetKind::Checkbox)
     }
 }
 

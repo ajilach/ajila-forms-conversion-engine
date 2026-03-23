@@ -80,20 +80,7 @@ impl RepeatableDetector {
     /// Extract occurrence hint from the flattened structure.
     /// Searches for Occurrence hints on the specific leaf node for the given group.
     fn get_occurrence_hint(&self, doc: &Document, group_idx: usize) -> Option<(u32, Option<u32>)> {
-        // Check if this is a leaf group pointing to a node with occurrence hint
-        let group = doc.groups.get(group_idx)?;
-        if let crate::document::GroupKind::Leaf { node_index } = &group.kind {
-            // Get the node and check its hints
-            if let Some(node) = doc.get_node(*node_index) {
-                for hint in &node.hints {
-                    if let crate::flattened::Hint::Occurrence { min, max } = hint {
-                        return Some((*min, *max));
-                    }
-                }
-            }
-        }
-
-        None
+        doc.occurrence(group_idx)
     }
 
     /// Find repeatable groups from the flattened structure.

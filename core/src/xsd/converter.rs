@@ -6,9 +6,7 @@
 //! `xs:element` declarations, conditionals become `xs:choice`, and
 //! repeatables use `minOccurs`/`maxOccurs`.
 
-use crate::structured::{
-    FieldId, FieldNode, FieldType, GroupNode, HeadingNode, RepeatableNode, StructuredNode,
-};
+use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, StructuredNode};
 
 use super::{
     XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,

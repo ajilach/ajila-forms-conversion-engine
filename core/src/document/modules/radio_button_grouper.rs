@@ -5,7 +5,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint};
+use crate::flattened::Bounds;
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -45,17 +45,8 @@ impl RadioButtonGrouper {
     fn get_excl_group_path(&self, doc: &Document, rb_idx: usize) -> Option<SomPath> {
         let group = doc.get_group(rb_idx)?;
         if let GroupKind::RadioButton { field, .. } = &group.kind {
-            // 'field' is an index into the children vec
             let field_group_idx = *group.children.get(*field)?;
-            // Use collect_nodes to get all nodes in this group subtree
-            let nodes = doc.collect_nodes(field_group_idx);
-            for node in &nodes {
-                for hint in &node.hints {
-                    if let Hint::ExclGroupSomPath(path) = hint {
-                        return Some(path.clone());
-                    }
-                }
-            }
+            return doc.excl_group_som_path(field_group_idx);
         }
         None
     }

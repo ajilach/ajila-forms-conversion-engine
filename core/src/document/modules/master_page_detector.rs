@@ -12,7 +12,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Hint, MasterPageRegion};
+use crate::flattened::MasterPageRegion;
 
 /// Detects header, footer, and background groups based on MasterPage hints.
 ///
@@ -33,17 +33,7 @@ impl MasterPageDetector {
 
     /// Get the MasterPage hint region from a leaf group's node.
     fn get_master_page_region(&self, doc: &Document, group_idx: usize) -> Option<MasterPageRegion> {
-        let group = doc.groups.get(group_idx)?;
-        if let GroupKind::Leaf { node_index } = &group.kind
-            && let Some(node) = doc.get_node(*node_index)
-        {
-            for hint in &node.hints {
-                if let Hint::MasterPage { region } = hint {
-                    return Some(*region);
-                }
-            }
-        }
-        None
+        doc.master_page_region(group_idx)
     }
 
     /// Find all leaf groups with a specific MasterPage region.

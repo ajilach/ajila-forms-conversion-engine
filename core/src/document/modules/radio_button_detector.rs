@@ -7,7 +7,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::{Bounds, Hint, WidgetKind};
+use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -66,62 +66,24 @@ impl RadioButtonDetector {
     /// Check if a field has an EXPLICIT `WidgetType(Radio)` hint.
     /// Returns true only when the hint is present; false when absent or Checkbox.
     fn has_explicit_radio_hint(&self, doc: &Document, field_idx: usize) -> bool {
-        let node_indices = doc.collect_node_indices(field_idx);
-        for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx) {
-                for hint in &node.hints {
-                    if let Hint::WidgetType(WidgetKind::Radio) = hint {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        doc.widget_kind(field_idx) == Some(WidgetKind::Radio)
     }
 
     /// Check if a field has an ExclGroupSomPath hint.
     fn has_excl_group_hint(&self, doc: &Document, field_idx: usize) -> bool {
-        let node_indices = doc.collect_node_indices(field_idx);
-        for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx) {
-                for hint in &node.hints {
-                    if matches!(hint, Hint::ExclGroupSomPath(_)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        doc.excl_group_som_path(field_idx).is_some()
     }
 
     /// Check if a field has a Radio widget type hint (and NOT Checkbox).
     /// If no widget hint is present, assume it could be a radio button (legacy behavior).
     /// But explicitly reject fields with Checkbox widget hint.
     fn is_radio_field(&self, doc: &Document, field_idx: usize) -> bool {
-        let node_indices = doc.collect_node_indices(field_idx);
-
-        for &node_idx in &node_indices {
-            if let Some(node) = doc.get_node(node_idx) {
-                // Check for explicit widget type
-                for hint in &node.hints {
-                    match hint {
-                        Hint::WidgetType(WidgetKind::Checkbox) => {
-                            // Explicitly a checkbox - not a radio button
-                            return false;
-                        }
-                        Hint::WidgetType(WidgetKind::Radio) => {
-                            // Explicitly a radio button
-                            return true;
-                        }
-                        _ => {}
-                    }
-                }
-            }
+        match doc.widget_kind(field_idx) {
+            Some(WidgetKind::Checkbox) => false,
+            Some(WidgetKind::Radio) => true,
+            // No explicit widget type found - could be radio (legacy behavior)
+            _ => true,
         }
-
-        // No explicit widget type found - could be radio (legacy behavior)
-        // But we'll be conservative and return true to maintain backward compatibility
-        true
     }
 
     /// Check if text is to the right of the field and on the same line.

@@ -963,7 +963,7 @@ pub fn find_matching_types<'a>(
             // Valid cover — check if it's better than the best.
             if best
                 .as_ref()
-                .map_or(true, |(best_total, _)| total_elems < *best_total)
+                .is_none_or(|(best_total, _)| total_elems < *best_total)
             {
                 *best = Some((total_elems, selected.clone()));
             }
@@ -1054,7 +1054,7 @@ pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElem
             let syn_lower = synonym.to_lowercase();
             if label_lower.contains(&syn_lower) {
                 let len = syn_lower.len();
-                if best.as_ref().map_or(true, |(best_len, _)| len > *best_len) {
+                if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
                     best = Some((
                         len,
                         ResolvedElement {

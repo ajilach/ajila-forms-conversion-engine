@@ -526,11 +526,98 @@ impl<'a> Document<'a> {
 
     /// Check if a group is inside a repeatable section (has an `Occurrence` hint on any node).
     pub fn is_inside_repeatable(&self, group_idx: usize) -> bool {
-        let nodes = self.collect_nodes(group_idx);
-        nodes.iter().any(|node| {
-            node.hints
-                .iter()
-                .any(|hint| matches!(hint, crate::flattened::Hint::Occurrence { .. }))
+        self.has_hint(group_idx, |h| {
+            matches!(h, crate::flattened::Hint::Occurrence { .. })
+        })
+    }
+
+    // ========================================================================
+    // Hint extraction helpers
+    // ========================================================================
+
+    /// Search all nodes in a group's subtree for a hint matching `predicate`,
+    /// returning the first match transformed by `extract`.
+    pub fn find_hint<T>(
+        &self,
+        group_idx: usize,
+        extract: impl Fn(&crate::flattened::Hint) -> Option<T>,
+    ) -> Option<T> {
+        for node in self.collect_nodes(group_idx) {
+            for hint in &node.hints {
+                if let Some(val) = extract(hint) {
+                    return Some(val);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if any node in a group's subtree has a hint matching `predicate`.
+    pub fn has_hint(
+        &self,
+        group_idx: usize,
+        predicate: impl Fn(&crate::flattened::Hint) -> bool,
+    ) -> bool {
+        self.collect_nodes(group_idx)
+            .iter()
+            .any(|node| node.hints.iter().any(&predicate))
+    }
+
+    /// Extract the `SomPath` hint from a group's nodes (first match).
+    pub fn som_path(&self, group_idx: usize) -> Option<SomPath> {
+        self.find_hint(group_idx, |h| {
+            if let crate::flattened::Hint::SomPath(p) = h {
+                Some(p.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Extract the `ExclGroupSomPath` hint from a group's nodes (first match).
+    pub fn excl_group_som_path(&self, group_idx: usize) -> Option<SomPath> {
+        self.find_hint(group_idx, |h| {
+            if let crate::flattened::Hint::ExclGroupSomPath(p) = h {
+                Some(p.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Extract the `WidgetKind` from a group's nodes (first `WidgetType` hint).
+    pub fn widget_kind(&self, group_idx: usize) -> Option<crate::flattened::WidgetKind> {
+        self.find_hint(group_idx, |h| {
+            if let crate::flattened::Hint::WidgetType(k) = h {
+                Some(k.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Extract the `MasterPageRegion` from a group's nodes (first match).
+    pub fn master_page_region(
+        &self,
+        group_idx: usize,
+    ) -> Option<crate::flattened::MasterPageRegion> {
+        self.find_hint(group_idx, |h| {
+            if let crate::flattened::Hint::MasterPage { region } = h {
+                Some(*region)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Extract the `Occurrence` hint from a group's nodes (first match).
+    pub fn occurrence(&self, group_idx: usize) -> Option<(u32, Option<u32>)> {
+        self.find_hint(group_idx, |h| {
+            if let crate::flattened::Hint::Occurrence { min, max } = h {
+                Some((*min, *max))
+            } else {
+                None
+            }
         })
     }
 

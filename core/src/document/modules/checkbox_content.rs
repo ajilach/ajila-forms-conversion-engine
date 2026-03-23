@@ -3,7 +3,6 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
-use crate::flattened::Hint;
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -40,14 +39,7 @@ impl CheckboxContentDetector {
         let group = doc.get_group(checkbox_idx)?;
         if let GroupKind::Checkbox { field, .. } = &group.kind {
             let field_group_idx = *group.children.get(*field)?;
-            let nodes = doc.collect_nodes(field_group_idx);
-            for node in &nodes {
-                for hint in &node.hints {
-                    if let Hint::SomPath(path) = hint {
-                        return Some(path.clone());
-                    }
-                }
-            }
+            return doc.som_path(field_group_idx);
         }
         None
     }
