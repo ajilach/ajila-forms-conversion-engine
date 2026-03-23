@@ -10,7 +10,7 @@
 //! 4. Creating GridLayout groups with appropriate column counts and spans
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::HashSet;
@@ -282,15 +282,13 @@ impl AnalysisModule for GridTemplateDetector {
                 candidate.elements.iter().map(|e| e.group_idx).collect();
             let spans: Vec<usize> = candidate.elements.iter().map(|e| e.span).collect();
 
-            doc.merge(
+            doc.merge_inferred(
                 group_indices,
                 GroupKind::GridLayout {
                     columns: candidate.columns,
                     spans,
                 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

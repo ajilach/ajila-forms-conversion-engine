@@ -7,7 +7,7 @@
 //! (above, below, or left of fields) based on the document layout.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -291,12 +291,10 @@ impl LabelAttacher {
 
         // Create LabeledField groups
         for (label_idx, field_idx) in pairs {
-            doc.merge(
+            doc.merge_inferred(
                 vec![label_idx, field_idx],
                 GroupKind::LabeledField { label: 0, field: 1 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }
@@ -358,12 +356,10 @@ impl LabelAttacher {
         }
 
         for (label_idx, radio_idx) in radio_pairs {
-            doc.merge(
+            doc.merge_inferred(
                 vec![label_idx, radio_idx],
                 GroupKind::LabeledField { label: 0, field: 1 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

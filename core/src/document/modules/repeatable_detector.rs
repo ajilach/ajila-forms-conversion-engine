@@ -12,7 +12,7 @@
 //! - A section is "repeatable" if max > 1 or max is unlimited
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 use rust_decimal::Decimal;
 use std::collections::HashSet;
@@ -379,15 +379,13 @@ impl AnalysisModule for RepeatableDetector {
                 let has_fields = section.member_groups.iter().any(|&g| doc.contains_field(g));
                 if has_fields {
                     // Multiple member groups - merge them into a RepeatableSection
-                    doc.merge(
+                    doc.merge_inferred(
                         section.member_groups,
                         GroupKind::RepeatableSection {
                             min_occurrences: section.min_occurrences,
                             max_occurrences: section.max_occurrences,
                         },
-                        GroupSource::Inferred {
-                            module: self.name().to_string(),
-                        },
+                        self.name(),
                     );
                 }
             } else if section.member_groups.is_empty() && !section.node_indices.is_empty() {
@@ -415,15 +413,13 @@ impl AnalysisModule for RepeatableDetector {
                 // Only create a repeatable section if it contains at least one field
                 let has_fields = contained_groups.iter().any(|&g| doc.contains_field(g));
                 if !contained_groups.is_empty() && has_fields {
-                    doc.merge(
+                    doc.merge_inferred(
                         contained_groups,
                         GroupKind::RepeatableSection {
                             min_occurrences: section.min_occurrences,
                             max_occurrences: section.max_occurrences,
                         },
-                        GroupSource::Inferred {
-                            module: self.name().to_string(),
-                        },
+                        self.name(),
                     );
                 }
             }

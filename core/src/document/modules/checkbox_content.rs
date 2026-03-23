@@ -2,7 +2,7 @@
 //! groups so the structured converter can render it as checked-only content.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -182,12 +182,10 @@ impl AnalysisModule for CheckboxContentDetector {
                 continue;
             }
 
-            doc.merge(
+            doc.merge_inferred(
                 collected,
                 GroupKind::CheckboxContent { checkbox_som_path },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

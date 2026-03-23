@@ -12,7 +12,7 @@
 //! - "Änderung Zahlungsempfänger ab: 01. ." → Label: "Änderung Zahlungsempfänger ab:", Field: InlineDate_Änderung_Zahlungsempfänger_ab
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::FlattenedNodeKind;
 use regex_lite::Regex;
 use std::sync::LazyLock;
@@ -184,7 +184,7 @@ impl AnalysisModule for InlineFieldDatePicker {
             };
 
             // Create new InlineDateField group wrapping the original content
-            doc.merge(
+            doc.merge_inferred(
                 children,
                 GroupKind::InlineDateField {
                     label_text: label,
@@ -192,9 +192,7 @@ impl AnalysisModule for InlineFieldDatePicker {
                     field_indices,
                     generated_name,
                 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

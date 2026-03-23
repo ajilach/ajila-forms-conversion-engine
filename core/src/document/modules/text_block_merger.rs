@@ -7,7 +7,7 @@
 //! assigned a single heading level.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::FlattenedNodeKind;
 use rust_decimal::prelude::*;
 
@@ -325,12 +325,10 @@ impl AnalysisModule for TextBlockMerger {
                 }
             }
 
-            doc.merge(
+            doc.merge_inferred(
                 group_indices,
                 GroupKind::TextBlock,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

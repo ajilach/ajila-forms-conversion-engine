@@ -10,7 +10,7 @@
 //! (e.g. `LabelAttacher`, `HeadingDetector`) try to use it.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::FlattenedNodeKind;
 
 /// Claims text nodes whose content is nothing but repeated placeholder characters.
@@ -95,12 +95,10 @@ impl AnalysisModule for PlaceholderFilter {
 
         // Claim each placeholder by wrapping it in a NoPrint group
         for group_idx in placeholder_groups {
-            doc.merge(
+            doc.merge_inferred(
                 vec![group_idx],
                 GroupKind::NoPrint,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

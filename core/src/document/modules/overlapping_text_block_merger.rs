@@ -13,7 +13,7 @@
 //! `<draw>` elements overlapping with paragraph text.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 
 /// Minimum fraction of the inner block's area that must fall within
@@ -122,12 +122,10 @@ impl AnalysisModule for OverlappingTextBlockMerger {
                 vec![outer_idx, inner_idx]
             };
 
-            doc.merge(
+            doc.merge_inferred(
                 children,
                 GroupKind::TextBlock,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

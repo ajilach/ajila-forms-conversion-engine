@@ -12,7 +12,7 @@
 //! - Hardcoded numeric values: "01", "12", "2024", etc.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -427,14 +427,12 @@ impl AnalysisModule for DateFieldDetector {
 
         // Create DateField groups
         for (indices, field_count) in date_groups {
-            doc.merge(
+            doc.merge_inferred(
                 indices,
                 GroupKind::DateField {
                     num_fields: field_count,
                 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

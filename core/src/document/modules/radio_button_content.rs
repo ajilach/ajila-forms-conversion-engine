@@ -17,7 +17,7 @@
 //!    option's `ExclGroupSomPath` and XFA field `name`.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNodeKind};
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -199,15 +199,13 @@ impl AnalysisModule for RadioButtonContentDetector {
                     continue;
                 }
 
-                doc.merge(
+                doc.merge_inferred(
                     content_indices,
                     GroupKind::RadioButtonContent {
                         excl_group_som_path: shared_excl_path.clone(),
                         option_field_name: field_name,
                     },
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
+                    self.name(),
                 );
             }
         }

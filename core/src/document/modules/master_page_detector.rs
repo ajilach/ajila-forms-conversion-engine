@@ -11,7 +11,7 @@
 //! so a simple gap-based clustering splits them correctly.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::MasterPageRegion;
 
 /// Detects header, footer, and background groups based on MasterPage hints.
@@ -117,12 +117,10 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in header_clusters {
             if !cluster.is_empty() {
-                doc.merge(
+                doc.merge_inferred(
                     cluster,
                     GroupKind::Header,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
+                    self.name(),
                 );
             }
         }
@@ -133,12 +131,10 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in footer_clusters {
             if !cluster.is_empty() {
-                doc.merge(
+                doc.merge_inferred(
                     cluster,
                     GroupKind::Footer,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
+                    self.name(),
                 );
             }
         }
@@ -149,12 +145,10 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in bg_clusters {
             if !cluster.is_empty() {
-                doc.merge(
+                doc.merge_inferred(
                     cluster,
                     GroupKind::Background,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
+                    self.name(),
                 );
             }
         }

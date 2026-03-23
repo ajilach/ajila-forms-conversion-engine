@@ -12,7 +12,7 @@
 //! 5. Wraps each row in a GridLayout with dynamic column count
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -194,15 +194,13 @@ impl FieldTableDetector {
             let num_columns = labeled_field_indices.len();
             let spans = vec![1; num_columns];
 
-            doc.merge(
+            doc.merge_inferred(
                 labeled_field_indices,
                 GroupKind::GridLayout {
                     columns: num_columns,
                     spans,
                 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

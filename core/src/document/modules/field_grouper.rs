@@ -5,7 +5,7 @@
 //! Only interactive (access="open") fields are marked as Fields.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 
 /// Wraps each interactive field node in its own FieldGroup.
 ///
@@ -49,12 +49,10 @@ impl AnalysisModule for FieldGrouper {
                 continue;
             }
 
-            doc.merge(
+            doc.merge_inferred(
                 vec![leaf_idx],
                 GroupKind::Field,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

@@ -7,7 +7,7 @@
 //! - Has WidgetType hint indicating Checkbox
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -169,12 +169,10 @@ impl AnalysisModule for CheckboxDetector {
 
         // Create Checkbox groups
         for (field_idx, label_idx) in checkboxes {
-            doc.merge(
+            doc.merge_inferred(
                 vec![field_idx, label_idx],
                 GroupKind::Checkbox { field: 0, label: 1 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

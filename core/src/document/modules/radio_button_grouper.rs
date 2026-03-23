@@ -4,7 +4,7 @@
 //! into RadioButtonGroup groups. Grouping stops if another element is in between.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -292,13 +292,7 @@ impl RadioButtonGrouper {
 
             // Create a RadioButtonGroup if we have more than one radio button
             if group.len() > 1 {
-                doc.merge(
-                    group,
-                    GroupKind::RadioButtonGroup,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
+                doc.merge_inferred(group, GroupKind::RadioButtonGroup, self.name());
             }
         }
     }
@@ -329,13 +323,7 @@ impl RadioButtonGrouper {
         // Create RadioButtonGroup for each exclGroup with more than one radio button
         for (_path, group) in sorted_groups {
             if group.len() > 1 {
-                doc.merge(
-                    group,
-                    GroupKind::RadioButtonGroup,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
+                doc.merge_inferred(group, GroupKind::RadioButtonGroup, self.name());
             }
         }
     }
@@ -411,13 +399,7 @@ impl RadioButtonGrouper {
             }
 
             for group in groups {
-                doc.merge(
-                    group,
-                    GroupKind::RadioButtonGroup,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
+                doc.merge_inferred(group, GroupKind::RadioButtonGroup, self.name());
             }
         }
     }

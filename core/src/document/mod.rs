@@ -350,15 +350,27 @@ impl<'a> Document<'a> {
         new_index
     }
 
-    /// Create a TextBlock group from multiple text groups.
-    pub fn create_text_block(&mut self, child_indices: Vec<usize>, module: &str) -> usize {
+    /// Merge groups into a new composite group with `GroupSource::Inferred`.
+    ///
+    /// Shorthand for `merge(children, kind, GroupSource::Inferred { module })`.
+    pub fn merge_inferred(
+        &mut self,
+        child_indices: Vec<usize>,
+        kind: GroupKind,
+        module: &str,
+    ) -> usize {
         self.merge(
             child_indices,
-            GroupKind::TextBlock,
+            kind,
             GroupSource::Inferred {
                 module: module.to_string(),
             },
         )
+    }
+
+    /// Create a TextBlock group from multiple text groups.
+    pub fn create_text_block(&mut self, child_indices: Vec<usize>, module: &str) -> usize {
+        self.merge_inferred(child_indices, GroupKind::TextBlock, module)
     }
 
     /// Create a LabeledField group from a label group and a field group.
@@ -368,12 +380,10 @@ impl<'a> Document<'a> {
         field_group: usize,
         module: &str,
     ) -> usize {
-        self.merge(
+        self.merge_inferred(
             vec![label_group, field_group],
             GroupKind::LabeledField { label: 0, field: 1 },
-            GroupSource::Inferred {
-                module: module.to_string(),
-            },
+            module,
         )
     }
 
@@ -393,13 +403,7 @@ impl<'a> Document<'a> {
 
     /// Create a Heading group.
     pub fn create_heading(&mut self, content_group: usize, level: u8, module: &str) -> usize {
-        self.merge(
-            vec![content_group],
-            GroupKind::Heading { level },
-            GroupSource::Inferred {
-                module: module.to_string(),
-            },
-        )
+        self.merge_inferred(vec![content_group], GroupKind::Heading { level }, module)
     }
 
     // ========================================================================

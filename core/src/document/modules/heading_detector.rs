@@ -4,7 +4,7 @@
 //! analysis of font sizes, weights, and other visual properties.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::{Flattened, FlattenedNodeKind};
 use rust_decimal::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -1070,12 +1070,10 @@ impl HeadingDetector {
         let headings = Self::normalize_heading_levels(filtered_headings);
 
         for (group_idx, level, _, _) in headings {
-            doc.merge(
+            doc.merge_inferred(
                 vec![group_idx],
                 GroupKind::Heading { level },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

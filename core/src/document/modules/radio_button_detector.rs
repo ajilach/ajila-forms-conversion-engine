@@ -6,7 +6,7 @@
 //! - Typically small (checkbox/radio button size)
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -248,12 +248,10 @@ impl AnalysisModule for RadioButtonDetector {
 
         // Create RadioButton groups
         for (field_idx, label_idx) in radio_buttons {
-            doc.merge(
+            doc.merge_inferred(
                 vec![field_idx, label_idx],
                 GroupKind::RadioButton { field: 0, label: 1 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

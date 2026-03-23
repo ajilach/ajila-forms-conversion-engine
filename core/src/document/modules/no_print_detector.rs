@@ -8,7 +8,7 @@
 //! are claimed before other modules can process them.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Hint;
 
 /// Detects and claims elements with the NoPrint hint.
@@ -59,12 +59,10 @@ impl AnalysisModule for NoPrintDetector {
         // Create individual NoPrint wrapper groups for each element
         // This claims them so other modules won't process them
         for group_idx in no_print_groups {
-            doc.merge(
+            doc.merge_inferred(
                 vec![group_idx],
                 GroupKind::NoPrint,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

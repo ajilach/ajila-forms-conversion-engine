@@ -24,7 +24,7 @@
 //! so the structured converter receives clean item text.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource, ListStyleType};
+use crate::document::{Document, GroupKind, ListStyleType};
 use crate::flattened::Bounds;
 use rust_decimal::prelude::*;
 use std::collections::HashSet;
@@ -372,12 +372,10 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
 
     // Apply merges: wrap each (marker, content) pair in a new TextBlock.
     for (marker_idx, content_idx) in merges {
-        doc.merge(
+        doc.merge_inferred(
             vec![marker_idx, content_idx],
             GroupKind::TextBlock,
-            GroupSource::Inferred {
-                module: module_name.to_string(),
-            },
+            module_name,
         );
     }
 }
@@ -490,12 +488,10 @@ impl AnalysisModule for ListDetector {
         for (group_indices, list_style) in groups.into_iter().zip(group_styles) {
             let child_group_indices = group_indices;
 
-            doc.merge(
+            doc.merge_inferred(
                 child_group_indices,
                 GroupKind::List { list_style },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

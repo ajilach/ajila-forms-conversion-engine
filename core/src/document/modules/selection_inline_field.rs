@@ -25,7 +25,7 @@
 //!    combined label text.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -281,7 +281,7 @@ impl AnalysisModule for SelectionInlineFieldDetector {
 
         // Apply detections
         for det in detections {
-            doc.merge(
+            doc.merge_inferred(
                 det.children,
                 GroupKind::SelectionInlineField {
                     condition_som_path: det.condition_som_path,
@@ -289,9 +289,7 @@ impl AnalysisModule for SelectionInlineFieldDetector {
                     label_text: det.label_text,
                     field: det.field_child_index,
                 },
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }

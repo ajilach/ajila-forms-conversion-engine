@@ -5,7 +5,7 @@
 //! Empty text nodes (like spacers) are skipped.
 
 use super::AnalysisModule;
-use crate::document::{Document, GroupKind, GroupSource};
+use crate::document::{Document, GroupKind};
 use crate::flattened::FlattenedNodeKind;
 
 /// Wraps each non-empty text node in its own TextBlock group.
@@ -62,12 +62,10 @@ impl AnalysisModule for TextBlockGrouper {
                 continue;
             }
 
-            doc.merge(
+            doc.merge_inferred(
                 vec![leaf_idx],
                 GroupKind::TextBlock,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
+                self.name(),
             );
         }
     }
