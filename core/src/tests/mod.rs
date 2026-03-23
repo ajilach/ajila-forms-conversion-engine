@@ -18271,3 +18271,34 @@ fn test_aags_en_ohne_resultat_radio_has_no_label() {
             .unwrap_or_default()
     );
 }
+
+#[test]
+fn test_aaha_de_fuer_die_benutzung_von_dropdown_occurs_once() {
+    // Regression test: the dropdown with label "Für die Benutzung von" must
+    // appear exactly once in the merged AAHA_019_DE output.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAHA_019_DE.pdf"))
+        .expect("Failed to process AAHA_019_DE.pdf");
+
+    let fields = collect_fields(&structured);
+
+    let matching: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            matches!(f.input_type, FieldType::Select { .. })
+                && f.label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains("Für die Benutzung von"))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    assert_eq!(
+        matching.len(),
+        1,
+        "Expected exactly 1 dropdown with label 'Für die Benutzung von', but found {}",
+        matching.len()
+    );
+}
