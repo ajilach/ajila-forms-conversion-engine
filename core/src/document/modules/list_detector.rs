@@ -346,8 +346,19 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
+            // Check if the content is on the "same line" as the marker.
+            // Two criteria:
+            //   a) Same y within tolerance (marker and content have similar top), OR
+            //   b) Marker sits directly above content (marker bottom ≈ content top).
+            // Case (b) handles XFA forms where the marker draw element is
+            // positioned one line above the content draw element.
+            let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
+            let marker_bottom = marker_bounds.y + marker_bounds.height;
+            let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
+            let on_same_line = same_y || marker_above;
+
             // Past the line – stop looking.
-            if (content_bounds.y - marker_bounds.y).abs() > y_tol {
+            if !on_same_line {
                 break;
             }
 
@@ -379,6 +390,7 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
         );
     }
 }
+
 impl AnalysisModule for ListDetector {
     fn name(&self) -> &'static str {
         "ListDetector"
@@ -421,7 +433,21 @@ impl AnalysisModule for ListDetector {
         let flush = |run: &mut Vec<(usize, String, Bounds, DetectedMarker)>,
                      groups: &mut Vec<Vec<usize>>,
                      group_styles: &mut Vec<ListStyleType>| {
-            if run.len() >= 2 {
+            // Normally require >= 2 items to form a list.  However, a single
+            // item with actual content after the marker prefix is also kept
+            // so that Phase 2 backward extension can try to find preceding
+            // items that were missing their markers.  A standalone marker
+            // ("–" with no content) is never promoted alone because it does
+            // not carry enough signal.
+            let keep = if run.len() >= 2 {
+                true
+            } else if run.len() == 1 {
+                let remaining = run[0].1[run[0].3.prefix_len..].trim();
+                !remaining.is_empty()
+            } else {
+                false
+            };
+            if keep {
                 let child_indices: Vec<usize> = run.iter().map(|(idx, _, _, _)| *idx).collect();
                 let kind = run[0].3.kind;
                 groups.push(child_indices);
@@ -484,8 +510,165 @@ impl AnalysisModule for ListDetector {
         // Flush the final run
         flush(&mut current_run, &mut groups, &mut group_styles);
 
-        // For each list group, merge into a List group
+        // Phase 2: Backward extension.
+        //
+        // Some XFA forms have list items where the marker text for the first
+        // N items is missing (empty draw elements).  Only the last few items
+        // receive visible markers.  Without this phase, the marker-less items
+        // are left as plain TextBlocks and get merged into the preceding
+        // paragraph by the TextBlockMerger.
+        //
+        // For each detected list group, we walk backwards through the root
+        // TextBlocks looking for items that share the same x position and are
+        // vertically contiguous.  We stop when we encounter a TextBlock whose
+        // height exceeds 2× the tallest item in the confirmed list (heuristic
+        // to avoid absorbing a preceding multi-line paragraph).
+        let roots_set: HashSet<usize> = roots.iter().copied().collect();
+
+        // Collect root TextBlocks sorted by y then x for backward scanning.
+        let mut root_tb_sorted: Vec<(usize, Bounds)> = Vec::new();
+        for &idx in &roots {
+            if matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                if let Some(b) = doc.get_bounds(idx) {
+                    root_tb_sorted.push((idx, b));
+                }
+            }
+        }
+        root_tb_sorted.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
+
+        // Build a quick lookup: group_idx → position in root_tb_sorted
+        let tb_pos: std::collections::HashMap<usize, usize> = root_tb_sorted
+            .iter()
+            .enumerate()
+            .map(|(pos, (idx, _))| (*idx, pos))
+            .collect();
+
+        // Track indices already claimed by a list group so we don't double-count.
+        let mut claimed: HashSet<usize> = HashSet::new();
+        for group in &groups {
+            for &idx in group {
+                claimed.insert(idx);
+            }
+        }
+
+        for group in &mut groups {
+            if group.is_empty() {
+                continue;
+            }
+
+            // Max height among confirmed list items (used as paragraph guard).
+            let max_item_height = group
+                .iter()
+                .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.height))
+                .max()
+                .unwrap_or(Decimal::ZERO);
+            let height_limit = max_item_height * Decimal::TWO;
+
+            // Reference width: use the widest item in the group for
+            // comparison.  This ensures backward candidates of normal width
+            // are not rejected when the list also contains narrow standalone
+            // markers.
+            let ref_item_width = group
+                .iter()
+                .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.width))
+                .max()
+                .unwrap_or(Decimal::ZERO);
+
+            let first_idx = group[0];
+            // Find the topmost item by y position for backward scanning.
+            let (topmost_idx, topmost_bounds) = group
+                .iter()
+                .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
+                .min_by_key(|(_, b)| b.y)
+                .unwrap_or_else(|| {
+                    let b = doc.get_bounds(first_idx).unwrap();
+                    (first_idx, b)
+                });
+
+            // Find position of topmost item in the sorted list
+            let start_pos = match tb_pos.get(&topmost_idx) {
+                Some(&pos) => pos,
+                None => continue,
+            };
+
+            // Walk backwards from the item before `start_pos`
+            let mut prepend = Vec::new();
+            let mut current_top = topmost_bounds.y;
+            for pos in (0..start_pos).rev() {
+                let (cand_idx, ref cand_bounds) = root_tb_sorted[pos];
+
+                if claimed.contains(&cand_idx) {
+                    break;
+                }
+
+                // Must still be a root TextBlock (not claimed by another module)
+                if !roots_set.contains(&cand_idx) {
+                    break;
+                }
+                if !matches!(doc.groups[cand_idx].kind, GroupKind::TextBlock) {
+                    break;
+                }
+
+                // Same x within tolerance
+                if (cand_bounds.x - topmost_bounds.x).abs() > x_tol {
+                    break;
+                }
+
+                // Vertically adjacent: candidate bottom ≈ current top
+                let cand_bottom = cand_bounds.y + cand_bounds.height;
+                let gap = current_top - cand_bottom;
+                let gap_limit = max_item_height / Decimal::TWO;
+                if gap < Decimal::ZERO || gap > gap_limit {
+                    break;
+                }
+
+                // Guard: skip multi-line paragraphs (much taller than list items)
+                if cand_bounds.height > height_limit {
+                    break;
+                }
+
+                // Guard: skip TextBlocks with very different width (e.g. narrow
+                // standalone markers that formed their own list group).
+                let width_narrow = cand_bounds.width.min(ref_item_width);
+                let width_wide = cand_bounds.width.max(ref_item_width);
+                if width_wide > Decimal::ZERO && width_narrow * Decimal::TWO < width_wide {
+                    break;
+                }
+
+                // Check no intervening non-TextBlock root between candidate and current top
+                let has_intervening = non_tb_root_ys
+                    .iter()
+                    .any(|&y| y > cand_bottom && y < current_top);
+                if has_intervening {
+                    break;
+                }
+
+                prepend.push(cand_idx);
+                claimed.insert(cand_idx);
+                current_top = cand_bounds.y;
+            }
+
+            // Only apply backward extension when at least 5 items are
+            // prepended.  This guards against false positives where a
+            // heading, introductory sentence, or nearby paragraph text
+            // sitting directly above a list would be incorrectly absorbed.
+            // The threshold of 5 ensures we only extend when there is a
+            // clear pattern of many consecutive items missing their markers
+            // (as happens in some XFA forms).
+            if prepend.len() >= 5 {
+                prepend.reverse(); // restore top-to-bottom order
+                prepend.append(group);
+                *group = prepend;
+            }
+        }
+
+        // For each list group, merge into a List group (skip groups with < 2 items
+        // after backward extension; these are single-item runs that didn't grow
+        // enough to form a proper list).
         for (group_indices, list_style) in groups.into_iter().zip(group_styles) {
+            if group_indices.len() < 2 {
+                continue;
+            }
             let child_group_indices = group_indices;
 
             doc.merge_inferred(

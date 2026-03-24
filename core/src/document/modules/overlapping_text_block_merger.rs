@@ -74,59 +74,89 @@ impl AnalysisModule for OverlappingTextBlockMerger {
             })
             .collect();
 
-        // Find pairs where one text block is mostly contained within another
-        let mut merged: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        let mut merges: Vec<(usize, usize)> = Vec::new(); // (outer_idx, inner_idx)
+        // Find groups where small text blocks are contained within larger ones.
+        // An outer (larger) block can absorb multiple inner (smaller) blocks.
+        let mut consumed_inner: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut outer_inners: std::collections::BTreeMap<usize, Vec<usize>> =
+            std::collections::BTreeMap::new();
 
         for i in 0..text_blocks.len() {
             let (idx_a, ref bounds_a) = text_blocks[i];
-            if merged.contains(&idx_a) {
+            if consumed_inner.contains(&idx_a) {
                 continue;
             }
 
             for j in (i + 1)..text_blocks.len() {
                 let (idx_b, ref bounds_b) = text_blocks[j];
-                if merged.contains(&idx_b) {
+                if consumed_inner.contains(&idx_b) {
                     continue;
                 }
 
                 if let Some((outer_idx, inner_idx)) =
                     Self::find_containment(bounds_a, bounds_b, idx_a, idx_b)
                 {
-                    merges.push((outer_idx, inner_idx));
-                    merged.insert(outer_idx);
-                    merged.insert(inner_idx);
+                    // An inner block that was already assigned as an outer to
+                    // other inners should not be consumed again.
+                    if outer_inners.contains_key(&inner_idx) {
+                        continue;
+                    }
+                    consumed_inner.insert(inner_idx);
+                    outer_inners.entry(outer_idx).or_default().push(inner_idx);
                 }
             }
         }
 
-        // Perform merges
-        for (outer_idx, inner_idx) in merges {
+        // Perform merges: for each outer with its inner blocks, merge all.
+        for (outer_idx, inner_indices) in outer_inners {
             let outer_bounds = match doc.get_bounds(outer_idx) {
                 Some(b) => b,
                 None => continue,
             };
-            let inner_bounds = match doc.get_bounds(inner_idx) {
-                Some(b) => b,
-                None => continue,
-            };
 
-            // Determine prefix vs postfix based on inner block position
-            let is_left = inner_bounds.center_x() < outer_bounds.center_x();
+            // Sort inner blocks: left-side inners first (by y, then x), then
+            // outer, then right-side inners.
+            let mut left_inners = Vec::new();
+            let mut right_inners = Vec::new();
+            for &inner_idx in &inner_indices {
+                let inner_bounds = match doc.get_bounds(inner_idx) {
+                    Some(b) => b,
+                    None => continue,
+                };
+                if inner_bounds.center_x() < outer_bounds.center_x() {
+                    left_inners.push((inner_idx, inner_bounds));
+                } else {
+                    right_inners.push((inner_idx, inner_bounds));
+                }
+            }
 
-            let children = if is_left {
-                // Inner is on the left → prefix: inner text comes first
-                vec![inner_idx, outer_idx]
-            } else {
-                // Inner is on the right → postfix: outer text comes first
-                vec![outer_idx, inner_idx]
-            };
+            // Sort left inners by y then x (reading order for prefixes)
+            left_inners.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
+            right_inners.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
 
-            doc.merge_inferred(
-                children,
-                GroupKind::TextBlock,
-                self.name(),
-            );
+            // Deduplicate: when multiple inner blocks have the same text
+            // (e.g. two "–" marker glyphs for a multi-line item), keep
+            // only the first occurrence on each side.
+            let mut seen_left = std::collections::HashSet::new();
+            left_inners.retain(|(idx, _)| {
+                let text = doc.get_text_content(*idx);
+                seen_left.insert(text)
+            });
+            let mut seen_right = std::collections::HashSet::new();
+            right_inners.retain(|(idx, _)| {
+                let text = doc.get_text_content(*idx);
+                seen_right.insert(text)
+            });
+
+            let mut children: Vec<usize> = Vec::new();
+            for (idx, _) in &left_inners {
+                children.push(*idx);
+            }
+            children.push(outer_idx);
+            for (idx, _) in &right_inners {
+                children.push(*idx);
+            }
+
+            doc.merge_inferred(children, GroupKind::TextBlock, self.name());
         }
     }
 }

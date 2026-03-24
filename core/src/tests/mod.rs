@@ -18851,8 +18851,7 @@ fn test_aais_019_translation_merge_content() {
     assert_eq!(sp.state_count, 9, "SP should have 9 states");
 
     // Merge all three languages
-    let merged = structured::merge_translations(vec![de, en, sp])
-        .expect("Merge should succeed");
+    let merged = structured::merge_translations(vec![de, en, sp]).expect("Merge should succeed");
 
     // === 1. "Client Details" heading should have correct translations ===
     let mut client_details_found = false;
@@ -18891,10 +18890,7 @@ fn test_aais_019_translation_merge_content() {
         if let structured::StructuredNode::Field(f) = node {
             if f.som_path_str().contains("Company.Company") {
                 company_field_count += 1;
-                let label = f
-                    .label
-                    .as_ref()
-                    .expect("Company field should have a label");
+                let label = f.label.as_ref().expect("Company field should have a label");
                 let de_text = label.plain_text_in("de");
                 let en_text = label.plain_text_in("en");
                 let es_text = label.plain_text_in("es");
@@ -19003,25 +18999,22 @@ fn test_aais_019_translation_merge_content() {
         fall_values
     );
     assert!(
-        fall_values.contains(
-            &"Komplette Auskehrung von Vertriebsprovisionen an Kunden".to_string()
-        ),
+        fall_values
+            .contains(&"Komplette Auskehrung von Vertriebsprovisionen an Kunden".to_string()),
         "Should have 'Komplette Auskehrung' condition, got: {:?}",
         fall_values
     );
     assert!(
-        fall_values.contains(
-            &"Teilweise Auskehrung von Vertriebsprovisionen an Kunden".to_string()
-        ),
+        fall_values
+            .contains(&"Teilweise Auskehrung von Vertriebsprovisionen an Kunden".to_string()),
         "Should have 'Teilweise Auskehrung' condition, got: {:?}",
         fall_values
     );
 
     // Each CL_ClientType condition should contain Fall sub-conditions
     for ct_cond in &client_type_conditions {
-        let inner_conditionals = collect_conditionals(std::slice::from_ref(
-            ct_cond.content.as_ref(),
-        ));
+        let inner_conditionals =
+            collect_conditionals(std::slice::from_ref(ct_cond.content.as_ref()));
         let inner_fall: Vec<_> = inner_conditionals
             .iter()
             .filter(|c| c.condition.field_name.to_string().contains("16c1f4fd"))
@@ -19087,5 +19080,113 @@ fn test_aais_019_company_field_recognized_per_language() {
                 "{file} ({lang}): Company field label should be '{expected_label}'"
             );
         }
+    }
+}
+
+/// Test that the AAIS_019 fee list is recognized as a single unordered list
+/// with 10 items and that all three translations (EN, DE, ES) are correct.
+#[test]
+fn test_aais_019_fee_list_recognized_and_translated() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    // Load all three language envelopes
+    let de = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AAIS_019_EN.pdf"), "en")
+        .expect("Failed to process AAIS_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AAIS_019_SP.pdf"), "es")
+        .expect("Failed to process AAIS_019_SP");
+
+    // Merge all three languages
+    let merged = structured::merge_translations(vec![de, en, sp])
+        .expect("AAIS_019 three-language merge should succeed");
+
+    // Collect all lists from the merged output
+    let lists = helpers::collect_lists(&merged.content);
+
+    let expected_en = [
+        "One-time placement fee of up to 2.50%,",
+        "One-time placement fee from the underlying fund manager of up to 2.0%,",
+        "Annual additional commitment fee of up to 0.50% p.a.,",
+        "Annual management fee of up to 0.60% p.a.,",
+        "Annual administration fee or servicing fee of up to 0.06% p.a.,",
+        "Annual Depository Fee of up to 0.02% p.a. based on the Net Asset Value (NAV),",
+        "Annual Alternative Investment Fund Manager Fee of up to 0.02% p.a. based on the NAV,",
+        "Annual Advisory Fee of up to 1.05% p.a.,",
+        "Management Revenues, which can be paid by the management of the target investment in an individual amount specified in the respective product documentation,",
+        "performance fee in an individual percentage amount shown in the respective product documentation",
+    ];
+
+    let expected_es = [
+        "comisión de colocación única de hasta un 2,50%,",
+        "comisión de colocación única del gestor subyacente del fondo de hasta un 2,0%,",
+        "comisión de compromiso adicional anual de hasta un 0,5% anual,",
+        "comisión de gestión anual de hasta un 0,6% anual,",
+        "comisión de administración anual o comisión de servicio de hasta un 0,06% anual,",
+        "comisión de custodia anual de hasta un 0,02% anual en relación con el valor neto de los activos,",
+        "comisión de gestor de fondo de inversiones alternativas de hasta un 0,02% anual en relación con el valor neto de los activos,",
+        "comisión de asesoramiento anual de hasta el 1,05% anual,",
+        "Rentas de gestión, las cuales se pueden abonar por la gestión de la inversión objetivo en el importe individual especificado en la documentación del producto correspondiente,",
+        "Comisión de rentabilidad en un importe porcentual particular que figura en la documentación del producto correspondiente.",
+    ];
+
+    let expected_de = [
+        "Einmalige Placement Fee in Höhe von bis zu 2,50%,",
+        "Einmalige Placement Fee vom zugrundeliegenden Fondsverwalter (Underlying Manager) in Höhe bis zu 2,0%,",
+        "Jährliche zusätzliche Additional Commitment Fee von bis zu 0,50% p.a.,",
+        "Jährliche Management Fee von bis zu 0,60% p.a.,",
+        "Jährliche Administrations Fee oder Servicing Fee von bis zu 0,06% p.a.,",
+        "Jährliche Depository Fee von bis zu 0,02% p.a. bezogen auf den Nettoinventarwert (NAV),",
+        "Jährliche Alternative Investment Fund Manager-Fee von bis zu 0,02% p.a. bezogen auf den NAV,",
+        "Jährliche Advisory Fee von bis zu 1,05% p.a.,",
+        "Management Revenues, die in individueller in der jeweiligen Produktdokumentation aufgezeigten Höhe seitens des Managements des Zielinvestments gezahlt werden können,",
+        "Erfolgsabhängige Performance Fee in individueller prozentualer in der jeweiligen Produktdokumentation aufgezeigten Höhe.",
+    ];
+
+    // Find the fee list: an unordered list with 10 items
+    let fee_list = lists
+        .iter()
+        .find(|l| !l.list_style.is_ordered() && l.items.len() == 10)
+        .unwrap_or_else(|| {
+            // Print diagnostic info about all lists found
+            for (i, l) in lists.iter().enumerate() {
+                eprintln!(
+                    "List {}: style={:?}, items={}",
+                    i,
+                    l.list_style,
+                    l.items.len()
+                );
+                for (j, item) in l.items.iter().enumerate() {
+                    eprintln!("  [{j}] EN: {}", item.plain_text_in("en"));
+                    eprintln!("      DE: {}", item.plain_text_in("de"));
+                    eprintln!("      ES: {}", item.plain_text_in("es"));
+                }
+            }
+            panic!(
+                "AAIS_019 should have an unordered list with 10 fee items, found lists: {:?}",
+                lists
+                    .iter()
+                    .map(|l| (l.list_style, l.items.len()))
+                    .collect::<Vec<_>>()
+            );
+        });
+
+    // Verify English items
+    for (i, expected) in expected_en.iter().enumerate() {
+        let text = fee_list.items[i].plain_text_in("en");
+        assert_eq!(text.trim(), *expected, "EN fee list item {} mismatch", i);
+    }
+
+    // Verify Spanish items
+    for (i, expected) in expected_es.iter().enumerate() {
+        let text = fee_list.items[i].plain_text_in("es");
+        assert_eq!(text.trim(), *expected, "ES fee list item {} mismatch", i);
+    }
+
+    // Verify German items
+    for (i, expected) in expected_de.iter().enumerate() {
+        let text = fee_list.items[i].plain_text_in("de");
+        assert_eq!(text.trim(), *expected, "DE fee list item {} mismatch", i);
     }
 }
