@@ -18302,3 +18302,525 @@ fn test_aaha_de_fuer_die_benutzung_von_dropdown_occurs_once() {
         matching.len()
     );
 }
+
+#[test]
+fn test_aabk_periodische_due_diligence_radio_group() {
+    // The top-level radio group (no label) has 3 options:
+    // - BBI – Institutionelle Kunden
+    // - Finanzportfolioverwalter, Anlage- und Abschlussvermittler PLF – KVG
+    // - Vermögensverwalter LatAm
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| {
+            f.som_path_str()
+                .contains("RB_Group_Periodische_Due_Diligence")
+        })
+        .expect("Expected to find RB_Group_Periodische_Due_Diligence radio field");
+
+    // This radio group has no label
+    assert!(
+        field.label.is_none()
+            || field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().trim().is_empty())
+                .unwrap_or(true),
+        "Expected no label for Periodische Due Diligence radio group"
+    );
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        options.len(),
+        3,
+        "Expected 3 radio options, found {}",
+        options.len()
+    );
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+
+    let expected = [
+        "BBI",
+        "Institutionelle Kunden",
+        "Finanzportfolioverwalter",
+        "Abschlussvermittler",
+        "KVG",
+        "LatAm",
+    ];
+
+    for substr in &expected {
+        assert!(
+            option_names.iter().any(|n| n.contains(substr)),
+            "Expected a radio option containing '{}'\nFound: {:?}",
+            substr,
+            option_names
+        );
+    }
+}
+
+#[test]
+fn test_aabk_sind_die_adress_radio_group() {
+    // Label context: "Sind die Adress-, Kontaktdaten und Kontaktpartner in der CAWB IM aktuell?"
+    // Options: Nein / Ja
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Sind_Die_Adress"))
+        .expect("Expected to find RB_Group_Sind_Die_Adress radio field");
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(options.len(), 2);
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(option_names.iter().any(|n| n.contains("Nein")));
+    assert!(option_names.iter().any(|n| n.contains("Ja")));
+}
+
+#[test]
+fn test_aabk_erfullt_der_kunde_radio_group() {
+    // Label context: "Erfüllt der Kunde die regulatorischen Kriterien..."
+    // Options: Nein / Ja, Art der Professionalisierung
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Erfullt_Der_Kunde"))
+        .expect("Expected to find RB_Group_Erfullt_Der_Kunde radio field");
+
+    // This radio group has no direct label (label is in surrounding context)
+    assert!(
+        field.label.is_none()
+            || field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().trim().is_empty())
+                .unwrap_or(true),
+        "Expected no label for Erfullt_Der_Kunde radio group"
+    );
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(options.len(), 2);
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(option_names.iter().any(|n| n.contains("Nein")));
+    assert!(
+        option_names
+            .iter()
+            .any(|n| n.contains("Professionalisierung"))
+    );
+}
+
+#[test]
+fn test_aabk_professionalisierung_radio_group() {
+    // No label — sub-radio group for Professionalisierung
+    // Options:
+    // - Geeignete Gegenpartei
+    // - Professioneller Kunde (Kraft Gesetz)
+    // - Professioneller Kunde (Hochstufung vom Retail zum Professionellen Kunden)
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Professionalisierung"))
+        .expect("Expected to find RB_Group_Professionalisierung radio field");
+
+    // This radio group has no label
+    assert!(
+        field.label.is_none()
+            || field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().trim().is_empty())
+                .unwrap_or(true),
+        "Expected no label for Professionalisierung radio group"
+    );
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(options.len(), 3);
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(
+        option_names
+            .iter()
+            .any(|n| n.contains("Geeignete Gegenpartei")),
+        "Missing 'Geeignete Gegenpartei' in {:?}",
+        option_names
+    );
+    assert!(
+        option_names.iter().any(|n| n.contains("Kraft Gesetz")),
+        "Missing 'Kraft Gesetz' in {:?}",
+        option_names
+    );
+    assert!(
+        option_names
+            .iter()
+            .any(|n| n.contains("Hochstufung vom Retail")),
+        "Missing 'Hochstufung vom Retail' in {:?}",
+        option_names
+    );
+}
+
+#[test]
+fn test_aabk_handelszugange_radio_group() {
+    // Label: "Handelszugänge"
+    // Options: Connect / DAC / DAC Plus / ATA / keine
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Handelszugange"))
+        .expect("Expected to find RB_Group_Handelszugange radio field");
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        options.len(),
+        5,
+        "Expected 5 Handelszugänge options, found {}",
+        options.len()
+    );
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    for expected in &["Connect", "DAC", "DAC Plus", "ATA", "keine"] {
+        assert!(
+            option_names.iter().any(|n| n.contains(expected)),
+            "Missing option '{}' in {:?}",
+            expected,
+            option_names
+        );
+    }
+}
+
+#[test]
+fn test_aabk_besteht_ein_operations_agreement_radio_group() {
+    // Label: "Besteht ein Operations-Agreement bzgl. externer Broker?"
+    // Options: Nein / Ja
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Besteht_Ein_Operations"))
+        .expect("Expected to find RB_Group_Besteht_Ein_Operations radio field");
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(options.len(), 2);
+
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(option_names.iter().any(|n| n.contains("Nein")));
+    assert!(option_names.iter().any(|n| n.contains("Ja")));
+}
+
+#[test]
+fn test_aabk_checkboxes() {
+    // Verify the two key checkboxes:
+    // 1. Handelsregisterauszug — label: "Beigefügt und geprüft"
+    // 2. Wurde der FIM besucht — label: "Ja, wann:"
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let fields = collect_fields(&structured);
+
+    // Handelsregisterauszug checkbox
+    let handelsregister = fields
+        .iter()
+        .find(|f| {
+            matches!(f.input_type, FieldType::Bool)
+                && f.som_path_str().contains("CB_Beigefugt_Und_Gepruft")
+        })
+        .expect("Expected to find Handelsregisterauszug checkbox (CB_Beigefugt_Und_Gepruft)");
+
+    let label = handelsregister
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+    assert!(
+        label.contains("Beigefügt und geprüft"),
+        "Handelsregisterauszug checkbox label should contain 'Beigefügt und geprüft', got: '{}'",
+        label
+    );
+
+    // Wurde der FIM besucht checkbox
+    let fim_besucht = fields
+        .iter()
+        .find(|f| {
+            matches!(f.input_type, FieldType::Bool)
+                && f.som_path_str().contains("CB_Ja_Wurde_Der_FIM")
+        })
+        .expect("Expected to find FIM besucht checkbox (CB_Ja_Wurde_Der_FIM)");
+
+    let label = fim_besucht
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+    assert!(
+        label.contains("Ja, wann"),
+        "FIM besucht checkbox label should contain 'Ja, wann', got: '{}'",
+        label
+    );
+}
+
+#[test]
+fn test_aabk_conditional_fields() {
+    // Verify conditional fields attached to radio buttons for the following labels:
+    // - "Andere Lizenz (Nachweis beifügen)"
+    // - "Ja, wann:" (from checkbox)
+    // - "Ja (Falls "Ja": Es gelten Enhanced Due Diligence...)"
+    // - "Ja: Angabe der Änderung"
+    // - "Ja, welche:"
+    // - "Ja, Beschreibung der Änderungen:"
+    // - "Ja, Beschreibung:"
+    // - "Ja, aber Konditionenanpassung erforderlich (Beschreibung und Frist):"
+    // - "Nein, weiteres Vorgehen:"
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, InputValue, StructuredNode};
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let conditionals = collect_conditionals(&structured);
+    let fields = collect_fields(&structured);
+
+    // 1. "Andere Lizenz (Nachweis beifügen)" — from Lizenzüberprüfung radio
+    let lizenz_radio = fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Lizenzuberprufung"))
+        .expect("Expected Lizenzüberprüfung radio field");
+    let options = match &lizenz_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type for Lizenzüberprüfung"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Andere Lizenz")),
+        "Expected 'Andere Lizenz (Nachweis beifügen)' option in Lizenzüberprüfung radio"
+    );
+
+    // 2. "Ja, wann:" — conditional Date field from checkbox CB_Ja_Wurde_Der_FIM
+    assert!(
+        conditionals.iter().any(|c| {
+            c.condition.value == InputValue::Bool(true)
+                && match c.content.as_ref() {
+                    StructuredNode::Field(f) => {
+                        f.label
+                            .as_ref()
+                            .map(|l| l.as_plain_text().contains("Ja, wann"))
+                            .unwrap_or(false)
+                            && matches!(f.input_type, FieldType::Date)
+                    }
+                    _ => false,
+                }
+        }),
+        "Expected conditional Date field labeled 'Ja, wann:' gated on checkbox"
+    );
+
+    // 3. "Ja (Falls "Ja": Es gelten Enhanced Due Diligence...)" — from Klassifizierung radio
+    let klassifizierung_radio = fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Klassifizierung"))
+        .expect("Expected Klassifizierung radio field");
+    let options = match &klassifizierung_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type for Klassifizierung"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Enhanced Due Diligence")),
+        "Expected option containing 'Enhanced Due Diligence' in Klassifizierung radio"
+    );
+
+    // 4. "Ja: Angabe der Änderung" — from Veranderungen_Hauptaktionare radio
+    let hauptaktionare_radio = fields
+        .iter()
+        .find(|f| {
+            f.som_path_str()
+                .contains("RB_Group_Veranderungen_Hauptaktionare")
+        })
+        .expect("Expected Veranderungen_Hauptaktionare radio field");
+    let options = match &hauptaktionare_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Angabe der Änderung")),
+        "Expected option 'Ja: Angabe der Änderung' in Veranderungen_Hauptaktionare radio"
+    );
+
+    // 5. "Ja, welche:" — from Besonderheiten radio
+    let besonderheiten_radio = fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Besonderheiten"))
+        .expect("Expected Besonderheiten radio field");
+    let options = match &besonderheiten_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Ja, welche")),
+        "Expected option 'Ja, welche:' in Besonderheiten radio"
+    );
+
+    // 6. "Ja, Beschreibung der Änderungen:" — from Geschaftsstrategie_Des_FIM radio
+    let strategie_radio = fields
+        .iter()
+        .find(|f| {
+            f.som_path_str()
+                .contains("RB_Group_Geschaftsstrategie_Des_FIM")
+        })
+        .expect("Expected Geschaftsstrategie_Des_FIM radio field");
+    let options = match &strategie_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Beschreibung der Änderungen")),
+        "Expected option 'Ja, Beschreibung der Änderungen:' in Geschaftsstrategie radio"
+    );
+
+    // 7. "Ja, Beschreibung:" — from Interessenkonflikte radio
+    let konflikte_radio = fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Interessenkonflikte"))
+        .expect("Expected Interessenkonflikte radio field");
+    let options = match &konflikte_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type"),
+    };
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Ja, Beschreibung")),
+        "Expected option 'Ja, Beschreibung:' in Interessenkonflikte radio"
+    );
+
+    // 8. "Ja, aber Konditionenanpassung erforderlich (Beschreibung und Frist):"
+    //    — from Geschaftsbeziehung_Fortgesetzt radio, conditional text field
+    let fortgesetzt_radio = fields
+        .iter()
+        .find(|f| {
+            f.som_path_str()
+                .contains("RB_Group_Geschaftsbeziehung_Fortgesetzt")
+        })
+        .expect("Expected Geschaftsbeziehung_Fortgesetzt radio field");
+    let options = match &fortgesetzt_radio.input_type {
+        FieldType::Radio { options } => options,
+        _ => panic!("Expected radio type"),
+    };
+    assert!(
+        options.iter().any(|o| o
+            .name
+            .to_string()
+            .contains("Konditionenanpassung erforderlich")),
+        "Expected option containing 'Konditionenanpassung erforderlich'"
+    );
+
+    // Verify the conditional text field for "Ja, aber Konditionenanpassung..."
+    // Derive the value from the radio option rather than hardcoding
+    let ja_aber_value = &options
+        .iter()
+        .find(|o| o.name.to_string().contains("Konditionenanpassung"))
+        .unwrap()
+        .value;
+    assert!(
+        conditionals
+            .iter()
+            .any(|c| c.condition.field_name == fortgesetzt_radio.name
+                && &c.condition.value == ja_aber_value),
+        "Expected conditional content gated on Konditionenanpassung option"
+    );
+
+    // 9. "Nein, weiteres Vorgehen:" — from Geschaftsbeziehung_Fortgesetzt radio
+    assert!(
+        options
+            .iter()
+            .any(|o| o.name.to_string().contains("Nein, weiteres Vorgehen")),
+        "Expected option 'Nein, weiteres Vorgehen:'"
+    );
+
+    // Verify the conditional text field for "Nein, weiteres Vorgehen:"
+    let nein_value = &options
+        .iter()
+        .find(|o| o.name.to_string().contains("Nein, weiteres Vorgehen"))
+        .unwrap()
+        .value;
+    assert!(
+        conditionals
+            .iter()
+            .any(|c| c.condition.field_name == fortgesetzt_radio.name
+                && &c.condition.value == nein_value),
+        "Expected conditional content gated on 'Nein, weiteres Vorgehen'"
+    );
+}
