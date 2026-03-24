@@ -18824,3 +18824,268 @@ fn test_aabk_conditional_fields() {
         "Expected conditional content gated on 'Nein, weiteres Vorgehen'"
     );
 }
+
+/// Test AAIS_019 translation merge produces correct multilingual content.
+///
+/// Verifies:
+/// 1. "Client Details" heading has correct translations in all 3 languages
+/// 2. "Company" field has correct label in all 3 languages
+/// 3. No German text contains Spanish content
+/// 4. States are correctly merged based on "Formular adressat" and "Fall" dropdowns
+#[test]
+fn test_aais_019_translation_merge_content() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    // Load all three language envelopes
+    let de = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AAIS_019_EN.pdf"), "en")
+        .expect("Failed to process AAIS_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AAIS_019_SP.pdf"), "es")
+        .expect("Failed to process AAIS_019_SP");
+
+    // All three should produce the same number of states (9)
+    assert_eq!(de.state_count, 9, "DE should have 9 states");
+    assert_eq!(en.state_count, 9, "EN should have 9 states");
+    assert_eq!(sp.state_count, 9, "SP should have 9 states");
+
+    // Merge all three languages
+    let merged = structured::merge_translations(vec![de, en, sp])
+        .expect("Merge should succeed");
+
+    // === 1. "Client Details" heading should have correct translations ===
+    let mut client_details_found = false;
+    helpers::walk_structured_nodes(&merged.content, &mut |node| {
+        if let structured::StructuredNode::Heading(h) = node {
+            if h.level.as_u8() == 2 {
+                let en_text = h.content.plain_text_in("en");
+                if en_text.trim().eq_ignore_ascii_case("Client details") {
+                    client_details_found = true;
+                    let de_text = h.content.plain_text_in("de");
+                    let es_text = h.content.plain_text_in("es");
+                    assert_eq!(
+                        de_text.trim(),
+                        "Kundendaten",
+                        "Client Details heading DE should be 'Kundendaten', got '{}'",
+                        de_text
+                    );
+                    assert_eq!(
+                        es_text.trim(),
+                        "Datos del cliente",
+                        "Client Details heading ES should be 'Datos del cliente', got '{}'",
+                        es_text
+                    );
+                }
+            }
+        }
+    });
+    assert!(
+        client_details_found,
+        "Should find at least one 'Client Details' heading"
+    );
+
+    // === 2. "Company" field should have correct label in all languages ===
+    let mut company_field_count = 0;
+    helpers::walk_structured_nodes(&merged.content, &mut |node| {
+        if let structured::StructuredNode::Field(f) = node {
+            if f.som_path_str().contains("Company.Company") {
+                company_field_count += 1;
+                let label = f
+                    .label
+                    .as_ref()
+                    .expect("Company field should have a label");
+                let de_text = label.plain_text_in("de");
+                let en_text = label.plain_text_in("en");
+                let es_text = label.plain_text_in("es");
+                assert_eq!(
+                    de_text.trim(),
+                    "Firma",
+                    "Company field DE label should be 'Firma'"
+                );
+                assert_eq!(
+                    en_text.trim(),
+                    "Company",
+                    "Company field EN label should be 'Company'"
+                );
+                assert_eq!(
+                    es_text.trim(),
+                    "Razón social",
+                    "Company field ES label should be 'Razón social'"
+                );
+            }
+        }
+    });
+    assert!(
+        company_field_count > 0,
+        "Should find at least one Company field"
+    );
+
+    // === 3. No German text should contain Spanish content ===
+    let spanish_words = [
+        "Datos del cliente",
+        "Razón social",
+        "Formulario destinatario",
+    ];
+    helpers::walk_structured_nodes(&merged.content, &mut |node| {
+        let de_text = match node {
+            structured::StructuredNode::Heading(h) => h.content.plain_text_in("de"),
+            structured::StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map_or(String::new(), |l| l.plain_text_in("de")),
+            _ => return,
+        };
+        for phrase in &spanish_words {
+            assert!(
+                !de_text.contains(phrase),
+                "German text should not contain Spanish phrase '{}', found in: '{}'",
+                phrase,
+                de_text
+            );
+        }
+    });
+
+    // === 4. States based on "Formular adressat" (CL_ClientType) and "Fall" ===
+    // The merged output should have conditionals for both dropdowns.
+    let conditionals = collect_conditionals(&merged.content);
+
+    // CL_ClientType conditions (bbe42e19-...)
+    let client_type_conditions: Vec<_> = conditionals
+        .iter()
+        .filter(|c| c.condition.field_name.to_string().contains("bbe42e19"))
+        .collect();
+    let client_type_values: Vec<String> = client_type_conditions
+        .iter()
+        .map(|c| match &c.condition.value {
+            structured::InputValue::Text(v) => v.clone(),
+            other => format!("{:?}", other),
+        })
+        .collect();
+    assert!(
+        client_type_values.contains(&"Firma".to_string()),
+        "Should have 'Firma' condition, got: {:?}",
+        client_type_values
+    );
+    assert!(
+        client_type_values.contains(&"Private Person".to_string()),
+        "Should have 'Private Person' condition, got: {:?}",
+        client_type_values
+    );
+    assert!(
+        client_type_values.contains(&"GbR".to_string()),
+        "Should have 'GbR' condition, got: {:?}",
+        client_type_values
+    );
+    assert!(
+        client_type_values.contains(&"Minderjährige".to_string()),
+        "Should have 'Minderjährige' condition, got: {:?}",
+        client_type_values
+    );
+
+    // Fall conditions (16c1f4fd-...)
+    let fall_conditions: Vec<_> = conditionals
+        .iter()
+        .filter(|c| c.condition.field_name.to_string().contains("16c1f4fd"))
+        .collect();
+    let fall_values: Vec<String> = fall_conditions
+        .iter()
+        .map(|c| match &c.condition.value {
+            structured::InputValue::Text(v) => v.clone(),
+            other => format!("{:?}", other),
+        })
+        .collect();
+    assert!(
+        fall_values.contains(
+            &"Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)".to_string()
+        ),
+        "Should have 'Normalfall' condition, got: {:?}",
+        fall_values
+    );
+    assert!(
+        fall_values.contains(
+            &"Komplette Auskehrung von Vertriebsprovisionen an Kunden".to_string()
+        ),
+        "Should have 'Komplette Auskehrung' condition, got: {:?}",
+        fall_values
+    );
+    assert!(
+        fall_values.contains(
+            &"Teilweise Auskehrung von Vertriebsprovisionen an Kunden".to_string()
+        ),
+        "Should have 'Teilweise Auskehrung' condition, got: {:?}",
+        fall_values
+    );
+
+    // Each CL_ClientType condition should contain Fall sub-conditions
+    for ct_cond in &client_type_conditions {
+        let inner_conditionals = collect_conditionals(std::slice::from_ref(
+            ct_cond.content.as_ref(),
+        ));
+        let inner_fall: Vec<_> = inner_conditionals
+            .iter()
+            .filter(|c| c.condition.field_name.to_string().contains("16c1f4fd"))
+            .collect();
+        assert_eq!(
+            inner_fall.len(),
+            3,
+            "Each CL_ClientType condition '{}' should have 3 Fall sub-conditions, got {}",
+            match &ct_cond.condition.value {
+                structured::InputValue::Text(v) => v.as_str(),
+                _ => "?",
+            },
+            inner_fall.len()
+        );
+    }
+}
+
+/// Test that the "Company" field is recognized with a label in each language
+/// variant of AAIS_019 *before* translation merging.
+///
+/// Regression test for a bug where `apply_presence_by_name` would set ALL
+/// nodes named "Company" to hidden — including the Company *field* inside the
+/// Company *subform* — when an init script changed only the subform's presence.
+#[test]
+fn test_aais_019_company_field_recognized_per_language() {
+    use crate::run_exhaustive_to_envelope;
+
+    for (file, lang, expected_label) in [
+        ("AAIS_019_DE.pdf", "de", "Firma"),
+        ("AAIS_019_EN.pdf", "en", "Company"),
+        ("AAIS_019_SP.pdf", "es", "Razón social"),
+    ] {
+        let envelope = run_exhaustive_to_envelope(input_path(file), lang)
+            .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"));
+
+        let all_fields = collect_fields(&envelope.content);
+
+        // Find all Company fields
+        let company_fields: Vec<_> = all_fields
+            .into_iter()
+            .filter(|f| f.som_path_str().contains("Company.Company"))
+            .collect();
+
+        assert!(
+            !company_fields.is_empty(),
+            "{file} ({lang}): should have at least one Company.Company field"
+        );
+
+        for field in &company_fields {
+            let label = field
+                .label
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{file} ({lang}): Company field should have a label, but has none. \
+                         The label text '{expected_label}' is likely a standalone Paragraph instead.",
+                    )
+                });
+            let label_text = label.as_plain_text();
+            assert_eq!(
+                label_text.trim(),
+                expected_label,
+                "{file} ({lang}): Company field label should be '{expected_label}'"
+            );
+        }
+    }
+}

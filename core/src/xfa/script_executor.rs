@@ -422,15 +422,23 @@ impl ScriptExecutor {
         false
     }
 
-    /// Recursively find ALL nodes by name and set their presence
+    /// Recursively find ALL nodes by name and set their presence.
+    ///
+    /// When a matching node is found, its children are **not** searched for
+    /// further matches. This prevents a common XFA pattern — a subform named
+    /// "X" containing a field also named "X" — from having the child field's
+    /// presence inadvertently overwritten when a script only intended to change
+    /// the parent subform's visibility.
     fn apply_presence_by_name(nodes: &mut [XfaNode], name: &str, presence: Presence) -> bool {
         let mut found = false;
         for node in nodes {
             if node.name.as_deref() == Some(name) {
                 node.set_presence(presence);
                 found = true;
-            }
-            if Self::apply_presence_by_name(&mut node.children, name, presence) {
+                // Do NOT recurse into children — a same-named child (e.g.
+                // field "Company" inside subform "Company") is a different
+                // entity whose presence should not be affected.
+            } else if Self::apply_presence_by_name(&mut node.children, name, presence) {
                 found = true;
             }
         }
