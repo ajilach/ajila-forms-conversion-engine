@@ -18,6 +18,8 @@ use std::str::FromStr;
 pub struct Flattened {
     pub page: Page,
     pub children: Vec<FlattenedKind>,
+    /// Document language (from XFA locale, e.g. "de", "en").
+    pub language: String,
     /// Cached structural key for deduplication (lazily computed).
     pub(crate) cached_key: Option<Vec<FlattenedKey>>,
 }
@@ -1591,6 +1593,8 @@ pub struct FlattenContext<'a> {
     /// Hints inherited from parent nodes that should be applied to all descendants
     /// Per XFA spec, certain attributes like `relevant` are inherited by descendants
     pub inherited_hints: Vec<Hint>,
+    /// Document language for hyphenation dictionary lookup
+    pub language: String,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -1608,6 +1612,7 @@ impl<'a> FlattenContext<'a> {
             current_path: String::new(),
             pending_occur: None,
             inherited_hints: Vec::new(),
+            language: String::new(),
         }
     }
 
@@ -1627,6 +1632,7 @@ impl<'a> FlattenContext<'a> {
             current_path: initial_path,
             pending_occur: None,
             inherited_hints: Vec::new(),
+            language: String::new(),
         }
     }
 
@@ -1645,6 +1651,7 @@ impl<'a> FlattenContext<'a> {
             current_path: String::new(),
             pending_occur: None,
             inherited_hints: Vec::new(),
+            language: String::new(),
         }
     }
 
@@ -1659,6 +1666,7 @@ impl<'a> FlattenContext<'a> {
             current_path: self.current_path.clone(),
             pending_occur: self.pending_occur,
             inherited_hints: self.inherited_hints.clone(),
+            language: self.language.clone(),
         }
     }
 
@@ -1829,6 +1837,7 @@ impl Flattened {
         Flattened {
             page,
             children,
+            language: String::new(),
             cached_key: None,
         }
     }
@@ -1839,6 +1848,7 @@ impl Flattened {
         Flattened {
             page,
             children,
+            language: String::new(),
             cached_key: None,
         }
     }
@@ -2205,7 +2215,8 @@ impl Flattened {
         computed_values: &HashMap<SomPath, String>,
     ) -> Result<Self, String> {
         let id_to_field = Self::build_id_to_field_map(xfa_nodes);
-        Self::from_xfa_with_computed_values(xfa_nodes, computed_values, &id_to_field)
+        let language = super::xfa::extract_language_from_nodes(xfa_nodes);
+        Self::from_xfa_with_computed_values(xfa_nodes, computed_values, &id_to_field, &language)
     }
 
     /// Alias for `from_xfa` - provided for backwards compatibility.
@@ -2400,6 +2411,7 @@ impl Flattened {
         xfa_nodes: &[XfaNode],
         computed_values: &HashMap<SomPath, String>,
         id_to_field: &HashMap<String, String>,
+        language: &str,
     ) -> Result<Self, String> {
         let mut flattened_children: Vec<FlattenedKind> = Vec::new();
 
@@ -2447,7 +2459,8 @@ impl Flattened {
             let content_areas = Self::collect_content_areas(page_area, page.width, page.height);
 
             // Create context for page background
-            let page_ctx = FlattenContext::new(computed_values, id_to_field);
+            let mut page_ctx = FlattenContext::new(computed_values, id_to_field);
+            page_ctx.language = language.to_string();
 
             for child in &page_area.children {
                 // Skip contentArea and medium - these define page structure, not content
@@ -2508,11 +2521,12 @@ impl Flattened {
             for (content_subform, content_path) in &content_subforms {
                 // Create flatten context with the content subform's path prefix
                 // This ensures computed_values lookups use the full SOM path
-                let ctx = FlattenContext::new_with_path(
+                let mut ctx = FlattenContext::new_with_path(
                     computed_values,
                     id_to_field,
                     content_path.clone(),
                 );
+                ctx.language = language.to_string();
 
                 // Get the layout from the content subform (often "tb" for top-to-bottom)
                 let layout = content_subform
@@ -2544,7 +2558,8 @@ impl Flattened {
             }
         } else {
             // Fallback: flatten all nodes (old behavior for simple forms without proper structure)
-            let ctx = FlattenContext::new(computed_values, id_to_field);
+            let mut ctx = FlattenContext::new(computed_values, id_to_field);
+            ctx.language = language.to_string();
             Self::flatten_nodes(
                 xfa_nodes,
                 root_position,
@@ -2593,6 +2608,7 @@ impl Flattened {
         Ok(Flattened {
             page,
             children: flattened_children,
+            language: language.to_string(),
             cached_key: None,
         })
     }
@@ -3027,7 +3043,7 @@ impl Flattened {
                     rich_text,
                 );
                 // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
-                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node);
+                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node, &ctx.language);
                 // Add NoPrint hint if relevant="-print" or inherited from parent
                 if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
                     for kind in &mut draw_kinds {
@@ -4145,7 +4161,7 @@ impl Flattened {
                             rich_text,
                         );
                         // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
-                        let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node);
+                        let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node, &child_ctx.language);
                         // Add NoPrint hint if relevant="-print" or inherited from parent
                         if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
                             for kind in &mut draw_kinds {
@@ -4559,7 +4575,7 @@ impl Flattened {
                                 );
                                 // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
                                 let mut draw_kinds =
-                                    Self::split_draw_into_paragraph_nodes(draw_node);
+                                    Self::split_draw_into_paragraph_nodes(draw_node, &child_ctx.language);
                                 // Add NoPrint hint if relevant="-print" or inherited from parent
                                 if Self::is_no_print(node)
                                     || child_ctx.has_inherited_hint(&Hint::NoPrint)
@@ -5503,6 +5519,7 @@ impl Flattened {
                     .or_else(|| node_para.as_ref().and_then(|p| p.text_indent)),
                 margin_left: node_para.as_ref().and_then(|p| p.margin_left),
                 margin_right: node_para.as_ref().and_then(|p| p.margin_right),
+                hyphenation: node_para.as_ref().and_then(|p| p.hyphenation.clone()),
             });
 
             match measurer.measure_text_block(
@@ -6284,6 +6301,8 @@ impl Flattened {
                             base_font,
                             scale,
                             letter_spacing,
+                            node.style.para.as_ref().and_then(|p| p.hyphenation.as_ref()),
+                            None, // dict resolved at call site if needed
                         );
 
                         Self::render_text_glyph_by_glyph(
@@ -7777,6 +7796,8 @@ impl Flattened {
         font: &FontRef<'_>,
         scale: f32,
         letter_spacing: f32,
+        hyph_settings: Option<&super::xfa::hyphenation::XfaHyphenation>,
+        hyph_dict: Option<&hyphenation::Standard>,
     ) -> Vec<RenderedLine> {
         let mut lines = Vec::new();
         let px_scale = xfa_px_scale(font, font_size);
@@ -7828,7 +7849,17 @@ impl Flattened {
 
             // Word-wrap the tokens
             let para_lines =
-                Self::wrap_tokens_to_lines(&tokens, max_width, para_indent, space_width);
+                Self::wrap_tokens_to_lines(
+                    &tokens,
+                    max_width,
+                    para_indent,
+                    space_width,
+                    hyph_settings,
+                    hyph_dict,
+                    Some(font),
+                    font_size,
+                    letter_spacing,
+                );
             let num_para_lines = para_lines.len();
 
             for (i, line_tokens) in para_lines.into_iter().enumerate() {
@@ -7942,23 +7973,42 @@ impl Flattened {
         tokens
     }
 
-    /// Wrap tokens into lines respecting max width and indentation
+    /// Wrap tokens into lines respecting max width and indentation.
+    ///
+    /// When `hyph_dict` is provided, words that don't fit on the current line
+    /// are split at valid hyphenation break points per XFA spec. The hyphen
+    /// mark ("-") is appended to the first fragment and its width is accounted
+    /// for in the line measurement.
     fn wrap_tokens_to_lines(
         tokens: &[LayoutToken],
         max_width: f32,
         first_line_indent: f32,
         space_width: f32,
+        hyph_settings: Option<&super::xfa::hyphenation::XfaHyphenation>,
+        hyph_dict: Option<&hyphenation::Standard>,
+        font: Option<&ab_glyph::FontRef<'_>>,
+        font_size: f32,
+        letter_spacing: f32,
     ) -> Vec<Vec<LayoutToken>> {
         if tokens.is_empty() {
             return vec![vec![]];
         }
+
+        // Pre-measure hyphen width if hyphenation is available
+        let hyphen_width = if let Some(f) = font {
+            Self::measure_text_width("-", font_size, f, letter_spacing)
+        } else {
+            0.0
+        };
 
         let mut lines: Vec<Vec<LayoutToken>> = Vec::new();
         let mut current_line: Vec<LayoutToken> = Vec::new();
         let mut current_width: f32 = 0.0;
         let mut is_first_line = true;
 
-        for token in tokens {
+        let mut i = 0;
+        while i < tokens.len() {
+            let token = &tokens[i];
             let effective_max = if is_first_line {
                 max_width - first_line_indent
             } else {
@@ -7979,12 +8029,47 @@ impl Flattened {
                 }
                 current_width += token.width;
                 current_line.push(token.clone());
+                i += 1;
             } else {
-                // Token doesn't fit - start new line
+                // Token doesn't fit — try hyphenation before falling back to
+                // whole-word wrapping.
+                let remaining_space = effective_max - current_width - token_space;
+
+                if let (Some(settings), Some(dict), Some(f)) = (hyph_settings, hyph_dict, font) {
+                    if let Some((first_frag, second_frag)) = Self::try_hyphenate_token(
+                        token,
+                        remaining_space,
+                        settings,
+                        dict,
+                        f,
+                        font_size,
+                        letter_spacing,
+                        hyphen_width,
+                    ) {
+                        // Hyphenation succeeded: place first fragment on current line
+                        current_line.push(first_frag);
+                        lines.push(current_line);
+
+                        // Second fragment starts a new line unconditionally
+                        // (matching non-hyphenation path where oversized tokens
+                        // are placed at line start without further splitting).
+                        current_line = Vec::new();
+                        is_first_line = false;
+
+                        // Place second_frag on the new line as its first token.
+                        current_width = second_frag.width;
+                        current_line.push(second_frag);
+                        i += 1;
+                        continue;
+                    }
+                }
+
+                // No hyphenation or no valid break: original behavior
                 lines.push(current_line);
                 current_line = vec![token.clone()];
                 current_width = token.width;
                 is_first_line = false;
+                i += 1;
             }
         }
 
@@ -7998,6 +8083,87 @@ impl Flattened {
         }
 
         lines
+    }
+
+    /// Try to split a token at a hyphenation boundary that fits the given space.
+    ///
+    /// Returns `Some((first_fragment, second_fragment))` if a valid break was
+    /// found, where the first fragment includes the trailing hyphen and its
+    /// width accounts for the hyphen character.
+    fn try_hyphenate_token(
+        token: &LayoutToken,
+        available_width: f32,
+        settings: &super::xfa::hyphenation::XfaHyphenation,
+        dict: &hyphenation::Standard,
+        font: &ab_glyph::FontRef<'_>,
+        font_size: f32,
+        letter_spacing: f32,
+        hyphen_width: f32,
+    ) -> Option<(LayoutToken, LayoutToken)> {
+        // Get break points (byte indices) — filtered by XFA rules
+        let mut break_points = settings.break_points(&token.text, dict);
+
+        if break_points.is_empty() {
+            // Try emergency hyphenation if no regular break points exist
+            break_points = settings.emergency_break_points(&token.text, dict);
+            if break_points.is_empty() {
+                return None;
+            }
+        }
+
+        // Sort break points for reverse iteration (largest first = maximize
+        // grapheme clusters before break per XFA spec).
+        break_points.sort_unstable();
+
+        // Helper closure to try splitting at a set of break points
+        let try_split = |break_points: &[usize]| -> Option<(LayoutToken, LayoutToken)> {
+            for &byte_idx in break_points.iter().rev() {
+                let first_part = &token.text[..byte_idx];
+                let first_width =
+                    Self::measure_text_width(first_part, font_size, font, letter_spacing) + hyphen_width;
+
+                if first_width <= available_width || available_width <= 0.0 {
+                    let second_part = &token.text[byte_idx..];
+                    let second_width =
+                        Self::measure_text_width(second_part, font_size, font, letter_spacing);
+
+                    return Some((
+                        LayoutToken {
+                            text: format!("{}-", first_part),
+                            width: first_width,
+                            preserve_spaces: token.preserve_spaces,
+                            bold: token.bold,
+                            italic: token.italic,
+                        },
+                        LayoutToken {
+                            text: second_part.to_string(),
+                            width: second_width,
+                            preserve_spaces: token.preserve_spaces,
+                            bold: token.bold,
+                            italic: token.italic,
+                        },
+                    ));
+                }
+            }
+            None
+        };
+
+        if let Some(result) = try_split(&break_points) {
+            return Some(result);
+        }
+
+        // Per XFA spec: if no regular break point fits, try emergency hyphenation
+        // which relaxes remain/push character count constraints.
+        let emergency = settings.emergency_break_points(&token.text, dict);
+        if !emergency.is_empty() {
+            let mut emergency_sorted = emergency;
+            emergency_sorted.sort_unstable();
+            if let Some(result) = try_split(&emergency_sorted) {
+                return Some(result);
+            }
+        }
+
+        None
     }
 
     /// Measure text width using font metrics
@@ -8044,7 +8210,10 @@ impl Flattened {
     /// - Empty paragraphs (is_empty=true) are preserved as spacing nodes.
     ///
     /// For single-paragraph or no-RichText nodes, returns the original node unchanged.
-    pub fn split_draw_into_paragraph_nodes(node: FlattenedNode) -> Vec<FlattenedKind> {
+    pub fn split_draw_into_paragraph_nodes(
+        node: FlattenedNode,
+        language: &str,
+    ) -> Vec<FlattenedKind> {
         // Extract rich text; if absent or single paragraph, return unchanged
         let rich_text = match node.rich_text() {
             Some(rt) if rt.paragraphs.len() > 1 => rt.clone(),
@@ -8081,6 +8250,9 @@ impl Flattened {
 
         // Get the default para from the node's style for line_height override
         let default_para = node.style.para.clone();
+
+        // Resolve hyphenation dictionary for this language
+        let hyph_dict = super::xfa::hyphenation::dict_for_language(language);
 
         // Measure each paragraph's height
         let mut paragraph_heights: Vec<Num> = Vec::with_capacity(rich_text.paragraphs.len());
@@ -8197,6 +8369,7 @@ impl Flattened {
                     .or_else(|| default_para.as_ref().and_then(|p| p.text_indent)),
                 margin_left: default_para.as_ref().and_then(|p| p.margin_left),
                 margin_right: default_para.as_ref().and_then(|p| p.margin_right),
+                hyphenation: default_para.as_ref().and_then(|p| p.hyphenation.clone()),
             });
 
             // Use layout_rich_text for line counting instead of measure_text_block.
@@ -8236,6 +8409,8 @@ impl Flattened {
                         .letter_spacing
                         .and_then(|ls| ls.to_f32())
                         .unwrap_or(0.0),
+                    default_para.as_ref().and_then(|p| p.hyphenation.as_ref()),
+                    hyph_dict,
                 );
                 let num_lines = num(rendered_lines.len().max(1) as f64);
                 let height = num_lines * effective_line_height + space_above + space_below;
@@ -8719,6 +8894,7 @@ mod tests {
             text_indent: None,
             margin_left: None,
             margin_right: None,
+            ..Default::default()
         });
 
         // Test with scale=1.0 (1x resolution)
@@ -8791,6 +8967,7 @@ mod tests {
             text_indent: None,
             margin_left: None,
             margin_right: None,
+            ..Default::default()
         });
 
         let para_without_space = Some(Para {
@@ -8802,6 +8979,7 @@ mod tests {
             text_indent: None,
             margin_left: None,
             margin_right: None,
+            ..Default::default()
         });
 
         let font_size = 12.0;

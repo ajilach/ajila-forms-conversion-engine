@@ -1,4 +1,5 @@
 pub mod font_manager;
+pub mod hyphenation;
 pub mod script_executor;
 pub mod scripting;
 pub mod text_metrics;
@@ -406,6 +407,8 @@ pub struct Para {
     pub text_indent: Option<Num>,
     pub margin_left: Option<Num>,
     pub margin_right: Option<Num>,
+    /// Auto-hyphenation settings from child `<hyphenation>` element.
+    pub hyphenation: Option<hyphenation::XfaHyphenation>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -992,6 +995,18 @@ impl XfaNode {
 
     /// Parse a <para> element
     fn parse_para(node: &XfaNode) -> Para {
+        // Look for a <hyphenation> child element
+        let hyph = node.children.iter().find_map(|child| {
+            if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+                if tag_name == "hyphenation" {
+                    return Some(hyphenation::XfaHyphenation::from_attributes(
+                        &child.attributes,
+                    ));
+                }
+            }
+            None
+        });
+
         Para {
             h_align: node
                 .attributes
@@ -1027,6 +1042,7 @@ impl XfaNode {
                 .attributes
                 .get("marginRight")
                 .and_then(|v| Self::parse_dimension(v).ok()),
+            hyphenation: hyph,
         }
     }
 
@@ -1090,7 +1106,139 @@ impl XfaNode {
 
         Self::parse_nodes(&mut reader, &mut root_nodes, None)?;
 
+        // Resolve `use` prototype references per XFA spec.
+        // Elements with a `use` attribute reference a prototype in a `<proto>`
+        // section via SOM expression. The prototype's attributes are merged
+        // into the element (element's own attributes take precedence).
+        Self::resolve_use_prototypes(&mut root_nodes);
+
+        // Re-extract styling after prototype resolution so that merged
+        // attributes (e.g. hyphenation settings from proto) are picked up.
+        Self::refresh_styling(&mut root_nodes);
+
         Ok(root_nodes)
+    }
+
+    /// Re-run styling extraction on all nodes. Called after prototype
+    /// resolution to pick up merged attributes.
+    fn refresh_styling(nodes: &mut [XfaNode]) {
+        for node in nodes.iter_mut() {
+            node.extract_styling_from_children();
+            Self::refresh_styling(&mut node.children);
+        }
+    }
+
+    /// Resolve `use` attribute prototype references across the tree.
+    ///
+    /// Per XFA 3.3: "At template load time, invokes another object in the same
+    /// document as a prototype for this object." The `use` value is a SOM
+    /// expression (e.g. `"designer__defaultHyphenation.para.hyphenation"`).
+    ///
+    /// Implementation:
+    /// 1. Collect all prototype definitions from `<proto>` sections.
+    /// 2. Walk the tree and resolve `use` references by merging prototype
+    ///    attributes into the referencing element.
+    fn resolve_use_prototypes(nodes: &mut [XfaNode]) {
+        // Step 1: Collect prototypes indexed by SOM path
+        let mut proto_map: HashMap<String, HashMap<String, String>> = HashMap::new();
+        for node in nodes.iter() {
+            Self::collect_proto_definitions(node, &mut proto_map);
+        }
+
+        if proto_map.is_empty() {
+            return;
+        }
+
+        // Step 2: Walk tree and resolve use references
+        for node in nodes.iter_mut() {
+            Self::resolve_use_in_subtree(node, &proto_map);
+        }
+    }
+
+    /// Recursively collect attribute maps from `<proto>` children.
+    ///
+    /// Builds a map from SOM path (e.g. `"designer__defaultHyphenation.para.hyphenation"`)
+    /// to the attributes of the prototype element at that path.
+    fn collect_proto_definitions(
+        node: &XfaNode,
+        proto_map: &mut HashMap<String, HashMap<String, String>>,
+    ) {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind {
+            if tag_name == "proto" {
+                // Index all descendants of this proto section
+                for child in &node.children {
+                    Self::index_proto_element(child, "", proto_map);
+                }
+                return;
+            }
+        }
+        for child in &node.children {
+            Self::collect_proto_definitions(child, proto_map);
+        }
+    }
+
+    /// Index a proto element and its descendants by SOM path.
+    fn index_proto_element(
+        node: &XfaNode,
+        parent_path: &str,
+        proto_map: &mut HashMap<String, HashMap<String, String>>,
+    ) {
+        let name = node.name.as_deref().unwrap_or("");
+        let tag = match &node.kind {
+            XfaNodeKind::Element { tag_name, .. } => tag_name.as_str(),
+            XfaNodeKind::Field => "field",
+            XfaNodeKind::Subform => "subform",
+            XfaNodeKind::Draw => "draw",
+            XfaNodeKind::ExclGroup => "exclGroup",
+            XfaNodeKind::Value => "value",
+            XfaNodeKind::Template => "template",
+            XfaNodeKind::PageSet => "pageSet",
+            XfaNodeKind::PageArea => "pageArea",
+            XfaNodeKind::ContentArea => "contentArea",
+            XfaNodeKind::Bind => return,
+            XfaNodeKind::Text { .. } => return,
+        };
+
+        // Build SOM path segment: use name if present, else tag
+        let segment = if !name.is_empty() { name } else { tag };
+        let path = if parent_path.is_empty() {
+            segment.to_string()
+        } else {
+            format!("{}.{}", parent_path, segment)
+        };
+
+        // Store this element's attributes under its path
+        proto_map.insert(path.clone(), node.attributes.clone());
+
+        // Recurse into children
+        for child in &node.children {
+            Self::index_proto_element(child, &path, proto_map);
+        }
+    }
+
+    /// Walk the subtree and resolve `use` references by merging prototype attributes.
+    fn resolve_use_in_subtree(
+        node: &mut XfaNode,
+        proto_map: &HashMap<String, HashMap<String, String>>,
+    ) {
+        // Check children for use attributes — any element type can have prototypes
+        for child in &mut node.children {
+            if !matches!(&child.kind, XfaNodeKind::Text { .. }) {
+                if let Some(use_ref) = child.attributes.get("use").cloned() {
+                    // Look up the prototype
+                    if let Some(proto_attrs) = proto_map.get(&use_ref) {
+                        // Merge: prototype attributes are defaults; element's
+                        // own attributes take precedence
+                        for (key, value) in proto_attrs {
+                            if key != "use" {
+                                child.attributes.entry(key.clone()).or_insert(value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            Self::resolve_use_in_subtree(child, proto_map);
+        }
     }
 
     fn parse_nodes(

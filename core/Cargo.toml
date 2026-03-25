@@ -27,6 +27,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tera = "1"
 toml = "0.8"
 include_dir = "0.7"
+hyphenation = "0.8.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10"

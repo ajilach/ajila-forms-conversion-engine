@@ -580,6 +580,7 @@ mod tests {
                 children: vec![FlattenedKind::Node(field_node)],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            language: String::new(),
             cached_key: None,
         };
 
@@ -632,6 +633,7 @@ mod tests {
                 ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            language: String::new(),
             cached_key: None,
         };
 
@@ -684,6 +686,7 @@ mod tests {
                 ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
+            language: String::new(),
             cached_key: None,
         };
 
