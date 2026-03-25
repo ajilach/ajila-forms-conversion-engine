@@ -366,6 +366,8 @@ pub struct ParagraphNode {
     pub content: InlineText,
     #[serde(skip)]
     pub som_path: Option<SomPath>,
+    #[serde(skip)]
+    pub source_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -375,6 +377,8 @@ pub struct HeadingNode {
     pub content: InlineText,
     #[serde(skip)]
     pub som_path: Option<SomPath>,
+    #[serde(skip)]
+    pub source_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -684,6 +688,22 @@ impl StructuredNode {
             StructuredNode::Paragraph(p) => p.som_path.as_ref(),
             StructuredNode::Heading(h) => h.som_path.as_ref(),
             StructuredNode::Conditional(c) => c.content.som_path(),
+            _ => None,
+        }
+    }
+
+    /// Returns the best available language-independent anchor key for this node.
+    ///
+    /// Prefers SOM path when available, falls back to `source_name` (the XFA
+    /// draw node `name` attribute, which is language-independent for same-template
+    /// forms).
+    pub fn anchor_key(&self) -> Option<String> {
+        if let Some(sp) = self.som_path() {
+            return Some(sp.as_str().to_owned());
+        }
+        match self {
+            StructuredNode::Paragraph(p) => p.source_name.clone(),
+            StructuredNode::Heading(h) => h.source_name.clone(),
             _ => None,
         }
     }

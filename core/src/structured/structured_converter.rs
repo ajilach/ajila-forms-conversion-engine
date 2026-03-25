@@ -245,24 +245,30 @@ impl<'a, 'b> Converter<'a, 'b> {
             GroupKind::Heading { level } => {
                 let text = self.extract_inline_text(group_idx);
                 let som_path = self.extract_group_som_path(group_idx);
+                let source_name = self.extract_group_source_name(group_idx);
                 Some(StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::from_u8(*level),
                     content: text,
                     som_path,
+                    source_name,
                 }))
             }
 
             // TextBlock / Paragraph → ParagraphNode (or multiple if rich text with multiple paragraphs)
             GroupKind::TextBlock | GroupKind::Paragraph => {
                 let som_path = self.extract_group_som_path(group_idx);
+                let source_name = self.extract_group_source_name(group_idx);
 
                 // Check if this is a single-node group with rich text containing multiple paragraphs
                 let nodes = self.doc.collect_nodes(group_idx);
                 if nodes.len() == 1 {
                     let node = nodes[0];
                     if let Some(rich_text) = node.rich_text() {
-                        let paragraphs =
-                            self.convert_rich_text_to_paragraph_nodes(rich_text, som_path.clone());
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(
+                            rich_text,
+                            som_path.clone(),
+                            source_name.clone(),
+                        );
                         if paragraphs.len() > 1 {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
@@ -282,9 +288,11 @@ impl<'a, 'b> Converter<'a, 'b> {
                 if text.is_empty() {
                     None
                 } else {
+                    let source_name = self.extract_group_source_name(group_idx);
                     Some(StructuredNode::Paragraph(ParagraphNode {
                         content: text,
                         som_path,
+                        source_name,
                     }))
                 }
             }
@@ -546,15 +554,23 @@ impl<'a, 'b> Converter<'a, 'b> {
         let node = self.doc.get_node(node_index)?;
 
         match &node.kind {
-            FlattenedNodeKind::Text { content, .. } => {
+            FlattenedNodeKind::Text {
+                content,
+                source_name,
+                ..
+            } => {
                 if content.trim().is_empty() {
                     None
                 } else {
                     let som_path = node.som_path().cloned();
+                    let source_name = source_name.clone();
                     // Check if this node has rich text with multiple paragraphs
                     if let Some(rich_text) = node.rich_text() {
-                        let paragraphs =
-                            self.convert_rich_text_to_paragraph_nodes(rich_text, som_path.clone());
+                        let paragraphs = self.convert_rich_text_to_paragraph_nodes(
+                            rich_text,
+                            som_path.clone(),
+                            source_name.clone(),
+                        );
                         if paragraphs.len() > 1 {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
@@ -574,6 +590,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         Some(StructuredNode::Paragraph(ParagraphNode {
                             content: text,
                             som_path,
+                            source_name,
                         }))
                     }
                 }
@@ -591,6 +608,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         Some(StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain(text),
                             som_path: node.som_path().cloned(),
+                            source_name: None,
                         }))
                     }
                 }
@@ -618,6 +636,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             return Some(StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain(text),
                 som_path: field_node.som_path().cloned(),
+                source_name: None,
             }));
         }
 
@@ -809,6 +828,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain(suffix.clone()),
                 som_path: None,
+                source_name: None,
             });
             return Some(StructuredNode::Group(GroupNode {
                 children: vec![field_node, suffix_paragraph],
@@ -884,12 +904,14 @@ impl<'a, 'b> Converter<'a, 'b> {
                                         before.push(StructuredNode::Paragraph(ParagraphNode {
                                             content: InlineText::plain(before_str),
                                             som_path: None,
+                                            source_name: None,
                                         }));
                                     }
                                     if !after_str.is_empty() {
                                         after.push(StructuredNode::Paragraph(ParagraphNode {
                                             content: InlineText::plain(after_str),
                                             som_path: None,
+                                            source_name: None,
                                         }));
                                     }
                                     continue;
@@ -913,11 +935,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 after.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
                                     som_path: None,
+                                    source_name: None,
                                 }));
                             } else {
                                 before.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
                                     som_path: None,
+                                    source_name: None,
                                 }));
                             }
                         }
@@ -941,12 +965,14 @@ impl<'a, 'b> Converter<'a, 'b> {
                                         before.push(StructuredNode::Paragraph(ParagraphNode {
                                             content: InlineText::plain(before_str),
                                             som_path: None,
+                                            source_name: None,
                                         }));
                                     }
                                     if !after_str.is_empty() {
                                         after.push(StructuredNode::Paragraph(ParagraphNode {
                                             content: InlineText::plain(after_str),
                                             som_path: None,
+                                            source_name: None,
                                         }));
                                     }
                                     return (before, after);
@@ -966,11 +992,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 before.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
                                     som_path: None,
+                                    source_name: None,
                                 }));
                             } else if text_bounds.x >= fb.x + fb.width {
                                 after.push(StructuredNode::Paragraph(ParagraphNode {
                                     content: text,
                                     som_path: None,
+                                    source_name: None,
                                 }));
                             } else {
                                 // Overlapping: use center
@@ -980,11 +1008,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                     before.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: text,
                                         som_path: None,
+                                        source_name: None,
                                     }));
                                 } else {
                                     after.push(StructuredNode::Paragraph(ParagraphNode {
                                         content: text,
                                         som_path: None,
+                                        source_name: None,
                                     }));
                                 }
                             }
@@ -993,6 +1023,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                             before.push(StructuredNode::Paragraph(ParagraphNode {
                                 content: text,
                                 som_path: None,
+                                source_name: None,
                             }));
                         }
                     }
@@ -1014,6 +1045,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         before_nodes.push(StructuredNode::Paragraph(ParagraphNode {
                             content: text,
                             som_path: None,
+                            source_name: None,
                         }));
                     }
                 }
@@ -1034,6 +1066,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         after_nodes.push(StructuredNode::Paragraph(ParagraphNode {
                             content: text,
                             som_path: None,
+                            source_name: None,
                         }));
                     }
                 }
@@ -1221,6 +1254,17 @@ impl<'a, 'b> Converter<'a, 'b> {
             .collect_nodes(group_idx)
             .first()
             .and_then(|n| n.som_path().cloned())
+    }
+
+    /// Extract the `source_name` (XFA draw node name) from the first text node in a group.
+    fn extract_group_source_name(&self, group_idx: usize) -> Option<String> {
+        self.doc
+            .collect_nodes(group_idx)
+            .iter()
+            .find_map(|n| match &n.kind {
+                FlattenedNodeKind::Text { source_name, .. } => source_name.clone(),
+                _ => None,
+            })
     }
 
     /// Get a FieldId from a FlattenedNode's SOM path hint, falling back to node name.
@@ -1463,6 +1507,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         &self,
         rich_text: &RichText,
         som_path: Option<SomPath>,
+        source_name: Option<String>,
     ) -> Vec<StructuredNode> {
         rich_text
             .paragraphs
@@ -1482,6 +1527,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     Some(StructuredNode::Paragraph(ParagraphNode {
                         content: InlineText::new(inline_nodes),
                         som_path: som_path.clone(),
+                        source_name: source_name.clone(),
                     }))
                 }
             })

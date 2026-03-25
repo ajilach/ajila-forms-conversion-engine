@@ -19,10 +19,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install project fonts
-      run: |
-        sudo mkdir -p /usr/local/share/fonts
-        sudo cp fonts/*.ttf /usr/local/share/fonts/
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
     - name: Build

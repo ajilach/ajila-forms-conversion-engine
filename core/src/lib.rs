@@ -149,7 +149,9 @@ pub use xfa::{XfaNode, XfaNodeKind};
 pub use image::RgbaImage;
 
 // Pipeline
-pub use pipeline::{PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, StateMap, run_pipeline};
+pub use pipeline::{
+    PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, StateMap, run_pipeline,
+};
 
 use std::path::Path;
 use std::sync::Arc;

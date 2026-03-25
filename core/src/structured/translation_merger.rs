@@ -229,6 +229,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hallo Welt"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -246,6 +247,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hallo"),
                 som_path: None,
+                source_name: None,
             })],
         );
         de.state_count = 2;
@@ -255,6 +257,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hello"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -274,10 +277,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Titel"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Hallo"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -288,10 +293,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Title"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Hello"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -336,10 +343,12 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Einleitung"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Nur auf Deutsch"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -361,6 +370,7 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Introduction"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -396,6 +406,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hallo"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let en = make_envelope(
@@ -403,6 +414,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hello"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let fr = make_envelope(
@@ -410,6 +422,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Bonjour"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -530,6 +543,7 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Formular A"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -551,6 +565,7 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Completely different"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Table(TableNode {
                     header: None,
@@ -593,22 +608,27 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Title"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Text 1"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Text 2"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Text 3"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Text 4"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -619,6 +639,7 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Title"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -686,10 +707,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Formular"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Beschreibung"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "name".into(),
@@ -724,10 +747,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Form"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Description"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "name".into(),
@@ -769,6 +794,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("First document"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let doc2 = make_envelope(
@@ -776,6 +802,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Second document"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -797,6 +824,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("German"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let doc2 = make_envelope(
@@ -804,6 +832,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("English"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let doc3 = make_envelope(
@@ -811,6 +840,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Another German"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -839,6 +869,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hallo"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let en = make_envelope_with_variables(
@@ -847,6 +878,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Hello"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -897,14 +929,17 @@ mod tests {
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Absatz 1"),
                             som_path: None,
+                            source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Absatz 2"),
                             som_path: None,
+                            source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Absatz 3"),
                             som_path: None,
+                            source_name: None,
                         }),
                     ],
                 })),
@@ -920,10 +955,12 @@ mod tests {
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Paragraph 1"),
                             som_path: None,
+                            source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Paragraph 2"),
                             som_path: None,
+                            source_name: None,
                         }),
                     ],
                 })),
@@ -974,21 +1011,25 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Formular"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Abschnitt"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Hinweis"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Erklärung"),
                     som_path: None,
+                    source_name: None,
                 }),
                 de_cond(),
                 de_cond(),
@@ -998,6 +1039,7 @@ mod tests {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Unterschrift"),
                     som_path: None,
+                    source_name: None,
                 }),
                 de_grid,
             ],
@@ -1010,16 +1052,19 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Form"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Section"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Instruction"),
                     som_path: None,
+                    source_name: None,
                 }),
                 en_cond(),
                 en_cond(),
@@ -1029,6 +1074,7 @@ mod tests {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Signature"),
                     som_path: None,
+                    source_name: None,
                 }),
                 en_grid,
             ],
@@ -1054,6 +1100,7 @@ mod tests {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Zelle"),
                     som_path: None,
+                    source_name: None,
                 })],
             }],
             caption: None,
@@ -1064,6 +1111,7 @@ mod tests {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Cell"),
                     som_path: None,
+                    source_name: None,
                 })],
             }],
             caption: Some(InlineText::plain("My Table")),
@@ -1086,6 +1134,7 @@ mod tests {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Zelle"),
                     som_path: None,
+                    source_name: None,
                 })],
             }],
             caption: None,
@@ -1095,12 +1144,14 @@ mod tests {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Column"),
                     som_path: None,
+                    source_name: None,
                 })],
             }),
             rows: vec![TableRow {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Cell"),
                     som_path: None,
+                    source_name: None,
                 })],
             }],
             caption: None,
@@ -1132,6 +1183,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("A"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                     GridLayoutElement {
@@ -1139,6 +1191,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("B"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                     GridLayoutElement {
@@ -1146,6 +1199,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("C"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                     GridLayoutElement {
@@ -1153,6 +1207,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("D"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                 ],
@@ -1168,6 +1223,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("X"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                     GridLayoutElement {
@@ -1175,6 +1231,7 @@ mod tests {
                         node: StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Y"),
                             som_path: None,
+                            source_name: None,
                         }),
                     },
                 ],
@@ -1375,18 +1432,21 @@ mod tests {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("R1"),
                             som_path: None,
+                            source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("R2"),
                             som_path: None,
+                            source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("R3"),
                             som_path: None,
+                            source_name: None,
                         })],
                     },
                 ],
@@ -1402,12 +1462,14 @@ mod tests {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Row1"),
                             som_path: None,
+                            source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain("Row2"),
                             som_path: None,
+                            source_name: None,
                         })],
                     },
                 ],
@@ -1442,11 +1504,13 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Gemeinsam"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Nur Deutsch"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1455,6 +1519,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Shared"),
                 som_path: None,
+                source_name: None,
             })],
         );
 
@@ -1487,6 +1552,7 @@ mod tests {
                     "Basis".to_string(),
                 )))]),
                 som_path: None,
+                source_name: None,
             })],
         );
         let en = make_envelope(
@@ -1495,12 +1561,14 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Intro"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
                         "Other".to_string(),
                     )))]),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1537,6 +1605,7 @@ mod tests {
                     InlineNode::Text(" Ende".to_string()),
                 ]),
                 som_path: None,
+                source_name: None,
             })],
         );
         let en = make_envelope(
@@ -1545,6 +1614,7 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Intro "),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText(vec![
@@ -1552,6 +1622,7 @@ mod tests {
                         InlineNode::Text(" tail".to_string()),
                     ]),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1586,6 +1657,7 @@ mod tests {
             vec![StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Basis"),
                 som_path: None,
+                source_name: None,
             })],
         );
         let en = make_envelope(
@@ -1594,14 +1666,17 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("First "),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Second "),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Other"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1624,6 +1699,7 @@ mod tests {
                 "Other".to_string(),
             )]))]),
             som_path: None,
+            source_name: None,
         }));
 
         assert!(prepend_orphan_text_to_matched_paragraph(
@@ -1757,6 +1833,7 @@ mod tests {
                         StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain(*t),
                             som_path: None,
+                            source_name: None,
                         })
                     })
                     .collect(),
@@ -1820,10 +1897,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Titel"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Beschreibung"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
             ],
@@ -1835,10 +1914,12 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Title"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Description"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
             ],
@@ -1850,6 +1931,7 @@ mod tests {
                     level: HeadingLevel::H1,
                     content: InlineText::plain("Titre"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(shared_field),
             ],
@@ -1890,11 +1972,13 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Gemeinsam"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Nur DE"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1904,11 +1988,13 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Shared"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Only EN"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -1918,11 +2004,13 @@ mod tests {
                 StructuredNode::Paragraph(ParagraphNode {
                     content: InlineText::plain("Commun"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Seulement FR"),
                     som_path: None,
+                    source_name: None,
                 }),
             ],
         );
@@ -2050,6 +2138,7 @@ mod tests {
                     content: Box::new(StructuredNode::Paragraph(ParagraphNode {
                         content: InlineText::plain(text),
                         som_path: None,
+                        source_name: None,
                     })),
                 })],
             )
@@ -2097,12 +2186,14 @@ mod tests {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain(header_text),
                             som_path: None,
+                            source_name: None,
                         })],
                     }),
                     rows: vec![TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
                             content: InlineText::plain(cell_text),
                             som_path: None,
+                            source_name: None,
                         })],
                     }],
                     caption: None,
@@ -2161,6 +2252,7 @@ mod tests {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Kundenerklärungen"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -2183,6 +2275,7 @@ mod tests {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Client representations"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
@@ -2205,6 +2298,7 @@ mod tests {
                     level: HeadingLevel::H2,
                     content: InlineText::plain("Declaraciones del Cliente"),
                     som_path: None,
+                    source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),

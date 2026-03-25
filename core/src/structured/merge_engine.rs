@@ -454,13 +454,15 @@ fn align_segment<P: MergePolicy>(
 fn find_som_anchors(base: &[StructuredNode], other: &[StructuredNode]) -> Vec<(usize, usize)> {
     use std::collections::HashMap;
 
-    // Build index: som_path → position (only keep paths that appear exactly once).
+    // Build index: anchor_key → position (only keep keys that appear exactly once).
+    // anchor_key() returns the best available language-independent identifier:
+    // SOM path when available, falling back to source_name (XFA draw node name).
     let collect_unique = |nodes: &[StructuredNode]| -> HashMap<String, usize> {
-        let mut counts: HashMap<String, (usize, usize)> = HashMap::new(); // path → (first_index, count)
+        let mut counts: HashMap<String, (usize, usize)> = HashMap::new(); // key → (first_index, count)
         for (i, node) in nodes.iter().enumerate() {
-            if let Some(sp) = node.som_path() {
+            if let Some(key) = node.anchor_key() {
                 counts
-                    .entry(sp.as_str().to_owned())
+                    .entry(key)
                     .and_modify(|(_, c)| *c += 1)
                     .or_insert((i, 1));
             }
@@ -594,7 +596,10 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
             a_cols == b_cols
         }
         (StructuredNode::Field(fa), StructuredNode::Field(fb)) => {
-            std::mem::discriminant(&fa.input_type) == std::mem::discriminant(&fb.input_type)
+            if std::mem::discriminant(&fa.input_type) == std::mem::discriminant(&fb.input_type) {
+                return true;
+            }
+            false
         }
         (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
         (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
@@ -852,10 +857,12 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
             level: heading.level,
             content: localize_inline_text(&heading.content, lang),
             som_path: heading.som_path.clone(),
+            source_name: heading.source_name.clone(),
         }),
         StructuredNode::Paragraph(paragraph) => StructuredNode::Paragraph(ParagraphNode {
             content: localize_inline_text(&paragraph.content, lang),
             som_path: paragraph.som_path.clone(),
+            source_name: paragraph.source_name.clone(),
         }),
         StructuredNode::Image(image) => StructuredNode::Image(image.clone()),
         StructuredNode::Table(table) => StructuredNode::Table(TableNode {
@@ -1091,6 +1098,7 @@ pub(crate) fn merge_node_lists(
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
     consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
     consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
+    consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
 
     entries
         .into_iter()
@@ -1437,6 +1445,159 @@ fn consolidate_orphan_paragraph_into_field_label(
 }
 
 // ============================================================================
+// Neighborhood-based consolidation
+// ============================================================================
+
+/// Post-process aligned entries to pair adjacent `LeftOnly` + `RightOnly` nodes
+/// of the same variant that LCS failed to match (e.g. because text shapes diverged
+/// too much between languages like DE compound words vs EN multi-word phrases).
+///
+/// For each consecutive `LeftOnly`/`RightOnly` pair of the same top-level variant
+/// (both Paragraph, both Heading, etc.), compute a neighborhood score based on
+/// the anchor keys of surrounding `Matched` entries. If the score exceeds the
+/// threshold, merge them into a `Matched` node.
+fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, other_lang: &str) {
+    let len = entries.len();
+    if len < 2 {
+        return;
+    }
+
+    // Collect anchor keys from Matched entries for neighborhood lookup.
+    let anchor_keys: Vec<Option<String>> = entries
+        .iter()
+        .map(|e| match e {
+            AlignedNode::Matched(node) => node.anchor_key(),
+            _ => None,
+        })
+        .collect();
+
+    // Find pairs to consolidate: LeftOnly(X) + RightOnly(X) or vice versa,
+    // where X is the same top-level variant.
+    let mut ops: Vec<(usize, usize)> = Vec::new(); // (left_idx, right_idx) to merge
+    let mut consumed = vec![false; len];
+
+    for i in 0..len {
+        if consumed[i] {
+            continue;
+        }
+
+        let (left_node, is_left) = match &entries[i] {
+            AlignedNode::LeftOnly(n) => (n, true),
+            AlignedNode::RightOnly(n) => (n, false),
+            _ => continue,
+        };
+
+        // Look at the next few entries for a complementary orphan.
+        for j in (i + 1)..len.min(i + 4) {
+            if consumed[j] {
+                continue;
+            }
+
+            let right_node = match (&entries[j], is_left) {
+                (AlignedNode::RightOnly(n), true) => n,
+                (AlignedNode::LeftOnly(n), false) => n,
+                (AlignedNode::Matched(_), _) => break, // Stop at matched boundary
+                _ => continue,
+            };
+
+            // Must be same top-level variant
+            if std::mem::discriminant(left_node) != std::mem::discriminant(right_node) {
+                continue;
+            }
+
+            // Compute neighborhood score
+            let score = neighborhood_score(&anchor_keys, i, j);
+            if score >= 0.5 {
+                ops.push((i, j));
+                consumed[i] = true;
+                consumed[j] = true;
+                break;
+            }
+        }
+    }
+
+    if ops.is_empty() {
+        return;
+    }
+
+    // Apply merges
+    let mut to_remove = vec![false; len];
+    for (left_idx, right_idx) in ops {
+        let (base_node, other_node) = {
+            let a = std::mem::replace(
+                &mut entries[left_idx],
+                AlignedNode::Matched(StructuredNode::Empty),
+            );
+            let b = std::mem::replace(
+                &mut entries[right_idx],
+                AlignedNode::Matched(StructuredNode::Empty),
+            );
+            match (a, b) {
+                (AlignedNode::LeftOnly(base), AlignedNode::RightOnly(other)) => (base, other),
+                (AlignedNode::RightOnly(other), AlignedNode::LeftOnly(base)) => (base, other),
+                _ => continue,
+            }
+        };
+
+        let merged = merge_node(&base_node, base_lang, &other_node, other_lang);
+        entries[left_idx] = AlignedNode::Matched(merged);
+        to_remove[right_idx] = true;
+    }
+
+    for i in (0..len).rev() {
+        if to_remove[i] {
+            entries.remove(i);
+        }
+    }
+}
+
+/// Compute a neighborhood score for positions `i` and `j` in an aligned entry list.
+///
+/// Looks at the k nearest anchor-carrying `Matched` entries before and after
+/// each position. Returns the fraction of neighboring anchors that are shared
+/// between the two positions' neighborhoods.
+fn neighborhood_score(anchor_keys: &[Option<String>], i: usize, j: usize) -> f64 {
+    const K: usize = 3;
+    let len = anchor_keys.len();
+
+    // Collect up to K anchor keys before the smaller index
+    let min_pos = i.min(j);
+    let max_pos = i.max(j);
+    let mut before_keys = Vec::new();
+    for pos in (0..min_pos).rev() {
+        if let Some(key) = &anchor_keys[pos] {
+            before_keys.push(key.as_str());
+            if before_keys.len() >= K {
+                break;
+            }
+        }
+    }
+
+    // Collect up to K anchor keys after the larger index
+    let mut after_keys = Vec::new();
+    for pos in (max_pos + 1)..len {
+        if let Some(key) = &anchor_keys[pos] {
+            after_keys.push(key.as_str());
+            if after_keys.len() >= K {
+                break;
+            }
+        }
+    }
+
+    let total = before_keys.len() + after_keys.len();
+    if total == 0 {
+        // No surrounding anchors — accept the match if positions are adjacent.
+        return if max_pos - min_pos <= 2 { 0.5 } else { 0.0 };
+    }
+
+    // Score = fraction of surrounding anchors that exist (they all match by
+    // definition since they come from Matched entries on both sides).
+    // The key insight: if both orphan nodes are surrounded by the same matched
+    // anchors, they likely correspond to the same logical position.
+    total as f64 / (2 * K) as f64
+}
+
+// ============================================================================
 // Recursive node merging (translation)
 // ============================================================================
 
@@ -1454,12 +1615,14 @@ fn merge_node(
                 level: a.level,
                 content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
                 som_path: a.som_path.clone(),
+                source_name: a.source_name.clone(),
             })
         }
         (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
             StructuredNode::Paragraph(ParagraphNode {
                 content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
                 som_path: a.som_path.clone(),
+                source_name: a.source_name.clone(),
             })
         }
         (StructuredNode::Image(a), StructuredNode::Image(_b)) => StructuredNode::Image(a.clone()),
