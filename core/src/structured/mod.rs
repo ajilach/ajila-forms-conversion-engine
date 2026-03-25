@@ -730,9 +730,7 @@ impl StructuredNode {
                 .iter()
                 .find_map(|c| c.anchor_key())
                 .map(|k| format!("g:{k}")),
-            StructuredNode::Repeatable(r) => {
-                r.item.anchor_key().map(|k| format!("r:{k}"))
-            }
+            StructuredNode::Repeatable(r) => r.item.anchor_key().map(|k| format!("r:{k}")),
             StructuredNode::GridLayout(gl) => gl
                 .elements
                 .iter()
