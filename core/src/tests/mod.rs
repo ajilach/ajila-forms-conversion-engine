@@ -19572,7 +19572,10 @@ fn test_aais_019_state_commission_visibility() {
                 );
             }
             other => panic!(
-                "State '{}': unexpected Fall value: {:?}",
+                "State '{}': unexpected Fall value: {:?}. Expected one of: \
+                 'Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)', \
+                 'Komplette Auskehrung von Vertriebsprovisionen an Kunden', or \
+                 'Teilweise Auskehrung von Vertriebsprovisionen an Kunden'",
                 state.label, other
             ),
         }
