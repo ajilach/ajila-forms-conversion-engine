@@ -92,7 +92,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Discover all PDFs matching {CODE}_{VERSION}_{LANG}.pdf and group by form code.
+/// Discover all PDFs matching {CODE}_{VERSION}_{LANG}.pdf and group by code + version.
+/// Different versions (e.g. 019 vs 033) are different entity forms and must not be merged.
 /// A discovered form variant: (version, language, path).
 type FormVariant = (String, String, PathBuf);
 
@@ -124,11 +125,11 @@ fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<FormVariant>>
             continue;
         }
 
-        forms.entry(code.to_string()).or_default().push((
-            version.to_string(),
-            lang.to_lowercase(),
-            path,
-        ));
+        let key = format!("{code}_{version}");
+        forms
+            .entry(key)
+            .or_default()
+            .push((version.to_string(), lang.to_lowercase(), path));
     }
 
     Ok(forms)
