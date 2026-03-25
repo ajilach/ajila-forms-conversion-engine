@@ -1456,7 +1456,18 @@ fn consolidate_orphan_paragraph_into_field_label(
 /// (both Paragraph, both Heading, etc.), compute a neighborhood score based on
 /// the anchor keys of surrounding `Matched` entries. If the score exceeds the
 /// threshold, merge them into a `Matched` node.
+///
+/// The search window is 6 positions (extended from 3) and can cross up to 2
+/// `Matched` entries that carry no anchor key (unanchored structural matches)
+/// before stopping. Anchored `Matched` entries still act as firm boundaries.
 fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, other_lang: &str) {
+    /// How many positions ahead to scan for a complementary orphan.
+    const LOOKAHEAD: usize = 6;
+    /// Maximum number of unanchored `Matched` entries we may skip over when
+    /// looking for a complementary orphan.  Anchored matches always stop the
+    /// search immediately.
+    const MAX_UNANCHORED_CROSSINGS: usize = 2;
+
     let len = entries.len();
     if len < 2 {
         return;
@@ -1487,8 +1498,9 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
             _ => continue,
         };
 
-        // Look at the next few entries for a complementary orphan.
-        for j in (i + 1)..len.min(i + 4) {
+        // Look ahead for a complementary orphan within the expanded window.
+        let mut unanchored_crossings = 0usize;
+        for j in (i + 1)..len.min(i + 1 + LOOKAHEAD) {
             if consumed[j] {
                 continue;
             }
@@ -1496,7 +1508,18 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
             let right_node = match (&entries[j], is_left) {
                 (AlignedNode::RightOnly(n), true) => n,
                 (AlignedNode::LeftOnly(n), false) => n,
-                (AlignedNode::Matched(_), _) => break, // Stop at matched boundary
+                (AlignedNode::Matched(n), _) => {
+                    // An anchored matched entry is a firm positional boundary — stop.
+                    // An unanchored one (no SOM path / source name) is a weak structural
+                    // match; allow crossing it up to MAX_UNANCHORED_CROSSINGS times.
+                    if n.anchor_key().is_none()
+                        && unanchored_crossings < MAX_UNANCHORED_CROSSINGS
+                    {
+                        unanchored_crossings += 1;
+                        continue;
+                    }
+                    break;
+                }
                 _ => continue,
             };
 
