@@ -19011,7 +19011,9 @@ fn test_aais_019_translation_merge_content() {
         fall_values
     );
 
-    // Each CL_ClientType condition should contain Fall sub-conditions
+    // Each CL_ClientType condition should NOT contain Fall sub-conditions
+    // after hoisting: since Fall conditionals are identical across all
+    // CL_ClientType siblings, they get hoisted to the same level.
     for ct_cond in &client_type_conditions {
         let inner_conditionals =
             collect_conditionals(std::slice::from_ref(ct_cond.content.as_ref()));
@@ -19021,8 +19023,8 @@ fn test_aais_019_translation_merge_content() {
             .collect();
         assert_eq!(
             inner_fall.len(),
-            3,
-            "Each CL_ClientType condition '{}' should have 3 Fall sub-conditions, got {}",
+            0,
+            "CL_ClientType condition '{}' should have 0 Fall sub-conditions after hoisting, got {}",
             match &ct_cond.condition.value {
                 structured::InputValue::Text(v) => v.as_str(),
                 _ => "?",
