@@ -758,8 +758,8 @@ fn text_shape_compatible(a: &str, b: &str) -> bool {
     // Compound-word languages (e.g. German) can express in one word what other
     // languages need several words for.  When one side has a single word, use a
     // more lenient word-ratio limit so valid translation pairs are not rejected.
-    let min_words = shape_a.words.min(shape_b.words).max(1);
-    let max_word_ratio = if min_words == 1 { 4.0 } else { 2.5 };
+    let min_words = shape_a.words.min(shape_b.words);
+    let max_word_ratio = if min_words <= 1 { 4.0 } else { 2.5 };
 
     char_ratio <= max_char_ratio && word_ratio <= max_word_ratio && digit_delta <= 3 && punct_delta <= 8
 }
