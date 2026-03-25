@@ -2367,4 +2367,217 @@ mod tests {
         }
         assert_no_missing(&result.content);
     }
+
+    /// Regression test: a direct 2-language merge with a German compound-word
+    /// heading (1 word) vs an English multi-word heading (3 words) must produce
+    /// exactly one merged heading, not two orphaned headings.
+    ///
+    /// Previously the `word_ratio > 2.5` gate in `text_shape_compatible` would
+    /// reject the pair (ratio = 3/1 = 3.0), leaving both nodes as orphans.
+    /// The fix raises the limit to 4.0 whenever one side has a single word.
+    #[test]
+    fn test_two_language_direct_compound_word_heading() {
+        // "Kundenkontoverwaltung" = 1 word (21 chars)
+        // "Customer account management" = 3 words (27 chars, no spaces)
+        // word_ratio = 3/1 = 3.0  →  previously failed (> 2.5), now passes (≤ 4.0)
+        let de = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Kundenkontoverwaltung"),
+                    som_path: None,
+                    source_name: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "f1".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "f2".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Adresse")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Customer account management"),
+                    som_path: None,
+                    source_name: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "f1".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "f2".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Address")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+
+        // Exactly one H2 — not two orphaned headings.
+        let h2_count = result
+            .content
+            .iter()
+            .filter(|n| {
+                matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8())
+            })
+            .count();
+        assert_eq!(
+            h2_count, 1,
+            "Expected exactly 1 H2 heading, got {h2_count}",
+        );
+
+        // The single H2 must carry both translations.
+        if let StructuredNode::Heading(h) = &result.content[0] {
+            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
+                assert_eq!(map.get("de").unwrap(), "Kundenkontoverwaltung");
+                assert_eq!(map.get("en").unwrap(), "Customer account management");
+            } else {
+                panic!("Expected TranslatedText in heading");
+            }
+        } else {
+            panic!("Expected Heading as first node");
+        }
+    }
+
+    /// Regression test: neighborhood recovery must pair orphaned headings that
+    /// are separated by a matched anchor (crossed structure).
+    ///
+    /// Scenario: one language has the heading *before* a field, the other has
+    /// it *after*.  The LCS produces [LeftOnly(H_de), Matched(F), RightOnly(H_en)].
+    /// Previously `consolidate_by_neighborhood` would `break` on the matched
+    /// boundary and never pair the two headings.  The fix changes `break` to
+    /// `continue` so the search skips past matched entries.
+    ///
+    /// The heading texts are chosen so that `word_ratio = 5/1 = 5.0` exceeds
+    /// even the relaxed compound-word threshold (4.0), guaranteeing the LCS
+    /// phase itself cannot match them and the recovery pass is the only path.
+    #[test]
+    fn test_neighborhood_recovery_past_matched_boundary() {
+        // H_de = 1 word (33 chars), H_en = 5 words → word_ratio = 5.0 > 4.0
+        // The LCS will match the shared field but leave both headings as orphans.
+        // DE document: Heading then Field.
+        let de = make_envelope(
+            "de",
+            vec![
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Kontoeröffnungsantragsbearbeitung"),
+                    som_path: None,
+                    source_name: None,
+                }),
+                StructuredNode::Field(FieldNode {
+                    name: "anchor_field".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+            ],
+        );
+        // EN document: Field then Heading (crossed order).
+        let en = make_envelope(
+            "en",
+            vec![
+                StructuredNode::Field(FieldNode {
+                    name: "anchor_field".into(),
+                    som_path: None,
+                    label: Some(InlineText::plain("Name")),
+                    input_type: FieldType::Text {
+                        regex: None,
+                        max_length: None,
+                        min_length: None,
+                    },
+                    value: None,
+                    placeholder: None,
+                }),
+                StructuredNode::Heading(HeadingNode {
+                    level: HeadingLevel::H2,
+                    content: InlineText::plain("Processing of account opening applications"),
+                    som_path: None,
+                    source_name: None,
+                }),
+            ],
+        );
+
+        let result = merge_translations(vec![de, en]).unwrap();
+
+        // Exactly one H2 — the neighborhood recovery must pair them.
+        let h2_count = result
+            .content
+            .iter()
+            .filter(|n| {
+                matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8())
+            })
+            .count();
+        assert_eq!(
+            h2_count, 1,
+            "Expected exactly 1 H2 (neighborhood recovery past matched boundary), got {h2_count}",
+        );
+
+        // Find the H2 and verify it carries both translations.
+        let heading = result
+            .content
+            .iter()
+            .find(|n| matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8()))
+            .expect("H2 heading not found");
+        if let StructuredNode::Heading(h) = heading {
+            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
+                assert_eq!(
+                    map.get("de").unwrap(),
+                    "Kontoeröffnungsantragsbearbeitung"
+                );
+                assert_eq!(
+                    map.get("en").unwrap(),
+                    "Processing of account opening applications"
+                );
+            } else {
+                panic!("Expected TranslatedText in heading");
+            }
+        }
+    }
 }
