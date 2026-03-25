@@ -713,6 +713,11 @@ impl StructuredNode {
     /// Prefers SOM path when available, falls back to `source_name` (the XFA
     /// draw node `name` attribute, which is language-independent for same-template
     /// forms).
+    ///
+    /// For container nodes (Group, Repeatable, GridLayout, Table) that lack
+    /// their own SOM path, a key is derived from the first anchored child.
+    /// These derived keys are prefixed with a type tag (e.g. `g:`, `r:`) to
+    /// prevent collisions with direct SOM-path anchors at the same list level.
     pub fn anchor_key(&self) -> Option<String> {
         if let Some(sp) = self.som_path() {
             return Some(sp.as_str().to_owned());
@@ -720,6 +725,29 @@ impl StructuredNode {
         match self {
             StructuredNode::Paragraph(p) => p.source_name.clone(),
             StructuredNode::Heading(h) => h.source_name.clone(),
+            StructuredNode::Group(g) => g
+                .children
+                .iter()
+                .find_map(|c| c.anchor_key())
+                .map(|k| format!("g:{k}")),
+            StructuredNode::Repeatable(r) => {
+                r.item.anchor_key().map(|k| format!("r:{k}"))
+            }
+            StructuredNode::GridLayout(gl) => gl
+                .elements
+                .iter()
+                .find_map(|e| e.node.anchor_key())
+                .map(|k| format!("gl:{k}")),
+            StructuredNode::Table(t) => t
+                .header
+                .as_ref()
+                .and_then(|h| h.cells.iter().find_map(|c| c.anchor_key()))
+                .or_else(|| {
+                    t.rows
+                        .first()
+                        .and_then(|r| r.cells.iter().find_map(|c| c.anchor_key()))
+                })
+                .map(|k| format!("t:{k}")),
             _ => None,
         }
     }
