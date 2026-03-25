@@ -7741,6 +7741,37 @@ fn test_aagz_approval_text_preserves_space_before_parenthesis() {
 }
 
 #[test]
+fn test_aagz_labels_contain_no_rich_text() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::InlineNode;
+
+    fn contains_formatting(node: &InlineNode) -> bool {
+        match node {
+            InlineNode::Strong(_) | InlineNode::Emphasis(_) => true,
+            InlineNode::Link(link) => link.content.0.iter().any(contains_formatting),
+            InlineNode::Text(_) | InlineNode::TranslatedText(_) => false,
+        }
+    }
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let fields = collect_fields(&structured);
+
+    for field in &fields {
+        if let Some(label) = &field.label {
+            for node in &label.0 {
+                assert!(
+                    !contains_formatting(node),
+                    "Field label '{}' contains rich text formatting (e.g. bold, italic). Labels must be plain text.",
+                    label.as_plain_text()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_aaab_has_no_vertical_field_table() {
     use crate::run_exhaustive_to_merged;
     use crate::structured::StructuredNode;
@@ -16777,7 +16808,7 @@ fn make_heading(level: u8, text: &str) -> crate::structured::HeadingNode {
         level: HeadingLevel::from_u8(level),
         content: InlineText::plain(text),
         som_path: None,
-    source_name: None,
+        source_name: None,
     }
 }
 
@@ -19215,7 +19246,10 @@ fn test_aais_019_hyphenation_paragraph_height() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find the node whose text contains "Für die Vermittlung"
@@ -19255,7 +19289,10 @@ fn test_aais_019_dash_markers_alignment() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find all fee description nodes (contain fee-related text)
@@ -19326,10 +19363,7 @@ fn test_aais_019_dash_markers_alignment() {
         closefund_fees.len()
     );
 
-    assert_eq!(
-        dash_nodes.len(), 10,
-        "Expected exactly 10 dash markers"
-    );
+    assert_eq!(dash_nodes.len(), 10, "Expected exactly 10 dash markers");
 
     // Verify the first fee item and first dash marker are within reasonable range.
     // Due to preceding paragraph differences between T_Left and T_LeftIndent,
@@ -19340,6 +19374,8 @@ fn test_aais_019_dash_markers_alignment() {
     assert!(
         offset < num(90.0),
         "First dash marker y ({}) should be within 90pt of first fee item y ({}), offset={}",
-        first_dash_y, first_fee_y, offset,
+        first_dash_y,
+        first_fee_y,
+        offset,
     );
 }

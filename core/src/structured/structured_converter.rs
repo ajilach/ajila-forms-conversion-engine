@@ -711,7 +711,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name,
             som_path: Some(som_path),
-            label,
+            label: label.map(|l| l.to_plain()),
             input_type: FieldType::Radio {
                 options: name_values,
             },
@@ -758,7 +758,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: self.get_field_id(field_node),
             som_path: self.get_som_path(field_node).cloned(),
-            label,
+            label: label.map(|l| l.to_plain()),
             input_type: FieldType::Radio {
                 options: name_values,
             },
@@ -1121,7 +1121,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&field_som_path),
             som_path: Some(field_som_path),
-            label,
+            label: label.map(|l| l.to_plain()),
             input_type: field_type,
             value: input_value,
             placeholder: self.get_placeholder(node).map(TranslatableString::Plain),

@@ -528,6 +528,22 @@ impl InlineText {
         result
     }
 
+    /// Return a new `InlineText` with `Strong` and `Emphasis` wrappers removed,
+    /// keeping only the inner text content. Adjacent text nodes are consolidated.
+    pub fn to_plain(&self) -> Self {
+        fn strip(node: &InlineNode) -> InlineNode {
+            match node {
+                InlineNode::Text(_) | InlineNode::TranslatedText(_) => node.clone(),
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => strip(inner),
+                InlineNode::Link(link) => InlineNode::Link(LinkNode {
+                    href: link.href.clone(),
+                    content: link.content.to_plain(),
+                }),
+            }
+        }
+        InlineText::new(self.0.iter().map(strip).collect())
+    }
+
     /// Collect all language codes from `TranslatedText` nodes in this inline text.
     pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
         fn walk(node: &InlineNode, langs: &mut BTreeSet<String>) {
