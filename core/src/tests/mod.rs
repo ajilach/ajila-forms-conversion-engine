@@ -19379,3 +19379,341 @@ fn test_aais_019_dash_markers_alignment() {
         offset,
     );
 }
+
+/// Diagnostic test – dump AAIS_019_EN text blocks to understand merger behaviour
+#[test]
+fn test_aais_019_en_text_block_merger_paragraph_separation() {
+    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::{
+        CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
+        InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
+        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
+        TextBlockMerger, run_analysis_pipeline,
+    };
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let flattened = &first_state.flattened;
+
+    // Run pipeline up to (but NOT including) TextBlockMerger
+    let mut doc = Document::from_flattened(flattened);
+    NoPrintDetector::new().process(&mut doc);
+    MasterPageDetector::new().process(&mut doc);
+    TextBlockGrouper::new().process(&mut doc);
+    PlaceholderFilter::new().process(&mut doc);
+    FieldGrouper::new().process(&mut doc);
+    DateFieldDetector::new().process(&mut doc);
+    InlineFieldDatePicker::new().process(&mut doc);
+    OverlappingTextBlockMerger::new().process(&mut doc);
+    RadioButtonDetector::new().process(&mut doc);
+    CheckboxDetector::new().process(&mut doc);
+    ListDetector::new().process(&mut doc);
+    RadioButtonGrouper::new().process(&mut doc);
+    SelectionInlineFieldDetector::new().process(&mut doc);
+    RadioButtonContentDetector::new().process(&mut doc);
+    CheckboxContentDetector::new().process(&mut doc);
+
+    // Snapshot text blocks BEFORE the TextBlockMerger
+    let pre_merge_tbs = doc.root_text_blocks();
+    let search_terms = [
+        "management fee it charges to investors",
+        "retrocession",
+        "portfolio commissions",
+        "brokering investments",
+        "sales compensation",
+        "amounts to up to 5%",
+        "Structured products",
+        "Closed-end products",
+        "inside fee",
+        "one-off fee",
+    ];
+
+    eprintln!(
+        "\n=== BEFORE TextBlockMerger ({} root text blocks) ===",
+        pre_merge_tbs.len()
+    );
+    let mut pre_relevant: Vec<(usize, String)> = Vec::new();
+    for &idx in &pre_merge_tbs {
+        let text = doc.get_text_content(idx);
+        if search_terms.iter().any(|t| text.contains(t)) {
+            let bounds = doc.get_bounds(idx);
+            eprintln!("  TB idx={idx} bounds={bounds:?}");
+            eprintln!("    text: \"{}\"", &text[..text.len().min(120)]);
+            pre_relevant.push((idx, text));
+        }
+    }
+
+    // Now run TextBlockMerger
+    TextBlockMerger::new().process(&mut doc);
+
+    let post_merge_tbs = doc.root_text_blocks();
+    eprintln!(
+        "\n=== AFTER TextBlockMerger ({} root text blocks) ===",
+        post_merge_tbs.len()
+    );
+    for &idx in &post_merge_tbs {
+        let text = doc.get_text_content(idx);
+        if search_terms.iter().any(|t| text.contains(t)) {
+            let bounds = doc.get_bounds(idx);
+            eprintln!("  TB idx={idx} bounds={bounds:?}");
+            eprintln!("    text: \"{}\"", &text[..text.len().min(120)]);
+        }
+    }
+
+    // These phrases should each be in SEPARATE text blocks (separate paragraphs):
+    let separate_paragraphs = [
+        "management fee it charges to investors",
+        "The amount of the retroce",
+        "Furthermore, recurring portfolio commissions",
+        "brokering investments",
+        "Details of the sales compensation",
+    ];
+
+    // Find which text block each phrase is in
+    let mut block_for_phrase: Vec<Option<usize>> = vec![None; separate_paragraphs.len()];
+    for &idx in &post_merge_tbs {
+        let text = doc.get_text_content(idx);
+        for (i, phrase) in separate_paragraphs.iter().enumerate() {
+            if text.contains(phrase) {
+                block_for_phrase[i] = Some(idx);
+            }
+        }
+    }
+
+    // All phrases must be found
+    for (i, phrase) in separate_paragraphs.iter().enumerate() {
+        assert!(
+            block_for_phrase[i].is_some(),
+            "Phrase not found in any text block: \"{phrase}\""
+        );
+    }
+
+    // Each phrase should be in a DIFFERENT text block (separate paragraphs)
+    for i in 0..separate_paragraphs.len() {
+        for j in (i + 1)..separate_paragraphs.len() {
+            assert_ne!(
+                block_for_phrase[i], block_for_phrase[j],
+                "Phrases should be in separate paragraphs but are merged into the same text block:\n  \
+                 [{i}] \"{}\"\n  [{j}] \"{}\"",
+                separate_paragraphs[i], separate_paragraphs[j],
+            );
+        }
+    }
+}
+
+/// Diagnostic: check container height vs estimated content height for text blocks.
+#[test]
+fn debug_aais_container_vs_content_height() {
+    use crate::document::Document;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::{
+        CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
+        InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
+        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
+    };
+    use crate::flattened::FlattenedNodeKind;
+
+    // Check AAIS
+    for (label, filename, search) in [
+        (
+            "AAIS_019_EN",
+            "AAIS_019_EN.pdf",
+            vec![
+                "Structured products",
+                "portfolio commissions",
+                "brokering investments",
+                "amounts to up to 5%",
+                "inside fee",
+                "one-off fee",
+                "management fee it charges",
+                "retrocession",
+                "sales compensation",
+                "Closed-end products",
+            ],
+        ),
+        (
+            "AACJ_019_DE",
+            "AACJ_019_DE.pdf",
+            vec![
+                "Aufgrund",
+                "Bitte füllen",
+                "Einzelkontoinhaber",
+                "Ich bestätige",
+                "steuerpflichtig",
+                "vorstehend",
+            ],
+        ),
+        (
+            "AACJ_019_EN",
+            "AACJ_019_EN.pdf",
+            vec![
+                "Common Reporting",
+                "Please fill",
+                "individual account",
+                "I confirm",
+                "tax resident",
+                "indicated above",
+            ],
+        ),
+    ] {
+        let mut bp = Blueprint::from_pdf(input_path(filename)).unwrap();
+        let states = bp.states().unwrap();
+        let first_state = states.iter().next().unwrap();
+        let flattened = &first_state.flattened;
+
+        let mut doc = Document::from_flattened(flattened);
+        NoPrintDetector::new().process(&mut doc);
+        MasterPageDetector::new().process(&mut doc);
+        TextBlockGrouper::new().process(&mut doc);
+        PlaceholderFilter::new().process(&mut doc);
+        FieldGrouper::new().process(&mut doc);
+        DateFieldDetector::new().process(&mut doc);
+        InlineFieldDatePicker::new().process(&mut doc);
+        OverlappingTextBlockMerger::new().process(&mut doc);
+        RadioButtonDetector::new().process(&mut doc);
+        CheckboxDetector::new().process(&mut doc);
+        ListDetector::new().process(&mut doc);
+        RadioButtonGrouper::new().process(&mut doc);
+        SelectionInlineFieldDetector::new().process(&mut doc);
+        RadioButtonContentDetector::new().process(&mut doc);
+        CheckboxContentDetector::new().process(&mut doc);
+
+        let root_tbs = doc.root_text_blocks();
+        eprintln!("\n=== {label}: container vs content height ===");
+        let mut prev_bottom: Option<rust_decimal::Decimal> = None;
+        for &idx in &root_tbs {
+            let text = doc.get_text_content(idx);
+            if !search.iter().any(|s| text.contains(s)) {
+                continue;
+            }
+            let bounds = doc.get_bounds(idx).unwrap();
+            let nodes = doc.collect_nodes(idx);
+            let gap = prev_bottom.map(|pb| bounds.y - pb);
+            for node in &nodes {
+                if let FlattenedNodeKind::Text {
+                    font_size, content, ..
+                } = &node.kind
+                {
+                    if content.trim().is_empty() {
+                        continue;
+                    }
+                    let est_lines = (node.height / *font_size).to_f64().unwrap_or(0.0);
+                    let content_h =
+                        *font_size * rust_decimal::Decimal::from(est_lines.round() as u32);
+                    let truncated: String = content.chars().take(55).collect();
+                    eprintln!(
+                        "  Node: y={:.1} h={} fs={} est_lines={:.1} content_h={} | \"{}\"",
+                        node.y.to_f64().unwrap_or(0.0),
+                        node.height,
+                        font_size,
+                        est_lines,
+                        content_h,
+                        truncated
+                    );
+                }
+            }
+            let truncated: String = text.chars().take(70).collect();
+            eprintln!(
+                "  GROUP idx={idx}: y={:.1} h={} gap_from_prev={:?} | \"{}\"\n",
+                bounds.y.to_f64().unwrap_or(0.0),
+                bounds.height,
+                gap.map(|g| g.to_f64().unwrap_or(0.0)),
+                truncated
+            );
+            prev_bottom = Some(bounds.bottom());
+        }
+    }
+}
+
+/// Diagnostic: dump TextBlock structure around "Bitte füllen Sie" / "Please fill" for all AACJ langs
+#[test]
+fn debug_aacj_snippets_structure() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
+        .expect("Failed to process AACJ_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en")
+        .expect("Failed to process AACJ_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_SP.pdf"), "sp")
+        .expect("Failed to process AACJ_019_SP");
+
+    // Dump ALL nodes in a window around "Aufgrund"/"Based on" for each language
+    for (label, envelope) in [
+        ("DE", &de_envelope),
+        ("EN", &en_envelope),
+        ("SP", &sp_envelope),
+    ] {
+        eprintln!("\n=== {label} structured nodes (around target text) ===");
+        let mut idx = 0;
+        let mut found_target_at: Option<usize> = None;
+        walk_structured_nodes(&envelope.content, &mut |node| {
+            let (kind, text) = match node {
+                StructuredNode::Paragraph(p) => ("P", p.content.as_plain_text()),
+                StructuredNode::Heading(h) => ("H", h.content.as_plain_text()),
+                StructuredNode::Field(f) => {
+                    let t = f
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text())
+                        .unwrap_or_default();
+                    ("F", t)
+                }
+                StructuredNode::Group(_) => ("G", String::new()),
+                StructuredNode::Conditional(_) => ("C", String::new()),
+                _ => ("?", String::new()),
+            };
+            if text.contains("Aufgrund")
+                || text.contains("Based on the OECD")
+                || text.contains("Conforme a la Norma")
+            {
+                found_target_at = Some(idx);
+            }
+            if let Some(target_idx) = found_target_at {
+                if idx <= target_idx + 12 {
+                    let trunc: String = text.chars().take(140).collect();
+                    eprintln!("  {kind}[{idx}]: \"{}\"", trunc);
+                }
+            }
+            idx += 1;
+        });
+    }
+
+    // Now merge and show the merged tree around the snippets
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+
+    eprintln!("\n=== MERGED structured nodes (paragraphs 0-15) ===");
+    let mut count = 0;
+    walk_structured_nodes(&merged.content, &mut |node| {
+        if count >= 15 {
+            return;
+        }
+        match node {
+            StructuredNode::Paragraph(p) => {
+                let de_text = p.content.plain_text_in("de");
+                let en_text = p.content.plain_text_in("en");
+                let sp_text = p.content.plain_text_in("sp");
+                let de_t: String = de_text.chars().take(120).collect();
+                let en_t: String = en_text.chars().take(120).collect();
+                let sp_t: String = sp_text.chars().take(120).collect();
+                eprintln!("  P[{count}] DE: \"{}\"", de_t);
+                eprintln!("         EN: \"{}\"", en_t);
+                eprintln!("         SP: \"{}\"", sp_t);
+                count += 1;
+            }
+            StructuredNode::Heading(h) => {
+                let text = h.content.as_plain_text();
+                let trunc: String = text.chars().take(80).collect();
+                eprintln!("  H[{count}]: \"{}\"", trunc);
+                count += 1;
+            }
+            _ => {}
+        }
+    });
+}
