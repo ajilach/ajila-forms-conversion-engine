@@ -19379,3 +19379,226 @@ fn test_aais_019_dash_markers_alignment() {
         offset,
     );
 }
+
+/// Test AAIS_019 state-dependent visibility of commission-related text blocks
+/// and the Company field based on form addressee.
+///
+/// Verifies for AAIS_019_EN (9 states = 3 Fall × 3 client-type groups):
+///
+/// **In all states:**
+/// - "UBS Europe SE may receive benefits from investment fund providers…" is visible
+/// - "UBS Europe SE may pay success fees to third parties who introduce clients…" is visible
+///
+/// **For Fall "Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)":**
+/// - "Waiver of Right to receive Commission" is visible
+/// - standalone "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus" is NOT visible
+/// - "UBS Europe SE will refund to you the full amount less expenses…" is NOT visible
+/// - "UBS Europe SE will refund to you % of any sales commissions…" is NOT visible
+///
+/// **For Fall "Komplette Auskehrung von Vertriebsprovisionen an Kunden":**
+/// - "UBS Europe SE will refund to you the full amount less expenses…" is visible
+/// - standalone "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus" is visible
+/// - "Waiver of Right to receive Commission" is NOT visible
+/// - "UBS Europe SE will refund to you % of any sales commissions…" is NOT visible
+///
+/// **For Fall "Teilweise Auskehrung von Vertriebsprovisionen an Kunden":**
+/// - "UBS Europe SE will refund to you % of any sales commissions…" is visible
+/// - standalone "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus" is visible
+/// - "Waiver of Right to receive Commission" is NOT visible
+/// - "UBS Europe SE will refund to you the full amount less expenses…" is NOT visible
+///
+/// **Company field visibility based on form addressee:**
+/// - Visible for Firma / GbR
+/// - Not visible for Minderjährige / Private Person
+#[test]
+fn test_aais_019_state_commission_visibility() {
+    use crate::flattened::FlattenedNodeKind;
+
+    // ── text fragment constants ───────────────────────────────────────────────
+    const BENEFITS_TEXT: &str =
+        "UBS Europe SE may receive benefits from investment fund providers and issuers of structured products";
+    const SUCCESS_FEES_TEXT: &str =
+        "UBS Europe SE may pay success fees to third parties who introduce clients";
+    const WAIVER_TEXT: &str = "Waiver of Right to receive Commission";
+    // The form header also starts with this phrase but continues with "Dieses Dokument …";
+    // the "standalone" version used in Modes-of-payment section does NOT contain that continuation.
+    const AUSKEHRUNG_TEXT: &str =
+        "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus";
+    const AUSKEHRUNG_HEADER_CONTINUATION: &str = "Dieses Dokument";
+    const FULL_REFUND_TEXT: &str =
+        "UBS Europe SE will refund to you the full amount less expenses";
+    // The partial-refund text has an inline field between "to you" and "%", so we
+    // match the "% of any sales commissions" fragment that follows the field.
+    const PARTIAL_REFUND_TEXT: &str = "% of any sales commissions";
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+    fn has_text(state: &crate::FormState, pattern: &str) -> bool {
+        state.flattened.iter_nodes().any(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, .. } if content.contains(pattern))
+        })
+    }
+
+    /// Returns true when a text node contains AUSKEHRUNG_TEXT but is NOT the
+    /// form-header node (which continues with AUSKEHRUNG_HEADER_CONTINUATION).
+    fn has_standalone_auskehrung(state: &crate::FormState) -> bool {
+        state.flattened.iter_nodes().any(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.contains(AUSKEHRUNG_TEXT)
+                    && !content.contains(AUSKEHRUNG_HEADER_CONTINUATION)
+            } else {
+                false
+            }
+        })
+    }
+
+    fn has_company_field(state: &crate::FormState) -> bool {
+        state.flattened.iter_nodes().any(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Field { name, .. } if name == "Company")
+        })
+    }
+
+    fn get_fall_value(state: &crate::FormState) -> Option<String> {
+        state.selections.iter().find_map(|sel| {
+            if sel.som_path.as_str().ends_with(".Fall") {
+                sel.values.first().cloned()
+            } else {
+                None
+            }
+        })
+    }
+
+    fn get_client_type_values(state: &crate::FormState) -> Vec<String> {
+        state
+            .selections
+            .iter()
+            .find_map(|sel| {
+                if sel.som_path.as_str().ends_with(".CL_ClientType") {
+                    Some(sel.values.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    // ── load form and explore states ──────────────────────────────────────────
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+    let states = bp.states().unwrap();
+
+    assert_eq!(states.len(), 9, "AAIS_019 should have 9 states");
+
+    for state in states.iter() {
+        let fall = get_fall_value(&state);
+        let client_types = get_client_type_values(&state);
+
+        // ── 1. Always visible in every state ─────────────────────────────────
+        assert!(
+            has_text(&state, BENEFITS_TEXT),
+            "State '{}': 'UBS Europe SE may receive benefits…' should be visible in all states",
+            state.label
+        );
+        assert!(
+            has_text(&state, SUCCESS_FEES_TEXT),
+            "State '{}': 'UBS Europe SE may pay success fees…' should be visible in all states",
+            state.label
+        );
+
+        // ── 2–4. Fall-specific visibility ────────────────────────────────────
+        match fall.as_deref() {
+            Some("Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)") => {
+                assert!(
+                    has_text(&state, WAIVER_TEXT),
+                    "State '{}' (Normalfall): 'Waiver of Right to receive Commission' should be visible",
+                    state.label
+                );
+                assert!(
+                    !has_standalone_auskehrung(&state),
+                    "State '{}' (Normalfall): standalone 'Auskehrung an Kunden setzt Approval…' should NOT be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, FULL_REFUND_TEXT),
+                    "State '{}' (Normalfall): full-refund text should NOT be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, PARTIAL_REFUND_TEXT),
+                    "State '{}' (Normalfall): partial-refund text should NOT be visible",
+                    state.label
+                );
+            }
+            Some("Komplette Auskehrung von Vertriebsprovisionen an Kunden") => {
+                assert!(
+                    has_text(&state, FULL_REFUND_TEXT),
+                    "State '{}' (Komplette): full-refund text should be visible",
+                    state.label
+                );
+                assert!(
+                    has_standalone_auskehrung(&state),
+                    "State '{}' (Komplette): standalone 'Auskehrung an Kunden setzt Approval…' should be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, WAIVER_TEXT),
+                    "State '{}' (Komplette): 'Waiver of Right to receive Commission' should NOT be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, PARTIAL_REFUND_TEXT),
+                    "State '{}' (Komplette): partial-refund text should NOT be visible",
+                    state.label
+                );
+            }
+            Some("Teilweise Auskehrung von Vertriebsprovisionen an Kunden") => {
+                assert!(
+                    has_text(&state, PARTIAL_REFUND_TEXT),
+                    "State '{}' (Teilweise): partial-refund text should be visible",
+                    state.label
+                );
+                assert!(
+                    has_standalone_auskehrung(&state),
+                    "State '{}' (Teilweise): standalone 'Auskehrung an Kunden setzt Approval…' should be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, WAIVER_TEXT),
+                    "State '{}' (Teilweise): 'Waiver of Right to receive Commission' should NOT be visible",
+                    state.label
+                );
+                assert!(
+                    !has_text(&state, FULL_REFUND_TEXT),
+                    "State '{}' (Teilweise): full-refund text should NOT be visible",
+                    state.label
+                );
+            }
+            other => panic!(
+                "State '{}': unexpected Fall value: {:?}",
+                state.label, other
+            ),
+        }
+
+        // ── 5. Company field visibility based on form addressee ───────────────
+        let company_visible = has_company_field(&state);
+        let is_firma_or_gbr = client_types
+            .iter()
+            .any(|ct| ct == "Firma" || ct == "GbR");
+        let is_minor_or_private = client_types
+            .iter()
+            .any(|ct| ct == "Minderjährige" || ct == "Private Person");
+
+        if is_firma_or_gbr {
+            assert!(
+                company_visible,
+                "State '{}' (Firma/GbR): Company field should be visible",
+                state.label
+            );
+        }
+        if is_minor_or_private {
+            assert!(
+                !company_visible,
+                "State '{}' (Minderjährige/Private Person): Company field should NOT be visible",
+                state.label
+            );
+        }
+    }
+}
