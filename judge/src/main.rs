@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+#[cfg(feature = "semantic-matching")]
+use blueprint::semantic::SemanticMatcher;
 use blueprint::{
     DocumentEnvelope, InlineNode, InlineText, StructuredNode, TranslatableString,
     structured::{calculate_structural_similarity, merge_translations},
 };
-#[cfg(feature = "semantic-matching")]
-use blueprint::semantic::SemanticMatcher;
 
 const MISSING_TRANSLATION: &str = "MISSING TRANSLATION";
 
