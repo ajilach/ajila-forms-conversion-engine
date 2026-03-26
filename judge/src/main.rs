@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use blueprint::{
     DocumentEnvelope, InlineNode, InlineText, StructuredNode, TranslatableString,
+    semantic::SemanticMatcher,
     structured::{calculate_structural_similarity, merge_translations},
 };
 
@@ -14,6 +15,7 @@ struct FormResult {
     status: String,
     translation_rating: f64,
     missing_translation_score: f64,
+    semantic_match_score: f64,
     labelled_fields_score: f64,
     total_score: f64,
 }
@@ -24,6 +26,11 @@ fn main() -> Result<()> {
     // Load UBS profile fonts before processing any forms
     blueprint::load_profile_fonts("ubs").map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    // Load semantic matcher once for scoring
+    eprintln!("Loading semantic matcher...");
+    let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
+    eprintln!("Semantic matcher loaded.");
+
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
     let forms = discover_forms(&input_dir)?;
 
@@ -33,7 +40,7 @@ fn main() -> Result<()> {
 
     for (form_code, variants) in &forms {
         eprint!("Processing {form_code} ({} languages)... ", variants.len());
-        let result = process_form(form_code, variants);
+        let result = process_form(form_code, variants, &matcher);
         match &result {
             r if r.status == "pass" => eprintln!("pass (score: {:.3})", r.total_score),
             r => eprintln!("FAIL ({})", r.status),
@@ -50,6 +57,7 @@ fn main() -> Result<()> {
         "status",
         "translation_rating",
         "missing_translation_score",
+        "semantic_match_score",
         "labelled_fields_score",
         "total_score",
     ])?;
@@ -59,6 +67,7 @@ fn main() -> Result<()> {
             &r.status,
             &format!("{:.3}", r.translation_rating),
             &format!("{:.3}", r.missing_translation_score),
+            &format!("{:.3}", r.semantic_match_score),
             &format!("{:.3}", r.labelled_fields_score),
             &format!("{:.3}", r.total_score),
         ])?;
@@ -73,6 +82,7 @@ fn main() -> Result<()> {
             .map(|r| r.missing_translation_score)
             .sum::<f64>()
             / n;
+        let avg_semantic = results.iter().map(|r| r.semantic_match_score).sum::<f64>() / n;
         let avg_labelled = results.iter().map(|r| r.labelled_fields_score).sum::<f64>() / n;
         let avg_total = results.iter().map(|r| r.total_score).sum::<f64>() / n;
         wtr.write_record([
@@ -80,6 +90,7 @@ fn main() -> Result<()> {
             "",
             &format!("{:.3}", avg_translation),
             &format!("{:.3}", avg_missing),
+            &format!("{:.3}", avg_semantic),
             &format!("{:.3}", avg_labelled),
             &format!("{:.3}", avg_total),
         ])?;
@@ -136,12 +147,17 @@ fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<FormVariant>>
 }
 
 /// Process a single form code: run pipeline, compute all ratings.
-fn process_form(form_code: &str, variants: &[FormVariant]) -> FormResult {
+fn process_form(
+    form_code: &str,
+    variants: &[FormVariant],
+    matcher: &SemanticMatcher,
+) -> FormResult {
     let fail = |msg: &str| FormResult {
         form_code: form_code.to_string(),
         status: format!("fail: {msg}"),
         translation_rating: 0.0,
         missing_translation_score: 0.0,
+        semantic_match_score: 0.0,
         labelled_fields_score: 0.0,
         total_score: 0.0,
     };
@@ -169,8 +185,10 @@ fn process_form(form_code: &str, variants: &[FormVariant]) -> FormResult {
     };
 
     // Step 3: Translation rating and merge
-    let (translation_rating, missing_translation_score) = if envelopes.len() == 1 {
-        (1.0, 1.0)
+    let (translation_rating, missing_translation_score, semantic_match_score) = if envelopes.len()
+        == 1
+    {
+        (1.0, 1.0, 1.0)
     } else {
         // Compute pairwise structural similarity
         let mut similarities = Vec::new();
@@ -196,16 +214,27 @@ fn process_form(form_code: &str, variants: &[FormVariant]) -> FormResult {
         // Compute missing translation score
         let missing_translation_score = compute_missing_translation_score(&merged.content);
 
-        (translation_rating, missing_translation_score)
+        // Compute semantic match score
+        let semantic_match_score = compute_semantic_match_score(&merged.content, matcher);
+
+        (
+            translation_rating,
+            missing_translation_score,
+            semantic_match_score,
+        )
     };
 
-    let total_score = translation_rating * missing_translation_score * labelled_fields_score;
+    let total_score = translation_rating
+        * missing_translation_score
+        * semantic_match_score
+        * labelled_fields_score;
 
     FormResult {
         form_code: form_code.to_string(),
         status: "pass".to_string(),
         translation_rating,
         missing_translation_score,
+        semantic_match_score,
         labelled_fields_score,
         total_score,
     }
@@ -405,6 +434,173 @@ fn count_translatable_string_slots(
             if value == MISSING_TRANSLATION {
                 *missing += 1;
             }
+        }
+    }
+}
+
+// =============================================================================
+// Semantic match score: average pairwise cosine similarity of matched translations
+// =============================================================================
+
+/// Compute how well matched translations correspond semantically.
+///
+/// Walks the merged tree, collects every `TranslatedText` node that has at
+/// least two non-missing language variants, embeds them with the multilingual
+/// model, computes pairwise cosine similarity, and returns the average.
+fn compute_semantic_match_score(nodes: &[StructuredNode], matcher: &SemanticMatcher) -> f64 {
+    // Collect all text pairs to evaluate
+    let mut text_groups: Vec<Vec<String>> = Vec::new();
+    collect_translated_text_groups(nodes, &mut text_groups);
+
+    if text_groups.is_empty() {
+        return 1.0;
+    }
+
+    // Flatten all texts for batch embedding
+    let mut all_texts: Vec<&str> = Vec::new();
+    let mut group_ranges: Vec<(usize, usize)> = Vec::new();
+    for group in &text_groups {
+        let start = all_texts.len();
+        for text in group {
+            all_texts.push(text.as_str());
+        }
+        group_ranges.push((start, all_texts.len()));
+    }
+
+    // Batch embed all texts at once
+    let embeddings = match matcher.embed_batch(&all_texts) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("Semantic embedding failed, skipping score: {e}");
+            return 1.0;
+        }
+    };
+
+    // Compute pairwise similarity within each group
+    let mut total_sim = 0.0;
+    let mut total_pairs = 0usize;
+
+    for (start, end) in &group_ranges {
+        let count = end - start;
+        if count < 2 {
+            continue;
+        }
+        for i in *start..*end {
+            for j in (i + 1)..*end {
+                let sim = SemanticMatcher::cosine_similarity(&embeddings[i], &embeddings[j]);
+                total_sim += sim as f64;
+                total_pairs += 1;
+            }
+        }
+    }
+
+    if total_pairs == 0 {
+        return 1.0;
+    }
+
+    (total_sim / total_pairs as f64).clamp(0.0, 1.0)
+}
+
+/// Collect groups of non-missing translation texts from TranslatedText nodes.
+/// Each group contains the text values for each language in one TranslatedText node.
+fn collect_translated_text_groups(nodes: &[StructuredNode], out: &mut Vec<Vec<String>>) {
+    for node in nodes {
+        match node {
+            StructuredNode::Heading(h) => {
+                collect_from_inline_text(&h.content, out);
+            }
+            StructuredNode::Paragraph(p) => {
+                collect_from_inline_text(&p.content, out);
+            }
+            StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    collect_from_inline_text(label, out);
+                }
+                if let Some(placeholder) = &f.placeholder {
+                    collect_from_translatable_string(placeholder, out);
+                }
+                match &f.input_type {
+                    blueprint::FieldType::Radio { options }
+                    | blueprint::FieldType::Select { options } => {
+                        for opt in options {
+                            collect_from_translatable_string(&opt.name, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            StructuredNode::Table(table) => {
+                if let Some(caption) = &table.caption {
+                    collect_from_inline_text(caption, out);
+                }
+                if let Some(header) = &table.header {
+                    collect_translated_text_groups(&header.cells, out);
+                }
+                for row in &table.rows {
+                    collect_translated_text_groups(&row.cells, out);
+                }
+            }
+            StructuredNode::Group(g) => {
+                collect_translated_text_groups(&g.children, out);
+            }
+            StructuredNode::Conditional(cond) => {
+                collect_translated_text_groups(std::slice::from_ref(&cond.content), out);
+            }
+            StructuredNode::Repeatable(r) => {
+                collect_translated_text_groups(std::slice::from_ref(&r.item), out);
+            }
+            StructuredNode::GridLayout(grid) => {
+                for elem in &grid.elements {
+                    collect_translated_text_groups(std::slice::from_ref(&elem.node), out);
+                }
+            }
+            StructuredNode::List(list) => {
+                for item in &list.items {
+                    collect_from_inline_text(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_from_inline_text(text: &InlineText, out: &mut Vec<Vec<String>>) {
+    for node in &text.0 {
+        collect_from_inline_node(node, out);
+    }
+}
+
+fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
+    match node {
+        InlineNode::TranslatedText(map) => {
+            let texts: Vec<String> = map
+                .values()
+                .filter(|v| *v != MISSING_TRANSLATION && !v.trim().is_empty())
+                .cloned()
+                .collect();
+            if texts.len() >= 2 {
+                out.push(texts);
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            collect_from_inline_node(inner, out);
+        }
+        InlineNode::Link(link) => {
+            collect_from_inline_text(&link.content, out);
+        }
+        InlineNode::Text(_) => {}
+    }
+}
+
+fn collect_from_translatable_string(ts: &TranslatableString, out: &mut Vec<Vec<String>>) {
+    if let TranslatableString::Translated(map) = ts {
+        let texts: Vec<String> = map
+            .values()
+            .filter(|v| *v != MISSING_TRANSLATION && !v.trim().is_empty())
+            .cloned()
+            .collect();
+        if texts.len() >= 2 {
+            out.push(texts);
         }
     }
 }
