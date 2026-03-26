@@ -7,8 +7,12 @@ edition = "2024"
 name = "judge"
 path = "src/main.rs"
 
+[features]
+default = ["semantic-matching"]
+semantic-matching = ["blueprint/semantic-matching"]
+
 [dependencies]
-blueprint = { path = "../core" }
+blueprint = { path = "../core", default-features = false }
 anyhow = "1"
 csv = "1"
 env_logger = "0.11"

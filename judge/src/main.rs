@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use blueprint::{
     DocumentEnvelope, InlineNode, InlineText, StructuredNode, TranslatableString,
-    semantic::SemanticMatcher,
     structured::{calculate_structural_similarity, merge_translations},
 };
+#[cfg(feature = "semantic-matching")]
+use blueprint::semantic::SemanticMatcher;
 
 const MISSING_TRANSLATION: &str = "MISSING TRANSLATION";
 
@@ -26,10 +27,14 @@ fn main() -> Result<()> {
     // Load UBS profile fonts before processing any forms
     blueprint::load_profile_fonts("ubs").map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Load semantic matcher once for scoring
-    eprintln!("Loading semantic matcher...");
-    let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
-    eprintln!("Semantic matcher loaded.");
+    // Load semantic matcher once for merge + scoring (feature-gated)
+    #[cfg(feature = "semantic-matching")]
+    let matcher = {
+        eprintln!("Loading semantic matcher...");
+        let m = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
+        eprintln!("Semantic matcher loaded.");
+        m
+    };
 
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
     let forms = discover_forms(&input_dir)?;
@@ -40,7 +45,10 @@ fn main() -> Result<()> {
 
     for (form_code, variants) in &forms {
         eprint!("Processing {form_code} ({} languages)... ", variants.len());
+        #[cfg(feature = "semantic-matching")]
         let result = process_form(form_code, variants, &matcher);
+        #[cfg(not(feature = "semantic-matching"))]
+        let result = process_form(form_code, variants);
         match &result {
             r if r.status == "pass" => eprintln!("pass (score: {:.3})", r.total_score),
             r => eprintln!("FAIL ({})", r.status),
@@ -150,7 +158,7 @@ fn discover_forms(input_dir: &Path) -> Result<BTreeMap<String, Vec<FormVariant>>
 fn process_form(
     form_code: &str,
     variants: &[FormVariant],
-    matcher: &SemanticMatcher,
+    #[cfg(feature = "semantic-matching")] matcher: &SemanticMatcher,
 ) -> FormResult {
     let fail = |msg: &str| FormResult {
         form_code: form_code.to_string(),
@@ -206,7 +214,12 @@ fn process_form(
         };
 
         // Perform translation merge
-        let merged = match merge_translations(envelopes, None) {
+        #[cfg(feature = "semantic-matching")]
+        let semantic_ref = Some(matcher as &blueprint::structured::SemanticCtx);
+        #[cfg(not(feature = "semantic-matching"))]
+        let semantic_ref: Option<&blueprint::structured::SemanticCtx> = None;
+
+        let merged = match merge_translations(envelopes, semantic_ref) {
             Ok(m) => m,
             Err(e) => return fail(&format!("merge: {e}")),
         };
@@ -215,7 +228,10 @@ fn process_form(
         let missing_translation_score = compute_missing_translation_score(&merged.content);
 
         // Compute semantic match score
+        #[cfg(feature = "semantic-matching")]
         let semantic_match_score = compute_semantic_match_score(&merged.content, matcher);
+        #[cfg(not(feature = "semantic-matching"))]
+        let semantic_match_score = 1.0;
 
         (
             translation_rating,
@@ -447,6 +463,7 @@ fn count_translatable_string_slots(
 /// Walks the merged tree, collects every `TranslatedText` node that has at
 /// least two non-missing language variants, embeds them with the multilingual
 /// model, computes pairwise cosine similarity, and returns the average.
+#[cfg(feature = "semantic-matching")]
 fn compute_semantic_match_score(nodes: &[StructuredNode], matcher: &SemanticMatcher) -> f64 {
     // Collect all text pairs to evaluate
     let mut text_groups: Vec<Vec<String>> = Vec::new();
@@ -503,6 +520,7 @@ fn compute_semantic_match_score(nodes: &[StructuredNode], matcher: &SemanticMatc
 
 /// Collect groups of non-missing translation texts from TranslatedText nodes.
 /// Each group contains the text values for each language in one TranslatedText node.
+#[cfg(feature = "semantic-matching")]
 fn collect_translated_text_groups(nodes: &[StructuredNode], out: &mut Vec<Vec<String>>) {
     for node in nodes {
         match node {
@@ -564,12 +582,14 @@ fn collect_translated_text_groups(nodes: &[StructuredNode], out: &mut Vec<Vec<St
     }
 }
 
+#[cfg(feature = "semantic-matching")]
 fn collect_from_inline_text(text: &InlineText, out: &mut Vec<Vec<String>>) {
     for node in &text.0 {
         collect_from_inline_node(node, out);
     }
 }
 
+#[cfg(feature = "semantic-matching")]
 fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
     match node {
         InlineNode::TranslatedText(map) => {
@@ -592,6 +612,7 @@ fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
     }
 }
 
+#[cfg(feature = "semantic-matching")]
 fn collect_from_translatable_string(ts: &TranslatableString, out: &mut Vec<Vec<String>>) {
     if let TranslatableString::Translated(map) = ts {
         let texts: Vec<String> = map
