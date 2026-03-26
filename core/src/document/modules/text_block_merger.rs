@@ -1,7 +1,9 @@
 //! Text block merger module.
 //!
 //! Merges adjacent TextBlock groups that have the same font size and weight
-//! and are very close together vertically (< 0.5 × line height).
+//! and are very close together vertically (gap < 0.5 × font line height).
+//! The threshold is based on the font size, not the total block height,
+//! so that tall multi-line blocks do not inflate the merge distance.
 //! This runs after the TextBlockGrouper and before the HeadingDetector,
 //! so that multi-line headings appear as a single TextBlock and are
 //! assigned a single heading level.
@@ -16,7 +18,7 @@ use rust_decimal::prelude::*;
 /// Two TextBlocks are merged when:
 /// 1. They have the same font size (rounded to 0.5pt).
 /// 2. They have the same font weight (bold vs non-bold).
-/// 3. Their vertical gap is less than 0.5 × the line height (max height of the two blocks).
+/// 3. Their vertical gap is less than 0.5 × the font-derived line height.
 /// 4. They have reasonable horizontal overlap (not completely separated horizontally).
 pub struct TextBlockMerger;
 
@@ -88,6 +90,27 @@ impl TextBlockMerger {
         })
     }
 
+    /// Extract the dominant (max) font size from a TextBlock's text nodes.
+    fn dominant_font_size(doc: &Document, idx: usize) -> Option<Decimal> {
+        doc.collect_nodes(idx)
+            .iter()
+            .filter_map(|n| {
+                if let FlattenedNodeKind::Text {
+                    font_size, content, ..
+                } = &n.kind
+                {
+                    if !content.trim().is_empty() {
+                        Some(*font_size)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .max()
+    }
+
     /// Check whether two TextBlocks are close enough to merge.
     /// Returns true if the vertical gap between them is less than 0.5 × line height.
     fn should_merge(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
@@ -112,23 +135,22 @@ impl TextBlockMerger {
 
         // If they overlap vertically or gap is negative, they're on the same line or overlapping
         if gap < Decimal::ZERO {
-            // They overlap vertically — check horizontal closeness instead
-            // Only merge if they're very close horizontally
             return false;
         }
 
-        // Use the height of the smaller block as line-height proxy when the
-        // two blocks differ significantly in height (ratio > 2:1).  This
-        // prevents a tall multi-line paragraph from absorbing a nearby
-        // single-line text that is visually separated.  When both blocks are
-        // similar in height, the max is used so that normal multi-line
-        // paragraph continuations still merge.
-        let min_h = bounds_a.height.min(bounds_b.height);
-        let max_h = bounds_a.height.max(bounds_b.height);
-        let line_height = if max_h > min_h * Decimal::TWO {
-            min_h
-        } else {
-            max_h
+        // Use the font size as line-height proxy so that the merge threshold
+        // scales with the actual text size, not the total block height.
+        // This prevents tall multi-line paragraphs from inflating the
+        // threshold and absorbing unrelated nearby text.
+        // Fall back to the smaller block height when no font info is available
+        // (single-line blocks where block height ≈ line height).
+        let font_a = Self::dominant_font_size(doc, idx_a);
+        let font_b = Self::dominant_font_size(doc, idx_b);
+        let line_height = match (font_a, font_b) {
+            (Some(a), Some(b)) => a.max(b),
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            (None, None) => bounds_a.height.min(bounds_b.height),
         };
         let threshold = line_height / Decimal::TWO;
 
@@ -325,11 +347,7 @@ impl AnalysisModule for TextBlockMerger {
                 }
             }
 
-            doc.merge_inferred(
-                group_indices,
-                GroupKind::TextBlock,
-                self.name(),
-            );
+            doc.merge_inferred(group_indices, GroupKind::TextBlock, self.name());
         }
     }
 }

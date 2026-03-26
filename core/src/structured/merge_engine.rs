@@ -1102,6 +1102,7 @@ pub(crate) fn merge_node_lists(
     let mut entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
 
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
+    consolidate_orphan_paragraph_groups(&mut entries, base_lang, other_lang);
     consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
     consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
     consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
@@ -1226,6 +1227,120 @@ fn consolidate_orphan_paragraphs(
 
     for i in (0..len).rev() {
         if absorbed[i] {
+            entries.remove(i);
+        }
+    }
+}
+
+/// Post-process aligned entries to merge N:M orphan paragraph groups.
+///
+/// When one language splits text into N paragraphs and another into M (N≠M),
+/// the LCS alignment leaves all of them unmatched because no individual
+/// paragraph is shape-compatible with its counterpart. This pass identifies
+/// contiguous runs of orphan paragraphs, separates them by language side
+/// (LeftOnly vs RightOnly), concatenates each side's text, and checks whether
+/// the aggregate texts are shape-compatible. If so, the entire run is replaced
+/// by a single `Matched(Paragraph)` with a `TranslatedText` map.
+fn consolidate_orphan_paragraph_groups(
+    entries: &mut Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+) {
+    // Identify contiguous runs of orphan paragraphs.
+    // A run ends at any Matched entry or non-Paragraph entry.
+    let len = entries.len();
+    if len == 0 {
+        return;
+    }
+
+    // Collect runs: each run is a range [start, end) of indices that are all
+    // orphan paragraphs (LeftOnly or RightOnly).
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for i in 0..len {
+        let is_orphan_para = matches!(
+            &entries[i],
+            AlignedNode::LeftOnly(StructuredNode::Paragraph(_))
+                | AlignedNode::RightOnly(StructuredNode::Paragraph(_))
+        );
+        match (is_orphan_para, run_start) {
+            (true, None) => run_start = Some(i),
+            (true, Some(_)) => {} // extend current run
+            (false, Some(start)) => {
+                runs.push((start, i));
+                run_start = None;
+            }
+            (false, None) => {}
+        }
+    }
+    if let Some(start) = run_start {
+        runs.push((start, len));
+    }
+
+    // Process runs in reverse order so that removals don't invalidate indices.
+    for (run_start, run_end) in runs.into_iter().rev() {
+        // Separate left-only and right-only paragraph texts.
+        let mut left_texts: Vec<(usize, String)> = Vec::new();
+        let mut right_texts: Vec<(usize, String)> = Vec::new();
+        for i in run_start..run_end {
+            match &entries[i] {
+                AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) => {
+                    left_texts.push((i, p.content.as_plain_text()));
+                }
+                AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
+                    right_texts.push((i, p.content.as_plain_text()));
+                }
+                _ => {}
+            }
+        }
+
+        // Need both sides to have content, and at least one side must have
+        // a different count (otherwise 1:1 consolidation should have handled it).
+        if left_texts.is_empty() || right_texts.is_empty() {
+            continue;
+        }
+
+        // Cap run size to avoid accidentally merging unrelated content.
+        if left_texts.len() > 5 || right_texts.len() > 5 {
+            continue;
+        }
+
+        // Concatenate each side's paragraph texts.
+        let left_combined: String = left_texts
+            .iter()
+            .map(|(_, t)| t.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let right_combined: String = right_texts
+            .iter()
+            .map(|(_, t)| t.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if left_combined.trim().is_empty() || right_combined.trim().is_empty() {
+            continue;
+        }
+
+        // Check if the aggregate texts are shape-compatible.
+        if !text_shape_compatible(&left_combined, &right_combined) {
+            continue;
+        }
+
+        // Build a merged Paragraph with TranslatedText.
+        let mut map = HashMap::new();
+        map.insert(base_lang.to_string(), left_combined);
+        map.insert(other_lang.to_string(), right_combined);
+
+        let merged_para = StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText(vec![InlineNode::TranslatedText(map)]),
+            som_path: None,
+            source_name: None,
+        });
+
+        // Replace the first entry in the run with the merged node and remove
+        // the rest.
+        entries[run_start] = AlignedNode::Matched(merged_para);
+        for i in (run_start + 1..run_end).rev() {
             entries.remove(i);
         }
     }
