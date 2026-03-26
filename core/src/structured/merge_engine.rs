@@ -755,7 +755,13 @@ fn text_shape_compatible(a: &str, b: &str) -> bool {
     let short_text = shape_a.chars.max(shape_b.chars) <= 32;
     let max_char_ratio = if short_text { 3.5 } else { 2.2 };
 
-    char_ratio <= max_char_ratio && word_ratio <= 2.5 && digit_delta <= 3 && punct_delta <= 8
+    // Compound-word languages (e.g. German) can express in one word what other
+    // languages need several words for.  When one side has a single word, use a
+    // more lenient word-ratio limit so valid translation pairs are not rejected.
+    let min_words = shape_a.words.min(shape_b.words);
+    let max_word_ratio = if min_words <= 1 { 4.0 } else { 2.5 };
+
+    char_ratio <= max_char_ratio && word_ratio <= max_word_ratio && digit_delta <= 3 && punct_delta <= 8
 }
 
 fn ratio(a: usize, b: usize) -> f64 {
@@ -1603,7 +1609,7 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
         };
 
         // Look at the next few entries for a complementary orphan.
-        for j in (i + 1)..len.min(i + 4) {
+        for j in (i + 1)..len.min(i + 7) {
             if consumed[j] {
                 continue;
             }
@@ -1611,7 +1617,11 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
             let right_node = match (&entries[j], is_left) {
                 (AlignedNode::RightOnly(n), true) => n,
                 (AlignedNode::LeftOnly(n), false) => n,
-                (AlignedNode::Matched(_), _) => break, // Stop at matched boundary
+                // Skip over matched entries — don't stop searching at boundaries.
+                // A compound-word orphan and its complement may be separated by a
+                // matched anchor when the two languages have different field/heading
+                // orderings (e.g. DE: [H, F] vs ES: [F, H]).
+                (AlignedNode::Matched(_), _) => continue,
                 _ => continue,
             };
 
