@@ -108,7 +108,7 @@
                                 messageboxType="{Long}4"
                                 name="submitErrorMessage"
                                 visible="{Boolean}false"/>
-                    {% else %}
+                    {% endif %}
                     <previewpanel_copy
                         jcr:created="{Date}2025-01-01T00:00:00.000Z"
                         jcr:createdBy="{{ author }}"
@@ -186,7 +186,6 @@
                                 messageboxType="{Long}4"
                                 name="submitErrorMessage"
                                 visible="{Boolean}false"/>
-                    {% endif %}
                             <doroptionsubs
                                 jcr:created="{Date}2025-01-01T00:00:00.000Z"
                                 jcr:createdBy="{{ author }}"
