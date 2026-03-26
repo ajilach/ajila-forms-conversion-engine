@@ -8542,7 +8542,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_aacj_multilingual_translation_snippets() {
     // Verify that specific text snippets are correctly aligned across DE, EN,
     // and SP in the merged AACJ tree.
@@ -8563,9 +8563,9 @@ fn test_aacj_multilingual_translation_snippets() {
     // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
     // TranslatedText node.
     let expected_triplets: Vec<(&str, &str, &str)> = vec![(
-        "Bitte füllen Sie dieses Formular aus, wenn Sie ein Einzelkontoinhaber (natürliche Person) oder ein Einzelunternehmen sind.",
-        "Please fill in this form if you are an individual account holder (a natural person) or a sole proprietorship.",
-        "Si usted es un titular de cuenta individual (persona física) o un empresario individual, rellene este formulario.",
+        "Aufgrund des gemeinsamen Meldestandards der OECD erfordert das FKAustG1",
+        "Based on the OECD Common Reporting Standard, the FKAustG1 requires UBS Europe SE",
+        "Conforme a la Norma sobre revelación de información de la OCDE, la FKAustG1 exige que UBS Europe SE",
     )];
 
     let mut triplet_found = vec![false; expected_triplets.len()];
@@ -17857,8 +17857,8 @@ fn test_aacc_relationship_label_has_space() {
     let en = run_exhaustive_to_envelope(input_path("AACC_019_EN.pdf"), "en")
         .expect("Failed to process AACC EN");
 
-    let merged =
-        structured::merge_translations(vec![de, en], None).expect("Merging AACC DE/EN should succeed");
+    let merged = structured::merge_translations(vec![de, en], None)
+        .expect("Merging AACC DE/EN should succeed");
 
     fn find_relationship_label(nodes: &[StructuredNode], lang: &str) -> Option<String> {
         for node in nodes {
@@ -18892,7 +18892,8 @@ fn test_aais_019_translation_merge_content() {
     assert_eq!(sp.state_count, 9, "SP should have 9 states");
 
     // Merge all three languages
-    let merged = structured::merge_translations(vec![de, en, sp], None).expect("Merge should succeed");
+    let merged =
+        structured::merge_translations(vec![de, en, sp], None).expect("Merge should succeed");
 
     // === 1. "Client Details" heading should have correct translations ===
     let mut client_details_found = false;
