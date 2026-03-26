@@ -1,5 +1,6 @@
 /target
 .DS_Store
+/core/models/
 
 /cli/*.png
 /cli/*.json
@@ -8,5 +9,7 @@
 /cli/*.zip
 /cli/*.dot
 /cli/*.xsd
+
+/judge/*.csv
 
 /specs/migrated

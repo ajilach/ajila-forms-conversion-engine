@@ -1117,6 +1117,45 @@ pub(crate) fn merge_node_lists(
         .collect()
 }
 
+/// Same as [`merge_node_lists`] but with an additional semantic consolidation
+/// pass that uses cross-lingual sentence embeddings to match orphan paragraphs
+/// and headings that failed all structural heuristics.
+#[cfg(feature = "semantic-matching")]
+pub(crate) fn merge_node_lists_semantic(
+    base: &[StructuredNode],
+    base_lang: &str,
+    other: &[StructuredNode],
+    other_lang: &str,
+    semantic: &crate::semantic::SemanticMatcher,
+) -> Vec<StructuredNode> {
+    let ctx = PairwiseMergeCtx {
+        base_lang,
+        other_lang,
+    };
+    let mut entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
+
+    consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
+    consolidate_orphan_paragraph_groups_with_semantic(
+        &mut entries,
+        base_lang,
+        other_lang,
+        semantic,
+    );
+    consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
+    consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
+    consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
+    consolidate_orphans_by_semantics(&mut entries, base_lang, other_lang, semantic);
+
+    entries
+        .into_iter()
+        .map(|e| match e {
+            AlignedNode::Matched(node) => node,
+            AlignedNode::LeftOnly(node) => localize_structured_node(&node, base_lang),
+            AlignedNode::RightOnly(node) => localize_structured_node(&node, other_lang),
+        })
+        .collect()
+}
+
 /// Post-process aligned entries to absorb orphaned (unmatched) `Paragraph`
 /// nodes into an adjacent matched `Paragraph`.
 ///
@@ -1720,6 +1759,259 @@ fn neighborhood_score(anchor_keys: &[Option<String>], i: usize, j: usize) -> f64
     // The key insight: if both orphan nodes are surrounded by the same matched
     // anchors, they likely correspond to the same logical position.
     total as f64 / (2 * K) as f64
+}
+
+// ============================================================================
+// Semantic consolidation (feature-gated)
+// ============================================================================
+
+/// Like [`consolidate_orphan_paragraph_groups`] but with a semantic similarity
+/// fallback: when the shape check fails, embeddings are compared.
+#[cfg(feature = "semantic-matching")]
+fn consolidate_orphan_paragraph_groups_with_semantic(
+    entries: &mut Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+    semantic: &crate::semantic::SemanticMatcher,
+) {
+    use crate::semantic::SEMANTIC_THRESHOLD;
+
+    let len = entries.len();
+    if len == 0 {
+        return;
+    }
+
+    // Collect contiguous runs of orphan paragraphs (same logic as the
+    // non-semantic variant).
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for i in 0..len {
+        let is_orphan_para = matches!(
+            &entries[i],
+            AlignedNode::LeftOnly(StructuredNode::Paragraph(_))
+                | AlignedNode::RightOnly(StructuredNode::Paragraph(_))
+        );
+        match (is_orphan_para, run_start) {
+            (true, None) => run_start = Some(i),
+            (true, Some(_)) => {}
+            (false, Some(start)) => {
+                runs.push((start, i));
+                run_start = None;
+            }
+            (false, None) => {}
+        }
+    }
+    if let Some(start) = run_start {
+        runs.push((start, len));
+    }
+
+    for (run_start, run_end) in runs.into_iter().rev() {
+        let mut left_texts: Vec<(usize, String)> = Vec::new();
+        let mut right_texts: Vec<(usize, String)> = Vec::new();
+        for i in run_start..run_end {
+            match &entries[i] {
+                AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) => {
+                    left_texts.push((i, p.content.as_plain_text()));
+                }
+                AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
+                    right_texts.push((i, p.content.as_plain_text()));
+                }
+                _ => {}
+            }
+        }
+
+        if left_texts.is_empty() || right_texts.is_empty() {
+            continue;
+        }
+        if left_texts.len() > 5 || right_texts.len() > 5 {
+            continue;
+        }
+
+        let left_combined: String = left_texts
+            .iter()
+            .map(|(_, t)| t.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let right_combined: String = right_texts
+            .iter()
+            .map(|(_, t)| t.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if left_combined.trim().is_empty() || right_combined.trim().is_empty() {
+            continue;
+        }
+
+        // Try shape first, then semantic fallback.
+        let compatible = text_shape_compatible(&left_combined, &right_combined)
+            || semantic
+                .embed_batch(&[&left_combined, &right_combined])
+                .ok()
+                .filter(|embs| embs.len() == 2)
+                .is_some_and(|embs| {
+                    crate::semantic::SemanticMatcher::cosine_similarity(&embs[0], &embs[1])
+                        >= SEMANTIC_THRESHOLD
+                });
+
+        if !compatible {
+            continue;
+        }
+
+        let mut map = HashMap::new();
+        map.insert(base_lang.to_string(), left_combined);
+        map.insert(other_lang.to_string(), right_combined);
+
+        let merged_para = StructuredNode::Paragraph(ParagraphNode {
+            content: InlineText(vec![InlineNode::TranslatedText(map)]),
+            som_path: None,
+            source_name: None,
+        });
+
+        entries[run_start] = AlignedNode::Matched(merged_para);
+        for i in (run_start + 1..run_end).rev() {
+            entries.remove(i);
+        }
+    }
+}
+
+/// Last-resort consolidation pass: match remaining orphan paragraphs and
+/// headings by cross-lingual sentence-embedding similarity.
+///
+/// Collects all remaining `LeftOnly` and `RightOnly` paragraph/heading nodes,
+/// computes embeddings, and greedily merges the highest-similarity pairs above
+/// [`SEMANTIC_THRESHOLD`].
+#[cfg(feature = "semantic-matching")]
+fn consolidate_orphans_by_semantics(
+    entries: &mut Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+    semantic: &crate::semantic::SemanticMatcher,
+) {
+    use crate::semantic::SEMANTIC_THRESHOLD;
+
+    // Collect orphan paragraph/heading indices and texts.
+    let mut left_orphans: Vec<(usize, String)> = Vec::new();
+    let mut right_orphans: Vec<(usize, String)> = Vec::new();
+
+    for (i, entry) in entries.iter().enumerate() {
+        match entry {
+            AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) => {
+                left_orphans.push((i, p.content.plain_text_in(base_lang)));
+            }
+            AlignedNode::LeftOnly(StructuredNode::Heading(h)) => {
+                left_orphans.push((i, h.content.plain_text_in(base_lang)));
+            }
+            AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
+                right_orphans.push((i, p.content.plain_text_in(other_lang)));
+            }
+            AlignedNode::RightOnly(StructuredNode::Heading(h)) => {
+                right_orphans.push((i, h.content.plain_text_in(other_lang)));
+            }
+            _ => {}
+        }
+    }
+
+    if left_orphans.is_empty() || right_orphans.is_empty() {
+        return;
+    }
+
+    // Compute embeddings in batch.
+    let left_texts: Vec<&str> = left_orphans.iter().map(|(_, t)| t.as_str()).collect();
+    let right_texts: Vec<&str> = right_orphans.iter().map(|(_, t)| t.as_str()).collect();
+
+    let (left_embs, right_embs) = match (
+        semantic.embed_batch(&left_texts),
+        semantic.embed_batch(&right_texts),
+    ) {
+        (Ok(l), Ok(r)) => (l, r),
+        _ => return,
+    };
+
+    // Build similarity matrix and greedily match highest pairs.
+    let mut pairs: Vec<(usize, usize, f32)> = Vec::new();
+    for (li, le) in left_embs.iter().enumerate() {
+        for (ri, re) in right_embs.iter().enumerate() {
+            let sim = crate::semantic::SemanticMatcher::cosine_similarity(le, re);
+            if sim >= SEMANTIC_THRESHOLD {
+                pairs.push((li, ri, sim));
+            }
+        }
+    }
+
+    // Sort descending by similarity for greedy assignment.
+    pairs.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut left_used = vec![false; left_orphans.len()];
+    let mut right_used = vec![false; right_orphans.len()];
+    let mut merge_ops: Vec<(usize, usize)> = Vec::new(); // (left entry idx, right entry idx)
+
+    for (li, ri, _sim) in &pairs {
+        if left_used[*li] || right_used[*ri] {
+            continue;
+        }
+        // Only merge same-variant nodes (paragraph-paragraph, heading-heading).
+        let left_idx = left_orphans[*li].0;
+        let right_idx = right_orphans[*ri].0;
+        let same_variant = match (&entries[left_idx], &entries[right_idx]) {
+            (
+                AlignedNode::LeftOnly(StructuredNode::Paragraph(_)),
+                AlignedNode::RightOnly(StructuredNode::Paragraph(_)),
+            ) => true,
+            (
+                AlignedNode::LeftOnly(StructuredNode::Heading(a)),
+                AlignedNode::RightOnly(StructuredNode::Heading(b)),
+            ) => a.level.as_u8() == b.level.as_u8(),
+            _ => false,
+        };
+        if !same_variant {
+            continue;
+        }
+
+        left_used[*li] = true;
+        right_used[*ri] = true;
+        merge_ops.push((left_idx, right_idx));
+    }
+
+    if merge_ops.is_empty() {
+        return;
+    }
+
+    // Apply merges.
+    let mut to_remove = vec![false; entries.len()];
+    for (left_idx, right_idx) in merge_ops {
+        let base_node = match std::mem::replace(
+            &mut entries[left_idx],
+            AlignedNode::Matched(StructuredNode::Empty),
+        ) {
+            AlignedNode::LeftOnly(n) => n,
+            other => {
+                entries[left_idx] = other;
+                continue;
+            }
+        };
+        let other_node = match std::mem::replace(
+            &mut entries[right_idx],
+            AlignedNode::Matched(StructuredNode::Empty),
+        ) {
+            AlignedNode::RightOnly(n) => n,
+            other => {
+                entries[right_idx] = other;
+                // Restore left side.
+                entries[left_idx] = AlignedNode::LeftOnly(base_node);
+                continue;
+            }
+        };
+
+        let merged = merge_node(&base_node, base_lang, &other_node, other_lang);
+        entries[left_idx] = AlignedNode::Matched(merged);
+        to_remove[right_idx] = true;
+    }
+
+    for i in (0..entries.len()).rev() {
+        if to_remove[i] {
+            entries.remove(i);
+        }
+    }
 }
 
 // ============================================================================

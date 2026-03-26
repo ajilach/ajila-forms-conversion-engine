@@ -17,7 +17,9 @@ use crate::structured::merge_engine::{
     MISSING_TRANSLATION_TEXT, fill_missing_translation_placeholders, lcs_table_with,
     merge_node_lists, node_matches_for_similarity,
 };
-use crate::structured::{DocumentEnvelope, StructuredNode};
+#[cfg(feature = "semantic-matching")]
+use crate::structured::merge_engine::merge_node_lists_semantic;
+use crate::structured::{DocumentEnvelope, SemanticCtx, StructuredNode};
 
 /// Threshold for minimum structural similarity (0.0 to 1.0).
 /// Documents must have at least this much structural overlap to be considered
@@ -69,6 +71,7 @@ impl std::error::Error for MergeError {}
 /// Returns an error if the documents are too structurally different to be translations.
 pub fn merge_translations(
     envelopes: Vec<DocumentEnvelope>,
+    semantic: Option<&SemanticCtx>,
 ) -> Result<DocumentEnvelope, MergeError> {
     if envelopes.is_empty() {
         return Ok(DocumentEnvelope {
@@ -141,8 +144,27 @@ pub fn merge_translations(
     // Merge each subsequent language into the base
     for envelope in iter {
         let other_lang = envelope.context.language().to_string();
-        merged_content =
-            merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
+        #[cfg(feature = "semantic-matching")]
+        {
+            if let Some(sem) = semantic {
+                merged_content = merge_node_lists_semantic(
+                    &merged_content,
+                    &base_lang,
+                    &envelope.content,
+                    &other_lang,
+                    sem,
+                );
+            } else {
+                merged_content =
+                    merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
+            }
+        }
+        #[cfg(not(feature = "semantic-matching"))]
+        {
+            let _ = &semantic; // suppress unused warning
+            merged_content =
+                merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
+        }
     }
 
     // Best-effort optimistic normalization: mark missing language entries explicitly.
@@ -233,7 +255,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![envelope]).unwrap();
+        let result = merge_translations(vec![envelope], None).unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.context.language(), "de");
     }
@@ -261,7 +283,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]);
+        let result = merge_translations(vec![de, en], None);
         assert!(
             result.is_ok(),
             "Mismatched state counts should not be an error"
@@ -303,7 +325,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(result.content.len(), 2);
         assert_eq!(result.context.language(), "de,en");
 
@@ -387,7 +409,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         // Should have 3 nodes: merged paragraph, DE-only paragraph, merged field
         assert_eq!(result.content.len(), 3);
 
@@ -426,7 +448,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en, fr]).unwrap();
+        let result = merge_translations(vec![de, en, fr], None).unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.context.language(), "de,en,fr");
 
@@ -490,7 +512,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Field(f) = &result.content[0] {
@@ -529,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_merge_empty() {
-        let result = merge_translations(vec![]).unwrap();
+        let result = merge_translations(vec![], None).unwrap();
         assert!(result.content.is_empty());
     }
 
@@ -584,7 +606,7 @@ mod tests {
         );
 
         // Should fail with InsufficientStructuralSimilarity
-        let result = merge_translations(vec![doc1, doc2]);
+        let result = merge_translations(vec![doc1, doc2], None);
         assert!(result.is_err());
         if let Err(MergeError::InsufficientStructuralSimilarity {
             similarity,
@@ -693,7 +715,7 @@ mod tests {
         );
 
         // Should fail - only 1 out of 5 nodes match (20%)
-        let result = merge_translations(vec![doc1, doc2]);
+        let result = merge_translations(vec![doc1, doc2], None);
         assert!(result.is_err());
     }
 
@@ -782,7 +804,7 @@ mod tests {
         );
 
         // Should succeed - 100% match
-        let result = merge_translations(vec![doc1, doc2]);
+        let result = merge_translations(vec![doc1, doc2], None);
         assert!(result.is_ok());
     }
 
@@ -807,7 +829,7 @@ mod tests {
         );
 
         // Should fail with DuplicateLanguage error
-        let result = merge_translations(vec![doc1, doc2]);
+        let result = merge_translations(vec![doc1, doc2], None);
         assert!(result.is_err());
         if let Err(MergeError::DuplicateLanguage { language }) = result {
             assert_eq!(language, "en");
@@ -845,7 +867,7 @@ mod tests {
         );
 
         // Should fail with DuplicateLanguage error
-        let result = merge_translations(vec![doc1, doc2, doc3]);
+        let result = merge_translations(vec![doc1, doc2, doc3], None);
         assert!(result.is_err());
         if let Err(MergeError::DuplicateLanguage { language }) = result {
             assert_eq!(language, "de");
@@ -882,7 +904,7 @@ mod tests {
             })],
         );
 
-        let merged = merge_translations(vec![de, en]).unwrap();
+        let merged = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(merged.context.language(), "de,en");
         assert_eq!(merged.context.get_variable("formrange_code"), Some("AAAI"));
         assert_eq!(merged.context.get_variable("formrange_entity"), Some("019"));
@@ -1082,7 +1104,7 @@ mod tests {
 
         // Should succeed: relaxed similarity check recognises Conditionals and
         // GridLayouts with the same column count as structurally compatible.
-        let result = merge_translations(vec![de, en]);
+        let result = merge_translations(vec![de, en], None);
         assert!(
             result.is_ok(),
             "Expected merge to succeed for documents with differing Conditional/GridLayout internals, got: {:?}",
@@ -1238,7 +1260,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(
             result.content.len(),
             1,
@@ -1279,7 +1301,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(
             result.content.len(),
             1,
@@ -1322,7 +1344,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
 
         let list = match &result.content[0] {
             StructuredNode::List(list) => list,
@@ -1393,7 +1415,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         if let StructuredNode::Field(f) = &result.content[0] {
             if let FieldType::Radio { options } = &f.input_type {
                 assert_eq!(
@@ -1477,7 +1499,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(
             result.content.len(),
             1,
@@ -1523,7 +1545,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(result.content.len(), 2);
 
         if let StructuredNode::Heading(heading) = &result.content[1] {
@@ -1573,7 +1595,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(
             result.content.len(),
             1,
@@ -1627,7 +1649,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
@@ -1681,7 +1703,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
@@ -1770,7 +1792,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
 
         let field = match &result.content[0] {
             StructuredNode::Field(field) => field,
@@ -1854,7 +1876,7 @@ mod tests {
         ];
 
         for (i, perm) in permutations.into_iter().enumerate() {
-            let result = merge_translations(perm).unwrap();
+            let result = merge_translations(perm, None).unwrap();
             assert_eq!(
                 result.content.len(),
                 2,
@@ -1941,7 +1963,7 @@ mod tests {
             vec![de.clone(), en.clone(), fr.clone()],
             vec![fr.clone(), de.clone(), en.clone()],
         ] {
-            let result = merge_translations(envelopes).unwrap();
+            let result = merge_translations(envelopes, None).unwrap();
 
             let has_para = result
                 .content
@@ -2015,7 +2037,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en, fr]).unwrap();
+        let result = merge_translations(vec![de, en, fr], None).unwrap();
 
         assert_paragraph_translations(
             &result.content[0],
@@ -2088,7 +2110,7 @@ mod tests {
             })],
         );
 
-        let result = merge_translations(vec![de, en, fr]).unwrap();
+        let result = merge_translations(vec![de, en, fr], None).unwrap();
         let field = match &result.content[0] {
             StructuredNode::Field(f) => f,
             other => panic!("Expected Field, got {:?}", other),
@@ -2152,7 +2174,7 @@ mod tests {
             vec![de.clone(), en.clone(), fr.clone()],
             vec![fr.clone(), en.clone(), de.clone()],
         ] {
-            let result = merge_translations(envelopes).unwrap();
+            let result = merge_translations(envelopes, None).unwrap();
             assert_eq!(result.content.len(), 1, "Single conditional expected");
 
             if let StructuredNode::Conditional(c) = &result.content[0] {
@@ -2205,7 +2227,7 @@ mod tests {
             mk_table("de", "Spalte", "Wert"),
             mk_table("en", "Column", "Value"),
             mk_table("fr", "Colonne", "Valeur"),
-        ])
+        ], None)
         .unwrap();
 
         assert_eq!(result.content.len(), 1);
@@ -2315,7 +2337,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en, sp]).unwrap();
+        let result = merge_translations(vec![de, en, sp], None).unwrap();
 
         // There must be exactly one H2, not two.
         let h2_count = result
@@ -2451,7 +2473,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
 
         // Exactly one H2 — not two orphaned headings.
         let h2_count = result
@@ -2544,7 +2566,7 @@ mod tests {
             ],
         );
 
-        let result = merge_translations(vec![de, en]).unwrap();
+        let result = merge_translations(vec![de, en], None).unwrap();
 
         // Exactly one H2 — the neighborhood recovery must pair them.
         let h2_count = result

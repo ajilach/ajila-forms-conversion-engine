@@ -427,6 +427,28 @@ pub fn run_pipeline(
         }
     }
 
+    // Construct semantic matcher once for the entire merge phase (feature-gated).
+    #[cfg(feature = "semantic-matching")]
+    let semantic_matcher = {
+        log::info!("Loading semantic matcher for translation merge …");
+        let start = std::time::Instant::now();
+        match crate::semantic::SemanticMatcher::new() {
+            Ok(m) => {
+                log::info!("Semantic matcher loaded in {:?}", start.elapsed());
+                Some(m)
+            }
+            Err(e) => {
+                log::warn!("Failed to load semantic matcher, continuing without: {e}");
+                None
+            }
+        }
+    };
+
+    #[cfg(feature = "semantic-matching")]
+    let semantic_ref = semantic_matcher.as_ref();
+    #[cfg(not(feature = "semantic-matching"))]
+    let semantic_ref: Option<&crate::structured::SemanticCtx> = None;
+
     let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();
     for signature in &expected_signatures {
         let mut canonical_selections: Option<Vec<Selection>> = None;
@@ -453,7 +475,7 @@ pub fn run_pipeline(
         }
 
         let merged_state = if state_envelopes.len() > 1 {
-            crate::merge_translations(state_envelopes)
+            crate::merge_translations(state_envelopes, semantic_ref)
                 .map_err(|e| Error::Conversion(e.to_string()))?
         } else {
             state_envelopes.into_iter().next().unwrap()

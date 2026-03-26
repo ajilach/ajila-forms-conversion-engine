@@ -76,6 +76,8 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
+#[cfg(feature = "semantic-matching")]
+pub mod semantic;
 pub mod structured;
 pub mod util;
 pub mod xfa;
@@ -711,8 +713,9 @@ pub(crate) fn merge_structured_outputs(
 /// multilingual envelope.
 pub fn merge_translations(
     envelopes: Vec<DocumentEnvelope>,
+    semantic: Option<&structured::SemanticCtx>,
 ) -> Result<DocumentEnvelope, structured::MergeError> {
-    structured::merge_translations(envelopes)
+    structured::merge_translations(envelopes, semantic)
 }
 
 /// Generate a complete HTML document from structured nodes.

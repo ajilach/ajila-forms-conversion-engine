@@ -227,7 +227,7 @@ pub async fn run_blueprint_pipeline(
         }
 
         let merged_state = if state_envelopes.len() > 1 {
-            match merge_translations(state_envelopes) {
+            match merge_translations(state_envelopes, None) {
                 Ok(m) => m,
                 Err(e) => fail!(format!("{e}")),
             }

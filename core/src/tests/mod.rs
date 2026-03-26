@@ -5583,7 +5583,7 @@ fn test_aaai_multilingual_merge_de_en() {
     assert_eq!(en_envelope.context.language(), "en");
 
     // Merge translations
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None).unwrap();
 
     // The merged context should mention both languages
     println!("Merged context language: {}", merged.context.language());
@@ -8359,7 +8359,7 @@ fn test_aacj_multilingual_merge_de_en_sp() {
 
     // Merge translations
     let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
 
     // The merged context should mention all three languages
     let lang = merged.context.language();
@@ -8465,7 +8465,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
         .expect("Failed to process AACJ_019_SP");
 
     let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
 
     // Walk the merged tree and look for a TranslatedText node containing the
     // tax-residency confirmation text in all three languages. This may appear
@@ -8558,7 +8558,7 @@ fn test_aacj_multilingual_translation_snippets() {
         .expect("Failed to process AACJ_019_SP");
 
     let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
 
     // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
     // TranslatedText node.
@@ -8643,7 +8643,7 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
     let sp = run_exhaustive_to_envelope(input_path("AANE_019_SP.pdf"), "es")
         .expect("Failed to process AANE_019_SP");
 
-    let merged = structured::merge_translations(vec![de, en, sp]).unwrap();
+    let merged = structured::merge_translations(vec![de, en, sp], None).unwrap();
 
     // Collect all H2 headings from the merged tree (including inside
     // conditionals, groups, etc.).
@@ -8715,7 +8715,7 @@ fn test_aags_multilingual_merge_de_en() {
     let en_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_EN.pdf"), "en")
         .expect("Failed to process AAGS_019_EN");
 
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope]).unwrap();
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None).unwrap();
 
     assert_eq!(merged.context.language(), "de,en");
     assert!(!merged.content.is_empty());
@@ -8946,7 +8946,7 @@ fn build_aaam_default_merged() -> crate::DocumentEnvelope {
         .expect("Failed to process AAAM EN");
     let sp = crate::run_exhaustive_to_envelope(input_path("AAAM_019_SP.pdf"), "sp")
         .expect("Failed to process AAAM SP");
-    crate::merge_translations(vec![de, en, sp]).expect("Failed to merge AAAM DE/EN/SP")
+    crate::merge_translations(vec![de, en, sp], None).expect("Failed to merge AAAM DE/EN/SP")
 }
 
 #[test]
@@ -9657,7 +9657,7 @@ fn build_aagg_default_merged() -> crate::DocumentEnvelope {
         .expect("Failed to process AAGG EN");
     let sp = crate::run_exhaustive_to_envelope(input_path("AAGG_019_SP.pdf"), "sp")
         .expect("Failed to process AAGG SP");
-    crate::merge_translations(vec![de, en, sp]).expect("Failed to merge AAGG DE/EN/SP")
+    crate::merge_translations(vec![de, en, sp], None).expect("Failed to merge AAGG DE/EN/SP")
 }
 
 fn assert_aagg_translation_triplet_on_same_node(
@@ -12839,7 +12839,7 @@ fn test_aacc_multilingual_merge_de_en() {
     assert_eq!(en_envelope.context.language(), "en");
 
     // This must succeed — the two versions are translations of the same form.
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Merging AACC_019 DE/EN should succeed");
 
     let lang = merged.context.language();
@@ -12916,7 +12916,7 @@ fn test_aacc_dropdown_no_missing_translation_in_options() {
     let en_envelope = run_exhaustive_to_envelope(input_path("AACC_019_EN.pdf"), "en")
         .expect("Failed to process AACC_019_EN");
 
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Merging AACC_019 DE/EN should succeed");
 
     let merged_fields = collect_fields(&merged.content);
@@ -14258,7 +14258,7 @@ fn test_aem_xml_valid_aaqm() {
 }
 
 #[test]
-#[ignore] // ACAV_001 lacks XFA variables required by the UBS AEM profile templates
+#[ignore = "ACAV_001 lacks XFA variables required by the UBS AEM profile templates"]
 fn test_aem_xml_valid_acav() {
     assert_aem_xml_valid_for(&[("ACAV_001_DE.pdf", "de")]);
 }
@@ -14341,7 +14341,7 @@ fn test_aem_aacq_title_translated() {
 /// the UBS AEM profile templates (see `test_aem_xml_valid_acav` above).
 /// Non-UBS forms (antrag_*, anordnung_*) are also excluded.
 #[test]
-#[ignore]
+#[ignore = "Runs the full pipeline for all forms, which is time-consuming. Run this test manually when needed to validate all forms."]
 fn test_all_form_codes_pipeline() {
     let all_forms: &[&[(&str, &str)]] = &[
         // ── entity 019 ────────────────────────────────────────────────────────
@@ -14530,7 +14530,7 @@ fn test_aags_de_en_state_counts_match() {
         de_envelope.state_count, en_envelope.state_count,
     );
 
-    let result = structured::merge_translations(vec![de_envelope, en_envelope]);
+    let result = structured::merge_translations(vec![de_envelope, en_envelope], None);
     assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
 }
 
@@ -14605,9 +14605,9 @@ fn test_aais_019_structural_similarity_diagnostic() {
     }
 
     // ── Attempt each pair via merge_translations ───────────────────────────────
-    let merge_de_en = structured::merge_translations(vec![de.clone(), en.clone()]);
-    let merge_de_sp = structured::merge_translations(vec![de.clone(), sp.clone()]);
-    let merge_en_sp = structured::merge_translations(vec![en.clone(), sp.clone()]);
+    let merge_de_en = structured::merge_translations(vec![de.clone(), en.clone()], None);
+    let merge_de_sp = structured::merge_translations(vec![de.clone(), sp.clone()], None);
+    let merge_en_sp = structured::merge_translations(vec![en.clone(), sp.clone()], None);
 
     println!("\n=== AAIS_019 merge results ===");
     println!(
@@ -15052,7 +15052,7 @@ fn test_aacj_state_count_diagnostic() {
         crate::run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de").unwrap();
     let en_envelope =
         crate::run_exhaustive_to_envelope(input_path("AACJ_019_EN.pdf"), "en").unwrap();
-    let merged = crate::merge_translations(vec![de_envelope, en_envelope]);
+    let merged = crate::merge_translations(vec![de_envelope, en_envelope], None);
     assert!(
         merged.is_ok(),
         "AACJ DE+EN merge should succeed despite different state counts: {:?}",
@@ -17326,7 +17326,7 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
         .expect("Failed to process AAAI DE");
     let en_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_EN.pdf"), "en")
         .expect("Failed to process AAAI EN");
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope])
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge translations");
 
     // 2) Load XSD config with master_language = "en"
@@ -17858,7 +17858,7 @@ fn test_aacc_relationship_label_has_space() {
         .expect("Failed to process AACC EN");
 
     let merged =
-        structured::merge_translations(vec![de, en]).expect("Merging AACC DE/EN should succeed");
+        structured::merge_translations(vec![de, en], None).expect("Merging AACC DE/EN should succeed");
 
     fn find_relationship_label(nodes: &[StructuredNode], lang: &str) -> Option<String> {
         for node in nodes {
@@ -18892,7 +18892,7 @@ fn test_aais_019_translation_merge_content() {
     assert_eq!(sp.state_count, 9, "SP should have 9 states");
 
     // Merge all three languages
-    let merged = structured::merge_translations(vec![de, en, sp]).expect("Merge should succeed");
+    let merged = structured::merge_translations(vec![de, en, sp], None).expect("Merge should succeed");
 
     // === 1. "Client Details" heading should have correct translations ===
     let mut client_details_found = false;
@@ -19142,7 +19142,7 @@ fn test_aais_019_fee_list_recognized_and_translated() {
         .expect("Failed to process AAIS_019_SP");
 
     // Merge all three languages
-    let merged = structured::merge_translations(vec![de, en, sp])
+    let merged = structured::merge_translations(vec![de, en, sp], None)
         .expect("AAIS_019 three-language merge should succeed");
 
     // Collect all lists from the merged output
@@ -19687,7 +19687,7 @@ fn debug_aacj_snippets_structure() {
 
     // Now merge and show the merged tree around the snippets
     let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope]).unwrap();
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
 
     eprintln!("\n=== MERGED structured nodes (paragraphs 0-15) ===");
     let mut count = 0;

@@ -188,7 +188,7 @@ fn process_form(form_code: &str, variants: &[FormVariant]) -> FormResult {
         };
 
         // Perform translation merge
-        let merged = match merge_translations(envelopes) {
+        let merged = match merge_translations(envelopes, None) {
             Ok(m) => m,
             Err(e) => return fail(&format!("merge: {e}")),
         };

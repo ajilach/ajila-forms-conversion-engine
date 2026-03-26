@@ -6,6 +6,15 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+semantic-matching = [
+    "dep:candle-core",
+    "dep:candle-nn",
+    "dep:candle-transformers",
+    "dep:tokenizers",
+]
+
 [dependencies]
 ab_glyph = "0.2.32"
 thiserror = "1.0"
@@ -31,6 +40,10 @@ hyphenation = "0.8.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10"
+candle-core = { version = "0.9", optional = true }
+candle-nn = { version = "0.9", optional = true }
+candle-transformers = { version = "0.9", optional = true }
+tokenizers = { version = "0.21", optional = true, default-features = false, features = ["onig"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }

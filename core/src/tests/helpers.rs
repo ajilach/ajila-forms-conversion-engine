@@ -422,7 +422,7 @@ pub(super) fn build_aem_test_output(
         (env.context, env.content)
     } else {
         let merged =
-            crate::structured::merge_translations(envelopes).expect("Failed to merge translations");
+            crate::structured::merge_translations(envelopes, None).expect("Failed to merge translations");
         (merged.context, merged.content)
     };
 

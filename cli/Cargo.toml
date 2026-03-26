@@ -8,7 +8,7 @@ name = "blueprint"
 path = "src/main.rs"
 
 [dependencies]
-blueprint = { path = "../core" }
+blueprint = { path = "../core", features = ["semantic-matching"] }
 clap = { version = "4.5", features = ["derive"] }
 env_logger = "0.11"
 log = "0.4"
