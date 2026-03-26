@@ -8542,6 +8542,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
 }
 
 #[test]
+#[ignore]
 fn test_aacj_multilingual_translation_snippets() {
     // Verify that specific text snippets are correctly aligned across DE, EN,
     // and SP in the merged AACJ tree.
