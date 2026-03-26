@@ -573,9 +573,16 @@ impl MergePolicy for TranslationPolicy {
 pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode) -> bool {
     // If both nodes carry the same SOM path and the same top-level variant,
     // they match regardless of content/shape differences.
+    // Exception: paragraphs also require matching inline structure (e.g.
+    // bold vs non-bold) even with the same SOM path, because a single XFA
+    // element can render as multiple paragraphs with different styling,
+    // and the SOM path alone cannot distinguish them.
     if std::mem::discriminant(a) == std::mem::discriminant(b) {
         if let (Some(sa), Some(sb)) = (a.som_path(), b.som_path()) {
             if sa.as_str() == sb.as_str() {
+                if let (StructuredNode::Paragraph(pa), StructuredNode::Paragraph(pb)) = (a, b) {
+                    return inline_text_structure_compatible(&pa.content, &pb.content);
+                }
                 return true;
             }
         }
@@ -618,6 +625,32 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
         (other, StructuredNode::Conditional(c)) => node_matches_for_similarity(other, &c.content),
         _ => false,
     }
+}
+
+/// Check whether two inline texts have the same structural wrapping pattern
+/// (e.g. both all-bold, both all-plain, etc.).
+///
+/// This prevents cross-matching paragraphs from the same XFA element that
+/// were rendered with different styling (e.g. a non-bold introduction and a
+/// bold instruction line).
+fn inline_text_structure_compatible(a: &InlineText, b: &InlineText) -> bool {
+    inline_text_is_bold(a) == inline_text_is_bold(b)
+}
+
+/// Returns true if all non-empty inline nodes are wrapped in Strong.
+fn inline_text_is_bold(text: &InlineText) -> bool {
+    let mut has_content = false;
+    for node in &text.0 {
+        match node {
+            InlineNode::Strong(_) => {
+                has_content = true;
+            }
+            InlineNode::Text(s) if s.trim().is_empty() => {}
+            InlineNode::TranslatedText(map) if map.values().all(|v| v.trim().is_empty()) => {}
+            _ => return false,
+        }
+    }
+    has_content
 }
 
 fn inline_text_shape_compatible(a: &InlineText, b: &InlineText) -> bool {
@@ -761,7 +794,10 @@ fn text_shape_compatible(a: &str, b: &str) -> bool {
     let min_words = shape_a.words.min(shape_b.words);
     let max_word_ratio = if min_words <= 1 { 4.0 } else { 2.5 };
 
-    char_ratio <= max_char_ratio && word_ratio <= max_word_ratio && digit_delta <= 3 && punct_delta <= 8
+    char_ratio <= max_char_ratio
+        && word_ratio <= max_word_ratio
+        && digit_delta <= 3
+        && punct_delta <= 8
 }
 
 fn ratio(a: usize, b: usize) -> f64 {

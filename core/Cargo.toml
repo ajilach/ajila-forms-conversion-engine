@@ -7,7 +7,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["semantic-matching"]
 semantic-matching = [
     "dep:candle-core",
     "dep:candle-nn",

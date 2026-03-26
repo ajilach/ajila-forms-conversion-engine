@@ -69,7 +69,11 @@ impl BertEmbedder {
 
     fn embed_chunk(&self, encodings: &[Encoding]) -> Result<Vec<Vec<f32>>, SemanticError> {
         let batch_size = encodings.len();
-        let max_len = encodings.iter().map(|e| e.token_ids.len()).max().unwrap_or(0);
+        let max_len = encodings
+            .iter()
+            .map(|e| e.token_ids.len())
+            .max()
+            .unwrap_or(0);
 
         if max_len == 0 {
             return Ok(vec![vec![0.0; EMBEDDING_DIM]; batch_size]);
@@ -95,13 +99,14 @@ impl BertEmbedder {
         let token_type_ids = token_ids.zeros_like()?;
 
         // Forward pass → [batch_size, seq_len, hidden_size]
-        let hidden_states = self.model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+        let hidden_states =
+            self.model
+                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
 
         // Mean pooling: average hidden states over non-padding positions.
         let mask_f32 = attention_mask.to_dtype(DType::F32)?;
         let mask_expanded = mask_f32.unsqueeze(2)?.broadcast_as(hidden_states.shape())?;
-        let sum = (hidden_states * mask_expanded)?
-            .sum(1)?;
+        let sum = (hidden_states * mask_expanded)?.sum(1)?;
         let count = mask_f32.sum(1)?.unsqueeze(1)?.broadcast_as(sum.shape())?;
         let mean_pooled = (sum / count)?;
 

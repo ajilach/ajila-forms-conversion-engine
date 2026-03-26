@@ -8562,13 +8562,34 @@ fn test_aacj_multilingual_translation_snippets() {
 
     // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
     // TranslatedText node.
-    let expected_triplets: Vec<(&str, &str, &str)> = vec![(
-        "Aufgrund des gemeinsamen Meldestandards der OECD erfordert das FKAustG1",
-        "Based on the OECD Common Reporting Standard, the FKAustG1 requires UBS Europe SE",
-        "Conforme a la Norma sobre revelación de información de la OCDE, la FKAustG1 exige que UBS Europe SE",
-    )];
+    let expected_triplets: Vec<(&str, &str, &str)> = vec![
+        (
+            "Aufgrund des gemeinsamen Meldestandards der OECD erfordert das FKAustG1",
+            "Based on the OECD Common Reporting Standard, the FKAustG1 requires UBS Europe SE",
+            "Conforme a la Norma sobre revelación de información de la OCDE, la FKAustG1 exige que UBS Europe SE",
+        ),
+        (
+            "Bitte füllen Sie dieses Formular aus, wenn Sie ein Einzelkontoinhaber",
+            "Please fill in this form if you are an individual account holder",
+            "Si usted es un titular de cuenta individual",
+        ),
+    ];
 
     let mut triplet_found = vec![false; expected_triplets.len()];
+
+    /// Extract TranslatedText maps from an InlineNode, unwrapping Strong/Emphasis.
+    fn collect_translated_texts<'a>(
+        node: &'a InlineNode,
+        out: &mut Vec<&'a std::collections::HashMap<String, String>>,
+    ) {
+        match node {
+            InlineNode::TranslatedText(map) => out.push(map),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                collect_translated_texts(inner, out);
+            }
+            _ => {}
+        }
+    }
 
     walk_structured_nodes(&merged.content, &mut |node| {
         let inline_texts: Vec<&InlineText> = match node {
@@ -8579,37 +8600,39 @@ fn test_aacj_multilingual_translation_snippets() {
         };
 
         for text in inline_texts {
+            let mut translated_maps = Vec::new();
             for inline in &text.0 {
-                if let InlineNode::TranslatedText(map) = inline {
-                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
-                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+                collect_translated_texts(inline, &mut translated_maps);
+            }
+            for map in translated_maps {
+                let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
+                let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
 
-                    for (i, (de_snippet, en_snippet, sp_snippet)) in
-                        expected_triplets.iter().enumerate()
+                for (i, (de_snippet, en_snippet, sp_snippet)) in
+                    expected_triplets.iter().enumerate()
+                {
+                    if de_text.contains(de_snippet)
+                        || en_text.contains(en_snippet)
+                        || sp_text.contains(sp_snippet)
                     {
-                        if de_text.contains(de_snippet)
-                            || en_text.contains(en_snippet)
-                            || sp_text.contains(sp_snippet)
-                        {
-                            assert!(
-                                de_text.contains(de_snippet)
-                                    && en_text.contains(en_snippet)
-                                    && sp_text.contains(sp_snippet),
-                                "Translation triplet {} should have all three languages in the \
+                        assert!(
+                            de_text.contains(de_snippet)
+                                && en_text.contains(en_snippet)
+                                && sp_text.contains(sp_snippet),
+                            "Translation triplet {} should have all three languages in the \
                                  same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
                                  {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
                                  Actual SP: {:?}",
-                                i,
-                                de_snippet,
-                                en_snippet,
-                                sp_snippet,
-                                &de_text[..de_text.len().min(200)],
-                                &en_text[..en_text.len().min(200)],
-                                &sp_text[..sp_text.len().min(200)],
-                            );
-                            triplet_found[i] = true;
-                        }
+                            i,
+                            de_snippet,
+                            en_snippet,
+                            sp_snippet,
+                            &de_text[..de_text.len().min(200)],
+                            &en_text[..en_text.len().min(200)],
+                            &sp_text[..sp_text.len().min(200)],
+                        );
+                        triplet_found[i] = true;
                     }
                 }
             }
