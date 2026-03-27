@@ -30,7 +30,15 @@ Dioxus can easily be installed using cargo-binstall:
 
 ```sh
 cargo install cargo-binstall
-cargo binstall dioxus-cli@0.6.3
+cargo binstall dioxus-cli@0.7.3
+```
+
+In order to version large files we need the git lfs extension
+
+```sh
+brew install git-lfs
+git lfs install
+git lfs pull
 ```
 
 ## Running Tests
