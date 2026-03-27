@@ -4188,9 +4188,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blueprint",
+ "clap",
  "csv",
  "env_logger",
  "log",
+ "rayon",
 ]
 
 [[package]]
