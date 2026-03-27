@@ -1,6 +1,5 @@
 /target
 .DS_Store
-/core/models/
 
 /cli/*.png
 /cli/*.json
