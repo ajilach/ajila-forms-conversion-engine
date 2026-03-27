@@ -7,8 +7,19 @@ use blueprint::{
     DocumentEnvelope, InlineNode, InlineText, StructuredNode, TranslatableString,
     structured::{calculate_structural_similarity, merge_translations},
 };
+use clap::Parser;
+use rayon::prelude::*;
 
 const MISSING_TRANSLATION: &str = "MISSING TRANSLATION";
+
+/// Judge — evaluate translation quality of multi-language PDF forms.
+#[derive(Parser)]
+#[command(name = "judge")]
+struct Args {
+    /// Only process a specific form code (e.g. ABCD_019). If omitted, all forms are processed.
+    #[arg(long)]
+    form_code: Option<String>,
+}
 
 struct FormResult {
     form_code: String,
@@ -22,6 +33,7 @@ struct FormResult {
 
 fn main() -> Result<()> {
     env_logger::init();
+    let args = Args::parse();
 
     // Load UBS profile fonts before processing any forms
     blueprint::load_profile_fonts("ubs").map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -32,21 +44,31 @@ fn main() -> Result<()> {
     eprintln!("Semantic matcher loaded.");
 
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
-    let forms = discover_forms(&input_dir)?;
+    let mut forms = discover_forms(&input_dir)?;
 
-    eprintln!("Discovered {} form codes", forms.len());
-
-    let mut results = Vec::new();
-
-    for (form_code, variants) in &forms {
-        eprint!("Processing {form_code} ({} languages)... ", variants.len());
-        let result = process_form(form_code, variants, &matcher);
-        match &result {
-            r if r.status == "pass" => eprintln!("pass (score: {:.3})", r.total_score),
-            r => eprintln!("FAIL ({})", r.status),
+    // Filter to a single form code if requested
+    if let Some(ref filter) = args.form_code {
+        forms.retain(|key, _| key == filter);
+        if forms.is_empty() {
+            anyhow::bail!("No form found matching '{filter}'");
         }
-        results.push(result);
     }
+
+    eprintln!("Processing {} form codes (parallel)", forms.len());
+
+    let mut results: Vec<FormResult> = forms
+        .par_iter()
+        .map(|(form_code, variants)| {
+            let result = process_form(form_code, variants, &matcher);
+            match &result {
+                r if r.status == "pass" => {
+                    eprintln!("{form_code}: pass (score: {:.3})", r.total_score)
+                }
+                r => eprintln!("{form_code}: FAIL ({})", r.status),
+            }
+            result
+        })
+        .collect();
 
     results.sort_by(|a, b| b.total_score.partial_cmp(&a.total_score).unwrap());
 

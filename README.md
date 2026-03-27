@@ -130,3 +130,22 @@ Then open http://localhost:8080.
 ```sh
 cargo doc -p blueprint --open
 ```
+
+## Judge
+
+The judge evaluates translation quality of multi-language PDF forms in `core/input/`. It processes all form codes in parallel using all available CPU cores and writes scores to `judge/results.csv`.
+
+```sh
+# Run the judge on all form codes (parallel)
+cargo run --release -p judge
+
+# Run the judge on a single form code
+cargo run --release -p judge -- --form-code ABCD_019
+
+# Compare results against a baseline
+cd judge
+cp results.csv results-baseline.csv
+# ... make changes ...
+cargo run --release -p judge
+python3 compare.py
+```
