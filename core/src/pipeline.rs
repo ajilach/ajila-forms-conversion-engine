@@ -49,6 +49,7 @@
 //! ```
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, collections::HashMap};
 
 use crate::{Blueprint, Context, DocumentEnvelope, Error, RgbaImage, Selection};
@@ -229,6 +230,28 @@ pub struct PipelineOutput {
     /// structured node tree.  When multiple files were provided (multilingual
     /// mode) all language envelopes are merged.
     pub merged: DocumentEnvelope,
+
+    /// Wall-clock duration of each pipeline step, in execution order.
+    ///
+    /// Each entry is `(step, duration)`.  The steps appear in the order they
+    /// were executed, allowing callers to identify the most expensive
+    /// operations.  Use [`PipelineOutput::most_expensive_steps`] to get the
+    /// list sorted by duration.
+    pub timings: Vec<(PipelineStep, Duration)>,
+}
+
+impl PipelineOutput {
+    /// Returns the timing entries sorted from slowest to fastest step.
+    pub fn most_expensive_steps(&self) -> Vec<(PipelineStep, Duration)> {
+        let mut sorted = self.timings.clone();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted
+    }
+
+    /// Returns the total wall-clock duration across all measured steps.
+    pub fn total_duration(&self) -> Duration {
+        self.timings.iter().map(|(_, d)| *d).sum()
+    }
 }
 
 // ============================================================================
@@ -270,8 +293,11 @@ pub fn run_pipeline(
     config: &PipelineConfig,
     mut on_event: impl FnMut(PipelineEvent),
 ) -> Result<PipelineOutput, Error> {
+    let mut timings: Vec<(PipelineStep, Duration)> = Vec::new();
+
     // ── Phase 1: Parsing ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Parsing));
+    let step_start = Instant::now();
 
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (filename, bytes) in files {
@@ -279,11 +305,13 @@ pub fn run_pipeline(
         let language = bp.language().to_string();
         blueprints.push((filename.clone(), language, bp));
     }
+    timings.push((PipelineStep::Parsing, step_start.elapsed()));
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────────
     on_event(PipelineEvent::StepChanged(
         PipelineStep::ExhaustiveSearching,
     ));
+    let step_start = Instant::now();
 
     // (filename, language, form_states, context)
     let mut explored: Vec<(String, String, crate::FormStates, Context)> = Vec::new();
@@ -296,9 +324,11 @@ pub fn run_pipeline(
         let context = bp.context();
         explored.push((filename, language, form_states, context));
     }
+    timings.push((PipelineStep::ExhaustiveSearching, step_start.elapsed()));
 
     // ── Phase 3: Flattening — plain and annotated renders ─────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Flattening));
+    let step_start = Instant::now();
 
     let mut plain_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut annotated_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
@@ -346,7 +376,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 4: Structuring — labelled renders + structured output ───────────
+    timings.push((PipelineStep::Flattening, step_start.elapsed()));
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
+    let step_start = Instant::now();
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
@@ -396,7 +428,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
+    timings.push((PipelineStep::Structuring, step_start.elapsed()));
     on_event(PipelineEvent::StepChanged(PipelineStep::Merging));
+    let step_start = Instant::now();
 
     if per_language_state_maps.is_empty() {
         return Err(Error::Conversion("No envelopes to merge".into()));
@@ -503,6 +537,7 @@ pub fn run_pipeline(
     };
 
     on_event(PipelineEvent::StepChanged(PipelineStep::Complete));
+    timings.push((PipelineStep::Merging, step_start.elapsed()));
 
     Ok(PipelineOutput {
         plain_renders,
@@ -510,6 +545,7 @@ pub fn run_pipeline(
         labelled_renders,
         state_labels,
         merged,
+        timings,
     })
 }
 

@@ -5,6 +5,7 @@ use blueprint::{
 use clap::{Parser, ValueEnum};
 use log::info;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// CLI render mode, wrapping the library's [`blueprint::RenderMode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -254,6 +255,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("XSD: {}", xsd_path.display());
     }
 
+    // ─── Timing summary ──────────────────────────────────────────────────────
+    print_timing_summary(&output.timings, output.total_duration());
+
     Ok(())
 }
 
@@ -284,6 +288,66 @@ fn strip_language_suffix(name: &str) -> &str {
 
 fn require_profile_name(profile_name: Option<&str>) -> Result<&str, Box<dyn std::error::Error>> {
     profile_name.ok_or_else(|| "No profile specified (use --profile <name>)".into())
+}
+
+// ─── Timing summary ───────────────────────────────────────────────────────────
+
+/// Returns a human-readable name for a [`PipelineStep`].
+fn pipeline_step_name(step: PipelineStep) -> &'static str {
+    match step {
+        PipelineStep::Parsing => "Parsing",
+        PipelineStep::ExhaustiveSearching => "ExhaustiveSearching",
+        PipelineStep::Flattening => "Flattening",
+        PipelineStep::Structuring => "Structuring",
+        PipelineStep::Merging => "Merging",
+        PipelineStep::Complete => "Complete",
+    }
+}
+
+/// Formats a [`Duration`] as `"1.234s"` (always three decimal places).
+fn format_duration(d: Duration) -> String {
+    let secs = d.as_secs_f64();
+    format!("{secs:.3}s")
+}
+
+/// Prints a timing summary table to stderr, listing each step from slowest to
+/// fastest followed by the total wall-clock time.
+fn print_timing_summary(timings: &[(PipelineStep, Duration)], total: Duration) {
+    if timings.is_empty() {
+        return;
+    }
+
+    // Sort by duration descending to show the most expensive step first.
+    let mut sorted = timings.to_vec();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let max_name_len = sorted
+        .iter()
+        .map(|(step, _)| pipeline_step_name(*step).len())
+        .max()
+        .unwrap_or(0)
+        .max("Total".len());
+
+    eprintln!("\nPipeline timing summary:");
+    eprintln!("  {:<width$}  {}", "Step", "Duration", width = max_name_len);
+    eprintln!("  {}", "-".repeat(max_name_len + 12));
+
+    for (step, duration) in &sorted {
+        eprintln!(
+            "  {:<width$}  {}",
+            pipeline_step_name(*step),
+            format_duration(*duration),
+            width = max_name_len,
+        );
+    }
+
+    eprintln!("  {}", "-".repeat(max_name_len + 12));
+    eprintln!(
+        "  {:<width$}  {}",
+        "Total",
+        format_duration(total),
+        width = max_name_len
+    );
 }
 
 #[cfg(test)]
