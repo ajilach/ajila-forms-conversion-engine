@@ -48,6 +48,9 @@
 //! TextBlockMerger             ─── merges nearby unclaimed TextBlocks with same font
 //!     │
 //!     ▼
+//! MultiColumnDetector         ─── detects columns of non-interactive content
+//!     │
+//!     ▼
 //! FieldTableDetector          ─── detects field tables with bold headers
 //!     │
 //!     ▼
@@ -97,6 +100,7 @@ mod inline_field_detector;
 mod label_attacher;
 mod list_detector;
 mod master_page_detector;
+mod multi_column_detector;
 mod no_print_detector;
 mod overlapping_text_block_merger;
 mod placeholder_filter;
@@ -120,6 +124,7 @@ pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
 pub use list_detector::ListDetector;
 pub use master_page_detector::MasterPageDetector;
+pub use multi_column_detector::MultiColumnDetector;
 pub use no_print_detector::NoPrintDetector;
 pub use overlapping_text_block_merger::OverlappingTextBlockMerger;
 pub use placeholder_filter::PlaceholderFilter;
@@ -203,6 +208,8 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
     TextBlockMerger::new().process_with_context(doc, ctx);
+
+    MultiColumnDetector::new().process_with_context(doc, ctx);
 
     FieldTableDetector::new().process_with_context(doc, ctx);
 

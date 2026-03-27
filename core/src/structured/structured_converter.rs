@@ -23,8 +23,8 @@ use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TranslatableString,
+    HeadingNode, InlineNode, InlineText, InputValue, ListNode, MultiColumnLayout, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -38,6 +38,11 @@ fn contains_fields(node: &StructuredNode) -> bool {
         StructuredNode::Repeatable(r) => contains_fields(&r.item),
         StructuredNode::Conditional(c) => contains_fields(&c.content),
         StructuredNode::GridLayout(g) => g.elements.iter().any(|e| contains_fields(&e.node)),
+        StructuredNode::MultiColumnLayout(mc) => mc
+            .columns
+            .iter()
+            .flat_map(|col| col.iter())
+            .any(contains_fields),
         StructuredNode::Heading(_)
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
@@ -522,6 +527,39 @@ impl<'a, 'b> Converter<'a, 'b> {
                         items,
                     }))
                 }
+            }
+
+            // MultiColumn → MultiColumnLayout with one Vec<StructuredNode> per column
+            GroupKind::MultiColumn {
+                num_columns,
+                column_sizes,
+            } => {
+                let group = self.doc.get_group(group_idx)?;
+                let children = group.children.clone();
+
+                // Split children into per-column slices using column_sizes
+                let mut columns: Vec<Vec<StructuredNode>> = Vec::new();
+                let mut offset = 0;
+                for &size in column_sizes {
+                    let col_children = &children[offset..offset + size];
+                    let col_nodes: Vec<StructuredNode> = col_children
+                        .iter()
+                        .filter_map(|&child_idx| self.convert_group(child_idx))
+                        .collect();
+                    columns.push(col_nodes);
+                    offset += size;
+                }
+
+                // Drop empty columns
+                columns.retain(|col| !col.is_empty());
+                if columns.is_empty() {
+                    return None;
+                }
+
+                Some(StructuredNode::MultiColumnLayout(MultiColumnLayout {
+                    num_columns: *num_columns,
+                    columns,
+                }))
             }
 
             // Leaf → depends on node type

@@ -6728,6 +6728,7 @@ fn test_aaoe_h2_sections() {
             StructuredNode::Empty => "Empty",
             StructuredNode::GridLayout(_) => "GridLayout",
             StructuredNode::List(_) => "List",
+            StructuredNode::MultiColumnLayout(_) => "MultiColumnLayout",
         };
         println!("  [{}] {}", i, ty);
     }
@@ -14586,6 +14587,9 @@ fn test_aais_019_structural_similarity_diagnostic() {
             StructuredNode::Empty => "Empty".to_string(),
             StructuredNode::GridLayout(g) => format!("GridLayout(cols={})", g.columns),
             StructuredNode::List(_) => "List".to_string(),
+            StructuredNode::MultiColumnLayout(mc) => {
+                format!("MultiColumnLayout(cols={})", mc.num_columns)
+            }
         }
     }
 

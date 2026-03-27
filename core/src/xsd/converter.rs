@@ -469,6 +469,7 @@ fn build_node(
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::MultiColumnLayout(_)
         | StructuredNode::Empty => {}
     }
 }
@@ -803,6 +804,7 @@ fn collect_node_bind_refs(
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::MultiColumnLayout(_)
         | StructuredNode::Empty => {}
     }
 }

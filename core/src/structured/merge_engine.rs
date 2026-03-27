@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::structured::{
     ConditionalNode, FieldNode, FieldType, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
-    InlineNode, InlineText, ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode,
-    TableHeader, TableNode, TableRow, TranslatableString,
+    InlineNode, InlineText, ListNode, MultiColumnLayout, NameValue, ParagraphNode, RepeatableNode,
+    StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
 };
 
 pub(crate) const MISSING_TRANSLATION_TEXT: &str = "MISSING TRANSLATION";
@@ -504,6 +504,13 @@ fn fill_node(
         StructuredNode::List(l) => {
             for item in &mut l.items {
                 fill_inline_text(item, all_languages, primary_language, placeholder);
+            }
+        }
+        StructuredNode::MultiColumnLayout(mc) => {
+            for col in &mut mc.columns {
+                for node in col {
+                    fill_node(node, all_languages, primary_language, placeholder);
+                }
             }
         }
         StructuredNode::Image(_) | StructuredNode::Empty => {}
@@ -1239,6 +1246,20 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .map(|item| localize_inline_text(item, lang))
                 .collect(),
         }),
+        StructuredNode::MultiColumnLayout(mc) => {
+            StructuredNode::MultiColumnLayout(MultiColumnLayout {
+                num_columns: mc.num_columns,
+                columns: mc
+                    .columns
+                    .iter()
+                    .map(|col| {
+                        col.iter()
+                            .map(|node| localize_structured_node(node, lang))
+                            .collect()
+                    })
+                    .collect(),
+            })
+        }
     }
 }
 

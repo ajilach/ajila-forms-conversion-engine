@@ -116,6 +116,7 @@ pub enum StructuredNode {
     Empty,
     GridLayout(GridLayout),
     List(ListNode),
+    MultiColumnLayout(MultiColumnLayout),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,6 +138,19 @@ pub struct GridLayout {
 pub struct GridLayoutElement {
     pub span: usize,
     pub node: StructuredNode,
+}
+
+/// A multi-column layout of non-interactive content (text, headings, lists, etc.).
+///
+/// Each inner `Vec<StructuredNode>` represents one column, with nodes in
+/// top-to-bottom reading order.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiColumnLayout {
+    /// Number of columns (equals `columns.len()`)
+    pub num_columns: usize,
+    /// Content for each column, in left-to-right column order
+    pub columns: Vec<Vec<StructuredNode>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -760,6 +774,12 @@ impl StructuredNode {
                         .and_then(|r| r.cells.iter().find_map(|c| c.anchor_key()))
                 })
                 .map(|k| format!("t:{k}")),
+            StructuredNode::MultiColumnLayout(mc) => mc
+                .columns
+                .iter()
+                .flat_map(|col| col.iter())
+                .find_map(|n| n.anchor_key())
+                .map(|k| format!("mc:{k}")),
             _ => None,
         }
     }
@@ -871,6 +891,17 @@ impl StructuredNode {
                             .zip(b.items.iter())
                             .all(|(ia, ib)| ia.structural_eq(ib)))
             }
+            (StructuredNode::MultiColumnLayout(a), StructuredNode::MultiColumnLayout(b)) => {
+                a.num_columns == b.num_columns
+                    && a.columns.len() == b.columns.len()
+                    && a.columns.iter().zip(b.columns.iter()).all(|(ca, cb)| {
+                        ca.len() == cb.len()
+                            && ca
+                                .iter()
+                                .zip(cb.iter())
+                                .all(|(na, nb)| na.structural_cmp(nb, mode))
+                    })
+            }
             // Different variants are never structurally equal
             _ => false,
         }
@@ -891,6 +922,7 @@ impl StructuredNode {
             StructuredNode::Empty => 8,
             StructuredNode::GridLayout(_) => 9,
             StructuredNode::List(_) => 10,
+            StructuredNode::MultiColumnLayout(_) => 11,
         }
     }
 
@@ -950,6 +982,13 @@ impl StructuredNode {
             StructuredNode::List(l) => {
                 for item in &l.items {
                     item.collect_languages(langs);
+                }
+            }
+            StructuredNode::MultiColumnLayout(mc) => {
+                for col in &mc.columns {
+                    for node in col {
+                        node.collect_languages(langs);
+                    }
                 }
             }
             _ => {}

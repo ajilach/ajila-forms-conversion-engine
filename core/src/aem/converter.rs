@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::structured::{
     ConditionalNode, FieldId, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel,
-    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode, TranslatableString,
+    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, MultiColumnLayout,
+    NameValue, ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
 use super::fragment_parser::ParsedFragment;
@@ -367,6 +367,9 @@ fn convert_node(
             Some(convert_grid_layout(gl, config, ctx, colspan, dor_colspan))
         }
         StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan, dor_colspan)),
+        StructuredNode::MultiColumnLayout(mc) => {
+            Some(convert_multi_column_layout(mc, config, ctx, colspan, dor_colspan))
+        }
         StructuredNode::Empty => None,
     }
 }
@@ -879,6 +882,64 @@ fn convert_grid_layout(
         dor_exclude: false,
         visible: true,
         dor_num_cols: Some(gl.columns as u32),
+        colspan,
+        dor_colspan,
+        bind_ref: None,
+    }
+}
+
+fn convert_multi_column_layout(
+    mc: &MultiColumnLayout,
+    config: &AemConfig,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> AemNode {
+    let name = ctx.make_name("MCCOL", "");
+    let uuid = ctx.uuid(&name);
+    let num_cols = mc.num_columns.max(1) as u32;
+    let col_span = config.grid_columns / num_cols;
+
+    // Each column becomes a child panel containing its nodes
+    let children: Vec<AemNode> = mc
+        .columns
+        .iter()
+        .flat_map(|col_nodes| {
+            let col_name = ctx.make_name("MCCOLCNT", "");
+            let col_uuid = ctx.uuid(&col_name);
+            let col_children: Vec<AemNode> = col_nodes
+                .iter()
+                .filter_map(|node| convert_node(node, config, ctx, col_span, Some(1)))
+                .collect();
+            if col_children.is_empty() {
+                None
+            } else {
+                Some(AemNode::Panel {
+                    uuid: col_uuid,
+                    name: col_name,
+                    title: String::new(),
+                    children: col_children,
+                    is_page: false,
+                    dor_exclude: false,
+                    visible: true,
+                    dor_num_cols: None,
+                    colspan: col_span.max(1),
+                    dor_colspan: Some(1),
+                    bind_ref: None,
+                })
+            }
+        })
+        .collect();
+
+    AemNode::Panel {
+        uuid,
+        name,
+        title: String::new(),
+        children,
+        is_page: false,
+        dor_exclude: false,
+        visible: true,
+        dor_num_cols: Some(num_cols),
         colspan,
         dor_colspan,
         bind_ref: None,

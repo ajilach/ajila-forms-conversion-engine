@@ -290,6 +290,21 @@ pub enum GroupKind {
         checkbox_som_path: SomPath,
     },
 
+    /// A multi-column layout containing non-interactive content (text, headings, lists, etc.).
+    ///
+    /// Created by `MultiColumnDetector` when spatially separated columns of non-interactive
+    /// elements are detected at overlapping vertical positions. Never contains interactive
+    /// elements (fields, checkboxes, radio buttons, etc.).
+    ///
+    /// Children are stored in column-major order: the first `column_sizes[0]` children
+    /// belong to column 0 (sorted by y), the next `column_sizes[1]` belong to column 1, etc.
+    MultiColumn {
+        /// Number of columns detected
+        num_columns: usize,
+        /// How many children each column has (sum equals total children count)
+        column_sizes: Vec<usize>,
+    },
+
     /// Inline conditional field on the same line as a radio button or checkbox.
     ///
     /// Pattern: `[checkbox/radio] [label] [field]` on one line.
@@ -1060,6 +1075,9 @@ impl<'a> Document<'a> {
             }
             GroupKind::SelectionInlineField { label_text, .. } => {
                 format!("SelectionInlineField[{}]", label_text)
+            }
+            GroupKind::MultiColumn { num_columns, .. } => {
+                format!("MultiColumn[{}cols]", num_columns)
             }
         }
     }

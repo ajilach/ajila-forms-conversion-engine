@@ -5,8 +5,8 @@
 
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode,
+    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, MultiColumnLayout,
+    ParagraphNode, RepeatableNode, StructuredNode, TableNode,
 };
 use crate::xfa::scripting::SomPath;
 use serde::Deserialize;
@@ -265,6 +265,7 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Conditional(c) => generate_conditional(c, ctx, indent),
         StructuredNode::GridLayout(g) => generate_grid_layout(g, ctx, indent),
         StructuredNode::List(l) => generate_list(l, &ind),
+        StructuredNode::MultiColumnLayout(mc) => generate_multi_column_layout(mc, ctx, indent),
         StructuredNode::Empty => String::new(),
     }
 }
@@ -791,6 +792,32 @@ fn generate_grid_layout(
             child_ind, span_style
         ));
         html.push_str(&generate_node(&element.node, ctx, indent + 2));
+        html.push_str(&format!("{}</div>\n", child_ind));
+    }
+
+    html.push_str(&format!("{}</div>\n", ind));
+    html
+}
+
+fn generate_multi_column_layout(
+    mc: &MultiColumnLayout,
+    ctx: &mut GeneratorContext,
+    indent: usize,
+) -> String {
+    let ind = "  ".repeat(indent);
+    let child_ind = "  ".repeat(indent + 1);
+
+    let grid_columns = format!("repeat({}, 1fr)", mc.num_columns);
+    let mut html = format!(
+        "{}<div class=\"multi-column-layout\" style=\"display: grid; grid-template-columns: {}; gap: 1rem;\">\n",
+        ind, grid_columns
+    );
+
+    for col_nodes in &mc.columns {
+        html.push_str(&format!("{}<div class=\"column\">\n", child_ind));
+        for node in col_nodes {
+            html.push_str(&generate_node(node, ctx, indent + 2));
+        }
         html.push_str(&format!("{}</div>\n", child_ind));
     }
 
