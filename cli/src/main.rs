@@ -320,6 +320,8 @@ fn print_timing_summary(timings: &[(PipelineStep, Duration)], total: Duration) {
         return;
     }
 
+    let total_secs = total.as_secs_f64();
+
     let max_name_len = timings
         .iter()
         .map(|(step, _)| pipeline_step_name(*step).len())
@@ -328,23 +330,36 @@ fn print_timing_summary(timings: &[(PipelineStep, Duration)], total: Duration) {
         .max("Total".len());
 
     eprintln!("\nPipeline timing summary:");
-    eprintln!("  {:<width$}  {}", "Step", "Duration", width = max_name_len);
-    eprintln!("  {}", "-".repeat(max_name_len + 12));
+    eprintln!(
+        "  {:<width$}  {:>9}  {:>6}",
+        "Step",
+        "Duration",
+        "%",
+        width = max_name_len
+    );
+    eprintln!("  {}", "-".repeat(max_name_len + 20));
 
     for (step, duration) in timings {
+        let pct = if total_secs > 0.0 {
+            duration.as_secs_f64() / total_secs * 100.0
+        } else {
+            0.0
+        };
         eprintln!(
-            "  {:<width$}  {}",
+            "  {:<width$}  {:>9}  {:>5.1}%",
             pipeline_step_name(*step),
             format_duration(*duration),
+            pct,
             width = max_name_len,
         );
     }
 
-    eprintln!("  {}", "-".repeat(max_name_len + 12));
+    eprintln!("  {}", "-".repeat(max_name_len + 20));
     eprintln!(
-        "  {:<width$}  {}",
+        "  {:<width$}  {:>9}  {:>5.1}%",
         "Total",
         format_duration(total),
+        100.0,
         width = max_name_len
     );
 }
