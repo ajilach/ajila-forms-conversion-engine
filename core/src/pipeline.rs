@@ -297,7 +297,7 @@ pub fn run_pipeline(
 
     // ── Phase 1: Parsing ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Parsing));
-    let step_start = Instant::now();
+    let parsing_start = Instant::now();
 
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (filename, bytes) in files {
@@ -305,13 +305,13 @@ pub fn run_pipeline(
         let language = bp.language().to_string();
         blueprints.push((filename.clone(), language, bp));
     }
-    timings.push((PipelineStep::Parsing, step_start.elapsed()));
+    timings.push((PipelineStep::Parsing, parsing_start.elapsed()));
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────────
     on_event(PipelineEvent::StepChanged(
         PipelineStep::ExhaustiveSearching,
     ));
-    let step_start = Instant::now();
+    let exhaustive_start = Instant::now();
 
     // (filename, language, form_states, context)
     let mut explored: Vec<(String, String, crate::FormStates, Context)> = Vec::new();
@@ -324,11 +324,11 @@ pub fn run_pipeline(
         let context = bp.context();
         explored.push((filename, language, form_states, context));
     }
-    timings.push((PipelineStep::ExhaustiveSearching, step_start.elapsed()));
+    timings.push((PipelineStep::ExhaustiveSearching, exhaustive_start.elapsed()));
 
     // ── Phase 3: Flattening — plain and annotated renders ─────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Flattening));
-    let step_start = Instant::now();
+    let flattening_start = Instant::now();
 
     let mut plain_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut annotated_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
@@ -376,9 +376,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 4: Structuring — labelled renders + structured output ───────────
-    timings.push((PipelineStep::Flattening, step_start.elapsed()));
+    timings.push((PipelineStep::Flattening, flattening_start.elapsed()));
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
-    let step_start = Instant::now();
+    let structuring_start = Instant::now();
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
@@ -428,9 +428,9 @@ pub fn run_pipeline(
     }
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
-    timings.push((PipelineStep::Structuring, step_start.elapsed()));
+    timings.push((PipelineStep::Structuring, structuring_start.elapsed()));
     on_event(PipelineEvent::StepChanged(PipelineStep::Merging));
-    let step_start = Instant::now();
+    let merging_start = Instant::now();
 
     if per_language_state_maps.is_empty() {
         return Err(Error::Conversion("No envelopes to merge".into()));
@@ -537,7 +537,7 @@ pub fn run_pipeline(
     };
 
     on_event(PipelineEvent::StepChanged(PipelineStep::Complete));
-    timings.push((PipelineStep::Merging, step_start.elapsed()));
+    timings.push((PipelineStep::Merging, merging_start.elapsed()));
 
     Ok(PipelineOutput {
         plain_renders,

@@ -256,7 +256,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ─── Timing summary ──────────────────────────────────────────────────────
-    print_timing_summary(&output.timings, output.total_duration());
+    print_timing_summary(&output.most_expensive_steps(), output.total_duration());
 
     Ok(())
 }
@@ -312,16 +312,15 @@ fn format_duration(d: Duration) -> String {
 
 /// Prints a timing summary table to stderr, listing each step from slowest to
 /// fastest followed by the total wall-clock time.
+///
+/// `timings` is expected to be already sorted (slowest first), as returned by
+/// [`blueprint::PipelineOutput::most_expensive_steps`].
 fn print_timing_summary(timings: &[(PipelineStep, Duration)], total: Duration) {
     if timings.is_empty() {
         return;
     }
 
-    // Sort by duration descending to show the most expensive step first.
-    let mut sorted = timings.to_vec();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let max_name_len = sorted
+    let max_name_len = timings
         .iter()
         .map(|(step, _)| pipeline_step_name(*step).len())
         .max()
@@ -332,7 +331,7 @@ fn print_timing_summary(timings: &[(PipelineStep, Duration)], total: Duration) {
     eprintln!("  {:<width$}  {}", "Step", "Duration", width = max_name_len);
     eprintln!("  {}", "-".repeat(max_name_len + 12));
 
-    for (step, duration) in &sorted {
+    for (step, duration) in timings {
         eprintln!(
             "  {:<width$}  {}",
             pipeline_step_name(*step),
