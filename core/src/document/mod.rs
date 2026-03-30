@@ -307,6 +307,16 @@ pub enum GroupKind {
         /// Index into children vec for the field group.
         field: usize,
     },
+
+    /// A multi-column text layout where content is arranged in parallel vertical columns.
+    ///
+    /// Created by `MultiColumnDetector` when it finds root-level elements (text blocks,
+    /// headings, lists, fields) arranged side-by-side in two or more visual columns.
+    /// Children are ordered column-by-column (all elements of column 0 first, then column 1, …).
+    MultiColumnLayout {
+        /// Number of detected columns.
+        num_columns: usize,
+    },
 }
 
 impl<'a> Document<'a> {
