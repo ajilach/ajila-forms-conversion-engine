@@ -269,6 +269,18 @@ pub enum GroupKind {
         list_style: ListStyleType,
     },
 
+    /// A table container (from XFA subform with layout="table").
+    /// Children are TableRow groups.
+    Table {
+        /// Column widths parsed from XFA columnWidths attribute.
+        /// -1 values mean auto-fit to widest cell.
+        column_widths: Vec<crate::xfa::Num>,
+    },
+
+    /// A table row (from XFA subform with layout="row" inside a table).
+    /// Children are the cell groups.
+    TableRow,
+
     /// Inset content that belongs to a specific radio button option.
     ///
     /// Created by `RadioButtonContentDetector` for content appearing between/after
@@ -1061,6 +1073,10 @@ impl<'a> Document<'a> {
             GroupKind::SelectionInlineField { label_text, .. } => {
                 format!("SelectionInlineField[{}]", label_text)
             }
+            GroupKind::Table { column_widths } => {
+                format!("Table[{}cols]", column_widths.len())
+            }
+            GroupKind::TableRow => "TableRow".to_string(),
         }
     }
 

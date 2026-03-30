@@ -367,6 +367,7 @@ fn convert_node(
             Some(convert_grid_layout(gl, config, ctx, colspan, dor_colspan))
         }
         StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Separator(_) => None, // Separators are visual-only, skip in AEM
         StructuredNode::Empty => None,
     }
 }

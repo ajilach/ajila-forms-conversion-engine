@@ -216,6 +216,7 @@ enum FlattenedKeyKind {
         label: String,
         // `value` and `is_checked` are intentionally excluded
     },
+    Line,
 }
 
 impl FlattenedKey {
@@ -236,6 +237,7 @@ impl FlattenedKey {
                 name: name.clone(),
                 label: label.clone(),
             },
+            FlattenedNodeKind::Line { .. } => FlattenedKeyKind::Line,
         };
         FlattenedKey {
             kind,
@@ -317,6 +319,43 @@ pub enum FlattenedNodeKind {
         /// - Radio in exclGroup: on when exclGroup.rawValue == this field's item key
         is_checked: Option<bool>,
     },
+
+    /// Line draw element (XFA draw with value > line)
+    /// Per XFA spec: line is a geometric element with slope and edge properties.
+    Line {
+        slope: LineSlope,
+        edge: LineEdge,
+    },
+}
+
+/// Slope direction for line draw elements.
+/// Per XFA spec §13.8: slope controls the direction of line rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineSlope {
+    /// Top-left to bottom-right (slope="\\")
+    #[default]
+    Backslash,
+    /// Bottom-left to top-right (slope="/")
+    Slash,
+}
+
+/// Edge properties for a line draw element.
+/// Per XFA spec: edge defines thickness, stroke style, and color.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineEdge {
+    pub thickness: Num,
+    pub stroke: StrokeStyle,
+    pub color: Option<(u8, u8, u8)>,
+}
+
+impl Default for LineEdge {
+    fn default() -> Self {
+        Self {
+            thickness: num(0.5),
+            stroke: StrokeStyle::Solid,
+            color: None, // black by default
+        }
+    }
 }
 
 // ============================================================================
@@ -482,6 +521,16 @@ pub enum Hint {
         /// Whether multiple selections are allowed (choiceList open="multiSelect")
         multi_select: bool,
     },
+
+    /// This node is a table container (XFA subform with layout="table").
+    /// column_widths is parsed from the columnWidths attribute.
+    /// Values of -1 mean auto-fit to widest cell.
+    TableLayout {
+        column_widths: Vec<Num>,
+    },
+
+    /// This node is a table row (XFA subform with layout="row" inside a table).
+    TableRowLayout,
 }
 
 /// Region classification for master page (page background) content.
@@ -517,6 +566,8 @@ impl Hint {
             Hint::SomPath(_) => "SomPath",
             Hint::ExclGroupSomPath(_) => "ExclGroupSomPath",
             Hint::Dropdown { .. } => "Dropdown",
+            Hint::TableLayout { .. } => "TableLayout",
+            Hint::TableRowLayout => "TableRowLayout",
         }
     }
 }
@@ -795,6 +846,12 @@ impl FlattenedNodeBuilder {
             label,
             is_checked,
         });
+        self
+    }
+
+    /// Configure as a line draw element
+    pub fn line(mut self, slope: LineSlope, edge: LineEdge) -> Self {
+        self.kind = Some(FlattenedNodeKind::Line { slope, edge });
         self
     }
 
@@ -1595,6 +1652,9 @@ pub struct FlattenContext<'a> {
     pub inherited_hints: Vec<Hint>,
     /// Document language for hyphenation dictionary lookup
     pub language: String,
+    /// Column widths from parent table subform (for row layout positioning).
+    /// Per XFA spec: parsed from columnWidths attribute; -1 means auto-fit.
+    pub table_column_widths: Option<Vec<Num>>,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -1613,6 +1673,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1633,6 +1694,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1652,6 +1714,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1667,6 +1730,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: self.pending_occur,
             inherited_hints: self.inherited_hints.clone(),
             language: self.language.clone(),
+            table_column_widths: self.table_column_widths.clone(),
         }
     }
 
@@ -2596,6 +2660,7 @@ impl Flattened {
                                 *content = computed.clone();
                             }
                         }
+                        FlattenedNodeKind::Line { .. } => {}
                     },
                     FlattenedKind::Group { children, .. } => {
                         apply_computed_values(children, computed_values);
@@ -3818,7 +3883,7 @@ impl Flattened {
             // children inherit that presence
             // Also extend the SOM path if this node has a name
             // Also propagate NoPrint hint if this node has relevant="-print"
-            let child_ctx = {
+            let mut child_ctx = {
                 let base_ctx = if presence.should_skip_layout() {
                     ctx.with_inherited_presence(presence)
                 } else {
@@ -3864,6 +3929,22 @@ impl Flattened {
                     if parent_layout == Layout::Position {
                         let node_bottom = (outer_pos.y - parent_position.y) + outer_pos.height;
                         max_extent_y = max_extent_y.max(node_bottom);
+                    }
+
+                    // If this subform has layout="table", parse columnWidths and propagate
+                    // to child context so row children can use them for cell positioning.
+                    if layout == Layout::Table {
+                        let column_widths = Self::parse_column_widths(node);
+                        child_ctx.table_column_widths = Some(column_widths);
+                    }
+                    // If this subform has layout="row", clear table_column_widths so
+                    // nested non-table children don't inherit them.
+                    if layout == Layout::Row || layout == Layout::RightToLeftRow {
+                        // Row children don't propagate column widths further
+                        // (the row's children are cells, which use positioned/flow layout internally)
+                        let mut row_child_ctx = child_ctx.derive();
+                        row_child_ctx.table_column_widths = None;
+                        child_ctx = row_child_ctx;
                     }
 
                     // Snapshot the current output length so we can locate the children
@@ -3918,6 +3999,23 @@ impl Flattened {
                             &child_ctx,
                         )?
                     };
+
+                    // Wrap table/row subform children in a group with layout hint
+                    // so the document layer can reconstruct table structure.
+                    if layout == Layout::Table || layout == Layout::Row || layout == Layout::RightToLeftRow {
+                        let new_children: Vec<FlattenedKind> =
+                            flattened_children.drain(subform_children_start..).collect();
+                        let hint = if layout == Layout::Table {
+                            let column_widths = child_ctx.table_column_widths.clone().unwrap_or_default();
+                            Hint::TableLayout { column_widths }
+                        } else {
+                            Hint::TableRowLayout
+                        };
+                        flattened_children.push(FlattenedKind::Group {
+                            children: new_children,
+                            hints: vec![hint],
+                        });
+                    }
 
                     // Per XFA spec: a subform's <border> draws a visual box around the subform.
                     // Propagate visible border edges to the first/last enclosed child nodes so
@@ -4077,6 +4175,23 @@ impl Flattened {
 
                     // Only add to output if not hidden
                     if !skip_render {
+                        // Check if this draw contains a line element (draw > value > line)
+                        if let Some((slope, edge)) = Self::extract_line_from_draw(&node.children) {
+                            let line_node = FlattenedNode::builder()
+                                .bounds(content_pos.x, content_pos.y, content_pos.width, content_pos.height)
+                                .style(Self::extract_style(node))
+                                .rotate(node.rotate)
+                                .line(slope, edge)
+                                .build();
+                            let mut line_kind = FlattenedKind::Node(line_node);
+                            if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
+                                line_kind.add_hint(Hint::NoPrint);
+                            }
+                            if !child_ctx.current_path.is_empty() {
+                                line_kind.add_hint(Hint::SomPath(SomPath::new(child_ctx.current_path.clone())));
+                            }
+                            flattened_children.push(line_kind);
+                        } else {
                         // Extract text content from draw node, or use empty (scripts may fill it)
                         // Use context to resolve xfa:embed references
                         let text_content =
@@ -4176,6 +4291,7 @@ impl Flattened {
                             }
                         }
                         flattened_children.extend(draw_kinds);
+                        } // end else (not a line draw)
                     }
 
                     // Don't recurse into draw children for positioning
@@ -5095,11 +5211,52 @@ impl Flattened {
                 pos
             }
             Layout::Row => {
-                // Row layout: similar to lr-tb but typically within a table row
-                // Honor explicit coordinates if provided
+                // Row layout: cells within a table row.
+                // Per XFA spec: row children are cells positioned using parent table's columnWidths.
                 if has_explicit_x || has_explicit_y {
                     Position::new(parent_position.x + x, parent_position.y + y, width, height)
+                } else if let Some(ref col_widths) = ctx.table_column_widths {
+                    // Table context: use column widths for cell positioning
+                    let col_span = node
+                        .attributes
+                        .get("colSpan")
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(1);
+
+                    // Determine current column index from current_x offset
+                    let col_offset = *current_x - parent_position.x;
+                    let mut col_idx = 0usize;
+                    let mut accum = Decimal::ZERO;
+                    for (i, &cw) in col_widths.iter().enumerate() {
+                        if accum >= col_offset {
+                            col_idx = i;
+                            break;
+                        }
+                        let w = if cw < Decimal::ZERO { width } else { cw };
+                        accum += w;
+                        col_idx = i + 1;
+                    }
+
+                    // Calculate cell width from column spans
+                    let end_col = if col_span == -1 {
+                        col_widths.len()
+                    } else {
+                        (col_idx + col_span as usize).min(col_widths.len())
+                    };
+                    let cell_width: Num = (col_idx..end_col)
+                        .map(|i| {
+                            let cw = col_widths.get(i).copied().unwrap_or(width);
+                            if cw < Decimal::ZERO { width } else { cw }
+                        })
+                        .sum();
+                    let cell_width = if cell_width > Decimal::ZERO { cell_width } else { width };
+
+                    let pos = Position::new(*current_x, *current_y, cell_width, height);
+                    *current_x += cell_width;
+                    *max_height_in_row = (*max_height_in_row).max(height);
+                    pos
                 } else {
+                    // No table context: simple left-to-right flow
                     let pos = Position::new(*current_x, *current_y, width, height);
                     *current_x += width;
                     *max_height_in_row = (*max_height_in_row).max(height);
@@ -5578,6 +5735,25 @@ impl Flattened {
         }
     }
 
+    /// Parse the columnWidths attribute from a table subform.
+    /// Per XFA spec: columnWidths is a space-separated list of measurements or -1 (auto-fit).
+    /// If omitted, returns an empty vec (all columns auto-fit).
+    fn parse_column_widths(node: &XfaNode) -> Vec<Num> {
+        let Some(cw_str) = node.attributes.get("columnWidths") else {
+            return Vec::new();
+        };
+        cw_str
+            .split_whitespace()
+            .filter_map(|token| {
+                if token == "-1" {
+                    Some(Decimal::from(-1))
+                } else {
+                    Self::parse_dimension(token).ok()
+                }
+            })
+            .collect()
+    }
+
     fn extract_field_value(children: &[XfaNode]) -> String {
         for child in children {
             if matches!(child.kind, XfaNodeKind::Value) {
@@ -5633,6 +5809,66 @@ impl Flattened {
     fn extract_text_content(children: &[XfaNode]) -> Option<String> {
         // Use empty context for backward compatibility
         Self::extract_text_content_with_embed(children, &HashMap::new(), &HashMap::new())
+    }
+
+    /// Check if a draw element's value contains a `<line>` element.
+    /// Per XFA spec: draw > value > line is a geometric line shape, not text.
+    /// Returns the line's slope and edge properties if found.
+    fn extract_line_from_draw(children: &[XfaNode]) -> Option<(LineSlope, LineEdge)> {
+        for child in children {
+            let is_value = matches!(child.kind, XfaNodeKind::Value)
+                || matches!(&child.kind, XfaNodeKind::Element { tag_name, .. } if tag_name == "value");
+            if !is_value {
+                continue;
+            }
+            for value_child in &child.children {
+                if let XfaNodeKind::Element { tag_name, .. } = &value_child.kind {
+                    if tag_name == "line" {
+                        let slope = match value_child.attributes.get("slope").map(|s| s.as_str()) {
+                            Some("/") => LineSlope::Slash,
+                            _ => LineSlope::Backslash, // default per XFA spec
+                        };
+                        let mut edge = LineEdge::default();
+                        // Parse child <edge> element for thickness, stroke, color
+                        for edge_child in &value_child.children {
+                            if let XfaNodeKind::Element { tag_name: et, .. } = &edge_child.kind {
+                                if et == "edge" {
+                                    if let Some(t) = edge_child.attributes.get("thickness") {
+                                        if let Ok(v) = Self::parse_dimension(t) {
+                                            edge.thickness = v;
+                                        }
+                                    }
+                                    if let Some(s) = edge_child.attributes.get("stroke") {
+                                        edge.stroke = s.parse().unwrap_or_default();
+                                    }
+                                    // Parse color from edge's <color> child
+                                    for cc in &edge_child.children {
+                                        if let XfaNodeKind::Element { tag_name: ct, .. } = &cc.kind {
+                                            if ct == "color" {
+                                                if let Some(val) = cc.attributes.get("value") {
+                                                    let parts: Vec<&str> = val.split(',').collect();
+                                                    if parts.len() >= 3 {
+                                                        if let (Ok(r), Ok(g), Ok(b)) = (
+                                                            parts[0].trim().parse::<u8>(),
+                                                            parts[1].trim().parse::<u8>(),
+                                                            parts[2].trim().parse::<u8>(),
+                                                        ) {
+                                                            edge.color = Some((r, g, b));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return Some((slope, edge));
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Compute the is_checked state for a field that may be in an exclGroup.
@@ -5961,6 +6197,7 @@ impl Flattened {
             let debug_name = match &node.kind {
                 FlattenedNodeKind::Field { name, .. } => name.clone(),
                 FlattenedNodeKind::Text { .. } => "Text".to_string(),
+                FlattenedNodeKind::Line { .. } => "Line".to_string(),
             };
 
             let debug_font_size = (8.0 * scale).max(6.0);
@@ -6052,6 +6289,9 @@ impl Flattened {
             }
 
             match &node.kind {
+                FlattenedNodeKind::Line { .. } => {
+                    // Lines are non-interactive visual separators; nothing to render in plain mode
+                }
                 FlattenedNodeKind::Field {
                     value, is_checked, ..
                 } => {

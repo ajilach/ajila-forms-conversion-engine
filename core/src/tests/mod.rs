@@ -159,6 +159,12 @@ fn test_flatten_aaab_xfa() {
                     i, preview, node.x, node.y
                 );
             }
+            flattened::FlattenedNodeKind::Line { .. } => {
+                println!(
+                    "  [{}] Line at x={:.1}, y={:.1}",
+                    i, node.x, node.y
+                );
+            }
         }
     }
 
@@ -3353,6 +3359,7 @@ fn test_aaab_conditional_groups_section_visibility() {
                 FlattenedNodeKind::Field { name, label, .. } => {
                     name.contains(pattern) || label.contains(pattern)
                 }
+                FlattenedNodeKind::Line { .. } => false,
             })
             .count()
     }
@@ -6728,6 +6735,7 @@ fn test_aaoe_h2_sections() {
             StructuredNode::Empty => "Empty",
             StructuredNode::GridLayout(_) => "GridLayout",
             StructuredNode::List(_) => "List",
+            StructuredNode::Separator(_) => "Separator",
         };
         println!("  [{}] {}", i, ty);
     }
@@ -13965,6 +13973,9 @@ fn test_aags_en_debug_flattened_fields() {
                             let short = content.chars().take(80).collect::<String>();
                             println!("{}TEXT  content='{}'", indent, short);
                         }
+                        FlattenedNodeKind::Line { .. } => {
+                            println!("{}LINE", indent);
+                        }
                     }
                 }
                 FlattenedKind::Group { children: c, .. } => {
@@ -14002,6 +14013,7 @@ fn test_aags_en_page_66439_included_in_flattened_output() {
                     FlattenedNodeKind::Field { name, .. } => {
                         texts.push(format!("FIELD:{}", name));
                     }
+                    FlattenedNodeKind::Line { .. } => {}
                 },
                 FlattenedKind::Group { children: c, .. } => {
                     collect_all_text(c, texts);
@@ -14190,6 +14202,75 @@ fn test_aacj_de_tin_radio_button_options() {
     }
 
     println!("\n✓ AACJ TIN radio button has all expected options");
+}
+
+#[test]
+fn diag_aahq_labelled_fields() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, StructuredNode};
+
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AAHQ");
+
+    fn dump_fields(nodes: &[StructuredNode], depth: usize, total: &mut usize, labelled: &mut usize) {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(f) => {
+                    *total += 1;
+                    let has_label = f.label.as_ref().is_some_and(|l| !l.is_empty());
+                    if has_label { *labelled += 1; }
+                    let label_str = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
+                    let ty = match &f.input_type {
+                        FieldType::Radio { .. } => "Radio",
+                        FieldType::Bool => "Bool",
+                        FieldType::Select { .. } => "Select",
+                        FieldType::Text { .. } => "Text",
+                        FieldType::Date { .. } => "Date",
+                        _ => "Other",
+                    };
+                    let indent = "  ".repeat(depth);
+                    println!("{}[{}] {} label={:?} labelled={}", indent,
+                        if has_label { "L" } else { " " }, ty, label_str, has_label);
+                }
+                StructuredNode::Group(g) => dump_fields(&g.children, depth + 1, total, labelled),
+                StructuredNode::Conditional(c) => {
+                    let indent = "  ".repeat(depth);
+                    println!("{}COND({:?})", indent, c.condition);
+                    dump_fields(std::slice::from_ref(&c.content), depth + 1, total, labelled);
+                }
+                StructuredNode::Repeatable(r) => dump_fields(std::slice::from_ref(&r.item), depth + 1, total, labelled),
+                StructuredNode::Table(t) => {
+                    let indent = "  ".repeat(depth);
+                    println!("{}TABLE ({} rows)", indent, t.rows.len());
+                    for row in &t.rows {
+                        dump_fields(&row.cells, depth + 1, total, labelled);
+                    }
+                }
+                StructuredNode::GridLayout(g) => {
+                    let indent = "  ".repeat(depth);
+                    println!("{}GRID ({}cols)", indent, g.columns);
+                    for e in &g.elements {
+                        dump_fields(std::slice::from_ref(&e.node), depth + 1, total, labelled);
+                    }
+                }
+                StructuredNode::Heading(h) => {
+                    let indent = "  ".repeat(depth);
+                    println!("{}H{}: {}", indent, h.level.as_u8(), h.content.as_plain_text());
+                }
+                StructuredNode::Separator(_) => {
+                    let indent = "  ".repeat(depth);
+                    println!("{}---SEPARATOR---", indent);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut total = 0;
+    let mut labelled = 0;
+    dump_fields(&structured, 0, &mut total, &mut labelled);
+    let score = if total > 0 { labelled as f64 / total as f64 } else { 1.0 };
+    println!("\nTotal fields: {}, Labelled: {}, Score: {:.3}", total, labelled, score);
 }
 
 // =========================================================================
@@ -14586,6 +14667,7 @@ fn test_aais_019_structural_similarity_diagnostic() {
             StructuredNode::Empty => "Empty".to_string(),
             StructuredNode::GridLayout(g) => format!("GridLayout(cols={})", g.columns),
             StructuredNode::List(_) => "List".to_string(),
+            StructuredNode::Separator(_) => "Separator".to_string(),
         }
     }
 
@@ -15055,6 +15137,7 @@ fn test_aacj_state_count_diagnostic() {
                             );
                         }
                     }
+                    FlattenedNodeKind::Line { .. } => {}
                 }
             }
         }
@@ -19727,6 +19810,7 @@ fn debug_aacs_regression_investigation() {
                 StructuredNode::GridLayout(_) => "GRID".to_string(),
                 StructuredNode::Image(_) => "IMG".to_string(),
                 StructuredNode::Empty => "EMPTY".to_string(),
+                StructuredNode::Separator(_) => "SEP".to_string(),
             })
             .collect()
     }

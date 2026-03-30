@@ -6,9 +6,10 @@
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
     HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode,
+    RepeatableNode, SeparatorNode, StructuredNode, TableNode,
 };
 use crate::xfa::scripting::SomPath;
+use rust_decimal::prelude::ToPrimitive;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -265,6 +266,7 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Conditional(c) => generate_conditional(c, ctx, indent),
         StructuredNode::GridLayout(g) => generate_grid_layout(g, ctx, indent),
         StructuredNode::List(l) => generate_list(l, &ind),
+        StructuredNode::Separator(s) => generate_separator(s, &ind),
         StructuredNode::Empty => String::new(),
     }
 }
@@ -299,6 +301,18 @@ fn generate_list(l: &ListNode, ind: &str) -> String {
         ind, tag
     ));
     html
+}
+
+fn generate_separator(s: &SeparatorNode, ind: &str) -> String {
+    let thickness = s.thickness.to_f64().unwrap_or(0.5);
+    let color = s
+        .color
+        .map(|(r, g, b)| format!("rgb({},{},{})", r, g, b))
+        .unwrap_or_else(|| "#000".to_string());
+    format!(
+        "{}<hr class=\"form-separator\" style=\"border: none; border-top: {:.1}pt solid {};\" />\n",
+        ind, thickness, color
+    )
 }
 
 fn generate_heading(h: &HeadingNode, ind: &str) -> String {

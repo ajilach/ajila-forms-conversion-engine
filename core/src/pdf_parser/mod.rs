@@ -480,6 +480,7 @@ impl ElementFingerprint {
                 font_name.clone(),
             ),
             FlattenedNodeKind::Field { name, .. } => ("field", name.clone(), 0.0, String::new()),
+            FlattenedNodeKind::Line { .. } => ("line", String::new(), 0.0, String::new()),
         };
 
         ElementFingerprint {

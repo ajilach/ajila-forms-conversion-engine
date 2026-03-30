@@ -463,12 +463,12 @@ fn build_node(
                 build_node(&elem.node, config, out, None, None);
             }
         }
-        // Presentational nodes — skip
         StructuredNode::Heading(_)
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Separator(_)
         | StructuredNode::Empty => {}
     }
 }
@@ -803,6 +803,7 @@ fn collect_node_bind_refs(
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Separator(_)
         | StructuredNode::Empty => {}
     }
 }
