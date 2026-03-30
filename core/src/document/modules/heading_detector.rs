@@ -383,6 +383,16 @@ impl HeadingDetector {
                     continue;
                 }
 
+                // Skip enumeration prefixes: a short alphabetic prefix at the
+                // start of text (e.g., "I.", "II.", "a.", "b.") is a section
+                // numbering marker, not a sentence boundary.
+                if c == '.' && char_idx > 0 && char_idx <= 4 {
+                    let prefix = &chars[..char_idx];
+                    if prefix.iter().all(|c| c.is_alphabetic()) {
+                        continue;
+                    }
+                }
+
                 end_positions.push(char_idx);
             }
         }
@@ -1070,11 +1080,7 @@ impl HeadingDetector {
         let headings = Self::normalize_heading_levels(filtered_headings);
 
         for (group_idx, level, _, _) in headings {
-            doc.merge_inferred(
-                vec![group_idx],
-                GroupKind::Heading { level },
-                self.name(),
-            );
+            doc.merge_inferred(vec![group_idx], GroupKind::Heading { level }, self.name());
         }
     }
 }

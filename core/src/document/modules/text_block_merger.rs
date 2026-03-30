@@ -183,6 +183,16 @@ impl TextBlockMerger {
             return false;
         }
 
+        // Don't merge blocks with very different heights. A single-line
+        // heading and a multi-line paragraph may share the same font
+        // properties and be vertically close, but they are separate
+        // logical elements (heading vs body text).
+        let short_h = bounds_a.height.min(bounds_b.height);
+        let tall_h = bounds_a.height.max(bounds_b.height);
+        if tall_h > Decimal::ZERO && short_h * Decimal::TWO < tall_h {
+            return false;
+        }
+
         true
     }
 
