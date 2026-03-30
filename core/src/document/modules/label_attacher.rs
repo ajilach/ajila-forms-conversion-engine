@@ -330,7 +330,11 @@ impl LabelAttacher {
         let mut used_radio_labels: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
 
-        let directions = [LabelPosition::Above, LabelPosition::Left, LabelPosition::Below];
+        let directions = [
+            LabelPosition::Above,
+            LabelPosition::Left,
+            LabelPosition::Below,
+        ];
 
         for &radio_idx in &radio_groups {
             let available: Vec<_> = remaining_text_groups
@@ -341,9 +345,7 @@ impl LabelAttacher {
 
             let mut matched = None;
             for &dir in &directions {
-                if let Some(result) =
-                    self.find_label_at_position(doc, radio_idx, &available, dir)
-                {
+                if let Some(result) = self.find_label_at_position(doc, radio_idx, &available, dir) {
                     matched = Some(result);
                     break;
                 }

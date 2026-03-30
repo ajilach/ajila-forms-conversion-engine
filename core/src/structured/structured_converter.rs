@@ -173,10 +173,14 @@ pub fn convert(doc: &Document) -> Vec<StructuredNode> {
         compare_bounds_reading_order(bounds_a, bounds_b)
     });
 
-    roots
+    let mut content: Vec<StructuredNode> = roots
         .into_iter()
         .filter_map(|idx| converter.convert_group(idx))
-        .collect()
+        .collect();
+
+    inherit_heading_labels_for_radios(&mut content);
+
+    content
 }
 
 /// Convert a Document to a DocumentEnvelope with context.
@@ -190,6 +194,94 @@ pub fn convert_with_context(
         context,
         content,
         state_count: 1,
+    }
+}
+
+/// If a radio button field has no label and the immediately preceding sibling
+/// is a heading, copy the heading text as the radio field's label.
+/// The heading stays in place — only the text is copied.
+/// Recurses into Groups, Repeatables, Conditionals, GridLayouts, and Tables.
+fn inherit_heading_labels_for_radios(nodes: &mut Vec<StructuredNode>) {
+    // First pass: copy heading text into immediately following unlabeled radios
+    for i in 1..nodes.len() {
+        let is_unlabeled_radio = matches!(
+            &nodes[i],
+            StructuredNode::Field(f)
+                if f.label.is_none() && matches!(f.input_type, FieldType::Radio { .. })
+        );
+        if !is_unlabeled_radio {
+            continue;
+        }
+        let is_heading = matches!(&nodes[i - 1], StructuredNode::Heading(_));
+        if !is_heading {
+            continue;
+        }
+        let StructuredNode::Heading(h) = &nodes[i - 1] else {
+            unreachable!();
+        };
+        let label = h.content.to_plain();
+        let StructuredNode::Field(f) = &mut nodes[i] else {
+            unreachable!();
+        };
+        f.label = Some(label);
+    }
+
+    // Second pass: recurse into containers
+    for node in nodes.iter_mut() {
+        match node {
+            StructuredNode::Group(g) => {
+                inherit_heading_labels_for_radios(&mut g.children);
+            }
+            StructuredNode::Repeatable(r) => {
+                if let StructuredNode::Group(g) = r.item.as_mut() {
+                    inherit_heading_labels_for_radios(&mut g.children);
+                }
+            }
+            StructuredNode::Conditional(c) => {
+                if let StructuredNode::Group(g) = c.content.as_mut() {
+                    inherit_heading_labels_for_radios(&mut g.children);
+                }
+            }
+            StructuredNode::GridLayout(gl) => {
+                let mut children: Vec<&mut StructuredNode> =
+                    gl.elements.iter_mut().map(|e| &mut e.node).collect();
+                // Check pairs within grid elements
+                for i in 1..children.len() {
+                    let (left, right) = children.split_at_mut(i);
+                    let prev = left.last_mut().unwrap();
+                    let curr = right.first_mut().unwrap();
+                    let is_unlabeled_radio = matches!(
+                        curr,
+                        StructuredNode::Field(f)
+                            if f.label.is_none()
+                                && matches!(f.input_type, FieldType::Radio { .. })
+                    );
+                    if is_unlabeled_radio {
+                        if let StructuredNode::Heading(h) = &**prev {
+                            let label = h.content.to_plain();
+                            if let StructuredNode::Field(f) = &mut **curr {
+                                f.label = Some(label);
+                            }
+                        }
+                    }
+                }
+                // Recurse into each grid element
+                for elem in &mut gl.elements {
+                    if let StructuredNode::Group(g) = &mut elem.node {
+                        inherit_heading_labels_for_radios(&mut g.children);
+                    }
+                }
+            }
+            StructuredNode::Table(t) => {
+                for row in &mut t.rows {
+                    inherit_heading_labels_for_radios(&mut row.cells);
+                }
+                if let Some(header) = &mut t.header {
+                    inherit_heading_labels_for_radios(&mut header.cells);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -543,10 +635,14 @@ impl<'a, 'b> Converter<'a, 'b> {
             compare_bounds_reading_order(bounds_a, bounds_b)
         });
 
-        children
+        let mut result: Vec<StructuredNode> = children
             .iter()
             .filter_map(|&child_idx| self.convert_group(child_idx))
-            .collect()
+            .collect();
+
+        inherit_heading_labels_for_radios(&mut result);
+
+        result
     }
 
     /// Convert a leaf node (text or field).

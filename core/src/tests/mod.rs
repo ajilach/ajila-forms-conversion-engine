@@ -18388,15 +18388,16 @@ fn test_aabk_periodische_due_diligence_radio_group() {
         })
         .expect("Expected to find RB_Group_Periodische_Due_Diligence radio field");
 
-    // This radio group has no label
+    // This radio group inherits its label from the heading directly above
     assert!(
-        field.label.is_none()
-            || field
+        field.label.is_some()
+            && !field
                 .label
                 .as_ref()
                 .map(|l| l.as_plain_text().trim().is_empty())
                 .unwrap_or(true),
-        "Expected no label for Periodische Due Diligence radio group"
+        "Expected Periodische Due Diligence radio group to inherit heading label, but got: {:?}",
+        field.label.as_ref().map(|l| l.as_plain_text())
     );
 
     let options = match &field.input_type {
@@ -18478,15 +18479,16 @@ fn test_aabk_erfullt_der_kunde_radio_group() {
         .find(|f| f.som_path_str().contains("RB_Group_Erfullt_Der_Kunde"))
         .expect("Expected to find RB_Group_Erfullt_Der_Kunde radio field");
 
-    // This radio group has no direct label (label is in surrounding context)
+    // This radio group inherits its label from the heading directly above
     assert!(
-        field.label.is_none()
-            || field
+        field.label.is_some()
+            && !field
                 .label
                 .as_ref()
                 .map(|l| l.as_plain_text().trim().is_empty())
                 .unwrap_or(true),
-        "Expected no label for Erfullt_Der_Kunde radio group"
+        "Expected Erfullt_Der_Kunde radio group to inherit heading label, but got: {:?}",
+        field.label.as_ref().map(|l| l.as_plain_text())
     );
 
     let options = match &field.input_type {
@@ -18603,6 +18605,86 @@ fn test_aabk_handelszugange_radio_group() {
             option_names
         );
     }
+}
+
+#[test]
+fn test_aabk_sind_die_adress_radio_has_heading_label() {
+    // "Sind die Adress-, Kontaktdaten und Kontaktpartner in der CAWB IM aktuell?"
+    // is the heading directly above the Nein/Ja radio group — it should be inherited.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Sind_Die_Adress"))
+        .expect("Expected to find RB_Group_Sind_Die_Adress radio field");
+
+    let label_text = field
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+    assert!(
+        label_text.contains("Sind die Adress"),
+        "Expected label containing 'Sind die Adress', got: '{}'",
+        label_text
+    );
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+    assert_eq!(options.len(), 2);
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(option_names.iter().any(|n| n.contains("Nein")));
+    assert!(option_names.iter().any(|n| n.contains("Ja")));
+}
+
+#[test]
+fn test_aabk_lizenzuberprufung_radio_has_heading_label() {
+    // "Lizenzüberprüfung" is the heading directly above the radio group.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    let field = radio_fields
+        .iter()
+        .find(|f| f.som_path_str().contains("RB_Group_Lizenzuberprufung"))
+        .expect("Expected to find RB_Group_Lizenzuberprufung radio field");
+
+    let label_text = field
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+    assert!(
+        label_text.contains("Lizenz"),
+        "Expected label containing 'Lizenz', got: '{}'",
+        label_text
+    );
+
+    let options = match &field.input_type {
+        FieldType::Radio { options } => options,
+        _ => unreachable!(),
+    };
+    assert_eq!(options.len(), 3);
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+    assert!(option_names.iter().any(|n| n.contains("Nein")));
+    assert!(option_names.iter().any(|n| n.contains("Ja")));
+    assert!(
+        option_names.iter().any(|n| n.contains("Andere Lizenz")),
+        "Missing 'Andere Lizenz' option in {:?}",
+        option_names
+    );
 }
 
 #[test]
@@ -20136,4 +20218,52 @@ fn test_aais_019_state_commission_visibility() {
             );
         }
     }
+}
+
+#[test]
+fn test_radio_inherits_heading_label_when_directly_above() {
+    // Radio button groups with no label inherit the heading text directly
+    // above them (with nothing in between) as their label.
+    // The heading itself must still be present in the output.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, StructuredNode};
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let radio_fields = collect_radio_fields(&structured);
+
+    // RB_Group_Periodische_Due_Diligence should have inherited its heading label
+    let field = radio_fields
+        .iter()
+        .find(|f| {
+            f.som_path_str()
+                .contains("RB_Group_Periodische_Due_Diligence")
+        })
+        .expect("Expected to find RB_Group_Periodische_Due_Diligence radio field");
+
+    assert!(
+        field.label.is_some(),
+        "Radio group should have inherited a heading label"
+    );
+    let label_text = field.label.as_ref().unwrap().as_plain_text();
+    assert!(
+        !label_text.trim().is_empty(),
+        "Inherited heading label should not be empty"
+    );
+
+    // The heading that was used as label must still exist in the structured output
+    let mut heading_found = false;
+    helpers::walk_structured_nodes(&structured, &mut |node| {
+        if let StructuredNode::Heading(h) = node {
+            if h.content.as_plain_text().trim() == label_text.trim() {
+                heading_found = true;
+            }
+        }
+    });
+    assert!(
+        heading_found,
+        "Heading '{}' should still be present in the output after being used as radio label",
+        label_text.trim()
+    );
 }
