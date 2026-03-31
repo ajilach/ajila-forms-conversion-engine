@@ -19604,6 +19604,60 @@ fn test_aais_019_de_real_estate_aif_continuation_stays_in_right_column() {
     );
 }
 
+#[test]
+fn test_aais_019_de_row_separator_spans_both_columns() {
+    use crate::flattened::{FlattenedNode, FlattenedNodeKind};
+
+    fn has_visible_bottom_border(node: &FlattenedNode) -> bool {
+        node.style
+            .border
+            .as_ref()
+            .and_then(|b| b.get_edge(2))
+            .map(|e| e.presence == "visible" && e.thickness.is_some())
+            .unwrap_or(false)
+    }
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("load AAIS_019_DE");
+    let states = bp.states().expect("compute states");
+    let flattened = &states
+        .iter()
+        .next()
+        .expect("default state must exist")
+        .flattened;
+
+    let left = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.contains("Bei offenen Immobilienfonds")
+                    && content.contains("Immobilien-AIF")
+            } else {
+                false
+            }
+        })
+        .expect("left real-estate AIF row text node");
+
+    let right = flattened
+        .iter_nodes()
+        .find(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.contains("bis max. 2,0% p.a.")
+            } else {
+                false
+            }
+        })
+        .expect("right real-estate AIF row text node");
+
+    assert!(
+        has_visible_bottom_border(left),
+        "Expected visible bottom border on left row cell for DE real-estate AIF row"
+    );
+    assert!(
+        has_visible_bottom_border(right),
+        "Expected visible bottom border on right row cell for DE real-estate AIF row"
+    );
+}
+
 /// Test that dash markers (–) in T_LeftIndent align vertically with the corresponding
 /// fee description items in T_Left for the AAIS_019_DE fee list.
 /// This test verifies that hyphenation improves alignment between the two overlapping
