@@ -13234,6 +13234,7 @@ fn test_aem_profile_requires_xsd_path_when_bind_to_xsd_enabled() {
 
     let toml_str = r#"
 title = "{{ xfa.formrange_code }}"
+form_dir = "AF_{{ xfa.formrange_code }}"
 bind_to_xsd = true
 "#;
 

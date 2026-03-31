@@ -92,9 +92,8 @@ pub struct AemConfig {
     /// JCR path segment between `content/forms/af/` and the form directory.
     pub form_path: String,
 
-    /// Override for `form_dir()`. When set, `form_dir()` returns this value
-    /// instead of computing `"AF_" + form_code`.
-    pub form_dir_override: Option<String>,
+    /// JCR folder name for this form (from the profile's `form_dir` template).
+    pub form_dir: String,
 
     /// JCR file path of the generated XSD used in DAM metadata `xsdRef`
     /// (e.g. `/content/dam/formsanddocuments/.../AF_AAAI.xsd`).
@@ -163,10 +162,7 @@ impl AemConfig {
         let tera_ctx = template::build_context(&xfa_vars, &user_vars);
 
         // --- form identity ---
-        let form_title = match &profile.title {
-            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
-            None => xfa_vars.get("formrange_code").cloned().unwrap_or_default(),
-        };
+        let form_title = template::render_string(&profile.title, &tera_ctx)?;
 
         let form_code = form_title.clone();
 
@@ -175,10 +171,7 @@ impl AemConfig {
             None => String::new(),
         };
 
-        let form_dir_override = match &profile.form_dir {
-            Some(tmpl) => Some(template::render_string(tmpl, &tera_ctx)?),
-            None => None,
-        };
+        let form_dir = template::render_string(&profile.form_dir, &tera_ctx)?;
 
         let bind_to_xsd = profile.bind_to_xsd.unwrap_or(false);
         let xsd_path = match &profile.xsd_path {
@@ -208,7 +201,7 @@ impl AemConfig {
             repeatable_max_occur: 20,
 
             form_path,
-            form_dir_override,
+            form_dir,
             xsd_path,
 
             dor_template_ref: user_vars
@@ -237,16 +230,9 @@ impl AemConfig {
         })
     }
 
-    /// The JCR folder name for this form.
-    ///
-    /// Uses `form_dir_override` if set (from profile's `form_dir` template),
-    /// otherwise computes `"AF_" + form_code`.
+    /// The JCR folder name for this form (from the profile's `form_dir` template).
     pub fn form_dir(&self) -> String {
-        if let Some(ref dir) = self.form_dir_override {
-            dir.clone()
-        } else {
-            format!("AF_{}", self.form_code)
-        }
+        self.form_dir.clone()
     }
 
     /// Return the canonical DAM XSD reference path for metadata attributes.
@@ -310,7 +296,7 @@ impl AemConfig {
             repeatable_max_occur: 20,
 
             form_path: "test/path".into(),
-            form_dir_override: None,
+            form_dir: format!("AF_{form_code}"),
             xsd_path: "/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into(),
 
             dor_template_ref: String::new(),

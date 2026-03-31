@@ -26,8 +26,9 @@ pub struct AemProfile {
     pub master_language: Option<String>,
 
     /// Tera template for the human-readable form title / form code.
-    /// Default: `"{{ xfa.formrange_code }}"`.
-    pub title: Option<String>,
+    ///
+    /// Required. Example: `"{{ xfa.formrange_code }}"`.
+    pub title: String,
 
     /// Tera template for the JCR path segment between
     /// `content/forms/af/` and the form directory.
@@ -35,7 +36,9 @@ pub struct AemProfile {
 
     /// Tera template for the JCR folder name
     /// (e.g. `"AF_{{ xfa.formrange_code }}"`).
-    pub form_dir: Option<String>,
+    ///
+    /// Required.
+    pub form_dir: String,
 
     /// Tera template for the generated form XSD file path.
     ///
