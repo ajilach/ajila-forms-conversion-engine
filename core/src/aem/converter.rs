@@ -858,7 +858,7 @@ fn convert_grid_layout(
     colspan: u32,
     dor_colspan: Option<u32>,
 ) -> AemNode {
-    let name = ctx.make_name("GRID", "");
+    let name = ctx.make_name("PN", "");
     let uuid = ctx.uuid(&name);
     let total = gl.columns as u32;
     let children: Vec<AemNode> = gl
