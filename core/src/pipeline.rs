@@ -428,7 +428,7 @@ pub fn run_pipeline(
     }
 
     // Construct semantic matcher once for the entire merge phase (feature-gated).
-    #[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+    #[cfg(feature = "semantic-matching")]
     let semantic_matcher = {
         log::info!("Loading semantic matcher for translation merge …");
         let start = std::time::Instant::now();
@@ -444,9 +444,9 @@ pub fn run_pipeline(
         }
     };
 
-    #[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+    #[cfg(feature = "semantic-matching")]
     let semantic_ref = semantic_matcher.as_ref();
-    #[cfg(not(all(feature = "semantic-matching", not(target_arch = "wasm32"))))]
+    #[cfg(not(feature = "semantic-matching"))]
     let semantic_ref: Option<&crate::structured::SemanticCtx> = None;
 
     let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();

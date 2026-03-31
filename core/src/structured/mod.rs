@@ -22,11 +22,11 @@ use crate::xfa::scripting::SomPath;
 /// When the `semantic-matching` feature is enabled, this is an alias for
 /// [`crate::semantic::SemanticMatcher`].  Otherwise it is a zero-sized dummy
 /// type so that function signatures remain identical in both configurations.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 pub type SemanticCtx = crate::semantic::SemanticMatcher;
 
 /// Dummy zero-sized type when semantic matching is not available.
-#[cfg(not(all(feature = "semantic-matching", not(target_arch = "wasm32"))))]
+#[cfg(not(feature = "semantic-matching"))]
 pub struct SemanticCtx;
 
 /// Check whether a space separator is needed between two adjacent text

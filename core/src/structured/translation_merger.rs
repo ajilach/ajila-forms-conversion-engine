@@ -17,7 +17,7 @@ use crate::structured::merge_engine::{
     MISSING_TRANSLATION_TEXT, fill_missing_translation_placeholders, lcs_table_with,
     merge_node_lists, node_matches_for_similarity,
 };
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 use crate::structured::merge_engine::merge_node_lists_semantic;
 use crate::structured::{DocumentEnvelope, SemanticCtx, StructuredNode};
 
@@ -144,7 +144,7 @@ pub fn merge_translations(
     // Merge each subsequent language into the base
     for envelope in iter {
         let other_lang = envelope.context.language().to_string();
-        #[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+        #[cfg(feature = "semantic-matching")]
         {
             if let Some(sem) = semantic {
                 merged_content = merge_node_lists_semantic(
@@ -159,7 +159,7 @@ pub fn merge_translations(
                     merge_node_lists(&merged_content, &base_lang, &envelope.content, &other_lang);
             }
         }
-        #[cfg(not(all(feature = "semantic-matching", not(target_arch = "wasm32"))))]
+        #[cfg(not(feature = "semantic-matching"))]
         {
             let _ = &semantic; // suppress unused warning
             merged_content =

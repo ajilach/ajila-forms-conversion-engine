@@ -99,7 +99,7 @@ where
 
 /// Compute a weighted LCS table where each match contributes a score (0.0–1.0)
 /// instead of a fixed +1.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn lcs_table_weighted<F>(
     a: &[StructuredNode],
     b: &[StructuredNode],
@@ -129,7 +129,7 @@ where
 }
 
 /// Backtrack through a weighted LCS table to produce aligned pairs.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn lcs_align_weighted<F>(
     a: &[StructuredNode],
     b: &[StructuredNode],
@@ -186,7 +186,7 @@ where
 }
 
 /// Extract embeddable plain text from a text-bearing node.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
@@ -215,7 +215,7 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
 /// - 0.0 if structural types are incompatible
 /// - Semantic cosine similarity if both are text-bearing (paragraph/heading)
 /// - 1.0 if structurally compatible but not text-bearing
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn precompute_score_matrix(
     base: &[StructuredNode],
     other: &[StructuredNode],
@@ -279,7 +279,7 @@ fn precompute_score_matrix(
 }
 
 /// Like [`align_and_tag`] but uses semantic-weighted LCS for alignment.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn align_and_tag_semantic(
     ctx: &PairwiseMergeCtx,
     base: &[StructuredNode],
@@ -325,7 +325,7 @@ fn align_and_tag_semantic(
 }
 
 /// Like [`align_segment`] but uses precomputed semantic scores in a weighted LCS.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 fn align_segment_semantic(
     ctx: &PairwiseMergeCtx,
     base: &[StructuredNode],
@@ -1414,7 +1414,7 @@ pub(crate) fn merge_node_lists(
 /// Same as [`merge_node_lists`] but uses semantic-weighted LCS alignment
 /// where text-bearing nodes (paragraphs, headings) are scored by cross-lingual
 /// embedding similarity instead of binary structural matching.
-#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
+#[cfg(feature = "semantic-matching")]
 pub(crate) fn merge_node_lists_semantic(
     base: &[StructuredNode],
     base_lang: &str,
