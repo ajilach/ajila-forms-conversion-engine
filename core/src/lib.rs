@@ -76,7 +76,7 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
-#[cfg(feature = "semantic-matching")]
+#[cfg(all(feature = "semantic-matching", not(target_arch = "wasm32")))]
 pub mod semantic;
 pub mod structured;
 pub mod util;
