@@ -603,7 +603,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                     if !text.is_empty() {
                         // Strip list marker prefix from the item text
                         let stripped = strip_list_marker_from_inline_text(text);
-                        items.push(stripped);
+                        if !stripped.is_empty() {
+                            items.push(stripped);
+                        }
                     }
                 }
                 if items.is_empty() {

@@ -20267,3 +20267,40 @@ fn test_radio_inherits_heading_label_when_directly_above() {
         label_text.trim()
     );
 }
+
+#[test]
+fn test_aais_019_no_missing_translation_list() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("AAIS_019_EN.pdf"), "en")
+        .expect("Failed to process AAIS_019_EN");
+    let sp = run_exhaustive_to_envelope(input_path("AAIS_019_SP.pdf"), "es")
+        .expect("Failed to process AAIS_019_SP");
+
+    let merged = structured::merge_translations(vec![de, en, sp], None)
+        .expect("AAIS_019 three-language merge should succeed");
+
+    let lists = helpers::collect_lists(&merged.content);
+
+    // No individual list item should have MISSING TRANSLATION in every language,
+    // since at least the source language should have real content.
+    for (i, l) in lists.iter().enumerate() {
+        for (j, item) in l.items.iter().enumerate() {
+            let en = item.plain_text_in("en");
+            let de = item.plain_text_in("de");
+            let es = item.plain_text_in("es");
+            let all_missing = en.trim() == "MISSING TRANSLATION"
+                && de.trim() == "MISSING TRANSLATION"
+                && es.trim() == "MISSING TRANSLATION";
+            assert!(
+                !all_missing,
+                "List {} item {} has MISSING TRANSLATION in every language; \
+                 this indicates an empty list item leaked through",
+                i, j,
+            );
+        }
+    }
+}
