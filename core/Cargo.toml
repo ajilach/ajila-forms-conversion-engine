@@ -37,18 +37,19 @@ tera = "1"
 toml = "0.8"
 include_dir = "0.7"
 hyphenation = "0.8.4"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rayon = "1.10"
 candle-core = { version = "0.9", optional = true }
 candle-nn = { version = "0.9", optional = true }
 candle-transformers = { version = "0.9", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1.10"
 tokenizers = { version = "0.21", optional = true, default-features = false, features = ["onig"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }
 boa_engine = { version = "0.20", features = ["js"] }
 js-sys = "0.3"
+tokenizers = { version = "0.21", optional = true, default-features = false, features = ["unstable_wasm"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
