@@ -24,7 +24,7 @@ use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichTe
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
     HeadingNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, SeparatorNode, StructuredNode, TableNode, TableRow, TranslatableString,
+    RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -43,69 +43,8 @@ fn contains_fields(node: &StructuredNode) -> bool {
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
-        | StructuredNode::Separator(_)
         | StructuredNode::Empty => false,
     }
-}
-
-/// Check if a node is a text-like label (Paragraph or Heading).
-fn is_text_label(node: &StructuredNode) -> bool {
-    matches!(node, StructuredNode::Paragraph(_) | StructuredNode::Heading(_))
-}
-
-/// Check if a node is a field-like element (Field, or Group containing fields).
-fn is_field_like(node: &StructuredNode) -> bool {
-    matches!(node, StructuredNode::Field(_)) || contains_fields(node)
-}
-
-/// Try to convert a 2-column label+field table into a list of labeled fields.
-///
-/// Pattern: every row has exactly 2 cells where the first cell is text (label)
-/// and the second cell is a field/checkbox/radio. Returns `None` if the table
-/// doesn't match this pattern.
-fn try_convert_label_field_table(rows: &[TableRow]) -> Option<Vec<StructuredNode>> {
-    if rows.is_empty() {
-        return None;
-    }
-
-    // Every row must have exactly 2 cells: text + field
-    let all_match = rows.iter().all(|row| {
-        row.cells.len() == 2 && is_text_label(&row.cells[0]) && is_field_like(&row.cells[1])
-    });
-
-    if !all_match {
-        return None;
-    }
-
-    let mut result = Vec::new();
-    for row in rows {
-        let label_text = match &row.cells[0] {
-            StructuredNode::Paragraph(p) => p.content.clone(),
-            StructuredNode::Heading(h) => h.content.clone(),
-            _ => unreachable!(),
-        };
-
-        // Apply label to the field cell
-        match &row.cells[1] {
-            StructuredNode::Field(f) => {
-                let mut labeled = f.clone();
-                if labeled.label.is_none() {
-                    labeled.label = Some(label_text);
-                }
-                result.push(StructuredNode::Field(labeled));
-            }
-            // Group containing fields — wrap with label as preceding paragraph
-            other => {
-                result.push(StructuredNode::Paragraph(ParagraphNode {
-                    content: label_text,
-                    som_path: None,
-                    source_name: None,
-                }));
-                result.push(other.clone());
-            }
-        }
-    }
-    Some(result)
 }
 
 /// Strip a list marker prefix from InlineText.
@@ -273,16 +212,11 @@ fn inherit_heading_labels_for_radios(nodes: &mut Vec<StructuredNode>) {
         if !is_unlabeled_radio {
             continue;
         }
-        // Scan backward past decorative Separator nodes
-        let prev_idx = (0..i)
-            .rev()
-            .find(|&j| !matches!(nodes[j], StructuredNode::Separator(_)));
-        let Some(prev_idx) = prev_idx else { continue };
-        let is_heading = matches!(&nodes[prev_idx], StructuredNode::Heading(_));
+        let is_heading = matches!(&nodes[i - 1], StructuredNode::Heading(_));
         if !is_heading {
             continue;
         }
-        let StructuredNode::Heading(h) = &nodes[prev_idx] else {
+        let StructuredNode::Heading(h) = &nodes[i - 1] else {
             unreachable!();
         };
         let label = h.content.to_plain();
@@ -567,61 +501,6 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }))
             }
 
-            // Table → TableNode (or label-field list if 2-column label+field pattern)
-            GroupKind::Table { column_widths: _ } => {
-                let group = self.doc.get_group(group_idx)?;
-                let mut rows = Vec::new();
-                for &child_idx in &group.children {
-                    if let Some(child_group) = self.doc.get_group(child_idx) {
-                        if matches!(child_group.kind, GroupKind::TableRow) {
-                            let cells: Vec<_> = self
-                                .convert_children(child_idx)
-                                .into_iter()
-                                .filter(|n| !matches!(n, StructuredNode::Separator(_)))
-                                .collect();
-                            if !cells.is_empty() {
-                                rows.push(TableRow { cells });
-                            }
-                        } else {
-                            // Non-row child inside table: convert and wrap as single-cell row
-                            if let Some(node) = self.convert_group(child_idx) {
-                                if !matches!(node, StructuredNode::Separator(_)) {
-                                    rows.push(TableRow { cells: vec![node] });
-                                }
-                            }
-                        }
-                    }
-                }
-                if rows.is_empty() {
-                    None
-                } else if let Some(labeled) = try_convert_label_field_table(&rows) {
-                    // 2-column label+field pattern → emit as labeled fields
-                    if labeled.len() == 1 {
-                        labeled.into_iter().next()
-                    } else {
-                        Some(StructuredNode::Group(GroupNode { children: labeled }))
-                    }
-                } else {
-                    Some(StructuredNode::Table(TableNode {
-                        header: None,
-                        rows,
-                        caption: None,
-                    }))
-                }
-            }
-
-            // TableRow outside of Table → GroupNode
-            GroupKind::TableRow => {
-                let children = self.convert_children(group_idx);
-                if children.is_empty() {
-                    None
-                } else if children.len() == 1 {
-                    children.into_iter().next()
-                } else {
-                    Some(StructuredNode::Group(GroupNode { children }))
-                }
-            }
-
             // Section / Unknown → GroupNode
             GroupKind::Section | GroupKind::Unknown => {
                 let children = self.convert_children(group_idx);
@@ -829,12 +708,6 @@ impl<'a, 'b> Converter<'a, 'b> {
                         }))
                     }
                 }
-            }
-            FlattenedNodeKind::Line { edge, .. } => {
-                Some(StructuredNode::Separator(SeparatorNode {
-                    thickness: edge.thickness,
-                    color: edge.color,
-                }))
             }
         }
     }

@@ -116,7 +116,6 @@ pub enum StructuredNode {
     Empty,
     GridLayout(GridLayout),
     List(ListNode),
-    Separator(SeparatorNode),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,14 +171,6 @@ pub struct ImageNode {
 #[serde(rename_all = "camelCase")]
 pub struct GroupNode {
     pub children: Vec<StructuredNode>,
-}
-
-/// Horizontal separator / rule element (from XFA line draw elements).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SeparatorNode {
-    pub thickness: crate::xfa::Num,
-    pub color: Option<(u8, u8, u8)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -880,9 +871,6 @@ impl StructuredNode {
                             .zip(b.items.iter())
                             .all(|(ia, ib)| ia.structural_eq(ib)))
             }
-            (StructuredNode::Separator(a), StructuredNode::Separator(b)) => {
-                a.thickness == b.thickness && a.color == b.color
-            }
             // Different variants are never structurally equal
             _ => false,
         }
@@ -903,7 +891,6 @@ impl StructuredNode {
             StructuredNode::Empty => 8,
             StructuredNode::GridLayout(_) => 9,
             StructuredNode::List(_) => 10,
-            StructuredNode::Separator(_) => 11,
         }
     }
 

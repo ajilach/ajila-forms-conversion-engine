@@ -100,7 +100,11 @@ where
 /// Compute a weighted LCS table where each match contributes a score (0.0–1.0)
 /// instead of a fixed +1.
 #[cfg(feature = "semantic-matching")]
-fn lcs_table_weighted<F>(a: &[StructuredNode], b: &[StructuredNode], score: F) -> Vec<Vec<f64>>
+fn lcs_table_weighted<F>(
+    a: &[StructuredNode],
+    b: &[StructuredNode],
+    score: F,
+) -> Vec<Vec<f64>>
 where
     F: Fn(usize, usize) -> f64,
 {
@@ -112,7 +116,9 @@ where
         for j in 1..=n {
             let s = score(i - 1, j - 1);
             if s > 0.0 {
-                dp[i][j] = (dp[i - 1][j - 1] + s).max(dp[i - 1][j]).max(dp[i][j - 1]);
+                dp[i][j] = (dp[i - 1][j - 1] + s)
+                    .max(dp[i - 1][j])
+                    .max(dp[i][j - 1]);
             } else {
                 dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
             }
@@ -185,11 +191,19 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
             let t = p.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         StructuredNode::Heading(h) => {
             let t = h.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         _ => None,
     }
@@ -249,11 +263,13 @@ fn precompute_score_matrix(
             }
             // Structurally compatible — use semantic score for text nodes.
             scores[i][j] = match (base_emb_idx[i], other_emb_idx[j]) {
-                (Some(bi), Some(oi)) => crate::semantic::SemanticMatcher::cosine_similarity(
-                    &embeddings[bi],
-                    &embeddings[oi],
-                )
-                .max(0.0) as f64,
+                (Some(bi), Some(oi)) => {
+                    crate::semantic::SemanticMatcher::cosine_similarity(
+                        &embeddings[bi],
+                        &embeddings[oi],
+                    )
+                    .max(0.0) as f64
+                }
                 _ => 1.0,
             };
         }
@@ -490,7 +506,7 @@ fn fill_node(
                 fill_inline_text(item, all_languages, primary_language, placeholder);
             }
         }
-        StructuredNode::Image(_) | StructuredNode::Separator(_) | StructuredNode::Empty => {}
+        StructuredNode::Image(_) | StructuredNode::Empty => {}
     }
 }
 
@@ -860,7 +876,6 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
             ga.columns == gb.columns
         }
         (StructuredNode::List(la), StructuredNode::List(lb)) => la.list_style == lb.list_style,
-        (StructuredNode::Separator(_), StructuredNode::Separator(_)) => true,
         // Conditional vs non-Conditional: when one language wraps content in a
         // Conditional (due to exhaustive-state differences) and the other doesn't,
         // try matching the conditional's inner content against the bare node.
@@ -1224,7 +1239,6 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .map(|item| localize_inline_text(item, lang))
                 .collect(),
         }),
-        StructuredNode::Separator(s) => StructuredNode::Separator(s.clone()),
     }
 }
 

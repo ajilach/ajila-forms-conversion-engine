@@ -51,13 +51,16 @@
 //! FieldTableDetector          ─── detects field tables with bold headers
 //!     │
 //!     ▼
+//! FieldTableDetectorVertical  ─── detects vertical field tables with bold labels to the left
+//!     │
+//!     ▼
+//! HeadingDetector             ─── identifies headings (must run BEFORE LabelAttacher)
+//!     │
+//!     ▼
 //! InlineFieldDetector         ─── identify inline fields
 //!     │
 //!     ▼
-//! LabelAttacher               ─── pairs labels with fields (gets first pick of text blocks)
-//!     │
-//!     ▼
-//! HeadingDetector             ─── identifies headings (runs AFTER LabelAttacher)
+//! LabelAttacher               ─── pairs labels with fields (uses only non-heading text)
 //!     │
 //!     ▼
 //! RepeatableDetector          ─── detects repeatable sections (LAST - collects composites)
@@ -104,7 +107,6 @@ mod repeatable_detector;
 mod selection_inline_field;
 mod text_block;
 mod text_block_merger;
-mod table_detector;
 
 pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
@@ -128,7 +130,6 @@ pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
 pub use selection_inline_field::SelectionInlineFieldDetector;
 pub use text_block::TextBlockGrouper;
 pub use text_block_merger::TextBlockMerger;
-pub use table_detector::TableDetector;
 
 use crate::flattened::Flattened;
 
@@ -209,8 +210,6 @@ pub fn run_analysis_pipeline_with_context(
     InlineFieldDetector::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
     GridTemplateDetector::new().process_with_context(doc, ctx);
-
-    TableDetector::new().process_with_context(doc, ctx);
 
     //FieldTableDetectorVertical::new().process_with_context(doc, ctx);
 
