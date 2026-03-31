@@ -1123,6 +1123,12 @@ pub struct Position {
     pub height: Num,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TableCellSlot {
+    x: Num,
+    width: Num,
+}
+
 impl Position {
     pub fn new(x: Num, y: Num, width: Num, height: Num) -> Self {
         Position {
@@ -1595,6 +1601,11 @@ pub struct FlattenContext<'a> {
     pub inherited_hints: Vec<Hint>,
     /// Document language for hyphenation dictionary lookup
     pub language: String,
+    /// Resolved table column widths for descendants within a table layout.
+    ///
+    /// Propagated through intermediate containers so row subforms do not need to
+    /// be direct table children.
+    pub table_column_widths: Option<Vec<Num>>,
 }
 
 impl<'a> FlattenContext<'a> {
@@ -1613,6 +1624,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1633,6 +1645,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1652,6 +1665,7 @@ impl<'a> FlattenContext<'a> {
             pending_occur: None,
             inherited_hints: Vec::new(),
             language: String::new(),
+            table_column_widths: None,
         }
     }
 
@@ -1667,7 +1681,15 @@ impl<'a> FlattenContext<'a> {
             pending_occur: self.pending_occur,
             inherited_hints: self.inherited_hints.clone(),
             language: self.language.clone(),
+            table_column_widths: self.table_column_widths.clone(),
         }
+    }
+
+    /// Create a child context with resolved table column widths.
+    pub fn with_table_column_widths(&self, widths: Option<Vec<Num>>) -> FlattenContext<'a> {
+        let mut ctx = self.derive();
+        ctx.table_column_widths = widths;
+        ctx
     }
 
     /// Create a child context with occurrence constraints from a repeatable section
@@ -3860,6 +3882,13 @@ impl Flattened {
                             &child_ctx,
                         )?;
 
+                    let layout_ctx = if layout == Layout::Table {
+                        let widths = Self::resolve_table_column_widths(node, &child_ctx);
+                        child_ctx.with_table_column_widths(Some(widths))
+                    } else {
+                        child_ctx.clone()
+                    };
+
                     // For positioned layout, track the max extent (relative to parent_position)
                     if parent_layout == Layout::Position {
                         let node_bottom = (outer_pos.y - parent_position.y) + outer_pos.height;
@@ -3878,7 +3907,7 @@ impl Flattened {
                         if occur.is_repeatable() && occur.has_initial_instances() {
                             // Create a group for repeatable sections that have initial instances
                             let mut group_children = Vec::new();
-                            let subform_ctx = child_ctx.with_occur_constraints(occur);
+                            let subform_ctx = layout_ctx.with_occur_constraints(occur);
                             let height = Self::flatten_nodes(
                                 &node.children,
                                 content_pos,
@@ -3905,7 +3934,7 @@ impl Flattened {
                                 content_pos,
                                 layout,
                                 flattened_children,
-                                &child_ctx,
+                                &layout_ctx,
                             )?
                         }
                     } else {
@@ -3915,7 +3944,7 @@ impl Flattened {
                             content_pos,
                             layout,
                             flattened_children,
-                            &child_ctx,
+                            &layout_ctx,
                         )?
                     };
 
@@ -3939,6 +3968,19 @@ impl Flattened {
                         let effective_height = actual_height.max(min_h).max(consumed_height);
 
                         // Adjust current_y if children consumed more height than the default
+                        if effective_height > consumed_height {
+                            current_y = outer_pos.y + effective_height;
+                        }
+                    }
+
+                    // Table layout also stacks child rows/non-row objects vertically.
+                    // If a child has no explicit height, grow by measured children height.
+                    if parent_layout == Layout::Table && node.h.is_none() {
+                        let actual_height = children_height
+                            + node.margin_top.unwrap_or(Decimal::ZERO)
+                            + node.margin_bottom.unwrap_or(Decimal::ZERO);
+                        let min_h = node.min_h.unwrap_or(Decimal::ZERO);
+                        let effective_height = actual_height.max(min_h).max(consumed_height);
                         if effective_height > consumed_height {
                             current_y = outer_pos.y + effective_height;
                         }
@@ -4816,7 +4858,7 @@ impl Flattened {
         // Per XFA spec: if w is not specified, the element is horizontally growable.
         // - For Draw elements: use natural text width (constrained by minW/maxW)
         // - For other elements: use minW if available, otherwise parent width
-        let width = node.w.unwrap_or_else(|| {
+        let mut width = node.w.unwrap_or_else(|| {
             match &node.kind {
                 XfaNodeKind::Draw => {
                     // Calculate natural width from text content
@@ -4848,11 +4890,66 @@ impl Flattened {
                     }
                 }
                 _ => {
-                    // For subforms, fields, etc: use minW if available, else parent width
-                    node.min_w.unwrap_or(parent_position.width)
+                    // For containers without explicit width, try natural width from children
+                    // before falling back to parent width. This is important for flowing
+                    // layouts (e.g. lr-tb): using full parent width can trigger an
+                    // unintended wrap to the next line.
+                    let min_w = node.min_w.unwrap_or(Decimal::ZERO);
+                    let natural_width = if matches!(
+                        parent_layout,
+                        Layout::LeftToRightTopToBottom
+                            | Layout::LeftToRight
+                            | Layout::RightToLeftTopToBottom
+                            | Layout::Row
+                            | Layout::RightToLeftRow
+                    ) {
+                        match &node.kind {
+                            XfaNodeKind::Subform | XfaNodeKind::ExclGroup => {
+                                let (w, _) = Self::compute_area_dimensions(node, ctx);
+                                w
+                            }
+                            XfaNodeKind::Element { tag_name, .. }
+                                if tag_name == "subform"
+                                    || tag_name == "subformSet"
+                                    || tag_name == "area"
+                                    || tag_name == "exclGroup" =>
+                            {
+                                let (w, _) = Self::compute_area_dimensions(node, ctx);
+                                w
+                            }
+                            _ => Decimal::ZERO,
+                        }
+                    } else {
+                        Decimal::ZERO
+                    };
+
+                    if natural_width > Decimal::ZERO {
+                        natural_width.max(min_w)
+                    } else {
+                        node.min_w.unwrap_or(parent_position.width)
+                    }
                 }
             }
         });
+
+        let table_slot = if matches!(parent_layout, Layout::Row | Layout::RightToLeftRow) {
+            ctx.table_column_widths
+                .as_ref()
+                .and_then(|widths| {
+                    Self::compute_table_cell_slot(
+                        widths,
+                        *current_x,
+                        parent_position,
+                        parent_layout,
+                        Self::extract_col_span(node),
+                    )
+                })
+        } else {
+            None
+        };
+        if let Some(slot) = table_slot {
+            width = slot.width;
+        }
 
         // Get margins (these define spacing between the element's edges and its content)
         // NOTE: Must be extracted before height calculation since natural height includes margins
@@ -5096,8 +5193,14 @@ impl Flattened {
             }
             Layout::Row => {
                 // Row layout: similar to lr-tb but typically within a table row
-                // Honor explicit coordinates if provided
-                if has_explicit_x || has_explicit_y {
+                // In XFA tables, cells are aligned by table columns; slotting takes precedence
+                // over explicit x/y on cell objects.
+                if let Some(slot) = table_slot {
+                    let pos = Position::new(slot.x, *current_y, slot.width, height);
+                    *current_x = slot.x + slot.width;
+                    *max_height_in_row = (*max_height_in_row).max(height);
+                    pos
+                } else if has_explicit_x || has_explicit_y {
                     Position::new(parent_position.x + x, parent_position.y + y, width, height)
                 } else {
                     let pos = Position::new(*current_x, *current_y, width, height);
@@ -5108,8 +5211,13 @@ impl Flattened {
             }
             Layout::RightToLeftRow => {
                 // Right-to-left row layout
-                // Honor explicit coordinates if provided
-                if has_explicit_x || has_explicit_y {
+                // In XFA tables, cells are aligned by table columns; slotting takes precedence.
+                if let Some(slot) = table_slot {
+                    let pos = Position::new(slot.x, *current_y, slot.width, height);
+                    *current_x = slot.x;
+                    *max_height_in_row = (*max_height_in_row).max(height);
+                    pos
+                } else if has_explicit_x || has_explicit_y {
                     Position::new(parent_position.x + x, parent_position.y + y, width, height)
                 } else {
                     let pos_x = *current_x - width;
@@ -5121,8 +5229,14 @@ impl Flattened {
                 }
             }
             Layout::Table => {
-                // Table layout: handled specially, for now treat as tb
-                let pos = Position::new(parent_position.x, *current_y, width, height);
+                // Table layout stacks children vertically; row alignment is applied inside row subforms.
+                // Children occupy the full table width unless they use explicit positioned coordinates.
+                let effective_width = if has_explicit_x || has_explicit_y || node.w.is_some() {
+                    width
+                } else {
+                    parent_position.width
+                };
+                let pos = Position::new(parent_position.x, *current_y, effective_width, height);
                 *current_y += height;
                 pos
             }
@@ -5576,6 +5690,231 @@ impl Flattened {
             // No unit, assume points or just a number
             Decimal::from_str(s).map_err(|e| format!("Failed to parse dimension: {}", e))
         }
+    }
+
+    fn extract_col_span(node: &XfaNode) -> i32 {
+        node.attributes
+            .get("colSpan")
+            .or_else(|| node.attributes.get("colspan"))
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .unwrap_or(1)
+    }
+
+    fn compute_table_cell_slot(
+        widths: &[Num],
+        current_x: Num,
+        parent_position: Position,
+        parent_layout: Layout,
+        raw_col_span: i32,
+    ) -> Option<TableCellSlot> {
+        if widths.is_empty() {
+            return None;
+        }
+
+        let mut col_index = 0usize;
+        match parent_layout {
+            Layout::Row => {
+                let mut cursor = parent_position.x;
+                while col_index < widths.len() && cursor < current_x {
+                    cursor += widths[col_index];
+                    col_index += 1;
+                }
+            }
+            Layout::RightToLeftRow => {
+                let mut cursor = parent_position.x + parent_position.width;
+                while col_index < widths.len() && cursor > current_x {
+                    cursor -= widths[col_index];
+                    col_index += 1;
+                }
+            }
+            _ => return None,
+        }
+
+        if col_index >= widths.len() {
+            return None;
+        }
+
+        let span = if raw_col_span == -1 {
+            widths.len().saturating_sub(col_index).max(1)
+        } else if raw_col_span <= 0 {
+            1
+        } else {
+            raw_col_span as usize
+        };
+        let end = (col_index + span).min(widths.len());
+        let slot_width = widths[col_index..end]
+            .iter()
+            .copied()
+            .fold(Decimal::ZERO, |acc, w| acc + w);
+
+        if slot_width <= Decimal::ZERO {
+            return None;
+        }
+
+        let slot_x = match parent_layout {
+            Layout::Row => {
+                parent_position.x
+                    + widths[..col_index]
+                        .iter()
+                        .copied()
+                        .fold(Decimal::ZERO, |acc, w| acc + w)
+            }
+            Layout::RightToLeftRow => {
+                parent_position.x + parent_position.width
+                    - widths[..end]
+                        .iter()
+                        .copied()
+                        .fold(Decimal::ZERO, |acc, w| acc + w)
+            }
+            _ => unreachable!(),
+        };
+
+        Some(TableCellSlot {
+            x: slot_x,
+            width: slot_width,
+        })
+    }
+
+    fn parse_column_width_tokens(column_widths: &str) -> Vec<Option<Num>> {
+        column_widths
+            .split_whitespace()
+            .map(|token| {
+                if token == "-1" {
+                    None
+                } else {
+                    Self::parse_dimension(token).ok()
+                }
+            })
+            .collect()
+    }
+
+    fn collect_row_subforms<'n>(nodes: &'n [XfaNode], out: &mut Vec<&'n XfaNode>) {
+        for node in nodes {
+            if !node.kind.is_subform() {
+                continue;
+            }
+
+            let layout = node
+                .layout
+                .as_ref()
+                .and_then(|l| l.parse().ok())
+                .unwrap_or(Layout::Position);
+
+            if layout == Layout::Row || layout == Layout::RightToLeftRow {
+                out.push(node);
+                continue;
+            }
+
+            // Nested tables define their own width context.
+            if layout == Layout::Table {
+                continue;
+            }
+
+            Self::collect_row_subforms(&node.children, out);
+        }
+    }
+
+    fn estimate_natural_cell_width(node: &XfaNode, ctx: &FlattenContext) -> Num {
+        if let Some(w) = node.w {
+            return w;
+        }
+        match &node.kind {
+            XfaNodeKind::Draw => {
+                let text = ctx.extract_text(&node.children).unwrap_or_default();
+                let natural_width = Self::calculate_natural_text_width(&text, &node.font);
+                natural_width.max(node.min_w.unwrap_or(Decimal::ZERO))
+            }
+            XfaNodeKind::Element { tag_name, .. } if tag_name == "draw" => {
+                let text = ctx.extract_text(&node.children).unwrap_or_default();
+                let natural_width = Self::calculate_natural_text_width(&text, &node.font);
+                natural_width.max(node.min_w.unwrap_or(Decimal::ZERO))
+            }
+            _ => node.min_w.unwrap_or(Decimal::ZERO),
+        }
+    }
+
+    fn resolve_table_column_widths(node: &XfaNode, ctx: &FlattenContext) -> Vec<Num> {
+        let parsed_widths_seed = node
+            .attributes
+            .get("columnWidths")
+            .map(|s| Self::parse_column_width_tokens(s))
+            .unwrap_or_default();
+
+        let mut rows = Vec::new();
+        Self::collect_row_subforms(&node.children, &mut rows);
+
+        let mut col_count = parsed_widths_seed.len();
+        for row in &rows {
+            let mut col = 0usize;
+            for cell in &row.children {
+                let raw_span = Self::extract_col_span(cell);
+                let span = if raw_span == -1 {
+                    parsed_widths_seed.len().saturating_sub(col).max(1)
+                } else if raw_span > 0 {
+                    raw_span as usize
+                } else {
+                    1
+                };
+                col += span;
+                if raw_span == -1 {
+                    break;
+                }
+            }
+            col_count = col_count.max(col);
+        }
+
+        let mut parsed_widths = parsed_widths_seed;
+        col_count = col_count.max(parsed_widths.len());
+        if col_count == 0 {
+            return Vec::new();
+        }
+
+        if parsed_widths.len() < col_count {
+            parsed_widths.resize(col_count, None);
+        }
+
+        let mut widest_auto_cols = vec![Decimal::ZERO; col_count];
+        for row in &rows {
+            let mut col = 0usize;
+            for cell in &row.children {
+                if col >= col_count {
+                    break;
+                }
+                let raw_span = Self::extract_col_span(cell);
+                let span = if raw_span == -1 {
+                    col_count.saturating_sub(col).max(1)
+                } else if raw_span <= 0 {
+                    1
+                } else {
+                    raw_span as usize
+                };
+                let end = (col + span).min(col_count);
+                let natural_width = Self::estimate_natural_cell_width(cell, ctx);
+                let per_col = natural_width / Decimal::from((end - col) as i64);
+                for w in &mut widest_auto_cols[col..end] {
+                    *w = (*w).max(per_col);
+                }
+                col = end;
+                if raw_span == -1 {
+                    break;
+                }
+            }
+        }
+
+        parsed_widths
+            .into_iter()
+            .enumerate()
+            .map(|(idx, width)| {
+                width.unwrap_or_else(|| {
+                    let w = widest_auto_cols[idx];
+                    if w > Decimal::ZERO {
+                        w
+                    } else {
+                        num(20.0)
+                    }
+                })
+            })
+            .collect()
     }
 
     fn extract_field_value(children: &[XfaNode]) -> String {
