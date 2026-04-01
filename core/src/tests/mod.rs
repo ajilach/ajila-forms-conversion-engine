@@ -20575,7 +20575,6 @@ fn test_aais_019_aem_disclosure_texts_not_in_conditional() {
     // If either text ends up inside a ConditionalNode the AEM output will
     // incorrectly hide it for certain form states.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::StructuredNode;
 
     const BENEFITS_TEXT: &str =
         "UBS Europe SE may receive benefits from investment fund providers and issuers of structured products";
@@ -20583,76 +20582,17 @@ fn test_aais_019_aem_disclosure_texts_not_in_conditional() {
     const DETAILS_TEXT: &str =
         "Details of the sales compensation for a specific financial instrument";
 
-    /// Walk `nodes`, recursing into every structural container **except**
-    /// `Conditional`; return `true` if any `Paragraph` or `Heading` node
-    /// contains `fragment` in its plain text.
-    fn has_text_outside_conditional(nodes: &[StructuredNode], fragment: &str) -> bool {
-        for node in nodes {
-            match node {
-                StructuredNode::Paragraph(p) => {
-                    if p.content.as_plain_text().contains(fragment) {
-                        return true;
-                    }
-                }
-                StructuredNode::Heading(h) => {
-                    if h.content.as_plain_text().contains(fragment) {
-                        return true;
-                    }
-                }
-                StructuredNode::Group(g) => {
-                    if has_text_outside_conditional(&g.children, fragment) {
-                        return true;
-                    }
-                }
-                StructuredNode::Repeatable(r) => {
-                    if has_text_outside_conditional(
-                        std::slice::from_ref(r.item.as_ref()),
-                        fragment,
-                    ) {
-                        return true;
-                    }
-                }
-                StructuredNode::GridLayout(grid) => {
-                    for element in &grid.elements {
-                        if has_text_outside_conditional(
-                            std::slice::from_ref(&element.node),
-                            fragment,
-                        ) {
-                            return true;
-                        }
-                    }
-                }
-                StructuredNode::Table(table) => {
-                    if let Some(header) = &table.header {
-                        if has_text_outside_conditional(&header.cells, fragment) {
-                            return true;
-                        }
-                    }
-                    for row in &table.rows {
-                        if has_text_outside_conditional(&row.cells, fragment) {
-                            return true;
-                        }
-                    }
-                }
-                // Intentionally do NOT recurse into Conditional nodes
-                StructuredNode::Conditional(_) => {}
-                _ => {}
-            }
-        }
-        false
-    }
-
     let merged = run_exhaustive_to_merged(input_path("AAIS_019_EN.pdf"))
         .expect("Failed to run exhaustive merge on AAIS_019_EN");
 
     assert!(
-        has_text_outside_conditional(&merged, BENEFITS_TEXT),
+        helpers::has_text_outside_conditional(&merged, BENEFITS_TEXT),
         "'UBS Europe SE may receive benefits…' must NOT be inside a conditional – \
          it is common to all states and should be factored out"
     );
 
     assert!(
-        has_text_outside_conditional(&merged, DETAILS_TEXT),
+        helpers::has_text_outside_conditional(&merged, DETAILS_TEXT),
         "'Details of the sales compensation…' must NOT be inside a conditional – \
          it is common to all states and should be factored out"
     );
