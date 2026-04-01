@@ -1,0 +1,1407 @@
+{
+  "context": {
+    "language": "de",
+    "variables": {
+      "Footer_Line_MANCode": "019",
+      "formrange_partnerlevel": "No",
+      "formrange_cdokinfo": "66411",
+      "formrange_code": "AAIS",
+      "formrange_entity": "019",
+      "Footer_Line_txtlanguage": "DE",
+      "Footer_Line_txtvversion": "V2",
+      "Footer_Line_APPCode": "",
+      "Footer_Line_txtformid": "66411",
+      "Footer_Line_txtjversion": "N1",
+      "formrange_htmlready": "false",
+      "Footer_Line_txtversiondate": "11.10.2024",
+      "formrange_language": "DE",
+      "formrange_version": "V2",
+      "formrange_formsetready": "true",
+      "formrange_releasedate": "11.10.2024"
+    }
+  },
+  "content": [
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Vereinbarung zu Vertriebsprovisionen"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Form configurator"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+      "label": [
+        {
+          "type": "text",
+          "content": "Formular Adressat"
+        }
+      ],
+      "inputType": {
+        "type": "select",
+        "options": [
+          {
+            "name": "Private Person",
+            "value": {
+              "type": "text",
+              "value": "Private Person"
+            }
+          },
+          {
+            "name": "Minderjährige",
+            "value": {
+              "type": "text",
+              "value": "Minderjährige"
+            }
+          },
+          {
+            "name": "Firma",
+            "value": {
+              "type": "text",
+              "value": "Firma"
+            }
+          },
+          {
+            "name": "GbR",
+            "value": {
+              "type": "text",
+              "value": "GbR"
+            }
+          }
+        ]
+      },
+      "value": {
+        "type": "text",
+        "value": "Firma"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+      "label": [
+        {
+          "type": "text",
+          "content": "Fall"
+        }
+      ],
+      "inputType": {
+        "type": "select",
+        "options": [
+          {
+            "name": "Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)",
+            "value": {
+              "type": "text",
+              "value": "Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)"
+            }
+          },
+          {
+            "name": "Komplette Auskehrung von Vertriebsprovisionen an Kunden",
+            "value": {
+              "type": "text",
+              "value": "Komplette Auskehrung von Vertriebsprovisionen an Kunden"
+            }
+          },
+          {
+            "name": "Teilweise Auskehrung von Vertriebsprovisionen an Kunden",
+            "value": {
+              "type": "text",
+              "value": "Teilweise Auskehrung von Vertriebsprovisionen an Kunden"
+            }
+          }
+        ]
+      },
+      "value": {
+        "type": "text",
+        "value": "Komplette Auskehrung von Vertriebsprovisionen an Kunden"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+        "value": {
+          "type": "text",
+          "value": "Komplette Auskehrung von Vertriebsprovisionen an Kunden"
+        }
+      },
+      "content": {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "content": "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus"
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+        "value": {
+          "type": "text",
+          "value": "Teilweise Auskehrung von Vertriebsprovisionen an Kunden"
+        }
+      },
+      "content": {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "content": "Auskehrung an Kunden setzt Approval gemäß Kompetenzordnung voraus"
+          }
+        ]
+      }
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Kundendaten"
+          }
+        }
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "Firma"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "4728273f-7fed-5a5d-9d73-ee40614500bb",
+            "label": [
+              {
+                "type": "text",
+                "content": "Firma"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "heading",
+            "level": "h3",
+            "content": [
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "Vertretungsberechtigte(r)"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "GbR"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "4728273f-7fed-5a5d-9d73-ee40614500bb",
+            "label": [
+              {
+                "type": "text",
+                "content": "Firma"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "heading",
+            "level": "h3",
+            "content": [
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "Vertretungsberechtigte(r)"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "repeatable",
+      "item": {
+        "type": "gridLayout",
+        "columns": 2,
+        "elements": [
+          {
+            "span": 1,
+            "node": {
+              "type": "field",
+              "name": "9d858a17-44be-5770-b670-76f405882c0e",
+              "label": [
+                {
+                  "type": "text",
+                  "content": "Nachname"
+                }
+              ],
+              "inputType": {
+                "type": "text",
+                "regex": null,
+                "max_length": null,
+                "min_length": null
+              },
+              "value": null,
+              "placeholder": null
+            }
+          },
+          {
+            "span": 1,
+            "node": {
+              "type": "field",
+              "name": "218a2df8-7b31-5139-809a-4f1aee6cb8fb",
+              "label": [
+                {
+                  "type": "text",
+                  "content": "Vorname(n)"
+                }
+              ],
+              "inputType": {
+                "type": "text",
+                "regex": null,
+                "max_length": null,
+                "min_length": null
+              },
+              "value": null,
+              "placeholder": null
+            }
+          }
+        ]
+      },
+      "minOccurrences": 1,
+      "maxOccurrences": 4
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Vereinbarung"
+          }
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "I. "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Offenlegung"
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "UBS Europe SE erhält im Zusammenhang mit Wertpapiergeschäften von Fondsgesellschaften und Emittenten von strukturierten Produkten Zuwendungen in Form von Vertriebsprovisionen oder sonstigen geldwerten Vorteilen. Soweit nicht anders vereinbart, gilt dies auch, wenn vergleichbare Instrumente ohne Vertriebsvergütung verfügbar sind. UBS Europe SE erbringt Anlageberatung nicht als Honorar-Anlageberater im Sinne des Wertpapierhandelsgesetzes. "
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "1."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Offene Produkte"
+          }
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "a."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Offene Investmentvermögen"
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "In Bezug auf offene Investmentvermögen im Sinne des § 1 Abs. 4 KAGB, vergüten Verwaltungsgesellschaften regelmäßig Vertriebsprovisionen in Form von wiederkehrenden Bestandsprovisionen an UBS (auch Vertriebsfolgeprovisionen genannt). Diese Bestandsprovisionen werden von der Verwaltungsgesellschaft üblicherweise aus der jährlichen Managementgebühr des offenen Investmentvermögens bezahlt, die sie den Anlegern berechnet."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Die Höhe der Bestandsprovisionen variiert je nach Verwaltungsgesellschaft, Investmentvermögens(gattung) und vertriebenem Fondsvolumen. In der Regel werden 50% der Managementgebühren eines offenen Investmentvermögen als Bestandsprovision an UBS gewährt. Die Managementgebühren betragen in der Regel (in Prozent des Fondsvolumens):"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Geldmarktfonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 1,0% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Fixed Income Fonds/Bond Fonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 2,05% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei offenen Immobilienfonds, welche als Alternative Investmentfonds (AIF) im Sinne des § 1 Abs. 3 KAGB qualifizieren (Immobilien-AIF):"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 2,0% p.a. (zusätzlich kann UBS Europe SE eine einmalige Leistung der zugrundeliegenden Verwaltungsgesellschaft von bis max. 2,0% des vollen Zeichnungsbetrags (einmalige Placement Fee) und bis zu 50% der Performance Fee oder einer von der Performance des Fonds abhängigen Gebühr (erfolgsabhängige Performance Fee) erhalten)."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei gelisteten Immobilienfonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 1,2% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Aktienfonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 2,5% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Anlagestrategiefonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 2,0% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Rohstofffonds:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis max. 2,4% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Hedgefonds, welche als Organismen für gemeinsame Anlagen in Wertpapiere (OGAW) im Sinne des § 1 Abs. 2 KAGB qualifizieren:"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis 2,2% p.a."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Hedgefonds, welche als Alternative Investmentfonds (AIF) im Sinne des § 1 Abs. 3 KAGB qualifizieren (Hedgefonds-AIF):"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "bis 2,2% p.a. (zusätzlich kann UBS Europe SE eine einmalige Leistung der zugrundeliegenden Verwaltungsgesellschaft von bis max. 2,0% des vollen Zeichnungsbetrags (einmalige Placement Fee) und bis zu 50% der Performance Fee oder einer von der Performance des Fonds abhängigen Gebühr (erfolgsabhängige Performance Fee) erhalten)."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Die genaue Höhe der Provisionen, die UBS Europe SE für jedes einzelne Investitionsangebot erhält, wird in der Produktdokumentation des jeweiligen Investitionsangebotes beschrieben."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "b. "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Strukturierte Produkte"
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Emittenten von strukturierten Produkten, insbesondere Zertifikaten und strukturierten Anleihen, vergüten Vertriebsleistungen regelmäßig in Form eines einmaligen Abschlags oder eines Teils des Emissionspreises, der unmittelbar oder zeitlich gestreckt berechnet wird (Platzierungsprovision). Die Höhe dieser Vergütung variiert von Emittent zu Emittent und beträgt in der Regel bis zu 5% des investierten Kapitals. Des Weiteren werden zusätzlich oder stattdessen wiederkehrende Bestandsprovisionen aus der Managementgebühr gewährt (sofern eine solche berechnet wird), die in Einzelfällen bis zu 1,5% des investierten Kapitals betragen kann."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "2."
+          }
+        },
+        {
+          "type": "text",
+          "content": " "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Geschlossene Produkte/Beteiligungen/Private Markets Investments"
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Initiatoren von geschlossenen Investmentvermögen im Sinne des § 1 Abs. 5 KAGB zur Investition an ein oder mehreren Wirtschaftsgütern (z.B. Immobilien, Schiffe, Flugzeuge, Infrastrukturprojekten etc.) vergüten UBS Europe SE für den Vertrieb dieser Beteiligungen mit bis zu 15% des gezeichneten Beteiligungskapitals. Diese Provision kann aus einem Agio und/oder einer Innenvergütung sowie einer regelmäßig wiederkehrenden Vergütung bestehen. "
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Für die Vermittlung von Investitionen in Private Market Investments wie beispielsweise direkte oder indirekte Unternehmensinvestitionen über von Private Markets Fondsmanagern ausgewählte Investitionsstrukturen wie STRIPE, Multi Vintage Private Equity (MVPE), europäische langfristige Investmentfonds (ELTIFs) im Sinne der Verordnung (EU) 2015/760, Open-Ended Private Markets Funds als Europäisch regulierte Alternative Investment Funds oder ähnliche Strukturen außerhalb spezieller europäischer Regulierungen mit dem Investitionsfokus auf Infrastrukturmaßnahmen, Kreditvergaben im Rahmen der verschiedenen Phasen eines Unternehmenslebenszyklusses und voll-, halb- oder teilliquiden Strukturen kann UBS Europe SE folgende Vergütungen kumuliert oder einzeln, jeweils bezogen auf das Commitment, sofern nicht anders angegeben, erhalten:"
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "listStyle": "dash",
+      "items": [
+        [
+          {
+            "type": "text",
+            "content": "Einmalige Placement Fee in Höhe von bis zu 2,50%, "
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Einmalige Placement Fee vom zugrundeliegenden Fondsverwalter (Underlying Manager) in Höhe bis zu 2,0%,"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche zusätzliche Additional Commitment Fee von bis zu 0,50% p.a., "
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche Management Fee von bis zu 0,60% p.a., "
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche Administrations Fee oder Servicing Fee von bis zu 0,06% p.a.,"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche Depository Fee von bis zu 0,02% p.a. bezogen auf den Nettoinventarwert (NAV),"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche Alternative Investment Fund Manager-Fee von bis zu 0,02% p.a. bezogen auf den NAV,"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Jährliche Advisory Fee von bis zu 1,05% p.a.,"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Management Revenues, die in individueller in der jeweiligen Produktdokumentation aufgezeigten Höhe seitens des Managements des Zielinvestments gezahlt werden können,"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "content": "Erfolgsabhängige Performance Fee in individueller prozentualer in der jeweiligen Produktdokumentation aufgezeigten Höhe."
+          }
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "– Die genaue Höhe der Provisionen, die UBS Europe SE für jedes einzelne Investitionsangebot erhält, wird in der Produktdokumentation des jeweiligen Investitionsangebotes beschrieben."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "3. –"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "– "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Geldwerte Vorteile"
+          }
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "Der UBS Europe SE können von Emittenten von Finanzinstrumenten ferner geldwerte Vorteile in Form von Training, Fortbildung oder Vertriebs-unterstützung ihrer Mitarbeiter gewährt werden. "
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "4. "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Weiterleitung an Finanzintermediäre"
+          }
+        },
+        {
+          "type": "text",
+          "content": " Im Geschäftsbereich «Financial Intermediaries» leitet UBS Europe SE einen Teil der Vertriebsprovisionen gegebenenfalls an Finanzintermediäre weiter, die den (End-)Kunden betreuen (z.B. Finanzportfolioverwalter, Anlagevermittler oder -berater)."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "5. "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Zuführung von Kunden"
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "An Zuführer, die Kunden vermitteln, zahlt UBS Europe SE gegebenenfalls eine erfolgsbezogene Vergütung. Die Vergütung bemisst sich nach dem Volumen der vermittelten Vermögenswerte und beträgt in der Regel 0,25 bis 0,5% des Gesamtbetrags der vermittelten Vermögenswerte. Die Vergütung wird gewöhnlich einmalig nach erfolgreicher Zuführung ausgezahlt."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Einzelheiten zu den Vertriebsvergütungen für ein konkretes Finanzinstrument teilt Ihnen Ihr Kundenberater auf Nachfrage, im Fall der Anlageberatung unaufgefordert vor Abschluss eines Wertpapiergeschäfts mit."
+        }
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+        "value": {
+          "type": "text",
+          "value": "Komplette Auskehrung von Vertriebsprovisionen an Kunden"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "heading",
+            "level": "h3",
+            "content": [
+              {
+                "type": "text",
+                "content": "II. "
+              },
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "Auszahlungsmodalitäten; Ausnahmen der Rückvergütung"
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "UBS Europe SE wird Vertriebsprovisionen, die ihr von Seiten Dritter im Zusammenhang mit für Sie verwahrten Vermögenswerten bzw. für Sie getätigten Transaktionen zufließen, abzüglich von Aufwendungen an Sie rückvergüten; dies gilt nicht für unter Ziff. 2. genannte Investitionen, die im Verwahr- und Vermittlerverzeichnis separat geführt werden und/oder im Hinblick auf unter Ziff. 1.a. genannte Hedgefonds-/Immobilien-AIF, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee und/oder im Hinblick auf die unter Ziff. 2. genannten Investitionen, welche im Depot geführt werden, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee. Die Rückvergütung errechnet sich auf die Monatsendbestände der Investmentfonds und strukturierten Produkte, für die Vertriebsvergütungen gezahlt werden. Die Rückvergütung erfolgt erstmals für den Monat, in dem die Bestände auf Ihrem Depot verbucht sind und mit banküblichem Vorlauf die Bearbeitung vorbereitet ist. Sie wird vor Eingang der Zahlung bei UBS Europe SE auf Basis der erwarteten Zahlung geleistet (die sich nach dem im Vertrag mit Emittenten/Fondsgesellschaften vereinbarten Mindestsatz oder dem zuletzt berechneten Satz richten); die erwartete Zahlung kann von der später tatsächlich eingehenden Zahlung abweichen. UBS Europe SE steht es frei, stattdessen die tatsächlich an UBS Europe SE geleistete Zahlung nach deren Eingang an Sie weiterzuleiten. Die Gutschrift erfolgt nach Abzug von Abgeltungsteuer und Solidaritätszuschlag. In Bezug auf die eingangs unter II. genannten Ausnahmen der Rückvergütung erklären Sie sich damit einverstanden, dass UBS Europe SE die von Dritten an sie geleisteten Vertriebsprovisionen behält, vorausgesetzt, dass UBS Europe SE sie nach den Vorschriften des Wertpapierhandelsgesetzes (insbesondere § 70 WpHG) annehmen darf. Insoweit treffen Sie und UBS Europe SE die von der gesetzlichen Regelung des Rechts der Geschäftsbesorgung abweichende Vereinbarung, dass ein Anspruch Ihrerseits auf Herausgabe der Vertriebsprovisionen nicht entsteht. Ohne diese Vereinbarung müsste UBS Europe SE – die Anwendbarkeit des Rechts der Geschäftsbesorgung auf alle Wertpapiergeschäfte unterstellt – die Vertriebsprovisionen an Sie herausgeben."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+        "value": {
+          "type": "text",
+          "value": "Normalfall (Kunde akzeptiert Einbehalt der Vertriebsprovisionen)"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "heading",
+            "level": "h3",
+            "content": [
+              {
+                "type": "text",
+                "content": "II. "
+              },
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "Vereinbarung des Verzichts auf Herausgabe"
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Sie erklären sich damit einverstanden, dass UBS Europe SE die von Dritten an sie geleistete Vertriebsprovisionen behält, vorausgesetzt, dass UBS Europe SE sie nach den Vorschriften des Wertpapierhandelsgesetzes (insbesondere § 70 WpHG) annehmen darf. Insoweit treffen Sie und UBS Europe SE die von der gesetzlichen Regelung des Rechts der Geschäftsbesorgung abweichende Vereinbarung, dass ein Anspruch Ihrerseits auf Herausgabe der Vertriebsprovisionen nicht entsteht. Ohne diese Vereinbarung müsste UBS Europe SE – die Anwendbarkeit des Rechts der Geschäftsbesorgung auf alle Wertpapiergeschäfte unterstellt – die Vertriebsprovisionen an Sie herausgeben."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "16c1f4fd-bd25-5297-acb1-0e6ac9a19121",
+        "value": {
+          "type": "text",
+          "value": "Teilweise Auskehrung von Vertriebsprovisionen an Kunden"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "heading",
+            "level": "h3",
+            "content": [
+              {
+                "type": "text",
+                "content": "II. "
+              },
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "Auszahlungsmodalitäten; Ausnahmen der Rückvergütung"
+                }
+              }
+            ]
+          },
+          {
+            "type": "group",
+            "children": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "UBS Europe SE wird Vertriebsprovisionen,"
+                  }
+                ]
+              },
+              {
+                "type": "field",
+                "name": "3f23c4ef-97d5-50e5-8294-9b453eb6174d",
+                "label": [
+                  {
+                    "type": "text",
+                    "content": "UNKNOWN"
+                  }
+                ],
+                "inputType": {
+                  "type": "text",
+                  "regex": null,
+                  "max_length": null,
+                  "min_length": null
+                },
+                "value": null,
+                "placeholder": null
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "die ihr von Seiten Dritter im Zusammenhang mit für Sie verwahrten Vermögenswerten bzw. für Sie getätigten Transaktionen zufließen, zu         % an Sie rückvergüten; dies gilt nicht für unter Ziff. 2. genannte Investitionen, die im Verwahr- und Vermittlerverzeichnis separat geführt werden und/oder im Hinblick auf unter Ziff. 1.a. genannte Hedgefonds-/Immobilien-AIF, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee und/oder im Hinblick auf die unter Ziff. 2. genannten Investitionen, welche im Depot geführt werden, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee. Die Rückvergütung errechnet sich auf die Monatsendbestände der Investmentfonds und strukturierten Produkte, für die Vertriebsvergütungen gezahlt werden. Die Rückvergütung erfolgt erstmals für den Monat, in dem die Bestände auf Ihrem Depot verbucht sind und mit banküblichem Vorlauf die Bearbeitung vorbereitet ist. Sie wird vor Eingang der Zahlung bei UBS Europe SE auf Basis der erwarteten Zahlung geleistet (die sich nach dem im Vertrag mit Emittenten/Fondsgesellschaften vereinbarten Mindestsatz oder dem zuletzt berechneten Satz richten); die erwartete Zahlung kann von der später tatsächlich eingehenden Zahlung abweichen. UBS Europe SE steht es frei, stattdessen die tatsächlich an UBS Europe SE geleistete Zahlung nach deren Eingang an Sie weiterzuleiten. Die Gutschrift erfolgt nach Abzug von Abgeltungsteuer und Solidaritätszuschlag. Hinsichtlich der Vertriebsprovisionen, die den Anteil von       % übersteigen, die eingangs unter II. genannten Ausnahmen der Rückvergütung, erklären Sie sich damit einverstanden, dass UBS Europe SE sie behält, vorausgesetzt, dass sie nach den Vorschriften des Wertpapierhandelsgesetzes (insbesondere § 70 WpHG) angenommen werden dürfen. Insoweit treffen Sie und UBS Europe SE die von der gesetzlichen Regelung des Rechts der Geschäftsbesorgung abweichende Vereinbarung, dass ein Anspruch Ihrerseits auf Herausgabe der Vertriebsprovisionen nicht entsteht. Ohne diese Vereinbarung müsste UBS Europe SE – die Anwendbarkeit des Rechts der Geschäftsbesorgung auf alle Wertpapiergeschäfte unterstellt – die Vertriebsprovisionen an Sie herausgeben."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "group",
+            "children": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "UBS Europe SE wird Vertriebsprovisionen, die ihr von Seiten Dritter im Zusammenhang mit für Sie verwahrten Vermögenswerten bzw. für Sie getätigten Transaktionen zufließen, zu         % an Sie rückvergüten; dies gilt nicht für unter Ziff. 2. genannte Investitionen, die im Verwahr- und Vermittlerverzeichnis separat geführt werden und/oder im Hinblick auf unter Ziff. 1.a. genannte Hedgefonds-/Immobilien-AIF, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee und/oder im Hinblick auf die unter Ziff. 2. genannten Investitionen, welche im Depot geführt werden, bezogen auf die einmalige Placement Fee und die erfolgsabhängige Performance Fee. Die Rückvergütung errechnet sich auf die Monatsendbestände der Investmentfonds und strukturierten Produkte, für die Vertriebsvergütungen gezahlt werden. Die Rückvergütung erfolgt erstmals für den Monat, in dem die Bestände auf Ihrem Depot verbucht sind und mit banküblichem Vorlauf die Bearbeitung vorbereitet ist. Sie wird vor Eingang der Zahlung bei UBS Europe SE auf Basis der erwarteten Zahlung geleistet (die sich nach dem im Vertrag mit Emittenten/Fondsgesellschaften vereinbarten Mindestsatz oder dem zuletzt berechneten Satz richten); die erwartete Zahlung kann von der später tatsächlich eingehenden Zahlung abweichen."
+                  }
+                ]
+              },
+              {
+                "type": "field",
+                "name": "2d57e365-81ce-5de6-b0d7-d0f4daf7cd11",
+                "label": [
+                  {
+                    "type": "text",
+                    "content": "UNKNOWN"
+                  }
+                ],
+                "inputType": {
+                  "type": "text",
+                  "regex": null,
+                  "max_length": null,
+                  "min_length": null
+                },
+                "value": null,
+                "placeholder": null
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "UBS Europe SE steht es frei, stattdessen die tatsächlich an UBS Europe SE geleistete Zahlung nach deren Eingang an Sie weiterzuleiten. Die Gutschrift erfolgt nach Abzug von Abgeltungsteuer und Solidaritätszuschlag. Hinsichtlich der Vertriebsprovisionen, die den Anteil von       % übersteigen, die eingangs unter II. genannten Ausnahmen der Rückvergütung, erklären Sie sich damit einverstanden, dass UBS Europe SE sie behält, vorausgesetzt, dass sie nach den Vorschriften des Wertpapierhandelsgesetzes (insbesondere § 70 WpHG) angenommen werden dürfen. Insoweit treffen Sie und UBS Europe SE die von der gesetzlichen Regelung des Rechts der Geschäftsbesorgung abweichende Vereinbarung, dass ein Anspruch Ihrerseits auf Herausgabe der Vertriebsprovisionen nicht entsteht. Ohne diese Vereinbarung müsste UBS Europe SE – die Anwendbarkeit des Rechts der Geschäftsbesorgung auf alle Wertpapiergeschäfte unterstellt – die Vertriebsprovisionen an Sie herausgeben."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "Unterschrift(en)"
+          }
+        }
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "Firma"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "gridLayout",
+            "columns": 12,
+            "elements": [
+              {
+                "span": 8,
+                "node": {
+                  "type": "field",
+                  "name": "39843be5-9bb3-59bb-9f61-0154515ecf10",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Ort"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 4,
+                "node": {
+                  "type": "field",
+                  "name": "80e0bb6a-adaa-5ea0-855c-172b83d554b3",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Datum"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "date"
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Unterschrift des Vertretungsberechtigten "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "167ddb9d-377c-526c-8427-e6c84821e8fc",
+            "label": [
+              {
+                "type": "text",
+                "content": "Name des Vertretungsberechtigten "
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "GbR"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "gridLayout",
+            "columns": 12,
+            "elements": [
+              {
+                "span": 8,
+                "node": {
+                  "type": "field",
+                  "name": "39843be5-9bb3-59bb-9f61-0154515ecf10",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Ort"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 4,
+                "node": {
+                  "type": "field",
+                  "name": "80e0bb6a-adaa-5ea0-855c-172b83d554b3",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Datum"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "date"
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Unterschrift des Vertretungsberechtigten "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "167ddb9d-377c-526c-8427-e6c84821e8fc",
+            "label": [
+              {
+                "type": "text",
+                "content": "Name des Vertretungsberechtigten "
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "Minderjährige"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "gridLayout",
+            "columns": 12,
+            "elements": [
+              {
+                "span": 5,
+                "node": {
+                  "type": "field",
+                  "name": "39843be5-9bb3-59bb-9f61-0154515ecf10",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Ort Unterschrift des gesetzlichen Vertreters 1"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 7,
+                "node": {
+                  "type": "field",
+                  "name": "80e0bb6a-adaa-5ea0-855c-172b83d554b3",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Ort Unterschrift des gesetzlichen Vertreters 2"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "date"
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Datum"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Datum"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "167ddb9d-377c-526c-8427-e6c84821e8fc",
+            "label": [
+              {
+                "type": "text",
+                "content": "Name des gesetzlichen Vertreters 1 Name des gesetzlichen Vertreters 2"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "bbe42e19-c881-5b12-8cc3-859b095115ac",
+        "value": {
+          "type": "text",
+          "value": "Private Person"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "gridLayout",
+            "columns": 12,
+            "elements": [
+              {
+                "span": 8,
+                "node": {
+                  "type": "field",
+                  "name": "39843be5-9bb3-59bb-9f61-0154515ecf10",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Ort"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 4,
+                "node": {
+                  "type": "field",
+                  "name": "80e0bb6a-adaa-5ea0-855c-172b83d554b3",
+                  "label": [
+                    {
+                      "type": "text",
+                      "content": "Datum"
+                    }
+                  ],
+                  "inputType": {
+                    "type": "date"
+                  },
+                  "value": null,
+                  "placeholder": null
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Unterschrift des Kunden "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "167ddb9d-377c-526c-8427-e6c84821e8fc",
+            "label": [
+              {
+                "type": "text",
+                "content": "Name des Kunden "
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    }
+  ],
+  "stateCount": 9
+}

@@ -19749,6 +19749,145 @@ fn test_aais_019_dash_markers_alignment() {
     );
 }
 
+
+/// Test that list markers ("1.", "a.") in T_LeftIndent align vertically with
+/// their corresponding headings ("Open-end products", "Open-end investment funds")
+/// in T_Left for the AAIS_019_EN form.
+///
+/// The XFA form uses two overlapping draw elements positioned at the same (x=0, y=0):
+/// - T_Left: rich text with paragraphs, some with CSS margin-left:25.512pt
+/// - T_LeftIndent: plain text "I.          1.    a.      " with U+2029 paragraph
+///   separators creating aligned markers
+///
+/// Per XFA spec: both draws have lineHeight="9pt", so paragraph heights must match
+/// for list markers to align with their headings.
+#[test]
+fn test_aais_019_en_list_marker_paragraph_alignment() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Collect all T_Left paragraphs with their y-positions and content
+    let t_left_paragraphs: Vec<(String, Decimal)> = flattened
+        .iter_nodes()
+        .filter_map(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                if source_name.as_ref().map(|s| s == "T_Left").unwrap_or(false) {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() {
+                        return Some((trimmed.to_string(), n.y));
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
+    // Collect all T_LeftIndent paragraphs with their y-positions and content
+    let t_left_indent_paragraphs: Vec<(String, Decimal)> = flattened
+        .iter_nodes()
+        .filter_map(|n| {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &n.kind
+            {
+                if source_name
+                    .as_ref()
+                    .map(|s| s == "T_LeftIndent")
+                    .unwrap_or(false)
+                {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() {
+                        return Some((trimmed.to_string(), n.y));
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
+    println!("\n=== T_Left paragraphs ===");
+    for (text, y) in &t_left_paragraphs {
+        let preview: String = text.chars().take(60).collect();
+        println!("  y={:.3}: '{}'", y, preview);
+    }
+
+    println!("\n=== T_LeftIndent paragraphs ===");
+    for (text, y) in &t_left_indent_paragraphs {
+        println!("  y={:.3}: '{}'", y, text);
+    }
+
+    // Find "1." marker and "Open-end products" heading
+    let marker_1 = t_left_indent_paragraphs
+        .iter()
+        .find(|(text, _)| text == "1.")
+        .expect("T_LeftIndent should have a paragraph with '1.'");
+
+    let open_end_products = t_left_paragraphs
+        .iter()
+        .find(|(text, _)| text == "Open-end products")
+        .expect("T_Left should have a paragraph with 'Open-end products'");
+
+    // Find "a." marker and "Open-end investment funds" heading
+    let marker_a = t_left_indent_paragraphs
+        .iter()
+        .find(|(text, _)| text == "a.")
+        .expect("T_LeftIndent should have a paragraph with 'a.'");
+
+    let open_end_funds = t_left_paragraphs
+        .iter()
+        .find(|(text, _)| text == "Open-end investment funds")
+        .expect("T_Left should have a paragraph with 'Open-end investment funds'");
+
+    // Verify alignments (within 0.1pt tolerance for rounding)
+    let tolerance = Decimal::from_str("0.1").unwrap();
+
+    let diff_1 = (marker_1.1 - open_end_products.1).abs();
+    assert!(
+        diff_1 < tolerance,
+        "'1.' (y={:.3}) should be aligned with 'Open-end products' (y={:.3}), diff={:.3}pt. \
+         This means the list marker '1.' should appear on the SAME LINE as 'Open-end products', not above or below.",
+        marker_1.1,
+        open_end_products.1,
+        diff_1
+    );
+    println!(
+        "ok '1.' aligned with 'Open-end products' at y={:.3}",
+        marker_1.1
+    );
+
+    let diff_a = (marker_a.1 - open_end_funds.1).abs();
+    assert!(
+        diff_a < tolerance,
+        "'a.' (y={:.3}) should be aligned with 'Open-end investment funds' (y={:.3}), diff={:.3}pt. \
+         This means the list marker 'a.' should appear on the SAME LINE as 'Open-end investment funds', not above or below.",
+        marker_a.1,
+        open_end_funds.1,
+        diff_a
+    );
+    println!(
+        "ok 'a.' aligned with 'Open-end investment funds' at y={:.3}",
+        marker_a.1
+    );
+
+    println!("\nok All AAIS list markers properly aligned!");
+}
+
 /// Diagnostic test – dump AAIS_019_EN text blocks to understand merger behaviour
 #[test]
 fn test_aais_019_en_text_block_merger_paragraph_separation() {

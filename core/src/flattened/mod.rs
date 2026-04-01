@@ -7879,12 +7879,37 @@ impl Flattened {
                             );
                         }
                         "br" => {
-                            // Line break - start a new paragraph
-                            paragraphs.push(RichParagraph {
-                                h_align: default_h_align,
-                                is_empty: true,
-                                ..Default::default()
-                            });
+                            // Line break handling per XFA/HTML semantics.
+                            // When <br/> appears inside a <p> that has no content yet
+                            // (e.g. <p><br/></p>), mark the existing paragraph as empty
+                            // rather than creating a second one. This is critical for
+                            // alignment between overlapping draw elements (T_Left/T_LeftIndent)
+                            // where each <p> should produce exactly ONE paragraph slot.
+                            if let Some(last_para) = paragraphs.last_mut() {
+                                if last_para.runs.is_empty()
+                                    || last_para
+                                        .runs
+                                        .iter()
+                                        .all(|r| r.text.trim().is_empty())
+                                {
+                                    // Current paragraph is empty, just mark it
+                                    last_para.is_empty = true;
+                                } else {
+                                    // Current paragraph has content, start a new empty one
+                                    paragraphs.push(RichParagraph {
+                                        h_align: default_h_align,
+                                        is_empty: true,
+                                        ..Default::default()
+                                    });
+                                }
+                            } else {
+                                // No paragraphs yet - create one
+                                paragraphs.push(RichParagraph {
+                                    h_align: default_h_align,
+                                    is_empty: true,
+                                    ..Default::default()
+                                });
+                            }
                         }
                         _ => {
                             // Unknown element - handle U+2029 paragraph separators

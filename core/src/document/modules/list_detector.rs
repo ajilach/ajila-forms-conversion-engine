@@ -328,6 +328,33 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
     // Sort by y then x so we can find same-line neighbours.
     root_tbs.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
 
+    // Helper to check if marker and content should be considered on the same line
+    let is_on_same_line = |marker_bounds: &Bounds, content_bounds: &Bounds| -> bool {
+        let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
+        let marker_bottom = marker_bounds.y + marker_bounds.height;
+        let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
+
+        // For narrow marker overlays (XFA pattern), use a larger y tolerance
+        let narrow_marker_threshold = Decimal::from(30);
+        let is_narrow_candidate = marker_bounds.x == content_bounds.x
+            && marker_bounds.width < narrow_marker_threshold
+            && content_bounds.width >= marker_bounds.width * Decimal::from(5);
+        let y_tol_overlay = Decimal::from(25); // accommodate 2-3 lines of paragraph height drift
+        let same_y_overlay = (content_bounds.y - marker_bounds.y).abs() <= y_tol_overlay;
+
+        same_y || marker_above || (is_narrow_candidate && same_y_overlay)
+    };
+
+    // Helper to check if content is valid for merging with marker
+    let is_valid_content = |marker_bounds: &Bounds, content_bounds: &Bounds| -> bool {
+        let content_to_right = content_bounds.x > marker_bounds.x;
+        let narrow_marker_threshold = Decimal::from(30);
+        let is_narrow_overlay = marker_bounds.x == content_bounds.x
+            && marker_bounds.width < narrow_marker_threshold
+            && content_bounds.width >= marker_bounds.width * Decimal::from(5);
+        content_to_right || is_narrow_overlay
+    };
+
     for i in 0..root_tbs.len() {
         let (marker_idx, ref marker_bounds) = root_tbs[i];
         if used.contains(&marker_idx) {
@@ -339,45 +366,73 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
             continue;
         }
 
-        // Find the next root TextBlock on the same line to the right.
-        for j in (i + 1)..root_tbs.len() {
+        // Look for content in a window around the marker's y position.
+        // Search both forward and backward in the sorted list to handle
+        // paragraph height drift in XFA narrow marker overlays.
+        let mut best_content: Option<(usize, Bounds)> = None;
+        let narrow_marker_threshold = Decimal::from(30);
+        let is_narrow_marker = marker_bounds.width < narrow_marker_threshold;
+
+        // For narrow markers, search in both directions
+        let search_range: Box<dyn Iterator<Item = usize>> = if is_narrow_marker {
+            Box::new((0..root_tbs.len()).filter(move |&j| j != i))
+        } else {
+            Box::new((i + 1)..root_tbs.len())
+        };
+
+        for j in search_range {
             let (content_idx, ref content_bounds) = root_tbs[j];
             if used.contains(&content_idx) {
                 continue;
             }
 
-            // Check if the content is on the "same line" as the marker.
-            // Two criteria:
-            //   a) Same y within tolerance (marker and content have similar top), OR
-            //   b) Marker sits directly above content (marker bottom ≈ content top).
-            // Case (b) handles XFA forms where the marker draw element is
-            // positioned one line above the content draw element.
-            let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
-            let marker_bottom = marker_bounds.y + marker_bounds.height;
-            let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
-            let on_same_line = same_y || marker_above;
-
-            // Past the line – stop looking.
-            if !on_same_line {
-                break;
-            }
-
-            // Content must be to the right of the marker.
-            if content_bounds.x <= marker_bounds.x {
+            if !is_on_same_line(marker_bounds, content_bounds) {
+                // For forward-only search, break early; for bidirectional, continue
+                if !is_narrow_marker && j > i {
+                    break;
+                }
                 continue;
             }
 
-            // The content block must not itself be a standalone marker (avoid
-            // merging two markers).
+            if !is_valid_content(marker_bounds, content_bounds) {
+                continue;
+            }
+
+            // The content block must not itself be a standalone marker
             let content_text = doc.get_text_content(content_idx);
             if is_standalone_marker(&content_text).is_some() {
                 continue;
             }
 
+            // For narrow marker overlays, prefer content with closest y that is
+            // BELOW the marker (content.y >= marker.y). In XFA layouts, markers
+            // from the narrow column appear at y positions slightly above their
+            // corresponding content from the wide column.
+            if is_narrow_marker && marker_bounds.x == content_bounds.x {
+                // Only consider content that is at or below the marker's y
+                if content_bounds.y < marker_bounds.y {
+                    continue;
+                }
+                let y_diff = content_bounds.y - marker_bounds.y;
+                if let Some((_, ref best_bounds)) = best_content {
+                    let best_diff = best_bounds.y - marker_bounds.y;
+                    if y_diff < best_diff {
+                        best_content = Some((content_idx, content_bounds.clone()));
+                    }
+                } else {
+                    best_content = Some((content_idx, content_bounds.clone()));
+                }
+            } else {
+                // Standard case: take first valid content
+                best_content = Some((content_idx, content_bounds.clone()));
+                break;
+            }
+        }
+
+        if let Some((content_idx, _)) = best_content {
             merges.push((marker_idx, content_idx));
             used.insert(marker_idx);
             used.insert(content_idx);
-            break;
         }
     }
 
