@@ -187,6 +187,68 @@ pub fn count_conditionals(nodes: &[StructuredNode]) -> usize {
     count
 }
 
+/// Return `true` if any `Paragraph` or `Heading` reachable from `nodes`
+/// **without** passing through a `Conditional` node contains `fragment` in its
+/// plain text.
+///
+/// This is used to assert that text blocks which are common to all form states
+/// are properly "factored out" of conditionals in the merged output.
+pub fn has_text_outside_conditional(nodes: &[StructuredNode], fragment: &str) -> bool {
+    for node in nodes {
+        match node {
+            StructuredNode::Paragraph(p) => {
+                if p.content.as_plain_text().contains(fragment) {
+                    return true;
+                }
+            }
+            StructuredNode::Heading(h) => {
+                if h.content.as_plain_text().contains(fragment) {
+                    return true;
+                }
+            }
+            StructuredNode::Group(g) => {
+                if has_text_outside_conditional(&g.children, fragment) {
+                    return true;
+                }
+            }
+            StructuredNode::Repeatable(r) => {
+                if has_text_outside_conditional(
+                    std::slice::from_ref(r.item.as_ref()),
+                    fragment,
+                ) {
+                    return true;
+                }
+            }
+            StructuredNode::GridLayout(grid) => {
+                for element in &grid.elements {
+                    if has_text_outside_conditional(
+                        std::slice::from_ref(&element.node),
+                        fragment,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+            StructuredNode::Table(table) => {
+                if let Some(header) = &table.header {
+                    if has_text_outside_conditional(&header.cells, fragment) {
+                        return true;
+                    }
+                }
+                for row in &table.rows {
+                    if has_text_outside_conditional(&row.cells, fragment) {
+                        return true;
+                    }
+                }
+            }
+            // Intentionally do NOT recurse into Conditional nodes
+            StructuredNode::Conditional(_) => {}
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Collect all `ListNode`s from the tree.
 pub fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
     let mut out = Vec::new();
