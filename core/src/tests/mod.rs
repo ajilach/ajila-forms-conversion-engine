@@ -19749,7 +19749,6 @@ fn test_aais_019_dash_markers_alignment() {
     );
 }
 
-
 /// Test that list markers ("1.", "a.") in T_LeftIndent align vertically with
 /// their corresponding headings ("Open-end products", "Open-end investment funds")
 /// in T_Left for the AAIS_019_EN form.
