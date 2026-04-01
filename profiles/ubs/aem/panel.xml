@@ -5,7 +5,7 @@
     jcr:lastModifiedBy="{{ author }}"
     jcr:primaryType="nt:unstructured"
     {% if title and title != "" %}jcr:title="{{ title }}"{% endif %}
-    sling:resourceType="{{ variables.resource_type_base }}/panel"
+    sling:resourceType="{{ variables.custom_resource_type_base }}/panel"
     {% if is_page %}css="stepTitle"{% endif %}
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
