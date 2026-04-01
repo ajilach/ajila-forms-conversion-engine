@@ -3291,20 +3291,51 @@ impl Flattened {
     /// applying the subform's top border edge to the first enclosed leaf node and the
     /// bottom edge to the last, but only when the node's own corresponding edge is not
     /// already visible and only for edges explicitly specified in the XFA source.
+    ///
+    /// The `parent_x`, `parent_y`, `parent_width`, `parent_height` parameters specify
+    /// the subform's outer bounds; these are stored in the border's `render_bounds` field
+    /// so that edges are rendered at the subform's position rather than the individual
+    /// child node's position.
     fn propagate_subform_border_to_children(
         border: &crate::xfa::Border,
         children_range: &mut [FlattenedKind],
+        parent_x: Num,
+        parent_y: Num,
+        parent_width: Num,
+        parent_height: Num,
     ) {
         // Per XFA spec: if fewer than 4 edge elements are supplied, the last is reused.
         // We intentionally consume edges via get_edge() so reused visible edges are
         // propagated consistently with runtime border rendering.
+        //
+        // We apply horizontal edges (top/bottom) to BOTH first and last leaf nodes
+        // so that heading detection and semantic queries can determine if ANY node
+        // in the row has a border. The render_bounds field ensures that edges render
+        // at the parent's position; since all nodes share the same render bounds,
+        // overlapping lines appear as a single visual line.
         if let Some(top) = border.get_edge(0) {
             if top.presence == "visible" && top.thickness.is_some() {
                 if let Some(node) = Self::first_leaf_node_mut(children_range) {
-                    Self::apply_edge_to_node_if_not_visible(node, top, 0);
+                    Self::apply_edge_to_node_if_not_visible(
+                        node,
+                        top,
+                        0,
+                        parent_x,
+                        parent_y,
+                        parent_width,
+                        parent_height,
+                    );
                 }
                 if let Some(node) = Self::last_leaf_node_mut(children_range) {
-                    Self::apply_edge_to_node_if_not_visible(node, top, 0);
+                    Self::apply_edge_to_node_if_not_visible(
+                        node,
+                        top,
+                        0,
+                        parent_x,
+                        parent_y,
+                        parent_width,
+                        parent_height,
+                    );
                 }
             }
         }
@@ -3312,10 +3343,26 @@ impl Flattened {
         if let Some(bottom) = border.get_edge(2) {
             if bottom.presence == "visible" && bottom.thickness.is_some() {
                 if let Some(node) = Self::last_leaf_node_mut(children_range) {
-                    Self::apply_edge_to_node_if_not_visible(node, bottom, 2);
+                    Self::apply_edge_to_node_if_not_visible(
+                        node,
+                        bottom,
+                        2,
+                        parent_x,
+                        parent_y,
+                        parent_width,
+                        parent_height,
+                    );
                 }
                 if let Some(node) = Self::first_leaf_node_mut(children_range) {
-                    Self::apply_edge_to_node_if_not_visible(node, bottom, 2);
+                    Self::apply_edge_to_node_if_not_visible(
+                        node,
+                        bottom,
+                        2,
+                        parent_x,
+                        parent_y,
+                        parent_width,
+                        parent_height,
+                    );
                 }
             }
         }
@@ -3323,10 +3370,15 @@ impl Flattened {
 
     /// Apply `edge` to `edge_index` in `node`'s border when that edge is not already visible.
     /// If the node has no border, create a minimal border with just this edge materialised.
+    /// The parent bounds are stored as render bounds so edges render at the parent's position.
     fn apply_edge_to_node_if_not_visible(
         node: &mut FlattenedNode,
         edge: &crate::xfa::Edge,
         edge_index: usize,
+        parent_x: Num,
+        parent_y: Num,
+        parent_width: Num,
+        parent_height: Num,
     ) {
         match &mut node.style.border {
             Some(border) => {
@@ -3346,6 +3398,8 @@ impl Flattened {
                     if border.presence == "hidden" || border.presence == "inactive" {
                         border.presence = "visible".to_string();
                     }
+                    // Store render bounds so edges render at parent's position
+                    border.render_bounds = Some((parent_x, parent_y, parent_width, parent_height));
                 }
             }
             None => {
@@ -3358,6 +3412,7 @@ impl Flattened {
                 node.style.border = Some(crate::xfa::Border {
                     edges,
                     presence: "visible".to_string(),
+                    render_bounds: Some((parent_x, parent_y, parent_width, parent_height)),
                     ..Default::default()
                 });
             }
@@ -3957,10 +4012,18 @@ impl Flattened {
                     // Per XFA spec: a subform's <border> draws a visual box around the subform.
                     // Propagate visible border edges to the first/last enclosed child nodes so
                     // heading detection and rendering reflect the subform border.
+                    // Pass the subform's outer_pos so edges render at the row's position/size.
                     if let Some(ref border) = subform_border {
                         if border.is_visible() {
                             let range = &mut flattened_children[subform_children_start..];
-                            Self::propagate_subform_border_to_children(border, range);
+                            Self::propagate_subform_border_to_children(
+                                border,
+                                range,
+                                outer_pos.x,
+                                outer_pos.y,
+                                outer_pos.width,
+                                outer_pos.height,
+                            );
                         }
                     }
 
@@ -6743,6 +6806,20 @@ impl Flattened {
         let img_width = img.width() as i32;
         let img_height = img.height() as i32;
 
+        // Check if we have override render bounds from a parent subform.
+        // When set, edges are rendered at the parent's position (for full-width row borders).
+        let scale_dec = num(scale as f64);
+        let (render_x, render_y, render_w, render_h) =
+            if let Some((rx, ry, rw, rh)) = border.render_bounds {
+                let rx_scaled = (rx * scale_dec).to_f32().unwrap_or(0.0) as i32;
+                let ry_scaled = (ry * scale_dec).to_f32().unwrap_or(0.0) as i32;
+                let rw_scaled = (rw * scale_dec).to_f32().unwrap_or(0.0) as i32;
+                let rh_scaled = (rh * scale_dec).to_f32().unwrap_or(0.0) as i32;
+                (rx_scaled, ry_scaled, rw_scaled, rh_scaled)
+            } else {
+                (x, y, w, h)
+            };
+
         // Get edges (0=top, 1=right, 2=bottom, 3=left)
         // Per XFA spec: if fewer than 4 edges, reuse the last one
         for edge_idx in 0..4 {
@@ -6766,15 +6843,19 @@ impl Flattened {
                     .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
                     .unwrap_or(Rgba([0u8, 0u8, 0u8, 255u8]));
 
+                // Use render bounds for all edges when available
+                let (edge_x, edge_y, edge_w, edge_h) =
+                    (render_x, render_y, render_w, render_h);
+
                 // Draw based on stroke style
                 match edge.stroke {
                     StrokeStyle::Solid => {
                         Self::draw_edge_solid(
                             img,
-                            x,
-                            y,
-                            w,
-                            h,
+                            edge_x,
+                            edge_y,
+                            edge_w,
+                            edge_h,
                             edge_idx,
                             thickness_px,
                             color,
@@ -6785,10 +6866,10 @@ impl Flattened {
                     StrokeStyle::Dashed => {
                         Self::draw_edge_dashed(
                             img,
-                            x,
-                            y,
-                            w,
-                            h,
+                            edge_x,
+                            edge_y,
+                            edge_w,
+                            edge_h,
                             edge_idx,
                             thickness_px,
                             color,
@@ -6800,10 +6881,10 @@ impl Flattened {
                     StrokeStyle::Dotted => {
                         Self::draw_edge_dashed(
                             img,
-                            x,
-                            y,
-                            w,
-                            h,
+                            edge_x,
+                            edge_y,
+                            edge_w,
+                            edge_h,
                             edge_idx,
                             thickness_px,
                             color,
@@ -6837,10 +6918,10 @@ impl Flattened {
                         };
                         Self::draw_edge_solid(
                             img,
-                            x,
-                            y,
-                            w,
-                            h,
+                            edge_x,
+                            edge_y,
+                            edge_w,
+                            edge_h,
                             edge_idx,
                             thickness_px,
                             edge_color,
@@ -6851,10 +6932,10 @@ impl Flattened {
                     _ => {
                         Self::draw_edge_solid(
                             img,
-                            x,
-                            y,
-                            w,
-                            h,
+                            edge_x,
+                            edge_y,
+                            edge_w,
+                            edge_h,
                             edge_idx,
                             thickness_px,
                             color,

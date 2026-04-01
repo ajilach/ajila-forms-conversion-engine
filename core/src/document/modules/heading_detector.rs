@@ -1188,6 +1188,7 @@ mod tests {
             margin_top: None,
             margin_right: None,
             margin_bottom: None,
+            render_bounds: None,
         });
 
         node

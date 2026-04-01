@@ -103,6 +103,13 @@ pub struct Border {
     pub margin_top: Option<Num>,
     pub margin_right: Option<Num>,
     pub margin_bottom: Option<Num>,
+    /// Optional render bounds override for edges (x, y, width, height).
+    /// When set, edges are rendered at the parent subform's position:
+    /// - Top edge at (x, y) spanning width
+    /// - Bottom edge at (x, y + height) spanning width
+    /// - Left/right edges use x and height
+    /// This is used when a subform border needs to span multiple child cells.
+    pub render_bounds: Option<(Num, Num, Num, Num)>,
 }
 
 impl Border {
@@ -157,6 +164,7 @@ impl Border {
             margin_top: self.margin_top,
             margin_right: self.margin_right,
             margin_bottom: self.margin_bottom,
+            render_bounds: self.render_bounds,
         }
     }
 }
