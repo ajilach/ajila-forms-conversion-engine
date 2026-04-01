@@ -598,6 +598,11 @@ pub struct RichParagraph {
     pub font_size: Option<f32>,
     /// Per-paragraph line height override (from CSS line-height on `<p>` style)
     pub line_height: Option<f32>,
+    /// Per-paragraph left margin (from CSS margin-left on `<p>` style)
+    /// Per XFA spec: reduces available width for text wrapping
+    pub margin_left: Option<f32>,
+    /// Per-paragraph right margin (from CSS margin-right on `<p>` style)
+    pub margin_right: Option<f32>,
 }
 
 /// A run of text with uniform styling.
@@ -649,6 +654,8 @@ pub struct RenderedLine {
     pub h_align: HAlign,
     /// Total width of all content on this line
     pub content_width: f32,
+    /// Per-paragraph left margin (from CSS margin-left), already scaled
+    pub margin_left: f32,
 }
 
 /// A token for text layout - a word or preserved space run.
@@ -7671,6 +7678,10 @@ impl Flattened {
                                 if let Some(mt) = Self::parse_css_dimension(style, "margin-top") {
                                     para.space_above = Some(mt);
                                 }
+                                // Parse CSS margin-left/margin-right for paragraph width reduction
+                                // Per XFA spec Chapter 27: margin-left reduces available width for text wrapping
+                                para.margin_left = Self::parse_css_dimension(style, "margin-left");
+                                para.margin_right = Self::parse_css_dimension(style, "margin-right");
                                 // Only override h_align if CSS specifies it
                                 let css_align = Self::parse_css_alignment_optional(style);
                                 if let Some(align) = css_align {
@@ -8249,9 +8260,16 @@ impl Flattened {
                     text_indent: 0.0,
                     h_align: para.h_align,
                     content_width: 0.0,
+                    margin_left: para.margin_left.unwrap_or(0.0) * scale,
                 });
                 continue;
             }
+
+            // Per XFA spec Chapter 27: margin-left/margin-right on paragraphs reduce
+            // the available width for text wrapping
+            let para_margin_left = para.margin_left.unwrap_or(0.0) * scale;
+            let para_margin_right = para.margin_right.unwrap_or(0.0) * scale;
+            let para_effective_width = (max_width - para_margin_left - para_margin_right).max(0.0);
 
             // Calculate effective indent (in pixels after scaling)
             let para_indent = para.text_indent.unwrap_or(0.0) * scale;
@@ -8269,15 +8287,16 @@ impl Flattened {
                     text_indent: para_indent,
                     h_align: para.h_align,
                     content_width: 0.0,
+                    margin_left: para_margin_left,
                 });
                 continue;
             }
 
-            // Word-wrap the tokens
+            // Word-wrap the tokens using effective width (reduced by margins)
             let para_lines =
                 Self::wrap_tokens_to_lines(
                     &tokens,
-                    max_width,
+                    para_effective_width,
                     para_indent,
                     space_width,
                     hyph_settings,
@@ -8321,6 +8340,7 @@ impl Flattened {
                     text_indent: if is_first { para_indent } else { 0.0 },
                     h_align: para.h_align,
                     content_width,
+                    margin_left: para_margin_left,
                 });
             }
         }
@@ -8811,6 +8831,18 @@ impl Flattened {
                 .and_then(|p| p.space_below)
                 .unwrap_or(Decimal::ZERO);
 
+            // Per XFA spec Chapter 27: margin-left/margin-right on paragraphs reduce
+            // the available width for text wrapping. This is critical for proper
+            // alignment between overlapping draw elements (e.g. T_Left / T_LeftIndent
+            // in AAIS forms where T_Left paragraphs have margin-left:25.512pt).
+            let para_margin_left = para.margin_left.unwrap_or(0.0);
+            let para_margin_right = para.margin_right.unwrap_or(0.0);
+            let effective_width_f32 = (max_width.to_f32().unwrap_or(500.0)
+                - para_margin_left
+                - para_margin_right)
+                .max(0.0);
+            let effective_width = num(effective_width_f32 as f64);
+
             // Get the font for layout_rich_text
             let font_for_layout = measurer.get_font_for_style(&para_xfa_font).ok().cloned();
 
@@ -8822,12 +8854,17 @@ impl Flattened {
                 // draw elements (e.g. T_Left / T_LeftIndent in AAAI).
                 let mut height_para = para.clone();
                 height_para.text_indent = None;
+                // Clear margins since effective_width_f32 already accounts for them.
+                // This prevents double-reduction in layout_rich_text.
+                height_para.margin_left = None;
+                height_para.margin_right = None;
+
                 let single_rt = RichText {
                     paragraphs: vec![height_para],
                 };
                 let rendered_lines = Self::layout_rich_text(
                     &single_rt,
-                    max_width.to_f32().unwrap_or(500.0),
+                    effective_width_f32,
                     para_font_size.to_f32().unwrap_or(10.0),
                     layout_font,
                     1.0, // scale=1.0 for measurement in pt units
@@ -8852,7 +8889,7 @@ impl Flattened {
                     &plain_text,
                     &Some(para_xfa_font.clone()),
                     &para_props_no_indent,
-                    max_width,
+                    effective_width,
                 ) {
                     Ok(block_metrics) => {
                         let num_lines = num(block_metrics.lines.len() as f64);
@@ -8860,7 +8897,7 @@ impl Flattened {
                         paragraph_heights.push(height);
                     }
                     Err(_) => {
-                        let estimated_chars_per_line = max_width / (para_font_size * num(0.5));
+                        let estimated_chars_per_line = effective_width / (para_font_size * num(0.5));
                         let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
                             let text_len = num(plain_text.len() as f64);
                             (text_len / estimated_chars_per_line).ceil()
@@ -9064,19 +9101,17 @@ impl Flattened {
             VAlign::Bottom => box_y as f32 + box_h as f32 - total_height,
         };
 
-        // Get paragraph margins
-        let margin_left = para
+        // Get paragraph margins (node-level defaults, may be overridden per-line)
+        let default_margin_left = para
             .as_ref()
             .and_then(|p| p.margin_left)
             .map(|m| m.to_f32().unwrap_or(0.0) * scale)
             .unwrap_or(0.0);
-        let margin_right = para
+        let default_margin_right = para
             .as_ref()
             .and_then(|p| p.margin_right)
             .map(|m| m.to_f32().unwrap_or(0.0) * scale)
             .unwrap_or(0.0);
-
-        let effective_width = box_w as f32 - margin_left - margin_right;
 
         // Render each line
         for (line_idx, line) in lines.iter().enumerate() {
@@ -9090,38 +9125,48 @@ impl Flattened {
                 continue;
             }
 
+            // Use per-line margin if available (from CSS margin-left on <p>), otherwise node-level default
+            let line_margin_left = if line.margin_left > 0.0 {
+                line.margin_left
+            } else {
+                default_margin_left
+            };
+
+            // Calculate effective width for this line (reduced by margins)
+            let effective_width = box_w as f32 - line_margin_left - default_margin_right;
+
             // Calculate available width (considering text-indent for first line)
             let available_width = effective_width - line.text_indent;
 
             // Determine alignment and spacing
             let (start_x, extra_space) = match line.h_align {
-                HAlign::Left => (box_x as f32 + margin_left + line.text_indent, 0.0),
+                HAlign::Left => (box_x as f32 + line_margin_left + line.text_indent, 0.0),
                 HAlign::Center => {
                     let offset = (available_width - line.content_width) / 2.0;
-                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
                 }
                 HAlign::Right => {
                     let offset = available_width - line.content_width;
-                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
                 }
                 HAlign::Justify | HAlign::JustifyAll => {
                     // Only justify if not the last line (unless JustifyAll)
                     if line.is_last_line && line.h_align != HAlign::JustifyAll {
                         // Last line of paragraph - left align
-                        (box_x as f32 + margin_left + line.text_indent, 0.0)
+                        (box_x as f32 + line_margin_left + line.text_indent, 0.0)
                     } else if line.words.len() > 1 {
                         // Distribute extra space between words
                         let extra = available_width - line.content_width;
                         let gaps = (line.words.len() - 1) as f32;
-                        (box_x as f32 + margin_left + line.text_indent, extra / gaps)
+                        (box_x as f32 + line_margin_left + line.text_indent, extra / gaps)
                     } else {
-                        (box_x as f32 + margin_left + line.text_indent, 0.0)
+                        (box_x as f32 + line_margin_left + line.text_indent, 0.0)
                     }
                 }
                 HAlign::Radix => {
                     // Simplified: treat as center
                     let offset = (available_width - line.content_width) / 2.0;
-                    (box_x as f32 + margin_left + line.text_indent + offset, 0.0)
+                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
                 }
             };
 
