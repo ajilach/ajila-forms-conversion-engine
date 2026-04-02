@@ -253,6 +253,20 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                             g.elements.remove(child_idx);
                         }
                     }
+                    StructuredNode::Repeatable(r) => {
+                        // Repeatable has only one item template (at index 0)
+                        // Replace with Empty instead of removing
+                        if child_idx == 0 {
+                            r.item = Box::new(StructuredNode::Empty);
+                        }
+                    }
+                    StructuredNode::Conditional(c) => {
+                        // Conditional has only one content (at index 0)
+                        // Replace with Empty instead of removing
+                        if child_idx == 0 {
+                            c.content = Box::new(StructuredNode::Empty);
+                        }
+                    }
                     _ => {}
                 }
             }

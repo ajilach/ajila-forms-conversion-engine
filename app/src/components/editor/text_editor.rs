@@ -35,11 +35,6 @@ pub struct TextEditorProps {
 /// Multilingual text editor with tabs for each language.
 #[component]
 pub fn TextEditor(props: TextEditorProps) -> Element {
-    // Track the currently active language tab
-    let mut active_lang = use_signal(|| {
-        props.languages.first().cloned().unwrap_or_else(|| "default".to_string())
-    });
-
     // Collect languages from the content
     let mut content_langs = BTreeSet::new();
     props.content.0.collect_languages(&mut content_langs);
@@ -53,6 +48,12 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+
+    // Track the currently active language tab
+    // Initialize to the first available language (document or content), or "default"
+    let mut active_lang = use_signal(|| {
+        all_langs.first().cloned().unwrap_or_else(|| "default".to_string())
+    });
 
     // Get current text for the active language
     let current_text = if all_langs.is_empty() || *active_lang.read() == "default" {
@@ -140,11 +141,6 @@ pub struct ListItemEditorProps {
 /// Editor for a single list item with multilingual support.
 #[component]
 pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
-    // Track the currently active language tab
-    let mut active_lang = use_signal(|| {
-        props.languages.first().cloned().unwrap_or_else(|| "default".to_string())
-    });
-
     // Collect languages from the content
     let mut content_langs = BTreeSet::new();
     props.content.0.collect_languages(&mut content_langs);
@@ -158,6 +154,12 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+
+    // Track the currently active language tab
+    // Initialize to the first available language (document or content), or "default"
+    let mut active_lang = use_signal(|| {
+        all_langs.first().cloned().unwrap_or_else(|| "default".to_string())
+    });
 
     // Get current text for the active language
     let current_text = if all_langs.is_empty() || *active_lang.read() == "default" {

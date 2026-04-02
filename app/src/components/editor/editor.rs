@@ -88,6 +88,17 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             collect_from_nodes(&row.cells, langs);
                         }
                     }
+                    StructuredNode::Repeatable(r) => {
+                        collect_from_nodes(&[(*r.item).clone()], langs);
+                    }
+                    StructuredNode::Conditional(c) => {
+                        collect_from_nodes(&[(*c.content).clone()], langs);
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        for elem in &g.elements {
+                            collect_from_nodes(&[elem.node.clone()], langs);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -356,40 +367,36 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&str>) {
     if let Some(lang) = language {
         // Update for specific language
-        // Find and update TranslatedText nodes, or convert Text to TranslatedText
-        let mut new_nodes = Vec::new();
-        let mut found = false;
-
+        // For multilingual content, we need to merge all existing content into a single
+        // TranslatedText node, then update the specific language.
+        
+        // First, collect all existing translations
+        let mut translations = std::collections::HashMap::new();
+        
         for node in text.0.iter() {
             match node {
                 InlineNode::TranslatedText(map) => {
-                    let mut new_map = map.clone();
-                    new_map.insert(lang.to_string(), content.to_string());
-                    new_nodes.push(InlineNode::TranslatedText(new_map));
-                    found = true;
-                }
-                other => new_nodes.push(other.clone()),
-            }
-        }
-
-        if !found && !text.0.is_empty() {
-            // Convert first text node to translated
-            new_nodes.clear();
-            for (i, node) in text.0.iter().enumerate() {
-                if i == 0 {
-                    let mut map = std::collections::HashMap::new();
-                    if let InlineNode::Text(existing) = node {
-                        map.insert("default".to_string(), existing.clone());
+                    for (k, v) in map {
+                        translations.insert(k.clone(), v.clone());
                     }
-                    map.insert(lang.to_string(), content.to_string());
-                    new_nodes.push(InlineNode::TranslatedText(map));
-                } else {
-                    new_nodes.push(node.clone());
+                }
+                InlineNode::Text(t) => {
+                    // If there's a plain text node, treat it as the default language
+                    if !translations.contains_key("default") {
+                        translations.insert("default".to_string(), t.clone());
+                    }
+                }
+                _ => {
+                    // Skip formatting nodes for now - simplified editing
                 }
             }
         }
-
-        text.0 = new_nodes;
+        
+        // Update the specified language
+        translations.insert(lang.to_string(), content.to_string());
+        
+        // Create a single TranslatedText node with all translations
+        text.0 = vec![InlineNode::TranslatedText(translations)];
     } else {
         // Replace all content with plain text
         text.0 = vec![InlineNode::Text(content.to_string())];
