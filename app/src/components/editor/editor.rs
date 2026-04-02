@@ -176,12 +176,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         let sel = selection.read();
         if !sel.selected.is_empty() {
             // Get all root-level selected indices
-            let root_indices: Vec<usize> = sel.selected
+            let root_indices: Vec<usize> = sel
+                .selected
                 .iter()
                 .filter(|p| p.len() == 1)
                 .map(|p| p[0])
                 .collect();
-            
+
             if root_indices.is_empty() {
                 (false, false)
             } else {
@@ -266,7 +267,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             EditorAction::MoveUp => {
                 let sel = selection.read();
                 // Get all root-level selected indices, sorted
-                let mut root_indices: Vec<usize> = sel.selected
+                let mut root_indices: Vec<usize> = sel
+                    .selected
                     .iter()
                     .filter(|p| p.len() == 1)
                     .map(|p| p[0])
@@ -294,7 +296,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             EditorAction::MoveDown => {
                 let sel = selection.read();
                 // Get all root-level selected indices, sorted in reverse
-                let mut root_indices: Vec<usize> = sel.selected
+                let mut root_indices: Vec<usize> = sel
+                    .selected
                     .iter()
                     .filter(|p| p.len() == 1)
                     .map(|p| p[0])
