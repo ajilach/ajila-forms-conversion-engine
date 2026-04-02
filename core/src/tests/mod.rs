@@ -9498,6 +9498,189 @@ fn test_aaam_h2_headings_per_radio_option() {
     );
 }
 
+/// Diagnostic test to show paragraph y-positions in BAGO_019
+#[test]
+fn test_bago_019_paragraph_diagnostic() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Find all T_Text and T_Indent nodes in section 1.3 area (y > 380 && y < 700)
+    let mut t_text_nodes: Vec<(Decimal, String)> = Vec::new();
+    let mut t_indent_nodes: Vec<(Decimal, String)> = Vec::new();
+
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { source_name, content, .. } = &node.kind {
+            if node.y <= Decimal::from(380) || node.y >= Decimal::from(700) {
+                continue;
+            }
+            let name = source_name.as_ref().map(|s| s.as_str()).unwrap_or("");
+            let preview: String = content.trim().chars().take(50).collect();
+            if name == "T_Text" && !preview.is_empty() {
+                t_text_nodes.push((node.y, preview));
+            } else if name == "T_Indent" && !preview.is_empty() {
+                t_indent_nodes.push((node.y, preview));
+            }
+        }
+    }
+
+    t_text_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+    t_indent_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+
+    println!("\n=== BAGO_019 Paragraph Alignment ===\n");
+    
+    println!("T_Text paragraphs ({}):", t_text_nodes.len());
+    for (i, (y, text)) in t_text_nodes.iter().enumerate() {
+        println!("  {:2}. y={:7.2}: '{}'", i+1, y, text);
+    }
+    
+    println!("\nT_Indent paragraphs ({}):", t_indent_nodes.len());
+    for (i, (y, text)) in t_indent_nodes.iter().enumerate() {
+        println!("  {:2}. y={:7.2}: '{}'", i+1, y, text);
+    }
+}
+
+/// Test that numbered list markers in T_Indent align with their corresponding
+/// paragraphs in T_Text for BAGO_019 section 1.3 (Erteilung des Überweisungsauftrags).
+///
+/// The XFA uses overlapping draw elements:
+/// - T_Indent: contains markers "1.3", "1)", "2)", "3)", "4)"
+/// - T_Text: contains the paragraph content
+///
+/// Expected alignment (German):
+/// - "1)" aligns with "Der Kunde erteilt der Bank..."
+/// - "2)" aligns with "Der Kunde autorisiert..."  
+/// - "3)" aligns with "Auf Verlangen des Kunden..."
+/// - "4)" aligns with "Der Kunde ist berechtigt..."
+///
+/// Expected alignment (English):
+/// - "1)" aligns with "The client shall issue..."
+/// - "2)" aligns with "The client shall authorise..."
+/// - "3)" aligns with "Before executing an individual..."
+/// - "4)" aligns with "The client shall be entitled..."
+#[test]
+fn test_bago_019_numbered_list_alignment() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    // Test both German and English versions
+    let test_cases = [
+        (
+            "BAGO_019_DE.pdf",
+            vec![
+                ("1)", "Der Kunde erteilt der Bank"),
+                ("2)", "Der Kunde autorisiert"),
+                ("3)", "Auf Verlangen des Kunden"),
+                ("4)", "Der Kunde ist berechtigt"),
+            ],
+        ),
+        (
+            "BAGO_019_EN.pdf",
+            vec![
+                ("1)", "The client shall issue"),
+                ("2)", "The client shall authorise"),
+                ("3)", "Before executing an individual"),
+                ("4)", "The client shall be entitled"),
+            ],
+        ),
+    ];
+
+    for (pdf_name, expected_pairs) in test_cases {
+        let mut bp = Blueprint::from_pdf(input_path(pdf_name)).unwrap();
+        let states = bp.states().unwrap();
+        let default_state = states.iter().next().expect("should have at least one state");
+        let flattened = &default_state.flattened;
+
+        // Collect ALL T_Indent markers with their y-positions (there may be duplicates
+        // across different sections of the document)
+        let mut indent_markers: Vec<(String, Decimal)> = Vec::new();
+        // Collect T_Text paragraphs with their y-positions
+        let mut text_paragraphs: Vec<(Decimal, String)> = Vec::new();
+
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &node.kind
+            {
+                let name = source_name.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let trimmed = content.trim();
+
+                if name == "T_Indent" && !trimmed.is_empty() {
+                    indent_markers.push((trimmed.to_string(), node.y));
+                } else if name == "T_Text" && !trimmed.is_empty() {
+                    text_paragraphs.push((node.y, trimmed.to_string()));
+                }
+            }
+        }
+
+        // Verify each expected pair aligns
+        let tolerance = Decimal::from_str("1.0").unwrap(); // Allow 1pt tolerance
+
+        for (marker, expected_text_start) in &expected_pairs {
+            // Find the text paragraph that starts with the expected text
+            let matching_para = text_paragraphs
+                .iter()
+                .find(|(_, text)| text.starts_with(expected_text_start));
+
+            let (text_y, text_content) = matching_para.unwrap_or_else(|| {
+                panic!(
+                    "[{}] T_Text paragraph starting with '{}' not found",
+                    pdf_name, expected_text_start
+                )
+            });
+
+            // Find the T_Indent marker with this label that is closest to the text y-position
+            let closest_marker = indent_markers
+                .iter()
+                .filter(|(label, _)| label == *marker)
+                .min_by_key(|(_, y)| (*y - *text_y).abs());
+
+            let (_, marker_y) = closest_marker.unwrap_or_else(|| {
+                panic!(
+                    "[{}] T_Indent marker '{}' not found. Available markers: {:?}",
+                    pdf_name,
+                    marker,
+                    indent_markers
+                        .iter()
+                        .map(|(l, _)| l.as_str())
+                        .collect::<Vec<_>>()
+                )
+            });
+
+            let diff = (*marker_y - *text_y).abs();
+            assert!(
+                diff <= tolerance,
+                "[{}] Marker '{}' (y={:.2}) should align with '{}...' (y={:.2}), diff={:.2}pt > {}pt tolerance.\n\
+                 The list marker should appear on the SAME LINE as its content.",
+                pdf_name,
+                marker,
+                marker_y,
+                &text_content.chars().take(40).collect::<String>(),
+                text_y,
+                diff,
+                tolerance
+            );
+
+            println!(
+                "[{}] ✓ '{}' aligns with '{}...' at y={:.2}",
+                pdf_name,
+                marker,
+                &text_content.chars().take(30).collect::<String>(),
+                marker_y
+            );
+        }
+
+        println!("[{}] All {} markers properly aligned!\n", pdf_name, expected_pairs.len());
+    }
+}
+
 #[test]
 fn test_aaam_statusaenderung_heading_has_visible_top_border_in_flattened() {
     use crate::flattened::FlattenedNodeKind;
