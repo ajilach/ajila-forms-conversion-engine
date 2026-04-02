@@ -307,6 +307,18 @@ pub enum GroupKind {
         /// Index into children vec for the field group.
         field: usize,
     },
+
+    /// A text-only table detected from spatially aligned text blocks.
+    ///
+    /// Created by `TableDetector` when text blocks form a grid pattern.
+    /// Children are TextBlock groups, organized row by row (row-major order).
+    /// Converted to `TableNode` in the structured output.
+    Table {
+        /// Number of columns in the table.
+        columns: usize,
+        /// Whether the first row is a header row (typically bold text).
+        has_header: bool,
+    },
 }
 
 impl<'a> Document<'a> {
@@ -1060,6 +1072,13 @@ impl<'a> Document<'a> {
             }
             GroupKind::SelectionInlineField { label_text, .. } => {
                 format!("SelectionInlineField[{}]", label_text)
+            }
+            GroupKind::Table { columns, has_header } => {
+                if *has_header {
+                    format!("Table[{}cols,header]", columns)
+                } else {
+                    format!("Table[{}cols]", columns)
+                }
             }
         }
     }

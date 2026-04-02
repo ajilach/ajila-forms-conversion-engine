@@ -105,6 +105,7 @@ mod radio_button_detector;
 mod radio_button_grouper;
 mod repeatable_detector;
 mod selection_inline_field;
+mod table_detector;
 mod text_block;
 mod text_block_merger;
 
@@ -128,6 +129,7 @@ pub use radio_button_detector::RadioButtonDetector;
 pub use radio_button_grouper::RadioButtonGrouper;
 pub use repeatable_detector::{RepeatableDetector, RepeatableSection};
 pub use selection_inline_field::SelectionInlineFieldDetector;
+pub use table_detector::TableDetector;
 pub use text_block::TextBlockGrouper;
 pub use text_block_merger::TextBlockMerger;
 
@@ -195,6 +197,7 @@ pub fn run_analysis_pipeline_with_context(
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
     OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
+    
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);
     ListDetector::new().process_with_context(doc, ctx);
@@ -202,6 +205,12 @@ pub fn run_analysis_pipeline_with_context(
     SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
+    
+    // Run TableDetector AFTER form elements are detected but BEFORE TextBlockMerger
+    // TODO: TableDetector is causing test failures by claiming text blocks meant for labels
+    // Disabled until algorithm is refined to avoid false positives
+    // TableDetector::new().process_with_context(doc, ctx);
+    
     TextBlockMerger::new().process_with_context(doc, ctx);
 
     FieldTableDetector::new().process_with_context(doc, ctx);

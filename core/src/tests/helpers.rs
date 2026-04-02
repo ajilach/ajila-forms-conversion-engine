@@ -198,6 +198,17 @@ pub fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
     out
 }
 
+/// Collect all `TableNode`s from the tree.
+pub fn collect_tables(nodes: &[StructuredNode]) -> Vec<crate::structured::TableNode> {
+    let mut out = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Table(t) = node {
+            out.push(t.clone());
+        }
+    });
+    out
+}
+
 /// Collect all `InlineNode`s from `Paragraph` nodes in the tree.
 pub fn collect_inline_nodes(nodes: &[StructuredNode]) -> Vec<InlineNode> {
     let mut out = Vec::new();

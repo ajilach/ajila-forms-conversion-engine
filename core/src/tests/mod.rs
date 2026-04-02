@@ -21036,3 +21036,59 @@ fn test_aais_019_no_missing_translation_list() {
         }
     }
 }
+
+
+// ============================================================================
+// Table Detection Tests  
+// ============================================================================
+// Tests for table detection infrastructure. The actual detection algorithm
+// is disabled pending refinement to avoid false positives.
+
+#[test]
+fn test_table_collection_infrastructure() {
+    // Verify that the collect_tables helper works correctly
+    use helpers::collect_tables;
+    use crate::structured::{StructuredNode, TableNode, TableRow, TableHeader, ParagraphNode, InlineText};
+
+    // Create a test table
+    let table = StructuredNode::Table(TableNode {
+        header: Some(TableHeader {
+            cells: vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Col1"),
+                    som_path: None,
+                    source_name: None,
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("Col2"),
+                    som_path: None,
+                    source_name: None,
+                }),
+            ],
+        }),
+        rows: vec![
+            TableRow {
+                cells: vec![
+                    StructuredNode::Paragraph(ParagraphNode {
+                        content: InlineText::plain("A"),
+                        som_path: None,
+                        source_name: None,
+                    }),
+                    StructuredNode::Paragraph(ParagraphNode {
+                        content: InlineText::plain("B"),
+                        som_path: None,
+                        source_name: None,
+                    }),
+                ],
+            },
+        ],
+        caption: None,
+    });
+
+    let nodes = vec![table];
+    let tables = collect_tables(&nodes);
+    
+    assert_eq!(tables.len(), 1, "Should collect exactly one table");
+    assert!(tables[0].header.is_some(), "Table should have a header");
+    assert_eq!(tables[0].rows.len(), 1, "Table should have one row");
+}

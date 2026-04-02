@@ -618,6 +618,56 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
 
+            // Table → TableNode
+            GroupKind::Table { columns, has_header } => {
+                use crate::structured::{TableHeader, TableNode, TableRow};
+
+                let group = self.doc.get_group(group_idx)?;
+                let children = &group.children;
+
+                if children.is_empty() || *columns == 0 {
+                    return None;
+                }
+
+                let num_rows = children.len() / columns;
+                if num_rows == 0 {
+                    return None;
+                }
+
+                let mut rows: Vec<TableRow> = Vec::new();
+                let mut header: Option<TableHeader> = None;
+
+                for row_idx in 0..num_rows {
+                    let start = row_idx * columns;
+                    let end = start + columns;
+                    let row_children = &children[start..end];
+
+                    let cells: Vec<StructuredNode> = row_children
+                        .iter()
+                        .map(|&child_idx| {
+                            let text = self.extract_inline_text(child_idx);
+                            StructuredNode::Paragraph(ParagraphNode {
+                                content: text,
+                                som_path: None,
+                                source_name: None,
+                            })
+                        })
+                        .collect();
+
+                    if row_idx == 0 && *has_header {
+                        header = Some(TableHeader { cells });
+                    } else {
+                        rows.push(TableRow { cells });
+                    }
+                }
+
+                Some(StructuredNode::Table(TableNode {
+                    header,
+                    rows,
+                    caption: None,
+                }))
+            }
+
             // Leaf → depends on node type
             GroupKind::Leaf { node_index } => self.convert_leaf(*node_index),
         }
