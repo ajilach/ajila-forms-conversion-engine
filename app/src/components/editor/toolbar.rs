@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use super::state::{EditorAction, NewNodeType, SelectionState};
+use super::state::{ConvertTarget, EditorAction, NewNodeType, SelectionState};
 
 /// Properties for the editor toolbar.
 #[derive(Clone, PartialEq, Props)]
@@ -17,6 +17,8 @@ pub struct ToolbarProps {
     pub can_move_up: bool,
     /// Whether the selected node can be moved down.
     pub can_move_down: bool,
+    /// Available conversion targets for current selection.
+    pub available_conversions: Vec<ConvertTarget>,
     /// Callback when an action is triggered.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -27,6 +29,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
     let selection_count = props.selection.count();
     let has_selection = selection_count > 0;
     let can_merge = props.can_merge && selection_count >= 2;
+    let has_conversions = !props.available_conversions.is_empty();
 
     rsx! {
         div { class: "editor-toolbar",
@@ -143,6 +146,36 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 }
             }
 
+            // Convert To dropdown
+            div { class: if has_conversions { "toolbar-dropdown" } else { "toolbar-dropdown toolbar-dropdown-disabled" },
+                button {
+                    class: "toolbar-btn",
+                    disabled: !has_conversions,
+                    title: if has_conversions { "Convert selected element(s)" } else { "Select element(s) to convert" },
+                    span { class: "toolbar-icon", "⟲" }
+                    span { class: "toolbar-label", "Convert To" }
+                    span { class: "toolbar-caret", "▾" }
+                }
+                if has_conversions {
+                    div { class: "toolbar-dropdown-menu",
+                        for target in props.available_conversions.iter() {
+                            {
+                                let target = *target;
+                                rsx! {
+                                    button {
+                                        class: "dropdown-item",
+                                        onclick: move |_| {
+                                            props.on_action.call(EditorAction::ConvertSelected(target))
+                                        },
+                                        {conversion_label(target)}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Spacer
             div { class: "toolbar-spacer" }
 
@@ -160,5 +193,15 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 }
             }
         }
+    }
+}
+
+/// Get the display label for a conversion target.
+fn conversion_label(target: ConvertTarget) -> &'static str {
+    match target {
+        ConvertTarget::Paragraph => "Paragraph",
+        ConvertTarget::Paragraphs => "Paragraphs",
+        ConvertTarget::Heading(_) => "Heading",
+        ConvertTarget::List => "List",
     }
 }

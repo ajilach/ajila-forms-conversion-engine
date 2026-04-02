@@ -142,6 +142,21 @@ pub enum EditorAction {
     UpdateMetadata { path: NodePath, metadata: NodeMetadata },
     /// Add a new node.
     AddNode { parent: NodePath, index: usize, node_type: NewNodeType },
+    /// Convert selected node(s) to a different type.
+    ConvertSelected(ConvertTarget),
+}
+
+/// Target type for conversion operations.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ConvertTarget {
+    /// Convert to paragraph (single element).
+    Paragraph,
+    /// Explode to multiple paragraphs (e.g., list -> paragraphs).
+    Paragraphs,
+    /// Convert to heading (with level).
+    Heading(u8),
+    /// Convert multiple items to list.
+    List,
 }
 
 /// Editable metadata for a node.
@@ -399,4 +414,68 @@ pub fn node_children(node: &StructuredNode) -> Option<&[StructuredNode]> {
         StructuredNode::Group(g) => Some(&g.children),
         _ => None,
     }
+}
+
+/// Determine available conversion targets for the current selection.
+///
+/// Returns a list of possible conversions based on what's selected:
+/// - Single paragraph -> Heading
+/// - Single heading -> Paragraph
+/// - Multiple paragraphs -> List
+/// - Single list -> Multiple paragraphs (converted internally to keep as one action)
+pub fn available_conversions(content: &[StructuredNode], paths: &HashSet<NodePath>) -> Vec<ConvertTarget> {
+    if paths.is_empty() {
+        return vec![];
+    }
+
+    // Only support root-level conversions for now
+    if !paths.iter().all(|p| p.len() == 1) {
+        return vec![];
+    }
+
+    // Get all selected nodes
+    let nodes: Vec<&StructuredNode> = paths
+        .iter()
+        .filter_map(|p| get_node_at_path(content, p))
+        .collect();
+
+    if nodes.is_empty() {
+        return vec![];
+    }
+
+    let mut targets = vec![];
+
+    // Single node conversions
+    if nodes.len() == 1 {
+        match nodes[0] {
+            StructuredNode::Paragraph(_) => {
+                // Paragraph can become heading
+                targets.push(ConvertTarget::Heading(2));
+            }
+            StructuredNode::Heading(_) => {
+                // Heading can become paragraph
+                targets.push(ConvertTarget::Paragraph);
+            }
+            StructuredNode::List(_) => {
+                // List can become paragraphs (explode list items)
+                targets.push(ConvertTarget::Paragraphs);
+            }
+            _ => {}
+        }
+    }
+
+    // Multiple node conversions
+    if nodes.len() >= 2 {
+        // Check if all are paragraphs or headings (text-like content)
+        let all_text_like = nodes.iter().all(|n| {
+            matches!(n, StructuredNode::Paragraph(_) | StructuredNode::Heading(_))
+        });
+
+        if all_text_like {
+            // Multiple paragraphs/headings can become a list
+            targets.push(ConvertTarget::List);
+        }
+    }
+
+    targets
 }

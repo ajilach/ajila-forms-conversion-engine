@@ -13,8 +13,8 @@ use blueprint::{
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    EditorAction, NewNodeType, NodeMetadata, SelectionState, can_merge_selected, delete_nodes,
-    get_node_at_path_mut,
+    ConvertTarget, EditorAction, NewNodeType, NodeMetadata, SelectionState, available_conversions,
+    can_merge_selected, delete_nodes, get_node_at_path_mut,
 };
 use super::toolbar::EditorToolbar;
 
@@ -161,6 +161,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         let env = envelope.read();
         let sel = selection.read();
         can_merge_selected(&env.content, &sel.selected).is_ok()
+    };
+
+    // Get available conversions for current selection
+    let conversions = {
+        let env = envelope.read();
+        let sel = selection.read();
+        available_conversions(&env.content, &sel.selected)
     };
 
     // Check if selected nodes can be moved up/down
@@ -423,6 +430,45 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     // TODO: Add to nested parent
                 }
             }
+            EditorAction::ConvertSelected(target) => {
+                // Get selected paths sorted by position
+                let mut paths: Vec<_> = selection.read().selected.iter().cloned().collect();
+                paths.sort();
+
+                // Only support root-level conversions for now
+                if paths.iter().all(|p| p.len() == 1) {
+                    let indices: Vec<usize> = paths.iter().map(|p| p[0]).collect();
+                    let env_read = envelope.read();
+
+                    // Collect nodes to convert
+                    let nodes: Vec<&StructuredNode> = indices
+                        .iter()
+                        .filter_map(|&i| env_read.content.get(i))
+                        .collect();
+
+                    if !nodes.is_empty() {
+                        let converted_nodes = convert_nodes(&nodes, target);
+                        drop(env_read);
+
+                        if !converted_nodes.is_empty() {
+                            let mut env = envelope.write();
+                            // Remove old nodes (in reverse order to maintain indices)
+                            for &idx in indices.iter().rev() {
+                                if idx < env.content.len() {
+                                    env.content.remove(idx);
+                                }
+                            }
+                            // Insert converted nodes at first position
+                            let insert_idx = indices[0].min(env.content.len());
+                            for (i, node) in converted_nodes.into_iter().enumerate() {
+                                env.content.insert(insert_idx + i, node);
+                            }
+                        }
+                    }
+                }
+
+                selection.write().clear();
+            }
         }
     };
 
@@ -457,6 +503,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 can_merge,
                 can_move_up,
                 can_move_down,
+                available_conversions: conversions.clone(),
                 on_action: handle_action,
             }
 
@@ -520,5 +567,90 @@ fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&st
     } else {
         // Replace all content with plain text
         text.0 = vec![InlineNode::Text(content.to_string())];
+    }
+}
+
+/// Convert selected nodes to a target type.
+///
+/// Returns the resulting nodes (may be fewer or more than input).
+fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<StructuredNode> {
+    match target {
+        ConvertTarget::Paragraph => {
+            // Converting single element to paragraph
+            nodes
+                .iter()
+                .map(|n| match n {
+                    StructuredNode::Heading(h) => {
+                        // Heading -> Paragraph: preserve text content
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: h.content.clone(),
+                            som_path: h.som_path.clone(),
+                            source_name: h.source_name.clone(),
+                        })
+                    }
+                    _ => (*n).clone(), // Keep unchanged
+                })
+                .collect()
+        }
+        ConvertTarget::Paragraphs => {
+            // Explode list items to multiple paragraphs
+            nodes
+                .iter()
+                .flat_map(|n| match n {
+                    StructuredNode::List(l) => {
+                        // List -> Multiple paragraphs: each item becomes a paragraph
+                        l.items
+                            .iter()
+                            .map(|item| {
+                                StructuredNode::Paragraph(ParagraphNode {
+                                    content: item.clone(),
+                                    som_path: None,
+                                    source_name: None,
+                                })
+                            })
+                            .collect()
+                    }
+                    _ => vec![(*n).clone()], // Keep unchanged
+                })
+                .collect()
+        }
+        ConvertTarget::Heading(level) => {
+            // Converting to heading
+            nodes
+                .iter()
+                .map(|n| match n {
+                    StructuredNode::Paragraph(p) => {
+                        // Paragraph -> Heading
+                        StructuredNode::Heading(HeadingNode {
+                            level: HeadingLevel::from_u8(level),
+                            content: p.content.clone(),
+                            som_path: p.som_path.clone(),
+                            source_name: p.source_name.clone(),
+                        })
+                    }
+                    _ => (*n).clone(), // Keep unchanged
+                })
+                .collect()
+        }
+        ConvertTarget::List => {
+            // Converting multiple items to a single list
+            let items: Vec<InlineText> = nodes
+                .iter()
+                .filter_map(|n| match n {
+                    StructuredNode::Paragraph(p) => Some(p.content.clone()),
+                    StructuredNode::Heading(h) => Some(h.content.clone()),
+                    _ => None,
+                })
+                .collect();
+
+            if items.is_empty() {
+                vec![]
+            } else {
+                vec![StructuredNode::List(ListNode {
+                    list_style: ListStyleType::Disc,
+                    items,
+                })]
+            }
+        }
     }
 }
