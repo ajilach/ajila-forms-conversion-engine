@@ -3,6 +3,8 @@
 //! The conversion is stateless apart from a small `ConversionContext` that
 //! tracks UUID generation and naming counters.
 
+use std::collections::HashMap;
+
 use uuid::Uuid;
 
 use crate::structured::{
@@ -56,6 +58,8 @@ struct ConversionContext {
     collected_conditions: Vec<CollectedCondition>,
     /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` is true.
     bind_refs: Option<crate::xsd::BindRefMaps>,
+    /// Map from field ID to human-readable label.
+    field_labels: HashMap<FieldId, String>,
 }
 
 impl ConversionContext {
@@ -67,6 +71,7 @@ impl ConversionContext {
             grid_columns: config.grid_columns,
             collected_conditions: Vec::new(),
             bind_refs: None,
+            field_labels: HashMap::new(),
         }
     }
 
@@ -216,6 +221,9 @@ fn short_uuid(uuid: &Uuid) -> String {
 /// Nodes before the first H2 remain directly under the root.
 pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut ctx = ConversionContext::new(config);
+
+    // Collect field labels for display in conditionals
+    collect_field_labels(nodes, &config.master_language, &mut ctx.field_labels);
 
     // If bind_to_xsd is enabled, pre-compute XSD bind-ref paths so that each
     // field / section panel can receive a `bindRef` attribute.
@@ -821,9 +829,15 @@ fn convert_conditional(
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&c.content, config, ctx, config.grid_columns, None);
     let children: Vec<AemNode> = inner.into_iter().collect();
+    
+    // Look up the field label, falling back to the UUID
+    let field_label = ctx.field_labels
+        .get(&c.condition.field_name)
+        .cloned()
+        .unwrap_or_else(|| c.condition.field_name.to_string());
     let title = format!(
         "Condition: {} = {}",
-        c.condition.field_name,
+        field_label,
         format_input_value(&c.condition.value)
     );
 
@@ -1372,6 +1386,43 @@ fn convert_name_values(options: &[NameValue], language: &str) -> Vec<AemOption> 
             AemOption { label, value }
         })
         .collect()
+}
+
+/// Collect field labels from the structured nodes into a map.
+fn collect_field_labels(nodes: &[StructuredNode], language: &str, labels: &mut HashMap<FieldId, String>) {
+    for node in nodes {
+        match node {
+            StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    let label_text = label.plain_text_in(language);
+                    if !label_text.is_empty() {
+                        labels.insert(f.name.clone(), label_text.trim().to_string());
+                    }
+                }
+            }
+            StructuredNode::Group(g) => collect_field_labels(&g.children, language, labels),
+            StructuredNode::Table(t) => {
+                if let Some(header) = &t.header {
+                    collect_field_labels(&header.cells, language, labels);
+                }
+                for row in &t.rows {
+                    collect_field_labels(&row.cells, language, labels);
+                }
+            }
+            StructuredNode::Repeatable(r) => {
+                collect_field_labels(&[(*r.item).clone()], language, labels);
+            }
+            StructuredNode::Conditional(c) => {
+                collect_field_labels(&[(*c.content).clone()], language, labels);
+            }
+            StructuredNode::GridLayout(g) => {
+                for elem in &g.elements {
+                    collect_field_labels(&[elem.node.clone()], language, labels);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn format_input_value(v: &InputValue) -> String {
