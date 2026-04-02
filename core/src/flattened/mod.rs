@@ -8402,25 +8402,44 @@ impl Flattened {
             } else {
                 // Normal text - split into words
                 let mut current_word = String::new();
+                // Track if this run's first character was NOT a space
+                // If so, we should merge with previous token (e.g., "currencies<span>5</span>")
+                let mut run_starts_without_space = !run.text.starts_with(' ');
 
                 for ch in run.text.chars() {
                     if ch == ' ' {
                         if !current_word.is_empty() {
-                            let width = Self::measure_text_width(
-                                &current_word,
-                                font_size,
-                                font,
-                                letter_spacing,
-                            );
-                            tokens.push(LayoutToken {
-                                text: current_word.clone(),
-                                width,
-                                preserve_spaces: false,
-                                bold: run.bold,
-                                italic: run.italic,
-                            });
+                            // Check if we should merge with previous token
+                            if run_starts_without_space && !tokens.is_empty() {
+                                // Merge with previous token
+                                let prev_token = tokens.last_mut().unwrap();
+                                prev_token.text.push_str(&current_word);
+                                // Re-measure the merged width
+                                prev_token.width = Self::measure_text_width(
+                                    &prev_token.text,
+                                    font_size,
+                                    font,
+                                    letter_spacing,
+                                );
+                            } else {
+                                let width = Self::measure_text_width(
+                                    &current_word,
+                                    font_size,
+                                    font,
+                                    letter_spacing,
+                                );
+                                tokens.push(LayoutToken {
+                                    text: current_word.clone(),
+                                    width,
+                                    preserve_spaces: false,
+                                    bold: run.bold,
+                                    italic: run.italic,
+                                });
+                            }
                             current_word.clear();
                         }
+                        // After first word in this run, we're no longer at the start
+                        run_starts_without_space = false;
                     } else {
                         current_word.push(ch);
                     }
@@ -8428,15 +8447,29 @@ impl Flattened {
 
                 // Don't forget the last word
                 if !current_word.is_empty() {
-                    let width =
-                        Self::measure_text_width(&current_word, font_size, font, letter_spacing);
-                    tokens.push(LayoutToken {
-                        text: current_word,
-                        width,
-                        preserve_spaces: false,
-                        bold: run.bold,
-                        italic: run.italic,
-                    });
+                    // Check if we should merge with previous token
+                    if run_starts_without_space && !tokens.is_empty() {
+                        // Merge with previous token
+                        let prev_token = tokens.last_mut().unwrap();
+                        prev_token.text.push_str(&current_word);
+                        // Re-measure the merged width
+                        prev_token.width = Self::measure_text_width(
+                            &prev_token.text,
+                            font_size,
+                            font,
+                            letter_spacing,
+                        );
+                    } else {
+                        let width =
+                            Self::measure_text_width(&current_word, font_size, font, letter_spacing);
+                        tokens.push(LayoutToken {
+                            text: current_word,
+                            width,
+                            preserve_spaces: false,
+                            bold: run.bold,
+                            italic: run.italic,
+                        });
+                    }
                 }
             }
         }
@@ -8885,7 +8918,7 @@ impl Flattened {
                 height_para.margin_right = None;
 
                 let single_rt = RichText {
-                    paragraphs: vec![height_para],
+                    paragraphs: vec![height_para.clone()],
                 };
                 let rendered_lines = Self::layout_rich_text(
                     &single_rt,
