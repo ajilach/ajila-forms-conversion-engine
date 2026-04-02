@@ -111,9 +111,12 @@ pub use document::{Document, Group, GroupKind, GroupSource};
 
 // Structured output
 pub use structured::{
-    DocumentEnvelope, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode, InlineNode,
-    InlineText, MergeError, MergeInput, ParagraphNode, RecursiveMerger, Selection, SelectionKind,
-    StructuredNode, TranslatableString,
+    ConditionalNode, DocumentEnvelope, FieldId, FieldNode, FieldType, GridLayout, GroupNode,
+    HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, ListNode, MergeError, MergeInput,
+    ParagraphNode, RecursiveMerger, RepeatableNode, Selection, SelectionKind, StructuredNode,
+    TableNode, TranslatableString,
+    // Element merging for editor
+    ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
 };
 
 // AEM generation

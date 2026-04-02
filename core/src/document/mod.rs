@@ -39,11 +39,11 @@ use ab_glyph::PxScale;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rust_decimal::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// The CSS `list-style-type` for a list, preserved from the detected marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ListStyleType {
     // Unordered

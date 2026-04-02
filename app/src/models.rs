@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+// Re-export DocumentEnvelope for the editor
+pub use blueprint::DocumentEnvelope;
+
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProcessingStep {
     #[default]
@@ -12,7 +15,7 @@ pub enum ProcessingStep {
     Complete,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProcessingState {
     pub step: ProcessingStep,
     pub available_states: Vec<String>,
@@ -26,6 +29,28 @@ pub struct ProcessingState {
     pub error: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    /// The merged document envelope for the editor.
+    /// This is the structured representation before JSON serialization.
+    #[serde(skip)]
+    pub envelope: Option<DocumentEnvelope>,
+}
+
+impl PartialEq for ProcessingState {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare all fields except envelope (which doesn't implement PartialEq)
+        self.step == other.step
+            && self.available_states == other.available_states
+            && self.plain_images == other.plain_images
+            && self.labelled_images == other.labelled_images
+            && self.form_code == other.form_code
+            && self.merged_json == other.merged_json
+            && self.html_preview == other.html_preview
+            && self.aem_package == other.aem_package
+            && self.xsd_schema == other.xsd_schema
+            && self.error == other.error
+            && self.warnings == other.warnings
+            // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
+    }
 }
 
 impl ProcessingState {
