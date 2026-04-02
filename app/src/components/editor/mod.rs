@@ -4,6 +4,7 @@
 //! document output before final generation.
 
 mod editor;
+mod metadata_editor;
 mod node_renderer;
 mod state;
 mod text_editor;

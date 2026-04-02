@@ -1036,3 +1036,147 @@ body {
     color: var(--color-border);
 }
 
+/* ---- Metadata Editor ---- */
+
+.node-metadata-btn {
+    font-size: 0.8em;
+}
+
+.metadata-editor {
+    margin-top: var(--space-xs);
+    padding: var(--space-sm);
+    background: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.metadata-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.metadata-editor-title {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+}
+
+.metadata-editor-close {
+    background: none;
+    border: none;
+    font-size: var(--font-size-lg);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0 var(--space-xs);
+    line-height: 1;
+}
+
+.metadata-editor-close:hover {
+    color: var(--color-text);
+}
+
+.metadata-editor-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.metadata-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.metadata-label {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.metadata-input,
+.metadata-select {
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family);
+    background: var(--light);
+}
+
+.metadata-input:focus,
+.metadata-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(var(--primary500-rgb), 0.2);
+}
+
+.metadata-input:disabled {
+    background: var(--gray100);
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+}
+
+.metadata-field-row {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.metadata-field-row .metadata-input {
+    flex: 1;
+}
+
+.metadata-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.metadata-checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.metadata-info {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-style: italic;
+    margin: 0;
+}
+
+.metadata-editor-actions {
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+}
+
+.metadata-btn {
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--light);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+}
+
+.metadata-btn-done {
+    background: var(--color-primary);
+    color: var(--light);
+    border-color: var(--color-primary);
+}
+
+.metadata-btn-done:hover {
+    background: var(--primary600);
+}

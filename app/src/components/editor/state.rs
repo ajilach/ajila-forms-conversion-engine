@@ -24,6 +24,8 @@ pub struct SelectionState {
     pub editing: Option<NodePath>,
     /// The list item currently being edited (path to list node, item index).
     pub editing_list_item: Option<(NodePath, usize)>,
+    /// The node whose metadata is being edited.
+    pub editing_metadata: Option<NodePath>,
 }
 
 impl SelectionState {
@@ -52,6 +54,7 @@ impl SelectionState {
         self.selected.clear();
         self.editing = None;
         self.editing_list_item = None;
+        self.editing_metadata = None;
     }
 
     /// Check if a node is selected.
@@ -73,12 +76,26 @@ impl SelectionState {
     pub fn stop_editing(&mut self) {
         self.editing = None;
         self.editing_list_item = None;
+        self.editing_metadata = None;
     }
 
     /// Start editing a list item.
     pub fn start_editing_list_item(&mut self, path: NodePath, index: usize) {
         self.editing = None;
         self.editing_list_item = Some((path, index));
+        self.editing_metadata = None;
+    }
+
+    /// Start editing a node's metadata.
+    pub fn start_editing_metadata(&mut self, path: NodePath) {
+        self.editing = None;
+        self.editing_list_item = None;
+        self.editing_metadata = Some(path);
+    }
+
+    /// Check if we're editing a specific node's metadata.
+    pub fn is_editing_metadata(&self, path: &NodePath) -> bool {
+        self.editing_metadata.as_ref() == Some(path)
     }
 
     /// Check if we're editing a specific list item.
@@ -119,8 +136,25 @@ pub enum EditorAction {
     UpdateListItem { path: NodePath, item_index: usize, content: String, language: Option<String> },
     /// Stop editing.
     StopEditing,
+    /// Start editing a node's metadata.
+    StartEditingMetadata(NodePath),
+    /// Update node metadata.
+    UpdateMetadata { path: NodePath, metadata: NodeMetadata },
     /// Add a new node.
     AddNode { parent: NodePath, index: usize, node_type: NewNodeType },
+}
+
+/// Editable metadata for a node.
+#[derive(Clone, Debug)]
+pub enum NodeMetadata {
+    /// Heading level (1-6).
+    HeadingLevel(u8),
+    /// Repeatable min/max occurrences.
+    Repeatable { min: u32, max: Option<u32> },
+    /// Grid layout columns.
+    GridColumns(usize),
+    /// Grid element span.
+    GridElementSpan(usize),
 }
 
 /// Types of nodes that can be added.

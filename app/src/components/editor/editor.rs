@@ -5,13 +5,16 @@
 use dioxus::prelude::*;
 use std::collections::{BTreeSet, HashMap};
 
-use blueprint::{DocumentEnvelope, FieldId, StructuredNode, InlineText, InlineNode, HeadingLevel, HeadingNode, ParagraphNode, ListNode, GroupNode};
 use blueprint::document::ListStyleType;
+use blueprint::{
+    DocumentEnvelope, FieldId, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText,
+    ListNode, ParagraphNode, StructuredNode,
+};
 
-use super::node_renderer::{NodeRenderer, NodesWrapper, FieldLabelsWrapper};
+use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    can_merge_selected, delete_nodes, get_node_at_path_mut, EditorAction, NewNodeType,
-    SelectionState,
+    EditorAction, NewNodeType, NodeMetadata, SelectionState, can_merge_selected, delete_nodes,
+    get_node_at_path_mut,
 };
 use super::toolbar::EditorToolbar;
 
@@ -112,7 +115,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let field_labels = {
         let env = envelope.read();
         let mut labels = HashMap::new();
-        
+
         fn collect_field_labels(nodes: &[StructuredNode], labels: &mut HashMap<FieldId, String>) {
             for node in nodes {
                 match node {
@@ -148,7 +151,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 }
             }
         }
-        
+
         collect_field_labels(&env.content, &mut labels);
         FieldLabelsWrapper(labels)
     };
@@ -197,6 +200,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
             EditorAction::StartEditingListItem(path, index) => {
                 selection.write().start_editing_list_item(path, index);
+            }
+            EditorAction::StartEditingMetadata(path) => {
+                selection.write().start_editing_metadata(path);
             }
             EditorAction::StopEditing => {
                 selection.write().stop_editing();
@@ -249,7 +255,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 if sel.selected.len() == 1 {
                     let path = sel.selected.iter().next().unwrap().clone();
                     drop(sel);
-                    
+
                     if path.len() == 1 && path[0] > 0 {
                         // Root level: swap with previous
                         let idx = path[0];
@@ -266,7 +272,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 if sel.selected.len() == 1 {
                     let path = sel.selected.iter().next().unwrap().clone();
                     drop(sel);
-                    
+
                     let env_len = envelope.read().content.len();
                     if path.len() == 1 && path[0] + 1 < env_len {
                         // Root level: swap with next
@@ -279,7 +285,11 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                 }
             }
-            EditorAction::UpdateText { path, content, language } => {
+            EditorAction::UpdateText {
+                path,
+                content,
+                language,
+            } => {
                 let mut env = envelope.write();
                 if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
                     match node {
@@ -304,17 +314,58 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                 }
             }
-            EditorAction::UpdateListItem { path, item_index, content, language } => {
+            EditorAction::UpdateListItem {
+                path,
+                item_index,
+                content,
+                language,
+            } => {
                 let mut env = envelope.write();
                 if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
                     if let StructuredNode::List(l) = node {
                         if item_index < l.items.len() {
-                            update_inline_text(&mut l.items[item_index], &content, language.as_deref());
+                            update_inline_text(
+                                &mut l.items[item_index],
+                                &content,
+                                language.as_deref(),
+                            );
                         }
                     }
                 }
             }
-            EditorAction::AddNode { parent, index, node_type } => {
+            EditorAction::UpdateMetadata { path, metadata } => {
+                let mut env = envelope.write();
+                if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
+                    match metadata {
+                        NodeMetadata::HeadingLevel(level) => {
+                            if let StructuredNode::Heading(h) = node {
+                                h.level = HeadingLevel::from_u8(level);
+                            }
+                        }
+                        NodeMetadata::Repeatable { min, max } => {
+                            if let StructuredNode::Repeatable(r) = node {
+                                r.min_occurrences = min;
+                                r.max_occurrences = max;
+                            }
+                        }
+                        NodeMetadata::GridColumns(cols) => {
+                            if let StructuredNode::GridLayout(g) = node {
+                                g.columns = cols;
+                            }
+                        }
+                        NodeMetadata::GridElementSpan(span) => {
+                            // For grid element span, we need parent context
+                            // This is more complex and would need different handling
+                            let _ = span;
+                        }
+                    }
+                }
+            }
+            EditorAction::AddNode {
+                parent,
+                index,
+                node_type,
+            } => {
                 let new_node = match node_type {
                     NewNodeType::Paragraph => StructuredNode::Paragraph(ParagraphNode {
                         content: InlineText::plain("New paragraph"),
@@ -331,9 +382,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         list_style: ListStyleType::Disc,
                         items: vec![InlineText::plain("New item")],
                     }),
-                    NewNodeType::Group => StructuredNode::Group(GroupNode {
-                        children: vec![],
-                    }),
+                    NewNodeType::Group => StructuredNode::Group(GroupNode { children: vec![] }),
                 };
 
                 let mut env = envelope.write();
@@ -411,10 +460,10 @@ fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&st
         // Update for specific language
         // For multilingual content, we need to merge all existing content into a single
         // TranslatedText node, then update the specific language.
-        
+
         // First, collect all existing translations
         let mut translations = std::collections::HashMap::new();
-        
+
         for node in text.0.iter() {
             match node {
                 InlineNode::TranslatedText(map) => {
@@ -433,10 +482,10 @@ fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&st
                 }
             }
         }
-        
+
         // Update the specified language
         translations.insert(lang.to_string(), content.to_string());
-        
+
         // Create a single TranslatedText node with all translations
         text.0 = vec![InlineNode::TranslatedText(translations)];
     } else {

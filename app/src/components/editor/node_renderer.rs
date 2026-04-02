@@ -9,6 +9,7 @@ use blueprint::{FieldId, StructuredNode};
 
 use super::state::{node_has_children, node_summary, node_type_name, EditorAction, NodePath, SelectionState};
 use super::text_editor::{TextEditor, ListItemEditor, InlineTextWrapper};
+use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
 
 /// Wrapper for Vec<StructuredNode> that implements PartialEq.
 #[derive(Clone)]
@@ -128,6 +129,8 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
 
     let type_name = node_type_name(&props.node.0);
     let summary = node_summary(&props.node.0);
+    let has_metadata = has_editable_metadata(&props.node.0);
+    let is_editing_metadata = props.selection.is_editing_metadata(&props.path);
 
     // Check if this node type supports text editing
     let can_edit_text = match &props.node.0 {
@@ -211,9 +214,26 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         "✎"
                     }
                 }
+
+                // Metadata edit button (wrench icon)
+                if has_metadata && !is_editing_metadata {
+                    button {
+                        class: "node-edit-btn node-metadata-btn",
+                        title: "Edit properties",
+                        onclick: {
+                            let path = props.path.clone();
+                            let on_action = props.on_action.clone();
+                            move |evt| {
+                                evt.stop_propagation();
+                                on_action.call(EditorAction::StartEditingMetadata(path.clone()));
+                            }
+                        },
+                        "🔧"
+                    }
+                }
             }
 
-            // Text editor (when editing)
+            // Text editor (when editing text)
             if is_editing {
                 match &props.node.0 {
                     StructuredNode::Paragraph(p) => {
@@ -251,6 +271,15 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         }
                     }
                     _ => rsx! {},
+                }
+            }
+
+            // Metadata editor (when editing metadata)
+            if is_editing_metadata {
+                MetadataEditor {
+                    node: MetadataNodeWrapper(props.node.0.clone()),
+                    path: props.path.clone(),
+                    on_action: props.on_action.clone(),
                 }
             }
 
@@ -335,7 +364,10 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         }
                         StructuredNode::Conditional(c) => {
                             // Render the conditional's content
-                            let field_label = props.field_labels.0.get(&c.condition.field_name)
+                            let field_label = props
+                                .field_labels
+                                .0
+                                .get(&c.condition.field_name)
                                 .cloned()
                                 .unwrap_or_else(|| c.condition.field_name.to_string());
                             rsx! {
@@ -354,7 +386,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                         StructuredNode::GridLayout(g) => {
-                            // Render grid elements
                             rsx! {
                                 div { class: "grid-content",
                                     span { class: "grid-label", "{g.columns} columns" }

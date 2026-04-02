@@ -829,9 +829,10 @@ fn convert_conditional(
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&c.content, config, ctx, config.grid_columns, None);
     let children: Vec<AemNode> = inner.into_iter().collect();
-    
+
     // Look up the field label, falling back to the UUID
-    let field_label = ctx.field_labels
+    let field_label = ctx
+        .field_labels
         .get(&c.condition.field_name)
         .cloned()
         .unwrap_or_else(|| c.condition.field_name.to_string());
@@ -1389,7 +1390,11 @@ fn convert_name_values(options: &[NameValue], language: &str) -> Vec<AemOption> 
 }
 
 /// Collect field labels from the structured nodes into a map.
-fn collect_field_labels(nodes: &[StructuredNode], language: &str, labels: &mut HashMap<FieldId, String>) {
+fn collect_field_labels(
+    nodes: &[StructuredNode],
+    language: &str,
+    labels: &mut HashMap<FieldId, String>,
+) {
     for node in nodes {
         match node {
             StructuredNode::Field(f) => {
