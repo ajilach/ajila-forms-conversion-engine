@@ -489,6 +489,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0; /* Required for flex children to scroll */
 }
 
 /* ---- Main Editor Container ---- */
@@ -499,9 +500,11 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0; /* Required for flex children to scroll */
 }
 
 .editor-header {
+    flex-shrink: 0; /* Prevent header from shrinking */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -551,6 +554,7 @@ body {
 /* ---- Editor Toolbar ---- */
 
 .editor-toolbar {
+    flex-shrink: 0; /* Prevent toolbar from shrinking */
     display: flex;
     align-items: center;
     gap: var(--space-xs);
@@ -679,6 +683,7 @@ body {
 
 .editor-content {
     flex: 1;
+    min-height: 0; /* Required for overflow to work in flex child */
     overflow-y: auto;
     padding: var(--space-md);
 }
@@ -1025,6 +1030,7 @@ body {
 /* ---- Editor Status Bar ---- */
 
 .editor-status {
+    flex-shrink: 0; /* Prevent status bar from shrinking */
     padding: var(--space-sm) var(--space-lg);
     border-top: 1px solid var(--color-border);
     background: var(--color-bg-light);
