@@ -57,13 +57,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_up,
-                title: if props.can_move_up {
-                    if selection_count > 1 { "Move selected nodes up" } else { "Move selected node up" }
-                } else if !has_selection {
-                    "Select nodes to move"
-                } else {
-                    "Cannot move up (already at top)"
-                },
+                title: if props.can_move_up { if selection_count > 1 { "Move selected nodes up" } else { "Move selected node up" } } else if !has_selection { "Select nodes to move" } else { "Cannot move up (already at top)" },
                 onclick: move |_| props.on_action.call(EditorAction::MoveUp),
                 span { class: "toolbar-icon", "↑" }
                 span { class: "toolbar-label", "Up" }
@@ -73,13 +67,11 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_down,
-                title: if props.can_move_down {
-                    if selection_count > 1 { "Move selected nodes down" } else { "Move selected node down" }
-                } else if !has_selection {
-                    "Select nodes to move"
+                title: if props.can_move_down { if selection_count > 1 {
+                    "Move selected nodes down"
                 } else {
-                    "Cannot move down (already at bottom)"
-                },
+                    "Move selected node down"
+                } } else if !has_selection { "Select nodes to move" } else { "Cannot move down (already at bottom)" },
                 onclick: move |_| props.on_action.call(EditorAction::MoveDown),
                 span { class: "toolbar-icon", "↓" }
                 span { class: "toolbar-label", "Down" }

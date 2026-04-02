@@ -60,10 +60,11 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                     let on_action = props.on_action.clone();
                                     move |evt: Event<FormData>| {
                                         if let Ok(level) = evt.value().parse::<u8>() {
-                                            on_action.call(EditorAction::UpdateMetadata {
-                                                path: path.clone(),
-                                                metadata: NodeMetadata::HeadingLevel(level),
-                                            });
+                                            on_action
+                                                .call(EditorAction::UpdateMetadata {
+                                                    path: path.clone(),
+                                                    metadata: NodeMetadata::HeadingLevel(level),
+                                                });
                                         }
                                     }
                                 },
@@ -165,13 +166,14 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 let path = props.path.clone();
                                 let on_action = props.on_action.clone();
                                 move |_| {
-                                    on_action.call(EditorAction::UpdateMetadata {
-                                        path: path.clone(),
-                                        metadata: NodeMetadata::Repeatable {
-                                            min: *min_signal.read(),
-                                            max: *max_signal.read(),
-                                        },
-                                    });
+                                    on_action
+                                        .call(EditorAction::UpdateMetadata {
+                                            path: path.clone(),
+                                            metadata: NodeMetadata::Repeatable {
+                                                min: *min_signal.read(),
+                                                max: *max_signal.read(),
+                                            },
+                                        });
                                     on_action.call(EditorAction::StopEditing);
                                 }
                             },
@@ -222,10 +224,11 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 let path = props.path.clone();
                                 let on_action = props.on_action.clone();
                                 move |_| {
-                                    on_action.call(EditorAction::UpdateMetadata {
-                                        path: path.clone(),
-                                        metadata: NodeMetadata::GridColumns(*cols_signal.read()),
-                                    });
+                                    on_action
+                                        .call(EditorAction::UpdateMetadata {
+                                            path: path.clone(),
+                                            metadata: NodeMetadata::GridColumns(*cols_signal.read()),
+                                        });
                                     on_action.call(EditorAction::StopEditing);
                                 }
                             },

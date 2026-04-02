@@ -7,9 +7,11 @@ use std::collections::HashMap;
 
 use blueprint::{FieldId, StructuredNode};
 
-use super::state::{node_has_children, node_summary, node_type_name, EditorAction, NodePath, SelectionState};
-use super::text_editor::{TextEditor, ListItemEditor, InlineTextWrapper};
 use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
+use super::state::{
+    EditorAction, NodePath, SelectionState, node_has_children, node_summary, node_type_name,
+};
+use super::text_editor::{InlineTextWrapper, ListItemEditor, TextEditor};
 
 /// Wrapper for Vec<StructuredNode> that implements PartialEq.
 #[derive(Clone)]
@@ -215,7 +217,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                     }
                 }
 
-                // Metadata edit button (wrench icon)
+                // Metadata edit button (gear icon)
                 if has_metadata && !is_editing_metadata {
                     button {
                         class: "node-edit-btn node-metadata-btn",
@@ -228,7 +230,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                 on_action.call(EditorAction::StartEditingMetadata(path.clone()));
                             }
                         },
-                        "🔧"
+                        "⚙"
                     }
                 }
             }

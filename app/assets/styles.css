@@ -1040,10 +1040,6 @@ body {
 
 /* ---- Metadata Editor ---- */
 
-.node-metadata-btn {
-    font-size: 0.8em;
-}
-
 .metadata-editor {
     margin-top: var(--space-xs);
     padding: var(--space-sm);
