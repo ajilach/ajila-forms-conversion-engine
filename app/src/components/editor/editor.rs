@@ -139,6 +139,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             EditorAction::StartEditing(path) => {
                 selection.write().start_editing(path);
             }
+            EditorAction::StartEditingListItem(path, index) => {
+                selection.write().start_editing_list_item(path, index);
+            }
             EditorAction::StopEditing => {
                 selection.write().stop_editing();
             }
@@ -230,7 +233,28 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         StructuredNode::Heading(h) => {
                             update_inline_text(&mut h.content, &content, language.as_deref());
                         }
+                        StructuredNode::Field(f) => {
+                            if let Some(label) = &mut f.label {
+                                update_inline_text(label, &content, language.as_deref());
+                            }
+                        }
+                        // Handle list item updates that come through UpdateText
+                        // (from the path encoding used in list item editing)
+                        StructuredNode::List(_) => {
+                            // This case is handled by UpdateListItem, but we need to check
+                            // if the path has an extra element for the item index
+                        }
                         _ => {}
+                    }
+                }
+            }
+            EditorAction::UpdateListItem { path, item_index, content, language } => {
+                let mut env = envelope.write();
+                if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
+                    if let StructuredNode::List(l) = node {
+                        if item_index < l.items.len() {
+                            update_inline_text(&mut l.items[item_index], &content, language.as_deref());
+                        }
                     }
                 }
             }

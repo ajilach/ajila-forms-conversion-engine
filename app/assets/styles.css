@@ -850,18 +850,91 @@ body {
 
 .list-item {
     display: flex;
+    align-items: flex-start;
     gap: var(--space-xs);
     padding: var(--space-xs) 0;
     font-size: var(--font-size-sm);
 }
 
+.list-item.editing {
+    flex-direction: column;
+}
+
 .list-item-marker {
     color: var(--color-text-muted);
     min-width: 24px;
+    flex-shrink: 0;
 }
 
 .list-item-text {
     color: var(--color-text);
+    flex: 1;
+}
+
+.list-item .node-edit-btn {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    flex-shrink: 0;
+}
+
+.list-item:hover .node-edit-btn {
+    opacity: 0.7;
+}
+
+.list-item .node-edit-btn:hover {
+    opacity: 1;
+}
+
+.list-item-editor {
+    margin-top: var(--space-xs);
+    margin-left: 24px;
+    padding: var(--space-xs);
+}
+
+.list-item-editor .text-editor-textarea {
+    min-height: 40px;
+}
+
+/* ---- Repeatable Content ---- */
+
+.repeatable-content {
+    padding: var(--space-xs);
+}
+
+.repeatable-label {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xs);
+    font-style: italic;
+}
+
+/* ---- Conditional Content ---- */
+
+.conditional-content {
+    padding: var(--space-xs);
+}
+
+.conditional-label {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xs);
+    font-style: italic;
+}
+
+/* ---- Grid Content ---- */
+
+.grid-content {
+    padding: var(--space-xs);
+}
+
+.grid-label {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xs);
+    font-style: italic;
 }
 
 /* ---- Table Preview ---- */

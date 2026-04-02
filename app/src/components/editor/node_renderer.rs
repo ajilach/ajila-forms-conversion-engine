@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use blueprint::StructuredNode;
 
 use super::state::{node_has_children, node_summary, node_type_name, EditorAction, NodePath, SelectionState};
-use super::text_editor::{TextEditor, InlineTextWrapper};
+use super::text_editor::{TextEditor, ListItemEditor, InlineTextWrapper};
 
 /// Wrapper for Vec<StructuredNode> that implements PartialEq.
 #[derive(Clone)]
@@ -112,10 +112,11 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
     let summary = node_summary(&props.node.0);
 
     // Check if this node type supports text editing
-    let can_edit_text = matches!(
-        &props.node.0,
-        StructuredNode::Paragraph(_) | StructuredNode::Heading(_)
-    );
+    let can_edit_text = match &props.node.0 {
+        StructuredNode::Paragraph(_) | StructuredNode::Heading(_) => true,
+        StructuredNode::Field(f) => f.label.is_some(),
+        _ => false,
+    };
 
     rsx! {
         div {
@@ -216,6 +217,20 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                     }
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            rsx! {
+                                TextEditor {
+                                    content: InlineTextWrapper(label.clone()),
+                                    path: props.path.clone(),
+                                    languages: props.languages.clone(),
+                                    on_action: props.on_action.clone(),
+                                }
+                            }
+                        } else {
+                            rsx! {}
+                        }
+                    }
                     _ => rsx! {}
                 }
             }
@@ -237,20 +252,104 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                         StructuredNode::List(l) => {
-                            // Render list items as pseudo-nodes
+                            // Render list items as editable entries
                             rsx! {
                                 div { class: "list-items",
                                     for (i, item) in l.items.iter().enumerate() {
-                                        div {
-                                            key: "{i}",
-                                            class: "list-item",
-                                            span { class: "list-item-marker",
-                                                "{i + 1}."
-                                            }
-                                            span { class: "list-item-text",
-                                                "{item.as_plain_text()}"
+                                        {
+                                            let is_editing_item = props.selection.is_editing_list_item(&props.path, i);
+                                            let path = props.path.clone();
+                                            let on_action = props.on_action.clone();
+                                            let languages = props.languages.clone();
+                                            rsx! {
+                                                div {
+                                                    key: "{i}",
+                                                    class: if is_editing_item { "list-item editing" } else { "list-item" },
+                                                    span { class: "list-item-marker",
+                                                        "{i + 1}."
+                                                    }
+                                                    if is_editing_item {
+                                                        ListItemEditor {
+                                                            content: InlineTextWrapper(item.clone()),
+                                                            list_path: path.clone(),
+                                                            item_index: i,
+                                                            languages: languages.clone(),
+                                                            on_action: on_action.clone(),
+                                                        }
+                                                    } else {
+                                                        span { class: "list-item-text",
+                                                            "{item.as_plain_text()}"
+                                                        }
+                                                        button {
+                                                            class: "node-edit-btn",
+                                                            onclick: {
+                                                                let path = path.clone();
+                                                                let on_action = on_action.clone();
+                                                                move |evt| {
+                                                                    evt.stop_propagation();
+                                                                    on_action.call(EditorAction::StartEditingListItem(path.clone(), i));
+                                                                }
+                                                            },
+                                                            "✎"
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                        StructuredNode::Repeatable(r) => {
+                            // Render the repeatable's item template
+                            rsx! {
+                                div { class: "repeatable-content",
+                                    span { class: "repeatable-label",
+                                        "Template (min: {r.min_occurrences}, max: {r.max_occurrences.map(|m| m.to_string()).unwrap_or(\"∞\".to_string())})"
+                                    }
+                                    NodeRenderer {
+                                        nodes: NodesWrapper(vec![(*r.item).clone()]),
+                                        selection: props.selection.clone(),
+                                        languages: props.languages.clone(),
+                                        base_path: props.path.clone(),
+                                        depth: props.depth + 1,
+                                        on_action: props.on_action.clone(),
+                                    }
+                                }
+                            }
+                        }
+                        StructuredNode::Conditional(c) => {
+                            // Render the conditional's content
+                            rsx! {
+                                div { class: "conditional-content",
+                                    span { class: "conditional-label",
+                                        "When {c.condition.field_name} = {c.condition.value:?}"
+                                    }
+                                    NodeRenderer {
+                                        nodes: NodesWrapper(vec![(*c.content).clone()]),
+                                        selection: props.selection.clone(),
+                                        languages: props.languages.clone(),
+                                        base_path: props.path.clone(),
+                                        depth: props.depth + 1,
+                                        on_action: props.on_action.clone(),
+                                    }
+                                }
+                            }
+                        }
+                        StructuredNode::GridLayout(g) => {
+                            // Render grid elements
+                            rsx! {
+                                div { class: "grid-content",
+                                    span { class: "grid-label",
+                                        "{g.columns} columns"
+                                    }
+                                    NodeRenderer {
+                                        nodes: NodesWrapper(g.elements.iter().map(|e| e.node.clone()).collect()),
+                                        selection: props.selection.clone(),
+                                        languages: props.languages.clone(),
+                                        base_path: props.path.clone(),
+                                        depth: props.depth + 1,
+                                        on_action: props.on_action.clone(),
                                     }
                                 }
                             }

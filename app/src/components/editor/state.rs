@@ -22,6 +22,8 @@ pub struct SelectionState {
     pub selected: HashSet<NodePath>,
     /// The node currently being edited (text editing mode).
     pub editing: Option<NodePath>,
+    /// The list item currently being edited (path to list node, item index).
+    pub editing_list_item: Option<(NodePath, usize)>,
 }
 
 impl SelectionState {
@@ -49,6 +51,7 @@ impl SelectionState {
     pub fn clear(&mut self) {
         self.selected.clear();
         self.editing = None;
+        self.editing_list_item = None;
     }
 
     /// Check if a node is selected.
@@ -69,6 +72,18 @@ impl SelectionState {
     /// Stop editing.
     pub fn stop_editing(&mut self) {
         self.editing = None;
+        self.editing_list_item = None;
+    }
+
+    /// Start editing a list item.
+    pub fn start_editing_list_item(&mut self, path: NodePath, index: usize) {
+        self.editing = None;
+        self.editing_list_item = Some((path, index));
+    }
+
+    /// Check if we're editing a specific list item.
+    pub fn is_editing_list_item(&self, path: &NodePath, index: usize) -> bool {
+        self.editing_list_item.as_ref() == Some(&(path.clone(), index))
     }
 
     /// Check if we're currently editing a specific node.
@@ -96,8 +111,12 @@ pub enum EditorAction {
     MoveDown,
     /// Start editing a node's text.
     StartEditing(NodePath),
+    /// Start editing a list item.
+    StartEditingListItem(NodePath, usize),
     /// Update text content of a node.
     UpdateText { path: NodePath, content: String, language: Option<String> },
+    /// Update list item content.
+    UpdateListItem { path: NodePath, item_index: usize, content: String, language: Option<String> },
     /// Stop editing.
     StopEditing,
     /// Add a new node.
@@ -322,6 +341,7 @@ pub fn node_has_children(node: &StructuredNode) -> bool {
             | StructuredNode::GridLayout(_)
             | StructuredNode::Repeatable(_)
             | StructuredNode::Conditional(_)
+            | StructuredNode::List(_)
     )
 }
 
