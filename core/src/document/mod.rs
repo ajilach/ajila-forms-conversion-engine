@@ -732,6 +732,11 @@ impl<'a> Document<'a> {
         })
     }
 
+    /// Check if any node in the group has bold text.
+    pub fn is_bold_group(&self, group_idx: usize) -> bool {
+        self.collect_nodes(group_idx).iter().any(|n| n.is_bold())
+    }
+
     /// Check if a group (or any of its descendants) contains a field node.
     pub fn contains_field(&self, group_idx: usize) -> bool {
         let nodes = self.collect_nodes(group_idx);

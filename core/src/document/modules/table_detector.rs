@@ -71,10 +71,6 @@ impl TableDetector {
         }
     }
 
-    fn is_bold_text(&self, doc: &Document, group_idx: usize) -> bool {
-        doc.collect_nodes(group_idx).iter().any(|n| n.is_bold())
-    }
-
     /// Find text blocks that have visible horizontal borders.
     fn find_bordered_blocks(&self, doc: &Document) -> Vec<(usize, Bounds)> {
         doc.roots()
@@ -250,7 +246,7 @@ impl TableDetector {
 
             // Check if first row is a header (all cells are bold)
             if i == 0 {
-                has_header = row.iter().all(|(idx, _)| self.is_bold_text(doc, *idx));
+                has_header = row.iter().all(|(idx, _)| doc.is_bold_group(*idx));
             }
 
             for (idx, _) in row {

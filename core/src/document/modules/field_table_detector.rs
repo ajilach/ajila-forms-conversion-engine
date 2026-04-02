@@ -80,18 +80,13 @@ impl FieldTableDetector {
         self
     }
 
-    /// Check if a group contains bold text.
-    fn is_bold_text(&self, doc: &Document, group_idx: usize) -> bool {
-        doc.collect_nodes(group_idx).iter().any(|n| n.is_bold())
-    }
-
     /// Find all unclaimed TextBlock groups that could be headers.
     fn find_candidate_headers(&self, doc: &Document) -> Vec<usize> {
         let roots = doc.roots();
         roots
             .into_iter()
             .filter(|&idx| {
-                doc.is_text_block(idx) && !doc.is_heading(idx) && self.is_bold_text(doc, idx)
+                doc.is_text_block(idx) && !doc.is_heading(idx) && doc.is_bold_group(idx)
             })
             .collect()
     }
