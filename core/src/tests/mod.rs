@@ -9506,7 +9506,10 @@ fn test_bago_019_paragraph_diagnostic() {
 
     let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find all T_Text and T_Indent nodes in section 1.3 area (y > 380 && y < 700)
@@ -9514,7 +9517,12 @@ fn test_bago_019_paragraph_diagnostic() {
     let mut t_indent_nodes: Vec<(Decimal, String)> = Vec::new();
 
     for node in flattened.iter_nodes() {
-        if let FlattenedNodeKind::Text { source_name, content, .. } = &node.kind {
+        if let FlattenedNodeKind::Text {
+            source_name,
+            content,
+            ..
+        } = &node.kind
+        {
             if node.y <= Decimal::from(380) || node.y >= Decimal::from(700) {
                 continue;
             }
@@ -9532,15 +9540,15 @@ fn test_bago_019_paragraph_diagnostic() {
     t_indent_nodes.sort_by(|a, b| a.0.cmp(&b.0));
 
     println!("\n=== BAGO_019 Paragraph Alignment ===\n");
-    
+
     println!("T_Text paragraphs ({}):", t_text_nodes.len());
     for (i, (y, text)) in t_text_nodes.iter().enumerate() {
-        println!("  {:2}. y={:7.2}: '{}'", i+1, y, text);
+        println!("  {:2}. y={:7.2}: '{}'", i + 1, y, text);
     }
-    
+
     println!("\nT_Indent paragraphs ({}):", t_indent_nodes.len());
     for (i, (y, text)) in t_indent_nodes.iter().enumerate() {
-        println!("  {:2}. y={:7.2}: '{}'", i+1, y, text);
+        println!("  {:2}. y={:7.2}: '{}'", i + 1, y, text);
     }
 }
 
@@ -9593,7 +9601,10 @@ fn test_bago_019_numbered_list_alignment() {
     for (pdf_name, expected_pairs) in test_cases {
         let mut bp = Blueprint::from_pdf(input_path(pdf_name)).unwrap();
         let states = bp.states().unwrap();
-        let default_state = states.iter().next().expect("should have at least one state");
+        let default_state = states
+            .iter()
+            .next()
+            .expect("should have at least one state");
         let flattened = &default_state.flattened;
 
         // Collect ALL T_Indent markers with their y-positions (there may be duplicates
@@ -9677,7 +9688,11 @@ fn test_bago_019_numbered_list_alignment() {
             );
         }
 
-        println!("[{}] All {} markers properly aligned!\n", pdf_name, expected_pairs.len());
+        println!(
+            "[{}] All {} markers properly aligned!\n",
+            pdf_name,
+            expected_pairs.len()
+        );
     }
 }
 
@@ -9742,7 +9757,10 @@ fn test_bago_019_bullet_list_alignment() {
     for (pdf_name, expected_texts) in test_cases {
         let mut bp = Blueprint::from_pdf(input_path(pdf_name)).unwrap();
         let states = bp.states().unwrap();
-        let default_state = states.iter().next().expect("should have at least one state");
+        let default_state = states
+            .iter()
+            .next()
+            .expect("should have at least one state");
         let flattened = &default_state.flattened;
 
         // Collect T_Indent dash markers with their y-positions
@@ -9792,12 +9810,7 @@ fn test_bago_019_bullet_list_alignment() {
             let closest_dash = dash_markers
                 .iter()
                 .min_by_key(|y| (*y - *text_y).abs())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "[{}] No dash markers found in T_Indent",
-                        pdf_name
-                    )
-                });
+                .unwrap_or_else(|| panic!("[{}] No dash markers found in T_Indent", pdf_name));
 
             let diff = (*closest_dash - *text_y).abs();
             assert!(
@@ -20999,7 +21012,6 @@ fn test_radio_inherits_heading_label_when_directly_above() {
     );
 }
 
-
 #[test]
 fn test_aais_019_no_missing_translation_list() {
     use crate::run_exhaustive_to_envelope;
@@ -21037,9 +21049,8 @@ fn test_aais_019_no_missing_translation_list() {
     }
 }
 
-
 // ============================================================================
-// Table Detection Tests  
+// Table Detection Tests
 // ============================================================================
 // Tests for table detection infrastructure. The actual detection algorithm
 // is disabled pending refinement to avoid false positives.
@@ -21047,8 +21058,10 @@ fn test_aais_019_no_missing_translation_list() {
 #[test]
 fn test_table_collection_infrastructure() {
     // Verify that the collect_tables helper works correctly
+    use crate::structured::{
+        InlineText, ParagraphNode, StructuredNode, TableHeader, TableNode, TableRow,
+    };
     use helpers::collect_tables;
-    use crate::structured::{StructuredNode, TableNode, TableRow, TableHeader, ParagraphNode, InlineText};
 
     // Create a test table
     let table = StructuredNode::Table(TableNode {
@@ -21066,29 +21079,56 @@ fn test_table_collection_infrastructure() {
                 }),
             ],
         }),
-        rows: vec![
-            TableRow {
-                cells: vec![
-                    StructuredNode::Paragraph(ParagraphNode {
-                        content: InlineText::plain("A"),
-                        som_path: None,
-                        source_name: None,
-                    }),
-                    StructuredNode::Paragraph(ParagraphNode {
-                        content: InlineText::plain("B"),
-                        som_path: None,
-                        source_name: None,
-                    }),
-                ],
-            },
-        ],
+        rows: vec![TableRow {
+            cells: vec![
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("A"),
+                    som_path: None,
+                    source_name: None,
+                }),
+                StructuredNode::Paragraph(ParagraphNode {
+                    content: InlineText::plain("B"),
+                    som_path: None,
+                    source_name: None,
+                }),
+            ],
+        }],
         caption: None,
     });
 
     let nodes = vec![table];
     let tables = collect_tables(&nodes);
-    
+
     assert_eq!(tables.len(), 1, "Should collect exactly one table");
     assert!(tables[0].header.is_some(), "Table should have a header");
     assert_eq!(tables[0].rows.len(), 1, "Table should have one row");
+}
+
+#[test]
+fn test_aais_019_aem_disclosure_texts_not_in_conditional() {
+    // Both of these paragraphs appear identically in every form state of AAIS_019
+    // and must therefore be "factored out" of conditionals in the merged output.
+    // If either text ends up inside a ConditionalNode the AEM output will
+    // incorrectly hide it for certain form states.
+    use crate::run_exhaustive_to_merged;
+
+    const BENEFITS_TEXT: &str = "UBS Europe SE may receive benefits from investment fund providers and issuers of structured products";
+
+    const DETAILS_TEXT: &str =
+        "Details of the sales compensation for a specific financial instrument";
+
+    let merged = run_exhaustive_to_merged(input_path("AAIS_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AAIS_019_EN");
+
+    assert!(
+        helpers::has_text_outside_conditional(&merged, BENEFITS_TEXT),
+        "'UBS Europe SE may receive benefits…' must NOT be inside a conditional – \
+         it is common to all states and should be factored out"
+    );
+
+    assert!(
+        helpers::has_text_outside_conditional(&merged, DETAILS_TEXT),
+        "'Details of the sales compensation…' must NOT be inside a conditional – \
+         it is common to all states and should be factored out"
+    );
 }
