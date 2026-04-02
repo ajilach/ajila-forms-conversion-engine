@@ -206,10 +206,10 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
     
-    // Run TableDetector AFTER form elements are detected but BEFORE TextBlockMerger
-    // TODO: TableDetector is causing test failures by claiming text blocks meant for labels
-    // Disabled until algorithm is refined to avoid false positives
-    // TableDetector::new().process_with_context(doc, ctx);
+    // TableDetector: Detect text-only tables by analyzing horizontal borders.
+    // Tables are identified by text blocks with visible horizontal borders
+    // that form a grid pattern.
+    TableDetector::new().process_with_context(doc, ctx);
     
     TextBlockMerger::new().process_with_context(doc, ctx);
 

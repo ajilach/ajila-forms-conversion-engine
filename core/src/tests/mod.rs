@@ -21132,3 +21132,409 @@ fn test_aais_019_aem_disclosure_texts_not_in_conditional() {
          it is common to all states and should be factored out"
     );
 }
+
+/// Diagnostic test: look for potential table structures in BAGO_019 by analyzing
+/// horizontal lines (borders) and column alignment.
+#[test]
+fn test_bago_019_table_detection_diagnostic() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    println!("\n=== BAGO_019 Table Detection Diagnostic ===\n");
+
+    // Look for text nodes with borders (potential table cells)
+    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> = Vec::new();
+    
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            // Check if node has bottom border (horizontal line)
+            let has_bottom_border = node.style.border.as_ref().map_or(false, |b| {
+                b.get_edge(2).map_or(false, |e| {
+                    e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO)
+                })
+            });
+            
+            let border_info = if let Some(border) = &node.style.border {
+                let mut edges = Vec::new();
+                for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                    if let Some(e) = border.get_edge(*i) {
+                        if e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO) {
+                            edges.push(format!("{}:{:?}", name, e.thickness));
+                        }
+                    }
+                }
+                if edges.is_empty() { "no-edges".to_string() } else { edges.join(",") }
+            } else {
+                "no-border".to_string()
+            };
+
+            let preview: String = content.trim().chars().take(40).collect();
+            if !preview.is_empty() && border_info != "no-border" && border_info != "no-edges" {
+                cells_with_borders.push((node.y, node.x, node.width, node.height, preview, border_info));
+            }
+        }
+    }
+
+    cells_with_borders.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    println!("Text nodes with borders ({}):", cells_with_borders.len());
+    for (i, (y, x, w, h, text, borders)) in cells_with_borders.iter().enumerate() {
+        println!("  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]", 
+            i + 1, y, x, w, h, text, borders);
+    }
+
+    // Look at the table mentioned by user: "Destination area Currency Unique identifier"
+    println!("\n\n=== Looking for 'Destination area' table ===");
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let content_lower = content.to_lowercase();
+            if content_lower.contains("destination") || content_lower.contains("zielgebiet") ||
+               content_lower.contains("currency") || content_lower.contains("währung") ||
+               content_lower.contains("iban") || content_lower.contains("bic") ||
+               content_lower.contains("germany") || content_lower.contains("deutschland") {
+                let border_info = if let Some(border) = &node.style.border {
+                    let mut edges = Vec::new();
+                    for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                        if let Some(e) = border.get_edge(*i) {
+                            if e.presence != "hidden" {
+                                edges.push(format!("{}:{:?}", name, e.thickness));
+                            }
+                        }
+                    }
+                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                } else {
+                    "no-border".to_string()
+                };
+                
+                let preview: String = content.trim().chars().take(60).collect();
+                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
+                    node.y, node.x, node.width, preview, border_info);
+            }
+        }
+    }
+}
+
+/// Diagnostic test: look for potential table structures in AAIS_019 by analyzing
+/// horizontal lines (borders) and column alignment.
+#[test]
+fn test_aais_019_table_detection_diagnostic() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    println!("\n=== AAIS_019 Table Detection Diagnostic ===\n");
+
+    // Look for text nodes with borders (potential table cells)
+    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> = Vec::new();
+    
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let border_info = if let Some(border) = &node.style.border {
+                let mut edges = Vec::new();
+                for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                    if let Some(e) = border.get_edge(*i) {
+                        if e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO) {
+                            edges.push(format!("{}:{:?}", name, e.thickness));
+                        }
+                    }
+                }
+                if edges.is_empty() { "no-edges".to_string() } else { edges.join(",") }
+            } else {
+                "no-border".to_string()
+            };
+
+            let preview: String = content.trim().chars().take(60).collect();
+            if !preview.is_empty() && border_info != "no-border" && border_info != "no-edges" {
+                cells_with_borders.push((node.y, node.x, node.width, node.height, preview, border_info));
+            }
+        }
+    }
+
+    cells_with_borders.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    println!("Text nodes with borders ({}):", cells_with_borders.len());
+    for (i, (y, x, w, h, text, borders)) in cells_with_borders.iter().enumerate() {
+        println!("  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]", 
+            i + 1, y, x, w, h, text, borders);
+    }
+
+    // Look for fund-related content from the user's expected table
+    println!("\n\n=== Looking for fund table content ===");
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let content_lower = content.to_lowercase();
+            if content_lower.contains("money market") || content_lower.contains("fixed income") ||
+               content_lower.contains("bond funds") || content_lower.contains("real estate") ||
+               content_lower.contains("equity fund") || content_lower.contains("hedge fund") ||
+               content_lower.contains("p.a.") || content_lower.contains("% p.a") ||
+               content_lower.contains("commodity fund") {
+                let border_info = if let Some(border) = &node.style.border {
+                    let mut edges = Vec::new();
+                    for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                        if let Some(e) = border.get_edge(*i) {
+                            if e.presence != "hidden" {
+                                edges.push(format!("{}:{:?}", name, e.thickness));
+                            }
+                        }
+                    }
+                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                } else {
+                    "no-border".to_string()
+                };
+                
+                let preview: String = content.trim().chars().take(80).collect();
+                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
+                    node.y, node.x, node.width, preview, border_info);
+            }
+        }
+    }
+}
+
+/// Test table detection for BAGO_019_DE.pdf
+/// Expected: exactly 2 tables
+/// Table 1: "Destination area / Currency / Unique identifier" table (3 columns, 5 rows)
+/// Table 2: Country/Currency table (2 columns, 30+ rows)
+#[test]
+fn test_bago_019_table_detection() {
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::{StructuredNode, TableNode};
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Run the analysis pipeline
+    let mut doc = Document::from_flattened(flattened);
+    run_analysis_pipeline(&mut doc);
+
+    // Convert to structured nodes
+    let structured = crate::structured::convert(&doc);
+
+    // Collect all tables (owned)
+    fn collect_tables(nodes: &[StructuredNode]) -> Vec<TableNode> {
+        let mut tables = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::Table(t) => tables.push(t.clone()),
+                StructuredNode::Group(g) => tables.extend(collect_tables(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    let items = vec![r.item.as_ref().clone()];
+                    tables.extend(collect_tables(&items));
+                }
+                StructuredNode::Conditional(c) => {
+                    let items = vec![c.content.as_ref().clone()];
+                    tables.extend(collect_tables(&items));
+                }
+                StructuredNode::GridLayout(g) => {
+                    let items: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    tables.extend(collect_tables(&items));
+                }
+                _ => {}
+            }
+        }
+        tables
+    }
+
+    let tables = collect_tables(&structured);
+
+    println!("\n=== BAGO_019 Table Detection Results ===");
+    println!("Found {} tables", tables.len());
+    for (i, table) in tables.iter().enumerate() {
+        let num_cols = if let Some(header) = &table.header {
+            header.cells.len()
+        } else if !table.rows.is_empty() {
+            table.rows[0].cells.len()
+        } else {
+            0
+        };
+        let num_rows = table.rows.len() + if table.header.is_some() { 1 } else { 0 };
+        println!("  Table {}: {} columns x {} rows", i + 1, num_cols, num_rows);
+    }
+
+    // Assert we found exactly 2 tables
+    assert_eq!(
+        tables.len(),
+        2,
+        "BAGO_019 should have exactly 2 tables detected. Found {}",
+        tables.len()
+    );
+
+    // Check the expected content for Table 1 (destination area table)
+    let table1_content: Vec<String> = tables[0]
+        .rows
+        .iter()
+        .flat_map(|row| row.cells.iter())
+        .chain(
+            tables[0]
+                .header
+                .iter()
+                .flat_map(|h| h.cells.iter()),
+        )
+        .filter_map(|cell| {
+            if let StructuredNode::Paragraph(p) = cell {
+                Some(p.content.as_plain_text())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // The first table should contain references to destination areas and payment identifiers
+    let all_content = table1_content.join(" ");
+    assert!(
+        all_content.contains("Zielgebiet") || all_content.contains("IBAN") || all_content.contains("Währung"),
+        "Table 1 should contain destination area/IBAN/currency content"
+    );
+}
+
+/// Test table detection for AAIS_019_EN.pdf
+/// Expected: exactly 1 table (fee structure table)
+/// Table: 2 columns x 9 rows (fund type + fee percentage)
+#[test]
+fn test_aais_019_table_detection() {
+    use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::structured::{StructuredNode, TableNode};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Run the analysis pipeline
+    let mut doc = Document::from_flattened(flattened);
+    run_analysis_pipeline(&mut doc);
+
+    // Convert to structured nodes
+    let structured = crate::structured::convert(&doc);
+
+    // Collect all tables (owned)
+    fn collect_tables(nodes: &[StructuredNode]) -> Vec<TableNode> {
+        let mut tables = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::Table(t) => tables.push(t.clone()),
+                StructuredNode::Group(g) => tables.extend(collect_tables(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    let items = vec![r.item.as_ref().clone()];
+                    tables.extend(collect_tables(&items));
+                }
+                StructuredNode::Conditional(c) => {
+                    let items = vec![c.content.as_ref().clone()];
+                    tables.extend(collect_tables(&items));
+                }
+                StructuredNode::GridLayout(g) => {
+                    let items: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    tables.extend(collect_tables(&items));
+                }
+                _ => {}
+            }
+        }
+        tables
+    }
+
+    let tables = collect_tables(&structured);
+
+    println!("\n=== AAIS_019 Table Detection Results ===");
+    println!("Found {} tables", tables.len());
+    for (i, table) in tables.iter().enumerate() {
+        let num_cols = if let Some(header) = &table.header {
+            header.cells.len()
+        } else if !table.rows.is_empty() {
+            table.rows[0].cells.len()
+        } else {
+            0
+        };
+        let num_rows = table.rows.len() + if table.header.is_some() { 1 } else { 0 };
+        println!("  Table {}: {} columns x {} rows", i + 1, num_cols, num_rows);
+        
+        // Print first few cells for debugging
+        if !table.rows.is_empty() {
+            for (row_idx, row) in table.rows.iter().take(3).enumerate() {
+                for (col_idx, cell) in row.cells.iter().enumerate() {
+                    if let StructuredNode::Paragraph(p) = cell {
+                        let text: String = p.content.as_plain_text().chars().take(50).collect();
+                        println!("    [{},{}]: '{}'", row_idx, col_idx, text);
+                    }
+                }
+            }
+        }
+    }
+
+    // Assert we found exactly 1 table
+    assert_eq!(
+        tables.len(),
+        1,
+        "AAIS_019 should have exactly 1 table detected. Found {}",
+        tables.len()
+    );
+
+    // Check the table has 2 columns
+    let table = &tables[0];
+    let num_cols = if let Some(header) = &table.header {
+        header.cells.len()
+    } else if !table.rows.is_empty() {
+        table.rows[0].cells.len()
+    } else {
+        0
+    };
+    assert_eq!(
+        num_cols, 2,
+        "AAIS_019 table should have 2 columns. Found {}",
+        num_cols
+    );
+
+    // Check the table has 9 rows (as specified by user)
+    let num_rows = table.rows.len() + if table.header.is_some() { 1 } else { 0 };
+    assert_eq!(
+        num_rows, 9,
+        "AAIS_019 table should have 9 rows. Found {}",
+        num_rows
+    );
+
+    // Verify content: should contain fund types and percentages
+    let all_content: String = table
+        .rows
+        .iter()
+        .flat_map(|row| row.cells.iter())
+        .chain(table.header.iter().flat_map(|h| h.cells.iter()))
+        .filter_map(|cell| {
+            if let StructuredNode::Paragraph(p) = cell {
+                Some(p.content.as_plain_text())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    assert!(
+        all_content.contains("money market"),
+        "Table should contain 'money market funds'"
+    );
+    assert!(
+        all_content.contains("equity fund"),
+        "Table should contain 'equity funds'"
+    );
+    assert!(
+        all_content.contains("p.a."),
+        "Table should contain fee percentages (p.a.)"
+    );
+}
