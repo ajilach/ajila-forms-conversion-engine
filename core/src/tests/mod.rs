@@ -9681,6 +9681,153 @@ fn test_bago_019_numbered_list_alignment() {
     }
 }
 
+/// Test that dash bullet markers ("–") in T_Indent align with their corresponding
+/// list items in T_Text for BAGO_019 section 2.1.1 (Regelangaben / Standard information).
+///
+/// The XFA uses overlapping draw elements:
+/// - T_Indent: contains dash markers "–" for each list item
+/// - T_Text: contains the list item content
+///
+/// Expected alignment (German):
+/// - "–" aligns with "Name des Zahlungsempfängers,"
+/// - "–" aligns with "Kundenkennung des Zahlungsempfängers..."
+/// - "–" aligns with "Währung (gegebenenfalls in Kurzform..."
+/// - "–" aligns with "Betrag,"
+/// - "–" aligns with "Name des Kunden,"
+/// - "–" aligns with "IBAN des Kunden,"
+/// - "–" aligns with "und bei grenzüberschreitenden..."
+///
+/// Expected alignment (English):
+/// - "–" aligns with "Name of the payee"
+/// - "–" aligns with "Unique identifier of the payee..."
+/// - "–" aligns with "Currency (if possible, in abbreviated..."
+/// - "–" aligns with "Amount"
+/// - "–" aligns with "Name of the client"
+/// - "–" aligns with "Client's IBAN"
+/// - "–" aligns with "and, in the case of cross-border..."
+#[test]
+fn test_bago_019_bullet_list_alignment() {
+    use crate::flattened::FlattenedNodeKind;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    // Test both German and English versions
+    let test_cases = [
+        (
+            "BAGO_019_DE.pdf",
+            vec![
+                "Name des Zahlungsempfängers,",
+                "Kundenkennung des Zahlungsempfängers",
+                "Währung (gegebenenfalls in Kurzform",
+                "Betrag,",
+                "Name des Kunden,",
+                "IBAN des Kunden,",
+                "und bei grenzüberschreitenden Überweisungen",
+            ],
+        ),
+        (
+            "BAGO_019_EN.pdf",
+            vec![
+                "Name of the payee",
+                "Unique identifier of the payee",
+                "Currency (if possible, in abbreviated",
+                "Amount",
+                "Name of the client",
+                "Client's IBAN",
+                "and, in the case of cross-border",
+            ],
+        ),
+    ];
+
+    for (pdf_name, expected_texts) in test_cases {
+        let mut bp = Blueprint::from_pdf(input_path(pdf_name)).unwrap();
+        let states = bp.states().unwrap();
+        let default_state = states.iter().next().expect("should have at least one state");
+        let flattened = &default_state.flattened;
+
+        // Collect T_Indent dash markers with their y-positions
+        let mut dash_markers: Vec<Decimal> = Vec::new();
+        // Collect T_Text paragraphs with their y-positions
+        let mut text_paragraphs: Vec<(Decimal, String)> = Vec::new();
+
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                ..
+            } = &node.kind
+            {
+                let name = source_name.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let trimmed = content.trim();
+
+                if name == "T_Indent" && trimmed == "–" {
+                    dash_markers.push(node.y);
+                } else if name == "T_Text" && !trimmed.is_empty() {
+                    text_paragraphs.push((node.y, trimmed.to_string()));
+                }
+            }
+        }
+
+        // Sort by y-position
+        dash_markers.sort();
+        text_paragraphs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let tolerance = Decimal::from_str("1.0").unwrap(); // Allow 1pt tolerance
+
+        // For each expected text, find its y-position and verify a dash marker aligns
+        for expected_text_start in &expected_texts {
+            // Find the text paragraph that starts with the expected text
+            let matching_para = text_paragraphs
+                .iter()
+                .find(|(_, text)| text.starts_with(expected_text_start));
+
+            let (text_y, text_content) = matching_para.unwrap_or_else(|| {
+                panic!(
+                    "[{}] T_Text paragraph starting with '{}' not found",
+                    pdf_name, expected_text_start
+                )
+            });
+
+            // Find the dash marker closest to this text y-position
+            let closest_dash = dash_markers
+                .iter()
+                .min_by_key(|y| (*y - *text_y).abs())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "[{}] No dash markers found in T_Indent",
+                        pdf_name
+                    )
+                });
+
+            let diff = (*closest_dash - *text_y).abs();
+            assert!(
+                diff <= tolerance,
+                "[{}] Dash '–' (y={:.2}) should align with '{}...' (y={:.2}), diff={:.2}pt > {}pt tolerance.\n\
+                 The bullet marker should appear on the SAME LINE as its content.",
+                pdf_name,
+                closest_dash,
+                &text_content.chars().take(40).collect::<String>(),
+                text_y,
+                diff,
+                tolerance
+            );
+
+            println!(
+                "[{}] ✓ '–' aligns with '{}...' at y={:.2}",
+                pdf_name,
+                &text_content.chars().take(30).collect::<String>(),
+                text_y
+            );
+        }
+
+        println!(
+            "[{}] All {} bullet items properly aligned!\n",
+            pdf_name,
+            expected_texts.len()
+        );
+    }
+}
+
 #[test]
 fn test_aaam_statusaenderung_heading_has_visible_top_border_in_flattened() {
     use crate::flattened::FlattenedNodeKind;
