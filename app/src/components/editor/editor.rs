@@ -163,20 +163,26 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         can_merge_selected(&env.content, &sel.selected).is_ok()
     };
 
-    // Check if selected node can be moved up/down
+    // Check if selected nodes can be moved up/down
     let (can_move_up, can_move_down) = {
         let env = envelope.read();
         let sel = selection.read();
-        if sel.selected.len() == 1 {
-            let path = sel.selected.iter().next().unwrap();
-            // Only support root-level moves for now
-            if path.len() == 1 {
-                let idx = path[0];
-                let can_up = idx > 0;
-                let can_down = idx + 1 < env.content.len();
-                (can_up, can_down)
-            } else {
+        if !sel.selected.is_empty() {
+            // Get all root-level selected indices
+            let root_indices: Vec<usize> = sel.selected
+                .iter()
+                .filter(|p| p.len() == 1)
+                .map(|p| p[0])
+                .collect();
+            
+            if root_indices.is_empty() {
                 (false, false)
+            } else {
+                let min_idx = *root_indices.iter().min().unwrap();
+                let max_idx = *root_indices.iter().max().unwrap();
+                let can_up = min_idx > 0;
+                let can_down = max_idx + 1 < env.content.len();
+                (can_up, can_down)
             }
         } else {
             (false, false)
@@ -252,36 +258,59 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
             EditorAction::MoveUp => {
                 let sel = selection.read();
-                if sel.selected.len() == 1 {
-                    let path = sel.selected.iter().next().unwrap().clone();
-                    drop(sel);
+                // Get all root-level selected indices, sorted
+                let mut root_indices: Vec<usize> = sel.selected
+                    .iter()
+                    .filter(|p| p.len() == 1)
+                    .map(|p| p[0])
+                    .collect();
+                root_indices.sort();
+                drop(sel);
 
-                    if path.len() == 1 && path[0] > 0 {
-                        // Root level: swap with previous
-                        let idx = path[0];
-                        let mut env = envelope.write();
-                        env.content.swap(idx, idx - 1);
-                        drop(env);
-                        // Update selection to follow the moved node
-                        selection.write().select_single(vec![idx - 1]);
+                if !root_indices.is_empty() && root_indices[0] > 0 {
+                    let mut env = envelope.write();
+                    // Move from top to bottom to avoid index shifting issues
+                    for &idx in &root_indices {
+                        if idx > 0 {
+                            env.content.swap(idx, idx - 1);
+                        }
+                    }
+                    drop(env);
+                    // Update selection to follow moved nodes
+                    let mut new_selection = selection.write();
+                    new_selection.selected.clear();
+                    for idx in root_indices {
+                        new_selection.selected.insert(vec![idx - 1]);
                     }
                 }
             }
             EditorAction::MoveDown => {
                 let sel = selection.read();
-                if sel.selected.len() == 1 {
-                    let path = sel.selected.iter().next().unwrap().clone();
-                    drop(sel);
+                // Get all root-level selected indices, sorted in reverse
+                let mut root_indices: Vec<usize> = sel.selected
+                    .iter()
+                    .filter(|p| p.len() == 1)
+                    .map(|p| p[0])
+                    .collect();
+                root_indices.sort();
+                root_indices.reverse();
+                drop(sel);
 
-                    let env_len = envelope.read().content.len();
-                    if path.len() == 1 && path[0] + 1 < env_len {
-                        // Root level: swap with next
-                        let idx = path[0];
-                        let mut env = envelope.write();
-                        env.content.swap(idx, idx + 1);
-                        drop(env);
-                        // Update selection to follow the moved node
-                        selection.write().select_single(vec![idx + 1]);
+                let env_len = envelope.read().content.len();
+                if !root_indices.is_empty() && root_indices[0] + 1 < env_len {
+                    let mut env = envelope.write();
+                    // Move from bottom to top to avoid index shifting issues
+                    for &idx in &root_indices {
+                        if idx + 1 < env_len {
+                            env.content.swap(idx, idx + 1);
+                        }
+                    }
+                    drop(env);
+                    // Update selection to follow moved nodes
+                    let mut new_selection = selection.write();
+                    new_selection.selected.clear();
+                    for idx in root_indices {
+                        new_selection.selected.insert(vec![idx + 1]);
                     }
                 }
             }

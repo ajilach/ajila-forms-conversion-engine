@@ -981,6 +981,7 @@ body {
     background: var(--light);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
+    overflow: hidden;
 }
 
 .text-editor-textarea {
@@ -991,6 +992,7 @@ body {
     font-family: var(--font-family);
     font-size: var(--font-size-base);
     line-height: 1.5;
+    box-sizing: border-box;
 }
 
 .text-editor-textarea:focus {

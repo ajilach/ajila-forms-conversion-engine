@@ -27,7 +27,6 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
     let selection_count = props.selection.count();
     let has_selection = selection_count > 0;
     let can_merge = props.can_merge && selection_count >= 2;
-    let single_selection = selection_count == 1;
 
     rsx! {
         div { class: "editor-toolbar",
@@ -58,7 +57,13 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_up,
-                title: if props.can_move_up { "Move selected node up" } else if !single_selection { "Select exactly one node to move" } else { "Cannot move up (already at top)" },
+                title: if props.can_move_up {
+                    if selection_count > 1 { "Move selected nodes up" } else { "Move selected node up" }
+                } else if !has_selection {
+                    "Select nodes to move"
+                } else {
+                    "Cannot move up (already at top)"
+                },
                 onclick: move |_| props.on_action.call(EditorAction::MoveUp),
                 span { class: "toolbar-icon", "↑" }
                 span { class: "toolbar-label", "Up" }
@@ -68,7 +73,13 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_down,
-                title: if props.can_move_down { "Move selected node down" } else if !single_selection { "Select exactly one node to move" } else { "Cannot move down (already at bottom)" },
+                title: if props.can_move_down {
+                    if selection_count > 1 { "Move selected nodes down" } else { "Move selected node down" }
+                } else if !has_selection {
+                    "Select nodes to move"
+                } else {
+                    "Cannot move down (already at bottom)"
+                },
                 onclick: move |_| props.on_action.call(EditorAction::MoveDown),
                 span { class: "toolbar-icon", "↓" }
                 span { class: "toolbar-label", "Down" }
