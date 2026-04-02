@@ -7,8 +7,10 @@
 //! Detection strategy:
 //! 1. Find text blocks with visible horizontal borders (top and/or bottom)
 //! 2. Cluster bordered blocks into rows based on Y-position
-//! 3. Determine column structure from X-position alignment within rows
-//! 4. Build tables from contiguous groups of bordered rows
+//! 3. For each bordered row, also include unbordered text blocks on the same row
+//!    that fall within the table's X-extent
+//! 4. Determine column structure from X-position alignment within rows
+//! 5. Build tables from contiguous groups of bordered rows
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
@@ -96,6 +98,20 @@ impl TableDetector {
                 } else {
                     None
                 }
+            })
+            .collect()
+    }
+
+    /// Find ALL text blocks (bordered or not) for potential table inclusion.
+    fn find_all_text_blocks(&self, doc: &Document) -> Vec<(usize, Bounds)> {
+        doc.roots()
+            .into_iter()
+            .filter_map(|idx| {
+                // Only consider text blocks, not headings or fields
+                if !doc.is_text_block(idx) || doc.is_heading(idx) {
+                    return None;
+                }
+                doc.get_bounds(idx).map(|b| (idx, b))
             })
             .collect()
     }
@@ -213,54 +229,74 @@ impl TableDetector {
         regions
     }
 
-    /// Build a table from a detected region.
-    fn build_table(
+    /// For a given table region (defined by bordered rows), find all text blocks
+    /// that should be included in the table rows (including unbordered ones).
+    fn expand_rows_with_unbordered_blocks(
         &self,
         doc: &Document,
-        rows: &[Vec<(usize, Bounds)>],
+        bordered_rows: &[Vec<(usize, Bounds)>],
         region: &[usize],
-    ) -> Option<(Vec<usize>, usize, bool)> {
+        all_text_blocks: &[(usize, Bounds)],
+    ) -> Vec<Vec<(usize, Bounds)>> {
         if region.is_empty() {
-            return None;
+            return vec![];
         }
 
-        // Determine column count from first row
-        let first_row = &rows[region[0]];
-        let num_cols = first_row.len();
+        // Get the bordered blocks in this region
+        let bordered_in_region: HashSet<usize> = region
+            .iter()
+            .flat_map(|&row_idx| bordered_rows[row_idx].iter().map(|(idx, _)| *idx))
+            .collect();
 
-        if num_cols < self.min_columns {
-            return None;
+        // Calculate the X-extent of the table (from leftmost to rightmost bordered block)
+        let mut min_x = Num::MAX;
+        let mut max_x = Num::MIN;
+        for &row_idx in region {
+            for (_, bounds) in &bordered_rows[row_idx] {
+                if bounds.x < min_x {
+                    min_x = bounds.x;
+                }
+                if bounds.right() > max_x {
+                    max_x = bounds.right();
+                }
+            }
         }
 
-        // Collect all children in row-major order
-        let mut children: Vec<usize> = vec![];
-        let mut has_header = false;
+        // Build expanded rows
+        let mut expanded_rows: Vec<Vec<(usize, Bounds)>> = Vec::new();
 
-        for (i, &row_idx) in region.iter().enumerate() {
-            let row = &rows[row_idx];
-
-            // Skip rows that don't have the right number of items
-            if row.len() != num_cols {
+        for &row_idx in region {
+            let bordered_row = &bordered_rows[row_idx];
+            if bordered_row.is_empty() {
                 continue;
             }
 
-            // Check if first row is a header (all cells are bold)
-            if i == 0 {
-                has_header = row.iter().all(|(idx, _)| doc.is_bold_group(*idx));
-            }
+            // Get the Y-position of this row
+            let row_y = bordered_row[0].1.y;
 
-            for (idx, _) in row {
-                children.push(*idx);
-            }
+            // Find all text blocks (bordered or not) that are on this row
+            // and within the table's X-extent
+            let mut row_blocks: Vec<(usize, Bounds)> = all_text_blocks
+                .iter()
+                .filter(|(idx, bounds)| {
+                    // Within Y tolerance
+                    let y_match = (bounds.y - row_y).abs() <= self.row_tolerance;
+                    
+                    // Block overlaps with table X-extent (at least partially within it)
+                    let x_overlap = bounds.x < max_x && bounds.right() > min_x;
+                    
+                    y_match && x_overlap
+                })
+                .cloned()
+                .collect();
+
+            // Sort by X position
+            row_blocks.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+
+            expanded_rows.push(row_blocks);
         }
 
-        // Verify we have enough cells for a valid table
-        let actual_rows = children.len() / num_cols;
-        if actual_rows < self.min_rows {
-            return None;
-        }
-
-        Some((children, num_cols, has_header))
+        expanded_rows
     }
 
     fn process_tables(&self, doc: &mut Document) {
@@ -271,39 +307,86 @@ impl TableDetector {
             return;
         }
 
-        // Cluster into rows
-        let rows = self.cluster_rows(&bordered_blocks);
+        // Also get all text blocks for row expansion
+        let all_text_blocks = self.find_all_text_blocks(doc);
 
-        // Find contiguous table regions
-        let regions = self.detect_table_regions(&rows);
+        // Cluster bordered blocks into rows
+        let bordered_rows = self.cluster_rows(&bordered_blocks);
+
+        // Find contiguous table regions based on bordered blocks
+        let regions = self.detect_table_regions(&bordered_rows);
 
         // Track which groups are claimed by tables
         let mut claimed: HashSet<usize> = HashSet::new();
 
         // Build tables from detected regions
         for region in regions {
-            if let Some((children, num_cols, has_header)) = self.build_table(doc, &rows, &region) {
-                // Skip if any child is already claimed
-                if children.iter().any(|&idx| claimed.contains(&idx)) {
-                    continue;
+            // Expand rows to include unbordered blocks within the table extent
+            let expanded_rows = self.expand_rows_with_unbordered_blocks(
+                doc,
+                &bordered_rows,
+                &region,
+                &all_text_blocks,
+            );
+
+            if expanded_rows.is_empty() {
+                continue;
+            }
+
+            // Determine column count from the row with the most columns
+            // (this handles cases where some rows might have missing cells)
+            let num_cols = expanded_rows.iter().map(|r| r.len()).max().unwrap_or(0);
+            
+            if num_cols < self.min_columns {
+                continue;
+            }
+
+            // Check if rows have consistent column counts
+            // (allow rows with exactly num_cols columns)
+            let valid_rows: Vec<&Vec<(usize, Bounds)>> = expanded_rows
+                .iter()
+                .filter(|r| r.len() == num_cols)
+                .collect();
+
+            if valid_rows.len() < self.min_rows {
+                continue;
+            }
+
+            // Collect all children in row-major order
+            let mut children: Vec<usize> = vec![];
+            let mut has_header = false;
+
+            for (i, row) in valid_rows.iter().enumerate() {
+                // Check if first row is a header (all cells are bold)
+                if i == 0 {
+                    has_header = row.iter().all(|(idx, _)| doc.is_bold_group(*idx));
                 }
 
-                // Create the table group
-                doc.groups.push(crate::document::Group {
-                    kind: GroupKind::Table {
-                        columns: num_cols,
-                        has_header,
-                    },
-                    children: children.clone(),
-                    source: GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                });
-
-                // Mark all children as claimed
-                for child in children {
-                    claimed.insert(child);
+                for (idx, _) in *row {
+                    children.push(*idx);
                 }
+            }
+
+            // Skip if any child is already claimed
+            if children.iter().any(|&idx| claimed.contains(&idx)) {
+                continue;
+            }
+
+            // Create the table group
+            doc.groups.push(crate::document::Group {
+                kind: GroupKind::Table {
+                    columns: num_cols,
+                    has_header,
+                },
+                children: children.clone(),
+                source: GroupSource::Inferred {
+                    module: self.name().to_string(),
+                },
+            });
+
+            // Mark all children as claimed
+            for child in children {
+                claimed.insert(child);
             }
         }
     }

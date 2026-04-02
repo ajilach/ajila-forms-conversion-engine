@@ -21156,7 +21156,7 @@ fn test_bago_019_table_detection_diagnostic() {
     for node in flattened.iter_nodes() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             // Check if node has bottom border (horizontal line)
-            let has_bottom_border = node.style.border.as_ref().map_or(false, |b| {
+            let _has_bottom_border = node.style.border.as_ref().map_or(false, |b| {
                 b.get_edge(2).map_or(false, |e| {
                     e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO)
                 })
@@ -21200,6 +21200,58 @@ fn test_bago_019_table_detection_diagnostic() {
                content_lower.contains("currency") || content_lower.contains("währung") ||
                content_lower.contains("iban") || content_lower.contains("bic") ||
                content_lower.contains("germany") || content_lower.contains("deutschland") {
+                let border_info = if let Some(border) = &node.style.border {
+                    let mut edges = Vec::new();
+                    for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                        if let Some(e) = border.get_edge(*i) {
+                            if e.presence != "hidden" {
+                                edges.push(format!("{}:{:?}", name, e.thickness));
+                            }
+                        }
+                    }
+                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                } else {
+                    "no-border".to_string()
+                };
+                
+                let preview: String = content.trim().chars().take(60).collect();
+                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
+                    node.y, node.x, node.width, preview, border_info);
+            }
+        }
+    }
+
+    // Look for ALL nodes around y=5078 (the country/currency table header row)
+    println!("\n\n=== All text nodes at y≈5078 (country table header row) ===");
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if node.y >= Decimal::from(5070) && node.y <= Decimal::from(5085) {
+                let border_info = if let Some(border) = &node.style.border {
+                    let mut edges = Vec::new();
+                    for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
+                        if let Some(e) = border.get_edge(*i) {
+                            if e.presence != "hidden" {
+                                edges.push(format!("{}:{:?}", name, e.thickness));
+                            }
+                        }
+                    }
+                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                } else {
+                    "no-border".to_string()
+                };
+                
+                let preview: String = content.trim().chars().take(60).collect();
+                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
+                    node.y, node.x, node.width, preview, border_info);
+            }
+        }
+    }
+
+    // Look for ALL nodes around y=5090 (first data row)
+    println!("\n=== All text nodes at y≈5090 (first data row - Belgien) ===");
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if node.y >= Decimal::from(5085) && node.y <= Decimal::from(5100) {
                 let border_info = if let Some(border) = &node.style.border {
                     let mut edges = Vec::new();
                     for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
