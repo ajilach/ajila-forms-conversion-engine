@@ -6,7 +6,10 @@ mod processing;
 
 use dioxus::prelude::*;
 
-use components::{EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection, StructuredEditor};
+use components::{
+    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection,
+    StructuredEditor,
+};
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
 

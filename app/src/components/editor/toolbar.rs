@@ -35,13 +35,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !can_merge,
-                title: if can_merge {
-                    "Merge selected nodes"
-                } else if selection_count < 2 {
-                    "Select at least 2 nodes to merge"
-                } else {
-                    "Selected nodes cannot be merged"
-                },
+                title: if can_merge { "Merge selected nodes" } else if selection_count < 2 { "Select at least 2 nodes to merge" } else { "Selected nodes cannot be merged" },
                 onclick: move |_| props.on_action.call(EditorAction::MergeSelected),
                 span { class: "toolbar-icon", "⊕" }
                 span { class: "toolbar-label", "Merge" }
@@ -51,11 +45,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn toolbar-btn-danger",
                 disabled: !has_selection,
-                title: if has_selection {
-                    format!("Delete {} selected node(s)", selection_count)
-                } else {
-                    "Select nodes to delete".to_string()
-                },
+                title: if has_selection { format!("Delete {} selected node(s)", selection_count) } else { "Select nodes to delete".to_string() },
                 onclick: move |_| props.on_action.call(EditorAction::DeleteSelected),
                 span { class: "toolbar-icon", "✕" }
                 span { class: "toolbar-label", "Delete" }
@@ -68,13 +58,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_up,
-                title: if props.can_move_up {
-                    "Move selected node up"
-                } else if !single_selection {
-                    "Select exactly one node to move"
-                } else {
-                    "Cannot move up (already at top)"
-                },
+                title: if props.can_move_up { "Move selected node up" } else if !single_selection { "Select exactly one node to move" } else { "Cannot move up (already at top)" },
                 onclick: move |_| props.on_action.call(EditorAction::MoveUp),
                 span { class: "toolbar-icon", "↑" }
                 span { class: "toolbar-label", "Up" }
@@ -84,13 +68,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             button {
                 class: "toolbar-btn",
                 disabled: !props.can_move_down,
-                title: if props.can_move_down {
-                    "Move selected node down"
-                } else if !single_selection {
-                    "Select exactly one node to move"
-                } else {
-                    "Cannot move down (already at bottom)"
-                },
+                title: if props.can_move_down { "Move selected node down" } else if !single_selection { "Select exactly one node to move" } else { "Cannot move down (already at bottom)" },
                 onclick: move |_| props.on_action.call(EditorAction::MoveDown),
                 span { class: "toolbar-icon", "↓" }
                 span { class: "toolbar-label", "Down" }
@@ -101,9 +79,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
 
             // Add dropdown
             div { class: "toolbar-dropdown",
-                button {
-                    class: "toolbar-btn",
-                    title: "Add new element",
+                button { class: "toolbar-btn", title: "Add new element",
                     span { class: "toolbar-icon", "+" }
                     span { class: "toolbar-label", "Add" }
                     span { class: "toolbar-caret", "▾" }
@@ -111,38 +87,54 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 div { class: "toolbar-dropdown-menu",
                     button {
                         class: "dropdown-item",
-                        onclick: move |_| props.on_action.call(EditorAction::AddNode {
-                            parent: vec![],
-                            index: 0,
-                            node_type: NewNodeType::Paragraph,
-                        }),
+                        onclick: move |_| {
+                            props
+                                .on_action
+                                .call(EditorAction::AddNode {
+                                    parent: vec![],
+                                    index: 0,
+                                    node_type: NewNodeType::Paragraph,
+                                })
+                        },
                         "Paragraph"
                     }
                     button {
                         class: "dropdown-item",
-                        onclick: move |_| props.on_action.call(EditorAction::AddNode {
-                            parent: vec![],
-                            index: 0,
-                            node_type: NewNodeType::Heading(2),
-                        }),
+                        onclick: move |_| {
+                            props
+                                .on_action
+                                .call(EditorAction::AddNode {
+                                    parent: vec![],
+                                    index: 0,
+                                    node_type: NewNodeType::Heading(2),
+                                })
+                        },
                         "Heading"
                     }
                     button {
                         class: "dropdown-item",
-                        onclick: move |_| props.on_action.call(EditorAction::AddNode {
-                            parent: vec![],
-                            index: 0,
-                            node_type: NewNodeType::List,
-                        }),
+                        onclick: move |_| {
+                            props
+                                .on_action
+                                .call(EditorAction::AddNode {
+                                    parent: vec![],
+                                    index: 0,
+                                    node_type: NewNodeType::List,
+                                })
+                        },
                         "List"
                     }
                     button {
                         class: "dropdown-item",
-                        onclick: move |_| props.on_action.call(EditorAction::AddNode {
-                            parent: vec![],
-                            index: 0,
-                            node_type: NewNodeType::Group,
-                        }),
+                        onclick: move |_| {
+                            props
+                                .on_action
+                                .call(EditorAction::AddNode {
+                                    parent: vec![],
+                                    index: 0,
+                                    node_type: NewNodeType::Group,
+                                })
+                        },
                         "Group"
                     }
                 }
@@ -153,9 +145,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
 
             // Selection info
             if has_selection {
-                span { class: "toolbar-info",
-                    "{selection_count} selected"
-                }
+                span { class: "toolbar-info", "{selection_count} selected" }
             }
 
             // Clear selection button

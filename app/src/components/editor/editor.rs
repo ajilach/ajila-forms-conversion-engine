@@ -3,12 +3,12 @@
 //! This is the top-level component that orchestrates the editor UI.
 
 use dioxus::prelude::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
-use blueprint::{DocumentEnvelope, StructuredNode, InlineText, InlineNode, HeadingLevel, HeadingNode, ParagraphNode, ListNode, GroupNode};
+use blueprint::{DocumentEnvelope, FieldId, StructuredNode, InlineText, InlineNode, HeadingLevel, HeadingNode, ParagraphNode, ListNode, GroupNode};
 use blueprint::document::ListStyleType;
 
-use super::node_renderer::{NodeRenderer, NodesWrapper};
+use super::node_renderer::{NodeRenderer, NodesWrapper, FieldLabelsWrapper};
 use super::state::{
     can_merge_selected, delete_nodes, get_node_at_path_mut, EditorAction, NewNodeType,
     SelectionState,
@@ -106,6 +106,51 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
         collect_from_nodes(&env.content, &mut langs);
         langs.into_iter().collect()
+    };
+
+    // Collect field labels for display in conditionals
+    let field_labels = {
+        let env = envelope.read();
+        let mut labels = HashMap::new();
+        
+        fn collect_field_labels(nodes: &[StructuredNode], labels: &mut HashMap<FieldId, String>) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Field(f) => {
+                        if let Some(label) = &f.label {
+                            let label_text = label.as_plain_text();
+                            if !label_text.is_empty() {
+                                labels.insert(f.name.clone(), label_text);
+                            }
+                        }
+                    }
+                    StructuredNode::Group(g) => collect_field_labels(&g.children, labels),
+                    StructuredNode::Table(t) => {
+                        if let Some(header) = &t.header {
+                            collect_field_labels(&header.cells, labels);
+                        }
+                        for row in &t.rows {
+                            collect_field_labels(&row.cells, labels);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        collect_field_labels(&[(*r.item).clone()], labels);
+                    }
+                    StructuredNode::Conditional(c) => {
+                        collect_field_labels(&[(*c.content).clone()], labels);
+                    }
+                    StructuredNode::GridLayout(g) => {
+                        for elem in &g.elements {
+                            collect_field_labels(&[elem.node.clone()], labels);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        collect_field_labels(&env.content, &mut labels);
+        FieldLabelsWrapper(labels)
     };
 
     // Check if current selection can be merged
@@ -331,9 +376,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             // Toolbar
             EditorToolbar {
                 selection: selection.read().clone(),
-                can_merge: can_merge,
-                can_move_up: can_move_up,
-                can_move_down: can_move_down,
+                can_merge,
+                can_move_up,
+                can_move_down,
                 on_action: handle_action,
             }
 
@@ -343,20 +388,17 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     nodes: NodesWrapper(envelope.read().content.clone()),
                     selection: selection.read().clone(),
                     languages: languages.clone(),
+                    field_labels: field_labels.clone(),
                     on_action: handle_action,
                 }
             }
 
             // Status bar
             div { class: "editor-status",
-                span {
-                    "{envelope.read().content.len()} nodes"
-                }
+                span { "{envelope.read().content.len()} nodes" }
                 if !languages.is_empty() {
                     span { class: "editor-status-sep", " • " }
-                    span {
-                        "Languages: {languages.join(\", \")}"
-                    }
+                    span { "Languages: {languages.join(\", \")}" }
                 }
             }
         }

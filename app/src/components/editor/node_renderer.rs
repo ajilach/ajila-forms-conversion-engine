@@ -3,8 +3,9 @@
 //! Recursively renders the structured node tree with selection and editing support.
 
 use dioxus::prelude::*;
+use std::collections::HashMap;
 
-use blueprint::StructuredNode;
+use blueprint::{FieldId, StructuredNode};
 
 use super::state::{node_has_children, node_summary, node_type_name, EditorAction, NodePath, SelectionState};
 use super::text_editor::{TextEditor, ListItemEditor, InlineTextWrapper};
@@ -29,6 +30,16 @@ impl PartialEq for NodeWrapper {
     }
 }
 
+/// Wrapper for field labels map that implements PartialEq.
+#[derive(Clone, Default)]
+pub struct FieldLabelsWrapper(pub HashMap<FieldId, String>);
+
+impl PartialEq for FieldLabelsWrapper {
+    fn eq(&self, _other: &Self) -> bool {
+        false // Always re-render
+    }
+}
+
 /// Properties for the node renderer.
 #[derive(Clone, PartialEq, Props)]
 pub struct NodeRendererProps {
@@ -38,6 +49,9 @@ pub struct NodeRendererProps {
     pub selection: SelectionState,
     /// Languages available in the document.
     pub languages: Vec<String>,
+    /// Map from field ID to field label.
+    #[props(default)]
+    pub field_labels: FieldLabelsWrapper,
     /// Base path for these nodes (empty for root).
     #[props(default)]
     pub base_path: NodePath,
@@ -53,7 +67,7 @@ pub struct NodeRendererProps {
 pub fn NodeRenderer(props: NodeRendererProps) -> Element {
     rsx! {
         div { class: "node-list", style: "padding-left: {props.depth * 16}px",
-            for (idx, node) in props.nodes.0.iter().enumerate() {
+            for (idx , node) in props.nodes.0.iter().enumerate() {
                 {
                     let path = {
                         let mut p = props.base_path.clone();
@@ -64,9 +78,10 @@ pub fn NodeRenderer(props: NodeRendererProps) -> Element {
                         NodeItem {
                             key: "{idx}",
                             node: NodeWrapper(node.clone()),
-                            path: path,
+                            path,
                             selection: props.selection.clone(),
                             languages: props.languages.clone(),
+                            field_labels: props.field_labels.clone(),
                             depth: props.depth,
                             on_action: props.on_action.clone(),
                         }
@@ -88,6 +103,9 @@ pub struct NodeItemProps {
     pub selection: SelectionState,
     /// Languages available in the document.
     pub languages: Vec<String>,
+    /// Map from field ID to field label.
+    #[props(default)]
+    pub field_labels: FieldLabelsWrapper,
     /// Nesting depth.
     pub depth: usize,
     /// Callback for editor actions.
@@ -119,8 +137,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
     };
 
     rsx! {
-        div {
-            class: "{node_class}",
+        div { class: "{node_class}",
 
             // Node header
             div {
@@ -146,7 +163,11 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             let current = *expanded.read();
                             expanded.set(!current);
                         },
-                        if *expanded.read() { "▼" } else { "▶" }
+                        if *expanded.read() {
+                            "▼"
+                        } else {
+                            "▶"
+                        }
                     }
                 } else {
                     span { class: "node-toggle-placeholder" }
@@ -173,9 +194,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                 }
 
                 // Summary text
-                span { class: "node-summary",
-                    "{summary}"
-                }
+                span { class: "node-summary", "{summary}" }
 
                 // Edit button for text nodes
                 if can_edit_text && !is_editing {
@@ -231,7 +250,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             rsx! {}
                         }
                     }
-                    _ => rsx! {}
+                    _ => rsx! {},
                 }
             }
 
@@ -245,6 +264,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                     nodes: NodesWrapper(g.children.clone()),
                                     selection: props.selection.clone(),
                                     languages: props.languages.clone(),
+                                    field_labels: props.field_labels.clone(),
                                     base_path: props.path.clone(),
                                     depth: props.depth + 1,
                                     on_action: props.on_action.clone(),
@@ -255,19 +275,15 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             // Render list items as editable entries
                             rsx! {
                                 div { class: "list-items",
-                                    for (i, item) in l.items.iter().enumerate() {
+                                    for (i , item) in l.items.iter().enumerate() {
                                         {
                                             let is_editing_item = props.selection.is_editing_list_item(&props.path, i);
                                             let path = props.path.clone();
                                             let on_action = props.on_action.clone();
                                             let languages = props.languages.clone();
                                             rsx! {
-                                                div {
-                                                    key: "{i}",
-                                                    class: if is_editing_item { "list-item editing" } else { "list-item" },
-                                                    span { class: "list-item-marker",
-                                                        "{i + 1}."
-                                                    }
+                                                div { key: "{i}", class: if is_editing_item { "list-item editing" } else { "list-item" },
+                                                    span { class: "list-item-marker", "{i + 1}." }
                                                     if is_editing_item {
                                                         ListItemEditor {
                                                             content: InlineTextWrapper(item.clone()),
@@ -277,9 +293,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                             on_action: on_action.clone(),
                                                         }
                                                     } else {
-                                                        span { class: "list-item-text",
-                                                            "{item.as_plain_text()}"
-                                                        }
+                                                        span { class: "list-item-text", "{item.as_plain_text()}" }
                                                         button {
                                                             class: "node-edit-btn",
                                                             onclick: {
@@ -311,6 +325,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         nodes: NodesWrapper(vec![(*r.item).clone()]),
                                         selection: props.selection.clone(),
                                         languages: props.languages.clone(),
+                                        field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
                                         on_action: props.on_action.clone(),
@@ -320,15 +335,17 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         }
                         StructuredNode::Conditional(c) => {
                             // Render the conditional's content
+                            let field_label = props.field_labels.0.get(&c.condition.field_name)
+                                .cloned()
+                                .unwrap_or_else(|| c.condition.field_name.to_string());
                             rsx! {
                                 div { class: "conditional-content",
-                                    span { class: "conditional-label",
-                                        "When {c.condition.field_name} = {c.condition.value:?}"
-                                    }
+                                    span { class: "conditional-label", "When {field_label} = {c.condition.value:?}" }
                                     NodeRenderer {
                                         nodes: NodesWrapper(vec![(*c.content).clone()]),
                                         selection: props.selection.clone(),
                                         languages: props.languages.clone(),
+                                        field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
                                         on_action: props.on_action.clone(),
@@ -340,13 +357,12 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             // Render grid elements
                             rsx! {
                                 div { class: "grid-content",
-                                    span { class: "grid-label",
-                                        "{g.columns} columns"
-                                    }
+                                    span { class: "grid-label", "{g.columns} columns" }
                                     NodeRenderer {
                                         nodes: NodesWrapper(g.elements.iter().map(|e| e.node.clone()).collect()),
                                         selection: props.selection.clone(),
                                         languages: props.languages.clone(),
+                                        field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
                                         on_action: props.on_action.clone(),
@@ -364,7 +380,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                 }
                             }
                         }
-                        _ => rsx! {}
+                        _ => rsx! {},
                     }
                 }
             }

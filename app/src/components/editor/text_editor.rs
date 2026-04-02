@@ -52,7 +52,10 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
     // Track the currently active language tab
     // Initialize to the first available language (document or content), or "default"
     let mut active_lang = use_signal(|| {
-        all_langs.first().cloned().unwrap_or_else(|| "default".to_string())
+        all_langs
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "default".to_string())
     });
 
     // Get current text for the active language
@@ -72,11 +75,7 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                 div { class: "text-editor-tabs",
                     for lang in &all_langs {
                         button {
-                            class: if *active_lang.read() == *lang {
-                                "text-editor-tab active"
-                            } else {
-                                "text-editor-tab"
-                            },
+                            class: if *active_lang.read() == *lang { "text-editor-tab active" } else { "text-editor-tab" },
                             onclick: {
                                 let lang = lang.clone();
                                 move |_| active_lang.set(lang.clone())
@@ -98,11 +97,12 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                         let lang = active_lang.read().clone();
                         let on_action = on_action.clone();
                         move |evt: Event<FormData>| {
-                            on_action.call(EditorAction::UpdateText {
-                                path: path.clone(),
-                                content: evt.value(),
-                                language: if lang == "default" { None } else { Some(lang.clone()) },
-                            });
+                            on_action
+                                .call(EditorAction::UpdateText {
+                                    path: path.clone(),
+                                    content: evt.value(),
+                                    language: if lang == "default" { None } else { Some(lang.clone()) },
+                                });
                         }
                     },
                 }
@@ -158,7 +158,10 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
     // Track the currently active language tab
     // Initialize to the first available language (document or content), or "default"
     let mut active_lang = use_signal(|| {
-        all_langs.first().cloned().unwrap_or_else(|| "default".to_string())
+        all_langs
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "default".to_string())
     });
 
     // Get current text for the active language
@@ -179,11 +182,7 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
                 div { class: "text-editor-tabs",
                     for lang in &all_langs {
                         button {
-                            class: if *active_lang.read() == *lang {
-                                "text-editor-tab active"
-                            } else {
-                                "text-editor-tab"
-                            },
+                            class: if *active_lang.read() == *lang { "text-editor-tab active" } else { "text-editor-tab" },
                             onclick: {
                                 let lang = lang.clone();
                                 move |_| active_lang.set(lang.clone())
@@ -205,12 +204,13 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
                         let lang = active_lang.read().clone();
                         let on_action = on_action.clone();
                         move |evt: Event<FormData>| {
-                            on_action.call(EditorAction::UpdateListItem {
-                                path: list_path.clone(),
-                                item_index,
-                                content: evt.value(),
-                                language: if lang == "default" { None } else { Some(lang.clone()) },
-                            });
+                            on_action
+                                .call(EditorAction::UpdateListItem {
+                                    path: list_path.clone(),
+                                    item_index,
+                                    content: evt.value(),
+                                    language: if lang == "default" { None } else { Some(lang.clone()) },
+                                });
                         }
                     },
                 }
