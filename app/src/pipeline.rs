@@ -259,7 +259,8 @@ pub async fn run_blueprint_pipeline(
         content: merged_content,
         state_count: translated_states.len(),
     };
-
+    // Store the envelope for the editor
+    state.envelope = Some(merged.clone());
     // ── Post-processing ──────────────────────────────────────────────────
     let json = match serde_json::to_string_pretty(&merged) {
         Ok(j) => j,

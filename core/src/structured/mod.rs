@@ -1,14 +1,16 @@
+pub mod element_merge;
 mod merge_engine;
 mod merger;
 mod structured_converter;
 mod translation_merger;
 
+pub use element_merge::{can_merge, can_merge_all, merge_nodes, merge_two, MergeError as ElementMergeError};
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
 pub use translation_merger::{MergeError, calculate_structural_similarity, merge_translations};
 
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
@@ -82,6 +84,14 @@ impl Serialize for FieldId {
     }
 }
 
+impl<'de> Deserialize<'de> for FieldId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        let uuid = Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
+        Ok(FieldId(uuid))
+    }
+}
+
 impl From<&SomPath> for FieldId {
     fn from(path: &SomPath) -> Self {
         Self::from_som_path(path)
@@ -100,7 +110,7 @@ impl From<&str> for FieldId {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum StructuredNode {
     Heading(HeadingNode),
@@ -118,28 +128,28 @@ pub enum StructuredNode {
     List(ListNode),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListNode {
     pub list_style: crate::document::ListStyleType,
     pub items: Vec<InlineText>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridLayout {
     pub columns: usize,
     pub elements: Vec<GridLayoutElement>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridLayoutElement {
     pub span: usize,
     pub node: StructuredNode,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableNode {
     pub header: Option<TableHeader>,
@@ -147,33 +157,33 @@ pub struct TableNode {
     pub caption: Option<InlineText>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableRow {
     pub cells: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableHeader {
     pub cells: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageNode {
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub content: Vec<u8>,
     pub alt_text: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupNode {
     pub children: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepeatableNode {
     pub item: Box<StructuredNode>,
@@ -181,21 +191,21 @@ pub struct RepeatableNode {
     pub max_occurrences: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConditionalNode {
     pub condition: FieldCondition,
     pub content: Box<StructuredNode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
     pub field_name: FieldId,
     pub value: InputValue,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum InputValue {
     Text(String),
@@ -203,7 +213,7 @@ pub enum InputValue {
     Bool(bool),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum FieldType {
     Text {
@@ -228,7 +238,7 @@ pub enum FieldType {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NameValue {
     pub name: TranslatableString,
@@ -236,7 +246,7 @@ pub struct NameValue {
 }
 
 /// A string that can have translations
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TranslatableString {
     Plain(String),
@@ -362,11 +372,11 @@ impl From<&str> for TranslatableString {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldNode {
     pub name: FieldId,
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub som_path: Option<SomPath>,
     pub label: Option<InlineText>,
     pub input_type: FieldType,
@@ -374,28 +384,28 @@ pub struct FieldNode {
     pub placeholder: Option<TranslatableString>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphNode {
     pub content: InlineText,
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub som_path: Option<SomPath>,
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub source_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadingNode {
     pub level: HeadingLevel,
     pub content: InlineText,
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub som_path: Option<SomPath>,
-    #[serde(skip)]
+    #[serde(skip, default)]
     pub source_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct InlineText(pub Vec<InlineNode>);
 
@@ -558,6 +568,38 @@ impl InlineText {
         InlineText::new(self.0.iter().map(strip).collect())
     }
 
+    /// Concatenate another `InlineText` onto this one.
+    ///
+    /// This method appends all nodes from `other` to `self`, inserting a space
+    /// separator between them if needed (when neither side provides whitespace
+    /// at the boundary). After concatenation, consecutive nodes of the same type
+    /// are consolidated.
+    pub fn concat(&mut self, other: InlineText) {
+        if other.0.is_empty() {
+            return;
+        }
+        if self.0.is_empty() {
+            self.0 = other.0;
+            return;
+        }
+
+        // Check if we need a separator between the last node of self and first of other
+        let needs_sep = self
+            .0
+            .last()
+            .and_then(|n| n.trailing_text())
+            .zip(other.0.first().and_then(|n| n.leading_text()))
+            .map(|(left, right)| needs_separator(left, right))
+            .unwrap_or(false);
+
+        if needs_sep {
+            self.0.push(InlineNode::Text(" ".to_string()));
+        }
+
+        self.0.extend(other.0);
+        self.consolidate();
+    }
+
     /// Collect all language codes from `TranslatedText` nodes in this inline text.
     pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
         fn walk(node: &InlineNode, langs: &mut BTreeSet<String>) {
@@ -588,7 +630,7 @@ impl Default for InlineText {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
 pub enum InlineNode {
     Text(String),
@@ -647,14 +689,14 @@ impl InlineNode {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkNode {
     pub href: String,
     pub content: InlineText,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HeadingLevel {
     H1,
@@ -1132,7 +1174,7 @@ impl TableNode {
 ///
 /// This is the top-level structure that wraps the document's structured nodes
 /// along with the processing context that was enriched throughout the pipeline.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentEnvelope {
     /// Context metadata enriched throughout processing
@@ -1145,4 +1187,8 @@ pub struct DocumentEnvelope {
     /// Used to detect mismatches between language variants of the same form.
     #[serde(default = "default_state_count")]
     pub state_count: usize,
+}
+
+fn default_state_count() -> usize {
+    1
 }

@@ -1,0 +1,274 @@
+//! Node renderer component.
+//!
+//! Recursively renders the structured node tree with selection and editing support.
+
+use dioxus::prelude::*;
+
+use blueprint::StructuredNode;
+
+use super::state::{node_has_children, node_summary, node_type_name, EditorAction, NodePath, SelectionState};
+use super::text_editor::{TextEditor, InlineTextWrapper};
+
+/// Wrapper for Vec<StructuredNode> that implements PartialEq.
+#[derive(Clone)]
+pub struct NodesWrapper(pub Vec<StructuredNode>);
+
+impl PartialEq for NodesWrapper {
+    fn eq(&self, _other: &Self) -> bool {
+        false // Always re-render
+    }
+}
+
+/// Wrapper for a single StructuredNode.
+#[derive(Clone)]
+pub struct NodeWrapper(pub StructuredNode);
+
+impl PartialEq for NodeWrapper {
+    fn eq(&self, _other: &Self) -> bool {
+        false // Always re-render
+    }
+}
+
+/// Properties for the node renderer.
+#[derive(Clone, PartialEq, Props)]
+pub struct NodeRendererProps {
+    /// The nodes to render.
+    pub nodes: NodesWrapper,
+    /// Current selection state.
+    pub selection: SelectionState,
+    /// Languages available in the document.
+    pub languages: Vec<String>,
+    /// Base path for these nodes (empty for root).
+    #[props(default)]
+    pub base_path: NodePath,
+    /// Nesting depth for indentation.
+    #[props(default)]
+    pub depth: usize,
+    /// Callback for editor actions.
+    pub on_action: EventHandler<EditorAction>,
+}
+
+/// Renders a list of structured nodes.
+#[component]
+pub fn NodeRenderer(props: NodeRendererProps) -> Element {
+    rsx! {
+        div { class: "node-list", style: "padding-left: {props.depth * 16}px",
+            for (idx, node) in props.nodes.0.iter().enumerate() {
+                {
+                    let path = {
+                        let mut p = props.base_path.clone();
+                        p.push(idx);
+                        p
+                    };
+                    rsx! {
+                        NodeItem {
+                            key: "{idx}",
+                            node: NodeWrapper(node.clone()),
+                            path: path,
+                            selection: props.selection.clone(),
+                            languages: props.languages.clone(),
+                            depth: props.depth,
+                            on_action: props.on_action.clone(),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Properties for a single node item.
+#[derive(Clone, PartialEq, Props)]
+pub struct NodeItemProps {
+    /// The node to render.
+    pub node: NodeWrapper,
+    /// Path to this node.
+    pub path: NodePath,
+    /// Current selection state.
+    pub selection: SelectionState,
+    /// Languages available in the document.
+    pub languages: Vec<String>,
+    /// Nesting depth.
+    pub depth: usize,
+    /// Callback for editor actions.
+    pub on_action: EventHandler<EditorAction>,
+}
+
+/// Renders a single node with its header and optionally children.
+#[component]
+pub fn NodeItem(props: NodeItemProps) -> Element {
+    let is_selected = props.selection.is_selected(&props.path);
+    let is_editing = props.selection.is_editing(&props.path);
+    let has_children = node_has_children(&props.node.0);
+    let mut expanded = use_signal(|| true);
+
+    let node_class = format!(
+        "node-item {} {}",
+        if is_selected { "selected" } else { "" },
+        if is_editing { "editing" } else { "" }
+    );
+
+    let type_name = node_type_name(&props.node.0);
+    let summary = node_summary(&props.node.0);
+
+    // Check if this node type supports text editing
+    let can_edit_text = matches!(
+        &props.node.0,
+        StructuredNode::Paragraph(_) | StructuredNode::Heading(_)
+    );
+
+    rsx! {
+        div {
+            class: "{node_class}",
+
+            // Node header
+            div {
+                class: "node-header",
+                onclick: {
+                    let path = props.path.clone();
+                    let on_action = props.on_action.clone();
+                    move |evt: Event<MouseData>| {
+                        if evt.modifiers().shift() {
+                            on_action.call(EditorAction::ToggleSelection(path.clone()));
+                        } else {
+                            on_action.call(EditorAction::SelectSingle(path.clone()));
+                        }
+                    }
+                },
+
+                // Expand/collapse toggle for nodes with children
+                if has_children {
+                    button {
+                        class: "node-toggle",
+                        onclick: move |evt| {
+                            evt.stop_propagation();
+                            let current = *expanded.read();
+                            expanded.set(!current);
+                        },
+                        if *expanded.read() { "▼" } else { "▶" }
+                    }
+                } else {
+                    span { class: "node-toggle-placeholder" }
+                }
+
+                // Selection checkbox
+                input {
+                    r#type: "checkbox",
+                    class: "node-checkbox",
+                    checked: is_selected,
+                    onclick: {
+                        let path = props.path.clone();
+                        let on_action = props.on_action.clone();
+                        move |evt| {
+                            evt.stop_propagation();
+                            on_action.call(EditorAction::ToggleSelection(path.clone()));
+                        }
+                    },
+                }
+
+                // Type badge
+                span { class: "node-type-badge node-type-{type_name.to_lowercase()}",
+                    "{type_name}"
+                }
+
+                // Summary text
+                span { class: "node-summary",
+                    "{summary}"
+                }
+
+                // Edit button for text nodes
+                if can_edit_text && !is_editing {
+                    button {
+                        class: "node-edit-btn",
+                        onclick: {
+                            let path = props.path.clone();
+                            let on_action = props.on_action.clone();
+                            move |evt| {
+                                evt.stop_propagation();
+                                on_action.call(EditorAction::StartEditing(path.clone()));
+                            }
+                        },
+                        "✎"
+                    }
+                }
+            }
+
+            // Text editor (when editing)
+            if is_editing {
+                match &props.node.0 {
+                    StructuredNode::Paragraph(p) => {
+                        rsx! {
+                            TextEditor {
+                                content: InlineTextWrapper(p.content.clone()),
+                                path: props.path.clone(),
+                                languages: props.languages.clone(),
+                                on_action: props.on_action.clone(),
+                            }
+                        }
+                    }
+                    StructuredNode::Heading(h) => {
+                        rsx! {
+                            TextEditor {
+                                content: InlineTextWrapper(h.content.clone()),
+                                path: props.path.clone(),
+                                languages: props.languages.clone(),
+                                on_action: props.on_action.clone(),
+                            }
+                        }
+                    }
+                    _ => rsx! {}
+                }
+            }
+
+            // Children (when expanded and has children)
+            if has_children && *expanded.read() {
+                div { class: "node-children",
+                    match &props.node.0 {
+                        StructuredNode::Group(g) => {
+                            rsx! {
+                                NodeRenderer {
+                                    nodes: NodesWrapper(g.children.clone()),
+                                    selection: props.selection.clone(),
+                                    languages: props.languages.clone(),
+                                    base_path: props.path.clone(),
+                                    depth: props.depth + 1,
+                                    on_action: props.on_action.clone(),
+                                }
+                            }
+                        }
+                        StructuredNode::List(l) => {
+                            // Render list items as pseudo-nodes
+                            rsx! {
+                                div { class: "list-items",
+                                    for (i, item) in l.items.iter().enumerate() {
+                                        div {
+                                            key: "{i}",
+                                            class: "list-item",
+                                            span { class: "list-item-marker",
+                                                "{i + 1}."
+                                            }
+                                            span { class: "list-item-text",
+                                                "{item.as_plain_text()}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        StructuredNode::Table(t) => {
+                            rsx! {
+                                div { class: "table-preview",
+                                    "Table with {t.rows.len()} rows"
+                                    if let Some(header) = &t.header {
+                                        " and {header.cells.len()} columns"
+                                    }
+                                }
+                            }
+                        }
+                        _ => rsx! {}
+                    }
+                }
+            }
+        }
+    }
+}

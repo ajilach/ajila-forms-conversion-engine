@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::models::ProcessingState;
+use crate::models::{DocumentEnvelope, ProcessingState};
 use crate::platform::{download_file, show_html_preview};
 
 fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
@@ -10,14 +10,39 @@ fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
     }
 }
 
+#[derive(Clone, PartialEq, Props)]
+pub struct ResultsSectionProps {
+    /// The current processing state.
+    pub state: ProcessingState,
+    /// Callback when the Edit Structure button is clicked.
+    /// Passes the envelope to edit.
+    pub on_edit: EventHandler<DocumentEnvelope>,
+}
+
 #[component]
-pub fn ResultsSection(state: ProcessingState) -> Element {
+pub fn ResultsSection(props: ResultsSectionProps) -> Element {
+    let state = &props.state;
+
     rsx! {
         div { class: "results-container",
 
             h2 { "✓ Processing Complete!" }
 
             div { class: "results-actions",
+
+                // Edit Structure button (shown first, before download buttons)
+                if let Some(envelope) = state.envelope.clone() {
+                    button {
+                        class: "btn btn-secondary btn-lg",
+                        onclick: {
+                            let on_edit = props.on_edit.clone();
+                            move |_| {
+                                on_edit.call(envelope.clone());
+                            }
+                        },
+                        "✎ Edit Structure"
+                    }
+                }
 
                 // HTML Preview button
                 if let Some(ref html_preview) = state.html_preview {
