@@ -714,6 +714,8 @@ body > div, #main {
 .editor-content {
     flex: 1;
     padding: var(--space-md);
+    overflow-y: auto;
+    min-height: 0;
 }
 
 /* ---- Node List ---- */
