@@ -109,32 +109,32 @@ pub fn markdown_to_inline_text(markdown: &str) -> InlineText {
             },
             Event::End(tag_end) => match tag_end {
                 TagEnd::Strong => {
-                    if let Some(ctx) = stack.pop() {
-                        if ctx.kind == FormattingKind::Strong {
-                            let inner = InlineNode::Text(ctx.text);
-                            let node = InlineNode::Strong(Box::new(inner));
-                            push_to_context_or_nodes(&mut stack, &mut nodes, node);
-                        }
+                    if let Some(ctx) = stack.pop()
+                        && ctx.kind == FormattingKind::Strong
+                    {
+                        let inner = InlineNode::Text(ctx.text);
+                        let node = InlineNode::Strong(Box::new(inner));
+                        push_to_context_or_nodes(&mut stack, &mut nodes, node);
                     }
                 }
                 TagEnd::Emphasis => {
-                    if let Some(ctx) = stack.pop() {
-                        if ctx.kind == FormattingKind::Emphasis {
-                            let inner = InlineNode::Text(ctx.text);
-                            let node = InlineNode::Emphasis(Box::new(inner));
-                            push_to_context_or_nodes(&mut stack, &mut nodes, node);
-                        }
+                    if let Some(ctx) = stack.pop()
+                        && ctx.kind == FormattingKind::Emphasis
+                    {
+                        let inner = InlineNode::Text(ctx.text);
+                        let node = InlineNode::Emphasis(Box::new(inner));
+                        push_to_context_or_nodes(&mut stack, &mut nodes, node);
                     }
                 }
                 TagEnd::Link => {
-                    if let Some(ctx) = stack.pop() {
-                        if let FormattingKind::Link(href) = ctx.kind {
-                            let node = InlineNode::Link(blueprint::structured::LinkNode {
-                                href,
-                                content: InlineText(vec![InlineNode::Text(ctx.text)]),
-                            });
-                            push_to_context_or_nodes(&mut stack, &mut nodes, node);
-                        }
+                    if let Some(ctx) = stack.pop()
+                        && let FormattingKind::Link(href) = ctx.kind
+                    {
+                        let node = InlineNode::Link(blueprint::structured::LinkNode {
+                            href,
+                            content: InlineText(vec![InlineNode::Text(ctx.text)]),
+                        });
+                        push_to_context_or_nodes(&mut stack, &mut nodes, node);
                     }
                 }
                 _ => {}
@@ -172,7 +172,7 @@ struct FormattingContext {
 }
 
 fn push_to_context_or_nodes(
-    stack: &mut Vec<FormattingContext>,
+    stack: &mut [FormattingContext],
     nodes: &mut Vec<InlineNode>,
     node: InlineNode,
 ) {
@@ -198,11 +198,11 @@ fn merge_adjacent_text_nodes(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     let mut result: Vec<InlineNode> = Vec::new();
 
     for node in nodes {
-        if let InlineNode::Text(text) = &node {
-            if let Some(InlineNode::Text(last)) = result.last_mut() {
-                last.push_str(text);
-                continue;
-            }
+        if let InlineNode::Text(text) = &node
+            && let Some(InlineNode::Text(last)) = result.last_mut()
+        {
+            last.push_str(text);
+            continue;
         }
         result.push(node);
     }
