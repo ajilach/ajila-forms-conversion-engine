@@ -53,7 +53,7 @@ impl PartialEq for ProcessingState {
             && self.xsd_schema == other.xsd_schema
             && self.error == other.error
             && self.warnings == other.warnings
-            // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
+        // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }
 
