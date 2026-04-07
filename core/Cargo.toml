@@ -36,7 +36,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tera = "1"
 toml = "0.8"
 include_dir = "0.7"
-hyphenation = "0.8.4"
+hyphenation = { version = "0.8.4", features = ["embed_all"] }
 candle-core = { version = "0.9", optional = true }
 candle-nn = { version = "0.9", optional = true }
 candle-transformers = { version = "0.9", optional = true }

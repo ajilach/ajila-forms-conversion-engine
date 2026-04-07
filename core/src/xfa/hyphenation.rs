@@ -4,13 +4,10 @@
 //! and applies XFA filtering rules from the `<hyphenation>` element per XFA 3.3
 //! §"Automatic Hyphenation" (spec page 65).
 
-use hyphenation::{Hyphenator, Load, Standard};
+use hyphenation::{Hyphenator, Language, Load, Standard};
 use std::sync::OnceLock;
 
 // ── Embedded dictionaries ────────────────────────────────────────────────────
-
-static DICT_DE: &[u8] = include_bytes!("../../dictionaries/de-1996.standard.bincode");
-static DICT_EN: &[u8] = include_bytes!("../../dictionaries/en-us.standard.bincode");
 
 static DE_DICT: OnceLock<Standard> = OnceLock::new();
 static EN_DICT: OnceLock<Standard> = OnceLock::new();
@@ -18,7 +15,7 @@ static EN_DICT: OnceLock<Standard> = OnceLock::new();
 /// Return a reference to the German hyphenation dictionary (lazy-loaded).
 fn german_dict() -> &'static Standard {
     DE_DICT.get_or_init(|| {
-        Standard::any_from_reader(&mut &DICT_DE[..])
+        Standard::from_embedded(Language::German1996)
             .expect("embedded German hyphenation dictionary is valid")
     })
 }
@@ -26,7 +23,7 @@ fn german_dict() -> &'static Standard {
 /// Return a reference to the English hyphenation dictionary (lazy-loaded).
 fn english_dict() -> &'static Standard {
     EN_DICT.get_or_init(|| {
-        Standard::any_from_reader(&mut &DICT_EN[..])
+        Standard::from_embedded(Language::EnglishUS)
             .expect("embedded English hyphenation dictionary is valid")
     })
 }
