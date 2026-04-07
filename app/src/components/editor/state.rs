@@ -330,6 +330,11 @@ pub fn get_table_cell_at_path_mut<'a>(content: &'a mut [StructuredNode], path: &
     // Navigate to the table first
     let table_path: NodePath = path.iter().take_while(|s| matches!(s, PathSegment::Child(_))).cloned().collect();
 
+    // Must have at least one Child segment to navigate to the table
+    if table_path.is_empty() {
+        return None;
+    }
+
     let PathSegment::Child(first_idx) = &table_path[0] else {
         return None;
     };
