@@ -227,7 +227,8 @@ impl GlobalFontStats {
                     .iter()
                     .filter(|&&other| (other - x).abs() <= x_tolerance)
                     .count();
-                if count > best_count {
+                // Break ties deterministically: prefer smaller x
+                if count > best_count || (count == best_count && x < best_x) {
                     best_count = count;
                     best_x = x;
                 }
@@ -251,7 +252,8 @@ impl GlobalFontStats {
                         .iter()
                         .filter(|&&other| (other - x).abs() <= x_tolerance)
                         .count();
-                    if count > best_count {
+                    // Break ties deterministically: prefer smaller x
+                    if count > best_count || (count == best_count && x < best_x) {
                         best_count = count;
                         best_x = x;
                     }
@@ -968,7 +970,8 @@ impl HeadingDetector {
                         .iter()
                         .filter(|&&other| (other - x).abs() <= x_tolerance)
                         .count();
-                    if count > best_count {
+                    // Break ties deterministically: prefer smaller x
+                    if count > best_count || (count == best_count && x < best_x) {
                         best_count = count;
                         best_x = x;
                     }
@@ -988,7 +991,8 @@ impl HeadingDetector {
                             .iter()
                             .filter(|&&other| (other - x).abs() <= x_tolerance)
                             .count();
-                        if count > best_count {
+                        // Break ties deterministically: prefer smaller x
+                        if count > best_count || (count == best_count && x < best_x) {
                             best_count = count;
                             best_x = x;
                         }
