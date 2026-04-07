@@ -83,8 +83,12 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                         button {
                             class: {
                                 let mut cls = String::from("text-editor-tab");
-                                if *active_lang.read() == *lang { cls.push_str(" active"); }
-                                if missing_langs.contains(lang) { cls.push_str(" missing-translation"); }
+                                if *active_lang.read() == *lang {
+                                    cls.push_str(" active");
+                                }
+                                if missing_langs.contains(lang) {
+                                    cls.push_str(" missing-translation");
+                                }
                                 cls
                             },
                             onclick: {
@@ -119,9 +123,7 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
 
                 // Per-field inline warning for missing translation
                 if active_is_missing {
-                    div { class: "text-editor-warning",
-                        "⚠ Translation missing for this language"
-                    }
+                    div { class: "text-editor-warning", "⚠ Translation missing for this language" }
                 }
             }
 

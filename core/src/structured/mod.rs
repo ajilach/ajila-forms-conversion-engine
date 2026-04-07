@@ -4,7 +4,9 @@ mod merger;
 mod structured_converter;
 mod translation_merger;
 
-pub use element_merge::{can_merge, can_merge_all, merge_nodes, merge_two, MergeError as ElementMergeError};
+pub use element_merge::{
+    MergeError as ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
+};
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
 pub use translation_merger::{MergeError, calculate_structural_similarity, merge_translations};
@@ -345,10 +347,7 @@ impl TranslatableString {
     }
 }
 
-fn translated_maps_match_on_shared_language(
-    left: &TranslationMap,
-    right: &TranslationMap,
-) -> bool {
+fn translated_maps_match_on_shared_language(left: &TranslationMap, right: &TranslationMap) -> bool {
     left.iter()
         .filter_map(|(lang, left_text)| {
             let lt = left_text.as_deref()?;
@@ -707,7 +706,11 @@ impl InlineNode {
                     .find(|s| {
                         !s.is_empty() && !s.as_bytes().last().unwrap_or(&b' ').is_ascii_whitespace()
                     })
-                    .or_else(|| map.values().filter_map(|o| o.as_deref()).find(|s| !s.is_empty()))
+                    .or_else(|| {
+                        map.values()
+                            .filter_map(|o| o.as_deref())
+                            .find(|s| !s.is_empty())
+                    })
             }
             InlineNode::Link(link) => link.content.0.last().and_then(|n| n.trailing_text()),
         }
@@ -731,7 +734,11 @@ impl InlineNode {
                         !s.is_empty()
                             && !s.as_bytes().first().unwrap_or(&b' ').is_ascii_whitespace()
                     })
-                    .or_else(|| map.values().filter_map(|o| o.as_deref()).find(|s| !s.is_empty()))
+                    .or_else(|| {
+                        map.values()
+                            .filter_map(|o| o.as_deref())
+                            .find(|s| !s.is_empty())
+                    })
             }
             InlineNode::Link(link) => link.content.0.first().and_then(|n| n.leading_text()),
         }
