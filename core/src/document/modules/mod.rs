@@ -197,7 +197,7 @@ pub fn run_analysis_pipeline_with_context(
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
     OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
-    
+
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);
     ListDetector::new().process_with_context(doc, ctx);
@@ -205,12 +205,12 @@ pub fn run_analysis_pipeline_with_context(
     SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
-    
+
     // TableDetector: Detect text-only tables by analyzing horizontal borders.
     // Tables are identified by text blocks with visible horizontal borders
     // that form a grid pattern.
     TableDetector::new().process_with_context(doc, ctx);
-    
+
     TextBlockMerger::new().process_with_context(doc, ctx);
 
     FieldTableDetector::new().process_with_context(doc, ctx);

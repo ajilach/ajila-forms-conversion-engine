@@ -186,7 +186,11 @@ impl TableDetector {
             }
 
             let row_y = row.iter().map(|(_, b)| b.y).min().unwrap_or(Num::ZERO);
-            let row_bottom = row.iter().map(|(_, b)| b.bottom()).max().unwrap_or(Num::ZERO);
+            let row_bottom = row
+                .iter()
+                .map(|(_, b)| b.bottom())
+                .max()
+                .unwrap_or(Num::ZERO);
 
             // Check if this row is contiguous with the previous
             let is_contiguous = match last_row_bottom {
@@ -213,7 +217,7 @@ impl TableDetector {
                 } else {
                     current_region.clear();
                 }
-                
+
                 // Start a new potential region
                 current_region.push(idx);
                 last_row_bottom = Some(row_bottom);
@@ -281,10 +285,10 @@ impl TableDetector {
                 .filter(|(idx, bounds)| {
                     // Within Y tolerance
                     let y_match = (bounds.y - row_y).abs() <= self.row_tolerance;
-                    
+
                     // Block overlaps with table X-extent (at least partially within it)
                     let x_overlap = bounds.x < max_x && bounds.right() > min_x;
-                    
+
                     y_match && x_overlap
                 })
                 .cloned()
@@ -302,7 +306,7 @@ impl TableDetector {
     fn process_tables(&self, doc: &mut Document) {
         // Find blocks with horizontal borders (primary table detection)
         let bordered_blocks = self.find_bordered_blocks(doc);
-        
+
         if bordered_blocks.len() < self.min_columns * self.min_rows {
             return;
         }
@@ -336,7 +340,7 @@ impl TableDetector {
             // Determine column count from the row with the most columns
             // (this handles cases where some rows might have missing cells)
             let num_cols = expanded_rows.iter().map(|r| r.len()).max().unwrap_or(0);
-            
+
             if num_cols < self.min_columns {
                 continue;
             }
