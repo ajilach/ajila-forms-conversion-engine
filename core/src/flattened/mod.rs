@@ -266,6 +266,26 @@ pub struct RenderStyle {
     pub para: Option<Para>,
 }
 
+impl RenderStyle {
+    /// Returns (default_bold, default_italic) from the XFA font element.
+    /// This should be called BEFORE CSS overrides are applied, so rich text
+    /// parsing gets the original XFA element's font weight/posture as defaults.
+    /// Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
+    pub fn get_xfa_bold_italic(&self) -> (bool, bool) {
+        let bold = self
+            .font
+            .as_ref()
+            .map(|f| f.weight.is_bold())
+            .unwrap_or(false);
+        let italic = self
+            .font
+            .as_ref()
+            .map(|f| f.posture == crate::xfa::FontPosture::Italic)
+            .unwrap_or(false);
+        (bold, italic)
+    }
+}
+
 /// Main flattened node structure containing position and rendering information
 #[derive(Debug, Clone)]
 pub struct FlattenedNode {
@@ -3012,17 +3032,7 @@ impl Flattened {
                 // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
                 // CSS font-weight from individual paragraphs should not change the default
                 // for rich text parsing - each paragraph handles its own font-weight CSS.
-                // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
-                let default_bold = style
-                    .font
-                    .as_ref()
-                    .map(|f| f.weight.is_bold())
-                    .unwrap_or(false);
-                let default_italic = style
-                    .font
-                    .as_ref()
-                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                    .unwrap_or(false);
+                let (default_bold, default_italic) = style.get_xfa_bold_italic();
 
                 // Only apply CSS overrides if at least one CSS property was found
                 // This ensures consistency: either all CSS properties are considered, or none
@@ -4210,17 +4220,7 @@ impl Flattened {
                         // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
                         // CSS font-weight from individual paragraphs should not change the default
                         // for rich text parsing - each paragraph handles its own font-weight CSS.
-                        // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
-                        let default_bold = style
-                            .font
-                            .as_ref()
-                            .map(|f| f.weight.is_bold())
-                            .unwrap_or(false);
-                        let default_italic = style
-                            .font
-                            .as_ref()
-                            .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                            .unwrap_or(false);
+                        let (default_bold, default_italic) = style.get_xfa_bold_italic();
 
                         // For HTML content (exData with contentType="text/html"), extract CSS font properties
                         // which may override the XFA <font> element values
@@ -4628,17 +4628,7 @@ impl Flattened {
                                 // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
                                 // CSS font-weight from individual paragraphs should not change the default
                                 // for rich text parsing - each paragraph handles its own font-weight CSS.
-                                // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
-                                let default_bold = style
-                                    .font
-                                    .as_ref()
-                                    .map(|f| f.weight.is_bold())
-                                    .unwrap_or(false);
-                                let default_italic = style
-                                    .font
-                                    .as_ref()
-                                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                                    .unwrap_or(false);
+                                let (default_bold, default_italic) = style.get_xfa_bold_italic();
 
                                 // For HTML content (exData with contentType="text/html"), extract CSS font properties
                                 // which may override the XFA <font> element values
