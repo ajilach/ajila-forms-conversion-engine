@@ -7849,13 +7849,42 @@ impl Flattened {
                                 continue; // Don't recurse into embed spans
                             }
 
-                            // Check for xfa-spacerun:yes style
-                            let new_preserve = if let Some(style) = child.attributes.get("style") {
-                                style.contains("xfa-spacerun:yes")
-                                    || style.contains("xfa-spacerun: yes")
-                            } else {
-                                preserve_spaces
-                            };
+                            // Parse CSS styles from span for font-weight/font-style and xfa-spacerun
+                            let (new_preserve, span_bold, span_italic) =
+                                if let Some(style) = child.attributes.get("style") {
+                                    let preserve = style.contains("xfa-spacerun:yes")
+                                        || style.contains("xfa-spacerun: yes");
+
+                                    // Parse font-weight: bold sets, normal resets
+                                    let effective_bold = if style.contains("font-weight:bold")
+                                        || style.contains("font-weight: bold")
+                                    {
+                                        true
+                                    } else if style.contains("font-weight:normal")
+                                        || style.contains("font-weight: normal")
+                                    {
+                                        false
+                                    } else {
+                                        bold // inherit
+                                    };
+
+                                    // Parse font-style: italic sets, normal resets
+                                    let effective_italic = if style.contains("font-style:italic")
+                                        || style.contains("font-style: italic")
+                                    {
+                                        true
+                                    } else if style.contains("font-style:normal")
+                                        || style.contains("font-style: normal")
+                                    {
+                                        false
+                                    } else {
+                                        italic // inherit
+                                    };
+
+                                    (preserve, effective_bold, effective_italic)
+                                } else {
+                                    (preserve_spaces, bold, italic)
+                                };
 
                             // Handle text_content if present
                             // Handle text_content with U+2029 support
@@ -7867,37 +7896,24 @@ impl Flattened {
 
                             if !has_text_children_span {
                                 if let Some(text) = text_content {
-                                    if new_preserve {
-                                        // Preserve all characters and whitespace exactly
-                                        // (except NBSP -> space), while still honoring U+2029.
-                                        Self::add_text_with_paragraph_splits(
-                                            text,
-                                            paragraphs,
-                                            true,
-                                            bold,
-                                            italic,
-                                            default_h_align,
-                                        );
-                                    } else {
-                                        Self::add_text_with_paragraph_splits(
-                                            text,
-                                            paragraphs,
-                                            false,
-                                            bold,
-                                            italic,
-                                            default_h_align,
-                                        );
-                                    }
+                                    Self::add_text_with_paragraph_splits(
+                                        text,
+                                        paragraphs,
+                                        new_preserve,
+                                        span_bold,
+                                        span_italic,
+                                        default_h_align,
+                                    );
                                 }
                             }
 
-                            // Recurse into span children
+                            // Recurse into span children with effective styles
                             Self::parse_html_nodes_to_rich_text(
                                 &child.children,
                                 paragraphs,
                                 new_preserve,
-                                bold,
-                                italic,
+                                span_bold,
+                                span_italic,
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
@@ -9750,5 +9766,68 @@ mod tests {
             !p2_runs[0].bold,
             "Second paragraph text should NOT be bold (no font-weight in style)"
         );
+    }
+
+    #[test]
+    fn test_parse_rich_text_span_font_weight_bold() {
+        // Test that <span style="font-weight:bold"> correctly sets bold on its text
+
+        let mut span_attrs = std::collections::HashMap::new();
+        span_attrs.insert("style".to_string(), "font-weight:bold".to_string());
+        let bold_span = XfaNode {
+            children: vec![XfaNode::new(
+                XfaNodeKind::Text {
+                    content: "bold_word".to_string(),
+                },
+                std::collections::HashMap::new(),
+            )],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "span".to_string(),
+                    text_content: None,
+                },
+                span_attrs,
+            )
+        };
+
+        let p = XfaNode {
+            children: vec![
+                XfaNode::new(
+                    XfaNodeKind::Text { content: "prefix ".to_string() },
+                    std::collections::HashMap::new(),
+                ),
+                bold_span,
+                XfaNode::new(
+                    XfaNodeKind::Text { content: " suffix".to_string() },
+                    std::collections::HashMap::new(),
+                ),
+            ],
+            ..XfaNode::new(
+                XfaNodeKind::Element { tag_name: "p".to_string(), text_content: None },
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let body = XfaNode {
+            children: vec![p],
+            ..XfaNode::new(
+                XfaNodeKind::Element { tag_name: "body".to_string(), text_content: None },
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let rich = Flattened::parse_rich_text_from_html(&[body], HAlign::Left, None, None, false, false);
+
+        assert_eq!(rich.paragraphs.len(), 1);
+        let runs = &rich.paragraphs[0].runs;
+
+        let bold_run = runs.iter().find(|r| r.text.contains("bold_word"));
+        assert!(bold_run.is_some(), "Should find bold_word run");
+        assert!(bold_run.unwrap().bold, "bold_word should be bold");
+
+        let prefix_run = runs.iter().find(|r| r.text.contains("prefix"));
+        if let Some(run) = prefix_run {
+            assert!(!run.bold, "prefix should not be bold");
+        }
     }
 }

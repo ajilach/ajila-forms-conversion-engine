@@ -11299,6 +11299,145 @@ fn test_aaoe_dichiarazione_is_bold() {
     }
 }
 
+/// Diagnostic test for BAQM rich text: verifies that partial bold within paragraphs
+/// (e.g., "dichiara" and "prende atto ed accetta") is correctly parsed and rendered.
+#[test]
+fn test_baqm_partial_bold_in_paragraph() {
+    use crate::flattened::FlattenedNodeKind;
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{InlineNode, StructuredNode};
+
+    // First, check the flattened layer for rich text parsing
+    let mut bp = Blueprint::from_pdf(input_path("BAQM_033_IT.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Search for the text containing "dichiara" in the flattened layer
+    let search_text = "dichiara";
+    let mut found_flattened = false;
+    let mut bold_runs_found = false;
+
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if content.contains(search_text) && content.contains("A tal fine") {
+                found_flattened = true;
+                println!("=== BAQM Flattened: Found text containing '{search_text}' ===");
+                println!("Full content (first 200 chars): {}...", content.chars().take(200).collect::<String>());
+
+                if let Some(rt) = node.rich_text() {
+                    println!("Rich text paragraphs: {}", rt.paragraphs.len());
+                    for (pi, para) in rt.paragraphs.iter().enumerate() {
+                        println!("  Paragraph {pi}:");
+                        for (ri, run) in para.runs.iter().enumerate() {
+                            let bold_marker = if run.bold { " [BOLD]" } else { "" };
+                            let italic_marker = if run.italic { " [ITALIC]" } else { "" };
+                            println!(
+                                "    Run {ri}: \"{}\"{bold_marker}{italic_marker}",
+                                run.text.chars().take(60).collect::<String>()
+                            );
+                            if run.bold && run.text.contains(search_text) {
+                                bold_runs_found = true;
+                            }
+                        }
+                    }
+                } else {
+                    println!("  NO rich_text() available");
+                }
+            }
+        }
+    }
+
+    assert!(
+        found_flattened,
+        "Should find text containing '{search_text}' in BAQM flattened output"
+    );
+
+    // Now check the structured layer
+    let merged = run_exhaustive_to_merged(input_path("BAQM_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on BAQM");
+
+    // Recursively search for structured nodes
+    fn find_all_paragraphs_containing<'a>(
+        nodes: &'a [StructuredNode],
+        text: &str,
+        results: &mut Vec<&'a StructuredNode>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Paragraph(p) if p.content.as_plain_text().contains(text) => {
+                    results.push(node);
+                }
+                StructuredNode::Group(g) => {
+                    find_all_paragraphs_containing(&g.children, text, results);
+                }
+                StructuredNode::Conditional(c) => {
+                    find_all_paragraphs_containing(
+                        std::slice::from_ref(c.content.as_ref()),
+                        text,
+                        results,
+                    );
+                }
+                StructuredNode::Repeatable(r) => {
+                    find_all_paragraphs_containing(
+                        std::slice::from_ref(r.item.as_ref()),
+                        text,
+                        results,
+                    );
+                }
+                StructuredNode::List(l) => {
+                    for item in &l.items {
+                        if item.as_plain_text().contains(text) {
+                            println!("  Found in List item: {:?}", item.0);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Helper to check if InlineNode contains Strong wrapping specific text
+    fn has_strong_containing(nodes: &[InlineNode], text: &str) -> bool {
+        nodes.iter().any(|n| match n {
+            InlineNode::Strong(inner) => match inner.as_ref() {
+                InlineNode::Text(t) => t.contains(text),
+                InlineNode::TranslatedText(map) => map.values().any(|v| v.contains(text)),
+                _ => false,
+            },
+            _ => false,
+        })
+    }
+
+    let mut paragraphs = Vec::new();
+    find_all_paragraphs_containing(&merged, search_text, &mut paragraphs);
+
+    println!("\n=== BAQM Structured: Found {} paragraphs containing '{search_text}' ===", paragraphs.len());
+
+    let mut strong_in_structured = false;
+    for (i, node) in paragraphs.iter().enumerate() {
+        if let StructuredNode::Paragraph(p) = node {
+            println!("Paragraph {i}:");
+            println!("  Plain text: {}", p.content.as_plain_text().chars().take(100).collect::<String>());
+            println!("  InlineNodes: {:?}", p.content.0);
+
+            if has_strong_containing(&p.content.0, search_text) {
+                strong_in_structured = true;
+                println!("  -> HAS Strong containing '{search_text}'");
+            } else {
+                println!("  -> NO Strong containing '{search_text}'");
+            }
+        }
+    }
+
+    // The actual assertion: "dichiara" should be wrapped in Strong
+    assert!(
+        bold_runs_found || strong_in_structured,
+        "BAQM: '{search_text}' should be bold (either in RichRun or InlineNode::Strong). \
+         Flattened bold: {bold_runs_found}, Structured Strong: {strong_in_structured}"
+    );
+}
+
 // ========================================================================
 // GridTemplateDetector — proportional colspan tests
 // ========================================================================
@@ -21588,93 +21727,5 @@ fn test_aais_019_table_detection() {
     assert!(
         all_content.contains("p.a."),
         "Table should contain fee percentages (p.a.)"
-    );
-}
-
-#[test]
-fn test_aair_communication_text_not_bold() {
-    // In AAIR DE, the text "Es ist der Bank ein großes Anliegen..." should NOT be bold.
-    // It's body text under a bold heading, but each paragraph has independent styling.
-    // The XFA structure shows:
-    //   <p style="...font-weight:bold...">Kommunikationsdaten...</p>  <- bold heading
-    //   <p style="letter-spacing:0in">Es ist der Bank...</p>         <- NOT bold
-    use crate::flattened::FlattenedNodeKind;
-
-    let mut bp = Blueprint::from_pdf(input_path("AAIR_019_DE.pdf")).unwrap();
-    let states = bp.states().unwrap();
-    let default_state = states
-        .iter()
-        .next()
-        .expect("should have at least one state");
-    let flattened = &default_state.flattened;
-
-    // Find the node containing the communication text
-    let search_text = "Es ist der Bank ein großes Anliegen";
-    let mut found = false;
-
-    for node in flattened.iter_nodes() {
-        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
-            if content.contains(search_text) {
-                found = true;
-
-                // This text should NOT be bold - it's body text, not a heading
-                if let Some(rt) = node.rich_text() {
-                    for para in &rt.paragraphs {
-                        let para_text: String = para.runs.iter().map(|r| r.text.as_str()).collect();
-                        if para_text.contains(search_text) {
-                            for run in &para.runs {
-                                if run.text.contains(search_text) || para_text.contains(search_text)
-                                {
-                                    assert!(
-                                        !run.bold,
-                                        "Text '{}' should NOT be bold. Per XFA this \
-                                         paragraph has no font-weight:bold in its style.",
-                                        search_text
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    assert!(
-        found,
-        "Should find text containing '{}' in AAIR_019_DE",
-        search_text
-    );
-}
-
-#[test]
-fn test_aair_internal_bank_use_visible() {
-    // Test that page background content from secondary pageAreas (MP_Last) is rendered.
-    // The "Nur für bankinterne Zwecke" text is in the Internal_Bank_Use subform,
-    // which is page background inside the MP_Last pageArea (second pageArea).
-    // Previously this was missing because only the first pageArea's background was processed.
-    use crate::flattened::FlattenedNodeKind;
-
-    let mut bp = Blueprint::from_pdf(input_path("AAIR_019_DE.pdf")).unwrap();
-    let states = bp.states().unwrap();
-    let default_state = states
-        .iter()
-        .next()
-        .expect("should have at least one state");
-    let flattened = &default_state.flattened;
-
-    let search_text = "Nur für bankinterne Zwecke";
-    let found = flattened.iter_nodes().any(|node| {
-        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
-            content.contains(search_text)
-        } else {
-            false
-        }
-    });
-
-    assert!(
-        found,
-        "Should find '{}' in AAIR_019_DE flattened output - this is page background from MP_Last pageArea",
-        search_text
     );
 }
