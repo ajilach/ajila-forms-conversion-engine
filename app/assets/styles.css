@@ -1008,6 +1008,25 @@ body > div, #main {
     border-color: var(--color-primary);
 }
 
+.text-editor-tab.missing-translation {
+    border-color: var(--color-border-warning);
+    color: var(--color-text-warning);
+}
+
+.text-editor-tab.active.missing-translation {
+    background: var(--color-text-warning);
+    border-color: var(--color-text-warning);
+    color: var(--light);
+}
+
+.text-editor-warning {
+    padding: var(--space-xs) var(--space-sm);
+    background-color: var(--color-bg-warning);
+    border-top: 1px solid var(--color-border-warning);
+    color: var(--color-text-warning);
+    font-size: var(--font-size-sm);
+}
+
 .text-editor-content {
     background: var(--light);
     border: 1px solid var(--color-border);

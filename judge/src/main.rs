@@ -10,8 +10,6 @@ use blueprint::{
 use clap::Parser;
 use rayon::prelude::*;
 
-const MISSING_TRANSLATION: &str = "MISSING TRANSLATION";
-
 /// Judge — evaluate translation quality of multi-language PDF forms.
 #[derive(Parser)]
 #[command(name = "judge")]
@@ -435,7 +433,7 @@ fn count_inline_node_slots(node: &InlineNode, total: &mut usize, missing: &mut u
         InlineNode::TranslatedText(map) => {
             for value in map.values() {
                 *total += 1;
-                if value == MISSING_TRANSLATION {
+                if value.is_none() {
                     *missing += 1;
                 }
             }
@@ -458,7 +456,7 @@ fn count_translatable_string_slots(
     if let TranslatableString::Translated(map) = ts {
         for value in map.values() {
             *total += 1;
-            if value == MISSING_TRANSLATION {
+            if value.is_none() {
                 *missing += 1;
             }
         }
@@ -602,7 +600,8 @@ fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
         InlineNode::TranslatedText(map) => {
             let texts: Vec<String> = map
                 .values()
-                .filter(|v| *v != MISSING_TRANSLATION && !v.trim().is_empty())
+                .filter_map(|v| v.as_ref())
+                .filter(|v| !v.trim().is_empty())
                 .cloned()
                 .collect();
             if texts.len() >= 2 {
@@ -623,7 +622,8 @@ fn collect_from_translatable_string(ts: &TranslatableString, out: &mut Vec<Vec<S
     if let TranslatableString::Translated(map) = ts {
         let texts: Vec<String> = map
             .values()
-            .filter(|v| *v != MISSING_TRANSLATION && !v.trim().is_empty())
+            .filter_map(|v| v.as_ref())
+            .filter(|v| !v.trim().is_empty())
             .cloned()
             .collect();
         if texts.len() >= 2 {

@@ -3984,7 +3984,7 @@ fn test_aaai_structured_output_no_invisible_content() {
                 .map(|node| match node {
                     InlineNode::Text(s) => s.clone(),
                     InlineNode::TranslatedText(map) => {
-                        map.values().next().cloned().unwrap_or_default()
+                        map.values().next().and_then(|v| v.clone()).unwrap_or_default()
                     }
                     InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
                         extract_inline_text(&[(**inner).clone()])
@@ -5630,7 +5630,7 @@ fn test_aaai_multilingual_merge_de_en() {
     let mut inline_nodes = Vec::new();
     collect_inline_nodes(&merged.content, &mut inline_nodes);
 
-    let translated_texts: Vec<&HashMap<String, String>> = inline_nodes
+    let translated_texts: Vec<&HashMap<String, Option<String>>> = inline_nodes
         .iter()
         .filter_map(|n| match n {
             InlineNode::TranslatedText(map) => Some(map),
@@ -5681,18 +5681,18 @@ fn test_aaai_multilingual_merge_de_en() {
     let en_title = h1_map.get("en").expect("H1 should have 'en' translation");
 
     assert!(
-        de_title.contains("Vereinbarung"),
+        de_title.as_ref().map_or(false, |s| s.contains("Vereinbarung")),
         "German H1 should contain 'Vereinbarung', got: '{}'",
-        de_title
+        de_title.as_deref().unwrap_or("")
     );
     assert!(
-        en_title.contains("Agreement"),
+        en_title.as_ref().map_or(false, |s| s.contains("Agreement")),
         "English H1 should contain 'Agreement', got: '{}'",
-        en_title
+        en_title.as_deref().unwrap_or("")
     );
 
-    println!("H1 de: {}", de_title);
-    println!("H1 en: {}", en_title);
+    println!("H1 de: {}", de_title.as_deref().unwrap_or(""));
+    println!("H1 en: {}", en_title.as_deref().unwrap_or(""));
 
     // =====================================================================
     // Check 3: Field labels have translated content
@@ -6668,7 +6668,7 @@ fn test_aaoe_h2_sections() {
                 InlineNode::Text(t) => Some(t.clone()),
                 InlineNode::TranslatedText(map) => {
                     // Prefer Italian, fall back to first available
-                    map.get("it").or_else(|| map.values().next()).cloned()
+                    map.get("it").or_else(|| map.values().next()).and_then(|v| v.clone())
                 }
                 InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => extract_text(inner),
                 _ => None,
@@ -8483,13 +8483,13 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     ) {
         for inline in inlines {
             if let InlineNode::TranslatedText(map) = inline {
-                let has_de = map.get("de").map_or(false, |t| t.contains("Ich bestätige"));
+                let has_de = map.get("de").map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("Ich bestätige")));
                 let has_en = map
                     .get("en")
-                    .map_or(false, |t| t.contains("I confirm that I am tax resident"));
+                    .map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("I confirm that I am tax resident")));
                 let has_sp = map
                     .get("sp")
-                    .map_or(false, |t| t.contains("Confirmo que soy residente fiscal"));
+                    .map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("Confirmo que soy residente fiscal")));
 
                 if has_de {
                     *found_de = true;
@@ -8580,7 +8580,7 @@ fn test_aacj_multilingual_translation_snippets() {
     /// Extract TranslatedText maps from an InlineNode, unwrapping Strong/Emphasis.
     fn collect_translated_texts<'a>(
         node: &'a InlineNode,
-        out: &mut Vec<&'a std::collections::HashMap<String, String>>,
+        out: &mut Vec<&'a std::collections::HashMap<String, Option<String>>>,
     ) {
         match node {
             InlineNode::TranslatedText(map) => out.push(map),
@@ -8605,9 +8605,9 @@ fn test_aacj_multilingual_translation_snippets() {
                 collect_translated_texts(inline, &mut translated_maps);
             }
             for map in translated_maps {
-                let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
-                let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+                let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
 
                 for (i, (de_snippet, en_snippet, sp_snippet)) in
                     expected_triplets.iter().enumerate()
@@ -8672,7 +8672,7 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
     // conditionals, groups, etc.).
     fn collect_h2s(
         nodes: &[StructuredNode],
-        out: &mut Vec<std::collections::HashMap<String, String>>,
+        out: &mut Vec<std::collections::HashMap<String, Option<String>>>,
     ) {
         for node in nodes {
             match node {
@@ -8701,9 +8701,9 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
     // No H2 should have MISSING TRANSLATION in any language.
     for map in &h2_maps {
         for (lang, val) in map {
-            assert_ne!(
-                val, "MISSING TRANSLATION",
-                "H2 heading has MISSING TRANSLATION for lang '{}': {:?}",
+            assert!(
+                val.is_some(),
+                "H2 heading has missing translation for lang '{}': {:?}",
                 lang, map
             );
         }
@@ -8715,7 +8715,7 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
         .iter()
         .filter(|map| {
             map.get("de")
-                .map_or(false, |v| v.contains("Kundenerklärungen"))
+                .map_or(false, |v| v.as_ref().map_or(false, |s| s.contains("Kundenerklärungen")))
         })
         .count();
     assert_eq!(
@@ -8779,8 +8779,8 @@ fn test_aags_multilingual_merge_de_en() {
         for text in inline_texts {
             for inline in &text.0 {
                 if let InlineNode::TranslatedText(map) = inline {
-                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
 
                     for (i, (de_snippet, en_snippet)) in expected_pairs.iter().enumerate() {
                         if de_text.contains(de_snippet) || en_text.contains(en_snippet) {
@@ -9218,9 +9218,9 @@ fn test_aaam_multilingual_translation_triplet_same_node() {
         for text in inline_texts {
             for inline in &text.0 {
                 if let InlineNode::TranslatedText(map) = inline {
-                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
-                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                    let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
 
                     if contains_ci(de_text, de_snippet)
                         && !contains_ci(en_text, en_snippet)
@@ -9318,9 +9318,9 @@ fn assert_aaam_translation_triplet_on_same_node(
         for text in inline_texts {
             for inline in &text.0 {
                 if let InlineNode::TranslatedText(map) = inline {
-                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
-                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                    let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
 
                     if contains_normalized(de_text, de_snippet)
                         && !contains_normalized(en_text, en_snippet)
@@ -10078,9 +10078,9 @@ fn assert_aagg_translation_triplet_on_same_node(
         for text in inline_texts {
             for inline in &text.0 {
                 if let InlineNode::TranslatedText(map) = inline {
-                    let de_text = map.get("de").map(|s| s.as_str()).unwrap_or("");
-                    let en_text = map.get("en").map(|s| s.as_str()).unwrap_or("");
-                    let sp_text = map.get("sp").map(|s| s.as_str()).unwrap_or("");
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                    let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
 
                     if contains_normalized(de_text, de_snippet)
                         || contains_normalized(en_text, en_snippet)
@@ -11408,7 +11408,7 @@ fn test_baqm_partial_bold_in_paragraph() {
         nodes.iter().any(|n| match n {
             InlineNode::Strong(inner) => match inner.as_ref() {
                 InlineNode::Text(t) => t.contains(text),
-                InlineNode::TranslatedText(map) => map.values().any(|v| v.contains(text)),
+                InlineNode::TranslatedText(map) => map.values().any(|v| v.as_ref().map_or(false, |s| s.contains(text))),
                 _ => false,
             },
             _ => false,
@@ -13598,9 +13598,9 @@ fn test_aacc_dropdown_no_missing_translation_in_options() {
             for opt in options {
                 if let TranslatableString::Translated(map) = &opt.name {
                     for (lang, val) in map {
-                        assert_ne!(
-                            val, "MISSING TRANSLATION",
-                            "Select field {:?} has MISSING TRANSLATION for lang '{}' in option {:?}",
+                        assert!(
+                            val.is_some(),
+                            "Select field {:?} has missing translation for lang '{}' in option {:?}",
                             f.name, lang, opt
                         );
                     }
@@ -14005,7 +14005,7 @@ fn debug_aacj_en_flattened_text() {
             let s = match inline {
                 InlineNode::Text(t) => t.clone(),
                 InlineNode::TranslatedText(map) => {
-                    map.values().cloned().collect::<Vec<_>>().join(" | ")
+                    map.values().filter_map(|v| v.as_ref().map(|s| s.as_str())).collect::<Vec<_>>().join(" | ")
                 }
                 _ => continue,
             };
@@ -14570,7 +14570,7 @@ fn test_aags_en_has_expected_fields_and_labels() {
                     let name_str = match &opt.name {
                         crate::structured::TranslatableString::Plain(s) => s.as_str(),
                         crate::structured::TranslatableString::Translated(map) => {
-                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                            map.values().next().and_then(|o| o.as_deref()).unwrap_or("")
                         }
                     };
                     name_str.contains(expected)
@@ -21343,12 +21343,12 @@ fn test_aais_019_no_missing_translation_list() {
             let en = item.plain_text_in("en");
             let de = item.plain_text_in("de");
             let es = item.plain_text_in("es");
-            let all_missing = en.trim() == "MISSING TRANSLATION"
-                && de.trim() == "MISSING TRANSLATION"
-                && es.trim() == "MISSING TRANSLATION";
+            let all_missing = en.trim().is_empty()
+                && de.trim().is_empty()
+                && es.trim().is_empty();
             assert!(
                 !all_missing,
-                "List {} item {} has MISSING TRANSLATION in every language; \
+                "List {} item {} has missing translation in every language; \
                  this indicates an empty list item leaked through",
                 i, j,
             );

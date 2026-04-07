@@ -469,15 +469,17 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                 // For translated placeholders, generate data attributes for each language
                 let mut attrs = String::new();
                 for (lang, text) in map {
+                    let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
                     attrs.push_str(&format!(
                         " data-placeholder-{}=\"{}\"",
                         escape_attr(lang),
-                        escape_attr(text)
+                        escape_attr(display_text)
                     ));
                 }
                 // Use first language as default placeholder
                 if let Some((_, text)) = map.iter().next() {
-                    attrs.push_str(&format!(" placeholder=\"{}\"", escape_attr(text)));
+                    let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
+                    attrs.push_str(&format!(" placeholder=\"{}\"", escape_attr(display_text)));
                 }
                 attrs
             }
@@ -593,7 +595,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                     _ => match &opt.name {
                         crate::structured::TranslatableString::Plain(s) => s.as_str(),
                         crate::structured::TranslatableString::Translated(map) => {
-                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                            map.values().find_map(|o| o.as_deref()).unwrap_or("")
                         }
                     },
                 };
@@ -606,11 +608,12 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                     crate::structured::TranslatableString::Translated(map) => {
                         let mut spans = String::new();
                         for (lang, text) in map {
+                            let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
                             spans.push_str(&format!(
                                 "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
                                 escape_attr(lang),
                                 escape_attr(lang),
-                                escape_html(text)
+                                escape_html(display_text)
                             ));
                         }
                         spans
@@ -650,7 +653,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                     _ => match &opt.name {
                         crate::structured::TranslatableString::Plain(s) => s.as_str(),
                         crate::structured::TranslatableString::Translated(map) => {
-                            map.values().next().map(|s| s.as_str()).unwrap_or("")
+                            map.values().find_map(|o| o.as_deref()).unwrap_or("")
                         }
                     },
                 };
@@ -666,8 +669,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                     crate::structured::TranslatableString::Translated(map) => {
                         // For select options, use first language as display text
                         // and add data-text-* attributes on the <option> element
-                        let first_lang = map.iter().next();
-                        if let Some((_lang, text)) = first_lang {
+                        if let Some(text) = map.values().find_map(|o| o.as_deref()) {
                             escape_html(text)
                         } else {
                             String::new()
@@ -681,10 +683,11 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                     crate::structured::TranslatableString::Translated(map) => {
                         let mut attrs = String::new();
                         for (l, t) in map {
+                            let display_text = t.as_deref().unwrap_or("MISSING TRANSLATION");
                             attrs.push_str(&format!(
                                 " data-text-{}=\"{}\"",
                                 escape_attr(l),
-                                escape_attr(t)
+                                escape_attr(display_text)
                             ));
                         }
                         attrs
@@ -846,11 +849,12 @@ fn generate_inline_node(node: &InlineNode) -> String {
             // Emit all languages with lang-tagged spans
             let mut html = String::new();
             for (lang, text) in translations {
+                let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
                 html.push_str(&format!(
                     "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
                     escape_attr(lang),
                     escape_attr(lang),
-                    escape_html(text)
+                    escape_html(display_text)
                 ));
             }
             html

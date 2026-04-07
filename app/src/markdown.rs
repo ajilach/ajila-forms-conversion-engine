@@ -27,8 +27,8 @@ fn inline_node_to_markdown(node: &InlineNode, language: Option<&str>, out: &mut 
             // Get text for the specified language, or fallback to first available
             let text = language
                 .and_then(|lang| map.get(lang))
-                .or_else(|| map.values().next())
-                .map(|s| s.as_str())
+                .and_then(|o| o.as_deref())
+                .or_else(|| map.values().find_map(|o| o.as_deref()))
                 .unwrap_or("");
             out.push_str(text);
         }
@@ -188,7 +188,7 @@ fn push_to_context_or_nodes(
 fn node_to_plain_text(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(s) => s.clone(),
-        InlineNode::TranslatedText(map) => map.values().next().cloned().unwrap_or_default(),
+        InlineNode::TranslatedText(map) => map.values().find_map(|o| o.clone()).unwrap_or_default(),
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => node_to_plain_text(inner),
         InlineNode::Link(link) => link.content.as_plain_text(),
     }
@@ -249,7 +249,8 @@ fn collect_translations_from_node(
 ) {
     match node {
         InlineNode::Text(s) => {
-            // Plain text goes to "default" language
+            // Plain text has no language — collect under "default" sentinel key.
+            // Filtered out during distribution in `convert_node_to_translated`.
             translations
                 .entry("default".to_string())
                 .or_default()
@@ -257,7 +258,9 @@ fn collect_translations_from_node(
         }
         InlineNode::TranslatedText(map) => {
             for (lang, text) in map {
-                translations.entry(lang.clone()).or_default().push_str(text);
+                if let Some(text) = text {
+                    translations.entry(lang.clone()).or_default().push_str(text);
+                }
             }
         }
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
@@ -294,7 +297,7 @@ fn convert_to_translated(
 fn text_length(node: &InlineNode) -> usize {
     match node {
         InlineNode::Text(s) => s.len(),
-        InlineNode::TranslatedText(map) => map.values().next().map(|s| s.len()).unwrap_or(0),
+        InlineNode::TranslatedText(map) => map.values().find_map(|o| o.as_ref().map(|s| s.len())).unwrap_or(0),
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => text_length(inner),
         InlineNode::Link(link) => link.content.0.iter().map(text_length).sum(),
     }
@@ -315,12 +318,12 @@ fn convert_node_to_translated(
             *position += node_len;
 
             // Build TranslatedText with the edited language's content
-            let mut map = std::collections::HashMap::new();
-            map.insert(edited_lang.to_string(), s);
+            let mut map = blueprint::structured::TranslationMap::new();
+            map.insert(edited_lang.to_string(), Some(s));
 
             // Distribute other languages' content proportionally
             for (lang, full_text) in existing_translations {
-                if lang != edited_lang {
+                if lang != edited_lang && lang != "default" {
                     let start_idx = (start_ratio * full_text.len() as f64).round() as usize;
                     let end_idx = (end_ratio * full_text.len() as f64).round() as usize;
                     let start_idx = start_idx.min(full_text.len());
@@ -329,7 +332,7 @@ fn convert_node_to_translated(
                     // Extract substring, being careful with UTF-8 boundaries
                     let extracted = extract_substring_safe(full_text, start_idx, end_idx);
                     if !extracted.is_empty() {
-                        map.insert(lang.clone(), extracted);
+                        map.insert(lang.clone(), Some(extracted));
                     }
                 }
             }
@@ -338,12 +341,12 @@ fn convert_node_to_translated(
         }
         InlineNode::TranslatedText(mut map) => {
             // Already translated, just update position tracking
-            let node_len = map.values().next().map(|s| s.len()).unwrap_or(0);
+            let node_len = map.values().find_map(|o| o.as_ref().map(|s| s.len())).unwrap_or(0);
             *position += node_len;
 
             // Ensure edited language is present
             if !map.contains_key(edited_lang) {
-                map.insert(edited_lang.to_string(), String::new());
+                map.insert(edited_lang.to_string(), Some(String::new()));
             }
 
             InlineNode::TranslatedText(map)
@@ -455,8 +458,8 @@ mod tests {
     fn test_multilingual_preserves_formatting() {
         // Start with translated text
         let mut translations = std::collections::HashMap::new();
-        translations.insert("de".to_string(), "Hallo Welt".to_string());
-        translations.insert("en".to_string(), "Hello World".to_string());
+        translations.insert("de".to_string(), Some("Hallo Welt".to_string()));
+        translations.insert("en".to_string(), Some("Hello World".to_string()));
 
         let existing = InlineText(vec![InlineNode::TranslatedText(translations)]);
 
@@ -469,7 +472,7 @@ mod tests {
         // First node should be Strong containing TranslatedText with "Hallo" for German
         if let InlineNode::Strong(inner) = &result.0[0] {
             if let InlineNode::TranslatedText(map) = inner.as_ref() {
-                assert_eq!(map.get("de"), Some(&"Hallo".to_string()));
+                assert_eq!(map.get("de"), Some(&Some("Hallo".to_string())));
                 // English should have proportional content
                 assert!(map.contains_key("en"));
             } else {
@@ -481,7 +484,7 @@ mod tests {
 
         // Second node should be TranslatedText with " Welt" for German
         if let InlineNode::TranslatedText(map) = &result.0[1] {
-            assert_eq!(map.get("de"), Some(&" Welt".to_string()));
+            assert_eq!(map.get("de"), Some(&Some(" Welt".to_string())));
         } else {
             panic!("Expected TranslatedText node");
         }
@@ -491,12 +494,12 @@ mod tests {
     fn test_multilingual_display_per_language() {
         // Create multilingual formatted text
         let mut map1 = std::collections::HashMap::new();
-        map1.insert("de".to_string(), "fett".to_string());
-        map1.insert("en".to_string(), "bold".to_string());
+        map1.insert("de".to_string(), Some("fett".to_string()));
+        map1.insert("en".to_string(), Some("bold".to_string()));
 
         let mut map2 = std::collections::HashMap::new();
-        map2.insert("de".to_string(), " Text".to_string());
-        map2.insert("en".to_string(), " text".to_string());
+        map2.insert("de".to_string(), Some(" Text".to_string()));
+        map2.insert("en".to_string(), Some(" text".to_string()));
 
         let text = InlineText(vec![
             InlineNode::Strong(Box::new(InlineNode::TranslatedText(map1))),

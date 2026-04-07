@@ -50,6 +50,9 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
         .into_iter()
         .collect();
 
+    // Detect which languages have missing translations
+    let missing_langs = props.content.0.missing_translation_languages();
+
     // Track the currently active language tab
     // Initialize to the first available language (document or content), or "default"
     let mut active_lang = use_signal(|| {
@@ -66,6 +69,8 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
         inline_text_to_markdown(&props.content.0, Some(&active_lang.read()))
     };
 
+    let active_is_missing = missing_langs.contains(&*active_lang.read());
+
     let path = props.path.clone();
     let on_action = props.on_action;
 
@@ -76,7 +81,12 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                 div { class: "text-editor-tabs",
                     for lang in &all_langs {
                         button {
-                            class: if *active_lang.read() == *lang { "text-editor-tab active" } else { "text-editor-tab" },
+                            class: {
+                                let mut cls = String::from("text-editor-tab");
+                                if *active_lang.read() == *lang { cls.push_str(" active"); }
+                                if missing_langs.contains(lang) { cls.push_str(" missing-translation"); }
+                                cls
+                            },
                             onclick: {
                                 let lang = lang.clone();
                                 move |_| active_lang.set(lang.clone())
@@ -105,6 +115,13 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                                 });
                         }
                     },
+                }
+
+                // Per-field inline warning for missing translation
+                if active_is_missing {
+                    div { class: "text-editor-warning",
+                        "⚠ Translation missing for this language"
+                    }
                 }
             }
 

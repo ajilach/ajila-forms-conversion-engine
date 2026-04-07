@@ -547,21 +547,21 @@ pub fn collect_languages(content: &[StructuredNode]) -> BTreeSet<String> {
 // ============================================================================
 
 /// A map of master-language text → { lang_code → translated_text }.
-type TranslationMap = HashMap<String, HashMap<String, String>>;
+type I18nDictionary = HashMap<String, HashMap<String, String>>;
 
 /// Walk the structured node tree and extract all translatable strings.
 ///
 /// Returns a map where each key is the master-language text and each value
 /// is a map of language codes to their translations.
-fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> TranslationMap {
-    let mut map = TranslationMap::new();
+fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> I18nDictionary {
+    let mut map = I18nDictionary::new();
     for node in nodes {
         extract_from_node(node, master_lang, &mut map);
     }
     map
 }
 
-fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut TranslationMap) {
+fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDictionary) {
     match node {
         StructuredNode::Heading(h) => {
             match h.level {
@@ -596,11 +596,11 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut Transla
                 extract_from_inline_text(label, master_lang, map);
             }
             if let Some(TranslatableString::Translated(tmap)) = &f.placeholder {
-                if let Some(master) = tmap.get(master_lang) {
+                if let Some(Some(master)) = tmap.get(master_lang) {
                     let others: HashMap<String, String> = tmap
                         .iter()
                         .filter(|(k, _)| k.as_str() != master_lang)
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .filter_map(|(k, v)| v.as_ref().map(|s| (k.clone(), s.clone())))
                         .collect();
                     if !others.is_empty() {
                         map.insert(master.clone(), others);
@@ -611,11 +611,11 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut Transla
                 FieldType::Radio { options } | FieldType::Select { options } => {
                     for opt in options {
                         if let TranslatableString::Translated(tmap) = &opt.name {
-                            if let Some(master) = tmap.get(master_lang) {
+                            if let Some(Some(master)) = tmap.get(master_lang) {
                                 let others: HashMap<String, String> = tmap
                                     .iter()
                                     .filter(|(k, _)| k.as_str() != master_lang)
-                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .filter_map(|(k, v)| v.as_ref().map(|s| (k.clone(), s.clone())))
                                     .collect();
                                 if !others.is_empty() {
                                     map.insert(master.clone(), others);
@@ -669,7 +669,7 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut Transla
 fn extract_rich_text_translations(
     text: &InlineText,
     master_lang: &str,
-    map: &mut TranslationMap,
+    map: &mut I18nDictionary,
     wrap: impl Fn(&str) -> String,
 ) {
     let mut langs = BTreeSet::new();
@@ -691,7 +691,7 @@ fn extract_rich_text_translations(
 
 /// Extract translations from a `ListNode`, rendering the full `<ul>/<ol>` HTML
 /// for each language so keys match the `_value` attribute.
-fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut TranslationMap) {
+fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut I18nDictionary) {
     let mut langs = BTreeSet::new();
     for item in &list.items {
         item.collect_languages(&mut langs);
@@ -738,20 +738,20 @@ fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut Trans
 
 /// Extract translations from plain inline text (for field labels, captions, etc.
 /// that are NOT wrapped in HTML tags).
-fn extract_from_inline_text(text: &InlineText, master_lang: &str, map: &mut TranslationMap) {
+fn extract_from_inline_text(text: &InlineText, master_lang: &str, map: &mut I18nDictionary) {
     for node in &text.0 {
         extract_from_inline_node(node, master_lang, map);
     }
 }
 
-fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut TranslationMap) {
+fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut I18nDictionary) {
     match node {
         InlineNode::TranslatedText(tmap) => {
-            if let Some(master) = tmap.get(master_lang) {
+            if let Some(Some(master)) = tmap.get(master_lang) {
                 let others: HashMap<String, String> = tmap
                     .iter()
                     .filter(|(k, _)| k.as_str() != master_lang)
-                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .filter_map(|(k, v)| v.as_ref().map(|s| (k.clone(), s.clone())))
                     .collect();
                 if !others.is_empty() {
                     map.insert(master.clone(), others);
@@ -1243,8 +1243,8 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap = HashMap::new();
-        tmap.insert("en".into(), "Authorized representative(s)".into());
-        tmap.insert("de".into(), "Vertretungsberechtigte(r)".into());
+        tmap.insert("en".into(), Some("Authorized representative(s)".into()));
+        tmap.insert("de".into(), Some("Vertretungsberechtigte(r)".into()));
 
         let node = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
@@ -1287,8 +1287,8 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap = HashMap::new();
-        tmap.insert("de".into(), "Bewirtschaftbare Konten".into());
-        tmap.insert("en".into(), "Manageable accounts".into());
+        tmap.insert("de".into(), Some("Bewirtschaftbare Konten".into()));
+        tmap.insert("en".into(), Some("Manageable accounts".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
@@ -1331,8 +1331,8 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap = HashMap::new();
-        tmap.insert("en".into(), "Client".into());
-        tmap.insert("de".into(), "Kunde".into());
+        tmap.insert("en".into(), Some("Client".into()));
+        tmap.insert("de".into(), Some("Kunde".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
@@ -1372,8 +1372,8 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap = HashMap::new();
-        tmap.insert("en".into(), "Agreement".into());
-        tmap.insert("de".into(), "Vereinbarung".into());
+        tmap.insert("en".into(), Some("Agreement".into()));
+        tmap.insert("de".into(), Some("Vereinbarung".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
@@ -1404,11 +1404,11 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap1 = HashMap::new();
-        tmap1.insert("en".into(), "Item A".into());
-        tmap1.insert("de".into(), "Punkt A".into());
+        tmap1.insert("en".into(), Some("Item A".to_string()));
+        tmap1.insert("de".into(), Some("Punkt A".to_string()));
         let mut tmap2 = HashMap::new();
-        tmap2.insert("en".into(), "Item B".into());
-        tmap2.insert("de".into(), "Punkt B".into());
+        tmap2.insert("en".into(), Some("Item B".to_string()));
+        tmap2.insert("de".into(), Some("Punkt B".to_string()));
 
         let node = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
@@ -1444,8 +1444,8 @@ mod tests {
         use std::collections::HashMap;
 
         let mut tmap = HashMap::new();
-        tmap.insert("en".into(), "Company".into());
-        tmap.insert("de".into(), "Firma".into());
+        tmap.insert("en".into(), Some("Company".into()));
+        tmap.insert("de".into(), Some("Firma".into()));
 
         let node = StructuredNode::Field(FieldNode {
             label: Some(InlineText(vec![InlineNode::TranslatedText(tmap)])),

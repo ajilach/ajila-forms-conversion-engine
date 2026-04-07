@@ -1303,8 +1303,8 @@ fn inline_node_to_html(node: &InlineNode, language: &str, out: &mut String) {
         InlineNode::TranslatedText(map) => {
             let text = map
                 .get(language)
-                .or_else(|| map.values().next())
-                .map(|s| s.as_str())
+                .and_then(|o| o.as_deref())
+                .or_else(|| map.values().find_map(|o| o.as_deref()))
                 .unwrap_or("");
             out.push_str(&escape_html(text));
         }
@@ -1340,8 +1340,8 @@ fn convert_name_values(options: &[NameValue], language: &str) -> Vec<AemOption> 
                 TranslatableString::Plain(s) => s.clone(),
                 TranslatableString::Translated(map) => map
                     .get(language)
-                    .or_else(|| map.values().next())
-                    .cloned()
+                    .and_then(|o| o.clone())
+                    .or_else(|| map.values().find_map(|o| o.clone()))
                     .unwrap_or_default(),
             };
             let value = format_input_value(&nv.value);

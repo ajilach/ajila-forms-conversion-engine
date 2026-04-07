@@ -17,6 +17,12 @@ use uuid::Uuid;
 use crate::context::Context;
 use crate::xfa::scripting::SomPath;
 
+/// A map of language code → optional translated text.
+///
+/// `None` means "translation not provided"; `Some(text)` is the actual content.
+/// Used by both `InlineNode::TranslatedText` and `TranslatableString::Translated`.
+pub type TranslationMap = HashMap<String, Option<String>>;
+
 // ── Semantic matching context (feature-gated) ────────────────────────────────
 
 /// Opaque semantic matching context threaded through translation merge.
@@ -250,7 +256,7 @@ pub struct NameValue {
 #[serde(untagged)]
 pub enum TranslatableString {
     Plain(String),
-    Translated(std::collections::HashMap<String, String>),
+    Translated(TranslationMap),
 }
 
 impl TranslatableString {
@@ -260,8 +266,8 @@ impl TranslatableString {
             TranslatableString::Plain(s) => Some(s),
             TranslatableString::Translated(map) => map
                 .get(lang)
-                .map(|s| s.as_str())
-                .or_else(|| map.values().next().map(|s| s.as_str())),
+                .and_then(|o| o.as_deref())
+                .or_else(|| map.values().find_map(|o| o.as_deref())),
         }
     }
 
@@ -276,7 +282,7 @@ impl TranslatableString {
         match self {
             TranslatableString::Plain(s) => s.as_str(),
             TranslatableString::Translated(map) => {
-                map.values().next().map(|s| s.as_str()).unwrap_or("")
+                map.values().find_map(|o| o.as_deref()).unwrap_or("")
             }
         }
     }
@@ -285,7 +291,10 @@ impl TranslatableString {
     pub fn contains(&self, needle: &str) -> bool {
         match self {
             TranslatableString::Plain(s) => s.contains(needle),
-            TranslatableString::Translated(map) => map.values().any(|s| s.contains(needle)),
+            TranslatableString::Translated(map) => map
+                .values()
+                .filter_map(|o| o.as_deref())
+                .any(|s| s.contains(needle)),
         }
     }
 
@@ -293,10 +302,10 @@ impl TranslatableString {
     /// single `Translated` map. `Plain` values are inserted under their respective
     /// language keys. Already-`Translated` maps are merged directly.
     pub fn merge(&self, self_lang: &str, other: &Self, other_lang: &str) -> Self {
-        let mut map = std::collections::HashMap::new();
+        let mut map: TranslationMap = HashMap::new();
         match self {
             TranslatableString::Plain(s) => {
-                map.insert(self_lang.to_string(), s.clone());
+                map.insert(self_lang.to_string(), Some(s.clone()));
             }
             TranslatableString::Translated(m) => {
                 map.extend(m.clone());
@@ -304,7 +313,7 @@ impl TranslatableString {
         }
         match other {
             TranslatableString::Plain(s) => {
-                map.insert(other_lang.to_string(), s.clone());
+                map.insert(other_lang.to_string(), Some(s.clone()));
             }
             TranslatableString::Translated(m) => {
                 map.extend(m.clone());
@@ -328,19 +337,24 @@ impl TranslatableString {
                 translated_maps_match_on_shared_language(a, b)
             }
             (TranslatableString::Plain(a), TranslatableString::Translated(b))
-            | (TranslatableString::Translated(b), TranslatableString::Plain(a)) => {
-                b.values().any(|value| value == a)
-            }
+            | (TranslatableString::Translated(b), TranslatableString::Plain(a)) => b
+                .values()
+                .filter_map(|o| o.as_deref())
+                .any(|value| value == a),
         }
     }
 }
 
 fn translated_maps_match_on_shared_language(
-    left: &HashMap<String, String>,
-    right: &HashMap<String, String>,
+    left: &TranslationMap,
+    right: &TranslationMap,
 ) -> bool {
     left.iter()
-        .filter_map(|(lang, left_text)| right.get(lang).map(|right_text| (left_text, right_text)))
+        .filter_map(|(lang, left_text)| {
+            let lt = left_text.as_deref()?;
+            let rt = right.get(lang)?.as_deref()?;
+            Some((lt, rt))
+        })
         .any(|(left_text, right_text)| left_text == right_text)
 }
 
@@ -350,7 +364,7 @@ impl std::fmt::Display for TranslatableString {
             TranslatableString::Plain(s) => write!(f, "{}", s),
             TranslatableString::Translated(map) => {
                 // Display first available value
-                if let Some(s) = map.values().next() {
+                if let Some(s) = map.values().find_map(|o| o.as_deref()) {
                     write!(f, "{}", s)
                 } else {
                     Ok(())
@@ -498,7 +512,7 @@ impl InlineText {
                 InlineNode::Text(s) => out.push_str(s),
                 InlineNode::TranslatedText(translations) => {
                     // For plain text, use the first available translation
-                    if let Some(text) = translations.values().next() {
+                    if let Some(text) = translations.values().find_map(|o| o.as_deref()) {
                         out.push_str(text);
                     }
                 }
@@ -528,11 +542,16 @@ impl InlineText {
             match node {
                 InlineNode::Text(s) => out.push_str(s),
                 InlineNode::TranslatedText(translations) => {
-                    let text = translations
-                        .get(lang)
-                        .or_else(|| translations.values().next());
-                    if let Some(text) = text {
-                        out.push_str(text);
+                    if let Some(opt) = translations.get(lang) {
+                        // Key exists – use it (may be None for missing translation)
+                        if let Some(text) = opt.as_deref() {
+                            out.push_str(text);
+                        }
+                    } else {
+                        // Key absent – fallback to any available value
+                        if let Some(text) = translations.values().find_map(|o| o.as_deref()) {
+                            out.push_str(text);
+                        }
                     }
                 }
                 InlineNode::Link(link) => {
@@ -622,6 +641,36 @@ impl InlineText {
             walk(node, langs);
         }
     }
+
+    /// Return the set of languages that have at least one `None` value
+    /// in a `TranslatedText` node (i.e. missing translations).
+    pub fn missing_translation_languages(&self) -> BTreeSet<String> {
+        fn walk(node: &InlineNode, missing: &mut BTreeSet<String>) {
+            match node {
+                InlineNode::TranslatedText(map) => {
+                    for (lang, val) in map {
+                        if val.is_none() {
+                            missing.insert(lang.clone());
+                        }
+                    }
+                }
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                    walk(inner, missing);
+                }
+                InlineNode::Link(link) => {
+                    for child in &link.content.0 {
+                        walk(child, missing);
+                    }
+                }
+                InlineNode::Text(_) => {}
+            }
+        }
+        let mut missing = BTreeSet::new();
+        for node in &self.0 {
+            walk(node, &mut missing);
+        }
+        missing
+    }
 }
 
 impl Default for InlineText {
@@ -634,7 +683,7 @@ impl Default for InlineText {
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
 pub enum InlineNode {
     Text(String),
-    TranslatedText(std::collections::HashMap<String, String>),
+    TranslatedText(TranslationMap),
     Link(LinkNode),
     Strong(Box<InlineNode>),
     Emphasis(Box<InlineNode>),
@@ -654,11 +703,11 @@ impl InlineNode {
                 // Prefer a value that doesn't end with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
                 map.values()
+                    .filter_map(|o| o.as_deref())
                     .find(|s| {
                         !s.is_empty() && !s.as_bytes().last().unwrap_or(&b' ').is_ascii_whitespace()
                     })
-                    .or_else(|| map.values().find(|s| !s.is_empty()))
-                    .map(|s| s.as_str())
+                    .or_else(|| map.values().filter_map(|o| o.as_deref()).find(|s| !s.is_empty()))
             }
             InlineNode::Link(link) => link.content.0.last().and_then(|n| n.trailing_text()),
         }
@@ -677,12 +726,12 @@ impl InlineNode {
                 // Prefer a value that doesn't start with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
                 map.values()
+                    .filter_map(|o| o.as_deref())
                     .find(|s| {
                         !s.is_empty()
                             && !s.as_bytes().first().unwrap_or(&b' ').is_ascii_whitespace()
                     })
-                    .or_else(|| map.values().find(|s| !s.is_empty()))
-                    .map(|s| s.as_str())
+                    .or_else(|| map.values().filter_map(|o| o.as_deref()).find(|s| !s.is_empty()))
             }
             InlineNode::Link(link) => link.content.0.first().and_then(|n| n.leading_text()),
         }

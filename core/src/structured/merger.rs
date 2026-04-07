@@ -1146,9 +1146,9 @@ mod tests {
     use std::collections::HashMap;
 
     fn translated_text(entries: &[(&str, &str)]) -> InlineText {
-        let map: HashMap<String, String> = entries
+        let map: crate::structured::TranslationMap = entries
             .iter()
-            .map(|(lang, text)| ((*lang).to_string(), (*text).to_string()))
+            .map(|(lang, text)| ((*lang).to_string(), Some((*text).to_string())))
             .collect();
         InlineText(vec![InlineNode::TranslatedText(map)])
     }

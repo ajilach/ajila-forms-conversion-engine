@@ -14,7 +14,7 @@
 
 use crate::context::Context;
 use crate::structured::merge_engine::{
-    MISSING_TRANSLATION_TEXT, fill_missing_translation_placeholders, lcs_table_with,
+    fill_missing_translation_placeholders, lcs_table_with,
     merge_node_lists, node_matches_for_similarity,
 };
 #[cfg(feature = "semantic-matching")]
@@ -172,7 +172,6 @@ pub fn merge_translations(
         &mut merged_content,
         &languages,
         &base_lang,
-        MISSING_TRANSLATION_TEXT,
     );
 
     // Create merged context — start from the base context to preserve variables
@@ -333,8 +332,8 @@ mod tests {
         if let StructuredNode::Heading(h) = &result.content[0] {
             assert_eq!(h.content.0.len(), 1);
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Titel");
-                assert_eq!(map.get("en").unwrap(), "Title");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Titel"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Title"));
             } else {
                 panic!("Expected TranslatedText");
             }
@@ -346,8 +345,8 @@ mod tests {
         if let StructuredNode::Paragraph(p) = &result.content[1] {
             assert_eq!(p.content.0.len(), 1);
             if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Hallo");
-                assert_eq!(map.get("en").unwrap(), "Hello");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Hallo"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Hello"));
             } else {
                 panic!("Expected TranslatedText");
             }
@@ -454,9 +453,9 @@ mod tests {
 
         if let StructuredNode::Paragraph(p) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Hallo");
-                assert_eq!(map.get("en").unwrap(), "Hello");
-                assert_eq!(map.get("fr").unwrap(), "Bonjour");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Hallo"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Hello"));
+                assert_eq!(map.get("fr").unwrap().as_deref(), Some("Bonjour"));
             } else {
                 panic!("Expected TranslatedText");
             }
@@ -519,16 +518,16 @@ mod tests {
             // Check label is merged
             let label = f.label.as_ref().unwrap();
             if let InlineNode::TranslatedText(map) = &label.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Geschlecht");
-                assert_eq!(map.get("en").unwrap(), "Gender");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Geschlecht"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Gender"));
             } else {
                 panic!("Expected TranslatedText in label");
             }
 
             // Check placeholder is merged
             if let Some(TranslatableString::Translated(map)) = &f.placeholder {
-                assert_eq!(map.get("de").unwrap(), "Bitte wählen");
-                assert_eq!(map.get("en").unwrap(), "Please select");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Bitte wählen"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Please select"));
             } else {
                 panic!("Expected translated placeholder");
             }
@@ -536,8 +535,8 @@ mod tests {
             // Check radio option names are merged
             if let FieldType::Radio { options } = &f.input_type {
                 if let TranslatableString::Translated(map) = &options[0].name {
-                    assert_eq!(map.get("de").unwrap(), "Männlich");
-                    assert_eq!(map.get("en").unwrap(), "Male");
+                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Männlich"));
+                    assert_eq!(map.get("en").unwrap().as_deref(), Some("Male"));
                 } else {
                     panic!("Expected translated option name");
                 }
@@ -1329,7 +1328,7 @@ mod tests {
                 items: vec![InlineText(vec![
                     InlineNode::TranslatedText(HashMap::from([(
                         "de".to_string(),
-                        "Prefix ".to_string(),
+                        Some("Prefix ".to_string()),
                     )])),
                     InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
                 ])],
@@ -1356,10 +1355,10 @@ mod tests {
             _ => panic!("Expected translated list item text"),
         };
 
-        assert_eq!(map.get("de").map(String::as_str), Some("Prefix Suffix"));
+        assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Prefix Suffix"));
         assert_eq!(
-            map.get("en").map(String::as_str),
-            Some(MISSING_TRANSLATION_TEXT)
+            map.get("en").and_then(|o| o.as_deref()),
+            None
         );
     }
 
@@ -1426,10 +1425,10 @@ mod tests {
                 );
                 // The third option should carry DE text and explicit EN placeholder.
                 if let TranslatableString::Translated(map) = &options[2].name {
-                    assert_eq!(map.get("de").unwrap(), "Enthaltung");
+                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Enthaltung"));
                     assert_eq!(
-                        map.get("en").map(String::as_str),
-                        Some(MISSING_TRANSLATION_TEXT)
+                        map.get("en").and_then(|o| o.as_deref()),
+                        None
                     );
                 } else {
                     panic!("Expected translated option name for third entry");
@@ -1551,10 +1550,10 @@ mod tests {
         if let StructuredNode::Heading(heading) = &result.content[1] {
             assert_eq!(heading.content.0.len(), 1);
             if let InlineNode::TranslatedText(map) = &heading.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Nur Deutsch");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Nur Deutsch"));
                 assert_eq!(
-                    map.get("en").map(String::as_str),
-                    Some(MISSING_TRANSLATION_TEXT),
+                    map.get("en").and_then(|o| o.as_deref()),
+                    None,
                     "Unmatched DE-only heading should be flagged for EN"
                 );
             } else {
@@ -1605,7 +1604,7 @@ mod tests {
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
             assert_eq!(
                 paragraph.content.plain_text_in("de"),
-                format!("{} Basis", MISSING_TRANSLATION_TEXT)
+                " Basis"
             );
             assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
             assert!(matches!(
@@ -1655,7 +1654,7 @@ mod tests {
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
             assert_eq!(
                 paragraph.content.plain_text_in("de"),
-                format!("{} Basis Ende", MISSING_TRANSLATION_TEXT)
+                " Basis Ende"
             );
             assert_eq!(
                 paragraph.content.plain_text_in("en"),
@@ -1718,7 +1717,7 @@ mod tests {
         let mut entry = AlignedNode::Matched(StructuredNode::Paragraph(ParagraphNode {
             content: InlineText(vec![InlineNode::TranslatedText(HashMap::from([(
                 "en".to_string(),
-                "Other".to_string(),
+                Some("Other".to_string()),
             )]))]),
             som_path: None,
             source_name: None,
@@ -1807,10 +1806,10 @@ mod tests {
         let unmatched = &options[2];
         match &unmatched.name {
             TranslatableString::Translated(map) => {
-                assert_eq!(map.get("de").map(String::as_str), Some("Vielleicht"));
+                assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Vielleicht"));
                 assert_eq!(
-                    map.get("en").map(String::as_str),
-                    Some(MISSING_TRANSLATION_TEXT)
+                    map.get("en").and_then(|o| o.as_deref()),
+                    None
                 );
             }
             _ => panic!("Expected translated name map"),
@@ -1827,7 +1826,7 @@ mod tests {
             if let InlineNode::TranslatedText(map) = &p.content.0[0] {
                 for &(lang, text) in expected {
                     assert_eq!(
-                        map.get(lang).map(String::as_str),
+                        map.get(lang).and_then(|o| o.as_deref()),
                         Some(text),
                         "Expected '{}' for lang '{}'",
                         text,
@@ -2128,14 +2127,14 @@ mod tests {
 
         // The third option from FR must carry placeholder for DE + EN.
         if let TranslatableString::Translated(map) = &options[2].name {
-            assert_eq!(map.get("fr").map(String::as_str), Some("Abstention"));
+            assert_eq!(map.get("fr").and_then(|o| o.as_deref()), Some("Abstention"));
             assert_eq!(
-                map.get("de").map(String::as_str),
-                Some(MISSING_TRANSLATION_TEXT)
+                map.get("de").and_then(|o| o.as_deref()),
+                None
             );
             assert_eq!(
-                map.get("en").map(String::as_str),
-                Some(MISSING_TRANSLATION_TEXT)
+                map.get("en").and_then(|o| o.as_deref()),
+                None
             );
         } else {
             panic!("Expected Translated name for third option");
@@ -2181,9 +2180,9 @@ mod tests {
                 assert_eq!(c.condition, cond);
                 if let StructuredNode::Paragraph(p) = c.content.as_ref() {
                     if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                        assert_eq!(map.get("de").map(String::as_str), Some("Hallo"));
-                        assert_eq!(map.get("en").map(String::as_str), Some("Hello"));
-                        assert_eq!(map.get("fr").map(String::as_str), Some("Bonjour"));
+                        assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Hallo"));
+                        assert_eq!(map.get("en").and_then(|o| o.as_deref()), Some("Hello"));
+                        assert_eq!(map.get("fr").and_then(|o| o.as_deref()), Some("Bonjour"));
                     } else {
                         panic!("Expected TranslatedText");
                     }
@@ -2236,9 +2235,9 @@ mod tests {
             if let StructuredNode::Paragraph(p) = hcell {
                 if let InlineNode::TranslatedText(map) = &p.content.0[0] {
                     assert_eq!(map.len(), 3);
-                    assert_eq!(map.get("de").unwrap(), "Spalte");
-                    assert_eq!(map.get("en").unwrap(), "Column");
-                    assert_eq!(map.get("fr").unwrap(), "Colonne");
+                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Spalte"));
+                    assert_eq!(map.get("en").unwrap().as_deref(), Some("Column"));
+                    assert_eq!(map.get("fr").unwrap().as_deref(), Some("Colonne"));
                 } else {
                     panic!("Expected TranslatedText in header");
                 }
@@ -2247,7 +2246,7 @@ mod tests {
             if let StructuredNode::Paragraph(p) = bcell {
                 if let InlineNode::TranslatedText(map) = &p.content.0[0] {
                     assert_eq!(map.len(), 3);
-                    assert_eq!(map.get("de").unwrap(), "Wert");
+                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Wert"));
                 } else {
                     panic!("Expected TranslatedText in body");
                 }
@@ -2354,9 +2353,9 @@ mod tests {
         // The single H2 must carry all three translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Kundenerklärungen");
-                assert_eq!(map.get("en").unwrap(), "Client representations");
-                assert_eq!(map.get("es").unwrap(), "Declaraciones del Cliente");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Kundenerklärungen"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Client representations"));
+                assert_eq!(map.get("es").unwrap().as_deref(), Some("Declaraciones del Cliente"));
             } else {
                 panic!("Expected TranslatedText in heading");
             }
@@ -2373,7 +2372,7 @@ mod tests {
                             if let InlineNode::TranslatedText(map) = inline {
                                 for (lang, val) in map {
                                     assert!(
-                                        val != "MISSING TRANSLATION",
+                                        val.is_some(),
                                         "H2 has MISSING TRANSLATION for lang '{}'",
                                         lang
                                     );
@@ -2491,8 +2490,8 @@ mod tests {
         // The single H2 must carry both translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap(), "Kundenkontoverwaltung");
-                assert_eq!(map.get("en").unwrap(), "Customer account management");
+                assert_eq!(map.get("de").unwrap().as_deref(), Some("Kundenkontoverwaltung"));
+                assert_eq!(map.get("en").unwrap().as_deref(), Some("Customer account management"));
             } else {
                 panic!("Expected TranslatedText in heading");
             }
@@ -2590,12 +2589,12 @@ mod tests {
         if let StructuredNode::Heading(h) = heading {
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
                 assert_eq!(
-                    map.get("de").unwrap(),
-                    "Kontoeröffnungsantragsbearbeitung"
+                    map.get("de").unwrap().as_deref(),
+                    Some("Kontoeröffnungsantragsbearbeitung")
                 );
                 assert_eq!(
-                    map.get("en").unwrap(),
-                    "Processing of account opening applications"
+                    map.get("en").unwrap().as_deref(),
+                    Some("Processing of account opening applications")
                 );
             } else {
                 panic!("Expected TranslatedText in heading");
