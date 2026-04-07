@@ -506,8 +506,8 @@ fn convert_table(
     _colspan: u32,
     dor_colspan: Option<u32>,
 ) -> AemNode {
-    // Convert the table into a panel with child rows.
-    // Each row becomes a sub-panel with cells distributed across the grid.
+    // Convert table to a simple panel with all cells as direct children (paragraphs).
+    // AEM doesn't support tables, so we just output cells linearly.
     let caption_text = table
         .caption
         .as_ref()
@@ -523,56 +523,22 @@ fn convert_table(
 
     let mut children = Vec::new();
 
-    // Header row
+    // Header cells
     if let Some(header) = &table.header {
-        let cols = header.cells.len().max(1) as u32;
-        let col_span = ctx.grid_columns / cols;
-        let row_name = ctx.make_name("TBLHDR", "");
-        let row_uuid = ctx.uuid(&row_name);
-        let cells: Vec<AemNode> = header
-            .cells
-            .iter()
-            .filter_map(|cell| convert_node(cell, config, ctx, col_span, None))
-            .collect();
-        children.push(AemNode::Panel {
-            uuid: row_uuid,
-            name: row_name,
-            title: String::new(),
-            children: cells,
-            is_page: false,
-            dor_exclude: false,
-            visible: true,
-            dor_num_cols: None,
-            colspan: config.grid_columns,
-            dor_colspan: None,
-            bind_ref: None,
-        });
+        for cell in &header.cells {
+            if let Some(node) = convert_node(cell, config, ctx, config.grid_columns, None) {
+                children.push(node);
+            }
+        }
     }
 
-    // Body rows
+    // Body cells
     for row in &table.rows {
-        let cols = row.cells.len().max(1) as u32;
-        let col_span = ctx.grid_columns / cols;
-        let row_name = ctx.make_name("TBLROW", "");
-        let row_uuid = ctx.uuid(&row_name);
-        let cells: Vec<AemNode> = row
-            .cells
-            .iter()
-            .filter_map(|cell| convert_node(cell, config, ctx, col_span, None))
-            .collect();
-        children.push(AemNode::Panel {
-            uuid: row_uuid,
-            name: row_name,
-            title: String::new(),
-            children: cells,
-            is_page: false,
-            dor_exclude: false,
-            visible: true,
-            dor_num_cols: None,
-            colspan: config.grid_columns,
-            dor_colspan: None,
-            bind_ref: None,
-        });
+        for cell in &row.cells {
+            if let Some(node) = convert_node(cell, config, ctx, config.grid_columns, None) {
+                children.push(node);
+            }
+        }
     }
 
     AemNode::Panel {
