@@ -201,7 +201,7 @@ pub fn convert_with_context(
 /// is a heading, copy the heading text as the radio field's label.
 /// The heading stays in place — only the text is copied.
 /// Recurses into Groups, Repeatables, Conditionals, GridLayouts, and Tables.
-fn inherit_heading_labels_for_radios(nodes: &mut Vec<StructuredNode>) {
+fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
     // First pass: copy heading text into immediately following unlabeled radios
     for i in 1..nodes.len() {
         let is_unlabeled_radio = matches!(

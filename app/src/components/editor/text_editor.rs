@@ -66,7 +66,7 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
     };
 
     let path = props.path.clone();
-    let on_action = props.on_action.clone();
+    let on_action = props.on_action;
 
     rsx! {
         div { class: "text-editor",
@@ -95,7 +95,6 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                     oninput: {
                         let path = path.clone();
                         let lang = active_lang.read().clone();
-                        let on_action = on_action.clone();
                         move |evt: Event<FormData>| {
                             on_action
                                 .call(EditorAction::UpdateText {
@@ -113,7 +112,7 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                 button {
                     class: "text-editor-btn text-editor-btn-done",
                     onclick: {
-                        let on_action = props.on_action.clone();
+                        let on_action = props.on_action;
                         move |_| on_action.call(EditorAction::StopEditing)
                     },
                     "Done"
@@ -173,7 +172,7 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
 
     let list_path = props.list_path.clone();
     let item_index = props.item_index;
-    let on_action = props.on_action.clone();
+    let on_action = props.on_action;
 
     rsx! {
         div { class: "text-editor list-item-editor",
@@ -202,7 +201,6 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
                     oninput: {
                         let list_path = list_path.clone();
                         let lang = active_lang.read().clone();
-                        let on_action = on_action.clone();
                         move |evt: Event<FormData>| {
                             on_action
                                 .call(EditorAction::UpdateListItem {
@@ -221,7 +219,7 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
                 button {
                     class: "text-editor-btn text-editor-btn-done",
                     onclick: {
-                        let on_action = props.on_action.clone();
+                        let on_action = props.on_action;
                         move |_| on_action.call(EditorAction::StopEditing)
                     },
                     "Done"

@@ -43,7 +43,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-editor-close",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "×"
@@ -57,7 +57,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 value: "{current_level}",
                                 onchange: {
                                     let path = props.path.clone();
-                                    let on_action = props.on_action.clone();
+                                    let on_action = props.on_action;
                                     move |evt: Event<FormData>| {
                                         if let Ok(level) = evt.value().parse::<u8>() {
                                             on_action
@@ -81,7 +81,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-btn metadata-btn-done",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "Done"
@@ -104,7 +104,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-editor-close",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "×"
@@ -164,7 +164,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                             class: "metadata-btn metadata-btn-done",
                             onclick: {
                                 let path = props.path.clone();
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| {
                                     on_action
                                         .call(EditorAction::UpdateMetadata {
@@ -194,7 +194,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-editor-close",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "×"
@@ -211,7 +211,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 value: "{*cols_signal.read()}",
                                 oninput: move |evt: Event<FormData>| {
                                     if let Ok(v) = evt.value().parse::<usize>() {
-                                        cols_signal.set(v.max(1).min(12));
+                                        cols_signal.set(v.clamp(1, 12));
                                     }
                                 },
                             }
@@ -222,7 +222,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                             class: "metadata-btn metadata-btn-done",
                             onclick: {
                                 let path = props.path.clone();
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| {
                                     on_action
                                         .call(EditorAction::UpdateMetadata {
@@ -247,7 +247,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-editor-close",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "×"
@@ -260,7 +260,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         button {
                             class: "metadata-btn metadata-btn-done",
                             onclick: {
-                                let on_action = props.on_action.clone();
+                                let on_action = props.on_action;
                                 move |_| on_action.call(EditorAction::StopEditing)
                             },
                             "Close"

@@ -108,6 +108,7 @@ pub struct Border {
     /// - Top edge at (x, y) spanning width
     /// - Bottom edge at (x, y + height) spanning width
     /// - Left/right edges use x and height
+    ///
     /// This is used when a subform border needs to span multiple child cells.
     pub render_bounds: Option<(Num, Num, Num, Num)>,
 }

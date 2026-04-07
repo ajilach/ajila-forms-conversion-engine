@@ -170,6 +170,7 @@ impl OverlappingTextBlockMerger {
     /// Merge narrow marker columns with their corresponding content columns.
     /// This handles cases where markers and content are at the same x but different y
     /// due to paragraph splitting creating misaligned vertical positions.
+    #[allow(dead_code)]
     fn merge_narrow_marker_columns(&self, doc: &mut Document) {
         use rust_decimal::Decimal;
         use std::collections::HashSet;
@@ -207,7 +208,7 @@ impl OverlappingTextBlockMerger {
             let is_numbered = trimmed.len() <= 4
                 && (trimmed.ends_with('.') || (trimmed.starts_with('(') && trimmed.ends_with(')')));
             if is_dash_or_bullet || is_numbered {
-                narrow_markers.push((idx, bounds.clone(), text));
+                narrow_markers.push((idx, *bounds, text));
             }
         }
 
@@ -223,7 +224,7 @@ impl OverlappingTextBlockMerger {
             marker_columns
                 .entry(x_key)
                 .or_default()
-                .push((*idx, bounds.clone()));
+                .push((*idx, *bounds));
         }
 
         // For each marker column, find wide content blocks at the same x
@@ -253,7 +254,7 @@ impl OverlappingTextBlockMerger {
                 {
                     continue;
                 }
-                content_at_x.push((idx, bounds.clone()));
+                content_at_x.push((idx, *bounds));
             }
 
             if content_at_x.is_empty() {
@@ -294,7 +295,7 @@ impl OverlappingTextBlockMerger {
                     if overlaps || just_above {
                         // Prefer content whose top is closest to marker top
                         let distance = (marker_top - content_top).abs();
-                        if best_match.map_or(true, |(_, best_dist)| distance < best_dist) {
+                        if best_match.is_none_or(|(_, best_dist)| distance < best_dist) {
                             best_match = Some((content_idx, distance));
                         }
                     }

@@ -86,7 +86,7 @@ pub fn NodeRenderer(props: NodeRendererProps) -> Element {
                             languages: props.languages.clone(),
                             field_labels: props.field_labels.clone(),
                             depth: props.depth,
-                            on_action: props.on_action.clone(),
+                            on_action: props.on_action,
                         }
                     }
                 }
@@ -149,7 +149,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                 class: "node-header",
                 onclick: {
                     let path = props.path.clone();
-                    let on_action = props.on_action.clone();
+                    let on_action = props.on_action;
                     move |evt: Event<MouseData>| {
                         if evt.modifiers().shift() {
                             on_action.call(EditorAction::ToggleSelection(path.clone()));
@@ -185,7 +185,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                     checked: is_selected,
                     onclick: {
                         let path = props.path.clone();
-                        let on_action = props.on_action.clone();
+                        let on_action = props.on_action;
                         move |evt| {
                             evt.stop_propagation();
                             on_action.call(EditorAction::ToggleSelection(path.clone()));
@@ -207,7 +207,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         class: "node-edit-btn",
                         onclick: {
                             let path = props.path.clone();
-                            let on_action = props.on_action.clone();
+                            let on_action = props.on_action;
                             move |evt| {
                                 evt.stop_propagation();
                                 on_action.call(EditorAction::StartEditing(path.clone()));
@@ -224,7 +224,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         title: "Edit properties",
                         onclick: {
                             let path = props.path.clone();
-                            let on_action = props.on_action.clone();
+                            let on_action = props.on_action;
                             move |evt| {
                                 evt.stop_propagation();
                                 on_action.call(EditorAction::StartEditingMetadata(path.clone()));
@@ -244,7 +244,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                 content: InlineTextWrapper(p.content.clone()),
                                 path: props.path.clone(),
                                 languages: props.languages.clone(),
-                                on_action: props.on_action.clone(),
+                                on_action: props.on_action,
                             }
                         }
                     }
@@ -254,7 +254,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                 content: InlineTextWrapper(h.content.clone()),
                                 path: props.path.clone(),
                                 languages: props.languages.clone(),
-                                on_action: props.on_action.clone(),
+                                on_action: props.on_action,
                             }
                         }
                     }
@@ -265,7 +265,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                     content: InlineTextWrapper(label.clone()),
                                     path: props.path.clone(),
                                     languages: props.languages.clone(),
-                                    on_action: props.on_action.clone(),
+                                    on_action: props.on_action,
                                 }
                             }
                         } else {
@@ -281,7 +281,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                 MetadataEditor {
                     node: MetadataNodeWrapper(props.node.0.clone()),
                     path: props.path.clone(),
-                    on_action: props.on_action.clone(),
+                    on_action: props.on_action,
                 }
             }
 
@@ -298,7 +298,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                     field_labels: props.field_labels.clone(),
                                     base_path: props.path.clone(),
                                     depth: props.depth + 1,
-                                    on_action: props.on_action.clone(),
+                                    on_action: props.on_action,
                                 }
                             }
                         }
@@ -310,7 +310,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         {
                                             let is_editing_item = props.selection.is_editing_list_item(&props.path, i);
                                             let path = props.path.clone();
-                                            let on_action = props.on_action.clone();
+                                            let on_action = props.on_action;
                                             let languages = props.languages.clone();
                                             rsx! {
                                                 div { key: "{i}", class: if is_editing_item { "list-item editing" } else { "list-item" },
@@ -321,7 +321,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                             list_path: path.clone(),
                                                             item_index: i,
                                                             languages: languages.clone(),
-                                                            on_action: on_action.clone(),
+                                                            on_action: on_action,
                                                         }
                                                     } else {
                                                         span { class: "list-item-text", "{item.as_plain_text()}" }
@@ -329,7 +329,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                             class: "node-edit-btn",
                                                             onclick: {
                                                                 let path = path.clone();
-                                                                let on_action = on_action.clone();
                                                                 move |evt| {
                                                                     evt.stop_propagation();
                                                                     on_action.call(EditorAction::StartEditingListItem(path.clone(), i));
@@ -359,7 +358,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
-                                        on_action: props.on_action.clone(),
+                                        on_action: props.on_action,
                                     }
                                 }
                             }
@@ -382,7 +381,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
-                                        on_action: props.on_action.clone(),
+                                        on_action: props.on_action,
                                     }
                                 }
                             }
@@ -398,7 +397,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
-                                        on_action: props.on_action.clone(),
+                                        on_action: props.on_action,
                                     }
                                 }
                             }

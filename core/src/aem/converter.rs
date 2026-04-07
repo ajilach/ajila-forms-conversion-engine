@@ -52,8 +52,6 @@ struct ConversionContext {
     deterministic: bool,
     /// The language to prefer when extracting translatable strings.
     language: String,
-    /// Default grid column span (total columns).
-    grid_columns: u32,
     /// Conditions collected during the first pass.
     collected_conditions: Vec<CollectedCondition>,
     /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` is true.
@@ -68,7 +66,6 @@ impl ConversionContext {
             counter: 0,
             deterministic: config.deterministic_uuids,
             language: config.master_language.clone(),
-            grid_columns: config.grid_columns,
             collected_conditions: Vec::new(),
             bind_refs: None,
             field_labels: HashMap::new(),
@@ -1388,7 +1385,7 @@ fn collect_field_labels(
             }
             StructuredNode::GridLayout(g) => {
                 for elem in &g.elements {
-                    collect_field_labels(&[elem.node.clone()], language, labels);
+                    collect_field_labels(std::slice::from_ref(&elem.node), language, labels);
                 }
             }
             _ => {}

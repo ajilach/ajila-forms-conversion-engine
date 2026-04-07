@@ -237,7 +237,7 @@ impl TableDetector {
     /// that should be included in the table rows (including unbordered ones).
     fn expand_rows_with_unbordered_blocks(
         &self,
-        doc: &Document,
+        _doc: &Document,
         bordered_rows: &[Vec<(usize, Bounds)>],
         region: &[usize],
         all_text_blocks: &[(usize, Bounds)],
@@ -247,7 +247,7 @@ impl TableDetector {
         }
 
         // Get the bordered blocks in this region
-        let bordered_in_region: HashSet<usize> = region
+        let _bordered_in_region: HashSet<usize> = region
             .iter()
             .flat_map(|&row_idx| bordered_rows[row_idx].iter().map(|(idx, _)| *idx))
             .collect();
@@ -282,7 +282,7 @@ impl TableDetector {
             // and within the table's X-extent
             let mut row_blocks: Vec<(usize, Bounds)> = all_text_blocks
                 .iter()
-                .filter(|(idx, bounds)| {
+                .filter(|(_idx, bounds)| {
                     // Within Y tolerance
                     let y_match = (bounds.y - row_y).abs() <= self.row_tolerance;
 

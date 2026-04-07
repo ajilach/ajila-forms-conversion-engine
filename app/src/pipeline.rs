@@ -33,12 +33,12 @@ pub async fn run_blueprint_pipeline(
 
     // Load profile fonts before running the pipeline so the font manager
     // has the right typefaces available during PDF parsing.
-    if let Some(ref profile_name) = profile {
-        if let Err(e) = blueprint::load_profile_fonts(profile_name) {
-            state
-                .warnings
-                .push(format!("Failed to load profile fonts: {e}"));
-        }
+    if let Some(ref profile_name) = profile
+        && let Err(e) = blueprint::load_profile_fonts(profile_name)
+    {
+        state
+            .warnings
+            .push(format!("Failed to load profile fonts: {e}"));
     }
 
     // Helper: report an error and return early.

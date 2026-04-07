@@ -335,8 +335,8 @@ fn align_segment_semantic(
     let scores = precompute_score_matrix(base, other, semantic);
     let score_fn = |i: usize, j: usize| scores[i][j];
 
-    let dp = lcs_table_weighted(base, other, &score_fn);
-    let alignment = lcs_align_weighted(base, other, &dp, &score_fn);
+    let dp = lcs_table_weighted(base, other, score_fn);
+    let alignment = lcs_align_weighted(base, other, &dp, score_fn);
 
     alignment
         .into_iter()

@@ -99,7 +99,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                     StructuredNode::GridLayout(g) => {
                         for elem in &g.elements {
-                            collect_from_nodes(&[elem.node.clone()], langs);
+                            collect_from_nodes(std::slice::from_ref(&elem.node), langs);
                         }
                     }
                     _ => {}
@@ -144,7 +144,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                     StructuredNode::GridLayout(g) => {
                         for elem in &g.elements {
-                            collect_field_labels(&[elem.node.clone()], labels);
+                            collect_field_labels(std::slice::from_ref(&elem.node), labels);
                         }
                     }
                     _ => {}
@@ -360,16 +360,15 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 language,
             } => {
                 let mut env = envelope.write();
-                if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
-                    if let StructuredNode::List(l) = node {
-                        if item_index < l.items.len() {
-                            update_inline_text(
-                                &mut l.items[item_index],
-                                &content,
-                                language.as_deref(),
-                            );
-                        }
-                    }
+                if let Some(node) = get_node_at_path_mut(&mut env.content, &path)
+                    && let StructuredNode::List(l) = node
+                    && item_index < l.items.len()
+                {
+                    update_inline_text(
+                        &mut l.items[item_index],
+                        &content,
+                        language.as_deref(),
+                    );
                 }
             }
             EditorAction::UpdateMetadata { path, metadata } => {
@@ -475,8 +474,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         }
     };
 
-    let on_apply = props.on_apply.clone();
-    let on_cancel = props.on_cancel.clone();
+    let on_apply = props.on_apply;
+    let on_cancel = props.on_cancel;
 
     rsx! {
         div { class: "structured-editor",
@@ -492,7 +491,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     button {
                         class: "editor-btn editor-btn-primary",
                         onclick: {
-                            let envelope = envelope.clone();
+                            let envelope = envelope;
                             move |_| on_apply.call(envelope.read().clone())
                         },
                         "Apply Changes"

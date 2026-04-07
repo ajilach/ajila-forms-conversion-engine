@@ -3,6 +3,7 @@
 //! This module provides a graphical editor for modifying the structured
 //! document output before final generation.
 
+#[allow(clippy::module_inception)]
 mod editor;
 mod metadata_editor;
 mod node_renderer;

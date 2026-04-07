@@ -14,6 +14,7 @@ use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
 
 fn main() {
+    #[allow(deprecated)]
     dioxus::LaunchBuilder::new()
         .with_cfg(desktop! {
             dioxus::desktop::Config::new().with_window(
@@ -63,34 +64,31 @@ fn App() -> Element {
         let profile = selected_profile.read().clone();
         if let Some(ref profile_name) = profile
             && blueprint::has_html_config(profile_name)
+            && let Ok(styles) = blueprint::load_html_custom_styles(profile_name)
         {
-            if let Ok(styles) = blueprint::load_html_custom_styles(profile_name) {
-                let html_config = blueprint::HtmlConfig {
-                    custom_styles: Some(styles),
-                    ..blueprint::HtmlConfig::default()
-                };
-                state.html_preview = Some(blueprint::to_html(&envelope.content, &html_config));
-            }
+            let html_config = blueprint::HtmlConfig {
+                custom_styles: Some(styles),
+                ..blueprint::HtmlConfig::default()
+            };
+            state.html_preview = Some(blueprint::to_html(&envelope.content, &html_config));
         }
 
         // Regenerate AEM package if profile supports it
         if let Some(ref profile_name) = profile
             && blueprint::has_aem_config(profile_name)
+            && let Ok(aem_config) = blueprint::load_aem_config(profile_name, &envelope.context)
         {
-            if let Ok(aem_config) = blueprint::load_aem_config(profile_name, &envelope.context) {
-                let aem_zip = blueprint::to_aem_package(&envelope.content, &aem_config);
-                state.form_code = Some(aem_config.form_code.clone());
-                state.aem_package = Some(aem_zip);
-            }
+            let aem_zip = blueprint::to_aem_package(&envelope.content, &aem_config);
+            state.form_code = Some(aem_config.form_code.clone());
+            state.aem_package = Some(aem_zip);
         }
 
         // Regenerate XSD if profile supports it
         if let Some(ref profile_name) = profile
             && blueprint::has_xsd_config(profile_name)
+            && let Ok(xsd_config) = blueprint::load_xsd_config(profile_name)
         {
-            if let Ok(xsd_config) = blueprint::load_xsd_config(profile_name) {
-                state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
-            }
+            state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
         }
 
         drop(state);

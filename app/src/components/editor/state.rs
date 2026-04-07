@@ -169,6 +169,7 @@ pub enum NodeMetadata {
     /// Grid layout columns.
     GridColumns(usize),
     /// Grid element span.
+    #[allow(dead_code)]
     GridElementSpan(usize),
 }
 
@@ -306,14 +307,14 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                         // Repeatable has only one item template (at index 0)
                         // Replace with Empty instead of removing
                         if child_idx == 0 {
-                            r.item = Box::new(StructuredNode::Empty);
+                            *r.item = StructuredNode::Empty;
                         }
                     }
                     StructuredNode::Conditional(c) => {
                         // Conditional has only one content (at index 0)
                         // Replace with Empty instead of removing
                         if child_idx == 0 {
-                            c.content = Box::new(StructuredNode::Empty);
+                            *c.content = StructuredNode::Empty;
                         }
                     }
                     _ => {}
@@ -409,6 +410,7 @@ pub fn node_has_children(node: &StructuredNode) -> bool {
 }
 
 /// Get the children of a node if it has any.
+#[allow(dead_code)]
 pub fn node_children(node: &StructuredNode) -> Option<&[StructuredNode]> {
     match node {
         StructuredNode::Group(g) => Some(&g.children),

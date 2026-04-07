@@ -35,7 +35,7 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                     button {
                         class: "btn btn-secondary btn-lg",
                         onclick: {
-                            let on_edit = props.on_edit.clone();
+                            let on_edit = props.on_edit;
                             move |_| {
                                 on_edit.call(envelope.clone());
                             }
