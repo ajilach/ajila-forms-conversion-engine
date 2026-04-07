@@ -9841,4 +9841,65 @@ mod tests {
             assert!(!run.bold, "prefix should not be bold");
         }
     }
+
+    /// Test that tokenization correctly separates bold words across space-only runs.
+    /// This regression test ensures that when a space-only run separates a normal word
+    /// from a bold word, the bold word becomes its own token with the bold flag preserved.
+    #[test]
+    fn test_tokenize_paragraph_runs_preserves_bold_across_space_run() {
+        // Simulate: "normal " + " " + "bold " where middle run is space-only
+        let runs = vec![
+            RichRun {
+                text: "normal".to_string(),
+                bold: false,
+                italic: false,
+                underline: false,
+                preserve_spaces: false,
+            },
+            RichRun {
+                text: " ".to_string(), // Space-only run
+                bold: false,
+                italic: false,
+                underline: false,
+                preserve_spaces: false,
+            },
+            RichRun {
+                text: "bold ".to_string(),
+                bold: true,
+                italic: false,
+                underline: false,
+                preserve_spaces: false,
+            },
+            RichRun {
+                text: "suffix".to_string(),
+                bold: false,
+                italic: false,
+                underline: false,
+                preserve_spaces: false,
+            },
+        ];
+
+        // Get a font from the font manager (same approach as other tests)
+        let font_manager = get_font_manager();
+        let mut mgr = font_manager.lock().unwrap();
+        let default_xfa_font = crate::xfa::Font::default();
+        let font = mgr.get_font(&default_xfa_font).unwrap();
+
+        let tokens = Flattened::tokenize_paragraph_runs(&runs, 12.0, &font, 0.0);
+
+        // Should have 3 tokens: "normal", "bold", "suffix"
+        assert_eq!(tokens.len(), 3, "Expected 3 tokens: {:?}", tokens.iter().map(|t| &t.text).collect::<Vec<_>>());
+
+        // First token: "normal", not bold
+        assert_eq!(tokens[0].text, "normal");
+        assert!(!tokens[0].bold, "normal should not be bold");
+
+        // Second token: "bold", SHOULD be bold
+        assert_eq!(tokens[1].text, "bold");
+        assert!(tokens[1].bold, "bold should be bold");
+
+        // Third token: "suffix", not bold
+        assert_eq!(tokens[2].text, "suffix");
+        assert!(!tokens[2].bold, "suffix should not be bold");
+    }
 }

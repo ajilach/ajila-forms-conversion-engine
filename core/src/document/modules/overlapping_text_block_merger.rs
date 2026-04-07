@@ -15,7 +15,6 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
-use rust_decimal::prelude::ToPrimitive;
 
 /// Minimum fraction of the inner block's area that must fall within
 /// the outer block for the pair to be considered overlapping.

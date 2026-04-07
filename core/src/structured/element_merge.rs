@@ -70,10 +70,9 @@ pub fn can_merge(source: &StructuredNode, target: &StructuredNode) -> Result<(),
         (Field(_), _) | (_, Field(_)) => Err(MergeError::CannotMergeFields),
 
         // Structural nodes (Conditional, Repeatable) cannot be merged
-        (Conditional(_), _)
-        | (_, Conditional(_))
-        | (Repeatable(_), _)
-        | (_, Repeatable(_)) => Err(MergeError::CannotMergeStructural),
+        (Conditional(_), _) | (_, Conditional(_)) | (Repeatable(_), _) | (_, Repeatable(_)) => {
+            Err(MergeError::CannotMergeStructural)
+        }
 
         // Empty nodes can always be merged (they just disappear)
         (Empty, _) | (_, Empty) => Ok(()),
@@ -125,7 +124,10 @@ pub fn can_merge_all(nodes: &[&StructuredNode]) -> Result<(), MergeError> {
 ///
 /// The source node is merged into the target node. The result replaces the target.
 /// Returns the merged node.
-pub fn merge_two(source: StructuredNode, target: StructuredNode) -> Result<StructuredNode, MergeError> {
+pub fn merge_two(
+    source: StructuredNode,
+    target: StructuredNode,
+) -> Result<StructuredNode, MergeError> {
     can_merge(&source, &target)?;
 
     use StructuredNode::*;
@@ -264,7 +266,7 @@ pub fn merge_nodes(nodes: Vec<StructuredNode>) -> Result<StructuredNode, MergeEr
 mod tests {
     use super::*;
     use crate::document::ListStyleType;
-    use crate::structured::{FieldId, FieldNode, FieldType, HeadingNode, InlineText, ListNode};
+    use crate::structured::{HeadingNode, InlineText, ListNode};
 
     #[test]
     fn test_merge_paragraphs() {
