@@ -16,6 +16,7 @@ futures-util = "0.3"
 base64 = "0.22"
 blueprint = { path = "../core" }
 image = { version = "0.25", features = ["png"] }
+pulldown-cmark = "0.10"
 
 # Server/Desktop-only deps (not available in WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

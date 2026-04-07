@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use blueprint::InlineText;
 
 use super::state::{EditorAction, NodePath};
+use crate::markdown::inline_text_to_markdown;
 
 /// Wrapper for InlineText that implements PartialEq.
 #[derive(Clone)]
@@ -58,11 +59,11 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
             .unwrap_or_else(|| "default".to_string())
     });
 
-    // Get current text for the active language
+    // Get current text for the active language (as markdown to preserve formatting)
     let current_text = if all_langs.is_empty() || *active_lang.read() == "default" {
-        props.content.0.as_plain_text()
+        inline_text_to_markdown(&props.content.0, None)
     } else {
-        props.content.0.plain_text_in(&active_lang.read())
+        inline_text_to_markdown(&props.content.0, Some(&active_lang.read()))
     };
 
     let path = props.path.clone();
@@ -163,11 +164,11 @@ pub fn ListItemEditor(props: ListItemEditorProps) -> Element {
             .unwrap_or_else(|| "default".to_string())
     });
 
-    // Get current text for the active language
+    // Get current text for the active language (as markdown to preserve formatting)
     let current_text = if all_langs.is_empty() || *active_lang.read() == "default" {
-        props.content.0.as_plain_text()
+        inline_text_to_markdown(&props.content.0, None)
     } else {
-        props.content.0.plain_text_in(&active_lang.read())
+        inline_text_to_markdown(&props.content.0, Some(&active_lang.read()))
     };
 
     let list_path = props.list_path.clone();

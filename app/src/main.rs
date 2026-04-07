@@ -1,4 +1,5 @@
 mod components;
+mod markdown;
 mod models;
 mod pipeline;
 mod platform;

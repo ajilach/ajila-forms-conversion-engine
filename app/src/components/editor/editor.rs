@@ -17,6 +17,7 @@ use super::state::{
     can_merge_selected, delete_nodes, get_node_at_path_mut,
 };
 use super::toolbar::EditorToolbar;
+use crate::markdown::markdown_to_inline_text;
 
 /// Wrapper for DocumentEnvelope that implements PartialEq (always eq for memoization skip).
 #[derive(Clone)]
@@ -533,6 +534,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 }
 
 /// Update inline text content, optionally for a specific language.
+/// Content is parsed as markdown to preserve bold/italic formatting.
 fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&str>) {
     if let Some(lang) = language {
         // Update for specific language
@@ -556,7 +558,7 @@ fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&st
                     }
                 }
                 _ => {
-                    // Skip formatting nodes for now - simplified editing
+                    // Skip formatting nodes for now - simplified editing for multilingual
                 }
             }
         }
@@ -567,8 +569,8 @@ fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&st
         // Create a single TranslatedText node with all translations
         text.0 = vec![InlineNode::TranslatedText(translations)];
     } else {
-        // Replace all content with plain text
-        text.0 = vec![InlineNode::Text(content.to_string())];
+        // Parse content as markdown to preserve bold/italic formatting
+        *text = markdown_to_inline_text(content);
     }
 }
 
