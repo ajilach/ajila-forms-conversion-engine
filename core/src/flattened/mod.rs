@@ -8462,7 +8462,7 @@ impl Flattened {
 
     /// Tokenize paragraph runs into layout tokens
     /// Per XFA spec: letterSpacing affects interword and interletter spacings
-    fn tokenize_paragraph_runs(
+    pub(crate) fn tokenize_paragraph_runs(
         runs: &[RichRun],
         font_size: f32,
         font: &FontRef<'_>,
@@ -8489,7 +8489,9 @@ impl Flattened {
                         bold: run.bold,
                         italic: run.italic,
                     });
-                    seen_word_boundary = false;
+                    // A preserved-space run that is only whitespace IS a word boundary.
+                    // This prevents the next run from merging its first word into this space.
+                    seen_word_boundary = run.text.trim().is_empty();
                 }
             } else {
                 // Normal text - split into words

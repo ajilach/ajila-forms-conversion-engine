@@ -11310,7 +11310,10 @@ fn test_baqm_partial_bold_in_paragraph() {
     // First, check the flattened layer for rich text parsing
     let mut bp = Blueprint::from_pdf(input_path("BAQM_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Search for the text containing "dichiara" in the flattened layer
@@ -11323,7 +11326,10 @@ fn test_baqm_partial_bold_in_paragraph() {
             if content.contains(search_text) && content.contains("A tal fine") {
                 found_flattened = true;
                 println!("=== BAQM Flattened: Found text containing '{search_text}' ===");
-                println!("Full content (first 200 chars): {}...", content.chars().take(200).collect::<String>());
+                println!(
+                    "Full content (first 200 chars): {}...",
+                    content.chars().take(200).collect::<String>()
+                );
 
                 if let Some(rt) = node.rich_text() {
                     println!("Rich text paragraphs: {}", rt.paragraphs.len());
@@ -11412,13 +11418,23 @@ fn test_baqm_partial_bold_in_paragraph() {
     let mut paragraphs = Vec::new();
     find_all_paragraphs_containing(&merged, search_text, &mut paragraphs);
 
-    println!("\n=== BAQM Structured: Found {} paragraphs containing '{search_text}' ===", paragraphs.len());
+    println!(
+        "\n=== BAQM Structured: Found {} paragraphs containing '{search_text}' ===",
+        paragraphs.len()
+    );
 
     let mut strong_in_structured = false;
     for (i, node) in paragraphs.iter().enumerate() {
         if let StructuredNode::Paragraph(p) = node {
             println!("Paragraph {i}:");
-            println!("  Plain text: {}", p.content.as_plain_text().chars().take(100).collect::<String>());
+            println!(
+                "  Plain text: {}",
+                p.content
+                    .as_plain_text()
+                    .chars()
+                    .take(100)
+                    .collect::<String>()
+            );
             println!("  InlineNodes: {:?}", p.content.0);
 
             if has_strong_containing(&p.content.0, search_text) {
@@ -11451,7 +11467,10 @@ fn test_aaqd_partial_bold_richiede() {
     // Check the flattened layer for rich text parsing
     let mut bp = Blueprint::from_pdf(input_path("AAQD_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Search for the text containing "richiede" in the flattened layer
@@ -11503,6 +11522,89 @@ fn test_aaqd_partial_bold_richiede() {
         bold_runs_found,
         "AAQD: '{search_text}' should be bold in flattened RichRun layer"
     );
+
+    // Now verify the full rendering pipeline: check that layout_rich_text preserves bold
+    // by finding the same node and calling layout_rich_text on its RichText
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if content.contains(search_text) && content.contains("Richiesta di Attivazione") {
+                if let Some(rt) = node.rich_text() {
+                    // Get a font for testing
+                    let font_manager = crate::xfa::font_manager::get_font_manager();
+                    let mut mgr = font_manager.lock().unwrap();
+                    let default_xfa_font = crate::xfa::Font::default();
+                    let font = mgr.get_font(&default_xfa_font).unwrap();
+
+                    // First, print detailed RichRun info including preserve_spaces
+                    println!("\n=== DETAILED RichRun info ===");
+                    for (pi, para) in rt.paragraphs.iter().enumerate() {
+                        println!("Paragraph {pi}:");
+                        for (ri, run) in para.runs.iter().enumerate() {
+                            if ri >= 6 {
+                                println!("  ... ({} more runs)", para.runs.len() - ri);
+                                break;
+                            }
+                            println!(
+                                "  Run {ri}: text={:?} bold={} italic={} preserve_spaces={}",
+                                run.text.chars().take(40).collect::<String>(),
+                                run.bold,
+                                run.italic,
+                                run.preserve_spaces
+                            );
+                        }
+                    }
+
+                    // Now test tokenize_paragraph_runs directly
+                    if let Some(para) = rt.paragraphs.first() {
+                        println!("\n=== LayoutTokens from tokenize_paragraph_runs ===");
+                        let tokens = Flattened::tokenize_paragraph_runs(&para.runs, 12.0, &font, 0.0);
+                        for (ti, tok) in tokens.iter().enumerate() {
+                            if tok.text.contains("richiede") || ti < 8 || tok.text.contains("con") {
+                                println!(
+                                    "  Token {ti}: text={:?} bold={} italic={} preserve_spaces={}",
+                                    tok.text, tok.bold, tok.italic, tok.preserve_spaces
+                                );
+                            }
+                        }
+                    }
+
+                    // Call layout_rich_text
+                    let rendered_lines = Flattened::layout_rich_text(
+                        rt,
+                        400.0, // box width
+                        12.0,  // font size
+                        &font,
+                        1.0,   // scale
+                        0.0,   // letter spacing
+                        None,  // hyphenation
+                        None,  // dict
+                    );
+
+                    println!("\n=== AAQD RenderedLine/Word analysis ===");
+                    let mut found_bold_rendered_word = false;
+                    for (li, line) in rendered_lines.iter().enumerate() {
+                        for (wi, word) in line.words.iter().enumerate() {
+                            if word.text.contains(search_text) || word.text.contains("richiede") {
+                                println!(
+                                    "Line {li} Word {wi}: \"{}\" bold={} italic={}",
+                                    word.text, word.bold, word.italic
+                                );
+                                if word.bold {
+                                    found_bold_rendered_word = true;
+                                }
+                            }
+                        }
+                    }
+
+                    assert!(
+                        found_bold_rendered_word,
+                        "AAQD: RenderedWord containing '{search_text}' should have bold=true"
+                    );
+                }
+                break;
+            }
+        }
+    }
 }
 
 // ========================================================================
@@ -21357,8 +21459,9 @@ fn test_bago_019_table_detection_diagnostic() {
     println!("\n=== BAGO_019 Table Detection Diagnostic ===\n");
 
     // Look for text nodes with borders (potential table cells)
-    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> = Vec::new();
-    
+    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> =
+        Vec::new();
+
     for node in flattened.iter_nodes() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             // Check if node has bottom border (horizontal line)
@@ -21367,24 +21470,37 @@ fn test_bago_019_table_detection_diagnostic() {
                     e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO)
                 })
             });
-            
+
             let border_info = if let Some(border) = &node.style.border {
                 let mut edges = Vec::new();
                 for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
                     if let Some(e) = border.get_edge(*i) {
-                        if e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO) {
+                        if e.presence != "hidden"
+                            && e.thickness.map_or(false, |t| t > Decimal::ZERO)
+                        {
                             edges.push(format!("{}:{:?}", name, e.thickness));
                         }
                     }
                 }
-                if edges.is_empty() { "no-edges".to_string() } else { edges.join(",") }
+                if edges.is_empty() {
+                    "no-edges".to_string()
+                } else {
+                    edges.join(",")
+                }
             } else {
                 "no-border".to_string()
             };
 
             let preview: String = content.trim().chars().take(40).collect();
             if !preview.is_empty() && border_info != "no-border" && border_info != "no-edges" {
-                cells_with_borders.push((node.y, node.x, node.width, node.height, preview, border_info));
+                cells_with_borders.push((
+                    node.y,
+                    node.x,
+                    node.width,
+                    node.height,
+                    preview,
+                    border_info,
+                ));
             }
         }
     }
@@ -21393,8 +21509,16 @@ fn test_bago_019_table_detection_diagnostic() {
 
     println!("Text nodes with borders ({}):", cells_with_borders.len());
     for (i, (y, x, w, h, text, borders)) in cells_with_borders.iter().enumerate() {
-        println!("  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]", 
-            i + 1, y, x, w, h, text, borders);
+        println!(
+            "  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]",
+            i + 1,
+            y,
+            x,
+            w,
+            h,
+            text,
+            borders
+        );
     }
 
     // Look at the table mentioned by user: "Destination area Currency Unique identifier"
@@ -21402,10 +21526,15 @@ fn test_bago_019_table_detection_diagnostic() {
     for node in flattened.iter_nodes() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             let content_lower = content.to_lowercase();
-            if content_lower.contains("destination") || content_lower.contains("zielgebiet") ||
-               content_lower.contains("currency") || content_lower.contains("währung") ||
-               content_lower.contains("iban") || content_lower.contains("bic") ||
-               content_lower.contains("germany") || content_lower.contains("deutschland") {
+            if content_lower.contains("destination")
+                || content_lower.contains("zielgebiet")
+                || content_lower.contains("currency")
+                || content_lower.contains("währung")
+                || content_lower.contains("iban")
+                || content_lower.contains("bic")
+                || content_lower.contains("germany")
+                || content_lower.contains("deutschland")
+            {
                 let border_info = if let Some(border) = &node.style.border {
                     let mut edges = Vec::new();
                     for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
@@ -21415,14 +21544,20 @@ fn test_bago_019_table_detection_diagnostic() {
                             }
                         }
                     }
-                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                    if edges.is_empty() {
+                        "no-visible-edges".to_string()
+                    } else {
+                        edges.join(",")
+                    }
                 } else {
                     "no-border".to_string()
                 };
-                
+
                 let preview: String = content.trim().chars().take(60).collect();
-                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
-                    node.y, node.x, node.width, preview, border_info);
+                println!(
+                    "  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]",
+                    node.y, node.x, node.width, preview, border_info
+                );
             }
         }
     }
@@ -21441,14 +21576,20 @@ fn test_bago_019_table_detection_diagnostic() {
                             }
                         }
                     }
-                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                    if edges.is_empty() {
+                        "no-visible-edges".to_string()
+                    } else {
+                        edges.join(",")
+                    }
                 } else {
                     "no-border".to_string()
                 };
-                
+
                 let preview: String = content.trim().chars().take(60).collect();
-                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
-                    node.y, node.x, node.width, preview, border_info);
+                println!(
+                    "  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]",
+                    node.y, node.x, node.width, preview, border_info
+                );
             }
         }
     }
@@ -21467,14 +21608,20 @@ fn test_bago_019_table_detection_diagnostic() {
                             }
                         }
                     }
-                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                    if edges.is_empty() {
+                        "no-visible-edges".to_string()
+                    } else {
+                        edges.join(",")
+                    }
                 } else {
                     "no-border".to_string()
                 };
-                
+
                 let preview: String = content.trim().chars().take(60).collect();
-                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
-                    node.y, node.x, node.width, preview, border_info);
+                println!(
+                    "  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]",
+                    node.y, node.x, node.width, preview, border_info
+                );
             }
         }
     }
@@ -21498,27 +21645,41 @@ fn test_aais_019_table_detection_diagnostic() {
     println!("\n=== AAIS_019 Table Detection Diagnostic ===\n");
 
     // Look for text nodes with borders (potential table cells)
-    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> = Vec::new();
-    
+    let mut cells_with_borders: Vec<(Decimal, Decimal, Decimal, Decimal, String, String)> =
+        Vec::new();
+
     for node in flattened.iter_nodes() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             let border_info = if let Some(border) = &node.style.border {
                 let mut edges = Vec::new();
                 for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
                     if let Some(e) = border.get_edge(*i) {
-                        if e.presence != "hidden" && e.thickness.map_or(false, |t| t > Decimal::ZERO) {
+                        if e.presence != "hidden"
+                            && e.thickness.map_or(false, |t| t > Decimal::ZERO)
+                        {
                             edges.push(format!("{}:{:?}", name, e.thickness));
                         }
                     }
                 }
-                if edges.is_empty() { "no-edges".to_string() } else { edges.join(",") }
+                if edges.is_empty() {
+                    "no-edges".to_string()
+                } else {
+                    edges.join(",")
+                }
             } else {
                 "no-border".to_string()
             };
 
             let preview: String = content.trim().chars().take(60).collect();
             if !preview.is_empty() && border_info != "no-border" && border_info != "no-edges" {
-                cells_with_borders.push((node.y, node.x, node.width, node.height, preview, border_info));
+                cells_with_borders.push((
+                    node.y,
+                    node.x,
+                    node.width,
+                    node.height,
+                    preview,
+                    border_info,
+                ));
             }
         }
     }
@@ -21527,8 +21688,16 @@ fn test_aais_019_table_detection_diagnostic() {
 
     println!("Text nodes with borders ({}):", cells_with_borders.len());
     for (i, (y, x, w, h, text, borders)) in cells_with_borders.iter().enumerate() {
-        println!("  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]", 
-            i + 1, y, x, w, h, text, borders);
+        println!(
+            "  {:2}. y={:7.2}, x={:7.2}, w={:7.2}, h={:7.2}: '{}' [{:}]",
+            i + 1,
+            y,
+            x,
+            w,
+            h,
+            text,
+            borders
+        );
     }
 
     // Look for fund-related content from the user's expected table
@@ -21536,11 +21705,16 @@ fn test_aais_019_table_detection_diagnostic() {
     for node in flattened.iter_nodes() {
         if let FlattenedNodeKind::Text { content, .. } = &node.kind {
             let content_lower = content.to_lowercase();
-            if content_lower.contains("money market") || content_lower.contains("fixed income") ||
-               content_lower.contains("bond funds") || content_lower.contains("real estate") ||
-               content_lower.contains("equity fund") || content_lower.contains("hedge fund") ||
-               content_lower.contains("p.a.") || content_lower.contains("% p.a") ||
-               content_lower.contains("commodity fund") {
+            if content_lower.contains("money market")
+                || content_lower.contains("fixed income")
+                || content_lower.contains("bond funds")
+                || content_lower.contains("real estate")
+                || content_lower.contains("equity fund")
+                || content_lower.contains("hedge fund")
+                || content_lower.contains("p.a.")
+                || content_lower.contains("% p.a")
+                || content_lower.contains("commodity fund")
+            {
                 let border_info = if let Some(border) = &node.style.border {
                     let mut edges = Vec::new();
                     for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
@@ -21550,14 +21724,20 @@ fn test_aais_019_table_detection_diagnostic() {
                             }
                         }
                     }
-                    if edges.is_empty() { "no-visible-edges".to_string() } else { edges.join(",") }
+                    if edges.is_empty() {
+                        "no-visible-edges".to_string()
+                    } else {
+                        edges.join(",")
+                    }
                 } else {
                     "no-border".to_string()
                 };
-                
+
                 let preview: String = content.trim().chars().take(80).collect();
-                println!("  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]", 
-                    node.y, node.x, node.width, preview, border_info);
+                println!(
+                    "  y={:7.2}, x={:7.2}, w={:7.2}: '{}' [{}]",
+                    node.y, node.x, node.width, preview, border_info
+                );
             }
         }
     }
@@ -21575,7 +21755,10 @@ fn test_bago_019_table_detection() {
 
     let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Run the analysis pipeline
@@ -21623,7 +21806,12 @@ fn test_bago_019_table_detection() {
             0
         };
         let num_rows = table.rows.len() + if table.header.is_some() { 1 } else { 0 };
-        println!("  Table {}: {} columns x {} rows", i + 1, num_cols, num_rows);
+        println!(
+            "  Table {}: {} columns x {} rows",
+            i + 1,
+            num_cols,
+            num_rows
+        );
     }
 
     // Assert we found exactly 2 tables
@@ -21639,12 +21827,7 @@ fn test_bago_019_table_detection() {
         .rows
         .iter()
         .flat_map(|row| row.cells.iter())
-        .chain(
-            tables[0]
-                .header
-                .iter()
-                .flat_map(|h| h.cells.iter()),
-        )
+        .chain(tables[0].header.iter().flat_map(|h| h.cells.iter()))
         .filter_map(|cell| {
             if let StructuredNode::Paragraph(p) = cell {
                 Some(p.content.as_plain_text())
@@ -21657,7 +21840,9 @@ fn test_bago_019_table_detection() {
     // The first table should contain references to destination areas and payment identifiers
     let all_content = table1_content.join(" ");
     assert!(
-        all_content.contains("Zielgebiet") || all_content.contains("IBAN") || all_content.contains("Währung"),
+        all_content.contains("Zielgebiet")
+            || all_content.contains("IBAN")
+            || all_content.contains("Währung"),
         "Table 1 should contain destination area/IBAN/currency content"
     );
 }
@@ -21673,7 +21858,10 @@ fn test_aais_019_table_detection() {
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Run the analysis pipeline
@@ -21721,8 +21909,13 @@ fn test_aais_019_table_detection() {
             0
         };
         let num_rows = table.rows.len() + if table.header.is_some() { 1 } else { 0 };
-        println!("  Table {}: {} columns x {} rows", i + 1, num_cols, num_rows);
-        
+        println!(
+            "  Table {}: {} columns x {} rows",
+            i + 1,
+            num_cols,
+            num_rows
+        );
+
         // Print first few cells for debugging
         if !table.rows.is_empty() {
             for (row_idx, row) in table.rows.iter().take(3).enumerate() {
