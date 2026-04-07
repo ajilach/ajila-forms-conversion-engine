@@ -344,9 +344,12 @@ pub fn get_node_at_path_mut<'a>(
 
     // Check if this path goes through a table cell
     // Look for TableRow/TableHeader followed by TableCell pattern
-    let table_cell_idx = path
-        .iter()
-        .position(|s| matches!(s, PathSegment::TableRow(_) | PathSegment::TableHeader));
+    let table_cell_idx = path.iter().position(|s| {
+        matches!(
+            s,
+            PathSegment::TableRow(_) | PathSegment::TableHeader
+        )
+    });
 
     if let Some(table_segment_idx) = table_cell_idx {
         // Path goes through a table - split into: path_to_table, row/header, cell, rest
@@ -944,4 +947,95 @@ pub fn get_list_item_text_mut<'a>(
     } else {
         None
     }
+}
+
+/// Check if a path addresses a child inside a container (Group or GridLayout).
+/// Returns true if the path has more than one Child segment and doesn't end with
+/// a pseudo-node segment (ListItem, TableRow, TableHeader, TableCell).
+pub fn is_container_child_path(path: &NodePath) -> bool {
+    if path.len() < 2 {
+        return false;
+    }
+    // Must end with a Child segment
+    matches!(path.last(), Some(PathSegment::Child(_)))
+}
+
+/// Get the parent path and child index for a container child path.
+pub fn get_container_child_info(path: &NodePath) -> Option<(NodePath, usize)> {
+    if let Some(PathSegment::Child(idx)) = path.last() {
+        if path.len() >= 2 {
+            let parent_path: NodePath = path[..path.len() - 1].to_vec();
+            return Some((parent_path, *idx));
+        }
+    }
+    None
+}
+
+/// Get the number of children in a container node.
+pub fn get_container_children_count(content: &[StructuredNode], parent_path: &NodePath) -> Option<usize> {
+    let parent = get_node_at_path(content, parent_path)?;
+    match parent {
+        StructuredNode::Group(g) => Some(g.children.len()),
+        StructuredNode::GridLayout(g) => Some(g.elements.len()),
+        _ => None,
+    }
+}
+
+/// Move a child up within its container (Group or GridLayout).
+/// Returns the new path if the move was successful.
+pub fn move_container_child_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+    if child_idx == 0 {
+        return None; // Can't move first child up
+    }
+
+    let parent = get_node_at_path_mut(content, &parent_path)?;
+    match parent {
+        StructuredNode::Group(g) => {
+            if child_idx < g.children.len() {
+                g.children.swap(child_idx, child_idx - 1);
+                let mut new_path = parent_path;
+                new_path.push(PathSegment::Child(child_idx - 1));
+                return Some(new_path);
+            }
+        }
+        StructuredNode::GridLayout(g) => {
+            if child_idx < g.elements.len() {
+                g.elements.swap(child_idx, child_idx - 1);
+                let mut new_path = parent_path;
+                new_path.push(PathSegment::Child(child_idx - 1));
+                return Some(new_path);
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+/// Move a child down within its container (Group or GridLayout).
+/// Returns the new path if the move was successful.
+pub fn move_container_child_down(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+
+    let parent = get_node_at_path_mut(content, &parent_path)?;
+    match parent {
+        StructuredNode::Group(g) => {
+            if child_idx + 1 < g.children.len() {
+                g.children.swap(child_idx, child_idx + 1);
+                let mut new_path = parent_path;
+                new_path.push(PathSegment::Child(child_idx + 1));
+                return Some(new_path);
+            }
+        }
+        StructuredNode::GridLayout(g) => {
+            if child_idx + 1 < g.elements.len() {
+                g.elements.swap(child_idx, child_idx + 1);
+                let mut new_path = parent_path;
+                new_path.push(PathSegment::Child(child_idx + 1));
+                return Some(new_path);
+            }
+        }
+        _ => {}
+    }
+    None
 }

@@ -8,16 +8,18 @@ use uuid::Uuid;
 
 use blueprint::document::ListStyleType;
 use blueprint::{
-    DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    InlineText, ListNode, ParagraphNode, StructuredNode,
+    DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineText,
+    ListNode, ParagraphNode, StructuredNode,
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_merge_selected, delete_nodes,
-    get_list_item_text_mut, get_node_at_path_mut, is_list_item_path, is_table_row_path,
-    move_list_item_down, move_list_item_up, move_table_row_down, move_table_row_up,
+    get_container_child_info, get_container_children_count, get_list_item_text_mut,
+    get_node_at_path_mut, is_container_child_path, is_list_item_path, is_table_row_path,
+    move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
+    move_table_row_down, move_table_row_up,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -185,9 +187,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             if is_list_item_path(path) {
                 if let Some(PathSegment::ListItem(idx)) = path.last() {
                     let parent_path: Vec<_> = path[..path.len() - 1].to_vec();
-                    if let Some(StructuredNode::List(l)) =
-                        super::state::get_node_at_path(&env.content, &parent_path)
-                    {
+                    if let Some(StructuredNode::List(l)) = super::state::get_node_at_path(&env.content, &parent_path) {
                         let can_up = *idx > 0;
                         let can_down = *idx + 1 < l.items.len();
                         (can_up, can_down)
@@ -202,9 +202,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             else if is_table_row_path(path) {
                 if let Some(PathSegment::TableRow(idx)) = path.last() {
                     let parent_path: Vec<_> = path[..path.len() - 1].to_vec();
-                    if let Some(StructuredNode::Table(t)) =
-                        super::state::get_node_at_path(&env.content, &parent_path)
-                    {
+                    if let Some(StructuredNode::Table(t)) = super::state::get_node_at_path(&env.content, &parent_path) {
                         let can_up = *idx > 0;
                         let can_down = *idx + 1 < t.rows.len();
                         (can_up, can_down)
@@ -221,6 +219,20 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     let can_up = *idx > 0;
                     let can_down = *idx + 1 < env.content.len();
                     (can_up, can_down)
+                } else {
+                    (false, false)
+                }
+            }
+            // Check for container child movement (Group, GridLayout)
+            else if is_container_child_path(path) {
+                if let Some((parent_path, child_idx)) = get_container_child_info(path) {
+                    if let Some(children_count) = get_container_children_count(&env.content, &parent_path) {
+                        let can_up = child_idx > 0;
+                        let can_down = child_idx + 1 < children_count;
+                        (can_up, can_down)
+                    } else {
+                        (false, false)
+                    }
                 } else {
                     (false, false)
                 }
@@ -292,12 +304,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
                 if paths.len() >= 2 {
                     // For now, only support merging at root level (single Child segment)
-                    if paths
-                        .iter()
-                        .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
-                    {
-                        let indices: Vec<usize> = paths
-                            .iter()
+                    if paths.iter().all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_)))) {
+                        let indices: Vec<usize> = paths.iter()
                             .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
                             .collect();
                         let mut env = envelope.write();
@@ -362,10 +370,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 drop(env);
                                 let mut new_selection = selection.write();
                                 new_selection.selected.clear();
-                                new_selection
-                                    .selected
-                                    .insert(vec![PathSegment::Child(idx - 1)]);
+                                new_selection.selected.insert(vec![PathSegment::Child(idx - 1)]);
                             }
+                        }
+                    }
+                    // Handle container child movement (Group, GridLayout)
+                    else if is_container_child_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_container_child_up(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
                         }
                     }
                 } else if !paths.is_empty() {
@@ -394,9 +410,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let mut new_selection = selection.write();
                             new_selection.selected.clear();
                             for idx in root_indices {
-                                new_selection
-                                    .selected
-                                    .insert(vec![PathSegment::Child(idx - 1)]);
+                                new_selection.selected.insert(vec![PathSegment::Child(idx - 1)]);
                             }
                         }
                     }
@@ -441,10 +455,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 drop(env);
                                 let mut new_selection = selection.write();
                                 new_selection.selected.clear();
-                                new_selection
-                                    .selected
-                                    .insert(vec![PathSegment::Child(idx + 1)]);
+                                new_selection.selected.insert(vec![PathSegment::Child(idx + 1)]);
                             }
+                        }
+                    }
+                    // Handle container child movement (Group, GridLayout)
+                    else if is_container_child_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_container_child_down(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
                         }
                     }
                 } else if !paths.is_empty() {
@@ -474,9 +496,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let mut new_selection = selection.write();
                             new_selection.selected.clear();
                             for idx in root_indices {
-                                new_selection
-                                    .selected
-                                    .insert(vec![PathSegment::Child(idx + 1)]);
+                                new_selection.selected.insert(vec![PathSegment::Child(idx + 1)]);
                             }
                         }
                     }
@@ -554,9 +574,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     FieldInputKind::Email => FieldType::Email,
                                     FieldInputKind::Tel => FieldType::Tel,
                                     FieldInputKind::Checkbox => FieldType::Bool,
-                                    FieldInputKind::Dropdown => {
-                                        FieldType::Select { options: vec![] }
-                                    }
+                                    FieldInputKind::Dropdown => FieldType::Select { options: vec![] },
                                     FieldInputKind::Radio => FieldType::Radio { options: vec![] },
                                 };
                             }
@@ -603,12 +621,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 paths.sort();
 
                 // Only support root-level conversions for now (single Child segment)
-                if paths
-                    .iter()
-                    .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
-                {
-                    let indices: Vec<usize> = paths
-                        .iter()
+                if paths.iter().all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_)))) {
+                    let indices: Vec<usize> = paths.iter()
                         .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
                         .collect();
                     let env_read = envelope.read();
@@ -670,27 +684,24 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 }
             }
 
-            // Scrollable area containing toolbar and content
-            div { class: "editor-scrollable",
-                // Toolbar (sticky within scroll area)
-                EditorToolbar {
-                    selection: selection.read().clone(),
-                    can_merge,
-                    can_move_up,
-                    can_move_down,
-                    available_conversions: conversions.clone(),
-                    on_action: handle_action,
-                }
+            // Toolbar
+            EditorToolbar {
+                selection: selection.read().clone(),
+                can_merge,
+                can_move_up,
+                can_move_down,
+                available_conversions: conversions.clone(),
+                on_action: handle_action,
+            }
 
-                // Document tree
-                div { class: "editor-content",
-                    NodeRenderer {
-                        nodes: NodesWrapper(envelope.read().content.clone()),
-                        selection: selection.read().clone(),
-                        languages: languages.clone(),
-                        field_labels: field_labels.clone(),
-                        on_action: handle_action,
-                    }
+            // Document tree
+            div { class: "editor-content",
+                NodeRenderer {
+                    nodes: NodesWrapper(envelope.read().content.clone()),
+                    selection: selection.read().clone(),
+                    languages: languages.clone(),
+                    field_labels: field_labels.clone(),
+                    on_action: handle_action,
                 }
             }
 
@@ -740,10 +751,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                     StructuredNode::Field(f) => {
                         // Field -> Paragraph: label becomes content
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: f
-                                .label
-                                .clone()
-                                .unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
+                            content: f.label.clone().unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
                             som_path: f.som_path.clone(),
                             source_name: None,
                         })
@@ -792,10 +800,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                         // Field -> Heading: label becomes content
                         StructuredNode::Heading(HeadingNode {
                             level: HeadingLevel::from_u8(level),
-                            content: f
-                                .label
-                                .clone()
-                                .unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
+                            content: f.label.clone().unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
                             som_path: f.som_path.clone(),
                             source_name: None,
                         })
@@ -831,10 +836,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                 .map(|n| match n {
                     StructuredNode::Paragraph(p) => {
                         // Paragraph -> Field: content becomes label
-                        let name = format!(
-                            "field_{}",
-                            Uuid::new_v4().to_string().replace('-', "")[..8].to_string()
-                        );
+                        let name = format!("field_{}", Uuid::new_v4().to_string().replace('-', "")[..8].to_string());
                         StructuredNode::Field(FieldNode {
                             name: FieldId::from(name.as_str()),
                             som_path: p.som_path.clone(),
@@ -850,10 +852,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                     }
                     StructuredNode::Heading(h) => {
                         // Heading -> Field: content becomes label
-                        let name = format!(
-                            "field_{}",
-                            Uuid::new_v4().to_string().replace('-', "")[..8].to_string()
-                        );
+                        let name = format!("field_{}", Uuid::new_v4().to_string().replace('-', "")[..8].to_string());
                         StructuredNode::Field(FieldNode {
                             name: FieldId::from(name.as_str()),
                             som_path: h.som_path.clone(),
