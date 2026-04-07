@@ -14,15 +14,7 @@ use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
 
 fn main() {
-    #[allow(deprecated)]
-    dioxus::LaunchBuilder::new()
-        .with_cfg(desktop! {
-            dioxus::desktop::Config::new().with_window(
-                dioxus::desktop::WindowBuilder::new()
-                    .with_title("Ajila Forms Conversion Engine"),
-            )
-        })
-        .launch(App);
+    dioxus::launch(App);
 }
 
 #[component]

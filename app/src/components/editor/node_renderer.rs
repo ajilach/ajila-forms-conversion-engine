@@ -321,7 +321,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                             list_path: path.clone(),
                                                             item_index: i,
                                                             languages: languages.clone(),
-                                                            on_action: on_action,
+                                                            on_action,
                                                         }
                                                     } else {
                                                         span { class: "list-item-text", "{item.as_plain_text()}" }
