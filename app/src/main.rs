@@ -115,43 +115,45 @@ fn App() -> Element {
                 }
             }
         } else {
-            // Main app content
-            div { class: "app-container",
+            // Main app content (scrollable area)
+            div { class: "app-scrollable",
+                div { class: "app-container",
 
-                // File Upload Section
-                FileUploadSection {
-                    is_processing: *is_processing.read(),
-                    profiles: profiles.clone(),
-                    selected_profile,
-                    on_process: move |files: Vec<(String, Vec<u8>)>| {
-                        on_process(files);
-                    },
-                }
-
-                // Progress Display
-                if *is_processing.read() || processing_state.read().step != ProcessingStep::Idle {
-                    ProgressDisplay {
-                        state: processing_state.read().clone(),
-                        on_image_click: move |(name, data)| enlarged_image.set(Some((name, data))),
-                    }
-                }
-
-                // Results Section
-                if processing_state.read().step == ProcessingStep::Complete {
-                    ResultsSection {
-                        state: processing_state.read().clone(),
-                        on_edit: move |envelope| {
-                            editor_envelope.set(Some(envelope));
+                    // File Upload Section
+                    FileUploadSection {
+                        is_processing: *is_processing.read(),
+                        profiles: profiles.clone(),
+                        selected_profile,
+                        on_process: move |files: Vec<(String, Vec<u8>)>| {
+                            on_process(files);
                         },
                     }
-                }
 
-                // Image Modal Overlay
-                if let Some((name, data)) = enlarged_image.read().as_ref() {
-                    ImageModal {
-                        name: name.clone(),
-                        data: data.clone(),
-                        on_close: move |_| enlarged_image.set(None),
+                    // Progress Display
+                    if *is_processing.read() || processing_state.read().step != ProcessingStep::Idle {
+                        ProgressDisplay {
+                            state: processing_state.read().clone(),
+                            on_image_click: move |(name, data)| enlarged_image.set(Some((name, data))),
+                        }
+                    }
+
+                    // Results Section
+                    if processing_state.read().step == ProcessingStep::Complete {
+                        ResultsSection {
+                            state: processing_state.read().clone(),
+                            on_edit: move |envelope| {
+                                editor_envelope.set(Some(envelope));
+                            },
+                        }
+                    }
+
+                    // Image Modal Overlay
+                    if let Some((name, data)) = enlarged_image.read().as_ref() {
+                        ImageModal {
+                            name: name.clone(),
+                            data: data.clone(),
+                            on_close: move |_| enlarged_image.set(None),
+                        }
                     }
                 }
             }

@@ -670,24 +670,27 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 }
             }
 
-            // Toolbar
-            EditorToolbar {
-                selection: selection.read().clone(),
-                can_merge,
-                can_move_up,
-                can_move_down,
-                available_conversions: conversions.clone(),
-                on_action: handle_action,
-            }
-
-            // Document tree
-            div { class: "editor-content",
-                NodeRenderer {
-                    nodes: NodesWrapper(envelope.read().content.clone()),
+            // Scrollable area containing toolbar and content
+            div { class: "editor-scrollable",
+                // Toolbar (sticky within scroll area)
+                EditorToolbar {
                     selection: selection.read().clone(),
-                    languages: languages.clone(),
-                    field_labels: field_labels.clone(),
+                    can_merge,
+                    can_move_up,
+                    can_move_down,
+                    available_conversions: conversions.clone(),
                     on_action: handle_action,
+                }
+
+                // Document tree
+                div { class: "editor-content",
+                    NodeRenderer {
+                        nodes: NodesWrapper(envelope.read().content.clone()),
+                        selection: selection.read().clone(),
+                        languages: languages.clone(),
+                        field_labels: field_labels.clone(),
+                        on_action: handle_action,
+                    }
                 }
             }
 
