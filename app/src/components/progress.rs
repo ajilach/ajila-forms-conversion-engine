@@ -25,6 +25,7 @@ pub fn ProgressDisplay(
                         | ProcessingStep::Merging
                         | ProcessingStep::Complete
                     ),
+                    progress: if state.step == ProcessingStep::Parsing { state.step_progress } else { None },
                 }
 
                 StepIndicator {
@@ -37,6 +38,7 @@ pub fn ProgressDisplay(
                         | ProcessingStep::Merging
                         | ProcessingStep::Complete
                     ),
+                    progress: if state.step == ProcessingStep::ExhaustiveSearching { state.step_progress } else { None },
                 }
 
                 StepIndicator {
@@ -46,6 +48,7 @@ pub fn ProgressDisplay(
                         state.step,
                         ProcessingStep::Structuring | ProcessingStep::Merging | ProcessingStep::Complete
                     ),
+                    progress: if state.step == ProcessingStep::Flattening { state.step_progress } else { None },
                 }
 
                 // Show plain images after flattening
@@ -61,6 +64,7 @@ pub fn ProgressDisplay(
                     name: "4. Structuring",
                     is_current: state.step == ProcessingStep::Structuring,
                     is_complete: matches!(state.step, ProcessingStep::Merging | ProcessingStep::Complete),
+                    progress: if state.step == ProcessingStep::Structuring { state.step_progress } else { None },
                 }
 
                 // Show labelled images after structuring
@@ -76,6 +80,7 @@ pub fn ProgressDisplay(
                     name: "5. Merging",
                     is_current: state.step == ProcessingStep::Merging,
                     is_complete: state.step == ProcessingStep::Complete,
+                    progress: if state.step == ProcessingStep::Merging { state.step_progress } else { None },
                 }
             }
 
@@ -101,7 +106,7 @@ pub fn ProgressDisplay(
 }
 
 #[component]
-pub fn StepIndicator(name: String, is_current: bool, is_complete: bool) -> Element {
+pub fn StepIndicator(name: String, is_current: bool, is_complete: bool, progress: Option<f32>) -> Element {
     let class = if is_complete {
         "step step-complete"
     } else if is_current {
@@ -110,13 +115,22 @@ pub fn StepIndicator(name: String, is_current: bool, is_complete: bool) -> Eleme
         "step step-pending"
     };
 
+    let progress_text = if is_current {
+        progress.map(|p| format!(" ({}%)", (p * 100.0).round() as u32))
+    } else {
+        None
+    };
+
     rsx! {
         div { class: "{class}",
             "{name}"
+            if let Some(pct) = &progress_text {
+                span { class: "step-progress", "{pct}" }
+            }
             if is_complete {
                 span { class: "step-icon", "✓" }
             }
-            if is_current {
+            if is_current && progress_text.is_none() {
                 span { class: "step-icon", "●" }
             }
         }

@@ -18,6 +18,8 @@ pub enum ProcessingStep {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProcessingState {
     pub step: ProcessingStep,
+    /// Progress within the current step, from 0.0 to 1.0.
+    pub step_progress: Option<f32>,
     pub available_states: Vec<String>,
     pub plain_images: HashMap<String, String>,
     pub labelled_images: HashMap<String, String>,
@@ -39,6 +41,8 @@ impl PartialEq for ProcessingState {
     fn eq(&self, other: &Self) -> bool {
         // Compare all fields except envelope (which doesn't implement PartialEq)
         self.step == other.step
+            && self.step_progress.map(|p| (p * 100.0) as u32)
+                == other.step_progress.map(|p| (p * 100.0) as u32)
             && self.available_states == other.available_states
             && self.plain_images == other.plain_images
             && self.labelled_images == other.labelled_images

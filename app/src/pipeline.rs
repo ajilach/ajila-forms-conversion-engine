@@ -52,11 +52,13 @@ pub async fn run_blueprint_pipeline(
 
     // ── Phase 1: Parsing ─────────────────────────────────────────────────
     state.step = ProcessingStep::Parsing;
+    state.step_progress = Some(0.0);
     on_progress(&state);
     async_sleep_ms(0).await;
 
+    let total_files = files.len();
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
-    for (filename, bytes) in files {
+    for (i, (filename, bytes)) in files.iter().enumerate() {
         match Blueprint::from_pdf_bytes(bytes) {
             Ok(bp) => {
                 let language = bp.language().to_string();
@@ -64,15 +66,20 @@ pub async fn run_blueprint_pipeline(
             }
             Err(e) => fail!(format!("{e}")),
         }
+        state.step_progress = Some((i + 1) as f32 / total_files as f32);
+        on_progress(&state);
+        async_sleep_ms(0).await;
     }
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────
     state.step = ProcessingStep::ExhaustiveSearching;
+    state.step_progress = Some(0.0);
     on_progress(&state);
     async_sleep_ms(0).await;
 
+    let total_blueprints = blueprints.len();
     let mut explored: Vec<(String, String, blueprint::FormStates, Context)> = Vec::new();
-    for (filename, language, mut bp) in blueprints {
+    for (i, (filename, language, mut bp)) in blueprints.into_iter().enumerate() {
         match bp.states() {
             Ok(form_states) => {
                 let context = bp.context();
@@ -80,16 +87,22 @@ pub async fn run_blueprint_pipeline(
             }
             Err(e) => fail!(format!("{e}")),
         }
+        state.step_progress = Some((i + 1) as f32 / total_blueprints as f32);
+        on_progress(&state);
+        async_sleep_ms(0).await;
     }
 
     // ── Phase 3: Flattening ──────────────────────────────────────────────
     state.step = ProcessingStep::Flattening;
+    state.step_progress = Some(0.0);
     on_progress(&state);
     async_sleep_ms(0).await;
 
     let config = blueprint::PipelineConfig::default();
 
     if config.render_plain {
+        let total_plain: usize = explored.iter().map(|(_, _, fs, _)| fs.len()).sum();
+        let mut done_plain: usize = 0;
         for (_filename, language, form_states, _context) in &explored {
             for (state_idx, form_state) in form_states.iter().enumerate() {
                 let label = format!("{}_{}", language, state_idx);
@@ -110,18 +123,24 @@ pub async fn run_blueprint_pipeline(
                         .warnings
                         .push(format!("Plain render failed for {label}: {e}")),
                 }
+                done_plain += 1;
+                state.step_progress = Some(done_plain as f32 / total_plain as f32);
+                on_progress(&state);
+                async_sleep_ms(0).await;
             }
         }
-        on_progress(&state);
-        async_sleep_ms(0).await;
     }
 
     // ── Phase 4: Structuring ─────────────────────────────────────────────
     state.step = ProcessingStep::Structuring;
+    state.step_progress = Some(0.0);
     on_progress(&state);
     async_sleep_ms(0).await;
 
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
+
+    let total_structuring: usize = explored.iter().map(|(_, _, fs, _)| fs.len()).sum();
+    let mut done_structuring: usize = 0;
 
     for (_filename, language, form_states, context) in &explored {
         let mut state_map: StateMap = HashMap::new();
@@ -160,16 +179,19 @@ pub async fn run_blueprint_pipeline(
                     "Duplicate state signature '{signature}' found in language '{language}'"
                 ));
             }
+
+            done_structuring += 1;
+            state.step_progress = Some(done_structuring as f32 / total_structuring as f32);
+            on_progress(&state);
+            async_sleep_ms(0).await;
         }
 
         per_language_state_maps.push((language.clone(), state_map));
     }
 
-    on_progress(&state);
-    async_sleep_ms(0).await;
-
     // ── Phase 5: Merging ─────────────────────────────────────────────────
     state.step = ProcessingStep::Merging;
+    state.step_progress = Some(0.0);
     on_progress(&state);
     async_sleep_ms(0).await;
 
@@ -201,8 +223,9 @@ pub async fn run_blueprint_pipeline(
         }
     }
 
+    let total_signatures = expected_signatures.len();
     let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();
-    for signature in &expected_signatures {
+    for (i, signature) in expected_signatures.iter().enumerate() {
         let mut canonical_selections: Option<Vec<Selection>> = None;
         let mut state_envelopes: Vec<DocumentEnvelope> = Vec::new();
 
@@ -236,6 +259,10 @@ pub async fn run_blueprint_pipeline(
         };
 
         translated_states.push((canonical_selections.unwrap_or_default(), merged_state));
+
+        state.step_progress = Some((i + 1) as f32 / total_signatures as f32 * 0.5);
+        on_progress(&state);
+        async_sleep_ms(0).await;
     }
 
     if translated_states.is_empty() {
@@ -261,11 +288,19 @@ pub async fn run_blueprint_pipeline(
     };
     // Store the envelope for the editor
     state.envelope = Some(merged.clone());
+    state.step_progress = Some(0.6);
+    on_progress(&state);
+    async_sleep_ms(0).await;
+
     // ── Post-processing ──────────────────────────────────────────────────
     let json = match serde_json::to_string_pretty(&merged) {
         Ok(j) => j,
         Err(e) => fail!(format!("Failed to serialize JSON: {e}")),
     };
+
+    state.step_progress = Some(0.7);
+    on_progress(&state);
+    async_sleep_ms(0).await;
 
     if let Some(ref profile_name) = profile
         && blueprint::has_html_config(profile_name)
@@ -280,6 +315,10 @@ pub async fn run_blueprint_pipeline(
         state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
     }
 
+    state.step_progress = Some(0.8);
+    on_progress(&state);
+    async_sleep_ms(0).await;
+
     if let Some(ref profile_name) = profile
         && blueprint::has_aem_config(profile_name)
     {
@@ -292,6 +331,10 @@ pub async fn run_blueprint_pipeline(
         state.aem_package = Some(aem_zip);
     }
 
+    state.step_progress = Some(0.9);
+    on_progress(&state);
+    async_sleep_ms(0).await;
+
     if let Some(ref profile_name) = profile
         && blueprint::has_xsd_config(profile_name)
     {
@@ -302,7 +345,12 @@ pub async fn run_blueprint_pipeline(
         state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
     }
 
+    state.step_progress = Some(1.0);
+    on_progress(&state);
+    async_sleep_ms(0).await;
+
     state.step = ProcessingStep::Complete;
+    state.step_progress = None;
     state.merged_json = Some(json);
     on_progress(&state);
 }
