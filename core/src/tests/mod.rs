@@ -11442,6 +11442,69 @@ fn test_baqm_partial_bold_in_paragraph() {
     // which confirms the structured layer also has the bold correctly.
 }
 
+/// Diagnostic test for AAQD rich text: verifies that partial bold within paragraphs
+/// (e.g., "richiede") is correctly parsed and rendered.
+#[test]
+fn test_aaqd_partial_bold_richiede() {
+    use crate::flattened::FlattenedNodeKind;
+
+    // Check the flattened layer for rich text parsing
+    let mut bp = Blueprint::from_pdf(input_path("AAQD_033_IT.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Search for the text containing "richiede" in the flattened layer
+    let search_text = "richiede";
+    let mut found_flattened = false;
+    let mut bold_runs_found = false;
+
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if content.contains(search_text) && content.contains("Richiesta di Attivazione") {
+                found_flattened = true;
+                println!("=== AAQD Flattened: Found text containing '{search_text}' ===");
+                println!(
+                    "Full content (first 300 chars): {}...",
+                    content.chars().take(300).collect::<String>()
+                );
+
+                if let Some(rt) = node.rich_text() {
+                    println!("Rich text paragraphs: {}", rt.paragraphs.len());
+                    for (pi, para) in rt.paragraphs.iter().enumerate() {
+                        println!("  Paragraph {pi}:");
+                        for (ri, run) in para.runs.iter().enumerate() {
+                            let bold_marker = if run.bold { " [BOLD]" } else { "" };
+                            let italic_marker = if run.italic { " [ITALIC]" } else { "" };
+                            println!(
+                                "    Run {ri}: \"{}\"{bold_marker}{italic_marker}",
+                                run.text.chars().take(80).collect::<String>()
+                            );
+                            if run.bold && run.text.contains(search_text) {
+                                bold_runs_found = true;
+                            }
+                        }
+                    }
+                } else {
+                    println!("  NO rich_text() available");
+                }
+                break;
+            }
+        }
+    }
+
+    assert!(
+        found_flattened,
+        "Should find text containing '{search_text}' in AAQD flattened output"
+    );
+
+    // The actual assertion: "richiede" should be wrapped in bold
+    assert!(
+        bold_runs_found,
+        "AAQD: '{search_text}' should be bold in flattened RichRun layer"
+    );
+}
+
 // ========================================================================
 // GridTemplateDetector — proportional colspan tests
 // ========================================================================

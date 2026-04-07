@@ -8473,6 +8473,10 @@ impl Flattened {
 
         let mut tokens = Vec::new();
 
+        // Track if we've seen a word boundary (space) since the last token was added.
+        // This prevents merging across space-only runs.
+        let mut seen_word_boundary = true; // Start true so first word is not merged
+
         for run in runs {
             if run.preserve_spaces {
                 // Preserved space run - keep as single token
@@ -8485,13 +8489,16 @@ impl Flattened {
                         bold: run.bold,
                         italic: run.italic,
                     });
+                    seen_word_boundary = false;
                 }
             } else {
                 // Normal text - split into words
                 let mut current_word = String::new();
                 // Track if this run's first character was NOT a space
                 // If so, we should merge with previous token (e.g., "currencies<span>5</span>")
-                let mut run_starts_without_space = !run.text.starts_with(' ');
+                // BUT only if we haven't seen a word boundary since the last token
+                let mut run_starts_without_space =
+                    !run.text.starts_with(' ') && !seen_word_boundary;
 
                 for ch in run.text.chars() {
                     if ch == ' ' {
@@ -8527,6 +8534,8 @@ impl Flattened {
                         }
                         // After first word in this run, we're no longer at the start
                         run_starts_without_space = false;
+                        // We've seen a word boundary (space)
+                        seen_word_boundary = true;
                     } else {
                         current_word.push(ch);
                     }
@@ -8557,6 +8566,8 @@ impl Flattened {
                             italic: run.italic,
                         });
                     }
+                    // We added a word, so clear the word boundary flag
+                    seen_word_boundary = false;
                 }
             }
         }
