@@ -344,12 +344,9 @@ pub fn get_node_at_path_mut<'a>(
 
     // Check if this path goes through a table cell
     // Look for TableRow/TableHeader followed by TableCell pattern
-    let table_cell_idx = path.iter().position(|s| {
-        matches!(
-            s,
-            PathSegment::TableRow(_) | PathSegment::TableHeader
-        )
-    });
+    let table_cell_idx = path
+        .iter()
+        .position(|s| matches!(s, PathSegment::TableRow(_) | PathSegment::TableHeader));
 
     if let Some(table_segment_idx) = table_cell_idx {
         // Path goes through a table - split into: path_to_table, row/header, cell, rest
