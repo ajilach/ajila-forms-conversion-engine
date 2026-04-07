@@ -4,11 +4,26 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_CustodyAccount1/jcr:content/guideContainer/assets/dictionary">
+    <_x0034_80f453a-6322-4a2c-9532-06d1681e3edc
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Object number"
+        sling:message="Object number"/>
+    <_x0035_47b31c8-3fb5-4420-9f76-010d3aa82e5f
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Account number"
+        sling:message="Account number"/>
     <_x0037_0a15d13-036a-4221-9f9d-9f24f57e1fb7
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Fragment#2 Banking Relationship Custody Account"
         sling:message="Fragment#2 Banking Relationship Custody Account"/>
+    <_x0037_f1f3fe1-0248-4d51-8f61-e00bb41c6301
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Clearing number"
+        sling:message="Clearing number"/>
     <f0b4bc29-eeb2-41b9-8c86-78b48209871e
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

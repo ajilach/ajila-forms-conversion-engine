@@ -81,4 +81,23 @@ pub struct AemProfile {
     /// (e.g. `"/content/forms/af/"`).
     /// The `fragRef` is built as `{prefix}{relative_fragment_dir_path}`.
     pub fragment_ref_prefix: Option<String>,
+
+    /// Tera template that evaluates to a comma-separated list of fragment
+    /// paths relative to `fragments/`. Each path can be:
+    /// - A fragment library directory (scanned recursively): `"afforms_ubs_fragmentlib"`
+    /// - A specific fragment: `"afforms_ubs_fragmentlib/affrg_Address1"`
+    ///
+    /// When set, only the listed paths are scanned.
+    /// When absent, ALL subdirectories are scanned (backward-compatible default).
+    ///
+    /// Example using conditional logic:
+    /// ```toml
+    /// fragment_paths = """{% if xfa.formrange_entity == "019" %}afforms_ubs_fragmentlib,afforms_germany_fragmentlib{% elif xfa.formrange_entity == "033" %}afforms_ubs_fragmentlib,afforms_italy_fragmentlib{% else %}afforms_ubs_fragmentlib,afforms_ch_fragmentlib{% endif %}"""
+    /// ```
+    ///
+    /// Example selecting specific fragments:
+    /// ```toml
+    /// fragment_paths = "afforms_ubs_fragmentlib/affrg_Address1,afforms_ubs_fragmentlib/affrg_IBAN1"
+    /// ```
+    pub fragment_paths: Option<String>,
 }

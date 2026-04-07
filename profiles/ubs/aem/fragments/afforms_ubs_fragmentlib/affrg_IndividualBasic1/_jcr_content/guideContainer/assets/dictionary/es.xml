@@ -9,6 +9,11 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_Fragment#3 Name (Individual)"
         sling:message="Fragment#3 Name (Individual)"/>
+    <ab99d9db-ad77-44ac-ad33-a6ddbef24267
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_UBS Fragment - Individual Basic 1"
+        sling:message="UBS Fragment - Individual Basic 1"/>
     <fd_Company_Entity
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

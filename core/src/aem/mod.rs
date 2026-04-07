@@ -140,6 +140,11 @@ pub struct AemConfig {
     /// JCR path prefix for constructing fragment `fragRef` values.
     pub fragment_ref_prefix: String,
 
+    /// Optional list of fragment paths (relative to `fragments/`) to scan.
+    /// Each path can be a directory (scanned recursively) or a specific fragment.
+    /// When empty, all subdirectories of `fragments/` are scanned.
+    pub fragment_paths: Vec<String>,
+
     /// Parsed fragments loaded from the `fragments/` subdirectory.
     pub fragments: Vec<ParsedFragment>,
 }
@@ -226,6 +231,17 @@ impl AemConfig {
                 .fragment_ref_prefix
                 .clone()
                 .unwrap_or_else(|| "/content/forms/af/".into()),
+            fragment_paths: match &profile.fragment_paths {
+                Some(tmpl) => {
+                    let rendered = template::render_string(tmpl, &tera_ctx)?;
+                    rendered
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                }
+                None => Vec::new(),
+            },
             fragments: Vec::new(),
         })
     }
@@ -312,6 +328,7 @@ impl AemConfig {
 
             use_fragments: false,
             fragment_ref_prefix: "/content/forms/af/".into(),
+            fragment_paths: Vec::new(),
             fragments: Vec::new(),
         }
     }

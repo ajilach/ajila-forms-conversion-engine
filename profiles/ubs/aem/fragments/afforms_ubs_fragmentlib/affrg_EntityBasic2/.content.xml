@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2025-04-14T18:53:34.493+02:00"
-        cq:lastModifiedBy="t653607"
+        cq:lastModified="{Date}2025-11-18T08:47:58.622+01:00"
+        cq:lastModifiedBy="t654865"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##7033&quot;}"
         jcr:language="en"

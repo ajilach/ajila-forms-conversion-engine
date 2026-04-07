@@ -9,11 +9,21 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_UBS Fragment - Custody Account 1"
         sling:message="UBS Fragment - Custody Account 1"/>
+    <_x0033_e121065-19c5-4c04-93f8-852eda96845b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Object number"
+        sling:message="Object number"/>
     <_x0038_647d9c4-2f3d-4fb6-960d-916e58a75e81
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Fragment#2 Banking Relationship Custody Account"
         sling:message="Fragment#2 Banking Relationship Custody Account"/>
+    <_x0039_4737be6-0072-43ef-8060-8ef5c8733adc
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Account number"
+        sling:message="Account number"/>
     <fd__x003c_p_x003e__x003c_b_x003e_Bank-355201254
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
@@ -54,4 +64,9 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_Object no."
         sling:message="Objekt-Nr."/>
+    <fe94a591-7aad-4dba-91a1-cd6bb93a58a1
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Clearing number"
+        sling:message="Clearing number"/>
 </jcr:root>

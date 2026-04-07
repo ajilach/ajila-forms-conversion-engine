@@ -4,7 +4,7 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2025-11-07T07:40:55.895+01:00"
+        cq:lastModified="{Date}2025-12-16T11:13:15.062+01:00"
         cq:lastModifiedBy="t653607"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:primaryType="cq:PageContent"

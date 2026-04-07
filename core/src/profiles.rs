@@ -85,7 +85,8 @@ pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
     }
 
     if config.use_fragments {
-        config.fragments = load_aem_fragments(name, &config.fragment_ref_prefix)?;
+        config.fragments =
+            load_aem_fragments(name, &config.fragment_ref_prefix, &config.fragment_paths)?;
     }
 
     Ok(config)
@@ -197,9 +198,17 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
 }
 
 /// Load parsed AEM fragments from `{profile}/aem/fragments`.
+///
+/// When `fragment_paths` is non-empty, only those specific paths (relative to
+/// `fragments/`) are scanned. Each path can be:
+/// - A single fragment directory (e.g. `"afforms_ubs_fragmentlib/affrg_Address1"`)
+/// - A parent directory to scan recursively (e.g. `"afforms_ubs_fragmentlib"`)
+///
+/// When empty, all subdirectories are scanned (backward-compatible).
 pub fn load_aem_fragments(
     name: &str,
     fragment_ref_prefix: &str,
+    fragment_paths: &[String],
 ) -> Result<Vec<crate::ParsedFragment>, String> {
     let fragments_root = PROFILES_DIR
         .get_dir(format!("{name}/aem/fragments"))
@@ -209,17 +218,50 @@ pub fn load_aem_fragments(
     let prefix = fragment_ref_prefix.trim_end_matches('/');
     let mut fragments = Vec::new();
 
-    walk_embedded_dirs(fragments_root, &mut |embedded_dir| {
-        if let Some(content_file) = embedded_dir
-            .files()
-            .find(|f| f.path().file_name().and_then(|n| n.to_str()) == Some(".content.xml"))
-            && let Some(content) = content_file.contents_utf8()
-            && let Some(fragment) =
-                parse_embedded_fragment(embedded_dir.path(), base, prefix, content)
-        {
-            fragments.push(fragment);
+    // If specific paths are requested, iterate over just those.
+    // Otherwise, scan all subdirectories (backward-compatible behavior).
+    if fragment_paths.is_empty() {
+        walk_embedded_dirs(fragments_root, &mut |embedded_dir| {
+            if let Some(content_file) = embedded_dir
+                .files()
+                .find(|f| f.path().file_name().and_then(|n| n.to_str()) == Some(".content.xml"))
+                && let Some(content) = content_file.contents_utf8()
+                && let Some(fragment) =
+                    parse_embedded_fragment(embedded_dir.path(), base, prefix, content)
+            {
+                fragments.push(fragment);
+            }
+        });
+    } else {
+        for path in fragment_paths {
+            let path = path.trim_matches('/');
+            let full_path = format!("{name}/aem/fragments/{path}");
+
+            // Check if this path points directly to a fragment (has .content.xml)
+            if let Some(content_file) = PROFILES_DIR.get_file(format!("{full_path}/.content.xml")) {
+                // Single fragment - parse it directly
+                if let Some(content) = content_file.contents_utf8()
+                    && let Some(fragment_dir) = PROFILES_DIR.get_dir(&full_path)
+                    && let Some(fragment) =
+                        parse_embedded_fragment(fragment_dir.path(), base, prefix, content)
+                {
+                    fragments.push(fragment);
+                }
+            } else if let Some(subdir) = PROFILES_DIR.get_dir(&full_path) {
+                // Directory - scan recursively for fragments
+                walk_embedded_dirs(subdir, &mut |embedded_dir| {
+                    if let Some(content_file) = embedded_dir.files().find(|f| {
+                        f.path().file_name().and_then(|n| n.to_str()) == Some(".content.xml")
+                    }) && let Some(content) = content_file.contents_utf8()
+                        && let Some(fragment) =
+                            parse_embedded_fragment(embedded_dir.path(), base, prefix, content)
+                    {
+                        fragments.push(fragment);
+                    }
+                });
+            }
         }
-    });
+    }
 
     fragments.sort_by(|a, b| a.frag_ref.cmp(&b.frag_ref));
     Ok(fragments)
@@ -417,7 +459,7 @@ mod tests {
     #[test]
     fn embedded_fragment_loader_parses_known_fragments() {
         let fragments =
-            load_aem_fragments("ubs", "/content/forms/af/").expect("load embedded fragments");
+            load_aem_fragments("ubs", "/content/forms/af/", &[]).expect("load embedded fragments");
 
         assert!(
             !fragments.is_empty(),

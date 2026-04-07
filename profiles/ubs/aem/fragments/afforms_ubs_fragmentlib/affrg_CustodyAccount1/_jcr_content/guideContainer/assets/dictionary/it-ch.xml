@@ -4,6 +4,21 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_CustodyAccount1/jcr:content/guideContainer/assets/dictionary">
+    <_x0030_c634b38-bd6e-4635-a9c7-d8e7ad96b1cc
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Object number"
+        sling:message="Object number"/>
+    <_x0033_fec287d-8682-48b3-8e36-dc5379bda2da
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Clearing number"
+        sling:message="Clearing number"/>
+    <_x0037_8329860-9432-4812-a214-f742f553b2e5
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Account number"
+        sling:message="Account number"/>
     <c7df8f17-d164-4192-bdb1-d62d0b123934
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
