@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use blueprint::document::ListStyleType;
 use blueprint::{
-    DocumentEnvelope, FieldId, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText,
+    DocumentEnvelope, FieldId, GroupNode, HeadingLevel, HeadingNode, InlineText,
     ListNode, ParagraphNode, StructuredNode,
 };
 
@@ -17,7 +17,7 @@ use super::state::{
     can_merge_selected, delete_nodes, get_node_at_path_mut,
 };
 use super::toolbar::EditorToolbar;
-use crate::markdown::markdown_to_inline_text;
+use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
 
 /// Wrapper for DocumentEnvelope that implements PartialEq (always eq for memoization skip).
 #[derive(Clone)]
@@ -537,37 +537,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 /// Content is parsed as markdown to preserve bold/italic formatting.
 fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&str>) {
     if let Some(lang) = language {
-        // Update for specific language
-        // For multilingual content, we need to merge all existing content into a single
-        // TranslatedText node, then update the specific language.
-
-        // First, collect all existing translations
-        let mut translations = std::collections::HashMap::new();
-
-        for node in text.0.iter() {
-            match node {
-                InlineNode::TranslatedText(map) => {
-                    for (k, v) in map {
-                        translations.insert(k.clone(), v.clone());
-                    }
-                }
-                InlineNode::Text(t) => {
-                    // If there's a plain text node, treat it as the default language
-                    if !translations.contains_key("default") {
-                        translations.insert("default".to_string(), t.clone());
-                    }
-                }
-                _ => {
-                    // Skip formatting nodes for now - simplified editing for multilingual
-                }
-            }
-        }
-
-        // Update the specified language
-        translations.insert(lang.to_string(), content.to_string());
-
-        // Create a single TranslatedText node with all translations
-        text.0 = vec![InlineNode::TranslatedText(translations)];
+        // Parse markdown and merge with existing translations
+        // This preserves formatting structure while keeping other languages' content
+        *text = markdown_to_inline_text_multilingual(content, lang, text);
     } else {
         // Parse content as markdown to preserve bold/italic formatting
         *text = markdown_to_inline_text(content);
