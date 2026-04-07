@@ -11557,7 +11557,8 @@ fn test_aaqd_partial_bold_richiede() {
                     // Now test tokenize_paragraph_runs directly
                     if let Some(para) = rt.paragraphs.first() {
                         println!("\n=== LayoutTokens from tokenize_paragraph_runs ===");
-                        let tokens = Flattened::tokenize_paragraph_runs(&para.runs, 12.0, &font, 0.0);
+                        let tokens =
+                            Flattened::tokenize_paragraph_runs(&para.runs, 12.0, &font, 0.0);
                         for (ti, tok) in tokens.iter().enumerate() {
                             if tok.text.contains("richiede") || ti < 8 || tok.text.contains("con") {
                                 println!(
@@ -11570,14 +11571,12 @@ fn test_aaqd_partial_bold_richiede() {
 
                     // Call layout_rich_text
                     let rendered_lines = Flattened::layout_rich_text(
-                        rt,
-                        400.0, // box width
+                        rt, 400.0, // box width
                         12.0,  // font size
-                        &font,
-                        1.0,   // scale
-                        0.0,   // letter spacing
-                        None,  // hyphenation
-                        None,  // dict
+                        &font, 1.0,  // scale
+                        0.0,  // letter spacing
+                        None, // hyphenation
+                        None, // dict
                     );
 
                     println!("\n=== AAQD RenderedLine/Word analysis ===");
