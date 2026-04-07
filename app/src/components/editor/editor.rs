@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 use std::collections::{BTreeSet, HashMap};
+use uuid::Uuid;
 
 use blueprint::document::ListStyleType;
 use blueprint::{
@@ -796,11 +797,10 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
             // Converting to field: text content becomes label
             nodes
                 .iter()
-                .enumerate()
-                .map(|(i, n)| match n {
+                .map(|n| match n {
                     StructuredNode::Paragraph(p) => {
                         // Paragraph -> Field: content becomes label
-                        let name = format!("field_{}", i + 1);
+                        let name = format!("field_{}", Uuid::new_v4().to_string().replace('-', "")[..8].to_string());
                         StructuredNode::Field(FieldNode {
                             name: FieldId::from(name.as_str()),
                             som_path: p.som_path.clone(),
@@ -816,7 +816,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                     }
                     StructuredNode::Heading(h) => {
                         // Heading -> Field: content becomes label
-                        let name = format!("field_{}", i + 1);
+                        let name = format!("field_{}", Uuid::new_v4().to_string().replace('-', "")[..8].to_string());
                         StructuredNode::Field(FieldNode {
                             name: FieldId::from(name.as_str()),
                             som_path: h.som_path.clone(),

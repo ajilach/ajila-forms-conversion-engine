@@ -140,15 +140,26 @@ pub enum EditorAction {
     /// Start editing a node's text.
     StartEditing(NodePath),
     /// Update text content of a node (works for paragraphs, headings, field labels, list items).
-    UpdateText { path: NodePath, content: String, language: Option<String> },
+    UpdateText {
+        path: NodePath,
+        content: String,
+        language: Option<String>,
+    },
     /// Stop editing.
     StopEditing,
     /// Start editing a node's metadata.
     StartEditingMetadata(NodePath),
     /// Update node metadata.
-    UpdateMetadata { path: NodePath, metadata: NodeMetadata },
+    UpdateMetadata {
+        path: NodePath,
+        metadata: NodeMetadata,
+    },
     /// Add a new node.
-    AddNode { parent: NodePath, index: usize, node_type: NewNodeType },
+    AddNode {
+        parent: NodePath,
+        index: usize,
+        node_type: NewNodeType,
+    },
     /// Convert selected node(s) to a different type.
     ConvertSelected(ConvertTarget),
 }
@@ -208,9 +219,12 @@ pub enum NewNodeType {
 
 /// Get a node at a given path.
 ///
-/// Note: This only works for paths that resolve to StructuredNode references.
+/// Handles regular child navigation, as well as paths through table rows/cells.
 /// ListItem paths cannot be resolved this way (list items are InlineText, not StructuredNode).
-pub fn get_node_at_path<'a>(content: &'a [StructuredNode], path: &NodePath) -> Option<&'a StructuredNode> {
+pub fn get_node_at_path<'a>(
+    content: &'a [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a StructuredNode> {
     if path.is_empty() {
         return None;
     }
@@ -221,25 +235,41 @@ pub fn get_node_at_path<'a>(content: &'a [StructuredNode], path: &NodePath) -> O
     };
 
     let mut current = content.get(*first_idx)?;
+    let mut i = 1;
 
-    for segment in &path[1..] {
+    while i < path.len() {
+        let segment = &path[i];
         current = match (current, segment) {
             // Child navigation
             (StructuredNode::Group(g), PathSegment::Child(idx)) => g.children.get(*idx)?,
-            (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => g.elements.get(*idx).map(|e| &e.node)?,
+            (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => {
+                g.elements.get(*idx).map(|e| &e.node)?
+            }
             (StructuredNode::Repeatable(r), PathSegment::Child(0)) => r.item.as_ref(),
             (StructuredNode::Conditional(c), PathSegment::Child(0)) => c.content.as_ref(),
 
-            // Table navigation
+            // Table cell navigation: TableRow/TableHeader followed by TableCell
             (StructuredNode::Table(t), PathSegment::TableRow(row_idx)) => {
-                // TableRow is not a StructuredNode itself, but we continue navigation
-                // This case returns None - use get_table_cell_at_path for cells
-                let _ = t.rows.get(*row_idx)?;
-                return None; // Can't return TableRow as StructuredNode
+                // Next segment must be TableCell
+                if i + 1 >= path.len() {
+                    return None; // TableRow is not a StructuredNode
+                }
+                let PathSegment::TableCell(cell_idx) = &path[i + 1] else {
+                    return None;
+                };
+                i += 1; // Skip the TableCell segment in the next iteration
+                t.rows.get(*row_idx)?.cells.get(*cell_idx)?
             }
             (StructuredNode::Table(t), PathSegment::TableHeader) => {
-                let _ = t.header.as_ref()?;
-                return None; // Can't return TableHeader as StructuredNode
+                // Next segment must be TableCell
+                if i + 1 >= path.len() {
+                    return None; // TableHeader is not a StructuredNode
+                }
+                let PathSegment::TableCell(cell_idx) = &path[i + 1] else {
+                    return None;
+                };
+                i += 1; // Skip the TableCell segment in the next iteration
+                t.header.as_ref()?.cells.get(*cell_idx)?
             }
 
             // ListItem is InlineText, not StructuredNode
@@ -247,6 +277,7 @@ pub fn get_node_at_path<'a>(content: &'a [StructuredNode], path: &NodePath) -> O
 
             _ => return None,
         };
+        i += 1;
     }
 
     Some(current)
@@ -255,13 +286,20 @@ pub fn get_node_at_path<'a>(content: &'a [StructuredNode], path: &NodePath) -> O
 /// Get a table cell at a given path.
 ///
 /// For paths ending with TableCell, this returns the cell's StructuredNode.
-pub fn get_table_cell_at_path<'a>(content: &'a [StructuredNode], path: &NodePath) -> Option<&'a StructuredNode> {
+pub fn get_table_cell_at_path<'a>(
+    content: &'a [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a StructuredNode> {
     if path.len() < 3 {
         return None;
     }
 
     // Navigate to the table first
-    let table_path: NodePath = path.iter().take_while(|s| matches!(s, PathSegment::Child(_))).cloned().collect();
+    let table_path: NodePath = path
+        .iter()
+        .take_while(|s| matches!(s, PathSegment::Child(_)))
+        .cloned()
+        .collect();
     let table = get_node_at_path(content, &table_path)?;
     let StructuredNode::Table(t) = table else {
         return None;
@@ -286,8 +324,11 @@ pub fn get_table_cell_at_path<'a>(content: &'a [StructuredNode], path: &NodePath
 
 /// Get a mutable reference to a node at a given path.
 ///
-/// Note: This only works for paths that resolve to StructuredNode references.
-pub fn get_node_at_path_mut<'a>(content: &'a mut [StructuredNode], path: &NodePath) -> Option<&'a mut StructuredNode> {
+/// Handles regular child navigation, as well as paths through table rows/cells.
+pub fn get_node_at_path_mut<'a>(
+    content: &'a mut [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a mut StructuredNode> {
     if path.is_empty() {
         return None;
     }
@@ -301,34 +342,104 @@ pub fn get_node_at_path_mut<'a>(content: &'a mut [StructuredNode], path: &NodePa
         return None;
     }
 
-    let mut current = &mut content[*first_idx];
+    // Check if this path goes through a table cell
+    // Look for TableRow/TableHeader followed by TableCell pattern
+    let table_cell_idx = path.iter().position(|s| {
+        matches!(
+            s,
+            PathSegment::TableRow(_) | PathSegment::TableHeader
+        )
+    });
 
-    for segment in &path[1..] {
-        current = match (current, segment) {
-            // Child navigation
-            (StructuredNode::Group(g), PathSegment::Child(idx)) => g.children.get_mut(*idx)?,
-            (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => g.elements.get_mut(*idx).map(|e| &mut e.node)?,
-            (StructuredNode::Repeatable(r), PathSegment::Child(0)) => r.item.as_mut(),
-            (StructuredNode::Conditional(c), PathSegment::Child(0)) => c.content.as_mut(),
+    if let Some(table_segment_idx) = table_cell_idx {
+        // Path goes through a table - split into: path_to_table, row/header, cell, rest
+        if table_segment_idx + 1 >= path.len() {
+            return None; // No cell segment after row/header
+        }
+        let PathSegment::TableCell(cell_idx) = &path[table_segment_idx + 1] else {
+            return None;
+        };
 
-            // For ListItem, we can't return the item as StructuredNode
-            (StructuredNode::List(_), PathSegment::ListItem(_)) => return None,
+        // Navigate to the table
+        let mut current = &mut content[*first_idx];
+        for segment in &path[1..table_segment_idx] {
+            current = match (current, segment) {
+                (StructuredNode::Group(g), PathSegment::Child(idx)) => g.children.get_mut(*idx)?,
+                (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => {
+                    g.elements.get_mut(*idx).map(|e| &mut e.node)?
+                }
+                _ => return None,
+            };
+        }
 
+        // Get the cell from the table
+        let StructuredNode::Table(t) = current else {
+            return None;
+        };
+
+        let cell = match &path[table_segment_idx] {
+            PathSegment::TableRow(row_idx) => t.rows.get_mut(*row_idx)?.cells.get_mut(*cell_idx)?,
+            PathSegment::TableHeader => t.header.as_mut()?.cells.get_mut(*cell_idx)?,
             _ => return None,
         };
-    }
 
-    Some(current)
+        // If there are more segments after the cell, continue navigation
+        let remaining = &path[table_segment_idx + 2..];
+        if remaining.is_empty() {
+            return Some(cell);
+        }
+
+        // Continue navigation from the cell
+        let mut current = cell;
+        for segment in remaining {
+            current = match (current, segment) {
+                (StructuredNode::Group(g), PathSegment::Child(idx)) => g.children.get_mut(*idx)?,
+                (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => {
+                    g.elements.get_mut(*idx).map(|e| &mut e.node)?
+                }
+                (StructuredNode::Repeatable(r), PathSegment::Child(0)) => r.item.as_mut(),
+                (StructuredNode::Conditional(c), PathSegment::Child(0)) => c.content.as_mut(),
+                (StructuredNode::List(_), PathSegment::ListItem(_)) => return None,
+                _ => return None,
+            };
+        }
+        Some(current)
+    } else {
+        // Regular path without table traversal
+        let mut current = &mut content[*first_idx];
+
+        for segment in &path[1..] {
+            current = match (current, segment) {
+                (StructuredNode::Group(g), PathSegment::Child(idx)) => g.children.get_mut(*idx)?,
+                (StructuredNode::GridLayout(g), PathSegment::Child(idx)) => {
+                    g.elements.get_mut(*idx).map(|e| &mut e.node)?
+                }
+                (StructuredNode::Repeatable(r), PathSegment::Child(0)) => r.item.as_mut(),
+                (StructuredNode::Conditional(c), PathSegment::Child(0)) => c.content.as_mut(),
+                (StructuredNode::List(_), PathSegment::ListItem(_)) => return None,
+                _ => return None,
+            };
+        }
+
+        Some(current)
+    }
 }
 
 /// Get a mutable reference to a table cell at a given path.
-pub fn get_table_cell_at_path_mut<'a>(content: &'a mut [StructuredNode], path: &NodePath) -> Option<&'a mut StructuredNode> {
+pub fn get_table_cell_at_path_mut<'a>(
+    content: &'a mut [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a mut StructuredNode> {
     if path.len() < 3 {
         return None;
     }
 
     // Navigate to the table first
-    let table_path: NodePath = path.iter().take_while(|s| matches!(s, PathSegment::Child(_))).cloned().collect();
+    let table_path: NodePath = path
+        .iter()
+        .take_while(|s| matches!(s, PathSegment::Child(_)))
+        .cloned()
+        .collect();
 
     // Must have at least one Child segment to navigate to the table
     if table_path.is_empty() {
@@ -495,7 +606,10 @@ fn segment_index(segment: Option<&PathSegment>) -> usize {
 }
 
 /// Check if the selected nodes can be merged.
-pub fn can_merge_selected(content: &[StructuredNode], paths: &HashSet<NodePath>) -> Result<(), blueprint::ElementMergeError> {
+pub fn can_merge_selected(
+    content: &[StructuredNode],
+    paths: &HashSet<NodePath>,
+) -> Result<(), blueprint::ElementMergeError> {
     if paths.len() < 2 {
         return Err(blueprint::ElementMergeError::NotEnoughNodes);
     }
@@ -519,16 +633,39 @@ pub fn node_summary(node: &StructuredNode) -> String {
         StructuredNode::Heading(h) => {
             let text = h.content.as_plain_text();
             let preview: String = text.chars().take(50).collect();
-            format!("H{}: {}", h.level.as_u8(), if text.len() > 50 { format!("{}...", preview) } else { preview })
+            format!(
+                "H{}: {}",
+                h.level.as_u8(),
+                if text.len() > 50 {
+                    format!("{}...", preview)
+                } else {
+                    preview
+                }
+            )
         }
         StructuredNode::Paragraph(p) => {
             let text = p.content.as_plain_text();
             let preview: String = text.chars().take(50).collect();
-            if text.len() > 50 { format!("{}...", preview) } else { preview }
+            if text.len() > 50 {
+                format!("{}...", preview)
+            } else {
+                preview
+            }
         }
         StructuredNode::Field(f) => {
-            let label = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
-            format!("Field: {}", if label.is_empty() { f.name.to_string() } else { label })
+            let label = f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default();
+            format!(
+                "Field: {}",
+                if label.is_empty() {
+                    f.name.to_string()
+                } else {
+                    label
+                }
+            )
         }
         StructuredNode::List(l) => {
             format!("List ({} items)", l.items.len())
@@ -595,13 +732,19 @@ pub fn node_children(node: &StructuredNode) -> Option<&[StructuredNode]> {
 /// - Single heading -> Paragraph
 /// - Multiple paragraphs -> List
 /// - Single list -> Multiple paragraphs (converted internally to keep as one action)
-pub fn available_conversions(content: &[StructuredNode], paths: &HashSet<NodePath>) -> Vec<ConvertTarget> {
+pub fn available_conversions(
+    content: &[StructuredNode],
+    paths: &HashSet<NodePath>,
+) -> Vec<ConvertTarget> {
     if paths.is_empty() {
         return vec![];
     }
 
     // Only support root-level conversions for now (single Child segment)
-    if !paths.iter().all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_)))) {
+    if !paths
+        .iter()
+        .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
+    {
         return vec![];
     }
 
@@ -646,9 +789,9 @@ pub fn available_conversions(content: &[StructuredNode], paths: &HashSet<NodePat
     // Multiple node conversions
     if nodes.len() >= 2 {
         // Check if all are paragraphs or headings (text-like content)
-        let all_text_like = nodes.iter().all(|n| {
-            matches!(n, StructuredNode::Paragraph(_) | StructuredNode::Heading(_))
-        });
+        let all_text_like = nodes
+            .iter()
+            .all(|n| matches!(n, StructuredNode::Paragraph(_) | StructuredNode::Heading(_)));
 
         if all_text_like {
             // Multiple paragraphs/headings can become a list
@@ -664,19 +807,24 @@ pub fn is_pseudo_node_path(path: &NodePath) -> bool {
     path.last().map_or(false, |seg| {
         matches!(
             seg,
-            PathSegment::ListItem(_) | PathSegment::TableRow(_) | PathSegment::TableHeader | PathSegment::TableCell(_)
+            PathSegment::ListItem(_)
+                | PathSegment::TableRow(_)
+                | PathSegment::TableHeader
+                | PathSegment::TableCell(_)
         )
     })
 }
 
 /// Check if a path refers to a list item.
 pub fn is_list_item_path(path: &NodePath) -> bool {
-    path.last().map_or(false, |seg| matches!(seg, PathSegment::ListItem(_)))
+    path.last()
+        .map_or(false, |seg| matches!(seg, PathSegment::ListItem(_)))
 }
 
 /// Check if a path refers to a table row.
 pub fn is_table_row_path(path: &NodePath) -> bool {
-    path.last().map_or(false, |seg| matches!(seg, PathSegment::TableRow(_)))
+    path.last()
+        .map_or(false, |seg| matches!(seg, PathSegment::TableRow(_)))
 }
 
 /// Get the parent path and item index for a list item path.
@@ -774,7 +922,10 @@ pub fn move_table_row_down(content: &mut Vec<StructuredNode>, path: &NodePath) -
 }
 
 /// Get the list item text at a path for editing.
-pub fn get_list_item_text<'a>(content: &'a [StructuredNode], path: &NodePath) -> Option<&'a InlineText> {
+pub fn get_list_item_text<'a>(
+    content: &'a [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a InlineText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let parent = get_node_at_path(content, &parent_path)?;
     if let StructuredNode::List(l) = parent {
@@ -785,7 +936,10 @@ pub fn get_list_item_text<'a>(content: &'a [StructuredNode], path: &NodePath) ->
 }
 
 /// Get mutable list item text at a path for editing.
-pub fn get_list_item_text_mut<'a>(content: &'a mut [StructuredNode], path: &NodePath) -> Option<&'a mut InlineText> {
+pub fn get_list_item_text_mut<'a>(
+    content: &'a mut [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a mut InlineText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let parent = get_node_at_path_mut(content, &parent_path)?;
     if let StructuredNode::List(l) = parent {
