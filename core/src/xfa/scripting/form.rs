@@ -1849,56 +1849,14 @@ impl XfaForm {
     }
 
     fn extract_and_register_translations(nodes: &[XfaNode], engine: &mut XfaScriptEngine) {
-        // Collect script variables (only scripts, not text)
-        fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
-            for node in nodes {
-                if let XfaNodeKind::Element { tag_name, .. } = &node.kind
-                    && tag_name == "variables"
-                {
-                    for child in &node.children {
-                        if let XfaNodeKind::Element {
-                            tag_name: child_tag,
-                            text_content,
-                            ..
-                        } = &child.kind
-                            && child_tag == "script"
-                            && let Some(name) = &child.name
-                        {
-                            if let Some(content) = text_content
-                                && !content.is_empty()
-                            {
-                                scripts.push((name.clone(), content.clone()));
-                            }
-                            for script_child in child.children.iter() {
-                                if let XfaNodeKind::Element {
-                                    text_content: Some(content),
-                                    ..
-                                } = &script_child.kind
-                                {
-                                    scripts.push((name.clone(), content.clone()));
-                                }
-                                if let XfaNodeKind::Text { content } = &script_child.kind
-                                    && !content.is_empty()
-                                {
-                                    scripts.push((name.clone(), content.clone()));
-                                }
-                            }
-                        }
-                    }
-                }
-                collect_variable_scripts(&node.children, scripts);
-            }
-        }
-
         // Register <text> variables as fields using the shared helper
         let text_vars = crate::xfa::collect_text_variables(nodes);
         for (name, value) in &text_vars {
             engine.register_field(name, name, value);
         }
 
-        // Collect and register <script> variables
-        let mut scripts = Vec::new();
-        collect_variable_scripts(nodes, &mut scripts);
+        // Collect and register <script> variables using the shared helper
+        let scripts = crate::xfa::collect_variable_scripts(nodes);
 
         for (name, content) in &scripts {
             // Per XFA 3.3 §10 pp. 376-378: named script objects expose all

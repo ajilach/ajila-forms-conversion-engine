@@ -791,9 +791,8 @@ impl ScriptExecutor {
             engine.register_field(name, name, value);
         }
 
-        // Collect and register <script> variables (only scripts, not text)
-        let mut variable_scripts: Vec<(String, String)> = Vec::new();
-        Self::collect_variable_scripts(xfa_nodes, &mut variable_scripts);
+        // Collect and register <script> variables using the shared helper
+        let variable_scripts = super::collect_variable_scripts(xfa_nodes);
 
         // Register <script> variables as JavaScript objects
         // Per XFA 3.3 §10 pp. 376-378: named script objects expose all
@@ -801,44 +800,6 @@ impl ScriptExecutor {
         for (name, content) in &variable_scripts {
             let wrapped = wrap_script_object(name, content, false);
             let _ = engine.execute_variable_script(&wrapped);
-        }
-    }
-
-    /// Recursively collect <script> content from <variables> elements.
-    fn collect_variable_scripts(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
-        for node in nodes {
-            if let XfaNodeKind::Element { tag_name, .. } = &node.kind
-                && tag_name == "variables"
-            {
-                for child in &node.children {
-                    if let XfaNodeKind::Element {
-                        tag_name: child_tag,
-                        text_content,
-                        ..
-                    } = &child.kind
-                        && child_tag == "script"
-                        && let Some(name) =
-                            child.name.as_ref().or_else(|| child.attributes.get("name"))
-                    {
-                        // Handle <script> - may have content directly or in children
-                        if let Some(content) = text_content
-                            && !content.is_empty()
-                        {
-                            scripts.push((name.clone(), content.clone()));
-                        }
-                        // Also check for content in child nodes
-                        for script_child in &child.children {
-                            if let XfaNodeKind::Text { content } = &script_child.kind
-                                && !content.is_empty()
-                            {
-                                scripts.push((name.clone(), content.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-
-            Self::collect_variable_scripts(&node.children, scripts);
         }
     }
 }

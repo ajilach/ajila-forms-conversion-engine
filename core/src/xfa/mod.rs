@@ -1694,6 +1694,59 @@ fn collect_text_variables_recursive(nodes: &[XfaNode], text_vars: &mut Vec<(Stri
     }
 }
 
+/// Recursively collect all `<script name="...">content</script>` items from
+/// `<variables>` elements in the XFA node tree.
+///
+/// Returns a list of `(name, content)` pairs for all script variables found.
+pub fn collect_variable_scripts(nodes: &[XfaNode]) -> Vec<(String, String)> {
+    let mut scripts = Vec::new();
+    collect_variable_scripts_recursive(nodes, &mut scripts);
+    scripts
+}
+
+fn collect_variable_scripts_recursive(nodes: &[XfaNode], scripts: &mut Vec<(String, String)>) {
+    for node in nodes {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+            && tag_name == "variables"
+        {
+            for child in &node.children {
+                if let XfaNodeKind::Element {
+                    tag_name: child_tag,
+                    text_content,
+                    ..
+                } = &child.kind
+                    && child_tag == "script"
+                    && let Some(name) = child.name.as_ref().or_else(|| child.attributes.get("name"))
+                {
+                    // Handle <script> - may have content directly in text_content
+                    if let Some(content) = text_content
+                        && !content.is_empty()
+                    {
+                        scripts.push((name.clone(), content.clone()));
+                    }
+                    // Also check for content in child nodes (both Element and Text types)
+                    for script_child in &child.children {
+                        match &script_child.kind {
+                            XfaNodeKind::Text { content } if !content.is_empty() => {
+                                scripts.push((name.clone(), content.clone()));
+                            }
+                            XfaNodeKind::Element {
+                                text_content: Some(content),
+                                ..
+                            } if !content.is_empty() => {
+                                scripts.push((name.clone(), content.clone()));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        collect_variable_scripts_recursive(&node.children, scripts);
+    }
+}
+
 /// Extract the document language from the root subform's `locale` attribute.
 ///
 /// Per XFA 3.3 §17: the `locale` attribute on a `<subform>` specifies the
