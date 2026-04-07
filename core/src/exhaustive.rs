@@ -122,16 +122,6 @@ impl ExplorationState {
     }
 }
 
-/// Get a canonical state representation by sorting the selections.
-/// This ensures that the same set of selections always produces the same state key,
-/// regardless of the order in which the selections were made.
-#[allow(dead_code)]
-fn get_current_state(selections: &[SomPath]) -> Vec<SomPath> {
-    let mut sorted = selections.to_vec();
-    sorted.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    sorted
-}
-
 // ============================================================================
 // Exploration context — bundles all shared / precomputed state
 // ============================================================================
@@ -610,11 +600,8 @@ impl CollectedState {
 /// path processes fields sequentially, either selecting or skipping them.
 /// Only complete states (where all fields have been processed) are collected.
 ///
-/// `xfa_bytes` must be the raw XFA XML bytes so that the explorer can
-/// cheaply recreate a fresh `XfaForm` for each branch.
 pub fn collect_states(
     form: &mut XfaForm,
-    _xfa_bytes: &[u8],
 ) -> Result<Vec<CollectedState>, crate::Error> {
     // OPTIMIZATION: Cache post-init nodes and computed values from the already-
     // initialised form. Branches use `XfaForm::from_post_init` which skips the

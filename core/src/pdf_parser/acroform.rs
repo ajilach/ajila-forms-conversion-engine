@@ -364,10 +364,10 @@ fn extract_rect(
         return None;
     }
 
-    let x1 = obj_to_f64(&rect_array[0])?;
-    let y1 = obj_to_f64(&rect_array[1])?;
-    let x2 = obj_to_f64(&rect_array[2])?;
-    let y2 = obj_to_f64(&rect_array[3])?;
+    let x1 = super::obj_to_f64(&rect_array[0])?;
+    let y1 = super::obj_to_f64(&rect_array[1])?;
+    let x2 = super::obj_to_f64(&rect_array[2])?;
+    let y2 = super::obj_to_f64(&rect_array[3])?;
 
     let x = x1.min(x2);
     let y_bottom = y1.min(y2);
@@ -441,8 +441,4 @@ fn resolve<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
         Object::Reference(r) => doc.get_object(*r).ok(),
         other => Some(other),
     }
-}
-
-fn obj_to_f64(obj: &Object) -> Option<f64> {
-    super::obj_to_f64(obj)
 }

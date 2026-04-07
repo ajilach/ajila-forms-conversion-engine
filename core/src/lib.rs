@@ -379,8 +379,6 @@ pub struct Blueprint {
 enum BlueprintInner {
     /// Traditional XFA pipeline: parse XFA XML, explore states via scripting.
     Xfa {
-        /// Raw XFA XML bytes for recreating fresh XfaForm instances.
-        xfa_bytes: Vec<u8>,
         /// The live XFA form.
         form: XfaForm,
     },
@@ -434,9 +432,9 @@ impl Blueprint {
     fn from_acroform_bytes(pdf_bytes: &[u8]) -> Result<Self, Error> {
         let pages = pdf_parser::parse_pdf(pdf_bytes).map_err(Error::PdfParse)?;
 
-        // Try to detect language from form field names / text content
-        // (basic heuristic — can be overridden by the caller)
-        let language = detect_language_from_pages(&pages);
+        // Default to "en" — a more sophisticated implementation could analyze
+        // character frequencies or look at PDF metadata.
+        let language = "en".to_string();
 
         Ok(Blueprint {
             inner: BlueprintInner::AcroForm { pages },
@@ -463,7 +461,7 @@ impl Blueprint {
         let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
         let form = XfaForm::new(nodes).map_err(Error::FormCreation)?;
         Ok(Blueprint {
-            inner: BlueprintInner::Xfa { xfa_bytes, form },
+            inner: BlueprintInner::Xfa { form },
             language: language.to_string(),
             variables,
         })
@@ -531,8 +529,8 @@ impl Blueprint {
     /// stored inside the returned [`FormStates`] wrapper.
     pub fn states(&mut self) -> Result<FormStates, Error> {
         match &mut self.inner {
-            BlueprintInner::Xfa { form, xfa_bytes } => {
-                let collected = exhaustive::collect_states(form, xfa_bytes)?;
+            BlueprintInner::Xfa { form } => {
+                let collected = exhaustive::collect_states(form)?;
                 Ok(FormStates::new(collected))
             }
             BlueprintInner::AcroForm { pages } => {
@@ -577,18 +575,6 @@ impl Blueprint {
 
 // ============================================================================
 // Language detection for AcroForm PDFs
-// ============================================================================
-
-/// Attempt to detect the document language from flattened page content.
-///
-/// Uses a simple heuristic: looks at the first few text nodes and checks
-/// for common language-specific characters/patterns.
-fn detect_language_from_pages(_pages: &[Flattened]) -> String {
-    // Default to "en" — a more sophisticated implementation could analyze
-    // character frequencies or look for PDF metadata.
-    "en".to_string()
-}
-
 // ============================================================================
 // FormStates — owns the GlobalContext and yields FormState references
 // ============================================================================
@@ -756,10 +742,6 @@ fn ensure_aem_bind_config(config: &AemConfig) {
     );
 }
 
-/// Detect available languages from content, applying them to a clone of the
-/// provided config. The master language is taken from the config as-is
-/// (set via the TOML profile or the constructor).
-///
 /// Detect available languages from content, applying them to a clone of the
 /// provided config. The master language is taken from the config as-is
 /// (set via the TOML profile or the constructor).

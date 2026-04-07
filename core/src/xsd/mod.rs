@@ -40,6 +40,8 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::util::escape_html as xml_escape;
+
 // ============================================================================
 // XSD node types (intermediate representation)
 // ============================================================================
@@ -235,15 +237,6 @@ fn build_occurrence_attrs(min_occurs: Option<u32>, max_occurs: Option<Option<u32
         }
     }
     attrs
-}
-
-/// Escape special XML characters in attribute values.
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
 }
 
 // ============================================================================

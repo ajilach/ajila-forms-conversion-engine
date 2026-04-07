@@ -11,6 +11,69 @@ use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
+// ============================================================================
+// Shared label detection helpers (used by CheckboxDetector too)
+// ============================================================================
+
+/// Check if text is to the right of a field and on the same line.
+///
+/// Returns the horizontal gap if the text qualifies as a right-side label,
+/// or None if it doesn't meet the criteria.
+pub(crate) fn is_label_on_right_of_field(
+    field_bounds: &Bounds,
+    text_bounds: &Bounds,
+    max_label_distance: Decimal,
+    line_tolerance: Decimal,
+) -> Option<Decimal> {
+    // Text must be to the right of field
+    let gap = field_bounds.horizontal_gap_to(text_bounds)?;
+
+    if gap > max_label_distance {
+        return None;
+    }
+
+    // Check vertical alignment (same line)
+    if !field_bounds.is_on_same_line(text_bounds, line_tolerance) {
+        return None;
+    }
+
+    Some(gap)
+}
+
+/// Find the best label on the right of a field from a set of candidates.
+///
+/// Returns the index of the text candidate with the smallest gap to the field.
+pub(crate) fn find_best_label_on_right(
+    doc: &Document,
+    field_idx: usize,
+    text_candidates: &[usize],
+    max_label_distance: Decimal,
+    line_tolerance: Decimal,
+) -> Option<usize> {
+    let field_bounds = doc.get_bounds(field_idx)?;
+
+    let mut best: Option<(usize, Decimal)> = None;
+
+    for &text_idx in text_candidates {
+        let Some(text_bounds) = doc.get_bounds(text_idx) else {
+            continue;
+        };
+
+        if let Some(gap) =
+            is_label_on_right_of_field(&field_bounds, &text_bounds, max_label_distance, line_tolerance)
+            && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true)
+        {
+            best = Some((text_idx, gap));
+        }
+    }
+
+    best.map(|(idx, _)| idx)
+}
+
+// ============================================================================
+// RadioButtonDetector
+// ============================================================================
+
 /// Detects radio buttons by identifying square fields with labels on the right.
 ///
 /// Radio buttons are characterized by:

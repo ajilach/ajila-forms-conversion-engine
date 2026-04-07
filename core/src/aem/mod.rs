@@ -528,20 +528,6 @@ pub enum AemNode {
         dor_colspan: Option<u32>,
     },
 
-    /// Multi-line text area (`guideTextBox` with `multiLine`).
-    TextBoxMultiline {
-        uuid: Uuid,
-        name: String,
-        label: String,
-        mandatory: bool,
-        visible: bool,
-        colspan: u32,
-        /// Column span in Document of Record layout (`dorColspan`).
-        dor_colspan: Option<u32>,
-        /// XSD path for `bindRef` attribute.
-        bind_ref: Option<String>,
-    },
-
     /// Repeatable panel with add/remove buttons.
     Repeatable {
         uuid: Uuid,
@@ -584,9 +570,6 @@ impl AemNode {
             AemNode::RadioButton { uuid, .. } => format!("radiobutton_{}", uuid.as_simple()),
             AemNode::TextDraw { uuid, .. } => format!("textdraw_{}", uuid.as_simple()),
             AemNode::TitleDraw { uuid, .. } => format!("titledraw_{}", uuid.as_simple()),
-            AemNode::TextBoxMultiline { uuid, .. } => {
-                format!("textboxmultiline_{}", uuid.as_simple())
-            }
             AemNode::Repeatable { uuid, .. } => format!("repeatable_{}", uuid.as_simple()),
             AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
         }

@@ -446,8 +446,6 @@ impl std::str::FromStr for HAlign {
     }
 }
 
-impl HAlign {}
-
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum VAlign {
     #[default]
@@ -467,8 +465,6 @@ impl std::str::FromStr for VAlign {
         })
     }
 }
-
-impl VAlign {}
 
 /// Node presence values per XFA spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -908,8 +904,6 @@ impl XfaNode {
             .get("typeface")
             .cloned()
             .unwrap_or_else(|| "Courier".to_string());
-
-        let _weight_attr = node.attributes.get("weight");
 
         // Determine generic family: from attribute, or infer from typeface
         let generic_family = node

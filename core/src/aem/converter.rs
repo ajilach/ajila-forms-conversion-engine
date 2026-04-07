@@ -951,8 +951,7 @@ fn collect_child_bind_ref_leaves(children: &[AemNode]) -> Vec<String> {
             | AemNode::DatePicker { bind_ref, .. }
             | AemNode::Dropdown { bind_ref, .. }
             | AemNode::Checkbox { bind_ref, .. }
-            | AemNode::RadioButton { bind_ref, .. }
-            | AemNode::TextBoxMultiline { bind_ref, .. } => bind_ref.as_deref(),
+            | AemNode::RadioButton { bind_ref, .. } => bind_ref.as_deref(),
             AemNode::Panel {
                 bind_ref,
                 children: sub_children,
@@ -1074,8 +1073,7 @@ fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
             | AemNode::DatePicker { bind_ref, .. }
             | AemNode::Dropdown { bind_ref, .. }
             | AemNode::Checkbox { bind_ref, .. }
-            | AemNode::RadioButton { bind_ref, .. }
-            | AemNode::TextBoxMultiline { bind_ref, .. } => {
+            | AemNode::RadioButton { bind_ref, .. } => {
                 if let Some(br) = bind_ref {
                     paths.push(br.clone());
                 }

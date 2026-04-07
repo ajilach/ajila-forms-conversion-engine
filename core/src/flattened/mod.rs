@@ -2466,8 +2466,8 @@ impl Flattened {
 
         // Default to A4 size (210mm x 297mm in points)
         let mut page = Page {
-            width: Self::parse_dimension("210mm").unwrap_or_else(|_| num(595.27)),
-            height: Self::parse_dimension("297mm").unwrap_or_else(|_| num(841.89)),
+            width: XfaNode::parse_dimension("210mm").unwrap_or_else(|_| num(595.27)),
+            height: XfaNode::parse_dimension("297mm").unwrap_or_else(|_| num(841.89)),
         };
 
         // Find page dimensions and contentArea offset from pageArea
@@ -5809,35 +5809,6 @@ impl Flattened {
         Some(total_height)
     }
 
-    fn parse_dimension(s: &str) -> Result<Num, String> {
-        // Parse dimensions that might have units like "100pt", "2in", "50mm"
-        let s = s.trim();
-
-        // Conversion constants with full precision
-        let pts_per_inch = Decimal::from_str("72").unwrap();
-        let pts_per_mm = Decimal::from_str("2.834645669291339").unwrap();
-        let pts_per_cm = Decimal::from_str("28.34645669291339").unwrap();
-
-        if let Some(val) = s.strip_suffix("pt") {
-            Decimal::from_str(val.trim()).map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if let Some(val) = s.strip_suffix("in") {
-            Decimal::from_str(val.trim())
-                .map(|v| v * pts_per_inch)
-                .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if let Some(val) = s.strip_suffix("mm") {
-            Decimal::from_str(val.trim())
-                .map(|v| v * pts_per_mm)
-                .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else if let Some(val) = s.strip_suffix("cm") {
-            Decimal::from_str(val.trim())
-                .map(|v| v * pts_per_cm)
-                .map_err(|e| format!("Failed to parse dimension: {}", e))
-        } else {
-            // No unit, assume points or just a number
-            Decimal::from_str(s).map_err(|e| format!("Failed to parse dimension: {}", e))
-        }
-    }
-
     fn extract_col_span(node: &XfaNode) -> i32 {
         node.attributes
             .get("colSpan")
@@ -5928,7 +5899,7 @@ impl Flattened {
                 if token == "-1" {
                     None
                 } else {
-                    Self::parse_dimension(token).ok()
+                    XfaNode::parse_dimension(token).ok()
                 }
             })
             .collect()

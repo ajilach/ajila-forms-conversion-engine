@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
 use crate::aem::template;
 use crate::structured::InputValue;
+use crate::util::escape_html as xml_escape;
 
 // ============================================================================
 // Public API
@@ -46,7 +47,6 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::RadioButton { .. } => "radiobutton",
         AemNode::TextDraw { .. } => "textdraw",
         AemNode::TitleDraw { .. } => "titledraw",
-        AemNode::TextBoxMultiline { .. } => "textbox_multiline",
         AemNode::Repeatable { .. } => "repeatable",
         AemNode::Fragment { .. } => "fragment",
     };
@@ -315,26 +315,6 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("dor_colspan", dor_colspan);
         }
 
-        AemNode::TextBoxMultiline {
-            uuid,
-            name,
-            label,
-            mandatory,
-            visible,
-            colspan,
-            dor_colspan,
-            bind_ref,
-        } => {
-            ctx.insert("uuid", &uuid.as_simple().to_string());
-            ctx.insert("name", name);
-            ctx.insert("label", &xml_escape(label));
-            ctx.insert("mandatory", mandatory);
-            ctx.insert("visible", visible);
-            ctx.insert("colspan", colspan);
-            ctx.insert("dor_colspan", dor_colspan);
-            ctx.insert("bind_ref", bind_ref);
-        }
-
         AemNode::Repeatable {
             uuid,
             name,
@@ -388,18 +368,6 @@ fn insert_options_context(ctx: &mut tera::Context, options: &[AemOption]) {
         })
         .collect();
     ctx.insert("options", &opt_list);
-}
-
-/// XML-escape a string for safe embedding inside an XML attribute value.
-///
-/// Encodes `&`, `"`, `<`, and `>` as their XML entity references. This is
-/// needed for JSON script strings that will be placed into template
-/// expressions like `fd:valueCommit="{{ conditions_script }}"`.
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 /// Insert conditions-related variables into a Tera context.

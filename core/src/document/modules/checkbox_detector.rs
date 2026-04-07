@@ -6,9 +6,10 @@
 //! - Typically small (checkbox size)
 //! - Has WidgetType hint indicating Checkbox
 
+use super::radio_button_detector::find_best_label_on_right;
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
-use crate::flattened::{Bounds, WidgetKind};
+use crate::flattened::WidgetKind;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -57,49 +58,6 @@ impl CheckboxDetector {
     pub fn with_square_tolerance(mut self, tolerance: Decimal) -> Self {
         self.square_tolerance = tolerance;
         self
-    }
-
-    /// Check if text is to the right of the field and on the same line.
-    fn is_label_on_right(&self, field_bounds: &Bounds, text_bounds: &Bounds) -> Option<Decimal> {
-        // Text must be to the right of field
-        let gap = field_bounds.horizontal_gap_to(text_bounds)?;
-
-        if gap > self.max_label_distance {
-            return None;
-        }
-
-        // Check vertical alignment (same line)
-        if !field_bounds.is_on_same_line(text_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
-    }
-
-    /// Find the best label on the right of a field.
-    fn find_label_on_right(
-        &self,
-        doc: &Document,
-        field_idx: usize,
-        text_candidates: &[usize],
-    ) -> Option<usize> {
-        let field_bounds = doc.get_bounds(field_idx)?;
-
-        let mut best: Option<(usize, Decimal)> = None;
-
-        for &text_idx in text_candidates {
-            let Some(text_bounds) = doc.get_bounds(text_idx) else {
-                continue;
-            };
-
-            if let Some(gap) = self.is_label_on_right(&field_bounds, &text_bounds)
-                && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true)
-            {
-                best = Some((text_idx, gap));
-            }
-        }
-
-        best.map(|(idx, _)| idx)
     }
 
     /// Check if a field has a Checkbox widget type hint.
@@ -161,7 +119,13 @@ impl AnalysisModule for CheckboxDetector {
                 .copied()
                 .collect();
 
-            if let Some(label_idx) = self.find_label_on_right(doc, field_idx, &available_labels) {
+            if let Some(label_idx) = find_best_label_on_right(
+                doc,
+                field_idx,
+                &available_labels,
+                self.max_label_distance,
+                self.line_tolerance,
+            ) {
                 checkboxes.push((field_idx, label_idx));
                 used_labels.insert(label_idx);
             }
