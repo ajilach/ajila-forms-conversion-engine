@@ -21646,3 +21646,35 @@ fn test_aair_communication_text_not_bold() {
         search_text
     );
 }
+
+#[test]
+fn test_aair_internal_bank_use_visible() {
+    // Test that page background content from secondary pageAreas (MP_Last) is rendered.
+    // The "Nur für bankinterne Zwecke" text is in the Internal_Bank_Use subform,
+    // which is page background inside the MP_Last pageArea (second pageArea).
+    // Previously this was missing because only the first pageArea's background was processed.
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIR_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    let search_text = "Nur für bankinterne Zwecke";
+    let found = flattened.iter_nodes().any(|node| {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            content.contains(search_text)
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        found,
+        "Should find '{}' in AAIR_019_DE flattened output - this is page background from MP_Last pageArea",
+        search_text
+    );
+}

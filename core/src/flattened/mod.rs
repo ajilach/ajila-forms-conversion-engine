@@ -2476,35 +2476,43 @@ impl Flattened {
         let mut content_width = page.width;
         let mut content_height = page.height;
 
-        if let Some((page_area, content_area)) = Self::find_page_and_content_area(xfa_nodes) {
+        // Find ALL pageAreas - XFA forms can have multiple (first page, last page, annex, etc.)
+        // Each pageArea may have its own background content that needs to be rendered.
+        let all_page_areas = Self::find_all_page_areas(xfa_nodes);
+
+        // Use the first pageArea for page dimensions and primary contentArea offset
+        if let Some((first_page_area, first_content_area)) = all_page_areas.first() {
             // Get pageArea dimensions (defines the page size)
-            if let Some(w) = page_area.w {
+            if let Some(w) = first_page_area.w {
                 page.width = w;
             }
-            if let Some(h) = page_area.h {
+            if let Some(h) = first_page_area.h {
                 page.height = h;
             }
 
             // Get contentArea offset and dimensions (defines the usable area for form content)
-            content_offset_x = content_area.x.unwrap_or(Decimal::ZERO);
-            content_offset_y = content_area.y.unwrap_or(Decimal::ZERO);
-            content_width = content_area.w.unwrap_or(page.width);
-            content_height = content_area.h.unwrap_or(page.height);
+            content_offset_x = first_content_area.x.unwrap_or(Decimal::ZERO);
+            content_offset_y = first_content_area.y.unwrap_or(Decimal::ZERO);
+            content_width = first_content_area.w.unwrap_or(page.width);
+            content_height = first_content_area.h.unwrap_or(page.height);
+        }
 
-            // ============================================================
-            // STEP 1: Render PAGE BACKGROUND (from Template DOM's pageArea)
-            // ============================================================
-            // Per XFA spec (section 7, "Page Background"):
-            // "A pageArea may contain content such as subforms. Such content, which is placed
-            // directly in a pageArea element, represents page background."
-            //
-            // Page background elements are positioned relative to the page origin (0,0),
-            // NOT the contentArea. They use positioned layout (absolute coordinates).
-            let page_position =
-                Position::new(Decimal::ZERO, Decimal::ZERO, page.width, page.height);
+        // ============================================================
+        // STEP 1: Render PAGE BACKGROUND (from Template DOM's pageAreas)
+        // ============================================================
+        // Per XFA spec (section 7, "Page Background"):
+        // "A pageArea may contain content such as subforms. Such content, which is placed
+        // directly in a pageArea element, represents page background."
+        //
+        // Page background elements are positioned relative to the page origin (0,0),
+        // NOT the contentArea. They use positioned layout (absolute coordinates).
+        //
+        // We process ALL pageAreas because each may have unique background content
+        // (e.g., "Internal Bank Use" section on the last page only).
+        let page_position = Position::new(Decimal::ZERO, Decimal::ZERO, page.width, page.height);
 
-            // Collect all content areas for region classification
-            // Each content area is handled separately when determining header/footer regions
+        for (page_area, _content_area) in &all_page_areas {
+            // Collect content areas for region classification (header/footer detection)
             let content_areas = Self::collect_content_areas(page_area, page.width, page.height);
 
             // Create context for page background
@@ -3252,6 +3260,66 @@ impl Flattened {
             None
         }
         search_recursive(nodes)
+    }
+
+    /// Find ALL pageAreas and their contentAreas in the XFA tree.
+    /// This is needed because XFA forms can have multiple pageAreas (e.g., first page, last page,
+    /// annex pages), each with their own page background content that must be rendered.
+    ///
+    /// Returns a Vec of (pageArea, contentArea) pairs for all pageAreas found.
+    fn find_all_page_areas(nodes: &[XfaNode]) -> Vec<(&XfaNode, &XfaNode)> {
+        fn find_content_area_in_page<'a>(page_area: &'a XfaNode) -> &'a XfaNode {
+            for child in &page_area.children {
+                if matches!(child.kind, XfaNodeKind::ContentArea) {
+                    return child;
+                }
+                if let XfaNodeKind::Element { tag_name, .. } = &child.kind
+                    && tag_name == "contentArea"
+                {
+                    return child;
+                }
+            }
+            // If no contentArea found, return pageArea itself (use page dimensions)
+            page_area
+        }
+
+        fn collect_recursive<'a>(nodes: &'a [XfaNode], result: &mut Vec<(&'a XfaNode, &'a XfaNode)>) {
+            for node in nodes {
+                // Check for PageArea node type
+                if matches!(node.kind, XfaNodeKind::PageArea) {
+                    let content_area = find_content_area_in_page(node);
+                    result.push((node, content_area));
+                    // Don't recurse into pageArea children - they are content, not structure
+                    continue;
+                }
+
+                // Check for pageArea as Element
+                if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+                    && tag_name == "pageArea"
+                {
+                    let content_area = find_content_area_in_page(node);
+                    result.push((node, content_area));
+                    continue;
+                }
+
+                // Recurse into container-like nodes to find more pageAreas
+                let should_recurse = matches!(
+                    node.kind,
+                    XfaNodeKind::Template
+                        | XfaNodeKind::PageSet
+                        | XfaNodeKind::Subform
+                        | XfaNodeKind::ExclGroup
+                ) || matches!(&node.kind, XfaNodeKind::Element { .. });
+
+                if should_recurse {
+                    collect_recursive(&node.children, result);
+                }
+            }
+        }
+
+        let mut result = Vec::new();
+        collect_recursive(nodes, &mut result);
+        result
     }
 
     /// Extract style information from an XFA node
