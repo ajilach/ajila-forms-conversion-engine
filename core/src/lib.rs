@@ -411,12 +411,10 @@ impl Blueprint {
         // Try XFA extraction first
         match extract_xfa_from_pdf_bytes(pdf_bytes)? {
             Some(xfa_bytes) => {
-                // XFA pipeline
-                let (language, variables) = {
-                    let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
-                    xfa::extract_context_from_nodes(&nodes)
-                };
-                Self::from_xfa_bytes_with_variables(xfa_bytes, &language, variables)
+                // XFA pipeline - parse once and reuse nodes
+                let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
+                let (language, variables) = xfa::extract_context_from_nodes(&nodes);
+                Self::from_xfa_nodes(nodes, &language, variables)
             }
             None => {
                 // AcroForm / regular PDF pipeline
@@ -459,6 +457,15 @@ impl Blueprint {
         variables: std::collections::HashMap<String, String>,
     ) -> Result<Self, Error> {
         let nodes = XfaNode::parse(&xfa_bytes).map_err(Error::XfaParse)?;
+        Self::from_xfa_nodes(nodes, language, variables)
+    }
+
+    /// Create a `Blueprint` from pre-parsed XFA nodes.
+    fn from_xfa_nodes(
+        nodes: Vec<XfaNode>,
+        language: &str,
+        variables: std::collections::HashMap<String, String>,
+    ) -> Result<Self, Error> {
         let form = XfaForm::new(nodes).map_err(Error::FormCreation)?;
         Ok(Blueprint {
             inner: BlueprintInner::Xfa { form },
