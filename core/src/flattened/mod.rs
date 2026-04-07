@@ -3009,6 +3009,21 @@ impl Flattened {
                 // Extract style
                 let mut style = Self::extract_style(node);
 
+                // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
+                // CSS font-weight from individual paragraphs should not change the default
+                // for rich text parsing - each paragraph handles its own font-weight CSS.
+                // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
+                let default_bold = style
+                    .font
+                    .as_ref()
+                    .map(|f| f.weight.is_bold())
+                    .unwrap_or(false);
+                let default_italic = style
+                    .font
+                    .as_ref()
+                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
+                    .unwrap_or(false);
+
                 // Only apply CSS overrides if at least one CSS property was found
                 // This ensures consistency: either all CSS properties are considered, or none
                 if (css_font_size.is_some() || css_font_family.is_some() || css_is_bold.is_some())
@@ -3038,17 +3053,6 @@ impl Flattened {
                     .unwrap_or(HAlign::Left);
 
                 // Extract rich text if this is HTML content (exData with contentType="text/html")
-                // Pass XFA font bold/italic as defaults for rich text runs
-                let default_bold = style
-                    .font
-                    .as_ref()
-                    .map(|f| f.weight == crate::xfa::FontWeight::Bold)
-                    .unwrap_or(false);
-                let default_italic = style
-                    .font
-                    .as_ref()
-                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                    .unwrap_or(false);
                 let rich_text = Self::extract_rich_text_from_node(
                     &node.children,
                     default_h_align,
@@ -4203,6 +4207,21 @@ impl Flattened {
                         let mut font_name = Self::extract_font_name(node);
                         let mut style = Self::extract_style(node);
 
+                        // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
+                        // CSS font-weight from individual paragraphs should not change the default
+                        // for rich text parsing - each paragraph handles its own font-weight CSS.
+                        // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
+                        let default_bold = style
+                            .font
+                            .as_ref()
+                            .map(|f| f.weight.is_bold())
+                            .unwrap_or(false);
+                        let default_italic = style
+                            .font
+                            .as_ref()
+                            .map(|f| f.posture == crate::xfa::FontPosture::Italic)
+                            .unwrap_or(false);
+
                         // For HTML content (exData with contentType="text/html"), extract CSS font properties
                         // which may override the XFA <font> element values
                         let (css_font_family, css_font_size, css_is_bold) =
@@ -4245,17 +4264,6 @@ impl Flattened {
 
                         // Extract rich text if this is HTML content (exData with contentType="text/html")
                         // This preserves paragraph structure, text-indent, and xfa-spacerun spacing
-                        // Pass XFA font bold/italic as defaults for rich text runs
-                        let default_bold = style
-                            .font
-                            .as_ref()
-                            .map(|f| f.weight == crate::xfa::FontWeight::Bold)
-                            .unwrap_or(false);
-                        let default_italic = style
-                            .font
-                            .as_ref()
-                            .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                            .unwrap_or(false);
                         let rich_text = Self::extract_rich_text_from_node(
                             &node.children,
                             default_h_align,
@@ -4617,6 +4625,21 @@ impl Flattened {
                                 let mut font_name = Self::extract_font_name(node);
                                 let mut style = Self::extract_style(node);
 
+                                // Compute default_bold/italic from original XFA font BEFORE CSS overrides.
+                                // CSS font-weight from individual paragraphs should not change the default
+                                // for rich text parsing - each paragraph handles its own font-weight CSS.
+                                // Per XFA spec Chapter 27: paragraph-level CSS styling is independent.
+                                let default_bold = style
+                                    .font
+                                    .as_ref()
+                                    .map(|f| f.weight.is_bold())
+                                    .unwrap_or(false);
+                                let default_italic = style
+                                    .font
+                                    .as_ref()
+                                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
+                                    .unwrap_or(false);
+
                                 // For HTML content (exData with contentType="text/html"), extract CSS font properties
                                 // which may override the XFA <font> element values
                                 let (css_font_family, css_font_size, css_is_bold) =
@@ -4658,17 +4681,6 @@ impl Flattened {
                                     .unwrap_or(HAlign::Left);
 
                                 // Extract rich text if this is HTML content (exData with contentType="text/html")
-                                // Pass XFA font bold/italic as defaults for rich text runs
-                                let default_bold = style
-                                    .font
-                                    .as_ref()
-                                    .map(|f| f.weight == crate::xfa::FontWeight::Bold)
-                                    .unwrap_or(false);
-                                let default_italic = style
-                                    .font
-                                    .as_ref()
-                                    .map(|f| f.posture == crate::xfa::FontPosture::Italic)
-                                    .unwrap_or(false);
                                 let rich_text = Self::extract_rich_text_from_node(
                                     &node.children,
                                     default_h_align,
@@ -7694,6 +7706,7 @@ impl Flattened {
                                     || style.contains("font-weight: bold");
                                 let has_normal = style.contains("font-weight:normal")
                                     || style.contains("font-weight: normal");
+
                                 if has_bold {
                                     Some(true)
                                 } else if has_normal {
@@ -9587,5 +9600,97 @@ mod tests {
             .map(|r| r.text.clone())
             .collect();
         assert_eq!(text, "AB  CD");
+    }
+
+    #[test]
+    fn test_parse_rich_text_bold_not_inherited_between_paragraphs() {
+        // Test that bold styling on one <p> does NOT leak to the next <p>
+        // This reproduces the AAIR bug where "Es ist der Bank..." was incorrectly bold
+
+        // Create first paragraph with font-weight:bold
+        let mut p1_attrs = std::collections::HashMap::new();
+        p1_attrs.insert(
+            "style".to_string(),
+            "font-weight:bold;letter-spacing:0in".to_string(),
+        );
+        let p1 = XfaNode {
+            children: vec![XfaNode::new(
+                XfaNodeKind::Text {
+                    content: "Bold heading".to_string(),
+                },
+                std::collections::HashMap::new(),
+            )],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "p".to_string(),
+                    text_content: None,
+                },
+                p1_attrs,
+            )
+        };
+
+        // Create second paragraph WITHOUT font-weight (should NOT be bold)
+        let mut p2_attrs = std::collections::HashMap::new();
+        p2_attrs.insert("style".to_string(), "letter-spacing:0in".to_string());
+        let p2 = XfaNode {
+            children: vec![XfaNode::new(
+                XfaNodeKind::Text {
+                    content: "Normal body text".to_string(),
+                },
+                std::collections::HashMap::new(),
+            )],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "p".to_string(),
+                    text_content: None,
+                },
+                p2_attrs,
+            )
+        };
+
+        // Create body containing both paragraphs
+        let body = XfaNode {
+            children: vec![p1, p2],
+            ..XfaNode::new(
+                XfaNodeKind::Element {
+                    tag_name: "body".to_string(),
+                    text_content: None,
+                },
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let rich = Flattened::parse_rich_text_from_html(
+            &[body],
+            HAlign::Left,
+            None,
+            None,
+            false, // default_bold = false
+            false,
+        );
+
+        assert_eq!(rich.paragraphs.len(), 2, "Should have 2 paragraphs");
+
+        // First paragraph should be bold
+        let p1_runs = &rich.paragraphs[0].runs;
+        assert!(
+            !p1_runs.is_empty(),
+            "First paragraph should have runs"
+        );
+        assert!(
+            p1_runs[0].bold,
+            "First paragraph text should be bold (has font-weight:bold)"
+        );
+
+        // Second paragraph should NOT be bold
+        let p2_runs = &rich.paragraphs[1].runs;
+        assert!(
+            !p2_runs.is_empty(),
+            "Second paragraph should have runs"
+        );
+        assert!(
+            !p2_runs[0].bold,
+            "Second paragraph text should NOT be bold (no font-weight in style)"
+        );
     }
 }

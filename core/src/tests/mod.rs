@@ -21590,3 +21590,59 @@ fn test_aais_019_table_detection() {
         "Table should contain fee percentages (p.a.)"
     );
 }
+
+#[test]
+fn test_aair_communication_text_not_bold() {
+    // In AAIR DE, the text "Es ist der Bank ein großes Anliegen..." should NOT be bold.
+    // It's body text under a bold heading, but each paragraph has independent styling.
+    // The XFA structure shows:
+    //   <p style="...font-weight:bold...">Kommunikationsdaten...</p>  <- bold heading
+    //   <p style="letter-spacing:0in">Es ist der Bank...</p>         <- NOT bold
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIR_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Find the node containing the communication text
+    let search_text = "Es ist der Bank ein großes Anliegen";
+    let mut found = false;
+
+    for node in flattened.iter_nodes() {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            if content.contains(search_text) {
+                found = true;
+
+                // This text should NOT be bold - it's body text, not a heading
+                if let Some(rt) = node.rich_text() {
+                    for para in &rt.paragraphs {
+                        let para_text: String = para.runs.iter().map(|r| r.text.as_str()).collect();
+                        if para_text.contains(search_text) {
+                            for run in &para.runs {
+                                if run.text.contains(search_text) || para_text.contains(search_text)
+                                {
+                                    assert!(
+                                        !run.bold,
+                                        "Text '{}' should NOT be bold. Per XFA this \
+                                         paragraph has no font-weight:bold in its style.",
+                                        search_text
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        found,
+        "Should find text containing '{}' in AAIR_019_DE",
+        search_text
+    );
+}
