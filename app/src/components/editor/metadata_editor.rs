@@ -1,13 +1,13 @@
 //! Metadata editor component.
 //!
 //! Provides a form for editing node metadata like heading level, repeatable
-//! min/max occurrences, grid columns, etc.
+//! min/max occurrences, grid columns, field type, etc.
 
 use dioxus::prelude::*;
 
-use blueprint::StructuredNode;
+use blueprint::{FieldType, StructuredNode};
 
-use super::state::{EditorAction, NodeMetadata, NodePath};
+use super::state::{EditorAction, FieldInputKind, NodeMetadata, NodePath};
 
 /// Wrapper for StructuredNode that implements PartialEq.
 #[derive(Clone)]
@@ -238,6 +238,94 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                 }
             }
         }
+        StructuredNode::Field(f) => {
+            // Determine current field type
+            let current_kind = match &f.input_type {
+                FieldType::Text { .. } => FieldInputKind::Text,
+                FieldType::Number { .. } => FieldInputKind::Number,
+                FieldType::Date => FieldInputKind::Date,
+                FieldType::Email => FieldInputKind::Email,
+                FieldType::Tel => FieldInputKind::Tel,
+                FieldType::Bool => FieldInputKind::Checkbox,
+                FieldType::Select { .. } => FieldInputKind::Dropdown,
+                FieldType::Radio { .. } => FieldInputKind::Radio,
+            };
+            let current_value = match current_kind {
+                FieldInputKind::Text => "text",
+                FieldInputKind::Number => "number",
+                FieldInputKind::Date => "date",
+                FieldInputKind::Email => "email",
+                FieldInputKind::Tel => "tel",
+                FieldInputKind::Checkbox => "checkbox",
+                FieldInputKind::Dropdown => "dropdown",
+                FieldInputKind::Radio => "radio",
+            };
+
+            rsx! {
+                div { class: "metadata-editor",
+                    div { class: "metadata-editor-header",
+                        span { class: "metadata-editor-title", "Edit Field" }
+                        button {
+                            class: "metadata-editor-close",
+                            onclick: {
+                                let on_action = props.on_action;
+                                move |_| on_action.call(EditorAction::StopEditing)
+                            },
+                            "×"
+                        }
+                    }
+                    div { class: "metadata-editor-content",
+                        div { class: "metadata-field",
+                            label { class: "metadata-label", "Field Type" }
+                            select {
+                                class: "metadata-select",
+                                value: "{current_value}",
+                                onchange: {
+                                    let path = props.path.clone();
+                                    let on_action = props.on_action;
+                                    move |evt: Event<FormData>| {
+                                        let kind = match evt.value().as_str() {
+                                            "text" => FieldInputKind::Text,
+                                            "number" => FieldInputKind::Number,
+                                            "date" => FieldInputKind::Date,
+                                            "email" => FieldInputKind::Email,
+                                            "tel" => FieldInputKind::Tel,
+                                            "checkbox" => FieldInputKind::Checkbox,
+                                            "dropdown" => FieldInputKind::Dropdown,
+                                            "radio" => FieldInputKind::Radio,
+                                            _ => return,
+                                        };
+                                        on_action
+                                            .call(EditorAction::UpdateMetadata {
+                                                path: path.clone(),
+                                                metadata: NodeMetadata::FieldInputType(kind),
+                                            });
+                                    }
+                                },
+                                option { value: "text", "Text" }
+                                option { value: "number", "Number" }
+                                option { value: "date", "Date" }
+                                option { value: "email", "Email" }
+                                option { value: "tel", "Phone" }
+                                option { value: "checkbox", "Checkbox" }
+                                option { value: "dropdown", "Dropdown" }
+                                option { value: "radio", "Radio" }
+                            }
+                        }
+                    }
+                    div { class: "metadata-editor-actions",
+                        button {
+                            class: "metadata-btn metadata-btn-done",
+                            onclick: {
+                                let on_action = props.on_action;
+                                move |_| on_action.call(EditorAction::StopEditing)
+                            },
+                            "Done"
+                        }
+                    }
+                }
+            }
+        }
         _ => {
             // No editable metadata for this node type
             rsx! {
@@ -279,5 +367,6 @@ pub fn has_editable_metadata(node: &StructuredNode) -> bool {
         StructuredNode::Heading(_)
             | StructuredNode::Repeatable(_)
             | StructuredNode::GridLayout(_)
+            | StructuredNode::Field(_)
     )
 }

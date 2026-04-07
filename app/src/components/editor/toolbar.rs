@@ -203,5 +203,6 @@ fn conversion_label(target: ConvertTarget) -> &'static str {
         ConvertTarget::Paragraphs => "Paragraphs",
         ConvertTarget::Heading(_) => "Heading",
         ConvertTarget::List => "List",
+        ConvertTarget::Field => "Field",
     }
 }

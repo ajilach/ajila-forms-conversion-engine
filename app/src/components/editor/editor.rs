@@ -7,14 +7,16 @@ use std::collections::{BTreeSet, HashMap};
 
 use blueprint::document::ListStyleType;
 use blueprint::{
-    DocumentEnvelope, FieldId, GroupNode, HeadingLevel, HeadingNode, InlineText,
+    DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode, InlineText,
     ListNode, ParagraphNode, StructuredNode,
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    ConvertTarget, EditorAction, NewNodeType, NodeMetadata, SelectionState, available_conversions,
-    can_merge_selected, delete_nodes, get_node_at_path_mut,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
+    SelectionState, available_conversions, can_merge_selected, delete_nodes,
+    get_list_item_text_mut, get_node_at_path_mut, is_list_item_path, move_list_item_down,
+    move_list_item_up, move_table_row_down, move_table_row_up, is_table_row_path,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -175,16 +177,66 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let (can_move_up, can_move_down) = {
         let env = envelope.read();
         let sel = selection.read();
-        if !sel.selected.is_empty() {
-            // Get all root-level selected indices
+        if sel.selected.len() == 1 {
+            let path = sel.selected.iter().next().unwrap();
+
+            // Check for list item movement
+            if is_list_item_path(path) {
+                if let Some(PathSegment::ListItem(idx)) = path.last() {
+                    let parent_path: Vec<_> = path[..path.len() - 1].to_vec();
+                    if let Some(StructuredNode::List(l)) = super::state::get_node_at_path(&env.content, &parent_path) {
+                        let can_up = *idx > 0;
+                        let can_down = *idx + 1 < l.items.len();
+                        (can_up, can_down)
+                    } else {
+                        (false, false)
+                    }
+                } else {
+                    (false, false)
+                }
+            }
+            // Check for table row movement
+            else if is_table_row_path(path) {
+                if let Some(PathSegment::TableRow(idx)) = path.last() {
+                    let parent_path: Vec<_> = path[..path.len() - 1].to_vec();
+                    if let Some(StructuredNode::Table(t)) = super::state::get_node_at_path(&env.content, &parent_path) {
+                        let can_up = *idx > 0;
+                        let can_down = *idx + 1 < t.rows.len();
+                        (can_up, can_down)
+                    } else {
+                        (false, false)
+                    }
+                } else {
+                    (false, false)
+                }
+            }
+            // Check for root-level node movement
+            else if path.len() == 1 {
+                if let Some(PathSegment::Child(idx)) = path.first() {
+                    let can_up = *idx > 0;
+                    let can_down = *idx + 1 < env.content.len();
+                    (can_up, can_down)
+                } else {
+                    (false, false)
+                }
+            } else {
+                (false, false)
+            }
+        } else if !sel.selected.is_empty() {
+            // Multiple selection: only support root-level
             let root_indices: Vec<usize> = sel
                 .selected
                 .iter()
-                .filter(|p| p.len() == 1)
-                .map(|p| p[0])
+                .filter_map(|p| {
+                    if p.len() == 1 {
+                        p.first().and_then(|s| s.as_child_index())
+                    } else {
+                        None
+                    }
+                })
                 .collect();
 
-            if root_indices.is_empty() {
+            if root_indices.is_empty() || root_indices.len() != sel.selected.len() {
                 (false, false)
             } else {
                 let min_idx = *root_indices.iter().min().unwrap();
@@ -213,9 +265,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             EditorAction::StartEditing(path) => {
                 selection.write().start_editing(path);
             }
-            EditorAction::StartEditingListItem(path, index) => {
-                selection.write().start_editing_list_item(path, index);
-            }
             EditorAction::StartEditingMetadata(path) => {
                 selection.write().start_editing_metadata(path);
             }
@@ -237,9 +286,11 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 paths.sort();
 
                 if paths.len() >= 2 {
-                    // For now, only support merging at root level
-                    if paths.iter().all(|p| p.len() == 1) {
-                        let indices: Vec<usize> = paths.iter().map(|p| p[0]).collect();
+                    // For now, only support merging at root level (single Child segment)
+                    if paths.iter().all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_)))) {
+                        let indices: Vec<usize> = paths.iter()
+                            .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
+                            .collect();
                         let mut env = envelope.write();
 
                         // Collect nodes to merge
@@ -267,61 +318,150 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
             EditorAction::MoveUp => {
                 let sel = selection.read();
-                // Get all root-level selected indices, sorted
-                let mut root_indices: Vec<usize> = sel
-                    .selected
-                    .iter()
-                    .filter(|p| p.len() == 1)
-                    .map(|p| p[0])
-                    .collect();
-                root_indices.sort();
+                let paths: Vec<_> = sel.selected.iter().cloned().collect();
                 drop(sel);
 
-                if !root_indices.is_empty() && root_indices[0] > 0 {
-                    let mut env = envelope.write();
-                    // Move from top to bottom to avoid index shifting issues
-                    for &idx in &root_indices {
-                        if idx > 0 {
-                            env.content.swap(idx, idx - 1);
+                if paths.len() == 1 {
+                    let path = &paths[0];
+
+                    // Handle list item movement
+                    if is_list_item_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_list_item_up(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
                         }
                     }
-                    drop(env);
-                    // Update selection to follow moved nodes
-                    let mut new_selection = selection.write();
-                    new_selection.selected.clear();
-                    for idx in root_indices {
-                        new_selection.selected.insert(vec![idx - 1]);
+                    // Handle table row movement
+                    else if is_table_row_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_table_row_up(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
+                        }
+                    }
+                    // Handle root-level node movement
+                    else if path.len() == 1 {
+                        if let Some(PathSegment::Child(idx)) = path.first() {
+                            if *idx > 0 {
+                                let mut env = envelope.write();
+                                env.content.swap(*idx, idx - 1);
+                                drop(env);
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                new_selection.selected.insert(vec![PathSegment::Child(idx - 1)]);
+                            }
+                        }
+                    }
+                } else if !paths.is_empty() {
+                    // Multiple selection: only support root-level
+                    let mut root_indices: Vec<usize> = paths
+                        .iter()
+                        .filter_map(|p| {
+                            if p.len() == 1 {
+                                p.first().and_then(|s| s.as_child_index())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if root_indices.len() == paths.len() {
+                        root_indices.sort();
+                        if root_indices[0] > 0 {
+                            let mut env = envelope.write();
+                            for &idx in &root_indices {
+                                if idx > 0 {
+                                    env.content.swap(idx, idx - 1);
+                                }
+                            }
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            for idx in root_indices {
+                                new_selection.selected.insert(vec![PathSegment::Child(idx - 1)]);
+                            }
+                        }
                     }
                 }
             }
             EditorAction::MoveDown => {
                 let sel = selection.read();
-                // Get all root-level selected indices, sorted in reverse
-                let mut root_indices: Vec<usize> = sel
-                    .selected
-                    .iter()
-                    .filter(|p| p.len() == 1)
-                    .map(|p| p[0])
-                    .collect();
-                root_indices.sort();
-                root_indices.reverse();
+                let paths: Vec<_> = sel.selected.iter().cloned().collect();
                 drop(sel);
 
                 let env_len = envelope.read().content.len();
-                if !root_indices.is_empty() && root_indices[0] + 1 < env_len {
-                    let mut env = envelope.write();
-                    // Move from bottom to top to avoid index shifting issues
-                    for &idx in &root_indices {
-                        if idx + 1 < env_len {
-                            env.content.swap(idx, idx + 1);
+
+                if paths.len() == 1 {
+                    let path = &paths[0];
+
+                    // Handle list item movement
+                    if is_list_item_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_list_item_down(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
                         }
                     }
-                    drop(env);
-                    // Update selection to follow moved nodes
-                    let mut new_selection = selection.write();
-                    new_selection.selected.clear();
-                    for idx in root_indices {
-                        new_selection.selected.insert(vec![idx + 1]);
+                    // Handle table row movement
+                    else if is_table_row_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = move_table_row_down(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
+                        }
+                    }
+                    // Handle root-level node movement
+                    else if path.len() == 1 {
+                        if let Some(PathSegment::Child(idx)) = path.first() {
+                            if *idx + 1 < env_len {
+                                let mut env = envelope.write();
+                                env.content.swap(*idx, idx + 1);
+                                drop(env);
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                new_selection.selected.insert(vec![PathSegment::Child(idx + 1)]);
+                            }
+                        }
+                    }
+                } else if !paths.is_empty() {
+                    // Multiple selection: only support root-level
+                    let mut root_indices: Vec<usize> = paths
+                        .iter()
+                        .filter_map(|p| {
+                            if p.len() == 1 {
+                                p.first().and_then(|s| s.as_child_index())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if root_indices.len() == paths.len() {
+                        root_indices.sort();
+                        root_indices.reverse();
+                        if root_indices[0] + 1 < env_len {
+                            let mut env = envelope.write();
+                            for &idx in &root_indices {
+                                if idx + 1 < env_len {
+                                    env.content.swap(idx, idx + 1);
+                                }
+                            }
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            for idx in root_indices {
+                                new_selection.selected.insert(vec![PathSegment::Child(idx + 1)]);
+                            }
+                        }
                     }
                 }
             }
@@ -331,7 +471,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 language,
             } => {
                 let mut env = envelope.write();
-                if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
+
+                // Check if this is a list item path
+                if is_list_item_path(&path) {
+                    if let Some(text) = get_list_item_text_mut(&mut env.content, &path) {
+                        update_inline_text(text, &content, language.as_deref());
+                    }
+                } else if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
                     match node {
                         StructuredNode::Paragraph(p) => {
                             update_inline_text(&mut p.content, &content, language.as_deref());
@@ -344,32 +490,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 update_inline_text(label, &content, language.as_deref());
                             }
                         }
-                        // Handle list item updates that come through UpdateText
-                        // (from the path encoding used in list item editing)
-                        StructuredNode::List(_) => {
-                            // This case is handled by UpdateListItem, but we need to check
-                            // if the path has an extra element for the item index
-                        }
                         _ => {}
                     }
-                }
-            }
-            EditorAction::UpdateListItem {
-                path,
-                item_index,
-                content,
-                language,
-            } => {
-                let mut env = envelope.write();
-                if let Some(node) = get_node_at_path_mut(&mut env.content, &path)
-                    && let StructuredNode::List(l) = node
-                    && item_index < l.items.len()
-                {
-                    update_inline_text(
-                        &mut l.items[item_index],
-                        &content,
-                        language.as_deref(),
-                    );
                 }
             }
             EditorAction::UpdateMetadata { path, metadata } => {
@@ -396,6 +518,29 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             // For grid element span, we need parent context
                             // This is more complex and would need different handling
                             let _ = span;
+                        }
+                        NodeMetadata::FieldInputType(kind) => {
+                            if let StructuredNode::Field(f) = node {
+                                // Convert to new field type, preserving label and name
+                                f.input_type = match kind {
+                                    FieldInputKind::Text => FieldType::Text {
+                                        regex: None,
+                                        max_length: None,
+                                        min_length: None,
+                                    },
+                                    FieldInputKind::Number => FieldType::Number {
+                                        min: None,
+                                        max: None,
+                                        step: None,
+                                    },
+                                    FieldInputKind::Date => FieldType::Date,
+                                    FieldInputKind::Email => FieldType::Email,
+                                    FieldInputKind::Tel => FieldType::Tel,
+                                    FieldInputKind::Checkbox => FieldType::Bool,
+                                    FieldInputKind::Dropdown => FieldType::Select { options: vec![] },
+                                    FieldInputKind::Radio => FieldType::Radio { options: vec![] },
+                                };
+                            }
                         }
                     }
                 }
@@ -438,9 +583,11 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let mut paths: Vec<_> = selection.read().selected.iter().cloned().collect();
                 paths.sort();
 
-                // Only support root-level conversions for now
-                if paths.iter().all(|p| p.len() == 1) {
-                    let indices: Vec<usize> = paths.iter().map(|p| p[0]).collect();
+                // Only support root-level conversions for now (single Child segment)
+                if paths.iter().all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_)))) {
+                    let indices: Vec<usize> = paths.iter()
+                        .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
+                        .collect();
                     let env_read = envelope.read();
 
                     // Collect nodes to convert
@@ -564,6 +711,14 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             source_name: h.source_name.clone(),
                         })
                     }
+                    StructuredNode::Field(f) => {
+                        // Field -> Paragraph: label becomes content
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: f.label.clone().unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
+                            som_path: f.som_path.clone(),
+                            source_name: None,
+                        })
+                    }
                     _ => (*n).clone(), // Keep unchanged
                 })
                 .collect()
@@ -604,6 +759,15 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             source_name: p.source_name.clone(),
                         })
                     }
+                    StructuredNode::Field(f) => {
+                        // Field -> Heading: label becomes content
+                        StructuredNode::Heading(HeadingNode {
+                            level: HeadingLevel::from_u8(level),
+                            content: f.label.clone().unwrap_or_else(|| InlineText::plain(&f.name.to_string())),
+                            som_path: f.som_path.clone(),
+                            source_name: None,
+                        })
+                    }
                     _ => (*n).clone(), // Keep unchanged
                 })
                 .collect()
@@ -627,6 +791,48 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                     items,
                 })]
             }
+        }
+        ConvertTarget::Field => {
+            // Converting to field: text content becomes label
+            nodes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| match n {
+                    StructuredNode::Paragraph(p) => {
+                        // Paragraph -> Field: content becomes label
+                        let name = format!("field_{}", i + 1);
+                        StructuredNode::Field(FieldNode {
+                            name: FieldId::from(name.as_str()),
+                            som_path: p.som_path.clone(),
+                            label: Some(p.content.clone()),
+                            input_type: FieldType::Text {
+                                regex: None,
+                                max_length: None,
+                                min_length: None,
+                            },
+                            value: None,
+                            placeholder: None,
+                        })
+                    }
+                    StructuredNode::Heading(h) => {
+                        // Heading -> Field: content becomes label
+                        let name = format!("field_{}", i + 1);
+                        StructuredNode::Field(FieldNode {
+                            name: FieldId::from(name.as_str()),
+                            som_path: h.som_path.clone(),
+                            label: Some(h.content.clone()),
+                            input_type: FieldType::Text {
+                                regex: None,
+                                max_length: None,
+                                min_length: None,
+                            },
+                            value: None,
+                            placeholder: None,
+                        })
+                    }
+                    _ => (*n).clone(), // Keep unchanged
+                })
+                .collect()
         }
     }
 }

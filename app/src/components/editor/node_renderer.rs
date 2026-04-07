@@ -9,9 +9,10 @@ use blueprint::{FieldId, StructuredNode};
 
 use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
 use super::state::{
-    EditorAction, NodePath, SelectionState, node_has_children, node_summary, node_type_name,
+    EditorAction, NodePath, PathSegment, SelectionState,
+    node_has_children, node_summary, node_type_name,
 };
-use super::text_editor::{InlineTextWrapper, ListItemEditor, TextEditor};
+use super::text_editor::{InlineTextWrapper, TextEditor};
 
 /// Wrapper for Vec<StructuredNode> that implements PartialEq.
 #[derive(Clone)]
@@ -74,7 +75,7 @@ pub fn NodeRenderer(props: NodeRendererProps) -> Element {
                 {
                     let path = {
                         let mut p = props.base_path.clone();
-                        p.push(idx);
+                        p.push(PathSegment::Child(idx));
                         p
                     };
                     rsx! {
@@ -303,23 +304,67 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                         StructuredNode::List(l) => {
-                            // Render list items as editable entries
+                            // Render list items as pseudo-nodes (selectable, movable, deletable)
+                            let list_path = props.path.clone();
+                            let selection = props.selection.clone();
+                            let languages = props.languages.clone();
+                            let on_action = props.on_action;
                             rsx! {
                                 div { class: "list-items",
                                     for (i , item) in l.items.iter().enumerate() {
                                         {
-                                            let is_editing_item = props.selection.is_editing_list_item(&props.path, i);
-                                            let path = props.path.clone();
-                                            let on_action = props.on_action;
-                                            let languages = props.languages.clone();
+                                            let item_path = {
+                                                let mut p = list_path.clone();
+                                                p.push(PathSegment::ListItem(i));
+                                                p
+                                            };
+                                            let is_selected = selection.is_selected(&item_path);
+                                            let is_editing = selection.is_editing(&item_path);
+                                            let item_class = format!(
+                                                "list-item pseudo-node {}{}",
+                                                if is_selected { "selected " } else { "" },
+                                                if is_editing { "editing" } else { "" }
+                                            );
                                             rsx! {
-                                                div { key: "{i}", class: if is_editing_item { "list-item editing" } else { "list-item" },
+                                                div {
+                                                    key: "{i}",
+                                                    class: "{item_class}",
+                                                    onclick: {
+                                                        let path = item_path.clone();
+                                                        let on_action = on_action;
+                                                        move |evt: Event<MouseData>| {
+                                                            evt.stop_propagation();
+                                                            if evt.modifiers().shift() {
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            } else {
+                                                                on_action.call(EditorAction::SelectSingle(path.clone()));
+                                                            }
+                                                        }
+                                                    },
+
+                                                    // Selection checkbox
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        class: "node-checkbox",
+                                                        checked: is_selected,
+                                                        onclick: {
+                                                            let path = item_path.clone();
+                                                            let on_action = on_action;
+                                                            move |evt| {
+                                                                evt.stop_propagation();
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            }
+                                                        },
+                                                    }
+
+                                                    // Item marker
                                                     span { class: "list-item-marker", "{i + 1}." }
-                                                    if is_editing_item {
-                                                        ListItemEditor {
+
+                                                    // Item content or editor
+                                                    if is_editing {
+                                                        TextEditor {
                                                             content: InlineTextWrapper(item.clone()),
-                                                            list_path: path.clone(),
-                                                            item_index: i,
+                                                            path: item_path.clone(),
                                                             languages: languages.clone(),
                                                             on_action,
                                                         }
@@ -328,10 +373,11 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                         button {
                                                             class: "node-edit-btn",
                                                             onclick: {
-                                                                let path = path.clone();
+                                                                let path = item_path.clone();
+                                                                let on_action = on_action;
                                                                 move |evt| {
                                                                     evt.stop_propagation();
-                                                                    on_action.call(EditorAction::StartEditingListItem(path.clone(), i));
+                                                                    on_action.call(EditorAction::StartEditing(path.clone()));
                                                                 }
                                                             },
                                                             "✎"
@@ -403,11 +449,167 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                         StructuredNode::Table(t) => {
+                            let table_path = props.path.clone();
+                            let selection = props.selection.clone();
+                            let on_action = props.on_action;
+                            let languages = props.languages.clone();
+                            let field_labels = props.field_labels.clone();
+                            let depth = props.depth;
                             rsx! {
-                                div { class: "table-preview",
-                                    "Table with {t.rows.len()} rows"
+                                div { class: "table-content",
+                                    // Render header if present
                                     if let Some(header) = &t.header {
-                                        " and {header.cells.len()} columns"
+                                        {
+                                            let header_path = {
+                                                let mut p = table_path.clone();
+                                                p.push(PathSegment::TableHeader);
+                                                p
+                                            };
+                                            let is_selected = selection.is_selected(&header_path);
+                                            let header_class = format!(
+                                                "table-row table-header pseudo-node {}",
+                                                if is_selected { "selected" } else { "" }
+                                            );
+                                            rsx! {
+                                                div {
+                                                    class: "{header_class}",
+                                                    onclick: {
+                                                        let path = header_path.clone();
+                                                        let on_action = on_action;
+                                                        move |evt: Event<MouseData>| {
+                                                            evt.stop_propagation();
+                                                            if evt.modifiers().shift() {
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            } else {
+                                                                on_action.call(EditorAction::SelectSingle(path.clone()));
+                                                            }
+                                                        }
+                                                    },
+
+                                                    // Selection checkbox
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        class: "node-checkbox",
+                                                        checked: is_selected,
+                                                        onclick: {
+                                                            let path = header_path.clone();
+                                                            let on_action = on_action;
+                                                            move |evt| {
+                                                                evt.stop_propagation();
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            }
+                                                        },
+                                                    }
+
+                                                    span { class: "table-row-label", "Header" }
+
+                                                    // Render header cells
+                                                    div { class: "table-cells",
+                                                        for (ci , cell) in header.cells.iter().enumerate() {
+                                                            {
+                                                                let cell_path = {
+                                                                    let mut p = header_path.clone();
+                                                                    p.push(PathSegment::TableCell(ci));
+                                                                    p
+                                                                };
+                                                                rsx! {
+                                                                    div { class: "table-cell",
+                                                                        span { class: "table-cell-label", "Cell {ci + 1}" }
+                                                                        NodeRenderer {
+                                                                            nodes: NodesWrapper(vec![cell.clone()]),
+                                                                            selection: selection.clone(),
+                                                                            languages: languages.clone(),
+                                                                            field_labels: field_labels.clone(),
+                                                                            base_path: cell_path,
+                                                                            depth: depth + 2,
+                                                                            on_action,
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Render data rows
+                                    for (ri , row) in t.rows.iter().enumerate() {
+                                        {
+                                            let row_path = {
+                                                let mut p = table_path.clone();
+                                                p.push(PathSegment::TableRow(ri));
+                                                p
+                                            };
+                                            let is_selected = selection.is_selected(&row_path);
+                                            let row_class = format!(
+                                                "table-row pseudo-node {}",
+                                                if is_selected { "selected" } else { "" }
+                                            );
+                                            rsx! {
+                                                div {
+                                                    key: "row-{ri}",
+                                                    class: "{row_class}",
+                                                    onclick: {
+                                                        let path = row_path.clone();
+                                                        let on_action = on_action;
+                                                        move |evt: Event<MouseData>| {
+                                                            evt.stop_propagation();
+                                                            if evt.modifiers().shift() {
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            } else {
+                                                                on_action.call(EditorAction::SelectSingle(path.clone()));
+                                                            }
+                                                        }
+                                                    },
+
+                                                    // Selection checkbox
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        class: "node-checkbox",
+                                                        checked: is_selected,
+                                                        onclick: {
+                                                            let path = row_path.clone();
+                                                            let on_action = on_action;
+                                                            move |evt| {
+                                                                evt.stop_propagation();
+                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                                            }
+                                                        },
+                                                    }
+
+                                                    span { class: "table-row-label", "Row {ri + 1}" }
+
+                                                    // Render row cells
+                                                    div { class: "table-cells",
+                                                        for (ci , cell) in row.cells.iter().enumerate() {
+                                                            {
+                                                                let cell_path = {
+                                                                    let mut p = row_path.clone();
+                                                                    p.push(PathSegment::TableCell(ci));
+                                                                    p
+                                                                };
+                                                                rsx! {
+                                                                    div { class: "table-cell",
+                                                                        span { class: "table-cell-label", "Cell {ci + 1}" }
+                                                                        NodeRenderer {
+                                                                            nodes: NodesWrapper(vec![cell.clone()]),
+                                                                            selection: selection.clone(),
+                                                                            languages: languages.clone(),
+                                                                            field_labels: field_labels.clone(),
+                                                                            base_path: cell_path,
+                                                                            depth: depth + 2,
+                                                                            on_action,
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
