@@ -3,7 +3,7 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
-use blueprint::{InlineText, StructuredNode};
+use blueprint::{InlineText, StructuredNode, TableNode};
 use std::collections::HashSet;
 
 /// A segment of a path to a node in the document tree.
@@ -209,12 +209,15 @@ pub enum FieldInputKind {
 }
 
 /// Types of nodes that can be added.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum NewNodeType {
     Paragraph,
     Heading(u8),
     List,
     Group,
+    ListItem,
+    TableRow,
+    TableCell,
 }
 
 /// Get a node at a given path.
@@ -824,6 +827,12 @@ pub fn is_table_row_path(path: &NodePath) -> bool {
         .map_or(false, |seg| matches!(seg, PathSegment::TableRow(_)))
 }
 
+/// Check if a path refers to a table cell.
+pub fn is_table_cell_path(path: &NodePath) -> bool {
+    path.last()
+        .map_or(false, |seg| matches!(seg, PathSegment::TableCell(_)))
+}
+
 /// Get the parent path and item index for a list item path.
 pub fn get_list_item_info(path: &NodePath) -> Option<(NodePath, usize)> {
     if let Some(PathSegment::ListItem(idx)) = path.last() {
@@ -1044,4 +1053,160 @@ pub fn move_container_child_down(
         _ => {}
     }
     None
+}
+
+/// An option for the Add dropdown, carrying a label and the action payload.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AddOption {
+    pub label: &'static str,
+    pub parent: NodePath,
+    pub index: usize,
+    pub node_type: NewNodeType,
+}
+
+/// Compute the list of add options based on the current selection.
+///
+/// When a single element is selected, the standard options (Paragraph, Heading,
+/// List, Group) insert below it. When a list item, table row, or table cell is
+/// selected, context-specific options are prepended.
+pub fn compute_add_options(
+    content: &[StructuredNode],
+    selection: &SelectionState,
+) -> Vec<AddOption> {
+    let mut options = Vec::new();
+
+    // Determine insertion target from selection
+    let (parent, index) = if selection.selected.len() == 1 {
+        let path = selection.selected.iter().next().unwrap();
+        insertion_target_from_path(content, path)
+    } else {
+        // No selection or multiple selection: insert at root index 0
+        (vec![], 0)
+    };
+
+    // Context-specific options
+    if selection.selected.len() == 1 {
+        let path = selection.selected.iter().next().unwrap();
+
+        if is_list_item_path(path) {
+            if let Some(PathSegment::ListItem(idx)) = path.last() {
+                let list_parent: NodePath = path[..path.len() - 1].to_vec();
+                options.push(AddOption {
+                    label: "List Item",
+                    parent: list_parent,
+                    index: idx + 1,
+                    node_type: NewNodeType::ListItem,
+                });
+            }
+        } else if is_table_row_path(path) {
+            if let Some(PathSegment::TableRow(idx)) = path.last() {
+                let table_parent: NodePath = path[..path.len() - 1].to_vec();
+                options.push(AddOption {
+                    label: "Table Row",
+                    parent: table_parent,
+                    index: idx + 1,
+                    node_type: NewNodeType::TableRow,
+                });
+            }
+        } else if is_table_cell_path(path) {
+            let row_parent: NodePath = path[..path.len() - 1].to_vec();
+            if let Some(PathSegment::TableCell(idx)) = path.last() {
+                options.push(AddOption {
+                    label: "Table Cell",
+                    parent: row_parent,
+                    index: idx + 1,
+                    node_type: NewNodeType::TableCell,
+                });
+            }
+        }
+    }
+
+    // Standard options (always available) with computed insertion target
+    for (label, node_type) in [
+        ("Paragraph", NewNodeType::Paragraph),
+        ("Heading", NewNodeType::Heading(2)),
+        ("List", NewNodeType::List),
+        ("Group", NewNodeType::Group),
+    ] {
+        options.push(AddOption {
+            label,
+            parent: parent.clone(),
+            index,
+            node_type,
+        });
+    }
+
+    options
+}
+
+/// For a selected path, compute the parent path and insertion index such that
+/// a new element is inserted directly below the selected element.
+fn insertion_target_from_path(
+    content: &[StructuredNode],
+    path: &NodePath,
+) -> (NodePath, usize) {
+    // Root-level node: insert at root after this element
+    if path.len() == 1 {
+        if let Some(PathSegment::Child(idx)) = path.first() {
+            return (vec![], idx + 1);
+        }
+    }
+
+    // Container child (Group/GridLayout): insert after this child in the same container
+    if is_container_child_path(path) {
+        if let Some((parent_path, child_idx)) = get_container_child_info(path) {
+            return (parent_path, child_idx + 1);
+        }
+    }
+
+    // List item selected: standard nodes go after the parent list at sibling level
+    if is_list_item_path(path) {
+        return sibling_insert_after(content, &path[..path.len() - 1]);
+    }
+
+    // Table row selected: standard nodes go after the parent table at sibling level
+    if is_table_row_path(path) {
+        return sibling_insert_after(content, &path[..path.len() - 1]);
+    }
+
+    // Table cell selected: standard nodes go after the parent table at sibling level
+    if is_table_cell_path(path) {
+        // Go up past TableCell and TableRow/TableHeader segments to reach the table
+        let table_path: NodePath = path
+            .iter()
+            .take_while(|s| matches!(s, PathSegment::Child(_)))
+            .cloned()
+            .collect();
+        return sibling_insert_after(content, &table_path);
+    }
+
+    // Fallback: root index 0
+    (vec![], 0)
+}
+
+/// Given a node path, compute insertion target as "after this node" at its parent level.
+fn sibling_insert_after(
+    _content: &[StructuredNode],
+    node_path: &[PathSegment],
+) -> (NodePath, usize) {
+    if node_path.is_empty() {
+        return (vec![], 0);
+    }
+    if let Some(PathSegment::Child(idx)) = node_path.last() {
+        let parent: NodePath = node_path[..node_path.len() - 1].to_vec();
+        return (parent, idx + 1);
+    }
+    // Fallback: root index 0
+    (vec![], 0)
+}
+
+/// Get the number of columns in a table (from header or first row).
+pub fn get_table_column_count(table: &TableNode) -> usize {
+    if let Some(header) = &table.header {
+        return header.cells.len();
+    }
+    if let Some(first_row) = table.rows.first() {
+        return first_row.cells.len();
+    }
+    1 // default to 1 column
 }

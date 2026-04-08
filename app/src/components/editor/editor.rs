@@ -11,13 +11,15 @@ use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
     InlineText, ListNode, ParagraphNode, StructuredNode,
 };
+use blueprint::structured::TableRow as StructTableRow;
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
-    SelectionState, available_conversions, can_merge_selected, delete_nodes,
-    get_container_child_info, get_container_children_count, get_list_item_text_mut,
-    get_node_at_path_mut, is_container_child_path, is_list_item_path, is_table_row_path,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata,
+    PathSegment, SelectionState, available_conversions, can_merge_selected, compute_add_options,
+    delete_nodes, get_container_child_info, get_container_children_count,
+    get_list_item_text_mut, get_node_at_path_mut, get_table_column_count,
+    is_container_child_path, is_list_item_path, is_table_row_path,
     move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
     move_table_row_down, move_table_row_up,
 };
@@ -174,6 +176,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         let env = envelope.read();
         let sel = selection.read();
         available_conversions(&env.content, &sel.selected)
+    };
+
+    // Compute context-aware add options
+    let add_options = {
+        let env = envelope.read();
+        let sel = selection.read();
+        compute_add_options(&env.content, &sel)
     };
 
     // Check if selected nodes can be moved up/down
@@ -607,32 +616,182 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 index,
                 node_type,
             } => {
-                let new_node = match node_type {
-                    NewNodeType::Paragraph => StructuredNode::Paragraph(ParagraphNode {
-                        content: InlineText::plain("New paragraph"),
-                        som_path: None,
-                        source_name: None,
-                    }),
-                    NewNodeType::Heading(level) => StructuredNode::Heading(HeadingNode {
-                        level: HeadingLevel::from_u8(level),
-                        content: InlineText::plain("New heading"),
-                        som_path: None,
-                        source_name: None,
-                    }),
-                    NewNodeType::List => StructuredNode::List(ListNode {
-                        list_style: ListStyleType::Disc,
-                        items: vec![InlineText::plain("New item")],
-                    }),
-                    NewNodeType::Group => StructuredNode::Group(GroupNode { children: vec![] }),
-                };
-
                 let mut env = envelope.write();
-                if parent.is_empty() {
-                    // Add to root
-                    let insert_idx = index.min(env.content.len());
-                    env.content.insert(insert_idx, new_node);
-                } else {
-                    // TODO: Add to nested parent
+                let new_selection: Option<Vec<PathSegment>>;
+
+                match node_type {
+                    NewNodeType::ListItem => {
+                        // Insert a new list item into the parent list
+                        new_selection = if let Some(node) =
+                            get_node_at_path_mut(&mut env.content, &parent)
+                        {
+                            if let StructuredNode::List(l) = node {
+                                let insert_idx = index.min(l.items.len());
+                                l.items
+                                    .insert(insert_idx, InlineText::plain("New item"));
+                                let mut path = parent.clone();
+                                path.push(PathSegment::ListItem(insert_idx));
+                                Some(path)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                    }
+                    NewNodeType::TableRow => {
+                        // Insert a new table row into the parent table
+                        new_selection = if let Some(node) =
+                            get_node_at_path_mut(&mut env.content, &parent)
+                        {
+                            if let StructuredNode::Table(t) = node {
+                                let col_count = get_table_column_count(t);
+                                let cells: Vec<StructuredNode> = (0..col_count)
+                                    .map(|_| {
+                                        StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(""),
+                                            som_path: None,
+                                            source_name: None,
+                                        })
+                                    })
+                                    .collect();
+                                let insert_idx = index.min(t.rows.len());
+                                t.rows
+                                    .insert(insert_idx, StructTableRow { cells });
+                                let mut path = parent.clone();
+                                path.push(PathSegment::TableRow(insert_idx));
+                                Some(path)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                    }
+                    NewNodeType::TableCell => {
+                        // Insert a new cell into the parent row (or header)
+                        // parent path ends at TableRow(r) or TableHeader
+                        new_selection = if parent.len() >= 2 {
+                            let table_path: Vec<_> = parent
+                                .iter()
+                                .take_while(|s| matches!(s, PathSegment::Child(_)))
+                                .cloned()
+                                .collect();
+                            let row_segment = parent.last();
+                            if let Some(table_node) =
+                                get_node_at_path_mut(&mut env.content, &table_path)
+                            {
+                                if let StructuredNode::Table(t) = table_node {
+                                    let new_cell =
+                                        StructuredNode::Paragraph(ParagraphNode {
+                                            content: InlineText::plain(""),
+                                            som_path: None,
+                                            source_name: None,
+                                        });
+                                    match row_segment {
+                                        Some(PathSegment::TableRow(row_idx)) => {
+                                            if let Some(row) = t.rows.get_mut(*row_idx) {
+                                                let insert_idx =
+                                                    index.min(row.cells.len());
+                                                row.cells.insert(insert_idx, new_cell);
+                                                let mut path = parent.clone();
+                                                path.push(PathSegment::TableCell(
+                                                    insert_idx,
+                                                ));
+                                                Some(path)
+                                            } else {
+                                                None
+                                            }
+                                        }
+                                        Some(PathSegment::TableHeader) => {
+                                            if let Some(header) = &mut t.header {
+                                                let insert_idx =
+                                                    index.min(header.cells.len());
+                                                header.cells.insert(insert_idx, new_cell);
+                                                let mut path = parent.clone();
+                                                path.push(PathSegment::TableCell(
+                                                    insert_idx,
+                                                ));
+                                                Some(path)
+                                            } else {
+                                                None
+                                            }
+                                        }
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                    }
+                    _ => {
+                        // Standard node types: Paragraph, Heading, List, Group
+                        let new_node = match node_type {
+                            NewNodeType::Paragraph => {
+                                StructuredNode::Paragraph(ParagraphNode {
+                                    content: InlineText::plain("New paragraph"),
+                                    som_path: None,
+                                    source_name: None,
+                                })
+                            }
+                            NewNodeType::Heading(level) => {
+                                StructuredNode::Heading(HeadingNode {
+                                    level: HeadingLevel::from_u8(level),
+                                    content: InlineText::plain("New heading"),
+                                    som_path: None,
+                                    source_name: None,
+                                })
+                            }
+                            NewNodeType::List => StructuredNode::List(ListNode {
+                                list_style: ListStyleType::Disc,
+                                items: vec![InlineText::plain("New item")],
+                            }),
+                            NewNodeType::Group => {
+                                StructuredNode::Group(GroupNode { children: vec![] })
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        if parent.is_empty() {
+                            // Add to root
+                            let insert_idx = index.min(env.content.len());
+                            env.content.insert(insert_idx, new_node);
+                            new_selection =
+                                Some(vec![PathSegment::Child(insert_idx)]);
+                        } else if let Some(parent_node) =
+                            get_node_at_path_mut(&mut env.content, &parent)
+                        {
+                            // Add to nested parent (Group or GridLayout)
+                            match parent_node {
+                                StructuredNode::Group(g) => {
+                                    let insert_idx =
+                                        index.min(g.children.len());
+                                    g.children.insert(insert_idx, new_node);
+                                    let mut path = parent.clone();
+                                    path.push(PathSegment::Child(insert_idx));
+                                    new_selection = Some(path);
+                                }
+                                _ => {
+                                    new_selection = None;
+                                }
+                            }
+                        } else {
+                            new_selection = None;
+                        }
+                    }
+                }
+
+                drop(env);
+                // Select the newly added element
+                if let Some(new_path) = new_selection {
+                    let mut sel = selection.write();
+                    sel.selected.clear();
+                    sel.selected.insert(new_path);
                 }
             }
             EditorAction::ConvertSelected(target) => {
@@ -715,6 +874,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 can_move_up,
                 can_move_down,
                 available_conversions: conversions.clone(),
+                add_options: add_options.clone(),
                 on_action: handle_action,
             }
 

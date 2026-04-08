@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use super::state::{ConvertTarget, EditorAction, NewNodeType, SelectionState};
+use super::state::{AddOption, ConvertTarget, EditorAction, SelectionState};
 
 /// Properties for the editor toolbar.
 #[derive(Clone, PartialEq, Props)]
@@ -19,6 +19,8 @@ pub struct ToolbarProps {
     pub can_move_down: bool,
     /// Available conversion targets for current selection.
     pub available_conversions: Vec<ConvertTarget>,
+    /// Available add options for current selection.
+    pub add_options: Vec<AddOption>,
     /// Callback when an action is triggered.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -91,57 +93,26 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                     span { class: "toolbar-caret", "▾" }
                 }
                 div { class: "toolbar-dropdown-menu",
-                    button {
-                        class: "dropdown-item",
-                        onclick: move |_| {
-                            props
-                                .on_action
-                                .call(EditorAction::AddNode {
-                                    parent: vec![],
-                                    index: 0,
-                                    node_type: NewNodeType::Paragraph,
-                                })
-                        },
-                        "Paragraph"
-                    }
-                    button {
-                        class: "dropdown-item",
-                        onclick: move |_| {
-                            props
-                                .on_action
-                                .call(EditorAction::AddNode {
-                                    parent: vec![],
-                                    index: 0,
-                                    node_type: NewNodeType::Heading(2),
-                                })
-                        },
-                        "Heading"
-                    }
-                    button {
-                        class: "dropdown-item",
-                        onclick: move |_| {
-                            props
-                                .on_action
-                                .call(EditorAction::AddNode {
-                                    parent: vec![],
-                                    index: 0,
-                                    node_type: NewNodeType::List,
-                                })
-                        },
-                        "List"
-                    }
-                    button {
-                        class: "dropdown-item",
-                        onclick: move |_| {
-                            props
-                                .on_action
-                                .call(EditorAction::AddNode {
-                                    parent: vec![],
-                                    index: 0,
-                                    node_type: NewNodeType::Group,
-                                })
-                        },
-                        "Group"
+                    for option in props.add_options.iter() {
+                        {
+                            let parent = option.parent.clone();
+                            let index = option.index;
+                            let node_type = option.node_type.clone();
+                            let label = option.label;
+                            rsx! {
+                                button {
+                                    class: "dropdown-item",
+                                    onclick: move |_| {
+                                        props.on_action.call(EditorAction::AddNode {
+                                            parent: parent.clone(),
+                                            index,
+                                            node_type: node_type.clone(),
+                                        })
+                                    },
+                                    {label}
+                                }
+                            }
+                        }
                     }
                 }
             }
