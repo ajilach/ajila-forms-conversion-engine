@@ -22305,3 +22305,63 @@ fn test_aari_has_list_with_expected_items() {
         texts
     );
 }
+
+#[test]
+fn test_aari_has_radio_button_group_fiscal_regime() {
+    use crate::structured::FieldType;
+    use crate::Blueprint;
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let radio_fields = helpers::collect_radio_fields(&envelope.content);
+
+    // Find the radio group about fiscal regime (Regime Fiscale Amministrato)
+    let fiscal_group = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            options.iter().any(|opt| {
+                opt.name
+                    .contains("voler optare per l\u{2019}applicazione dell\u{2019}imposizione sostitutiva")
+                    || opt.name
+                        .contains("voler optare per l'applicazione dell'imposizione sostitutiva")
+            }) && options.iter().any(|opt| {
+                opt.name
+                    .contains("non voler optare per il Regime Fiscale Amministrato")
+                    || opt.name
+                        .contains("Non voler optare per il Regime Fiscale Amministrato")
+            })
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        fiscal_group.is_some(),
+        "Expected a radio button group with fiscal regime options (Regime Fiscale Amministrato).\nFound radio fields: {:#?}",
+        radio_fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    Some(options.iter().map(|o| o.name.to_string()).collect::<Vec<_>>())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    );
+
+    if let FieldType::Radio { options } = &fiscal_group.unwrap().input_type {
+        assert_eq!(
+            options.len(),
+            2,
+            "Expected exactly 2 options in the fiscal regime radio group, got {}.\nOptions: {:?}",
+            options.len(),
+            options.iter().map(|o| o.name.to_string()).collect::<Vec<_>>()
+        );
+    }
+}
