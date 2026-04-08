@@ -51,7 +51,7 @@ pub fn generate_aem_package(
 
     // When binding to XSD, include the XSD path as a filter root so that CRX
     // actually installs the file (content outside filter roots is ignored).
-    if config.bind_to_xsd {
+    if config.bind_to_xsd && !config.xsd_path.is_empty() {
         let xsd_jcr_path = config.xsd_ref();
         filter_roots.push(xsd_jcr_path);
     }
@@ -204,8 +204,8 @@ pub fn generate_aem_package(
         }
     }
 
-    // ── XSD schema (when bind_to_xsd = true) ───────────────────────────
-    if config.bind_to_xsd {
+    // ── XSD schema (when bind_to_xsd = true and xsd_path is set) ──────
+    if config.bind_to_xsd && !config.xsd_path.is_empty() {
         if let Some(ref xsd_config) = config.xsd_config {
             let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
             let xsd_zip_path = config.xsd_zip_path();
@@ -290,7 +290,12 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
         ctx.insert("bind_to_xsd", &config.bind_to_xsd);
-        ctx.insert("xsd_ref", &config.xsd_ref());
+        let xsd_ref = if config.xsd_path.is_empty() {
+            String::new()
+        } else {
+            config.xsd_ref()
+        };
+        ctx.insert("xsd_ref", &xsd_ref);
 
         match template::render_string(dam_template, &ctx) {
             Ok(rendered) => return reformat_attributes(&rendered),
@@ -341,8 +346,9 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
             meta.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
         }
         meta.push_attribute(("dorType", config.dor_type.as_str()));
-        meta.push_attribute(("formmodel", if config.bind_to_xsd { "xsd" } else { "none" }));
-        if config.bind_to_xsd {
+        let has_xsd_path = !config.xsd_path.is_empty();
+        meta.push_attribute(("formmodel", if has_xsd_path { "xsd" } else { "none" }));
+        if has_xsd_path {
             let xsd_ref = config.xsd_ref();
             meta.push_attribute(("xsdRef", xsd_ref.as_str()));
         }
@@ -1204,7 +1210,7 @@ mod tests {
 
         assert!(
             xml.contains("formmodel=\"xsd\""),
-            "DAM metadata should use xsd model when bind_to_xsd=true"
+            "DAM metadata should use xsd model when xsd_path is set"
         );
         assert!(
             xml.contains(
@@ -1513,8 +1519,7 @@ mod tests {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
         config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
-        config.xsd_path =
-            "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
 
         let root = AemNode::Root {
             title: "TEST".into(),
@@ -1547,5 +1552,62 @@ mod tests {
         archive
             .by_name("jcr_root/content/dam/formsanddocuments/afforms_xsd/AFForms/.content.xml")
             .expect("AFForms intermediate folder must exist");
+    }
+
+    #[test]
+    fn bind_to_xsd_without_xsd_path_omits_xsd_from_package() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
+        config.xsd_path = String::new(); // no xsd_path
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        // No XSD file should be in the package
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).expect("zip entry");
+            names.push(entry.name().to_string());
+        }
+        assert!(
+            !names.iter().any(|n| n.ends_with(".xsd")),
+            "package must NOT contain any XSD file when xsd_path is empty. Entries: {:?}",
+            names
+        );
+
+        // filter.xml must NOT contain an XSD filter root
+        let mut filter_xml = String::new();
+        archive
+            .by_name("META-INF/vault/filter.xml")
+            .expect("filter.xml")
+            .read_to_string(&mut filter_xml)
+            .unwrap();
+        assert!(
+            !filter_xml.contains("afforms_xsd"),
+            "filter.xml must NOT reference xsd path when xsd_path is empty, got: {}",
+            filter_xml
+        );
+
+        // DAM metadata must use formmodel="none" and no xsdRef
+        let dam_xml = generate_dam_asset_xml(&config);
+        assert!(
+            dam_xml.contains("formmodel=\"none\""),
+            "DAM metadata should use formmodel=none when xsd_path is empty, got: {}",
+            dam_xml
+        );
+        assert!(
+            !dam_xml.contains("xsdRef"),
+            "DAM metadata should NOT include xsdRef when xsd_path is empty, got: {}",
+            dam_xml
+        );
     }
 }

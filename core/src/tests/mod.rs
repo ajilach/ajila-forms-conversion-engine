@@ -13896,7 +13896,7 @@ fn test_ubs_profile_entity_folder_mapping() {
 }
 
 #[test]
-fn test_aem_profile_requires_xsd_path_when_bind_to_xsd_enabled() {
+fn test_aem_profile_allows_bind_to_xsd_without_xsd_path() {
     use crate::aem::{AemConfig, AemProfile};
 
     let toml_str = r#"
@@ -13910,15 +13910,11 @@ bind_to_xsd = true
     vars.insert("formrange_code".to_string(), "AAAB".to_string());
     let ctx = crate::Context::new("en".to_string(), vars);
 
-    let err = AemConfig::from_profile(&profile, HashMap::new(), &ctx)
-        .expect_err("bind_to_xsd=true without xsd_path should fail");
+    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx)
+        .expect("bind_to_xsd=true without xsd_path should succeed");
 
-    assert!(
-        err.to_string()
-            .contains("bind_to_xsd=true requires xsd_path to be set in aem/config.toml"),
-        "unexpected error message: {}",
-        err
-    );
+    assert!(config.bind_to_xsd);
+    assert!(config.xsd_path.is_empty());
 }
 
 #[test]

@@ -181,11 +181,6 @@ impl AemConfig {
         let bind_to_xsd = profile.bind_to_xsd.unwrap_or(false);
         let xsd_path = match &profile.xsd_path {
             Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
-            None if bind_to_xsd => {
-                return Err(crate::Error::AemConfig(
-                    "bind_to_xsd=true requires xsd_path to be set in aem/config.toml".into(),
-                ));
-            }
             None => String::new(),
         };
 
