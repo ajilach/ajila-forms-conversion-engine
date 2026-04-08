@@ -3983,9 +3983,11 @@ fn test_aaai_structured_output_no_invisible_content() {
                 .iter()
                 .map(|node| match node {
                     InlineNode::Text(s) => s.clone(),
-                    InlineNode::TranslatedText(map) => {
-                        map.values().next().and_then(|v| v.clone()).unwrap_or_default()
-                    }
+                    InlineNode::TranslatedText(map) => map
+                        .values()
+                        .next()
+                        .and_then(|v| v.clone())
+                        .unwrap_or_default(),
                     InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
                         extract_inline_text(&[(**inner).clone()])
                     }
@@ -5681,7 +5683,9 @@ fn test_aaai_multilingual_merge_de_en() {
     let en_title = h1_map.get("en").expect("H1 should have 'en' translation");
 
     assert!(
-        de_title.as_ref().map_or(false, |s| s.contains("Vereinbarung")),
+        de_title
+            .as_ref()
+            .map_or(false, |s| s.contains("Vereinbarung")),
         "German H1 should contain 'Vereinbarung', got: '{}'",
         de_title.as_deref().unwrap_or("")
     );
@@ -6668,7 +6672,9 @@ fn test_aaoe_h2_sections() {
                 InlineNode::Text(t) => Some(t.clone()),
                 InlineNode::TranslatedText(map) => {
                     // Prefer Italian, fall back to first available
-                    map.get("it").or_else(|| map.values().next()).and_then(|v| v.clone())
+                    map.get("it")
+                        .or_else(|| map.values().next())
+                        .and_then(|v| v.clone())
                 }
                 InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => extract_text(inner),
                 _ => None,
@@ -8483,13 +8489,17 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     ) {
         for inline in inlines {
             if let InlineNode::TranslatedText(map) = inline {
-                let has_de = map.get("de").map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("Ich bestätige")));
-                let has_en = map
-                    .get("en")
-                    .map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("I confirm that I am tax resident")));
-                let has_sp = map
-                    .get("sp")
-                    .map_or(false, |t| t.as_ref().map_or(false, |s| s.contains("Confirmo que soy residente fiscal")));
+                let has_de = map.get("de").map_or(false, |t| {
+                    t.as_ref().map_or(false, |s| s.contains("Ich bestätige"))
+                });
+                let has_en = map.get("en").map_or(false, |t| {
+                    t.as_ref()
+                        .map_or(false, |s| s.contains("I confirm that I am tax resident"))
+                });
+                let has_sp = map.get("sp").map_or(false, |t| {
+                    t.as_ref()
+                        .map_or(false, |s| s.contains("Confirmo que soy residente fiscal"))
+                });
 
                 if has_de {
                     *found_de = true;
@@ -8704,7 +8714,8 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
             assert!(
                 val.is_some(),
                 "H2 heading has missing translation for lang '{}': {:?}",
-                lang, map
+                lang,
+                map
             );
         }
     }
@@ -8714,8 +8725,10 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
     let matching = h2_maps
         .iter()
         .filter(|map| {
-            map.get("de")
-                .map_or(false, |v| v.as_ref().map_or(false, |s| s.contains("Kundenerklärungen")))
+            map.get("de").map_or(false, |v| {
+                v.as_ref()
+                    .map_or(false, |s| s.contains("Kundenerklärungen"))
+            })
         })
         .count();
     assert_eq!(
@@ -11408,7 +11421,9 @@ fn test_baqm_partial_bold_in_paragraph() {
         nodes.iter().any(|n| match n {
             InlineNode::Strong(inner) => match inner.as_ref() {
                 InlineNode::Text(t) => t.contains(text),
-                InlineNode::TranslatedText(map) => map.values().any(|v| v.as_ref().map_or(false, |s| s.contains(text))),
+                InlineNode::TranslatedText(map) => map
+                    .values()
+                    .any(|v| v.as_ref().map_or(false, |s| s.contains(text))),
                 _ => false,
             },
             _ => false,
@@ -13601,7 +13616,9 @@ fn test_aacc_dropdown_no_missing_translation_in_options() {
                         assert!(
                             val.is_some(),
                             "Select field {:?} has missing translation for lang '{}' in option {:?}",
-                            f.name, lang, opt
+                            f.name,
+                            lang,
+                            opt
                         );
                     }
                 }
@@ -14004,9 +14021,11 @@ fn debug_aacj_en_flattened_text() {
         for inline in &text.0 {
             let s = match inline {
                 InlineNode::Text(t) => t.clone(),
-                InlineNode::TranslatedText(map) => {
-                    map.values().filter_map(|v| v.as_ref().map(|s| s.as_str())).collect::<Vec<_>>().join(" | ")
-                }
+                InlineNode::TranslatedText(map) => map
+                    .values()
+                    .filter_map(|v| v.as_ref().map(|s| s.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" | "),
                 _ => continue,
             };
             let lower = s.to_lowercase();
@@ -21343,9 +21362,7 @@ fn test_aais_019_no_missing_translation_list() {
             let en = item.plain_text_in("en");
             let de = item.plain_text_in("de");
             let es = item.plain_text_in("es");
-            let all_missing = en.trim().is_empty()
-                && de.trim().is_empty()
-                && es.trim().is_empty();
+            let all_missing = en.trim().is_empty() && de.trim().is_empty() && es.trim().is_empty();
             assert!(
                 !all_missing,
                 "List {} item {} has missing translation in every language; \
@@ -21986,5 +22003,99 @@ fn test_aais_019_table_detection() {
     assert!(
         all_content.contains("p.a."),
         "Table should contain fee percentages (p.a.)"
+    );
+}
+
+#[test]
+fn test_bagq_exhaustive_discovers_checkbox_hidden_content() {
+    // BAGQ has 8 currency checkboxes (CB_EUR, CB_USD, ...) that reveal hidden
+    // content sections (EUR, USD, ...) via a calculate script on the parent
+    // subform. The checkboxes themselves have no interactive scripts, but they
+    // must still be explored because the parent subform's calculate script
+    // reads their values and toggles section visibility.
+    //
+    // With all checkboxes unchecked (default), only the base form is visible.
+    // Checking a checkbox reveals a currency section with additional content.
+    // The exhaustive search must produce more than 1 state.
+    let mut bp = Blueprint::from_pdf(input_path("BAGQ_019_DE.pdf"))
+        .expect("Failed to create Blueprint from BAGQ PDF");
+    let form_states = bp.states().expect("Failed to collect exhaustive states");
+
+    assert!(
+        form_states.len() > 1,
+        "BAGQ should produce more than 1 exhaustive state (checkboxes reveal currency sections), got {}",
+        form_states.len()
+    );
+
+    // Verify that at least one state has checkbox selections
+    let has_checkbox_selection = form_states.iter().any(|s| {
+        s.selections
+            .iter()
+            .any(|sel| sel.kind == SelectionKind::Checkbox)
+    });
+    assert!(
+        has_checkbox_selection,
+        "At least one BAGQ state should have checkbox selections"
+    );
+}
+
+#[test]
+fn test_bagq_debug_selectable_fields() {
+    // Debug test — trace EUR visibility through the set_value + refresh flow
+    let mut bp = Blueprint::from_pdf(input_path("BAGQ_019_DE.pdf"))
+        .expect("Failed to create Blueprint from BAGQ PDF");
+    let form = bp.form_mut().expect("should be XFA PDF");
+
+    // Check initial state
+    let initial_eur_vis = form.is_path_visible("UBSForms.Page.EUR");
+    eprintln!("EUR initially visible: {}", initial_eur_vis);
+
+    // Check EUR presence on the XFA node
+    if let Some(eur_node) = form.resolve("UBSForms.Page.EUR") {
+        eprintln!(
+            "EUR XFA node presence: {:?}",
+            eur_node.xfa_node().get_presence()
+        );
+    }
+
+    // Check EUR initial presence in JS engine
+    let eval_result = form.eval_js("return Page.EUR.presence");
+    eprintln!("Page.EUR.presence in JS (initial): {:?}", eval_result);
+
+    // Check flattened key before
+    let flat_key_before = form.flattened_mut().flattened_key().clone();
+    eprintln!("Flattened key count before: {}", flat_key_before.len());
+
+    // Set CB_EUR=1 (check the checkbox)
+    let cb_path = "UBSForms.Page.FormConfigurator_Currency.STP_Currencies.CB_EUR";
+    let result = form.set_value_as_user(cb_path, "1");
+    eprintln!("set_value_as_user result: {:?}", result);
+
+    // Check JS presence after set_value_as_user (which now runs ancestor calculate)
+    let eval_result = form.eval_js("return Page.EUR.presence");
+    eprintln!(
+        "Page.EUR.presence in JS (after set_value): {:?}",
+        eval_result
+    );
+
+    // Check presence changes from JS engine
+    let changes = form.get_presence_changes();
+    eprintln!("Presence changes from JS engine: {:?}", changes);
+
+    // Now refresh (which should sync JS presence to XFA nodes and reflatten)
+    form.refresh().expect("refresh failed");
+
+    // Check EUR visibility after refresh
+    let eur_vis_after = form.is_path_visible("UBSForms.Page.EUR");
+    eprintln!("EUR visible after refresh: {}", eur_vis_after);
+
+    // Check flattened key after
+    let flat_key_after = form.flattened_mut().flattened_key().clone();
+    eprintln!("Flattened key count after: {}", flat_key_after.len());
+
+    // The key: flattened output should be different when EUR is visible vs hidden
+    eprintln!(
+        "Flattened key changed: {}",
+        flat_key_before != flat_key_after
     );
 }

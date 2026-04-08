@@ -982,6 +982,11 @@ function _xfa_cloneSubform(original, depth) {
         if path.contains('.') {
             let global_obj = self.context.global_object();
 
+            // Register the full SOM path on the global object so that
+            // scripts accessing `RootSubform.Child.Field` as nested
+            // properties on a global variable resolve correctly.
+            self.register_path_on_object(&global_obj, path, field_obj.clone());
+
             if let Some(dot_pos) = path.find('.') {
                 let stripped_path = &path[dot_pos + 1..];
                 if stripped_path.contains('.') {

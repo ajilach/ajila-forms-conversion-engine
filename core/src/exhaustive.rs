@@ -600,9 +600,7 @@ impl CollectedState {
 /// path processes fields sequentially, either selecting or skipping them.
 /// Only complete states (where all fields have been processed) are collected.
 ///
-pub fn collect_states(
-    form: &mut XfaForm,
-) -> Result<Vec<CollectedState>, crate::Error> {
+pub fn collect_states(form: &mut XfaForm) -> Result<Vec<CollectedState>, crate::Error> {
     // OPTIMIZATION: Cache post-init nodes and computed values from the already-
     // initialised form. Branches use `XfaForm::from_post_init` which skips the
     // expensive `ScriptExecutor::execute()` phase (saves one Boa JS context
@@ -617,6 +615,16 @@ pub fn collect_states(
     // Establish the global field ordering from the initial form state
     // Only includes fields with interactive scripts (change, click, calculate)
     let global_field_order = get_all_selectable_fields_ordered(form);
+
+    #[cfg(test)]
+    eprintln!(
+        "[exhaustive] global_field_order has {} fields:",
+        global_field_order.len()
+    );
+    #[cfg(test)]
+    for f in &global_field_order {
+        eprintln!("  {:?} → {}", f.kind, f.path.as_str());
+    }
 
     // OPTIMIZATION (Step 1): Precompute excl-group lookups for every selectable field.
     // `find_excl_group_for_field` does an O(tree-depth) walk each time — here we pay
@@ -662,6 +670,12 @@ pub fn collect_states(
 
     // If a single group (or zero/one fields), fall through to the original
     // algorithm — no partitioning benefit.
+    #[cfg(test)]
+    eprintln!(
+        "[partition] {} groups: {:?}",
+        groups.len(),
+        groups.iter().map(|g| g.len()).collect::<Vec<_>>()
+    );
     if groups.len() <= 1 {
         return collect_states_single_group(
             form,
@@ -847,7 +861,19 @@ fn combine_group_results(
                     let _ = form.select_radio_button(sel.som_path.as_str());
                 }
                 SelectionKind::Checkbox => {
-                    let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
+                    // Selection stores labels ("checked"/"unchecked"), but
+                    // set_value_as_user needs raw XFA values ("1"/"0").
+                    // Resolve on/off values from the XFA <items> element.
+                    let (on_val, off_val) = form
+                        .resolve(sel.som_path.as_str())
+                        .map(|node| node.xfa_node().extract_item_values())
+                        .unwrap_or((None, None));
+                    let raw_value = if sel.option_index == 0 {
+                        on_val.unwrap_or_else(|| "1".to_string())
+                    } else {
+                        off_val.unwrap_or_else(|| "0".to_string())
+                    };
+                    let _ = form.set_value_as_user(sel.som_path.as_str(), &raw_value);
                 }
                 SelectionKind::Dropdown => {
                     let _ = form.set_value_as_user(sel.som_path.as_str(), sel.primary_value());
@@ -890,6 +916,14 @@ fn collect_states_linear(
     exploration_state: ExplorationState,
     ctx: &ExplorationContext,
 ) -> Result<(), crate::Error> {
+    #[cfg(test)]
+    eprintln!(
+        "[CSL_ENTER] next_field_index={}, depth={}, is_complete={}",
+        exploration_state.next_field_index,
+        exploration_state.selections.len(),
+        exploration_state.is_complete()
+    );
+
     // Check if this is a complete state (all fields processed)
     if exploration_state.is_complete() {
         let state_key = exploration_state.state_key();
@@ -898,6 +932,11 @@ fn collect_states_linear(
         {
             let mut states = ctx.rendered_states.lock().unwrap();
             if states.contains(&state_key) {
+                #[cfg(test)]
+                eprintln!(
+                    "[COMPLETE] DUPLICATE state, depth={}",
+                    exploration_state.selections.len()
+                );
                 return Ok(());
             }
             // Mark this state as collected
@@ -909,6 +948,13 @@ fn collect_states_linear(
 
         // Get flattened data for this state (but don't analyze yet)
         let flattened = form.flattened().clone();
+
+        #[cfg(test)]
+        eprintln!(
+            "[COMPLETE] NEW state collected, depth={}, label={}",
+            exploration_state.selections.len(),
+            label
+        );
 
         // Store the collected state (thread-safe)
         ctx.collected_states.lock().unwrap().push(CollectedState {
@@ -936,6 +982,14 @@ fn collect_states_linear(
 
     // Check if field can be selected
     let can_select = can_select_field(form, field, &exploration_state.selections, ctx);
+    #[cfg(test)]
+    eprintln!(
+        "[collect_states_linear] field_index={}, field={}, can_select={}, depth={}",
+        field_index,
+        field.path,
+        can_select,
+        exploration_state.selections.len()
+    );
 
     // If field cannot be selected, automatically skip it and continue
     if !can_select {
@@ -1047,8 +1101,19 @@ fn explore_with_dedup(
         {
             let mut seen = ctx.seen_layouts.lock().unwrap();
             if seen.contains_key(&composite_key) {
+                #[cfg(test)]
+                eprintln!(
+                    "[explore_with_dedup] SKIPPING seen layout for next_field_index={}",
+                    composite_key.1
+                );
                 continue;
             }
+            #[cfg(test)]
+            eprintln!(
+                "[explore_with_dedup] NEW layout for next_field_index={}, key_len={}",
+                composite_key.1,
+                composite_key.0.len()
+            );
             seen.insert(composite_key, representative.state.selections.clone());
         }
 
@@ -1281,7 +1346,12 @@ fn explore_checkbox(
             )
             .map_err(crate::Error::FormCreation)?;
 
-            let _ = new_form.set_value_as_user(field.path.as_str(), raw_value);
+            let result = new_form.set_value_as_user(field.path.as_str(), raw_value);
+            #[cfg(test)]
+            eprintln!(
+                "[explore_checkbox] {} = {} → set_value result: {:?}",
+                field.path, raw_value, result
+            );
 
             let mut state = exploration_state.clone();
             state.selections.push(Selection::standalone_with_index(
@@ -1297,6 +1367,13 @@ fn explore_checkbox(
 
             // OPTIMIZATION (Step 6): Use cached flattened key
             let flattened_key = new_form.flattened_mut().flattened_key().clone();
+            #[cfg(test)]
+            eprintln!(
+                "[explore_checkbox] {} = {} → flattened_key len: {}",
+                field.path,
+                raw_value,
+                flattened_key.len()
+            );
             let snapshot_nodes = new_form.xfa_nodes().to_vec();
             let snapshot_values = new_form.current_field_values();
 
@@ -1419,8 +1496,9 @@ fn can_select_field(
 }
 
 /// Get selectable fields (radio buttons, checkboxes, dropdowns) that have interactive scripts.
-/// Only fields with change, click, or calculate scripts on themselves or their parent exclGroup
-/// (for radios) are included. This establishes the static ordering used throughout the exploration.
+/// Fields are included if they (or their parent exclGroup for radios, or any ancestor subform)
+/// have change, click, or calculate scripts. This establishes the static ordering used throughout
+/// the exploration.
 fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
     let mut results = Vec::new();
     search_selectable_fields(form.xfa_nodes(), "", &mut results);
@@ -1468,6 +1546,24 @@ fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
                 if registry.has_interactive_scripts(&excl_group_path) {
                     return true;
                 }
+            }
+        }
+
+        // Check ancestor subforms for calculate scripts. In XFA, calculate
+        // scripts on subforms fire when any descendant field value changes.
+        // For example, a checkbox inside a subform with a calculate script
+        // that reads the checkbox value and toggles visibility of other
+        // sections must be explored even if the checkbox has no own scripts.
+        {
+            let path_str = field.path.as_str();
+            let mut pos = path_str.len();
+            while let Some(dot) = path_str[..pos].rfind('.') {
+                let ancestor = &path_str[..dot];
+                let ancestor_path = SomPath::new(ancestor);
+                if registry.has_interactive_scripts(&ancestor_path) {
+                    return true;
+                }
+                pos = dot;
             }
         }
 

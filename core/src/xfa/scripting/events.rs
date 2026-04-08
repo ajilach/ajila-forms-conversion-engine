@@ -179,11 +179,23 @@ pub fn parse_events_from_node(children: &[XfaNode]) -> Vec<XfaScript> {
     let mut scripts = Vec::new();
 
     for child in children {
-        if let XfaNodeKind::Element { tag_name, .. } = &child.kind
-            && tag_name == "event"
-            && let Some(script) = parse_event_element(child)
-        {
-            scripts.push(script);
+        if let XfaNodeKind::Element { tag_name, .. } = &child.kind {
+            match tag_name.as_str() {
+                "event" => {
+                    if let Some(script) = parse_event_element(child) {
+                        scripts.push(script);
+                    }
+                }
+                // XFA 3.3 §D.4: <calculate> and <validate> can appear as direct
+                // children of field/subform/exclGroup, equivalent to
+                // <event activity="calculate/validate"><script>...</script></event>.
+                "calculate" | "validate" => {
+                    if let Some(script) = parse_shorthand_element(child, tag_name) {
+                        scripts.push(script);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -241,6 +253,56 @@ fn parse_event_element(event_node: &XfaNode) -> Option<XfaScript> {
                     name,
                     run_at,
                     listen,
+                });
+            }
+        }
+    }
+
+    None
+}
+
+/// Parse a shorthand `<calculate>` or `<validate>` element into an [`XfaScript`].
+///
+/// XFA allows `<calculate><script>...</script></calculate>` directly on
+/// field/subform/exclGroup nodes as shorthand for
+/// `<event activity="calculate"><script>...</script></event>`.
+fn parse_shorthand_element(node: &XfaNode, tag_name: &str) -> Option<XfaScript> {
+    let activity = match tag_name {
+        "calculate" => EventActivity::Calculate,
+        "validate" => EventActivity::Validate,
+        _ => return None,
+    };
+
+    for child in &node.children {
+        if let XfaNodeKind::Element {
+            tag_name: child_tag,
+            text_content,
+        } = &child.kind
+            && child_tag == "script"
+        {
+            let content_type = child
+                .attributes
+                .get("contentType")
+                .and_then(|s| ScriptContentType::from_content_type(s))
+                .unwrap_or(ScriptContentType::FormCalc);
+
+            let run_at = child
+                .attributes
+                .get("runAt")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_default();
+
+            let source = text_content.clone().unwrap_or_default();
+
+            if !source.trim().is_empty() {
+                return Some(XfaScript {
+                    source,
+                    content_type,
+                    activity,
+                    event_ref: EventRef::Current,
+                    name: None,
+                    run_at,
+                    listen: ListenScope::default(),
                 });
             }
         }

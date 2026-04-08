@@ -12,7 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::structured::merge_engine::{lcs_align_with, lcs_table_with, merge_duplicate_conditionals};
+use crate::structured::merge_engine::{
+    lcs_align_with, lcs_table_with, merge_duplicate_conditionals,
+};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, GridLayout, GridLayoutElement, GroupNode, InputValue,
     RepeatableNode, StructuredNode, TableHeader, TableRow,
@@ -739,9 +741,7 @@ impl RecursiveMerger {
 /// 1 + sum of children counts.
 fn recursive_node_count(node: &StructuredNode) -> usize {
     match node {
-        StructuredNode::Group(g) => {
-            1 + g.children.iter().map(recursive_node_count).sum::<usize>()
-        }
+        StructuredNode::Group(g) => 1 + g.children.iter().map(recursive_node_count).sum::<usize>(),
         StructuredNode::Conditional(c) => 1 + recursive_node_count(&c.content),
         StructuredNode::Repeatable(r) => 1 + recursive_node_count(&r.item),
         StructuredNode::GridLayout(gl) => {
@@ -1029,8 +1029,10 @@ fn hoist_common_from_sibling_conditionals(nodes: Vec<StructuredNode>) -> Vec<Str
                 })
                 .collect();
 
-            let children_lists: Vec<Vec<StructuredNode>> =
-                siblings.iter().map(|c| unwrap_to_children(&c.content)).collect();
+            let children_lists: Vec<Vec<StructuredNode>> = siblings
+                .iter()
+                .map(|c| unwrap_to_children(&c.content))
+                .collect();
 
             let segments = split_at_common_runs(&children_lists);
 
@@ -1058,12 +1060,12 @@ fn hoist_common_from_sibling_conditionals(nodes: Vec<StructuredNode>) -> Vec<Str
                             if div_nodes.is_empty() {
                                 continue;
                             }
-                            result.push(recurse_into_node(
-                                StructuredNode::Conditional(ConditionalNode {
+                            result.push(recurse_into_node(StructuredNode::Conditional(
+                                ConditionalNode {
                                     condition: siblings[k].condition.clone(),
                                     content: Box::new(wrap_children(div_nodes)),
-                                }),
-                            ));
+                                },
+                            )));
                         }
                     }
                 }
@@ -1719,20 +1721,28 @@ mod tests {
         //   [unique1, C1, C2, C3, unique2]
         // The common run C1–C3 (weight=3, ≥ threshold) should be hoisted out.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("A-only-1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-                para("A-only-2"),
-            ]),
-            cond("A", "v2", vec![
-                para("B-only-1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-                para("B-only-2"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("A-only-1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                    para("A-only-2"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("B-only-1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                    para("B-only-2"),
+                ],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
@@ -1742,29 +1752,37 @@ mod tests {
         //           Cond(A=v1){A-only-2}, Cond(A=v2){B-only-2}
         assert_eq!(result.len(), 7, "got: {result:#?}");
 
-        assert!(matches!(&result[0], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v1".into())));
-        assert!(matches!(&result[1], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v2".into())));
+        assert!(
+            matches!(&result[0], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v1".into()))
+        );
+        assert!(
+            matches!(&result[1], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v2".into()))
+        );
         assert!(matches!(&result[2], StructuredNode::Paragraph(_)));
         assert!(matches!(&result[3], StructuredNode::Paragraph(_)));
         assert!(matches!(&result[4], StructuredNode::Paragraph(_)));
-        assert!(matches!(&result[5], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v1".into())));
-        assert!(matches!(&result[6], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v2".into())));
+        assert!(
+            matches!(&result[5], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v1".into()))
+        );
+        assert!(
+            matches!(&result[6], StructuredNode::Conditional(c) if c.condition.value == InputValue::Text("v2".into()))
+        );
     }
 
     #[test]
     fn test_hoist_below_threshold_no_split() {
         // Common run of 2 paragraphs (weight=2 < 3) — should NOT be hoisted.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("A-only"),
-                para("common1"),
-                para("common2"),
-            ]),
-            cond("A", "v2", vec![
-                para("B-only"),
-                para("common1"),
-                para("common2"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![para("A-only"), para("common1"), para("common2")],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![para("B-only"), para("common1"), para("common2")],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
@@ -1801,55 +1819,83 @@ mod tests {
     fn test_hoist_three_siblings_requires_all_match() {
         // 3 siblings: common run present in first two but NOT the third → no hoisting.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("unique-1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v2", vec![
-                para("unique-2"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v3", vec![
-                para("unique-3"),
-                para("different1"),
-                para("different2"),
-                para("different3"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("unique-1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("unique-2"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v3",
+                vec![
+                    para("unique-3"),
+                    para("different1"),
+                    para("different2"),
+                    para("different3"),
+                ],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
 
         // No common run across ALL 3 siblings — three conditionals remain.
         assert_eq!(result.len(), 3, "got: {result:#?}");
-        assert!(result.iter().all(|n| matches!(n, StructuredNode::Conditional(_))));
+        assert!(
+            result
+                .iter()
+                .all(|n| matches!(n, StructuredNode::Conditional(_)))
+        );
     }
 
     #[test]
     fn test_hoist_three_siblings_all_match() {
         // 3 siblings: common run of 3 nodes present in ALL → hoisted.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("unique-1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v2", vec![
-                para("unique-2"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v3", vec![
-                para("unique-3"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("unique-1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("unique-2"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v3",
+                vec![
+                    para("unique-3"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
@@ -1874,7 +1920,11 @@ mod tests {
         let inner_b = cond("B", "x", vec![para("b1"), para("b2"), para("b3")]);
 
         let nodes = vec![
-            cond("A", "v1", vec![para("A-only"), inner_b.clone(), para("A-tail")]),
+            cond(
+                "A",
+                "v1",
+                vec![para("A-only"), inner_b.clone(), para("A-tail")],
+            ),
             cond("A", "v2", vec![para("B-only"), inner_b, para("B-tail")]),
         ];
 
@@ -1888,44 +1938,64 @@ mod tests {
         // Expected: Cond(A=v1){A-only}, Cond(A=v2){B-only}, Conditional(B=x){...},
         //           Cond(A=v1){A-tail}, Cond(A=v2){B-tail}
         assert_eq!(result.len(), 5, "got: {result:#?}");
-        assert!(matches!(&result[2], StructuredNode::Conditional(c) if c.condition.field_name == FieldId::from("B")));
+        assert!(
+            matches!(&result[2], StructuredNode::Conditional(c) if c.condition.field_name == FieldId::from("B"))
+        );
     }
 
     #[test]
     fn test_hoist_no_common_content() {
         // Two siblings with completely different content → no hoisting.
         let nodes = vec![
-            cond("A", "v1", vec![para("only-A1"), para("only-A2"), para("only-A3")]),
-            cond("A", "v2", vec![para("only-B1"), para("only-B2"), para("only-B3")]),
+            cond(
+                "A",
+                "v1",
+                vec![para("only-A1"), para("only-A2"), para("only-A3")],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![para("only-B1"), para("only-B2"), para("only-B3")],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
 
         assert_eq!(result.len(), 2, "got: {result:#?}");
-        assert!(result.iter().all(|n| matches!(n, StructuredNode::Conditional(_))));
+        assert!(
+            result
+                .iter()
+                .all(|n| matches!(n, StructuredNode::Conditional(_)))
+        );
     }
 
     #[test]
     fn test_hoist_recursive_into_group() {
         // A Group containing sibling conditionals → hoisting applied inside the Group.
         let inner = vec![
-            cond("A", "v1", vec![
-                para("u1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v2", vec![
-                para("u2"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("u1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("u2"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
         ];
 
-        let nodes = vec![StructuredNode::Group(GroupNode {
-            children: inner,
-        })];
+        let nodes = vec![StructuredNode::Group(GroupNode { children: inner })];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
 
@@ -1944,20 +2014,36 @@ mod tests {
         // Two siblings each with: [u1, C1, C2, C3, u2, D1, D2, D3, u3]
         // Two common runs (C and D), both weight ≥ 3 → both hoisted.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("A1"),
-                para("C1"), para("C2"), para("C3"),
-                para("A2"),
-                para("D1"), para("D2"), para("D3"),
-                para("A3"),
-            ]),
-            cond("A", "v2", vec![
-                para("B1"),
-                para("C1"), para("C2"), para("C3"),
-                para("B2"),
-                para("D1"), para("D2"), para("D3"),
-                para("B3"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("A1"),
+                    para("C1"),
+                    para("C2"),
+                    para("C3"),
+                    para("A2"),
+                    para("D1"),
+                    para("D2"),
+                    para("D3"),
+                    para("A3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("B1"),
+                    para("C1"),
+                    para("C2"),
+                    para("C3"),
+                    para("B2"),
+                    para("D1"),
+                    para("D2"),
+                    para("D3"),
+                    para("B3"),
+                ],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
@@ -1976,25 +2062,37 @@ mod tests {
         // Two groups of Conditional(A=*) siblings separated by a non-conditional node.
         // Neither group covers all A-conditionals in the list, so hoisting must NOT happen.
         let nodes = vec![
-            cond("A", "v1", vec![
-                para("unique-1"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
-            cond("A", "v2", vec![
-                para("unique-2"),
-                para("common1"),
-                para("common2"),
-                para("common3"),
-            ]),
+            cond(
+                "A",
+                "v1",
+                vec![
+                    para("unique-1"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
+            cond(
+                "A",
+                "v2",
+                vec![
+                    para("unique-2"),
+                    para("common1"),
+                    para("common2"),
+                    para("common3"),
+                ],
+            ),
             para("separator"),
-            cond("A", "v3", vec![
-                para("unique-3"),
-                para("different1"),
-                para("different2"),
-                para("different3"),
-            ]),
+            cond(
+                "A",
+                "v3",
+                vec![
+                    para("unique-3"),
+                    para("different1"),
+                    para("different2"),
+                    para("different3"),
+                ],
+            ),
         ];
 
         let result = hoist_common_from_sibling_conditionals(nodes);

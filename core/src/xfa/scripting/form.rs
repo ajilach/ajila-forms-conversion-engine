@@ -491,10 +491,12 @@ impl XfaForm {
         // interactive events use select_radio_button for explicit propagation
         let mut script_engine = XfaScriptEngine::new();
 
+        // Register fields/subforms FIRST so that script objects can reference
+        // them at initialization time (e.g., `var b = UBSForms.Page;`).
+        Self::build_som_hierarchy_with_values(&nodes, &init_values, &mut script_engine);
         // Initialize engine with form context - variables like Footer_Line_txtlanguage
         // and Footer_Line_txtformid are extracted from XFA <variables><text> elements
         Self::extract_and_register_translations(&nodes, &mut script_engine);
-        Self::build_som_hierarchy_with_values(&nodes, &init_values, &mut script_engine);
 
         Ok(XfaForm {
             nodes,
@@ -551,8 +553,10 @@ impl XfaForm {
         let field_index_cache = Self::build_field_index_cache(&flattened);
 
         let mut script_engine = XfaScriptEngine::new();
-        Self::extract_and_register_translations(&nodes, &mut script_engine);
+        // Register fields/subforms FIRST so that script objects can reference
+        // them at initialization time (e.g., `var b = UBSForms.Page;`).
         Self::build_som_hierarchy_with_values(&nodes, init_values, &mut script_engine);
+        Self::extract_and_register_translations(&nodes, &mut script_engine);
 
         Ok(XfaForm {
             nodes,
@@ -659,6 +663,21 @@ impl XfaForm {
             xfa_node,
             som_path: resolved_path,
             script_engine: &mut self.script_engine,
+        })
+    }
+
+    /// Evaluate a JavaScript expression directly in the engine (for debugging/testing).
+    #[cfg(test)]
+    pub fn eval_js(&mut self, source: &str) -> Result<Option<String>, String> {
+        use super::events::{EventRef, ListenScope, RunAt, ScriptContentType, XfaScript};
+        self.script_engine.execute_script(&XfaScript {
+            source: source.to_string(),
+            content_type: ScriptContentType::JavaScript,
+            activity: EventActivity::Calculate,
+            event_ref: EventRef::Current,
+            name: None,
+            run_at: RunAt::Client,
+            listen: ListenScope::default(),
         })
     }
 
@@ -830,6 +849,14 @@ impl XfaForm {
         // Duplicate XFA nodes for dynamic subform instances (setInstances(N))
         // before reflattening so each instance produces its own flattened output.
         self.apply_dynamic_instances();
+
+        // Sync presence changes from JS engine back to XFA nodes so that
+        // reflattening picks up visibility toggled by scripts.
+        let presence_changes = self.script_engine.get_all_som_presence_changes();
+        for (som_path, presence_str) in &presence_changes {
+            let presence: crate::xfa::Presence = presence_str.parse().unwrap();
+            Self::apply_presence_by_path(&mut self.nodes, som_path, presence);
+        }
 
         let values = self.script_engine.get_all_field_values_for_flattening();
         self.flattened = Flattened::reflatten(&self.nodes, &values)?;
@@ -1206,6 +1233,7 @@ impl XfaForm {
         if let Some(ref excl_path) = excl_group_path {
             let result = self.execute_event(excl_path, EventActivity::Change, prev_value)?;
             self.cascade_calculations(excl_path)?;
+            self.run_ancestor_calculate_scripts(excl_path)?;
             Ok(result)
         } else {
             let resolved_path = self
@@ -1214,6 +1242,7 @@ impl XfaForm {
                 .unwrap_or_else(|| SomPath::from(field_path));
             let result = self.execute_event(field_path, EventActivity::Change, prev_value)?;
             self.cascade_calculations(&resolved_path)?;
+            self.run_ancestor_calculate_scripts(&resolved_path)?;
             Ok(result)
         }
     }
@@ -1351,6 +1380,36 @@ impl XfaForm {
         }
 
         self.dirty = true;
+        Ok(())
+    }
+
+    /// Run calculate scripts on ancestor subforms of a changed field.
+    ///
+    /// Per XFA 3.3: calculate scripts on container nodes (subforms) fire when
+    /// any descendant field value changes. Walk upward from the changed field
+    /// and execute calculate scripts registered on each ancestor.
+    fn run_ancestor_calculate_scripts(&mut self, field_path: &SomPath) -> Result<(), String> {
+        let path_str = field_path.as_str().to_string();
+        let mut pos = path_str.len();
+        while let Some(dot) = path_str[..pos].rfind('.') {
+            let ancestor = &path_str[..dot];
+            let ancestor_path = SomPath::new(ancestor);
+
+            let has_calc = self
+                .script_registry
+                .get_event_scripts(&ancestor_path, &EventActivity::Calculate)
+                .len()
+                > 0;
+
+            if has_calc {
+                // Use execute_event to correctly handle presence changes,
+                // value side-effects, and script object calls.
+                let _ = self.execute_event(ancestor, EventActivity::Calculate, None);
+            }
+
+            pos = dot;
+        }
+
         Ok(())
     }
 
