@@ -832,7 +832,7 @@ mod tests {
             title: "Form".into(),
             children: vec![AemNode::Repeatable {
                 uuid: fixed_uuid(),
-                name: "RPT_1".into(),
+                name: "RP_1".into(),
                 title: "Repeat Section".into(),
                 children: vec![],
                 min_occur: 1,
@@ -842,7 +842,7 @@ mod tests {
         let xml = generate_aem_xml(&root, &test_config());
         assert!(xml.contains("minOccur=\"1\""), "missing minOccur");
         assert!(xml.contains("maxOccur=\"10\""), "missing maxOccur");
-        assert!(xml.contains("name=\"RPT_1\""));
+        assert!(xml.contains("name=\"RP_1\""));
     }
 
     #[test]

@@ -738,7 +738,7 @@ fn convert_repeatable(
     _colspan: u32,
     _dor_colspan: Option<u32>,
 ) -> AemNode {
-    let name = ctx.make_name("RPT", "");
+    let name = ctx.make_name("RP", "");
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&r.item, config, ctx, config.grid_columns, None);
     let children = inner.into_iter().collect();
@@ -788,7 +788,7 @@ fn convert_conditional(
     colspan: u32,
     dor_colspan: Option<u32>,
 ) -> AemNode {
-    let name = ctx.make_name("COND", "");
+    let name = ctx.make_name("PN", "");
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&c.content, config, ctx, config.grid_columns, None);
     let children: Vec<AemNode> = inner.into_iter().collect();
