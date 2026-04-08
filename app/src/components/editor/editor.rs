@@ -12,6 +12,7 @@ use blueprint::{
     InlineText, ListNode, ParagraphNode, StructuredNode,
 };
 use blueprint::structured::TableRow as StructTableRow;
+use blueprint::structured::GridLayoutElement;
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
@@ -669,7 +670,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         };
                     }
                     NewNodeType::TableCell => {
-                        // Insert a new cell into the parent row (or header)
+                        // Insert a new column into the table (all rows + header)
                         // parent path ends at TableRow(r) or TableHeader
                         new_selection = if parent.len() >= 2 {
                             let table_path: Vec<_> = parent
@@ -677,48 +678,48 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 .take_while(|s| matches!(s, PathSegment::Child(_)))
                                 .cloned()
                                 .collect();
-                            let row_segment = parent.last();
+                            let row_segment = parent.last().cloned();
                             if let Some(table_node) =
                                 get_node_at_path_mut(&mut env.content, &table_path)
                             {
                                 if let StructuredNode::Table(t) = table_node {
-                                    let new_cell =
+                                    let insert_idx = index;
+                                    let make_cell = || {
                                         StructuredNode::Paragraph(ParagraphNode {
                                             content: InlineText::plain(""),
                                             som_path: None,
                                             source_name: None,
-                                        });
-                                    match row_segment {
+                                        })
+                                    };
+                                    // Insert into header if present
+                                    if let Some(header) = &mut t.header {
+                                        let idx = insert_idx.min(header.cells.len());
+                                        header.cells.insert(idx, make_cell());
+                                    }
+                                    // Insert into all rows
+                                    for row in &mut t.rows {
+                                        let idx = insert_idx.min(row.cells.len());
+                                        row.cells.insert(idx, make_cell());
+                                    }
+                                    // Select the newly inserted cell in the originating row
+                                    let mut path = parent.clone();
+                                    let cell_idx = match &row_segment {
                                         Some(PathSegment::TableRow(row_idx)) => {
-                                            if let Some(row) = t.rows.get_mut(*row_idx) {
-                                                let insert_idx =
-                                                    index.min(row.cells.len());
-                                                row.cells.insert(insert_idx, new_cell);
-                                                let mut path = parent.clone();
-                                                path.push(PathSegment::TableCell(
-                                                    insert_idx,
-                                                ));
-                                                Some(path)
-                                            } else {
-                                                None
-                                            }
+                                            t.rows
+                                                .get(*row_idx)
+                                                .map(|r| insert_idx.min(r.cells.len().saturating_sub(1)))
+                                                .unwrap_or(insert_idx)
                                         }
                                         Some(PathSegment::TableHeader) => {
-                                            if let Some(header) = &mut t.header {
-                                                let insert_idx =
-                                                    index.min(header.cells.len());
-                                                header.cells.insert(insert_idx, new_cell);
-                                                let mut path = parent.clone();
-                                                path.push(PathSegment::TableCell(
-                                                    insert_idx,
-                                                ));
-                                                Some(path)
-                                            } else {
-                                                None
-                                            }
+                                            t.header
+                                                .as_ref()
+                                                .map(|h| insert_idx.min(h.cells.len().saturating_sub(1)))
+                                                .unwrap_or(insert_idx)
                                         }
-                                        _ => None,
-                                    }
+                                        _ => insert_idx,
+                                    };
+                                    path.push(PathSegment::TableCell(cell_idx));
+                                    Some(path)
                                 } else {
                                     None
                                 }
@@ -772,6 +773,20 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     let insert_idx =
                                         index.min(g.children.len());
                                     g.children.insert(insert_idx, new_node);
+                                    let mut path = parent.clone();
+                                    path.push(PathSegment::Child(insert_idx));
+                                    new_selection = Some(path);
+                                }
+                                StructuredNode::GridLayout(g) => {
+                                    let insert_idx =
+                                        index.min(g.elements.len());
+                                    g.elements.insert(
+                                        insert_idx,
+                                        GridLayoutElement {
+                                            span: 1,
+                                            node: new_node,
+                                        },
+                                    );
                                     let mut path = parent.clone();
                                     path.push(PathSegment::Child(insert_idx));
                                     new_selection = Some(path);
