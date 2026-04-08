@@ -22117,11 +22117,10 @@ fn test_aais_019_de_umlauts_preserved() {
         let text = match node {
             StructuredNode::Paragraph(p) => p.content.as_plain_text(),
             StructuredNode::Heading(h) => h.content.as_plain_text(),
-            StructuredNode::Field(f) => {
-                f.label
-                    .as_ref()
-                    .map_or(String::new(), |l| l.as_plain_text())
-            }
+            StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map_or(String::new(), |l| l.as_plain_text()),
             _ => return,
         };
         if !text.trim().is_empty() {
@@ -22132,10 +22131,10 @@ fn test_aais_019_de_umlauts_preserved() {
     // 1. No text should contain the corruption pattern "u?" where "ü" is expected.
     //    Specifically, these German words must contain proper umlauts:
     let expected_umlaut_words = [
-        "Gebühr",      // fee/charge
-        "Vergütung",   // compensation
-        "für",         // for
-        "vergüte",     // compensate (stem)
+        "Gebühr",    // fee/charge
+        "Vergütung", // compensation
+        "für",       // for
+        "vergüte",   // compensate (stem)
     ];
 
     for word in &expected_umlaut_words {
@@ -22175,7 +22174,9 @@ fn test_aais_019_de_umlauts_preserved() {
                     chars[i + 2],
                     text,
                     &text[..],
-                    text.replace("u?", "ü").replace("o?", "ö").replace("a?", "ä"),
+                    text.replace("u?", "ü")
+                        .replace("o?", "ö")
+                        .replace("a?", "ä"),
                 );
             }
         }
@@ -22219,5 +22220,88 @@ fn test_aem_form_xml_has_utf8_declaration() {
     assert!(
         form_xml.contains("Gebühr") || form_xml.contains("Vergütung") || form_xml.contains("für"),
         "Form XML should contain German umlauts (Gebühr, Vergütung, für)",
+    );
+}
+
+#[test]
+fn test_aari_has_list_with_expected_items() {
+    use crate::Blueprint;
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let lists = helpers::collect_lists(&envelope.content);
+
+    // Find the list containing "cessione a titolo oneroso di partecipazioni"
+    let target_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text()
+                .contains("cessione a titolo oneroso di partecipazioni")
+        })
+    });
+
+    assert!(
+        target_list.is_some(),
+        "Expected a list containing 'cessione a titolo oneroso di partecipazioni'.\nFound lists: {:?}",
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    let target_list = target_list.unwrap();
+
+    assert_eq!(
+        target_list.items.len(),
+        4,
+        "Expected 4 items in the list, got {}.\nItems: {:?}",
+        target_list.items.len(),
+        target_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
+    );
+
+    let texts: Vec<String> = target_list
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
+
+    assert!(
+        texts.iter().any(|t| t
+            .contains("cessione a titolo oneroso di partecipazioni qualificate e non qualificate")),
+        "List should contain item about 'partecipazioni qualificate e non qualificate'.\nItems: {:?}",
+        texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains(
+            "cessione a titolo oneroso ovvero rimborso di titoli non rappresentativi di merci"
+        )),
+        "List should contain item about 'rimborso di titoli non rappresentativi di merci'.\nItems: {:?}",
+        texts
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("rapporti da cui deriva il diritto o l")
+                && t.contains("obbligo di cedere o acquistare a termine strumenti finanziari")),
+        "List should contain item about 'rapporti da cui deriva il diritto o l'obbligo'.\nItems: {:?}",
+        texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi di redditi di capitale")),
+        "List should contain item about 'chiusura di rapporti produttivi di redditi di capitale'.\nItems: {:?}",
+        texts
     );
 }

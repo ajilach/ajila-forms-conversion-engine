@@ -347,23 +347,34 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
             }
 
             // Check if the content is on the "same line" as the marker.
-            // Two criteria:
+            // Three criteria:
             //   a) Same y within tolerance (marker and content have similar top), OR
-            //   b) Marker sits directly above content (marker bottom ≈ content top).
-            // Case (b) handles XFA forms where the marker draw element is
+            //   b) Marker sits directly above content (marker bottom ≈ content top), OR
+            //   c) Content top is within the marker's vertical extent (common in
+            //      XFA forms where the marker draw has a tall bounding box that
+            //      overlaps with the content draw below it).
+            // Cases (b) and (c) handle XFA forms where the marker draw element is
             // positioned one line above the content draw element.
             let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
             let marker_bottom = marker_bounds.y + marker_bounds.height;
             let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
-            let on_same_line = same_y || marker_above;
+            let content_within_marker =
+                content_bounds.y > marker_bounds.y && content_bounds.y < marker_bottom;
+            let on_same_line = same_y || marker_above || content_within_marker;
 
             // Past the line – stop looking.
             if !on_same_line {
                 break;
             }
 
-            // Content must be to the right of the marker.
-            if content_bounds.x <= marker_bounds.x {
+            // For same-line / marker-above: content must be to the right.
+            // For content-within-marker: content can start at the same x
+            // (same column, line below the marker at the same indent).
+            if content_within_marker {
+                if content_bounds.x + y_tol < marker_bounds.x {
+                    continue;
+                }
+            } else if content_bounds.x <= marker_bounds.x {
                 continue;
             }
 
@@ -659,6 +670,108 @@ impl AnalysisModule for ListDetector {
                 prepend.reverse(); // restore top-to-bottom order
                 prepend.append(group);
                 *group = prepend;
+            }
+        }
+
+        // Phase 3: List consolidation.
+        //
+        // Standalone marker merging (Phase 0) can create TextBlocks with
+        // higher group indices than the rest of the list.  These end up as
+        // separate single-item runs because Phase 1 iterates by index.
+        //
+        // For each list group with ≥ 2 items, look for root TextBlocks
+        // that (a) carry the same marker style, (b) share the same x
+        // position, and (c) have a y position between the topmost and
+        // bottommost items of the list.  Items from single-item groups
+        // are eligible for adoption into a larger group.
+        //
+        // The loop repeats until convergence because adopting an item can
+        // extend the list's y range, making further items eligible.
+        let final_roots: HashSet<usize> = doc.roots().iter().copied().collect();
+
+        // Indices from single-item groups are eligible for consolidation
+        // into larger groups.
+        let single_item_indices: HashSet<usize> = groups
+            .iter()
+            .filter(|g| g.len() == 1)
+            .flat_map(|g| g.iter().copied())
+            .collect();
+
+        let mut adopted: HashSet<usize> = HashSet::new();
+
+        loop {
+            let mut changed = false;
+
+            for (gi, group) in groups.iter_mut().enumerate() {
+                if group.len() < 2 {
+                    continue;
+                }
+
+                let style = group_styles[gi];
+                let list_x = group
+                    .iter()
+                    .find_map(|&idx| doc.get_bounds(idx).map(|b| b.x));
+                let list_top = group
+                    .iter()
+                    .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
+                    .min();
+                let list_bottom = group
+                    .iter()
+                    .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y + b.height))
+                    .max();
+
+                let (Some(lx), Some(lt), Some(lb)) = (list_x, list_top, list_bottom) else {
+                    continue;
+                };
+
+                for &(tb_idx, ref tb_bounds) in &root_tb_sorted {
+                    // Allow items from single-item groups to be adopted.
+                    let is_available =
+                        !claimed.contains(&tb_idx) || single_item_indices.contains(&tb_idx);
+                    if !is_available || group.contains(&tb_idx) {
+                        continue;
+                    }
+                    if !final_roots.contains(&tb_idx) {
+                        continue;
+                    }
+                    if !matches!(doc.groups[tb_idx].kind, GroupKind::TextBlock) {
+                        continue;
+                    }
+                    if (tb_bounds.x - lx).abs() > x_tol {
+                        continue;
+                    }
+                    // Must fall within the list's y extent.
+                    if tb_bounds.y < lt || tb_bounds.y > lb {
+                        continue;
+                    }
+                    let text = doc.get_text_content(tb_idx);
+                    if let Some(marker) = detect_marker(&text) {
+                        if marker.kind == style {
+                            group.push(tb_idx);
+                            claimed.insert(tb_idx);
+                            adopted.insert(tb_idx);
+                            changed = true;
+                        }
+                    }
+                }
+
+                // Sort items by y position so the list is in document order.
+                group.sort_by(|&a, &b| {
+                    let a_y = doc.get_bounds(a).map(|b| b.y).unwrap_or(Decimal::ZERO);
+                    let b_y = doc.get_bounds(b).map(|b| b.y).unwrap_or(Decimal::ZERO);
+                    a_y.cmp(&b_y)
+                });
+            }
+
+            if !changed {
+                break;
+            }
+        }
+
+        // Remove adopted items from their original single-item groups.
+        for group in groups.iter_mut() {
+            if group.len() == 1 && adopted.contains(&group[0]) {
+                group.clear();
             }
         }
 
