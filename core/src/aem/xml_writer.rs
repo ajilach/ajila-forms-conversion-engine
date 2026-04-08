@@ -333,7 +333,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             // Pre-compute the repeatable button scripts as template variables.
             // These contain complex JCR-escaped JSON that would be very messy
             // to write inline in a Tera template.
-            let panel_name = format!("PN_{}", name);
+            let panel_name = format!("RCP_{}", name);
             ctx.insert("panel_name", &panel_name);
             insert_repeatable_scripts(&mut ctx, &panel_name, *max_occur);
         }
