@@ -103,11 +103,13 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                                 button {
                                     class: "dropdown-item",
                                     onclick: move |_| {
-                                        props.on_action.call(EditorAction::AddNode {
-                                            parent: parent.clone(),
-                                            index,
-                                            node_type: node_type.clone(),
-                                        })
+                                        props
+                                            .on_action
+                                            .call(EditorAction::AddNode {
+                                                parent: parent.clone(),
+                                                index,
+                                                node_type: node_type.clone(),
+                                            })
                                     },
                                     {label}
                                 }
@@ -135,9 +137,7 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                                 rsx! {
                                     button {
                                         class: "dropdown-item",
-                                        onclick: move |_| {
-                                            props.on_action.call(EditorAction::ConvertSelected(target))
-                                        },
+                                        onclick: move |_| { props.on_action.call(EditorAction::ConvertSelected(target)) },
                                         {conversion_label(target)}
                                     }
                                 }

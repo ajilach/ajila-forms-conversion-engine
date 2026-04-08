@@ -1141,10 +1141,7 @@ pub fn compute_add_options(
 
 /// For a selected path, compute the parent path and insertion index such that
 /// a new element is inserted directly below the selected element.
-fn insertion_target_from_path(
-    content: &[StructuredNode],
-    path: &NodePath,
-) -> (NodePath, usize) {
+fn insertion_target_from_path(content: &[StructuredNode], path: &NodePath) -> (NodePath, usize) {
     // Root-level node: insert at root after this element
     if path.len() == 1 {
         if let Some(PathSegment::Child(idx)) = path.first() {
