@@ -22099,3 +22099,125 @@ fn test_bagq_debug_selectable_fields() {
         flat_key_before != flat_key_after
     );
 }
+
+/// Regression test: German Umlauts (ü, ö, ä, ß) must be preserved
+/// in AAIS_019_DE text output. A bug caused "ü" to appear as "u?"
+/// in the rendered output (e.g. "Gebühr" → "Gebu?hr").
+#[test]
+fn test_aais_019_de_umlauts_preserved() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+
+    let envelope = run_exhaustive_to_envelope(input_path("AAIS_019_DE.pdf"), "de")
+        .expect("Failed to process AAIS_019_DE");
+
+    // Collect ALL plain text from the structured output
+    let mut all_texts = Vec::new();
+    helpers::walk_structured_nodes(&envelope.content, &mut |node| {
+        let text = match node {
+            StructuredNode::Paragraph(p) => p.content.as_plain_text(),
+            StructuredNode::Heading(h) => h.content.as_plain_text(),
+            StructuredNode::Field(f) => {
+                f.label
+                    .as_ref()
+                    .map_or(String::new(), |l| l.as_plain_text())
+            }
+            _ => return,
+        };
+        if !text.trim().is_empty() {
+            all_texts.push(text);
+        }
+    });
+
+    // 1. No text should contain the corruption pattern "u?" where "ü" is expected.
+    //    Specifically, these German words must contain proper umlauts:
+    let expected_umlaut_words = [
+        "Gebühr",      // fee/charge
+        "Vergütung",   // compensation
+        "für",         // for
+        "vergüte",     // compensate (stem)
+    ];
+
+    for word in &expected_umlaut_words {
+        let found = all_texts.iter().any(|t| t.contains(word));
+        // Also check for the corrupted version
+        let corrupted = word.replace('ü', "u?");
+        let found_corrupted = all_texts.iter().any(|t| t.contains(&corrupted));
+
+        assert!(
+            found && !found_corrupted,
+            "Expected to find '{}' in AAIS_019_DE text output. \
+             Found correct: {}, Found corrupted '{}': {}",
+            word,
+            found,
+            corrupted,
+            found_corrupted,
+        );
+    }
+
+    // 2. No text anywhere should contain the pattern of a base letter followed by "?"
+    //    where an umlaut is expected. We check broadly: no "u?", "o?", "a?" patterns
+    //    that look like corrupted umlauts (preceded by a lowercase letter and followed
+    //    by a lowercase letter).
+    for text in &all_texts {
+        // Look for corruption pattern: lowercase letter + "?" + lowercase letter
+        let chars: Vec<char> = text.chars().collect();
+        for i in 0..chars.len().saturating_sub(2) {
+            if chars[i + 1] == '?'
+                && (chars[i] == 'u' || chars[i] == 'o' || chars[i] == 'a')
+                && chars[i + 2].is_lowercase()
+            {
+                panic!(
+                    "Found likely corrupted umlaut '{}{}{} ' in text: '{}'. \
+                     This suggests '{}' should be '{}'.",
+                    chars[i],
+                    chars[i + 1],
+                    chars[i + 2],
+                    text,
+                    &text[..],
+                    text.replace("u?", "ü").replace("o?", "ö").replace("a?", "ä"),
+                );
+            }
+        }
+    }
+}
+
+/// Regression test: AEM form .content.xml must have an XML declaration with
+/// encoding="UTF-8" so that AEM/CRX correctly interprets multi-byte UTF-8
+/// characters (German umlauts, etc.). Without this declaration, some JCR
+/// implementations fall back to ISO-8859-1, causing "ü" → "u?" corruption.
+#[test]
+fn test_aem_form_xml_has_utf8_declaration() {
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("Failed to load AAIS PDF");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to explore states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = load_ubs_profile();
+    let config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let form_xml = generate_aem_xml(&root, &config);
+
+    // The form XML must start with the XML declaration
+    assert!(
+        form_xml.starts_with("<?xml"),
+        "Form .content.xml must start with an XML declaration, got: '{}'",
+        &form_xml[..form_xml.len().min(100)],
+    );
+    assert!(
+        form_xml.contains("encoding=\"UTF-8\""),
+        "Form .content.xml must declare encoding=\"UTF-8\"",
+    );
+
+    // Umlauts must appear correctly in the form XML
+    assert!(
+        form_xml.contains("Gebühr") || form_xml.contains("Vergütung") || form_xml.contains("für"),
+        "Form XML should contain German umlauts (Gebühr, Vergütung, für)",
+    );
+}
