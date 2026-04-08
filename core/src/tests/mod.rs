@@ -22308,8 +22308,8 @@ fn test_aari_has_list_with_expected_items() {
 
 #[test]
 fn test_aari_has_radio_button_group_fiscal_regime() {
-    use crate::structured::FieldType;
     use crate::Blueprint;
+    use crate::structured::FieldType;
 
     let mut bp =
         Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
@@ -22325,14 +22325,16 @@ fn test_aari_has_radio_button_group_fiscal_regime() {
     let fiscal_group = radio_fields.iter().find(|field| {
         if let FieldType::Radio { options } = &field.input_type {
             options.iter().any(|opt| {
-                opt.name
-                    .contains("voler optare per l\u{2019}applicazione dell\u{2019}imposizione sostitutiva")
-                    || opt.name
-                        .contains("voler optare per l'applicazione dell'imposizione sostitutiva")
+                opt.name.contains(
+                    "voler optare per l\u{2019}applicazione dell\u{2019}imposizione sostitutiva",
+                ) || opt
+                    .name
+                    .contains("voler optare per l'applicazione dell'imposizione sostitutiva")
             }) && options.iter().any(|opt| {
                 opt.name
                     .contains("non voler optare per il Regime Fiscale Amministrato")
-                    || opt.name
+                    || opt
+                        .name
                         .contains("Non voler optare per il Regime Fiscale Amministrato")
             })
         } else {
@@ -22347,7 +22349,12 @@ fn test_aari_has_radio_button_group_fiscal_regime() {
             .iter()
             .filter_map(|f| {
                 if let FieldType::Radio { options } = &f.input_type {
-                    Some(options.iter().map(|o| o.name.to_string()).collect::<Vec<_>>())
+                    Some(
+                        options
+                            .iter()
+                            .map(|o| o.name.to_string())
+                            .collect::<Vec<_>>(),
+                    )
                 } else {
                     None
                 }
@@ -22361,7 +22368,10 @@ fn test_aari_has_radio_button_group_fiscal_regime() {
             2,
             "Expected exactly 2 options in the fiscal regime radio group, got {}.\nOptions: {:?}",
             options.len(),
-            options.iter().map(|o| o.name.to_string()).collect::<Vec<_>>()
+            options
+                .iter()
+                .map(|o| o.name.to_string())
+                .collect::<Vec<_>>()
         );
     }
 }
