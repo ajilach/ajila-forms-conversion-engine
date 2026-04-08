@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:vlt="http://www.day.com/jcr/vault/1.0"
+          xmlns:jcr="http://www.jcp.org/jcr/1.0"
+          xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+          jcr:primaryType="vlt:PackageDefinition"
+          buildCount="1"
+          group="fd/export"
+          jcr:created="{Date}2026-04-08T10:53:03.831+00:00"
+          jcr:createdBy="blueprint"
+          jcr:lastModified="{Date}2026-04-08T10:53:03.831+00:00"
+          jcr:lastModifiedBy="blueprint"
+          lastWrapped="{Date}2026-04-08T10:53:03.831+00:00"
+          lastWrappedBy="blueprint"
+          name="BlueprintFormsPackage_AAHO"
+          version="">
+    <filter jcr:primaryType="nt:unstructured">
+        <f0 jcr:primaryType="nt:unstructured"
+            mode="replace"
+            root="/content/forms/af/afforms_germany_all/af_aa/AF_AAHO"
+            rules="[]"/>
+        <f1 jcr:primaryType="nt:unstructured"
+            mode="replace"
+            root="/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAHO"
+            rules="[]"/>
+    </filter>
+</jcr:root>

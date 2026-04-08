@@ -47,7 +47,14 @@ pub fn generate_aem_package(
         config.form_path, form_dir
     );
 
-    let filter_roots = vec![form_jcr_path.clone(), dam_jcr_path.clone()];
+    let mut filter_roots = vec![form_jcr_path.clone(), dam_jcr_path.clone()];
+
+    // When binding to XSD, include the XSD path as a filter root so that CRX
+    // actually installs the file (content outside filter roots is ignored).
+    if config.bind_to_xsd {
+        let xsd_jcr_path = config.xsd_ref();
+        filter_roots.push(xsd_jcr_path);
+    }
 
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
@@ -202,6 +209,27 @@ pub fn generate_aem_package(
         if let Some(ref xsd_config) = config.xsd_config {
             let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
             let xsd_zip_path = config.xsd_zip_path();
+
+            // Write intermediate .content.xml files for the XSD directory
+            // segments that lie between the DAM base and the XSD file.
+            let xsd_ref = config.xsd_ref();
+            let xsd_ref_trimmed = xsd_ref.trim_start_matches('/');
+            let dam_base = "content/dam/formsanddocuments/";
+            if let Some(rest) = xsd_ref_trimmed.strip_prefix(dam_base) {
+                // rest = "afforms_xsd/AFForms/AF_TEST.xsd" → parent segments = ["afforms_xsd", "AFForms"]
+                let parts: Vec<&str> = rest.split('/').collect();
+                if parts.len() > 1 {
+                    let dir_segments = &parts[..parts.len() - 1];
+                    write_intermediate_folders(
+                        &mut zip,
+                        &opts,
+                        "jcr_root/content/dam/formsanddocuments",
+                        dir_segments,
+                        true,
+                    );
+                }
+            }
+
             write_entry(&mut zip, &opts, &xsd_zip_path, &xsd_content);
         }
     }
@@ -1476,5 +1504,48 @@ mod tests {
             !translations.contains_key("<p>Company</p>"),
             "Field label key must NOT have HTML wrapping"
         );
+    }
+
+    #[test]
+    fn xsd_filter_root_included_in_package() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
+        config.xsd_path =
+            "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        // filter.xml must include the XSD path as a root
+        let mut filter_xml = String::new();
+        archive
+            .by_name("META-INF/vault/filter.xml")
+            .expect("filter.xml")
+            .read_to_string(&mut filter_xml)
+            .unwrap();
+        assert!(
+            filter_xml.contains(
+                "root=\"/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd\""
+            ),
+            "filter.xml must include xsd path as filter root, got: {}",
+            filter_xml
+        );
+
+        // Intermediate .content.xml files for XSD directories must exist
+        archive
+            .by_name("jcr_root/content/dam/formsanddocuments/afforms_xsd/.content.xml")
+            .expect("afforms_xsd intermediate folder must exist");
+        archive
+            .by_name("jcr_root/content/dam/formsanddocuments/afforms_xsd/AFForms/.content.xml")
+            .expect("AFForms intermediate folder must exist");
     }
 }
