@@ -22367,3 +22367,66 @@ fn test_bage_headings_no_missing_translation() {
         }
     }
 }
+
+/// Regression test: BAGE numbered headings like "2. Ausführung von Wertpapier-Aufträgen"
+/// must keep the number prefix with the heading text, not detach it into the
+/// following paragraph.
+#[test]
+fn test_bage_numbered_headings_keep_number_prefix() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+
+    let de = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+
+    // Collect headings and paragraphs in order
+    let mut headings: Vec<String> = Vec::new();
+    let mut paragraphs: Vec<String> = Vec::new();
+    helpers::walk_structured_nodes(&de.content, &mut |node| {
+        match node {
+            StructuredNode::Heading(h) => {
+                headings.push(h.content.as_plain_text());
+            }
+            StructuredNode::Paragraph(p) => {
+                paragraphs.push(p.content.as_plain_text());
+            }
+            _ => {}
+        }
+    });
+
+    // The heading "Ausführung von Wertpapier-Aufträgen" must include the "2." prefix.
+    assert!(
+        headings.iter().any(|h| h.contains("2.") && h.contains("Ausführung von Wertpapier")),
+        "Heading '2. Ausführung von Wertpapier-Aufträgen' should have its number prefix.\nHeadings: {:?}",
+        headings
+    );
+
+    // The heading "Kommunikation und Informationsbeschaffung" must include the "3." prefix.
+    assert!(
+        headings.iter().any(|h| h.contains("3.") && h.contains("Kommunikation und Informationsbeschaffung")),
+        "Heading '3. Kommunikation und Informationsbeschaffung' should have its number prefix.\nHeadings: {:?}",
+        headings
+    );
+
+    // The paragraph "Die An- und Verkauforders..." must NOT start with "2."
+    let bad_para_2 = paragraphs.iter().any(|p| {
+        let t = p.trim();
+        t.starts_with("2.") && t.contains("Verkauforders")
+    });
+    assert!(
+        !bad_para_2,
+        "Paragraph 'Die An- und Verkauforders...' should NOT start with '2.'\nParagraphs: {:?}",
+        paragraphs.iter().filter(|p| p.starts_with("2.")).collect::<Vec<_>>()
+    );
+
+    // The paragraph "Für die Kommunikation..." must NOT start with "3."
+    let bad_para_3 = paragraphs.iter().any(|p| {
+        let t = p.trim();
+        t.starts_with("3.") && t.contains("Kommunikation zwischen UBS")
+    });
+    assert!(
+        !bad_para_3,
+        "Paragraph 'Für die Kommunikation...' should NOT start with '3.'\nParagraphs: {:?}",
+        paragraphs.iter().filter(|p| p.starts_with("3.")).collect::<Vec<_>>()
+    );
+}

@@ -179,6 +179,7 @@ pub fn convert(doc: &Document) -> Vec<StructuredNode> {
         .collect();
 
     inherit_heading_labels_for_radios(&mut content);
+    move_number_prefixes_to_headings(&mut content);
 
     content
 }
@@ -281,6 +282,176 @@ fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Move a numeric prefix (e.g. "2. ") from a Paragraph to the immediately
+/// preceding Heading when the heading does not already have a number prefix.
+///
+/// This fixes XFA forms where a narrow "marker column" draw overlaps with a
+/// wide "content column" draw, and paragraph-height misalignment causes the
+/// section number to land on the paragraph line rather than the heading line.
+/// The overlapping-text-block merger then prepends the number to the paragraph
+/// text instead of the heading text.
+///
+/// The function recurses into Groups, Conditionals, Repeatables, etc.
+fn move_number_prefixes_to_headings(nodes: &mut Vec<StructuredNode>) {
+    // Process siblings: look for Heading followed by Paragraph starting with "N. "
+    let mut i = 1;
+    while i < nodes.len() {
+        let should_move = {
+            let is_heading = matches!(&nodes[i - 1], StructuredNode::Heading(_));
+            if !is_heading {
+                false
+            } else if let StructuredNode::Paragraph(p) = &nodes[i] {
+                extract_numeric_prefix(&p.content.as_plain_text()).is_some()
+            } else {
+                false
+            }
+        };
+
+        if should_move {
+            let heading_already_numbered = if let StructuredNode::Heading(h) = &nodes[i - 1] {
+                let text = h.content.as_plain_text();
+                text.trim().starts_with(|c: char| c.is_ascii_digit())
+            } else {
+                false
+            };
+
+            if !heading_already_numbered {
+                // Extract the prefix from the paragraph
+                let para_text = if let StructuredNode::Paragraph(p) = &nodes[i] {
+                    p.content.as_plain_text()
+                } else {
+                    String::new()
+                };
+
+                if let Some((prefix, _remaining)) = extract_numeric_prefix(&para_text) {
+                    // Prepend prefix to heading content
+                    if let StructuredNode::Heading(h) = &mut nodes[i - 1] {
+                        let heading_text = h.content.as_plain_text();
+                        h.content = InlineText(vec![InlineNode::Text(format!(
+                            "{prefix}{heading_text}"
+                        ))]);
+                    }
+
+                    // Strip prefix from paragraph content
+                    if let StructuredNode::Paragraph(p) = &mut nodes[i] {
+                        strip_numeric_prefix_from_inline_text(&mut p.content);
+                        // If the paragraph is now empty, remove it
+                        if p.content.is_empty() {
+                            nodes.remove(i);
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        i += 1;
+    }
+
+    // Recurse into container nodes
+    for node in nodes.iter_mut() {
+        match node {
+            StructuredNode::Group(g) => {
+                move_number_prefixes_to_headings(&mut g.children);
+            }
+            StructuredNode::Conditional(c) => {
+                if let StructuredNode::Group(g) = c.content.as_mut() {
+                    move_number_prefixes_to_headings(&mut g.children);
+                }
+            }
+            StructuredNode::Repeatable(r) => {
+                if let StructuredNode::Group(g) = r.item.as_mut() {
+                    move_number_prefixes_to_headings(&mut g.children);
+                }
+            }
+            StructuredNode::GridLayout(gl) => {
+                let mut children: Vec<StructuredNode> =
+                    gl.elements.iter().map(|e| e.node.clone()).collect();
+                move_number_prefixes_to_headings(&mut children);
+                for (elem, new_node) in gl.elements.iter_mut().zip(children.into_iter()) {
+                    elem.node = new_node;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Extract a numeric prefix like "2. " from the start of text.
+/// Returns the prefix (including trailing space) and the remaining text.
+fn extract_numeric_prefix(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim_start();
+    let bytes = trimmed.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_digit() {
+        return None;
+    }
+
+    let mut i = 0;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+
+    // Must be followed by '.' or ')'
+    if i >= bytes.len() || (bytes[i] != b'.' && bytes[i] != b')') {
+        return None;
+    }
+    i += 1;
+
+    // Consume trailing whitespace
+    let after = &trimmed[i..];
+    let ws_len = after.len() - after.trim_start().len();
+
+    let prefix = trimmed[..i + ws_len].to_string();
+    let remaining = trimmed[i + ws_len..].to_string();
+
+    Some((prefix, remaining))
+}
+
+/// Strip a numeric prefix ("N. ") from the first text node in an InlineText.
+fn strip_numeric_prefix_from_inline_text(text: &mut InlineText) {
+    if text.0.is_empty() {
+        return;
+    }
+
+    if let Some(node) = text.0.first_mut() {
+        match node {
+            InlineNode::Text(s) => {
+                if let Some((_prefix, remaining)) = extract_numeric_prefix(s) {
+                    *s = remaining;
+                }
+            }
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                if let InlineNode::Text(s) = inner.as_mut() {
+                    if let Some((_prefix, remaining)) = extract_numeric_prefix(s) {
+                        *s = remaining;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Remove empty leading text nodes
+    while !text.0.is_empty() {
+        let is_empty = match &text.0[0] {
+            InlineNode::Text(s) => s.trim().is_empty(),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                if let InlineNode::Text(s) = inner.as_ref() {
+                    s.trim().is_empty()
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if is_empty {
+            text.0.remove(0);
+        } else {
+            break;
         }
     }
 }
