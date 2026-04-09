@@ -22382,28 +22382,30 @@ fn test_bage_numbered_headings_keep_number_prefix() {
     // Collect headings and paragraphs in order
     let mut headings: Vec<String> = Vec::new();
     let mut paragraphs: Vec<String> = Vec::new();
-    helpers::walk_structured_nodes(&de.content, &mut |node| {
-        match node {
-            StructuredNode::Heading(h) => {
-                headings.push(h.content.as_plain_text());
-            }
-            StructuredNode::Paragraph(p) => {
-                paragraphs.push(p.content.as_plain_text());
-            }
-            _ => {}
+    helpers::walk_structured_nodes(&de.content, &mut |node| match node {
+        StructuredNode::Heading(h) => {
+            headings.push(h.content.as_plain_text());
         }
+        StructuredNode::Paragraph(p) => {
+            paragraphs.push(p.content.as_plain_text());
+        }
+        _ => {}
     });
 
     // The heading "Ausführung von Wertpapier-Aufträgen" must include the "2." prefix.
     assert!(
-        headings.iter().any(|h| h.contains("2.") && h.contains("Ausführung von Wertpapier")),
+        headings
+            .iter()
+            .any(|h| h.contains("2.") && h.contains("Ausführung von Wertpapier")),
         "Heading '2. Ausführung von Wertpapier-Aufträgen' should have its number prefix.\nHeadings: {:?}",
         headings
     );
 
     // The heading "Kommunikation und Informationsbeschaffung" must include the "3." prefix.
     assert!(
-        headings.iter().any(|h| h.contains("3.") && h.contains("Kommunikation und Informationsbeschaffung")),
+        headings
+            .iter()
+            .any(|h| h.contains("3.") && h.contains("Kommunikation und Informationsbeschaffung")),
         "Heading '3. Kommunikation und Informationsbeschaffung' should have its number prefix.\nHeadings: {:?}",
         headings
     );
@@ -22416,7 +22418,10 @@ fn test_bage_numbered_headings_keep_number_prefix() {
     assert!(
         !bad_para_2,
         "Paragraph 'Die An- und Verkauforders...' should NOT start with '2.'\nParagraphs: {:?}",
-        paragraphs.iter().filter(|p| p.starts_with("2.")).collect::<Vec<_>>()
+        paragraphs
+            .iter()
+            .filter(|p| p.starts_with("2."))
+            .collect::<Vec<_>>()
     );
 
     // The paragraph "Für die Kommunikation..." must NOT start with "3."
@@ -22427,6 +22432,89 @@ fn test_bage_numbered_headings_keep_number_prefix() {
     assert!(
         !bad_para_3,
         "Paragraph 'Für die Kommunikation...' should NOT start with '3.'\nParagraphs: {:?}",
-        paragraphs.iter().filter(|p| p.starts_with("3.")).collect::<Vec<_>>()
+        paragraphs
+            .iter()
+            .filter(|p| p.starts_with("3."))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Regression test: BAGE checkbox labeled "Sofern abweichend von obiger Regelung..."
+/// must have the full label recognized.
+/// The expected label is:
+/// "Sofern abweichend von obiger Regelung der Schriftverkehr ausschließlich mit dem/der
+/// Bevollmächtigten zu führen sein soll, ist hier gesondert anzukreuzen:"
+#[test]
+fn test_bage_checkbox_label_sofern_abweichend() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::FieldType;
+
+    let doc = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+
+    // Collect all Bool (checkbox) fields
+    let fields = collect_fields(&doc.content);
+    let bool_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(f.input_type, FieldType::Bool))
+        .collect();
+
+    // Print all checkbox labels to debug
+    println!("=== BAGE Checkbox Fields ===");
+    for (i, field) in bool_fields.iter().enumerate() {
+        let label = field
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        println!("Checkbox {}: name={}, label={:?}", i, field.name, label);
+    }
+
+    // Find the checkbox that should have the "Sofern abweichend..." label
+    let expected_label_fragment = "Sofern abweichend von obiger Regelung der Schriftverkehr ausschließlich mit dem/der Bevollmächtigten zu führen sein soll, ist hier gesondert anzukreuzen:";
+
+    let matching_checkbox = bool_fields.iter().find(|f| {
+        let label = f
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        label.contains("Sofern abweichend")
+            || label.contains("Schriftverkehr")
+            || label.contains("Bevollmächtigten zu führen")
+    });
+
+    assert!(
+        matching_checkbox.is_some(),
+        "Expected to find a checkbox with a label containing 'Sofern abweichend', 'Schriftverkehr', or 'Bevollmächtigten zu führen'.\nFound labels: {:?}",
+        bool_fields
+            .iter()
+            .map(|f| f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default())
+            .collect::<Vec<_>>()
+    );
+
+    let checkbox = matching_checkbox.unwrap();
+    let label = checkbox
+        .label
+        .as_ref()
+        .map(|l| l.as_plain_text())
+        .unwrap_or_default();
+
+    // Verify the label contains the expected text
+    assert!(
+        label.contains("Sofern abweichend von obiger Regelung"),
+        "Checkbox label should start with 'Sofern abweichend von obiger Regelung'.\nActual label: {:?}\nExpected: {:?}",
+        label,
+        expected_label_fragment
+    );
+
+    assert!(
+        label.contains("Bevollmächtigten zu führen"),
+        "Checkbox label should contain 'Bevollmächtigten zu führen'.\nActual label: {:?}",
+        label
     );
 }

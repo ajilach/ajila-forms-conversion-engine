@@ -2,14 +2,14 @@
 //!
 //! Detects checkboxes based on their characteristics:
 //! - Square fields (width == height)
-//! - Labeled on the right side
+//! - Labeled on the right side, OR overlapping label that starts at same x position
 //! - Typically small (checkbox size)
 //! - Has WidgetType hint indicating Checkbox
 
-use super::radio_button_detector::find_best_label_on_right;
 use super::AnalysisModule;
+use super::radio_button_detector::find_best_label_on_right;
 use crate::document::{Document, GroupKind};
-use crate::flattened::WidgetKind;
+use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
@@ -18,7 +18,7 @@ use rust_decimal::prelude::*;
 /// Checkboxes are characterized by:
 /// 1. Being Field groups (not text)
 /// 2. Having equal width and height (square)
-/// 3. Having a text label positioned to the right
+/// 3. Having a text label positioned to the right OR overlapping (starting at same x)
 /// 4. Being relatively small (typical checkbox size)
 /// 5. Having a WidgetType(Checkbox) hint (from XFA ui/checkButton with square shape)
 pub struct CheckboxDetector {
@@ -30,6 +30,8 @@ pub struct CheckboxDetector {
     pub max_label_distance: Decimal,
     /// Vertical tolerance for "same line" detection
     pub line_tolerance: Decimal,
+    /// Tolerance for overlapping label x-position matching
+    pub x_position_tolerance: Decimal,
 }
 
 impl Default for CheckboxDetector {
@@ -45,6 +47,7 @@ impl CheckboxDetector {
             square_tolerance: Decimal::from_str("0.1").unwrap(), // 10% tolerance
             max_label_distance: Decimal::from_str("150.0").unwrap(),
             line_tolerance: Decimal::from_str("8.0").unwrap(),
+            x_position_tolerance: Decimal::from_str("2.0").unwrap(), // 2pt tolerance for x matching
         }
     }
 
@@ -63,6 +66,62 @@ impl CheckboxDetector {
     /// Check if a field has a Checkbox widget type hint.
     fn is_checkbox_field(&self, doc: &Document, field_idx: usize) -> bool {
         doc.widget_kind(field_idx) == Some(WidgetKind::Checkbox)
+    }
+
+    /// Find an overlapping label for a checkbox.
+    ///
+    /// Handles the case where the label text starts at approximately the same
+    /// x position as the checkbox (within tolerance) and extends beyond it.
+    /// This is common in XFA forms where the checkbox caption overlaps with
+    /// or starts at the same position as the checkbox widget.
+    ///
+    /// Returns the index of the best overlapping label, or None if none found.
+    fn find_overlapping_label(
+        &self,
+        doc: &Document,
+        field_idx: usize,
+        text_candidates: &[usize],
+    ) -> Option<usize> {
+        let field_bounds = doc.get_bounds(field_idx)?;
+
+        let mut best: Option<(usize, Decimal)> = None;
+
+        for &text_idx in text_candidates {
+            let Some(text_bounds) = doc.get_bounds(text_idx) else {
+                continue;
+            };
+
+            // Check if text starts at approximately the same x position as the checkbox
+            let x_diff = (text_bounds.x - field_bounds.x).abs();
+            if x_diff > self.x_position_tolerance {
+                continue;
+            }
+
+            // Text must extend beyond the checkbox's right edge
+            if text_bounds.right() <= field_bounds.right() {
+                continue;
+            }
+
+            // Must be on the same line (vertical alignment)
+            if !self.is_on_same_line(&field_bounds, &text_bounds) {
+                continue;
+            }
+
+            // Prefer text with smaller x_diff (closer to exact alignment)
+            if best
+                .map(|(_, best_diff)| x_diff < best_diff)
+                .unwrap_or(true)
+            {
+                best = Some((text_idx, x_diff));
+            }
+        }
+
+        best.map(|(idx, _)| idx)
+    }
+
+    /// Check if two bounds are on the same line (vertical alignment within tolerance).
+    fn is_on_same_line(&self, a: &Bounds, b: &Bounds) -> bool {
+        a.is_on_same_line(b, self.line_tolerance)
     }
 }
 
@@ -119,13 +178,19 @@ impl AnalysisModule for CheckboxDetector {
                 .copied()
                 .collect();
 
-            if let Some(label_idx) = find_best_label_on_right(
+            // First try finding a label to the right of the checkbox
+            let label_idx = find_best_label_on_right(
                 doc,
                 field_idx,
                 &available_labels,
                 self.max_label_distance,
                 self.line_tolerance,
-            ) {
+            )
+            // If no label to the right, try finding an overlapping label
+            // (text that starts at the same x position and extends beyond the checkbox)
+            .or_else(|| self.find_overlapping_label(doc, field_idx, &available_labels));
+
+            if let Some(label_idx) = label_idx {
                 checkboxes.push((field_idx, label_idx));
                 used_labels.insert(label_idx);
             }
