@@ -394,6 +394,8 @@ pub enum AemNode {
         dor_exclude: bool,
         /// Whether the panel is visible. Default `true`.
         visible: bool,
+        /// Whether this panel wraps a conditional branch.
+        is_conditional: bool,
         /// Number of columns for Document of Record layout (`dorNumCols`).
         /// Derived from `GridLayout.columns`. `None` means no `dorNumCols` attribute.
         dor_num_cols: Option<u32>,

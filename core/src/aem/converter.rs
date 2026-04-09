@@ -290,6 +290,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 is_page: true,
                 dor_exclude: false,
                 visible: true,
+                is_conditional: false,
                 dor_num_cols: None,
                 colspan: config.grid_columns,
                 dor_colspan: None,
@@ -308,6 +309,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                     is_page: true,
                     dor_exclude: false,
                     visible: true,
+                    is_conditional: false,
                     dor_num_cols: None,
                     colspan: config.grid_columns,
                     dor_colspan: None,
@@ -546,6 +548,7 @@ fn convert_table(
         is_page: false,
         dor_exclude: false,
         visible: true,
+        is_conditional: false,
         dor_num_cols: None,
         colspan: config.grid_columns,
         dor_colspan,
@@ -774,6 +777,7 @@ fn convert_group(
         is_page: false,
         dor_exclude: false,
         visible: true,
+        is_conditional: false,
         dor_num_cols: None,
         colspan,
         dor_colspan,
@@ -822,6 +826,7 @@ fn convert_conditional(
         is_page: false,
         dor_exclude: true,
         visible: false,
+        is_conditional: true,
         dor_num_cols: None,
         colspan,
         dor_colspan,
@@ -856,6 +861,7 @@ fn convert_grid_layout(
         is_page: false,
         dor_exclude: false,
         visible: true,
+        is_conditional: false,
         dor_num_cols: Some(gl.columns as u32),
         colspan,
         dor_colspan,
@@ -2381,6 +2387,7 @@ mod tests {
                 visible,
                 dor_exclude,
                 title,
+                is_conditional,
                 ..
             } => {
                 assert!(!visible, "Conditional panel should start hidden");
@@ -2390,6 +2397,7 @@ mod tests {
                     "Conditional panel title should mention 'Condition'. Got: {}",
                     title
                 );
+                assert!(is_conditional, "Panel should be marked as conditional");
             }
             other => panic!("Expected Panel, got {:?}", other),
         }

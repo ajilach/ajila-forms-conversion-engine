@@ -38,6 +38,10 @@ pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
 fn render_node(node: &AemNode, config: &AemConfig) -> String {
     let template_key = match node {
         AemNode::Root { .. } => "root",
+        AemNode::Panel {
+            is_conditional: true,
+            ..
+        } => "conditional",
         AemNode::Panel { .. } => "panel",
         AemNode::TextField { .. } => "textbox",
         AemNode::NumberField { .. } => "numericbox",
@@ -106,6 +110,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             is_page,
             dor_exclude,
             visible,
+            is_conditional: _,
             dor_num_cols,
             colspan,
             dor_colspan,
@@ -709,6 +714,10 @@ mod tests {
             "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ title }}\"{% if not visible %} visible=\"{Boolean}false\"{% endif %}{% if dor_exclude %} dorExclusion=\"true\"{% endif %}{% if dor_num_cols %} dorNumCols=\"{{ dor_num_cols }}\"{% endif %}{% if dor_colspan %} dorColspan=\"{{ dor_colspan }}\"{% endif %}>{{ children }}</{{ element_name }}>".into(),
         );
         config.component_templates.insert(
+            "conditional".into(),
+            "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ title }}\"{% if not visible %} visible=\"{Boolean}false\"{% endif %}{% if dor_exclude %} dorExclusion=\"true\"{% endif %}{% if dor_num_cols %} dorNumCols=\"{{ dor_num_cols }}\"{% endif %}{% if dor_colspan %} dorColspan=\"{{ dor_colspan }}\"{% endif %}>{{ children }}</{{ element_name }}>".into(),
+        );
+        config.component_templates.insert(
             "textbox".into(),
             "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ label }}\"{% if mandatory %} mandatory=\"{Boolean}true\"{% endif %}{% if max_chars %} maxChars=\"{{ max_chars }}\"{% endif %}{% if dor_colspan %} dorColspan=\"{{ dor_colspan }}\"{% endif %}><cq:responsive jcr:primaryType=\"nt:unstructured\"><default jcr:primaryType=\"nt:unstructured\" offset=\"0\" width=\"{{ colspan }}\"/></cq:responsive></{{ element_name }}>".into(),
         );
@@ -889,6 +898,7 @@ mod tests {
                 is_page: false,
                 dor_exclude: true,
                 visible: false,
+                is_conditional: true,
                 dor_num_cols: None,
                 colspan: 12,
                 dor_colspan: None,
@@ -1150,6 +1160,7 @@ mod tests {
                 is_page: false,
                 dor_exclude: false,
                 visible: true,
+                is_conditional: false,
                 dor_num_cols: Some(3),
                 colspan: 12,
                 dor_colspan: None,
