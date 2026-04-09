@@ -98,11 +98,7 @@ where
 /// Compute a weighted LCS table where each match contributes a score (0.0–1.0)
 /// instead of a fixed +1.
 #[cfg(feature = "semantic-matching")]
-fn lcs_table_weighted<F>(
-    a: &[StructuredNode],
-    b: &[StructuredNode],
-    score: F,
-) -> Vec<Vec<f64>>
+fn lcs_table_weighted<F>(a: &[StructuredNode], b: &[StructuredNode], score: F) -> Vec<Vec<f64>>
 where
     F: Fn(usize, usize) -> f64,
 {
@@ -114,9 +110,7 @@ where
         for j in 1..=n {
             let s = score(i - 1, j - 1);
             if s > 0.0 {
-                dp[i][j] = (dp[i - 1][j - 1] + s)
-                    .max(dp[i - 1][j])
-                    .max(dp[i][j - 1]);
+                dp[i][j] = (dp[i - 1][j - 1] + s).max(dp[i - 1][j]).max(dp[i][j - 1]);
             } else {
                 dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
             }
@@ -189,19 +183,11 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
             let t = p.content.as_plain_text();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
+            if t.trim().is_empty() { None } else { Some(t) }
         }
         StructuredNode::Heading(h) => {
             let t = h.content.as_plain_text();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
+            if t.trim().is_empty() { None } else { Some(t) }
         }
         _ => None,
     }
@@ -261,13 +247,11 @@ fn precompute_score_matrix(
             }
             // Structurally compatible — use semantic score for text nodes.
             scores[i][j] = match (base_emb_idx[i], other_emb_idx[j]) {
-                (Some(bi), Some(oi)) => {
-                    crate::semantic::SemanticMatcher::cosine_similarity(
-                        &embeddings[bi],
-                        &embeddings[oi],
-                    )
-                    .max(0.0) as f64
-                }
+                (Some(bi), Some(oi)) => crate::semantic::SemanticMatcher::cosine_similarity(
+                    &embeddings[bi],
+                    &embeddings[oi],
+                )
+                .max(0.0) as f64,
                 _ => 1.0,
             };
         }
@@ -435,11 +419,7 @@ pub(crate) fn fill_missing_translation_placeholders(
     }
 }
 
-fn fill_node(
-    node: &mut StructuredNode,
-    all_languages: &[String],
-    primary_language: &str,
-) {
+fn fill_node(node: &mut StructuredNode, all_languages: &[String], primary_language: &str) {
     match node {
         StructuredNode::Heading(h) => {
             fill_inline_text(&mut h.content, all_languages, primary_language)
@@ -454,11 +434,7 @@ fn fill_node(
             if let Some(ts) = &mut f.placeholder {
                 fill_translatable_string(ts, all_languages, primary_language);
             }
-            fill_field_type(
-                &mut f.input_type,
-                all_languages,
-                primary_language,
-            );
+            fill_field_type(&mut f.input_type, all_languages, primary_language);
         }
         StructuredNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
@@ -480,19 +456,13 @@ fn fill_node(
                 fill_node(child, all_languages, primary_language);
             }
         }
-        StructuredNode::Repeatable(r) => {
-            fill_node(&mut r.item, all_languages, primary_language)
-        }
+        StructuredNode::Repeatable(r) => fill_node(&mut r.item, all_languages, primary_language),
         StructuredNode::Conditional(c) => {
             fill_node(&mut c.content, all_languages, primary_language)
         }
         StructuredNode::GridLayout(g) => {
             for element in &mut g.elements {
-                fill_node(
-                    &mut element.node,
-                    all_languages,
-                    primary_language,
-                );
+                fill_node(&mut element.node, all_languages, primary_language);
             }
         }
         StructuredNode::List(l) => {
@@ -504,11 +474,7 @@ fn fill_node(
     }
 }
 
-fn fill_field_type(
-    input_type: &mut FieldType,
-    all_languages: &[String],
-    primary_language: &str,
-) {
+fn fill_field_type(input_type: &mut FieldType, all_languages: &[String], primary_language: &str) {
     match input_type {
         FieldType::Radio { options } | FieldType::Select { options } => {
             for NameValue { name, .. } in options {
@@ -519,21 +485,13 @@ fn fill_field_type(
     }
 }
 
-fn fill_inline_text(
-    text: &mut InlineText,
-    all_languages: &[String],
-    primary_language: &str,
-) {
+fn fill_inline_text(text: &mut InlineText, all_languages: &[String], primary_language: &str) {
     for node in &mut text.0 {
         fill_inline_node(node, all_languages, primary_language);
     }
 }
 
-fn fill_inline_node(
-    node: &mut InlineNode,
-    all_languages: &[String],
-    primary_language: &str,
-) {
+fn fill_inline_node(node: &mut InlineNode, all_languages: &[String], primary_language: &str) {
     match node {
         InlineNode::Text(s) => {
             let mut map = TranslationMap::new();
@@ -542,11 +500,9 @@ fn fill_inline_node(
             *node = InlineNode::TranslatedText(map);
         }
         InlineNode::TranslatedText(map) => ensure_all_languages(map, all_languages),
-        InlineNode::Link(link) => fill_inline_text(
-            &mut link.content,
-            all_languages,
-            primary_language,
-        ),
+        InlineNode::Link(link) => {
+            fill_inline_text(&mut link.content, all_languages, primary_language)
+        }
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
             fill_inline_node(inner, all_languages, primary_language)
         }
@@ -565,21 +521,41 @@ fn fill_translatable_string(
             ensure_all_languages(&mut map, all_languages);
             *value = TranslatableString::Translated(map);
         }
-        TranslatableString::Translated(map) => {
-            ensure_all_languages(map, all_languages)
-        }
+        TranslatableString::Translated(map) => ensure_all_languages(map, all_languages),
     }
 }
 
 fn ensure_all_languages(map: &mut TranslationMap, langs: &[String]) {
+    // Only treat whitespace-only entries as missing when at least one other
+    // language carries real (non-whitespace) content.  If every existing value
+    // is whitespace, the whitespace is structural (e.g. a space between a
+    // numbering prefix and heading text) and must be preserved — including for
+    // language keys that are absent from the map or already set to None.
+    let has_real_content = map
+        .values()
+        .any(|v| v.as_ref().map_or(false, |s| !s.trim().is_empty()));
+
     for lang in langs {
         match map.get(lang) {
-            Some(Some(value)) if value.trim().is_empty() => {
+            Some(Some(value)) if value.trim().is_empty() && has_real_content => {
                 map.insert(lang.clone(), None);
+            }
+            Some(None) if !has_real_content => {
+                // Pre-existing None in a whitespace-only segment — repair it
+                // by replicating the structural whitespace.
+                let ws = map.values().find_map(|v| v.clone()).unwrap_or_default();
+                map.insert(lang.clone(), Some(ws));
             }
             Some(_) => {}
             None => {
-                map.insert(lang.clone(), None);
+                if has_real_content {
+                    map.insert(lang.clone(), None);
+                } else {
+                    // All existing values are whitespace — replicate the
+                    // whitespace for the missing language key.
+                    let ws = map.values().find_map(|v| v.clone()).unwrap_or_default();
+                    map.insert(lang.clone(), Some(ws));
+                }
             }
         }
     }
@@ -893,7 +869,10 @@ fn inline_text_is_bold(text: &InlineText) -> bool {
                 has_content = true;
             }
             InlineNode::Text(s) if s.trim().is_empty() => {}
-            InlineNode::TranslatedText(map) if map.values().all(|v| v.as_ref().is_none_or(|s| s.trim().is_empty())) => {}
+            InlineNode::TranslatedText(map)
+                if map
+                    .values()
+                    .all(|v| v.as_ref().is_none_or(|s| s.trim().is_empty())) => {}
             _ => return false,
         }
     }
@@ -979,7 +958,11 @@ fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &m
         InlineNode::TranslatedText(map) => {
             if let Some(Some(value)) = map.get(lang) {
                 out.push_str(value);
-            } else if let Some((_k, Some(value))) = map.iter().filter(|(_, v)| v.is_some()).min_by_key(|(k, _)| k.as_str()) {
+            } else if let Some((_k, Some(value))) = map
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .min_by_key(|(k, _)| k.as_str())
+            {
                 // Fallback to alphabetically-first key if this lang is missing.
                 out.push_str(value);
             }
@@ -999,7 +982,11 @@ fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
     match node {
         InlineNode::Text(s) => out.push_str(s),
         InlineNode::TranslatedText(map) => {
-            if let Some((_lang, Some(value))) = map.iter().filter(|(_, v)| v.is_some()).min_by_key(|(lang, _)| lang.as_str()) {
+            if let Some((_lang, Some(value))) = map
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .min_by_key(|(lang, _)| lang.as_str())
+            {
                 out.push_str(value);
             }
         }
@@ -1322,7 +1309,9 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
         if let Some(InlineNode::TranslatedText(map)) = para.content.0.first_mut() {
             map.entry(base_lang.to_string()).or_insert(None);
             map.entry(other_lang.to_string()).or_insert(None);
-            let existing = map.entry(lang.to_string()).or_insert_with(|| Some(String::new()));
+            let existing = map
+                .entry(lang.to_string())
+                .or_insert_with(|| Some(String::new()));
             let existing_str = existing.get_or_insert_with(String::new);
             if super::needs_separator(text, existing_str) {
                 *existing_str = format!("{} {}", text, existing_str);
@@ -1820,7 +1809,9 @@ fn consolidate_orphan_paragraph_into_field_label(
     for (field_idx, para_idx) in ops {
         let para_text = match &entries[para_idx] {
             AlignedNode::LeftOnly(StructuredNode::Paragraph(p))
-            | AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => Some(p.content.as_plain_text()),
+            | AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
+                Some(p.content.as_plain_text())
+            }
             _ => continue,
         };
         let para_lang = match &entries[para_idx] {
@@ -2407,9 +2398,10 @@ fn merge_name_values(
         .collect();
     for a in &base[paired..] {
         let name = match &a.name {
-            TranslatableString::Plain(s) => {
-                TranslatableString::Translated(HashMap::from([(base_lang.to_string(), Some(s.clone()))]))
-            }
+            TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
+                base_lang.to_string(),
+                Some(s.clone()),
+            )])),
             TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
         };
         options.push(NameValue {
@@ -2419,9 +2411,10 @@ fn merge_name_values(
     }
     for b in &other[paired..] {
         let name = match &b.name {
-            TranslatableString::Plain(s) => {
-                TranslatableString::Translated(HashMap::from([(other_lang.to_string(), Some(s.clone()))]))
-            }
+            TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
+                other_lang.to_string(),
+                Some(s.clone()),
+            )])),
             TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
         };
         options.push(NameValue {

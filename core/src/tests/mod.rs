@@ -22301,3 +22301,71 @@ fn test_aari_has_list_with_expected_items() {
         texts
     );
 }
+
+/// Regression test: BAGE headings like "1. Umfang der Verwaltungsvollmacht",
+/// "8. Risikoaufklärung", "9. Eigene Aufträge" must not contain segments with
+/// missing translations. Previously, whitespace-only inline segments between
+/// a numbering prefix and the heading text were marked as missing translations.
+#[test]
+fn test_bage_headings_no_missing_translation() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+
+    let de = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE_019_EN");
+
+    let merged = structured::merge_translations(vec![de, en], None).unwrap();
+
+    // Collect all headings from the merged tree.
+    fn collect_headings(
+        nodes: &[StructuredNode],
+        out: &mut Vec<(u8, Vec<std::collections::HashMap<String, Option<String>>>)>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    let mut maps = Vec::new();
+                    for inline in &h.content.0 {
+                        if let InlineNode::TranslatedText(map) = inline {
+                            maps.push(map.clone());
+                        }
+                    }
+                    out.push((h.level.as_u8(), maps));
+                }
+                StructuredNode::Group(g) => collect_headings(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_headings(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_headings(&[(*r.item).clone()], out)
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> =
+                        g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_headings(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut headings = Vec::new();
+    collect_headings(&merged.content, &mut headings);
+
+    // No heading should have any segment with a missing translation in any language.
+    for (level, maps) in &headings {
+        for map in maps {
+            for (lang, val) in map {
+                assert!(
+                    val.is_some(),
+                    "H{} heading has missing translation for lang '{}': segment {:?}",
+                    level,
+                    lang,
+                    map
+                );
+            }
+        }
+    }
+}
