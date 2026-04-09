@@ -22902,3 +22902,71 @@ fn debug_bage_list_detection() {
         }
     }
 }
+
+#[test]
+fn test_bage_has_no_ordered_list_only_numbered_headings() {
+    // BAGE document contains headings that start with numbers (e.g., "1. Vollmacht").
+    // These should NOT be parsed as ordered list items - they are section headings.
+    // There is also legal text that wrongly gets detected as an ordered list.
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("BAGE_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on BAGE_019_DE.pdf");
+
+    // Collect all lists from the structured output
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // Check that there are no ordered lists
+    let ordered_lists: Vec<_> = lists.iter().filter(|l| l.list_style.is_ordered()).collect();
+    assert!(
+        ordered_lists.is_empty(),
+        "BAGE should have NO ordered lists, but found {} ordered list(s): {:?}",
+        ordered_lists.len(),
+        ordered_lists
+            .iter()
+            .map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    // Verify there are headings that start with numbers (these should NOT be lists)
+    let headings = collect_headings(&structured_nodes);
+    let numbered_headings: Vec<_> = headings
+        .iter()
+        .filter(|(_, text)| text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+        .collect();
+
+    assert!(
+        !numbered_headings.is_empty(),
+        "BAGE should have headings that start with numbers"
+    );
+
+    println!(
+        "\n✓ BAGE has no ordered lists, but has {} headings starting with numbers:",
+        numbered_headings.len()
+    );
+    for (level, text) in &numbered_headings {
+        println!("  H{}: {}", level, text);
+    }
+}

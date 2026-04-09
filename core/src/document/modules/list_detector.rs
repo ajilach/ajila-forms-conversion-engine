@@ -802,7 +802,10 @@ impl AnalysisModule for ListDetector {
                 not_heading_like && is_single_line && is_adjacent
             };
 
-            let should_extend = if prepend.len() >= 5 {
+            let should_extend = if prepend.len() >= 5 && group.len() >= 2 {
+                // Large backward extension requires at least 2 confirmed items.
+                // A single marker item (e.g. "4. Heading text") is not strong
+                // enough to absorb 5+ preceding paragraphs.
                 true
             } else if !prepend.is_empty() && is_unordered_style {
                 // Check if the item closest to the list (first in prepend) meets criteria.
