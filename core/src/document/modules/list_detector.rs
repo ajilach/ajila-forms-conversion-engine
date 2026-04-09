@@ -12,6 +12,9 @@
 //! - `1.`, `2.`, ... (decimal numbers followed by `.` or `)`)
 //! - `a.`, `b.`, ... or `A.`, `B.`, ... (letters followed by `.` or `)`)
 //! - `i.`, `ii.`, `iv.`, ... (roman numerals followed by `.` or `)`)
+//! - `(1)`, `(2)`, ... (decimal numbers in parentheses)
+//! - `(a)`, `(b)`, ... or `(A)`, `(B)`, ... (letters in parentheses)
+//! - `(i)`, `(ii)`, `(iv)`, ... (roman numerals in parentheses)
 //!
 //! # Grouping rules
 //!
@@ -138,6 +141,14 @@ fn detect_marker(text: &str) -> Option<DetectedMarker> {
                 });
             }
         }
+    }
+
+    // Check parenthesized ordered markers: (1), (a), (i), (ii), etc.
+    if let Some((marker, kind)) = detect_parenthesized_marker(trimmed) {
+        return Some(DetectedMarker {
+            kind,
+            prefix_len: leading_ws + marker,
+        });
     }
 
     // Check ordered markers: <digits>. or <digits>)
@@ -285,6 +296,77 @@ fn detect_roman_marker(text: &str) -> Option<(usize, bool)> {
 
     let ws_after = after.len() - after.trim_start().len();
     Some((i + ws_after, is_upper))
+}
+
+/// Detect a parenthesized marker like "(i)", "(ii)", "(1)", "(a)" at the start of text.
+/// Returns the byte length of the marker + trailing whitespace, and the detected kind.
+fn detect_parenthesized_marker(text: &str) -> Option<(usize, ListStyleType)> {
+    let bytes = text.as_bytes();
+
+    // Must start with '('
+    if bytes.is_empty() || bytes[0] != b'(' {
+        return None;
+    }
+
+    // Find the closing ')'
+    let close_paren = bytes.iter().position(|&b| b == b')')?;
+    if close_paren < 2 {
+        // Need at least "(X)" where X is content
+        return None;
+    }
+
+    // Extract the content between parentheses
+    let content = &text[1..close_paren];
+
+    // Determine the kind of marker inside the parentheses
+    let kind = if content.chars().all(|c| c.is_ascii_digit()) {
+        // Numeric: (1), (2), (10), etc.
+        ListStyleType::Decimal
+    } else {
+        // Check if it's a roman numeral first: (i), (ii), (iii), (iv), (I), (II), etc.
+        // This includes single characters like 'i', 'v', 'x' which are common in legal docs
+        let roman_chars = ['i', 'v', 'x', 'l', 'c', 'd', 'm'];
+        let content_lower = content.to_ascii_lowercase();
+        if content_lower.chars().all(|c| roman_chars.contains(&c)) {
+            // Determine if uppercase or lowercase
+            let is_upper = content
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_uppercase());
+            if is_upper {
+                ListStyleType::UpperRoman
+            } else {
+                ListStyleType::LowerRoman
+            }
+        } else if content.len() == 1
+            && content
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_alphabetic())
+        {
+            // Single non-roman letter: (a), (b), (A), (B) - but not (i), (v), (x) which are roman
+            let ch = content.chars().next().unwrap();
+            if ch.is_ascii_uppercase() {
+                ListStyleType::UpperAlpha
+            } else {
+                ListStyleType::LowerAlpha
+            }
+        } else {
+            return None;
+        }
+    };
+
+    // Calculate prefix length: opening paren + content + closing paren + trailing whitespace
+    let marker_len = close_paren + 1; // includes '(' and ')'
+    let after = &text[marker_len..];
+
+    // Must be followed by whitespace or end of string
+    if !after.is_empty() && !after.starts_with(char::is_whitespace) {
+        return None;
+    }
+
+    let ws_after = after.len() - after.trim_start().len();
+    Some((marker_len + ws_after, kind))
 }
 
 /// Check if a text block contains *only* a list marker (with optional whitespace).
@@ -854,6 +936,42 @@ mod tests {
         let m = detect_marker("ii. Second roman item").unwrap();
         assert_eq!(m.kind, ListStyleType::LowerRoman);
         assert_eq!(m.prefix_len, 4);
+    }
+
+    #[test]
+    fn test_detect_parenthesized_roman() {
+        // Parenthesized roman numerals like (i), (ii), (iii)
+        let m = detect_marker("(i) First item").unwrap();
+        assert_eq!(m.kind, ListStyleType::LowerRoman);
+        assert_eq!(m.prefix_len, 4); // "(i) " = 4 bytes
+
+        let m = detect_marker("(ii) Second item").unwrap();
+        assert_eq!(m.kind, ListStyleType::LowerRoman);
+        assert_eq!(m.prefix_len, 5); // "(ii) " = 5 bytes
+
+        let m = detect_marker("(iii) Third item").unwrap();
+        assert_eq!(m.kind, ListStyleType::LowerRoman);
+        assert_eq!(m.prefix_len, 6); // "(iii) " = 6 bytes
+    }
+
+    #[test]
+    fn test_detect_parenthesized_numeric() {
+        // Parenthesized numbers like (1), (2), (3)
+        let m = detect_marker("(1) First item").unwrap();
+        assert_eq!(m.kind, ListStyleType::Decimal);
+        assert_eq!(m.prefix_len, 4); // "(1) " = 4 bytes
+    }
+
+    #[test]
+    fn test_detect_parenthesized_alpha() {
+        // Parenthesized letters like (a), (b), (c)
+        let m = detect_marker("(a) First item").unwrap();
+        assert_eq!(m.kind, ListStyleType::LowerAlpha);
+        assert_eq!(m.prefix_len, 4); // "(a) " = 4 bytes
+
+        let m = detect_marker("(A) First item").unwrap();
+        assert_eq!(m.kind, ListStyleType::UpperAlpha);
+        assert_eq!(m.prefix_len, 4); // "(A) " = 4 bytes
     }
 
     #[test]

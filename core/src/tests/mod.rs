@@ -22518,3 +22518,91 @@ fn test_bage_checkbox_label_sofern_abweichend() {
         label
     );
 }
+
+#[test]
+fn test_baqn_parenthesized_roman_list() {
+    // BAQN contains a list with parenthesized roman numeral markers:
+    // (i) ai sensi dell'art. 67-duodecies, ...
+    // (ii) ai sensi dell'art. 67-duodecies, ...
+    // (iii) ai sensi dell'art. 67-terdecies, ...
+    // This test verifies that these markers are detected and grouped as a list.
+    use crate::document::{GroupKind, ListStyleType};
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("BAQN_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on BAQN_033_IT.pdf");
+
+    // Collect all lists from the structured output
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // Find the list containing the article 67-duodecies references
+    let art_67_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("67-duodecies"))
+    });
+
+    assert!(
+        art_67_list.is_some(),
+        "Expected to find a list with items containing '67-duodecies'. Found {} total lists.",
+        lists.len()
+    );
+
+    let list = art_67_list.unwrap();
+
+    // Should be detected as a roman numeral list
+    assert_eq!(
+        list.list_style,
+        ListStyleType::LowerRoman,
+        "The (i), (ii), (iii) list should be detected as LowerRoman"
+    );
+
+    // Should have 3 items
+    assert_eq!(
+        list.items.len(),
+        3,
+        "Expected 3 list items for (i), (ii), (iii), found {}",
+        list.items.len()
+    );
+
+    // Verify the content of each item mentions the expected article
+    let item_texts: Vec<String> = list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        item_texts[0].contains("67-duodecies") && item_texts[0].contains("c. 1"),
+        "First item should mention 'art. 67-duodecies, c. 1'. Found: {}",
+        item_texts[0]
+    );
+    assert!(
+        item_texts[1].contains("67-duodecies") && item_texts[1].contains("c. 4"),
+        "Second item should mention 'art. 67-duodecies, c. 4'. Found: {}",
+        item_texts[1]
+    );
+    assert!(
+        item_texts[2].contains("67-terdecies"),
+        "Third item should mention 'art. 67-terdecies'. Found: {}",
+        item_texts[2]
+    );
+}
