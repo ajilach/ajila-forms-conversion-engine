@@ -8,9 +8,11 @@
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
+    dorExcludeTitle="true"
     {% if dor_exclude %}dorExclusion="{{ dor_exclude }}"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
+    {% if variables.use_summary == "true" %}hideTitle="{Boolean}true"{% endif %}
     name="{{ name }}"
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false"
