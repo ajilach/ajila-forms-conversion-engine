@@ -128,6 +128,7 @@
                         jcr:title="Preview"
                         sling:resourceType="fd/af/components/panel"
                         dorExclusion="true"
+                        summaryExclusion="true"
                         guideNodeClass="guidePanel"
                         name="preview"
                         textIsRich="true"
