@@ -19,9 +19,10 @@ use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_merge_selected, compute_add_options, delete_nodes,
     get_container_child_info, get_container_children_count, get_list_item_text_mut,
-    get_node_at_path_mut, get_table_column_count, is_container_child_path, is_list_item_path,
-    is_table_row_path, move_container_child_down, move_container_child_up, move_list_item_down,
-    move_list_item_up, move_table_row_down, move_table_row_up,
+    get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
+    is_container_child_path, is_list_item_path, is_table_row_path, move_container_child_down,
+    move_container_child_up, move_list_item_down, move_list_item_up, move_table_row_down,
+    move_table_row_up,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -318,34 +319,83 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 paths.sort();
 
                 if paths.len() >= 2 {
-                    // For now, only support merging at root level (single Child segment)
-                    if paths
-                        .iter()
-                        .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
-                    {
-                        let indices: Vec<usize> = paths
+                    // All selected paths must be siblings (same parent, all ending with Child)
+                    if let Some(parent_path) = get_shared_parent_path(&paths) {
+                        let mut indices: Vec<usize> = paths
                             .iter()
-                            .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
+                            .filter_map(|p| p.last().and_then(|s| s.as_child_index()))
                             .collect();
+                        indices.sort();
+
                         let mut env = envelope.write();
 
-                        // Collect nodes to merge
-                        let nodes: Vec<StructuredNode> = indices
-                            .iter()
-                            .filter_map(|&i| env.content.get(i).cloned())
-                            .collect();
+                        if parent_path.is_empty() {
+                            // Root-level merge
+                            let nodes: Vec<StructuredNode> = indices
+                                .iter()
+                                .filter_map(|&i| env.content.get(i).cloned())
+                                .collect();
 
-                        // Try to merge
-                        if let Ok(merged) = blueprint::merge_nodes(nodes) {
-                            // Remove old nodes (in reverse order to maintain indices)
-                            for &idx in indices.iter().rev() {
-                                if idx < env.content.len() {
-                                    env.content.remove(idx);
+                            if let Ok(merged) = blueprint::merge_nodes(nodes) {
+                                for &idx in indices.iter().rev() {
+                                    if idx < env.content.len() {
+                                        env.content.remove(idx);
+                                    }
                                 }
+                                let insert_idx = indices[0].min(env.content.len());
+                                env.content.insert(insert_idx, merged);
                             }
-                            // Insert merged node at first position
-                            let insert_idx = indices[0].min(env.content.len());
-                            env.content.insert(insert_idx, merged);
+                        } else if let Some(parent) =
+                            get_node_at_path_mut(&mut env.content, &parent_path)
+                        {
+                            match parent {
+                                StructuredNode::Group(g) => {
+                                    let nodes: Vec<StructuredNode> = indices
+                                        .iter()
+                                        .filter_map(|&i| g.children.get(i).cloned())
+                                        .collect();
+
+                                    if let Ok(merged) = blueprint::merge_nodes(nodes) {
+                                        for &idx in indices.iter().rev() {
+                                            if idx < g.children.len() {
+                                                g.children.remove(idx);
+                                            }
+                                        }
+                                        let insert_idx = indices[0].min(g.children.len());
+                                        g.children.insert(insert_idx, merged);
+                                    }
+                                }
+                                StructuredNode::GridLayout(g) => {
+                                    let nodes: Vec<StructuredNode> = indices
+                                        .iter()
+                                        .filter_map(|&i| {
+                                            g.elements.get(i).map(|e| e.node.clone())
+                                        })
+                                        .collect();
+
+                                    if let Ok(merged) = blueprint::merge_nodes(nodes) {
+                                        let merged_span = g
+                                            .elements
+                                            .get(indices[0])
+                                            .map(|e| e.span)
+                                            .unwrap_or(1);
+                                        for &idx in indices.iter().rev() {
+                                            if idx < g.elements.len() {
+                                                g.elements.remove(idx);
+                                            }
+                                        }
+                                        let insert_idx = indices[0].min(g.elements.len());
+                                        g.elements.insert(
+                                            insert_idx,
+                                            GridLayoutElement {
+                                                span: merged_span,
+                                                node: merged,
+                                            },
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
                     }
 
@@ -804,39 +854,110 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let mut paths: Vec<_> = selection.read().selected.iter().cloned().collect();
                 paths.sort();
 
-                // Only support root-level conversions for now (single Child segment)
-                if paths
-                    .iter()
-                    .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
-                {
-                    let indices: Vec<usize> = paths
+                // All selected paths must be siblings (same parent, all ending with Child)
+                if let Some(parent_path) = get_shared_parent_path(&paths) {
+                    let mut indices: Vec<usize> = paths
                         .iter()
-                        .filter_map(|p| p.first().and_then(|s| s.as_child_index()))
+                        .filter_map(|p| p.last().and_then(|s| s.as_child_index()))
                         .collect();
-                    let env_read = envelope.read();
+                    indices.sort();
 
-                    // Collect nodes to convert
-                    let nodes: Vec<&StructuredNode> = indices
-                        .iter()
-                        .filter_map(|&i| env_read.content.get(i))
-                        .collect();
+                    if parent_path.is_empty() {
+                        // Root-level conversion
+                        let env_read = envelope.read();
+                        let nodes: Vec<&StructuredNode> = indices
+                            .iter()
+                            .filter_map(|&i| env_read.content.get(i))
+                            .collect();
 
-                    if !nodes.is_empty() {
-                        let converted_nodes = convert_nodes(&nodes, target);
-                        drop(env_read);
+                        if !nodes.is_empty() {
+                            let converted_nodes = convert_nodes(&nodes, target);
+                            drop(env_read);
 
-                        if !converted_nodes.is_empty() {
-                            let mut env = envelope.write();
-                            // Remove old nodes (in reverse order to maintain indices)
-                            for &idx in indices.iter().rev() {
-                                if idx < env.content.len() {
-                                    env.content.remove(idx);
+                            if !converted_nodes.is_empty() {
+                                let mut env = envelope.write();
+                                for &idx in indices.iter().rev() {
+                                    if idx < env.content.len() {
+                                        env.content.remove(idx);
+                                    }
+                                }
+                                let insert_idx = indices[0].min(env.content.len());
+                                for (i, node) in converted_nodes.into_iter().enumerate() {
+                                    env.content.insert(insert_idx + i, node);
                                 }
                             }
-                            // Insert converted nodes at first position
-                            let insert_idx = indices[0].min(env.content.len());
-                            for (i, node) in converted_nodes.into_iter().enumerate() {
-                                env.content.insert(insert_idx + i, node);
+                        }
+                    } else {
+                        // Non-root conversion: collect clones first, then mutate
+                        let nodes_cloned: Vec<StructuredNode> = {
+                            let env_read = envelope.read();
+                            let parent = get_node_at_path(
+                                &env_read.content,
+                                &parent_path,
+                            );
+                            match parent {
+                                Some(StructuredNode::Group(g)) => indices
+                                    .iter()
+                                    .filter_map(|&i| g.children.get(i).cloned())
+                                    .collect(),
+                                Some(StructuredNode::GridLayout(g)) => indices
+                                    .iter()
+                                    .filter_map(|&i| {
+                                        g.elements.get(i).map(|e| e.node.clone())
+                                    })
+                                    .collect(),
+                                _ => vec![],
+                            }
+                        };
+
+                        if !nodes_cloned.is_empty() {
+                            let node_refs: Vec<&StructuredNode> = nodes_cloned.iter().collect();
+                            let converted_nodes = convert_nodes(&node_refs, target);
+
+                            if !converted_nodes.is_empty() {
+                                let mut env = envelope.write();
+                                if let Some(parent) =
+                                    get_node_at_path_mut(&mut env.content, &parent_path)
+                                {
+                                    match parent {
+                                        StructuredNode::Group(g) => {
+                                            for &idx in indices.iter().rev() {
+                                                if idx < g.children.len() {
+                                                    g.children.remove(idx);
+                                                }
+                                            }
+                                            let insert_idx = indices[0].min(g.children.len());
+                                            for (i, node) in
+                                                converted_nodes.into_iter().enumerate()
+                                            {
+                                                g.children.insert(insert_idx + i, node);
+                                            }
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            let first_span = g
+                                                .elements
+                                                .get(indices[0])
+                                                .map(|e| e.span)
+                                                .unwrap_or(1);
+                                            for &idx in indices.iter().rev() {
+                                                if idx < g.elements.len() {
+                                                    g.elements.remove(idx);
+                                                }
+                                            }
+                                            let insert_idx = indices[0].min(g.elements.len());
+                                            for (i, node) in
+                                                converted_nodes.into_iter().enumerate()
+                                            {
+                                                let span = if i == 0 { first_span } else { 1 };
+                                                g.elements.insert(
+                                                    insert_idx + i,
+                                                    GridLayoutElement { span, node },
+                                                );
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
                             }
                         }
                     }
