@@ -616,11 +616,16 @@ impl AnalysisModule for ListDetector {
         // vertically contiguous.  We stop when we encounter a TextBlock whose
         // height exceeds 2× the tallest item in the confirmed list (heuristic
         // to avoid absorbing a preceding multi-line paragraph).
-        let roots_set: HashSet<usize> = roots.iter().copied().collect();
+        //
+        // NOTE: We re-query current roots here because Phase 0 and Phase 1
+        // may have created new groups (merged standalone markers, lists).
+        // We need the current state for accurate root detection.
+        let current_roots: HashSet<usize> = doc.roots().iter().copied().collect();
 
         // Collect root TextBlocks sorted by y then x for backward scanning.
+        // Use current roots, not the original `roots` captured at the start.
         let mut root_tb_sorted: Vec<(usize, Bounds)> = Vec::new();
-        for &idx in &roots {
+        for &idx in &current_roots {
             if matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
                 if let Some(b) = doc.get_bounds(idx) {
                     root_tb_sorted.push((idx, b));
@@ -644,7 +649,7 @@ impl AnalysisModule for ListDetector {
             }
         }
 
-        for group in &mut groups {
+        for (group_idx, group) in groups.iter_mut().enumerate() {
             if group.is_empty() {
                 continue;
             }
@@ -695,7 +700,7 @@ impl AnalysisModule for ListDetector {
                 }
 
                 // Must still be a root TextBlock (not claimed by another module)
-                if !roots_set.contains(&cand_idx) {
+                if !current_roots.contains(&cand_idx) {
                     break;
                 }
                 if !matches!(doc.groups[cand_idx].kind, GroupKind::TextBlock) {
@@ -736,22 +741,95 @@ impl AnalysisModule for ListDetector {
                     break;
                 }
 
+                // Guard: stop at heading-like text (ends with ':')
+                // Such text blocks are introductions to a list, not list items.
+                let cand_text = doc.get_text_content(cand_idx);
+                let cand_trimmed = cand_text.trim();
+                if cand_trimmed.ends_with(':') || cand_trimmed.ends_with("：") {
+                    break;
+                }
+
                 prepend.push(cand_idx);
                 claimed.insert(cand_idx);
                 current_top = cand_bounds.y;
             }
 
-            // Only apply backward extension when at least 5 items are
-            // prepended.  This guards against false positives where a
+            // Apply backward extension when either:
+            // 1. At least 5 items are prepended (clear pattern of missing markers), OR
+            // 2. Exactly 1 item is prepended AND it meets stricter criteria:
+            //    - The list style is unordered (Dash/Disc) - numbered lists should
+            //      have explicit numbering, so single-item prepending risks absorbing
+            //      a heading like "2. Title" that precedes "2. First list item..."
+            //    - It's immediately adjacent to the first marked item
+            //    - It doesn't end with ':' (which would indicate a heading)
+            //    - It's a single line (not a paragraph)
+            //
+            // The threshold of 5 guards against false positives where a
             // heading, introductory sentence, or nearby paragraph text
             // sitting directly above a list would be incorrectly absorbed.
-            // The threshold of 5 ensures we only extend when there is a
-            // clear pattern of many consecutive items missing their markers
-            // (as happens in some XFA forms).
-            if prepend.len() >= 5 {
-                prepend.reverse(); // restore top-to-bottom order
-                prepend.append(group);
-                *group = prepend;
+            // The stricter criteria for single-item prepending allows
+            // absorbing the first unmarked item in lists where only the
+            // first item lacks a marker.
+            let group_style = group_styles.get(group_idx);
+            let is_unordered_style = matches!(
+                group_style,
+                Some(ListStyleType::Dash) | Some(ListStyleType::Disc)
+            );
+
+            // Helper to check if a candidate meets single-item criteria
+            let check_single_item = |cand_idx: usize| -> bool {
+                let cand_bounds = match doc.get_bounds(cand_idx) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                let cand_text = doc.get_text_content(cand_idx);
+                let cand_trimmed = cand_text.trim();
+
+                // Must not end with ':' (would be a heading)
+                let not_heading_like = !cand_trimmed.ends_with(':')
+                    && !cand_trimmed.ends_with("：");
+
+                // Must be single line (height similar to list items)
+                let is_single_line = cand_bounds.height <= max_item_height * Decimal::new(12, 1);
+
+                // Must be immediately adjacent (gap <= 0.3 * line height)
+                let first_marked_y = topmost_bounds.y;
+                let cand_bottom = cand_bounds.y + cand_bounds.height;
+                let gap = first_marked_y - cand_bottom;
+                let is_adjacent = gap >= Decimal::ZERO
+                    && gap <= max_item_height * Decimal::new(3, 1);
+
+                not_heading_like && is_single_line && is_adjacent
+            };
+
+            let should_extend = if prepend.len() >= 5 {
+                true
+            } else if !prepend.is_empty() && is_unordered_style {
+                // Check if the item closest to the list (first in prepend) meets criteria.
+                // Note: prepend is built from closest-to-list to farthest, so first item
+                // is the one immediately above the list.
+                check_single_item(prepend[0])
+            } else {
+                false
+            };
+
+            if should_extend {
+                if prepend.len() >= 5 {
+                    // Keep all prepended items
+                    prepend.reverse();
+                    prepend.append(group);
+                    *group = prepend;
+                } else {
+                    // Only keep the single item closest to the list (prepend[0])
+                    let single_item = prepend[0];
+                    // Remove other items from claimed set since we're not using them
+                    for &idx in prepend.iter().skip(1) {
+                        claimed.remove(&idx);
+                    }
+                    let mut new_group = vec![single_item];
+                    new_group.append(group);
+                    *group = new_group;
+                }
             }
         }
 

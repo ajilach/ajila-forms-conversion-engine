@@ -22606,3 +22606,299 @@ fn test_baqn_parenthesized_roman_list() {
         item_texts[2]
     );
 }
+
+/// Test that BAGE unordered lists are correctly detected.
+/// There are multiple unordered lists in BAGE:
+/// 1. "Depotaufstellungen", "Rechnungsabschlüsse", "Mitteilungen nach Nr. 16...", "Sonstige Mitteilungen..."
+/// 2. Items restricted for the authorized person (starting with "Dispositionen zu eigenen Gunsten...")
+/// 3. Authorized actions (starting with "An- und Verkauf von Wertpapieren...")
+#[test]
+fn test_bage_unordered_lists() {
+    use crate::run_exhaustive_to_envelope;
+
+    let doc = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+
+    let lists = helpers::collect_lists(&doc.content);
+
+    // Print all lists for debugging
+    println!("=== BAGE Lists ({} total) ===", lists.len());
+    for (i, list) in lists.iter().enumerate() {
+        println!("List {} ({:?}, {} items):", i, list.list_style, list.items.len());
+        for (j, item) in list.items.iter().enumerate() {
+            println!("  {}: {}", j, item.as_plain_text());
+        }
+        println!();
+    }
+
+    // List 1: Communication types - should have 4 items
+    // Expected items: Depotaufstellungen, Rechnungsabschlüsse, Mitteilungen nach Nr. 16..., Sonstige Mitteilungen...
+    let comm_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Rechnungsabschlüsse"))
+    });
+    assert!(
+        comm_list.is_some(),
+        "Expected to find a list containing 'Rechnungsabschlüsse'"
+    );
+    let comm_list = comm_list.unwrap();
+    let comm_texts: Vec<String> = comm_list.items.iter().map(|i| i.as_plain_text()).collect();
+    // Verify all expected items are present
+    assert!(
+        comm_texts.iter().any(|t| t.contains("Depotaufstellungen")),
+        "Communication types list should contain 'Depotaufstellungen'.\nActual items: {:?}",
+        comm_texts
+    );
+    assert!(
+        comm_texts.iter().any(|t| t.contains("Rechnungsabschlüsse")),
+        "Communication types list should contain 'Rechnungsabschlüsse'.\nActual items: {:?}",
+        comm_texts
+    );
+    assert!(
+        comm_texts.iter().any(|t| t.contains("Mitteilungen nach Nr. 16")),
+        "Communication types list should contain 'Mitteilungen nach Nr. 16'.\nActual items: {:?}",
+        comm_texts
+    );
+    assert!(
+        comm_texts.iter().any(|t| t.contains("Sonstige Mitteilungen")),
+        "Communication types list should contain 'Sonstige Mitteilungen'.\nActual items: {:?}",
+        comm_texts
+    );
+
+    // List 2: Restrictions (things the authorized person cannot do)
+    // The first item "Dispositionen zu eigenen Gunsten..." should be separate from the heading
+    // because it has different font style (normal vs bold heading)
+    let restrictions_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Barabhebungen"))
+    });
+    assert!(
+        restrictions_list.is_some(),
+        "Expected to find a list containing 'Barabhebungen'"
+    );
+    let restrictions_list = restrictions_list.unwrap();
+    let restrictions_texts: Vec<String> = restrictions_list.items.iter().map(|i| i.as_plain_text()).collect();
+    
+    // BUG: "Dispositionen zu eigenen Gunsten..." is incorrectly merged with the heading
+    // It should be a separate list item because the font style is different (bold heading vs normal text)
+    assert!(
+        restrictions_texts.iter().any(|t| t.contains("Dispositionen zu eigenen Gunsten")),
+        "Restrictions list should include 'Dispositionen zu eigenen Gunsten...' as a separate item (not merged with heading).\nActual items: {:?}",
+        restrictions_texts
+    );
+    assert!(
+        restrictions_texts.iter().any(|t| t.contains("Untervollmachten")),
+        "Restrictions list should contain 'Untervollmachten'.\nActual items: {:?}",
+        restrictions_texts
+    );
+    assert!(
+        restrictions_texts.iter().any(|t| t.contains("Sicherheiten")),
+        "Restrictions list should contain 'Sicherheiten'.\nActual items: {:?}",
+        restrictions_texts
+    );
+    assert!(
+        restrictions_texts.iter().any(|t| t.contains("Auflösung von Konten")),
+        "Restrictions list should contain 'Auflösung von Konten'.\nActual items: {:?}",
+        restrictions_texts
+    );
+    // Should have 7 items total
+    assert_eq!(
+        restrictions_texts.len(),
+        7,
+        "Restrictions list should have 7 items.\nActual items: {:?}",
+        restrictions_texts
+    );
+
+    // List 3: Permissions (authorized actions)
+    let permissions_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("An- und Verkauf von Wertpapieren"))
+    });
+    assert!(
+        permissions_list.is_some(),
+        "Expected to find a list containing 'An- und Verkauf von Wertpapieren'"
+    );
+    let permissions_list = permissions_list.unwrap();
+    let permissions_texts: Vec<String> = permissions_list.items.iter().map(|i| i.as_plain_text()).collect();
+    assert!(
+        permissions_texts.iter().any(|t| t.contains("Edelmetallen")),
+        "Permissions list should contain 'Edelmetallen'.\nActual items: {:?}",
+        permissions_texts
+    );
+    assert!(
+        permissions_texts.iter().any(|t| t.contains("Überweisungen auf das Referenzkonto")),
+        "Permissions list should contain 'Überweisungen auf das Referenzkonto'.\nActual items: {:?}",
+        permissions_texts
+    );
+}
+
+/// Debug test: inspect where "Depotaufstellungen" and "Dispositionen zu eigenen Gunsten" end up
+/// after each pipeline stage to understand why they're not in the expected lists.
+#[test]
+#[ignore]
+fn debug_bage_list_detection() {
+    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::{
+        CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
+        HeadingDetector, InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
+        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TableDetector,
+        TextBlockGrouper, TextBlockMerger, FieldTableDetector,
+    };
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGE_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let flattened = &first_state.flattened;
+
+    let search_terms = [
+        "Depotaufstellungen",
+        "Rechnungsabschlüsse",
+        "Dispositionen zu eigenen Gunsten",
+        "Barabhebungen",
+    ];
+
+    let mut doc = Document::from_flattened(flattened);
+
+    // Helper to print text blocks containing our terms
+    let print_relevant = |doc: &Document, stage: &str| {
+        eprintln!("\n=== {} ===", stage);
+        let roots = doc.roots();
+        for &idx in &roots {
+            let text = doc.get_text_content(idx);
+            for term in &search_terms {
+                if text.contains(*term) {
+                    let kind = &doc.groups[idx].kind;
+                    let bounds = doc.get_bounds(idx);
+                    let is_bold = doc.is_bold_group(idx);
+                    eprintln!(
+                        "  [{idx}] kind={kind:?}, bold={is_bold}, bounds={bounds:?}"
+                    );
+                    let preview: String = text.chars().take(150).collect();
+                    eprintln!("    text: \"{preview}...\"");
+                    break;
+                }
+            }
+        }
+    };
+
+    NoPrintDetector::new().process(&mut doc);
+    MasterPageDetector::new().process(&mut doc);
+    TextBlockGrouper::new().process(&mut doc);
+
+    // After TextBlockGrouper: look for standalone dash markers near our search terms
+    eprintln!("\n=== Standalone markers after TextBlockGrouper ===");
+    let roots = doc.roots();
+    for &idx in &roots {
+        let text = doc.get_text_content(idx);
+        let trimmed = text.trim();
+        // Look for standalone markers (just "–" or "-" etc.)
+        if trimmed.len() <= 3 && (trimmed.contains('–') || trimmed.contains('-') || trimmed.contains('*')) {
+            let bounds = doc.get_bounds(idx);
+            eprintln!("  [{idx}] standalone marker: \"{trimmed}\" bounds={bounds:?}");
+        }
+    }
+    
+    // Also print all TextBlocks in the y-range of "Depotaufstellungen" (y ≈ 1279)
+    eprintln!("\n=== TextBlocks near y=1279 (Depotaufstellungen area) ===");
+    for &idx in &roots {
+        if let Some(bounds) = doc.get_bounds(idx) {
+            let y: f64 = bounds.y.try_into().unwrap_or(0.0);
+            if y > 1270.0 && y < 1310.0 {
+                let text = doc.get_text_content(idx);
+                let kind = &doc.groups[idx].kind;
+                eprintln!("  [{idx}] y={y:.1}, kind={kind:?}, text=\"{}\"", text.chars().take(60).collect::<String>());
+            }
+        }
+    }
+
+    // Print all TextBlocks near y=765 ("Dispositionen" area)
+    eprintln!("\n=== TextBlocks near y=756-775 (Dispositionen area) ===");
+    for &idx in &roots {
+        if let Some(bounds) = doc.get_bounds(idx) {
+            let y: f64 = bounds.y.try_into().unwrap_or(0.0);
+            if y > 750.0 && y < 785.0 {
+                let text = doc.get_text_content(idx);
+                let kind = &doc.groups[idx].kind;
+                let is_bold = doc.is_bold_group(idx);
+                eprintln!("  [{idx}] y={y:.1}, kind={kind:?}, bold={is_bold}, text=\"{}\"", text.chars().take(80).collect::<String>());
+            }
+        }
+    }
+
+    print_relevant(&doc, "After TextBlockGrouper");
+
+    PlaceholderFilter::new().process(&mut doc);
+    FieldGrouper::new().process(&mut doc);
+    DateFieldDetector::new().process(&mut doc);
+    InlineFieldDatePicker::new().process(&mut doc);
+    OverlappingTextBlockMerger::new().process(&mut doc);
+    print_relevant(&doc, "After OverlappingTextBlockMerger");
+
+    RadioButtonDetector::new().process(&mut doc);
+    CheckboxDetector::new().process(&mut doc);
+    
+    // Debug state before ListDetector
+    print_relevant(&doc, "Before ListDetector");
+    
+    ListDetector::new().process(&mut doc);
+    print_relevant(&doc, "After ListDetector");
+
+    // Print lists
+    let roots = doc.roots();
+    eprintln!("\n=== Lists after ListDetector ===");
+    for &idx in &roots {
+        if matches!(doc.groups[idx].kind, GroupKind::List { .. }) {
+            let list_style = match &doc.groups[idx].kind {
+                GroupKind::List { list_style } => list_style,
+                _ => unreachable!(),
+            };
+            let items: Vec<_> = doc.groups[idx].children.iter().map(|&c| doc.get_text_content(c)).collect();
+            eprintln!("  List [{idx}] style={list_style:?}, items={}", items.len());
+            for (i, item) in items.iter().enumerate() {
+                let preview: String = item.chars().take(80).collect();
+                eprintln!("    {i}: \"{preview}\"");
+            }
+        }
+    }
+
+    RadioButtonGrouper::new().process(&mut doc);
+    SelectionInlineFieldDetector::new().process(&mut doc);
+    RadioButtonContentDetector::new().process(&mut doc);
+    CheckboxContentDetector::new().process(&mut doc);
+    TableDetector::new().process(&mut doc);
+    TextBlockMerger::new().process(&mut doc);
+    print_relevant(&doc, "After TextBlockMerger");
+
+    FieldTableDetector::new().process(&mut doc);
+    HeadingDetector::default().process(&mut doc);
+    print_relevant(&doc, "After HeadingDetector");
+
+    // Print headings to see if "Dispositionen" got merged
+    eprintln!("\n=== Headings after HeadingDetector ===");
+    let roots = doc.roots();
+    for &idx in &roots {
+        if matches!(doc.groups[idx].kind, GroupKind::Heading { .. }) {
+            let text = doc.get_text_content(idx);
+            if text.contains("Bevollmächtigte")
+                || text.contains("Dispositionen")
+                || text.contains("nicht berechtigt")
+            {
+                let level = match &doc.groups[idx].kind {
+                    GroupKind::Heading { level } => level,
+                    _ => unreachable!(),
+                };
+                let is_bold = doc.is_bold_group(idx);
+                eprintln!(
+                    "  Heading [{idx}] level={level}, bold={is_bold}"
+                );
+                let preview: String = text.chars().take(200).collect();
+                eprintln!("    text: \"{preview}\"");
+            }
+        }
+    }
+}

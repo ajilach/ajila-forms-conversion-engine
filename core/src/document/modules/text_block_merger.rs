@@ -124,11 +124,25 @@ impl TextBlockMerger {
         };
 
         // Determine which is above and which is below
+        let (top_idx, bottom_idx) = if bounds_a.y <= bounds_b.y {
+            (idx_a, idx_b)
+        } else {
+            (idx_b, idx_a)
+        };
         let (top, bottom) = if bounds_a.y <= bounds_b.y {
             (&bounds_a, &bounds_b)
         } else {
             (&bounds_b, &bounds_a)
         };
+
+        // Don't merge if the upper block ends with a colon ':'.
+        // A colon typically indicates an introductory phrase or heading
+        // that should remain separate from the content that follows.
+        let top_text = doc.get_text_content(top_idx);
+        let trimmed = top_text.trim();
+        if trimmed.ends_with(':') || trimmed.ends_with("：") {
+            return false;
+        }
 
         // Calculate vertical gap (bottom of top block to top of bottom block)
         let gap = bottom.y - top.bottom();
