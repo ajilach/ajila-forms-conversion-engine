@@ -51,9 +51,10 @@ pub fn generate_aem_package(
 
     // When binding to XSD, include the XSD path as a filter root so that CRX
     // actually installs the file (content outside filter roots is ignored).
-    if config.bind_to_xsd && !config.xsd_path.is_empty() {
-        let xsd_jcr_path = config.xsd_ref();
-        filter_roots.push(xsd_jcr_path);
+    if config.bind_to_xsd {
+        if let Some(xsd_jcr_path) = config.xsd_ref() {
+            filter_roots.push(xsd_jcr_path);
+        }
     }
 
     let buf = Cursor::new(Vec::new());
@@ -205,14 +206,14 @@ pub fn generate_aem_package(
     }
 
     // ── XSD schema (when bind_to_xsd = true and xsd_path is set) ──────
-    if config.bind_to_xsd && !config.xsd_path.is_empty() {
+    if config.bind_to_xsd && config.xsd_path.is_some() {
         if let Some(ref xsd_config) = config.xsd_config {
             let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
-            let xsd_zip_path = config.xsd_zip_path();
+            let xsd_zip_path = config.xsd_zip_path().unwrap();
 
             // Write intermediate .content.xml files for the XSD directory
             // segments that lie between the DAM base and the XSD file.
-            let xsd_ref = config.xsd_ref();
+            let xsd_ref = config.xsd_ref().unwrap();
             let xsd_ref_trimmed = xsd_ref.trim_start_matches('/');
             let dam_base = "content/dam/formsanddocuments/";
             if let Some(rest) = xsd_ref_trimmed.strip_prefix(dam_base) {
@@ -290,11 +291,7 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
         ctx.insert("bind_to_xsd", &config.bind_to_xsd);
-        let xsd_ref = if config.xsd_path.is_empty() {
-            String::new()
-        } else {
-            config.xsd_ref()
-        };
+        let xsd_ref = config.xsd_ref().unwrap_or_default();
         ctx.insert("xsd_ref", &xsd_ref);
 
         match template::render_string(dam_template, &ctx) {
@@ -346,10 +343,10 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
             meta.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
         }
         meta.push_attribute(("dorType", config.dor_type.as_str()));
-        let has_xsd_path = !config.xsd_path.is_empty();
+        let has_xsd_path = config.xsd_path.is_some();
         meta.push_attribute(("formmodel", if has_xsd_path { "xsd" } else { "none" }));
         if has_xsd_path {
-            let xsd_ref = config.xsd_ref();
+            let xsd_ref = config.xsd_ref().unwrap();
             meta.push_attribute(("xsdRef", xsd_ref.as_str()));
         }
         meta.push_attribute(("hasCustomThumbnail", "{Boolean}false"));
@@ -1165,7 +1162,8 @@ mod tests {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
         config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
-        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.xsd_path =
+            Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into());
 
         let root = AemNode::Root {
             title: "TEST".into(),
@@ -1204,7 +1202,7 @@ mod tests {
         let mut config = AemConfig::test_default("TEST_FORM");
         config.bind_to_xsd = true;
         config.xsd_path =
-            "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST_FORM.xsd".into();
+            Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST_FORM.xsd".into());
 
         let xml = generate_dam_asset_xml(&config);
 
@@ -1225,7 +1223,8 @@ mod tests {
     fn dam_template_receives_resolved_xsd_ref() {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
-        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.xsd_path =
+            Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into());
         config.component_templates.insert(
             "dam".into(),
             "<jcr:root><jcr:content><metadata {% if bind_to_xsd %}xsdRef=\"{{ xsd_ref }}\"{% endif %}/></jcr:content></jcr:root>".into(),
@@ -1247,7 +1246,8 @@ mod tests {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
         config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
-        config.xsd_path = "content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.xsd_path =
+            Some("content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into());
 
         let xml = generate_dam_asset_xml(&config);
         assert!(
@@ -1519,7 +1519,8 @@ mod tests {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
         config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
-        config.xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into();
+        config.xsd_path =
+            Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_TEST.xsd".into());
 
         let root = AemNode::Root {
             title: "TEST".into(),
@@ -1561,7 +1562,7 @@ mod tests {
         let mut config = AemConfig::test_default("TEST");
         config.bind_to_xsd = true;
         config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
-        config.xsd_path = String::new(); // no xsd_path
+        config.xsd_path = None; // no xsd_path
 
         let root = AemNode::Root {
             title: "TEST".into(),

@@ -97,7 +97,8 @@ pub struct AemConfig {
 
     /// JCR file path of the generated XSD used in DAM metadata `xsdRef`
     /// (e.g. `/content/dam/formsanddocuments/.../AF_AAAI.xsd`).
-    pub xsd_path: String,
+    /// `None` when the profile does not specify an `xsd_path`.
+    pub xsd_path: Option<String>,
 
     // -- Package writer metadata (derived from profile variables) -------------
     /// DOR template reference path (from `variables.dor_template_ref`).
@@ -180,8 +181,8 @@ impl AemConfig {
 
         let bind_to_xsd = profile.bind_to_xsd.unwrap_or(false);
         let xsd_path = match &profile.xsd_path {
-            Some(tmpl) => template::render_string(tmpl, &tera_ctx)?,
-            None => String::new(),
+            Some(tmpl) => Some(template::render_string(tmpl, &tera_ctx)?),
+            None => None,
         };
 
         Ok(Self {
@@ -247,17 +248,22 @@ impl AemConfig {
     }
 
     /// Return the canonical DAM XSD reference path for metadata attributes.
-    pub fn xsd_ref(&self) -> String {
-        if self.xsd_path.starts_with('/') {
-            self.xsd_path.clone()
-        } else {
-            format!("/{}", self.xsd_path)
-        }
+    /// Returns `None` when `xsd_path` is not configured.
+    pub fn xsd_ref(&self) -> Option<String> {
+        self.xsd_path.as_ref().map(|p| {
+            if p.starts_with('/') {
+                p.clone()
+            } else {
+                format!("/{}", p)
+            }
+        })
     }
 
     /// Return the ZIP entry path where the XSD file should be written.
-    pub fn xsd_zip_path(&self) -> String {
-        format!("jcr_root/{}", self.xsd_ref().trim_start_matches('/'))
+    /// Returns `None` when `xsd_path` is not configured.
+    pub fn xsd_zip_path(&self) -> Option<String> {
+        self.xsd_ref()
+            .map(|r| format!("jcr_root/{}", r.trim_start_matches('/')))
     }
 
     /// Expand `languages` to include synonyms.
@@ -308,7 +314,7 @@ impl AemConfig {
 
             form_path: "test/path".into(),
             form_dir: format!("AF_{form_code}"),
-            xsd_path: "/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into(),
+            xsd_path: Some("/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into()),
 
             dor_template_ref: String::new(),
             dor_type: "generate".into(),

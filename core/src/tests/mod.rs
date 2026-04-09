@@ -10563,8 +10563,8 @@ fn test_aaab_aem_config_form_path_title_code() {
     );
 
     assert_eq!(
-        config.xsd_path, "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd",
-        "xsd_path should resolve to the configured UBS AFForms location"
+        config.xsd_path, None,
+        "xsd_path should be None when not configured in the profile"
     );
 }
 
@@ -13914,7 +13914,10 @@ bind_to_xsd = true
         .expect("bind_to_xsd=true without xsd_path should succeed");
 
     assert!(config.bind_to_xsd);
-    assert!(config.xsd_path.is_empty());
+    assert_eq!(
+        config.xsd_path, None,
+        "xsd_path should be None when not configured"
+    );
 }
 
 #[test]
@@ -22335,15 +22338,10 @@ fn test_bage_headings_no_missing_translation() {
                     out.push((h.level.as_u8(), maps));
                 }
                 StructuredNode::Group(g) => collect_headings(&g.children, out),
-                StructuredNode::Conditional(c) => {
-                    collect_headings(&[(*c.content).clone()], out)
-                }
-                StructuredNode::Repeatable(r) => {
-                    collect_headings(&[(*r.item).clone()], out)
-                }
+                StructuredNode::Conditional(c) => collect_headings(&[(*c.content).clone()], out),
+                StructuredNode::Repeatable(r) => collect_headings(&[(*r.item).clone()], out),
                 StructuredNode::GridLayout(g) => {
-                    let children: Vec<_> =
-                        g.elements.iter().map(|e| e.node.clone()).collect();
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
                     collect_headings(&children, out);
                 }
                 _ => {}
