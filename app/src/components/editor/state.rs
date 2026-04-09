@@ -605,12 +605,50 @@ fn segment_index(segment: Option<&PathSegment>) -> usize {
     }
 }
 
+/// Get the shared parent path if all paths are siblings (same parent container)
+/// and all end with a `Child` segment.
+///
+/// Returns `None` if:
+/// - `paths` is empty
+/// - any path is empty or doesn't end with a `Child` segment
+/// - paths don't all share the same parent prefix
+pub fn get_shared_parent_path(paths: &[NodePath]) -> Option<NodePath> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    // All paths must be non-empty and end with a Child segment
+    if !paths
+        .iter()
+        .all(|p| !p.is_empty() && matches!(p.last(), Some(PathSegment::Child(_))))
+    {
+        return None;
+    }
+
+    // All paths must share the same parent (all but last segment)
+    let first_parent = &paths[0][..paths[0].len() - 1];
+    if paths
+        .iter()
+        .all(|p| p[..p.len() - 1] == *first_parent)
+    {
+        Some(first_parent.to_vec())
+    } else {
+        None
+    }
+}
+
 /// Check if the selected nodes can be merged.
 pub fn can_merge_selected(
     content: &[StructuredNode],
     paths: &HashSet<NodePath>,
 ) -> Result<(), blueprint::ElementMergeError> {
     if paths.len() < 2 {
+        return Err(blueprint::ElementMergeError::NotEnoughNodes);
+    }
+
+    // All selected nodes must be siblings (share the same parent container)
+    let sorted_paths: Vec<NodePath> = paths.iter().cloned().collect();
+    if get_shared_parent_path(&sorted_paths).is_none() {
         return Err(blueprint::ElementMergeError::NotEnoughNodes);
     }
 
@@ -740,11 +778,9 @@ pub fn available_conversions(
         return vec![];
     }
 
-    // Only support root-level conversions for now (single Child segment)
-    if !paths
-        .iter()
-        .all(|p| p.len() == 1 && matches!(p.first(), Some(PathSegment::Child(_))))
-    {
+    // All selected paths must be siblings (same parent, all ending with a Child segment)
+    let sorted_paths: Vec<NodePath> = paths.iter().cloned().collect();
+    if get_shared_parent_path(&sorted_paths).is_none() {
         return vec![];
     }
 
