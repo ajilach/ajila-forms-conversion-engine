@@ -674,8 +674,10 @@ pub struct RenderedLine {
     pub h_align: HAlign,
     /// Total width of all content on this line
     pub content_width: f32,
-    /// Per-paragraph left margin (from CSS margin-left), already scaled
-    pub margin_left: f32,
+    /// Per-paragraph left margin (from CSS margin-left), already scaled.
+    /// `Some(value)` means CSS explicitly set margin-left (even if 0),
+    /// `None` means no CSS override (use XFA `<para marginLeft>` default).
+    pub margin_left: Option<f32>,
 }
 
 /// A token for text layout - a word or preserved space run.
@@ -8343,16 +8345,17 @@ impl Flattened {
                     text_indent: 0.0,
                     h_align: para.h_align,
                     content_width: 0.0,
-                    margin_left: para.margin_left.unwrap_or(0.0) * scale,
+                    margin_left: para.margin_left.map(|m| m * scale),
                 });
                 continue;
             }
 
             // Per XFA spec Chapter 27: margin-left/margin-right on paragraphs reduce
             // the available width for text wrapping
-            let para_margin_left = para.margin_left.unwrap_or(0.0) * scale;
+            let para_margin_left = para.margin_left.map(|m| m * scale);
             let para_margin_right = para.margin_right.unwrap_or(0.0) * scale;
-            let para_effective_width = (max_width - para_margin_left - para_margin_right).max(0.0);
+            let para_margin_left_val = para_margin_left.unwrap_or(0.0);
+            let para_effective_width = (max_width - para_margin_left_val - para_margin_right).max(0.0);
 
             // Calculate effective indent (in pixels after scaling)
             let para_indent = para.text_indent.unwrap_or(0.0) * scale;
@@ -8375,7 +8378,7 @@ impl Flattened {
                 continue;
             }
 
-            // Word-wrap the tokens using effective width (reduced by margins)
+            // Word-wrap the tokens using effective width (reduced by margins, using resolved value)
             let para_lines =
                 Self::wrap_tokens_to_lines(
                     &tokens,
@@ -9254,12 +9257,9 @@ impl Flattened {
                 continue;
             }
 
-            // Use per-line margin if available (from CSS margin-left on <p>), otherwise node-level default
-            let line_margin_left = if line.margin_left > 0.0 {
-                line.margin_left
-            } else {
-                default_margin_left
-            };
+            // Per XFA spec §11: para.marginLeft supplies the default for CSS margin-left.
+            // Use per-line CSS margin if explicitly set (even if 0), otherwise XFA default.
+            let line_margin_left = line.margin_left.unwrap_or(default_margin_left);
 
             // Calculate effective width for this line (reduced by margins)
             let effective_width = box_w as f32 - line_margin_left - default_margin_right;

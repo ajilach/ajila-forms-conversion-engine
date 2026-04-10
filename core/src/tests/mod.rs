@@ -22970,3 +22970,68 @@ fn test_bage_has_no_ordered_list_only_numbered_headings() {
         println!("  H{}: {}", level, text);
     }
 }
+
+/// Regression test: In BAGE T_Indent draws, the "2.", "3.", etc. paragraphs have
+/// CSS `margin-left:0pt` which should override the XFA default `marginLeft=14.173pt`.
+/// The RichParagraph.margin_left must be `Some(0.0)` (not None) so the renderer
+/// uses the CSS value instead of falling back to the XFA default.
+#[test]
+fn test_bage_tindent_numbers_have_explicit_zero_margin() {
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGE_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().unwrap();
+    let flattened = &default_state.flattened;
+
+    // Find all T_Indent paragraph nodes containing "2.", "3.", etc.
+    let targets = ["2.", "3.", "4.", "5."];
+    let number_nodes: Vec<_> = flattened
+        .iter_nodes()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text {
+                content,
+                source_name: Some(name),
+                ..
+            } = &n.kind
+            {
+                name == "T_Indent" && targets.contains(&content.trim())
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    assert!(
+        !number_nodes.is_empty(),
+        "Should find T_Indent nodes with numbered headings"
+    );
+
+    for node in &number_nodes {
+        if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let trimmed = content.trim();
+            let rt = node
+                .rich_text()
+                .expect(&format!("T_Indent '{}' should have rich text", trimmed));
+            // Each split paragraph node should have exactly one paragraph in its rich_text
+            assert_eq!(
+                rt.paragraphs.len(),
+                1,
+                "Split node '{}' should have 1 paragraph",
+                trimmed
+            );
+            let para = &rt.paragraphs[0];
+            // The "2.", "3.", etc. paragraphs in the BAGE XFA have CSS
+            // `margin-left:0pt`, which means RichParagraph.margin_left should
+            // be Some(0.0), NOT None. This distinction is critical: Some(0.0)
+            // tells the renderer to use 0 margin, while None would cause it to
+            // fall back to the XFA default (14.173pt), shifting text to the right.
+            assert_eq!(
+                para.margin_left,
+                Some(0.0),
+                "T_Indent '{}' should have explicit CSS margin-left:0pt (Some(0.0)), not None",
+                trimmed
+            );
+        }
+    }
+}
