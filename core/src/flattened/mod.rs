@@ -623,6 +623,10 @@ pub struct RichParagraph {
     pub margin_left: Option<f32>,
     /// Per-paragraph right margin (from CSS margin-right on `<p>` style)
     pub margin_right: Option<f32>,
+    /// Whether this empty paragraph was created by a `<br/>` element.
+    /// Distinguishes `<p><br/></p>` (structural placeholder in rich text)
+    /// from empty U+2029 segments in plain text (vertical spacers).
+    pub has_br: bool,
 }
 
 /// A run of text with uniform styling.
@@ -7954,11 +7958,13 @@ impl Flattened {
                                 {
                                     // Current paragraph is empty, just mark it
                                     last_para.is_empty = true;
+                                    last_para.has_br = true;
                                 } else {
                                     // Current paragraph has content, start a new empty one
                                     paragraphs.push(RichParagraph {
                                         h_align: default_h_align,
                                         is_empty: true,
+                                        has_br: true,
                                         ..Default::default()
                                     });
                                 }
@@ -7967,6 +7973,7 @@ impl Flattened {
                                 paragraphs.push(RichParagraph {
                                     h_align: default_h_align,
                                     is_empty: true,
+                                    has_br: true,
                                     ..Default::default()
                                 });
                             }
@@ -8902,7 +8909,7 @@ impl Flattened {
                 // elements (e.g. T_Indent / T_The_Authorized in BAGE) where the
                 // first br-only paragraph is a structural placeholder, not a visible
                 // blank line.
-                if paragraph_heights.is_empty() && para.runs.is_empty() {
+                if paragraph_heights.is_empty() && para.runs.is_empty() && para.has_br {
                     paragraph_heights.push(Decimal::ZERO);
                     continue;
                 }
