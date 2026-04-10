@@ -19,9 +19,9 @@ title = "{{ xfa.formrange_code }}"
 
 master_language = "en"
 
-bind_to_xsd = true
 # XSD path can be disabled as we currently dont want the schema included in the package.
 # xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{{ variables.form_code }}.xsd"
+# bind_to_xsd = true
 
 use_fragments = true
 fragment_xsd_ref = "/content/dam/formsanddocuments/afforms_xsd/"
