@@ -552,25 +552,21 @@ impl AnalysisModule for ListDetector {
         let flush = |run: &mut Vec<(usize, String, Bounds, DetectedMarker)>,
                      groups: &mut Vec<Vec<usize>>,
                      group_styles: &mut Vec<ListStyleType>| {
-            // Normally require >= 2 items to form a list.  However, a single
-            // item with actual content after the marker prefix is also kept
-            // so that Phase 2 backward extension can try to find preceding
-            // items that were missing their markers.  A standalone marker
-            // ("–" with no content) is never promoted alone because it does
-            // not carry enough signal.
-            let keep = if run.len() >= 2 {
-                true
-            } else if run.len() == 1 {
-                let remaining = run[0].1[run[0].3.prefix_len..].trim();
-                !remaining.is_empty()
-            } else {
-                false
-            };
-            if keep {
+            if run.len() >= 2 {
                 let child_indices: Vec<usize> = run.iter().map(|(idx, _, _, _)| *idx).collect();
                 let kind = run[0].3.kind;
                 groups.push(child_indices);
                 group_styles.push(kind);
+            } else if run.len() == 1 {
+                // Keep single-item runs so the consolidation phase can adopt
+                // them into larger groups if they have matching marker style.
+                let remaining = run[0].1[run[0].3.prefix_len..].trim();
+                if !remaining.is_empty() {
+                    let child_indices: Vec<usize> = run.iter().map(|(idx, _, _, _)| *idx).collect();
+                    let kind = run[0].3.kind;
+                    groups.push(child_indices);
+                    group_styles.push(kind);
+                }
             }
             run.clear();
         };
@@ -655,27 +651,11 @@ impl AnalysisModule for ListDetector {
         // Flush the final run
         flush(&mut current_run, &mut groups, &mut group_styles);
 
-        // Phase 2: Backward extension.
-        //
-        // Some XFA forms have list items where the marker text for the first
-        // N items is missing (empty draw elements).  Only the last few items
-        // receive visible markers.  Without this phase, the marker-less items
-        // are left as plain TextBlocks and get merged into the preceding
-        // paragraph by the TextBlockMerger.
-        //
-        // For each detected list group, we walk backwards through the root
-        // TextBlocks looking for items that share the same x position and are
-        // vertically contiguous.  We stop when we encounter a TextBlock whose
-        // height exceeds 2× the tallest item in the confirmed list (heuristic
-        // to avoid absorbing a preceding multi-line paragraph).
-        //
-        // NOTE: We re-query current roots here because Phase 0 and Phase 1
-        // may have created new groups (merged standalone markers, lists).
-        // We need the current state for accurate root detection.
+        // Collect root TextBlocks sorted by y then x for consolidation phase.
+        // Re-query current roots because Phase 0 and Phase 1 may have created
+        // new groups (merged standalone markers, lists).
         let current_roots: HashSet<usize> = doc.roots().iter().copied().collect();
 
-        // Collect root TextBlocks sorted by y then x for backward scanning.
-        // Use current roots, not the original `roots` captured at the start.
         let mut root_tb_sorted: Vec<(usize, Bounds)> = Vec::new();
         for &idx in &current_roots {
             if matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
@@ -686,216 +666,11 @@ impl AnalysisModule for ListDetector {
         }
         root_tb_sorted.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
 
-        // Build a quick lookup: group_idx → position in root_tb_sorted
-        let tb_pos: std::collections::HashMap<usize, usize> = root_tb_sorted
-            .iter()
-            .enumerate()
-            .map(|(pos, (idx, _))| (*idx, pos))
-            .collect();
-
         // Track indices already claimed by a list group so we don't double-count.
         let mut claimed: HashSet<usize> = HashSet::new();
         for group in &groups {
             for &idx in group {
                 claimed.insert(idx);
-            }
-        }
-
-        for (group_idx, group) in groups.iter_mut().enumerate() {
-            if group.is_empty() {
-                continue;
-            }
-
-            // Max height among confirmed list items (used as paragraph guard).
-            let max_item_height = group
-                .iter()
-                .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.height))
-                .max()
-                .unwrap_or(Decimal::ZERO);
-            let height_limit = max_item_height * Decimal::TWO;
-
-            // Reference width: use the widest item in the group for
-            // comparison.  This ensures backward candidates of normal width
-            // are not rejected when the list also contains narrow standalone
-            // markers.
-            let ref_item_width = group
-                .iter()
-                .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.width))
-                .max()
-                .unwrap_or(Decimal::ZERO);
-
-            let first_idx = group[0];
-            // Find the topmost item by y position for backward scanning.
-            let (topmost_idx, topmost_bounds) = group
-                .iter()
-                .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
-                .min_by_key(|(_, b)| b.y)
-                .unwrap_or_else(|| {
-                    let b = doc.get_bounds(first_idx).unwrap();
-                    (first_idx, b)
-                });
-
-            // Find position of topmost item in the sorted list
-            let start_pos = match tb_pos.get(&topmost_idx) {
-                Some(&pos) => pos,
-                None => continue,
-            };
-
-            // Walk backwards from the item before `start_pos`
-            let mut prepend = Vec::new();
-            let mut current_top = topmost_bounds.y;
-            for pos in (0..start_pos).rev() {
-                let (cand_idx, ref cand_bounds) = root_tb_sorted[pos];
-
-                if claimed.contains(&cand_idx) {
-                    break;
-                }
-
-                // Must still be a root TextBlock (not claimed by another module)
-                if !current_roots.contains(&cand_idx) {
-                    break;
-                }
-                if !matches!(doc.groups[cand_idx].kind, GroupKind::TextBlock) {
-                    break;
-                }
-
-                // Same x within tolerance
-                if (cand_bounds.x - topmost_bounds.x).abs() > x_tol {
-                    break;
-                }
-
-                // Vertically adjacent: candidate bottom ≈ current top
-                let cand_bottom = cand_bounds.y + cand_bounds.height;
-                let gap = current_top - cand_bottom;
-                let gap_limit = max_item_height / Decimal::TWO;
-                if gap < Decimal::ZERO || gap > gap_limit {
-                    break;
-                }
-
-                // Guard: skip multi-line paragraphs (much taller than list items)
-                if cand_bounds.height > height_limit {
-                    break;
-                }
-
-                // Guard: skip TextBlocks with very different width (e.g. narrow
-                // standalone markers that formed their own list group).
-                let width_narrow = cand_bounds.width.min(ref_item_width);
-                let width_wide = cand_bounds.width.max(ref_item_width);
-                if width_wide > Decimal::ZERO && width_narrow * Decimal::TWO < width_wide {
-                    break;
-                }
-
-                // Check no intervening non-TextBlock root or non-marker
-                // TextBlock between candidate and current top
-                let has_intervening = non_tb_root_ys
-                    .iter()
-                    .any(|&y| y > cand_bottom && y < current_top)
-                    || non_marker_tb_bounds.iter().any(|sep| {
-                        let sep_bottom = sep.y + sep.height;
-                        let y_ok = sep_bottom > cand_bottom && sep.y < current_top;
-                        let x_ok = sep.x < (cand_bounds.x + cand_bounds.width)
-                            && (sep.x + sep.width) > cand_bounds.x;
-                        let gap = current_top - sep_bottom;
-                        let tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
-                        let bridges = gap < tol;
-                        y_ok && x_ok && bridges
-                    });
-                if has_intervening {
-                    break;
-                }
-
-                // Guard: stop at heading-like text (ends with ':')
-                // Such text blocks are introductions to a list, not list items.
-                let cand_text = doc.get_text_content(cand_idx);
-                let cand_trimmed = cand_text.trim();
-                if cand_trimmed.ends_with(':') || cand_trimmed.ends_with("：") {
-                    break;
-                }
-
-                prepend.push(cand_idx);
-                claimed.insert(cand_idx);
-                current_top = cand_bounds.y;
-            }
-
-            // Apply backward extension when either:
-            // 1. At least 5 items are prepended (clear pattern of missing markers), OR
-            // 2. Exactly 1 item is prepended AND it meets stricter criteria:
-            //    - The list style is unordered (Dash/Disc) - numbered lists should
-            //      have explicit numbering, so single-item prepending risks absorbing
-            //      a heading like "2. Title" that precedes "2. First list item..."
-            //    - It's immediately adjacent to the first marked item
-            //    - It doesn't end with ':' (which would indicate a heading)
-            //    - It's a single line (not a paragraph)
-            //
-            // The threshold of 5 guards against false positives where a
-            // heading, introductory sentence, or nearby paragraph text
-            // sitting directly above a list would be incorrectly absorbed.
-            // The stricter criteria for single-item prepending allows
-            // absorbing the first unmarked item in lists where only the
-            // first item lacks a marker.
-            let group_style = group_styles.get(group_idx);
-            let is_unordered_style = matches!(
-                group_style,
-                Some(ListStyleType::Dash) | Some(ListStyleType::Disc)
-            );
-
-            // Helper to check if a candidate meets single-item criteria
-            let check_single_item = |cand_idx: usize| -> bool {
-                let cand_bounds = match doc.get_bounds(cand_idx) {
-                    Some(b) => b,
-                    None => return false,
-                };
-                let cand_text = doc.get_text_content(cand_idx);
-                let cand_trimmed = cand_text.trim();
-
-                // Must not end with ':' (would be a heading)
-                let not_heading_like =
-                    !cand_trimmed.ends_with(':') && !cand_trimmed.ends_with("：");
-
-                // Must be single line (height similar to list items)
-                let is_single_line = cand_bounds.height <= max_item_height * Decimal::new(12, 1);
-
-                // Must be immediately adjacent (gap <= 0.3 * line height)
-                let first_marked_y = topmost_bounds.y;
-                let cand_bottom = cand_bounds.y + cand_bounds.height;
-                let gap = first_marked_y - cand_bottom;
-                let is_adjacent =
-                    gap >= Decimal::ZERO && gap <= max_item_height * Decimal::new(3, 1);
-
-                not_heading_like && is_single_line && is_adjacent
-            };
-
-            let should_extend = if prepend.len() >= 5 && group.len() >= 2 {
-                // Large backward extension requires at least 2 confirmed items.
-                // A single marker item (e.g. "4. Heading text") is not strong
-                // enough to absorb 5+ preceding paragraphs.
-                true
-            } else if !prepend.is_empty() && is_unordered_style {
-                // Check if the item closest to the list (first in prepend) meets criteria.
-                // Note: prepend is built from closest-to-list to farthest, so first item
-                // is the one immediately above the list.
-                check_single_item(prepend[0])
-            } else {
-                false
-            };
-
-            if should_extend {
-                if prepend.len() >= 5 {
-                    // Keep all prepended items
-                    prepend.reverse();
-                    prepend.append(group);
-                    *group = prepend;
-                } else {
-                    // Only keep the single item closest to the list (prepend[0])
-                    let single_item = prepend[0];
-                    // Remove other items from claimed set since we're not using them
-                    for &idx in prepend.iter().skip(1) {
-                        claimed.remove(&idx);
-                    }
-                    let mut new_group = vec![single_item];
-                    new_group.append(group);
-                    *group = new_group;
-                }
             }
         }
 
