@@ -8894,6 +8894,18 @@ impl Flattened {
                 });
 
             if para.is_empty {
+                // Per XFA spec §2.5+: a leading `<p><br/></p>` at the very start
+                // of a rich text body (first paragraph, no text runs — only a <br/>
+                // marker) produces zero height.  The <br/> terminates an empty first
+                // line that has no content, so it does not advance the vertical
+                // position.  This is critical for alignment between overlapping draw
+                // elements (e.g. T_Indent / T_The_Authorized in BAGE) where the
+                // first br-only paragraph is a structural placeholder, not a visible
+                // blank line.
+                if paragraph_heights.is_empty() && para.runs.is_empty() {
+                    paragraph_heights.push(Decimal::ZERO);
+                    continue;
+                }
                 // Empty paragraph: height is one line
                 let space_above = para
                     .space_above

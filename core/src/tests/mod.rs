@@ -22624,7 +22624,12 @@ fn test_bage_unordered_lists() {
     // Print all lists for debugging
     println!("=== BAGE Lists ({} total) ===", lists.len());
     for (i, list) in lists.iter().enumerate() {
-        println!("List {} ({:?}, {} items):", i, list.list_style, list.items.len());
+        println!(
+            "List {} ({:?}, {} items):",
+            i,
+            list.list_style,
+            list.items.len()
+        );
         for (j, item) in list.items.iter().enumerate() {
             println!("  {}: {}", j, item.as_plain_text());
         }
@@ -22656,12 +22661,16 @@ fn test_bage_unordered_lists() {
         comm_texts
     );
     assert!(
-        comm_texts.iter().any(|t| t.contains("Mitteilungen nach Nr. 16")),
+        comm_texts
+            .iter()
+            .any(|t| t.contains("Mitteilungen nach Nr. 16")),
         "Communication types list should contain 'Mitteilungen nach Nr. 16'.\nActual items: {:?}",
         comm_texts
     );
     assert!(
-        comm_texts.iter().any(|t| t.contains("Sonstige Mitteilungen")),
+        comm_texts
+            .iter()
+            .any(|t| t.contains("Sonstige Mitteilungen")),
         "Communication types list should contain 'Sonstige Mitteilungen'.\nActual items: {:?}",
         comm_texts
     );
@@ -22679,27 +22688,39 @@ fn test_bage_unordered_lists() {
         "Expected to find a list containing 'Barabhebungen'"
     );
     let restrictions_list = restrictions_list.unwrap();
-    let restrictions_texts: Vec<String> = restrictions_list.items.iter().map(|i| i.as_plain_text()).collect();
-    
+    let restrictions_texts: Vec<String> = restrictions_list
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
+
     // BUG: "Dispositionen zu eigenen Gunsten..." is incorrectly merged with the heading
     // It should be a separate list item because the font style is different (bold heading vs normal text)
     assert!(
-        restrictions_texts.iter().any(|t| t.contains("Dispositionen zu eigenen Gunsten")),
+        restrictions_texts
+            .iter()
+            .any(|t| t.contains("Dispositionen zu eigenen Gunsten")),
         "Restrictions list should include 'Dispositionen zu eigenen Gunsten...' as a separate item (not merged with heading).\nActual items: {:?}",
         restrictions_texts
     );
     assert!(
-        restrictions_texts.iter().any(|t| t.contains("Untervollmachten")),
+        restrictions_texts
+            .iter()
+            .any(|t| t.contains("Untervollmachten")),
         "Restrictions list should contain 'Untervollmachten'.\nActual items: {:?}",
         restrictions_texts
     );
     assert!(
-        restrictions_texts.iter().any(|t| t.contains("Sicherheiten")),
+        restrictions_texts
+            .iter()
+            .any(|t| t.contains("Sicherheiten")),
         "Restrictions list should contain 'Sicherheiten'.\nActual items: {:?}",
         restrictions_texts
     );
     assert!(
-        restrictions_texts.iter().any(|t| t.contains("Auflösung von Konten")),
+        restrictions_texts
+            .iter()
+            .any(|t| t.contains("Auflösung von Konten")),
         "Restrictions list should contain 'Auflösung von Konten'.\nActual items: {:?}",
         restrictions_texts
     );
@@ -22713,23 +22734,30 @@ fn test_bage_unordered_lists() {
 
     // List 3: Permissions (authorized actions)
     let permissions_list = lists.iter().find(|l| {
-        l.items
-            .iter()
-            .any(|item| item.as_plain_text().contains("An- und Verkauf von Wertpapieren"))
+        l.items.iter().any(|item| {
+            item.as_plain_text()
+                .contains("An- und Verkauf von Wertpapieren")
+        })
     });
     assert!(
         permissions_list.is_some(),
         "Expected to find a list containing 'An- und Verkauf von Wertpapieren'"
     );
     let permissions_list = permissions_list.unwrap();
-    let permissions_texts: Vec<String> = permissions_list.items.iter().map(|i| i.as_plain_text()).collect();
+    let permissions_texts: Vec<String> = permissions_list
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
     assert!(
         permissions_texts.iter().any(|t| t.contains("Edelmetallen")),
         "Permissions list should contain 'Edelmetallen'.\nActual items: {:?}",
         permissions_texts
     );
     assert!(
-        permissions_texts.iter().any(|t| t.contains("Überweisungen auf das Referenzkonto")),
+        permissions_texts
+            .iter()
+            .any(|t| t.contains("Überweisungen auf das Referenzkonto")),
         "Permissions list should contain 'Überweisungen auf das Referenzkonto'.\nActual items: {:?}",
         permissions_texts
     );
@@ -22743,10 +22771,10 @@ fn debug_bage_list_detection() {
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
-        HeadingDetector, InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
-        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
-        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TableDetector,
-        TextBlockGrouper, TextBlockMerger, FieldTableDetector,
+        FieldTableDetector, HeadingDetector, InlineFieldDatePicker, ListDetector,
+        MasterPageDetector, NoPrintDetector, OverlappingTextBlockMerger, PlaceholderFilter,
+        RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
+        SelectionInlineFieldDetector, TableDetector, TextBlockGrouper, TextBlockMerger,
     };
     use crate::document::{Document, GroupKind};
 
@@ -22775,9 +22803,7 @@ fn debug_bage_list_detection() {
                     let kind = &doc.groups[idx].kind;
                     let bounds = doc.get_bounds(idx);
                     let is_bold = doc.is_bold_group(idx);
-                    eprintln!(
-                        "  [{idx}] kind={kind:?}, bold={is_bold}, bounds={bounds:?}"
-                    );
+                    eprintln!("  [{idx}] kind={kind:?}, bold={is_bold}, bounds={bounds:?}");
                     let preview: String = text.chars().take(150).collect();
                     eprintln!("    text: \"{preview}...\"");
                     break;
@@ -22797,12 +22823,14 @@ fn debug_bage_list_detection() {
         let text = doc.get_text_content(idx);
         let trimmed = text.trim();
         // Look for standalone markers (just "–" or "-" etc.)
-        if trimmed.len() <= 3 && (trimmed.contains('–') || trimmed.contains('-') || trimmed.contains('*')) {
+        if trimmed.len() <= 3
+            && (trimmed.contains('–') || trimmed.contains('-') || trimmed.contains('*'))
+        {
             let bounds = doc.get_bounds(idx);
             eprintln!("  [{idx}] standalone marker: \"{trimmed}\" bounds={bounds:?}");
         }
     }
-    
+
     // Also print all TextBlocks in the y-range of "Depotaufstellungen" (y ≈ 1279)
     eprintln!("\n=== TextBlocks near y=1279 (Depotaufstellungen area) ===");
     for &idx in &roots {
@@ -22811,7 +22839,10 @@ fn debug_bage_list_detection() {
             if y > 1270.0 && y < 1310.0 {
                 let text = doc.get_text_content(idx);
                 let kind = &doc.groups[idx].kind;
-                eprintln!("  [{idx}] y={y:.1}, kind={kind:?}, text=\"{}\"", text.chars().take(60).collect::<String>());
+                eprintln!(
+                    "  [{idx}] y={y:.1}, kind={kind:?}, text=\"{}\"",
+                    text.chars().take(60).collect::<String>()
+                );
             }
         }
     }
@@ -22825,7 +22856,10 @@ fn debug_bage_list_detection() {
                 let text = doc.get_text_content(idx);
                 let kind = &doc.groups[idx].kind;
                 let is_bold = doc.is_bold_group(idx);
-                eprintln!("  [{idx}] y={y:.1}, kind={kind:?}, bold={is_bold}, text=\"{}\"", text.chars().take(80).collect::<String>());
+                eprintln!(
+                    "  [{idx}] y={y:.1}, kind={kind:?}, bold={is_bold}, text=\"{}\"",
+                    text.chars().take(80).collect::<String>()
+                );
             }
         }
     }
@@ -22841,10 +22875,10 @@ fn debug_bage_list_detection() {
 
     RadioButtonDetector::new().process(&mut doc);
     CheckboxDetector::new().process(&mut doc);
-    
+
     // Debug state before ListDetector
     print_relevant(&doc, "Before ListDetector");
-    
+
     ListDetector::new().process(&mut doc);
     print_relevant(&doc, "After ListDetector");
 
@@ -22857,7 +22891,11 @@ fn debug_bage_list_detection() {
                 GroupKind::List { list_style } => list_style,
                 _ => unreachable!(),
             };
-            let items: Vec<_> = doc.groups[idx].children.iter().map(|&c| doc.get_text_content(c)).collect();
+            let items: Vec<_> = doc.groups[idx]
+                .children
+                .iter()
+                .map(|&c| doc.get_text_content(c))
+                .collect();
             eprintln!("  List [{idx}] style={list_style:?}, items={}", items.len());
             for (i, item) in items.iter().enumerate() {
                 let preview: String = item.chars().take(80).collect();
@@ -22893,9 +22931,7 @@ fn debug_bage_list_detection() {
                     _ => unreachable!(),
                 };
                 let is_bold = doc.is_bold_group(idx);
-                eprintln!(
-                    "  Heading [{idx}] level={level}, bold={is_bold}"
-                );
+                eprintln!("  Heading [{idx}] level={level}, bold={is_bold}");
                 let preview: String = text.chars().take(200).collect();
                 eprintln!("    text: \"{preview}\"");
             }
@@ -22946,7 +22982,11 @@ fn test_bage_has_no_ordered_list_only_numbered_headings() {
         ordered_lists.len(),
         ordered_lists
             .iter()
-            .map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
             .collect::<Vec<_>>()
     );
 
@@ -22954,7 +22994,12 @@ fn test_bage_has_no_ordered_list_only_numbered_headings() {
     let headings = collect_headings(&structured_nodes);
     let numbered_headings: Vec<_> = headings
         .iter()
-        .filter(|(_, text)| text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+        .filter(|(_, text)| {
+            text.chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        })
         .collect();
 
     assert!(
@@ -23031,6 +23076,161 @@ fn test_bage_tindent_numbers_have_explicit_zero_margin() {
                 Some(0.0),
                 "T_Indent '{}' should have explicit CSS margin-left:0pt (Some(0.0)), not None",
                 trimmed
+            );
+        }
+    }
+}
+
+/// Diagnostic test: BAGE T_Indent first dash should be at the correct Y offset.
+/// The draw has two empty `<p><br/></p>` paragraphs followed by dash `<p>–</p>`.
+/// The first dash must align with the corresponding text in T_The_Authorized.
+#[test]
+fn test_bage_t_indent_first_dash_y_alignment() {
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("BAGE_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Save rendered image for manual inspection
+    let img = default_state.render_plain(2.0).expect("render failed");
+    let out_path = format!("{}/input/bage_render.png", env!("CARGO_MANIFEST_DIR"));
+    img.save(&out_path).expect("save failed");
+    println!("Rendered to: {}", out_path);
+
+    // Find the T_The_Authorized nodes
+    let t_auth_nodes: Vec<_> = flattened
+        .iter_nodes()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text { source_name, .. } = &n.kind {
+                source_name
+                    .as_ref()
+                    .map(|s| s == "T_The_Authorized")
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    // Find the T_Indent nodes
+    let t_indent_nodes: Vec<_> = flattened
+        .iter_nodes()
+        .filter(|n| {
+            if let FlattenedNodeKind::Text { source_name, .. } = &n.kind {
+                source_name
+                    .as_ref()
+                    .map(|s| s == "T_Indent")
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    // Look for the STP_Declaration3 section
+    let vollmacht_node = t_auth_nodes.iter().find(|n| {
+        if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+            content.contains("Die Vollmacht berechtigt nicht")
+        } else {
+            false
+        }
+    });
+
+    if let Some(vn) = vollmacht_node {
+        let vollmacht_y = vn.y.to_f32().unwrap_or(0.0);
+
+        // Find T_The_Authorized paragraphs in this section
+        let auth_section: Vec<_> = t_auth_nodes
+            .iter()
+            .filter(|n| {
+                n.y.to_f32().unwrap_or(0.0) >= vollmacht_y - 1.0
+                    && n.y.to_f32().unwrap_or(0.0) < vollmacht_y + 200.0
+            })
+            .collect();
+        println!("\nT_The_Authorized section:");
+        for (i, node) in auth_section.iter().enumerate() {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                let trimmed = content.trim();
+                let display: String = trimmed.chars().take(70).collect();
+                let display = if display.is_empty() {
+                    "(empty)".to_string()
+                } else {
+                    display
+                };
+                println!(
+                    "  auth[{}] y={:.3} '{}'",
+                    i,
+                    node.y.to_f32().unwrap_or(0.0),
+                    display
+                );
+            }
+        }
+
+        // Find T_Indent paragraphs in same y range
+        let indent_section: Vec<_> = t_indent_nodes
+            .iter()
+            .filter(|n| {
+                n.y.to_f32().unwrap_or(0.0) >= vollmacht_y - 1.0
+                    && n.y.to_f32().unwrap_or(0.0) < vollmacht_y + 200.0
+            })
+            .collect();
+        println!("\nT_Indent section:");
+        for (i, node) in indent_section.iter().enumerate() {
+            if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                let trimmed = content.trim();
+                let display = if trimmed.is_empty() {
+                    "(empty)"
+                } else {
+                    trimmed
+                };
+                let has_runs = node
+                    .rich_text()
+                    .map(|rt| rt.paragraphs.iter().any(|p| !p.runs.is_empty()))
+                    .unwrap_or(false);
+                println!(
+                    "  indent[{}] y={:.3} '{}' runs_present={}",
+                    i,
+                    node.y.to_f32().unwrap_or(0.0),
+                    display,
+                    has_runs,
+                );
+            }
+        }
+
+        // Check alignment
+        let dispositionen_node = auth_section.iter().find(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.contains("Dispositionen")
+            } else {
+                false
+            }
+        });
+        let first_dash_node = indent_section.iter().find(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.trim() == "–"
+            } else {
+                false
+            }
+        });
+
+        if let (Some(disp_node), Some(dash_node)) = (dispositionen_node, first_dash_node) {
+            let disp_y = disp_node.y.to_f32().unwrap_or(0.0);
+            let dash_y = dash_node.y.to_f32().unwrap_or(0.0);
+            println!("\n'Dispositionen...' y={:.3}", disp_y);
+            println!("First dash '–'     y={:.3}", dash_y);
+            println!("Difference: {:.3} (should be 0)", dash_y - disp_y);
+
+            assert!(
+                (dash_y - disp_y).abs() < 1.0,
+                "First dash (y={:.3}) should align with 'Dispositionen...' (y={:.3}), off by {:.3}pt",
+                dash_y,
+                disp_y,
+                dash_y - disp_y
             );
         }
     }
