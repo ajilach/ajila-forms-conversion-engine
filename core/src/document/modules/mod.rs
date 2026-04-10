@@ -85,7 +85,6 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
-mod checkbox_content;
 mod checkbox_detector;
 mod date_field_detector;
 mod field_grouper;
@@ -108,7 +107,6 @@ mod table_detector;
 mod text_block;
 mod text_block_merger;
 
-pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
@@ -201,8 +199,6 @@ pub fn run_analysis_pipeline_with_context(
     RadioButtonGrouper::new().process_with_context(doc, ctx);
     SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
-    CheckboxContentDetector::new().process_with_context(doc, ctx);
-
     // TableDetector: Detect text-only tables by analyzing horizontal borders.
     // Tables are identified by text blocks with visible horizontal borders
     // that form a grid pattern.
