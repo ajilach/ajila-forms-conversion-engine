@@ -586,7 +586,8 @@ impl HeadingDetector {
 
         // Aggregate properties from all nodes
         let mut total_size = 0.0f32;
-        let mut bold_count = 0;
+        let mut bold_char_count: usize = 0;
+        let mut total_char_count: usize = 0;
         let mut text_node_count = 0;
         let mut text_content = String::new();
         let mut count = 0;
@@ -605,9 +606,11 @@ impl HeadingDetector {
                 text_content.push_str(content);
                 text_content.push(' ');
 
-                // Count bold nodes
+                // Count bold/total characters (non-whitespace only)
+                let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
+                total_char_count += char_count;
                 if node.is_bold() {
-                    bold_count += 1;
+                    bold_char_count += char_count;
                 }
                 // Check font underline property
                 if node.is_underline() {
@@ -638,8 +641,11 @@ impl HeadingDetector {
             return None;
         }
 
-        // Only consider as bold if ALL text nodes are bold
-        let is_bold = text_node_count > 0 && bold_count == text_node_count;
+        // Consider bold if the majority (>= 50%) of non-whitespace characters
+        // come from bold nodes.  This handles merged text blocks where a small
+        // prefix (e.g. "2." from a non-bold draw) is combined with bold body
+        // text — the group is still effectively bold.
+        let is_bold = total_char_count > 0 && bold_char_count * 2 >= total_char_count;
 
         // Consider border/underline present if ANY node has it
         let has_top_border = top_border_count > 0;

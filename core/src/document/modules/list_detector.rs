@@ -518,6 +518,32 @@ impl AnalysisModule for ListDetector {
             .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
             .collect();
 
+        // Also collect bounds of root TextBlocks that are bold, have
+        // non-empty text, and do NOT start with a list marker.  Bold
+        // non-marker TextBlocks are headings or labels that naturally
+        // separate lists.  Because OverlappingTextBlockMerger creates
+        // groups with higher indices, these separator TextBlocks may
+        // appear earlier in index order than the merged list items and
+        // therefore won't be encountered between them during the
+        // sequential Phase 1 walk.  Only bold TextBlocks are considered
+        // to avoid breaking lists where a non-bold continuation paragraph
+        // (e.g. multi-line item text) appears between marker items.
+        let non_marker_tb_bounds: Vec<Bounds> = roots
+            .iter()
+            .filter(|&&idx| {
+                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                    return false;
+                }
+                if !doc.is_bold_group(idx) {
+                    return false;
+                }
+                let text = doc.get_text_content(idx);
+                let trimmed = text.trim();
+                !trimmed.is_empty() && detect_marker(&text).is_none()
+            })
+            .filter_map(|&idx| doc.get_bounds(idx))
+            .collect();
+
         // Each entry: (group_idx, text, bounds, marker)
         let mut current_run: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
         let mut groups: Vec<Vec<usize>> = Vec::new();
@@ -571,10 +597,11 @@ impl AnalysisModule for ListDetector {
                     let same_kind = marker.kind == last.3.kind;
                     let similar_x = (bounds.x - last.2.x).abs() <= x_tol;
 
-                    // Check whether any non-TextBlock root group sits
-                    // between the previous item and this candidate (by
-                    // y-position).  If so, there is other content between
-                    // them and they belong to separate lists.
+                    // Check whether any non-TextBlock root group or
+                    // non-marker TextBlock root sits between the previous
+                    // item and this candidate (by y-position).  If so,
+                    // there is other content between them and they belong
+                    // to separate lists.
                     let last_bottom = last.2.y + last.2.height;
                     let curr_top = bounds.y;
                     let (range_lo, range_hi) = if last_bottom <= curr_top {
@@ -582,8 +609,33 @@ impl AnalysisModule for ListDetector {
                     } else {
                         (curr_top, last_bottom)
                     };
-                    let has_intervening =
-                        non_tb_root_ys.iter().any(|&y| y > range_lo && y < range_hi);
+                    let has_intervening = non_tb_root_ys
+                        .iter()
+                        .any(|&y| y > range_lo && y < range_hi)
+                        || non_marker_tb_bounds.iter().any(|sep| {
+                            // Check vertical overlap: separator spans
+                            // [y, y+h], gap spans (range_lo, range_hi).
+                            let sep_bottom = sep.y + sep.height;
+                            let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
+                            // Check horizontal overlap: separator must
+                            // share x-range with the list items to avoid
+                            // false positives from unrelated columns.
+                            let item_x_lo = last.2.x.min(bounds.x);
+                            let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
+                            let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
+                            // The separator must bridge to the next item:
+                            // the gap between separator bottom and the
+                            // next item's top must be less than the
+                            // same-line tolerance.  This prevents body
+                            // paragraphs (under numbered headings) from
+                            // breaking the list — they typically end well
+                            // above the next heading item.
+                            let gap_after_sep = range_hi - sep_bottom;
+                            let tol =
+                                Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+                            let bridges = gap_after_sep < tol;
+                            y_overlap && x_overlap && bridges
+                        });
 
                     if same_kind && similar_x && !has_intervening {
                         current_run.push((idx, text, bounds, marker));
@@ -733,10 +785,21 @@ impl AnalysisModule for ListDetector {
                     break;
                 }
 
-                // Check no intervening non-TextBlock root between candidate and current top
+                // Check no intervening non-TextBlock root or non-marker
+                // TextBlock between candidate and current top
                 let has_intervening = non_tb_root_ys
                     .iter()
-                    .any(|&y| y > cand_bottom && y < current_top);
+                    .any(|&y| y > cand_bottom && y < current_top)
+                    || non_marker_tb_bounds.iter().any(|sep| {
+                        let sep_bottom = sep.y + sep.height;
+                        let y_ok = sep_bottom > cand_bottom && sep.y < current_top;
+                        let x_ok = sep.x < (cand_bounds.x + cand_bounds.width)
+                            && (sep.x + sep.width) > cand_bounds.x;
+                        let gap = current_top - sep_bottom;
+                        let tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+                        let bridges = gap < tol;
+                        y_ok && x_ok && bridges
+                    });
                 if has_intervening {
                     break;
                 }
@@ -786,8 +849,8 @@ impl AnalysisModule for ListDetector {
                 let cand_trimmed = cand_text.trim();
 
                 // Must not end with ':' (would be a heading)
-                let not_heading_like = !cand_trimmed.ends_with(':')
-                    && !cand_trimmed.ends_with("：");
+                let not_heading_like =
+                    !cand_trimmed.ends_with(':') && !cand_trimmed.ends_with("：");
 
                 // Must be single line (height similar to list items)
                 let is_single_line = cand_bounds.height <= max_item_height * Decimal::new(12, 1);
@@ -796,8 +859,8 @@ impl AnalysisModule for ListDetector {
                 let first_marked_y = topmost_bounds.y;
                 let cand_bottom = cand_bounds.y + cand_bounds.height;
                 let gap = first_marked_y - cand_bottom;
-                let is_adjacent = gap >= Decimal::ZERO
-                    && gap <= max_item_height * Decimal::new(3, 1);
+                let is_adjacent =
+                    gap >= Decimal::ZERO && gap <= max_item_height * Decimal::new(3, 1);
 
                 not_heading_like && is_single_line && is_adjacent
             };

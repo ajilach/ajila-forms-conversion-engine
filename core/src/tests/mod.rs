@@ -22766,7 +22766,6 @@ fn test_bage_unordered_lists() {
 /// Debug test: inspect where "Depotaufstellungen" and "Dispositionen zu eigenen Gunsten" end up
 /// after each pipeline stage to understand why they're not in the expected lists.
 #[test]
-#[ignore]
 fn debug_bage_list_detection() {
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
@@ -22788,6 +22787,9 @@ fn debug_bage_list_detection() {
         "Rechnungsabschlüsse",
         "Dispositionen zu eigenen Gunsten",
         "Barabhebungen",
+        "Ausführung von Wertpapier",
+        "Kommunikation und Informationsbeschaffung",
+        "Die Vollmacht berechtigt nicht",
     ];
 
     let mut doc = Document::from_flattened(flattened);
@@ -22876,8 +22878,27 @@ fn debug_bage_list_detection() {
     RadioButtonDetector::new().process(&mut doc);
     CheckboxDetector::new().process(&mut doc);
 
-    // Debug state before ListDetector
+    // Debug state before ListDetector - print ALL roots in y range 600-850
     print_relevant(&doc, "Before ListDetector");
+    eprintln!("\n=== ALL roots y=600-850 before ListDetector ===");
+    {
+        let roots = doc.roots();
+        for &idx in &roots {
+            if let Some(bounds) = doc.get_bounds(idx) {
+                let y: f64 = bounds.y.try_into().unwrap_or(0.0);
+                if y > 600.0 && y < 850.0 {
+                    let text = doc.get_text_content(idx);
+                    let kind = &doc.groups[idx].kind;
+                    let is_bold = doc.is_bold_group(idx);
+                    eprintln!(
+                        "  [{idx}] y={y:.1}, h={:.1}, kind={kind:?}, bold={is_bold}, text=\"{}\"",
+                        bounds.height.to_f64().unwrap_or(0.0),
+                        text.chars().take(80).collect::<String>()
+                    );
+                }
+            }
+        }
+    }
 
     ListDetector::new().process(&mut doc);
     print_relevant(&doc, "After ListDetector");
