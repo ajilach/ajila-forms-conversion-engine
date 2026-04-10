@@ -236,19 +236,6 @@ pub enum GroupKind {
         after: Vec<usize>,
     },
 
-    /// An inline date field detected from text patterns like "Löschung ab: 01..1"
-    /// The text block is split into: label (prefix) + date field + optional suffix
-    InlineDateField {
-        /// The label text extracted before the date pattern (e.g., "Löschung ab:")
-        label_text: String,
-        /// Optional text after the date pattern
-        suffix_text: Option<String>,
-        /// Indices of any associated field groups (for radio option associations)
-        field_indices: Vec<usize>,
-        /// Generated field name based on sanitized label
-        generated_name: String,
-    },
-
     /// Non-printable content (elements with relevant="-print")
     /// These are screen-only interactive elements like add/remove buttons
     /// that should not appear in print or structured output.
@@ -1055,9 +1042,6 @@ impl<'a> Document<'a> {
                 None => format!("RepeatableSection[{}+]", min_occurrences),
             },
             GroupKind::InlineField { .. } => "InlineField".to_string(),
-            GroupKind::InlineDateField { generated_name, .. } => {
-                format!("InlineDateField[{}]", generated_name)
-            }
             GroupKind::NoPrint => "NoPrint".to_string(),
             GroupKind::GridLayout { columns, .. } => format!("GridLayout[{}cols]", columns),
             GroupKind::List { list_style } => {

@@ -20561,7 +20561,7 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
-        InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        ListDetector, MasterPageDetector, NoPrintDetector,
         OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
         RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
         TextBlockMerger, run_analysis_pipeline,
@@ -20581,7 +20581,6 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
     PlaceholderFilter::new().process(&mut doc);
     FieldGrouper::new().process(&mut doc);
     DateFieldDetector::new().process(&mut doc);
-    InlineFieldDatePicker::new().process(&mut doc);
     OverlappingTextBlockMerger::new().process(&mut doc);
     RadioButtonDetector::new().process(&mut doc);
     CheckboxDetector::new().process(&mut doc);
@@ -20859,7 +20858,7 @@ fn debug_aais_container_vs_content_height() {
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
-        InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        ListDetector, MasterPageDetector, NoPrintDetector,
         OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
         RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
     };
@@ -20920,7 +20919,6 @@ fn debug_aais_container_vs_content_height() {
         PlaceholderFilter::new().process(&mut doc);
         FieldGrouper::new().process(&mut doc);
         DateFieldDetector::new().process(&mut doc);
-        InlineFieldDatePicker::new().process(&mut doc);
         OverlappingTextBlockMerger::new().process(&mut doc);
         RadioButtonDetector::new().process(&mut doc);
         CheckboxDetector::new().process(&mut doc);
@@ -22770,7 +22768,7 @@ fn debug_bage_list_detection() {
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
-        FieldTableDetector, HeadingDetector, InlineFieldDatePicker, ListDetector,
+        FieldTableDetector, HeadingDetector, ListDetector,
         MasterPageDetector, NoPrintDetector, OverlappingTextBlockMerger, PlaceholderFilter,
         RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, TableDetector, TextBlockGrouper, TextBlockMerger,
@@ -22871,7 +22869,6 @@ fn debug_bage_list_detection() {
     PlaceholderFilter::new().process(&mut doc);
     FieldGrouper::new().process(&mut doc);
     DateFieldDetector::new().process(&mut doc);
-    InlineFieldDatePicker::new().process(&mut doc);
     OverlappingTextBlockMerger::new().process(&mut doc);
     print_relevant(&doc, "After OverlappingTextBlockMerger");
 

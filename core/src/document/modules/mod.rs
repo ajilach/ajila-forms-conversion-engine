@@ -92,7 +92,6 @@ mod field_grouper;
 mod field_table_detector;
 mod grid_template;
 mod heading_detector;
-mod inline_field_date_picker;
 mod inline_field_detector;
 mod label_attacher;
 mod list_detector;
@@ -116,7 +115,6 @@ pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
 pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
-pub use inline_field_date_picker::InlineFieldDatePicker;
 pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
 pub use list_detector::ListDetector;
@@ -195,7 +193,6 @@ pub fn run_analysis_pipeline_with_context(
     PlaceholderFilter::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);
     DateFieldDetector::new().process_with_context(doc, ctx);
-    InlineFieldDatePicker::new().process_with_context(doc, ctx);
     OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
 
     RadioButtonDetector::new().process_with_context(doc, ctx);
