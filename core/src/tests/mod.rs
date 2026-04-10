@@ -23256,3 +23256,71 @@ fn test_bage_t_indent_first_dash_y_alignment() {
         }
     }
 }
+
+#[test]
+fn test_aari_has_radio_button_with_fiscal_regime_options() {
+    use crate::Blueprint;
+    use crate::structured::FieldType;
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let radio_fields = collect_radio_fields(&envelope.content);
+
+    println!("\n=== Radio fields in AARI ===");
+    for field in &radio_fields {
+        if let FieldType::Radio { options } = &field.input_type {
+            println!("  Field: {} ({} options)", field.name, options.len());
+            for opt in options {
+                println!("    - {}", opt.name);
+            }
+        }
+    }
+
+    // Find a radio button group with 2 options about the fiscal regime
+    let fiscal_radio = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            options.len() == 2
+                && options.iter().any(|opt| {
+                    let text = opt.name.to_string();
+                    text.contains("voler optare per l")
+                        && text.contains("imposizione sostitutiva")
+                        && text.contains("Regime Fiscale Amministrato")
+                })
+                && options.iter().any(|opt| {
+                    let text = opt.name.to_string();
+                    text.contains("non voler optare per il Regime Fiscale Amministrato")
+                })
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        fiscal_radio.is_some(),
+        "Expected a radio button with 2 fiscal regime options:\n\
+         1) 'Di voler optare per l'applicazione dell'imposizione sostitutiva ... (Regime Fiscale Amministrato)'\n\
+         2) 'Di non voler optare per il Regime Fiscale Amministrato ...'\n\
+         Found radio fields: {:#?}",
+        radio_fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    Some(
+                        options
+                            .iter()
+                            .map(|o| o.name.to_string())
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    );
+}
