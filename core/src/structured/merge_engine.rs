@@ -1377,7 +1377,6 @@ pub(crate) fn merge_node_lists(
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
     consolidate_orphan_paragraph_groups(&mut entries, base_lang, other_lang);
     consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
-    consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
     consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
 
     entries
@@ -1410,7 +1409,6 @@ pub(crate) fn merge_node_lists_semantic(
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
     consolidate_orphan_paragraph_groups(&mut entries, base_lang, other_lang);
     consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
-    consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
     consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
 
     entries
@@ -1744,135 +1742,6 @@ fn consolidate_orphan_conditionals(
 ///
 /// The paragraph text is absorbed as the field's label for the paragraph's
 /// language, and the field becomes a Matched node with bilingual labels.
-fn consolidate_orphan_paragraph_into_field_label(
-    entries: &mut Vec<AlignedNode>,
-    base_lang: &str,
-    other_lang: &str,
-) {
-    /// Maximum paragraph length (in characters) to be considered a field label.
-    const MAX_LABEL_LEN: usize = 80;
-
-    let len = entries.len();
-
-    // Collect (field_idx, para_idx) operations.
-    let mut ops: Vec<(usize, usize)> = Vec::new();
-    let mut para_consumed = vec![false; len];
-
-    for i in 0..len {
-        // Check if this is an orphan Field (from either side).
-        let (is_left_field, is_right_field) = match &entries[i] {
-            AlignedNode::LeftOnly(StructuredNode::Field(_)) => (true, false),
-            AlignedNode::RightOnly(StructuredNode::Field(_)) => (false, true),
-            _ => continue,
-        };
-
-        // Look at the immediate neighbor (after, then before) for an orphan
-        // Paragraph from the OTHER side.
-        for delta in [1isize, -1isize] {
-            let j = i as isize + delta;
-            if j < 0 || j as usize >= len {
-                continue;
-            }
-            let j = j as usize;
-            if para_consumed[j] {
-                continue;
-            }
-
-            let is_candidate = match &entries[j] {
-                AlignedNode::RightOnly(StructuredNode::Paragraph(p)) if is_left_field => {
-                    let text = p.content.as_plain_text();
-                    let trimmed = text.trim();
-                    !trimmed.is_empty() && trimmed.len() <= MAX_LABEL_LEN
-                }
-                AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) if is_right_field => {
-                    let text = p.content.as_plain_text();
-                    let trimmed = text.trim();
-                    !trimmed.is_empty() && trimmed.len() <= MAX_LABEL_LEN
-                }
-                _ => false,
-            };
-
-            if is_candidate {
-                ops.push((i, j));
-                para_consumed[j] = true;
-                break;
-            }
-        }
-    }
-
-    if ops.is_empty() {
-        return;
-    }
-
-    // Apply: absorb paragraph text into field label.
-    let mut to_remove = vec![false; len];
-    for (field_idx, para_idx) in ops {
-        let para_text = match &entries[para_idx] {
-            AlignedNode::LeftOnly(StructuredNode::Paragraph(p))
-            | AlignedNode::RightOnly(StructuredNode::Paragraph(p)) => {
-                Some(p.content.as_plain_text())
-            }
-            _ => continue,
-        };
-        let para_lang = match &entries[para_idx] {
-            AlignedNode::LeftOnly(_) => base_lang,
-            _ => other_lang,
-        };
-        let field_lang = match &entries[field_idx] {
-            AlignedNode::LeftOnly(_) => base_lang,
-            _ => other_lang,
-        };
-
-        // Take the field node out, localize it, update label, and make it Matched.
-        let field_node = std::mem::replace(
-            &mut entries[field_idx],
-            AlignedNode::LeftOnly(StructuredNode::Empty),
-        );
-
-        let raw_field = match field_node {
-            AlignedNode::LeftOnly(n) | AlignedNode::RightOnly(n) => n,
-            _ => continue,
-        };
-
-        // Localize the field to its own language first.
-        let mut localized = localize_structured_node(&raw_field, field_lang);
-
-        if let StructuredNode::Field(f) = &mut localized {
-            // Add the paragraph text as label for the paragraph's language.
-            let label = f.label.get_or_insert_with(InlineText::empty);
-            if let Some(InlineNode::TranslatedText(map)) = label.0.first_mut() {
-                // Only insert if the language slot is empty or not yet present.
-                map.entry(para_lang.to_string())
-                    .or_insert_with(|| para_text.clone());
-            } else if label.is_empty() {
-                // Label was empty — create a TranslatedText with both languages.
-                let mut map = TranslationMap::new();
-                map.insert(para_lang.to_string(), para_text);
-                *label = InlineText(vec![InlineNode::TranslatedText(map)]);
-            } else {
-                // Label has non-TranslatedText content (plain Text after localization).
-                // Preserve existing content for the field's language and add para text.
-                let existing_text = label.as_plain_text();
-                let mut map = TranslationMap::new();
-                if !existing_text.is_empty() {
-                    map.insert(field_lang.to_string(), Some(existing_text));
-                }
-                map.insert(para_lang.to_string(), para_text);
-                *label = InlineText(vec![InlineNode::TranslatedText(map)]);
-            }
-        }
-
-        entries[field_idx] = AlignedNode::Matched(localized);
-        to_remove[para_idx] = true;
-    }
-
-    for i in (0..len).rev() {
-        if to_remove[i] {
-            entries.remove(i);
-        }
-    }
-}
-
 // ============================================================================
 // Neighborhood-based consolidation
 // ============================================================================
