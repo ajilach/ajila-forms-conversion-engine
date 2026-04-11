@@ -18244,6 +18244,76 @@ fn test_aaai_has_address_and_individual_fragments() {
 }
 
 #[test]
+fn test_fragments_work_without_bind_to_xsd() {
+    // use_fragments should work independently of bind_to_xsd.
+    // When bind_to_xsd=false but use_fragments=true, fragment nodes should
+    // still be produced, and non-fragment nodes should have no bind_ref.
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    // Explicitly disable bind_to_xsd but enable fragments
+    config.bind_to_xsd = false;
+    config.use_fragments = true;
+    config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // Fragments should still be produced
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+    assert!(
+        fragment_refs.len() >= 2,
+        "Expected at least 2 fragment nodes with bind_to_xsd=false, found {}.\nFragments: {:?}",
+        fragment_refs.len(),
+        fragment_refs
+    );
+
+    // Fragment nodes should retain their bind_ref
+    for (frag_ref, bind_ref) in &fragment_refs {
+        assert!(
+            bind_ref.is_some(),
+            "Fragment '{}' should have a bind_ref even when bind_to_xsd=false",
+            frag_ref
+        );
+    }
+
+    // Non-fragment nodes should have no bind_ref
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        match node {
+            AemNode::Panel { bind_ref, name, .. } => {
+                assert!(
+                    bind_ref.is_none(),
+                    "Panel '{}' should have no bind_ref when bind_to_xsd=false",
+                    name
+                );
+            }
+            AemNode::TextField { bind_ref, name, .. } => {
+                assert!(
+                    bind_ref.is_none(),
+                    "TextField '{}' should have no bind_ref when bind_to_xsd=false",
+                    name
+                );
+            }
+            _ => {}
+        }
+    });
+}
+
+#[test]
 fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
     // Regression test: the "Nachname" field in AAHA_019_DE should have the label
     // "Nachname" only. The agreement text ("Hiermit erkläre ich...") belongs to a

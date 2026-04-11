@@ -54,7 +54,7 @@ struct ConversionContext {
     language: String,
     /// Conditions collected during the first pass.
     collected_conditions: Vec<CollectedCondition>,
-    /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` is true.
+    /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` or `use_fragments` is true.
     bind_refs: Option<crate::xsd::BindRefMaps>,
     /// Map from field ID to human-readable label.
     field_labels: HashMap<FieldId, String>,
@@ -222,9 +222,10 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // Collect field labels for display in conditionals
     collect_field_labels(nodes, &config.master_language, &mut ctx.field_labels);
 
-    // If bind_to_xsd is enabled, pre-compute XSD bind-ref paths so that each
-    // field / section panel can receive a `bindRef` attribute.
-    if config.bind_to_xsd {
+    // Pre-compute XSD bind-ref paths when either bind_to_xsd (so fields/panels
+    // receive `bindRef` attributes) or use_fragments (so fragment matching can
+    // work based on bind-ref leaf names) is enabled.
+    if config.bind_to_xsd || config.use_fragments {
         if let Some(ref xsd_config) = config.xsd_config {
             ctx.bind_refs = Some(crate::xsd::compute_bind_refs(nodes, xsd_config));
         }
@@ -329,6 +330,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     if config.use_fragments && !config.fragments.is_empty() {
         let xsd_config = config.xsd_config.as_ref();
         replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
+    }
+
+    // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
+    // (bind_refs were only needed internally for fragment matching).
+    if !config.bind_to_xsd {
+        strip_bind_refs(&mut children);
     }
 
     AemNode::Root {
@@ -1286,6 +1293,39 @@ fn compute_intermediate_matches(
     }
 
     matched
+}
+
+/// Recursively clear `bind_ref` on all nodes except `Fragment` nodes.
+///
+/// Used when `use_fragments` is enabled but `bind_to_xsd` is disabled:
+/// bind-refs were computed internally for fragment matching but should not
+/// appear in the final AEM output.
+fn strip_bind_refs(nodes: &mut [AemNode]) {
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Fragment { .. } => {
+                // Keep bind_ref on fragments — it is the data bind path.
+            }
+            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+                strip_bind_refs(children);
+            }
+            AemNode::Panel {
+                children, bind_ref, ..
+            } => {
+                *bind_ref = None;
+                strip_bind_refs(children);
+            }
+            AemNode::TextField { bind_ref, .. }
+            | AemNode::NumberField { bind_ref, .. }
+            | AemNode::DatePicker { bind_ref, .. }
+            | AemNode::Dropdown { bind_ref, .. }
+            | AemNode::Checkbox { bind_ref, .. }
+            | AemNode::RadioButton { bind_ref, .. } => {
+                *bind_ref = None;
+            }
+            AemNode::TextDraw { .. } | AemNode::TitleDraw { .. } => {}
+        }
+    }
 }
 
 // ============================================================================

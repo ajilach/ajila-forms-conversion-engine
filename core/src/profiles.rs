@@ -75,13 +75,14 @@ pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
     let mut config = AemConfig::from_profile(&profile, templates, ctx)
         .map_err(|e| format!("Failed to build AEM config: {e}"))?;
 
-    if config.bind_to_xsd {
-        if !has_xsd_config(name) {
+    if config.bind_to_xsd || config.use_fragments {
+        if has_xsd_config(name) {
+            config.xsd_config = Some(load_xsd_config(name)?);
+        } else if config.bind_to_xsd {
             return Err(format!(
                 "bind_to_xsd=true requires profile '{name}' to provide xsd/config.toml"
             ));
         }
-        config.xsd_config = Some(load_xsd_config(name)?);
     }
 
     if config.use_fragments {

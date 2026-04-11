@@ -111,12 +111,35 @@ pub use document::{Document, Group, GroupKind, GroupSource};
 
 // Structured output
 pub use structured::{
-    ConditionalNode, DocumentEnvelope, FieldId, FieldNode, FieldType, GridLayout, GroupNode,
-    HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, ListNode, MergeError, MergeInput,
-    ParagraphNode, RecursiveMerger, RepeatableNode, Selection, SelectionKind, StructuredNode,
-    TableNode, TranslatableString,
+    ConditionalNode,
+    DocumentEnvelope,
     // Element merging for editor
-    ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
+    ElementMergeError,
+    FieldId,
+    FieldNode,
+    FieldType,
+    GridLayout,
+    GroupNode,
+    HeadingLevel,
+    HeadingNode,
+    ImageNode,
+    InlineNode,
+    InlineText,
+    ListNode,
+    MergeError,
+    MergeInput,
+    ParagraphNode,
+    RecursiveMerger,
+    RepeatableNode,
+    Selection,
+    SelectionKind,
+    StructuredNode,
+    TableNode,
+    TranslatableString,
+    can_merge,
+    can_merge_all,
+    merge_nodes,
+    merge_two,
 };
 
 // AEM generation
@@ -747,6 +770,7 @@ fn ensure_aem_bind_config(config: &AemConfig) {
         !config.bind_to_xsd || config.xsd_config.is_some(),
         "bind_to_xsd=true requires xsd_config to be set"
     );
+    // use_fragments does not require xsd_config (it gracefully degrades)
 }
 
 /// Detect available languages from content, applying them to a clone of the
