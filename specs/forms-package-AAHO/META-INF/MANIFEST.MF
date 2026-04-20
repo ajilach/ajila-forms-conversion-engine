@@ -1,6 +1,0 @@
-Manifest-Version: 1.0
-Content-Package-Id: fd/export:BlueprintFormsPackage_AAHO
-Content-Package-Roots: /content/forms/af/afforms_germany_all/af_aa/AF_AA
- HO,/content/dam/formsanddocuments/afforms_germany_all/af_aa/AF_AAHO
-Content-Package-Type: mixed
-
