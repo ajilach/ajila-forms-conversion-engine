@@ -18228,10 +18228,7 @@ fn test_aaai_has_address_and_individual_fragments() {
     // The Client panel should still exist (not be replaced)
     let mut client_panel_exists = false;
     helpers::walk_aem_nodes(&root, &mut |node| {
-        if let AemNode::Panel {
-            title, ..
-        } = node
-        {
+        if let AemNode::Panel { title, .. } = node {
             if title.to_lowercase() == "client" {
                 client_panel_exists = true;
             }
@@ -18292,24 +18289,22 @@ fn test_fragments_work_without_bind_to_xsd() {
     }
 
     // Non-fragment nodes should have no bind_ref
-    helpers::walk_aem_nodes(&root, &mut |node| {
-        match node {
-            AemNode::Panel { bind_ref, name, .. } => {
-                assert!(
-                    bind_ref.is_none(),
-                    "Panel '{}' should have no bind_ref when bind_to_xsd=false",
-                    name
-                );
-            }
-            AemNode::TextField { bind_ref, name, .. } => {
-                assert!(
-                    bind_ref.is_none(),
-                    "TextField '{}' should have no bind_ref when bind_to_xsd=false",
-                    name
-                );
-            }
-            _ => {}
+    helpers::walk_aem_nodes(&root, &mut |node| match node {
+        AemNode::Panel { bind_ref, name, .. } => {
+            assert!(
+                bind_ref.is_none(),
+                "Panel '{}' should have no bind_ref when bind_to_xsd=false",
+                name
+            );
         }
+        AemNode::TextField { bind_ref, name, .. } => {
+            assert!(
+                bind_ref.is_none(),
+                "TextField '{}' should have no bind_ref when bind_to_xsd=false",
+                name
+            );
+        }
+        _ => {}
     });
 }
 
