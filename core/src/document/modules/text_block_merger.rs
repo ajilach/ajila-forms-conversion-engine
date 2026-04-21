@@ -187,14 +187,21 @@ impl TextBlockMerger {
             }
         }
 
-        // Don't merge blocks with very different widths. A short label
-        // (e.g. "Nachname") and a full-width paragraph may share the same
-        // font properties and be vertically close, but they are separate
-        // logical elements and must not be fused into a single TextBlock.
-        let narrow = bounds_a.width.min(bounds_b.width);
-        let wide = bounds_a.width.max(bounds_b.width);
-        if wide > Decimal::ZERO && narrow * Decimal::TWO < wide {
-            return false;
+        // Don't merge blocks that aren't in the same horizontal flow.
+        // With text-content bounds, line widths vary naturally within a
+        // paragraph (e.g. a final short line), so we check left-edge
+        // alignment rather than width ratio.  Two blocks whose left
+        // margins are close belong to the same column flow.
+        let left_diff = (bounds_a.x - bounds_b.x).abs();
+        let margin_tolerance = Decimal::from_str("15.0").unwrap();
+        if left_diff > margin_tolerance {
+            // Different left margins — use width ratio as a secondary guard
+            // to prevent merging across columns.
+            let narrow = bounds_a.width.min(bounds_b.width);
+            let wide = bounds_a.width.max(bounds_b.width);
+            if wide > Decimal::ZERO && narrow * Decimal::TWO < wide {
+                return false;
+            }
         }
 
         // Don't merge blocks with very different heights. A single-line

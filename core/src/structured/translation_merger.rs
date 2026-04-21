@@ -219,7 +219,7 @@ mod tests {
     };
     use crate::structured::{
         ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode,
-        InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode, TableHeader,
+        InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode, TableHeader,
         TableNode, TableRow, TranslatableString,
     };
 
@@ -1286,9 +1286,9 @@ mod tests {
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
                 items: vec![
-                    InlineText::plain("Eins"),
-                    InlineText::plain("Zwei"),
-                    InlineText::plain("Drei"),
+                    ListItem::simple(InlineText::plain("Eins")),
+                    ListItem::simple(InlineText::plain("Zwei")),
+                    ListItem::simple(InlineText::plain("Drei")),
                 ],
             })],
         );
@@ -1296,7 +1296,7 @@ mod tests {
             "en",
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
-                items: vec![InlineText::plain("One"), InlineText::plain("Two")],
+                items: vec![ListItem::simple(InlineText::plain("One")), ListItem::simple(InlineText::plain("Two"))],
             })],
         );
 
@@ -1325,13 +1325,13 @@ mod tests {
             "de",
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
-                items: vec![InlineText(vec![
+                items: vec![ListItem::simple(InlineText(vec![
                     InlineNode::TranslatedText(HashMap::from([(
                         "de".to_string(),
                         Some("Prefix ".to_string()),
                     )])),
                     InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
-                ])],
+                ]))],
             })],
         );
 
@@ -1350,7 +1350,7 @@ mod tests {
             _ => panic!("Expected list node"),
         };
 
-        let map = match &list.items[0].0[0] {
+        let map = match &list.items[0].content.0[0] {
             InlineNode::TranslatedText(map) => map,
             _ => panic!("Expected translated list item text"),
         };

@@ -966,6 +966,91 @@ impl FlattenedNode {
         Bounds::new(self.x, self.y, self.width, self.height)
     }
 
+    /// Get tight bounds around the actual rendered text content.
+    ///
+    /// For `Text` nodes this uses font metrics to compute the real text width
+    /// and height, then applies horizontal / vertical alignment to position the
+    /// text rectangle within the element box.  For `Field` nodes (and any node
+    /// without text content) the full element bounds are returned unchanged.
+    pub fn text_bounds(&self) -> Bounds {
+        let content = match &self.kind {
+            FlattenedNodeKind::Text { content, .. } if !content.is_empty() => content.as_str(),
+            _ => return self.bounds(),
+        };
+
+        let font = &self.style.font;
+        let para = &self.style.para;
+
+        // --- extract paragraph properties first --------------------------------
+        let h_align = para.as_ref().map(|p| p.h_align).unwrap_or(crate::xfa::HAlign::Left);
+        let margin_left = para.as_ref().and_then(|p| p.margin_left).unwrap_or(Decimal::ZERO);
+        let margin_right = para.as_ref().and_then(|p| p.margin_right).unwrap_or(Decimal::ZERO);
+        let available_width = (self.width - margin_left - margin_right).max(Decimal::ONE);
+
+        // --- measure text block ------------------------------------------------
+        let mut measurer = TextMeasurer::new();
+        let metrics = match measurer.measure_text_block(content, font, para, available_width) {
+            Ok(m) => m,
+            Err(_) => return self.approximate_text_bounds(content),
+        };
+
+        let text_width = metrics.total_width;
+        let text_height = metrics.total_height;
+
+        // --- horizontal placement ----------------------------------------------
+        let text_x = match h_align {
+            crate::xfa::HAlign::Left | crate::xfa::HAlign::Justify | crate::xfa::HAlign::JustifyAll => {
+                self.x + margin_left
+            }
+            crate::xfa::HAlign::Center => {
+                self.x + (self.width - text_width) / Decimal::TWO
+            }
+            crate::xfa::HAlign::Right => {
+                self.x + self.width - text_width - margin_right
+            }
+            crate::xfa::HAlign::Radix => {
+                self.x + self.width / Decimal::TWO
+            }
+        };
+
+        // Use measured text width, capped at available width.
+        let effective_width = text_width.min(available_width);
+
+        // --- vertical placement ------------------------------------------------
+        let v_align = para.as_ref().map(|p| p.v_align).unwrap_or(crate::xfa::VAlign::Top);
+        let v_offset = metrics.first_line_offset(self.height, v_align);
+        let text_y = self.y + v_offset;
+
+        Bounds::new(text_x, text_y, effective_width, text_height)
+    }
+
+    /// Approximate text bounds when font metrics are unavailable.
+    fn approximate_text_bounds(&self, content: &str) -> Bounds {
+        let font_size = self.style.font.as_ref().map(|f| f.size).unwrap_or(num(10.0));
+        let char_width = font_size * num(0.6);
+        let text_width = char_width * Decimal::from(content.chars().count() as u32);
+        let text_width = text_width.min(self.width);
+
+        let line_height = font_size * num(1.2);
+        let chars_per_line = (self.width / char_width).to_u32().unwrap_or(1).max(1) as usize;
+        // Simple word-wrap estimate
+        let mut num_lines: usize = 1;
+        let mut current_len: usize = 0;
+        for word in content.split_whitespace() {
+            let wlen = word.chars().count();
+            if current_len + wlen > chars_per_line && current_len > 0 {
+                num_lines += 1;
+                current_len = wlen;
+            } else {
+                current_len += wlen + if current_len > 0 { 1 } else { 0 };
+            }
+        }
+        let text_height = (line_height * Decimal::from(num_lines as u32)).min(self.height);
+
+        let margin_left = self.style.para.as_ref().and_then(|p| p.margin_left).unwrap_or(Decimal::ZERO);
+        Bounds::new(self.x + margin_left, self.y, text_width.min(self.width - margin_left), text_height)
+    }
+
     // ========================================================================
     // Hint accessor methods
     // ========================================================================

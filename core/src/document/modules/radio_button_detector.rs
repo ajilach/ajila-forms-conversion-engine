@@ -17,6 +17,14 @@ use rust_decimal::prelude::*;
 
 /// Check if text is to the right of a field and on the same line.
 ///
+/// `label_overlap_tolerance` allows the text to start slightly inside the field's
+/// right edge (in points).  Pass `Decimal::ZERO` for strict right-of-field checks.
+///
+/// When `allow_overlapping_caption` is true, also accepts text blocks that start at
+/// approximately the field's x position and extend beyond the field's right edge.
+/// This handles XFA horizontal radio layouts where the caption text is placed
+/// overlapping the radio-button widget rather than to its right.
+///
 /// Returns the horizontal gap if the text qualifies as a right-side label,
 /// or None if it doesn't meet the criteria.
 pub(crate) fn is_label_on_right_of_field(
@@ -24,9 +32,36 @@ pub(crate) fn is_label_on_right_of_field(
     text_bounds: &Bounds,
     max_label_distance: Decimal,
     line_tolerance: Decimal,
+    label_overlap_tolerance: Decimal,
+    allow_overlapping_caption: bool,
 ) -> Option<Decimal> {
-    // Text must be to the right of field
-    let gap = field_bounds.horizontal_gap_to(text_bounds)?;
+    // Text must be to the right of field (allowing a small overlap for XFA forms
+    // that position the caption text slightly inside the button widget's right edge).
+    let gap = if text_bounds.x >= field_bounds.right() - label_overlap_tolerance {
+        let raw = text_bounds.x - field_bounds.right();
+        if raw < Decimal::ZERO {
+            Decimal::ZERO
+        } else {
+            raw
+        }
+    } else if allow_overlapping_caption {
+        // Check for overlapping caption: text starts at approximately the field's
+        // x position (within 2pt) and extends beyond the field's right edge.
+        let x_diff = (text_bounds.x - field_bounds.x).abs();
+        let x_tolerance = Decimal::from_str("2.0").unwrap();
+        let max_caption_width = Decimal::from_str("100.0").unwrap();
+        if x_diff <= x_tolerance
+            && text_bounds.right() > field_bounds.right()
+            && text_bounds.width <= max_caption_width
+            && text_bounds.bottom() > field_bounds.y
+        {
+            Decimal::ZERO
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
 
     if gap > max_label_distance {
         return None;
@@ -43,31 +78,52 @@ pub(crate) fn is_label_on_right_of_field(
 /// Find the best label on the right of a field from a set of candidates.
 ///
 /// Returns the index of the text candidate with the smallest gap to the field.
+/// When gaps are nearly equal (within 1pt), prefers the candidate with the
+/// smallest vertical distance (closest to same line).
 pub(crate) fn find_best_label_on_right(
     doc: &Document,
     field_idx: usize,
     text_candidates: &[usize],
     max_label_distance: Decimal,
     line_tolerance: Decimal,
+    label_overlap_tolerance: Decimal,
+    allow_overlapping_caption: bool,
 ) -> Option<usize> {
     let field_bounds = doc.get_bounds(field_idx)?;
 
-    let mut best: Option<(usize, Decimal)> = None;
+    let mut best: Option<(usize, Decimal, Decimal)> = None; // (idx, gap, vert_dist)
 
     for &text_idx in text_candidates {
         let Some(text_bounds) = doc.get_bounds(text_idx) else {
             continue;
         };
 
-        if let Some(gap) =
-            is_label_on_right_of_field(&field_bounds, &text_bounds, max_label_distance, line_tolerance)
-            && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true)
-        {
-            best = Some((text_idx, gap));
+        if let Some(gap) = is_label_on_right_of_field(
+            &field_bounds,
+            &text_bounds,
+            max_label_distance,
+            line_tolerance,
+            label_overlap_tolerance,
+            allow_overlapping_caption,
+        ) {
+            let vert_dist = field_bounds.vertical_center_distance(&text_bounds);
+            let is_better = match best {
+                None => true,
+                Some((_, best_gap, best_vert)) => {
+                    if (gap - best_gap).abs() <= Decimal::ONE {
+                        vert_dist < best_vert
+                    } else {
+                        gap < best_gap
+                    }
+                }
+            };
+            if is_better {
+                best = Some((text_idx, gap, vert_dist));
+            }
         }
     }
 
-    best.map(|(idx, _)| idx)
+    best.map(|(idx, _, _)| idx)
 }
 
 // ============================================================================
@@ -149,91 +205,6 @@ impl RadioButtonDetector {
         }
     }
 
-    /// Check if text is to the right of the field and on the same line.
-    ///
-    /// When `allow_overlapping_caption` is true, also accepts text blocks that
-    /// start at approximately the field's x position and extend beyond the field's
-    /// right edge. This handles XFA horizontal radio layouts where the caption
-    /// text is placed overlapping the radio-button widget rather than to its right.
-    fn is_label_on_right(
-        &self,
-        field_bounds: &Bounds,
-        text_bounds: &Bounds,
-        allow_overlapping_caption: bool,
-    ) -> Option<Decimal> {
-        // Text must be to the right of field (allowing a small overlap for XFA forms
-        // that position the caption text slightly inside the button widget's right edge).
-        let gap = if text_bounds.x >= field_bounds.right() - self.label_overlap_tolerance {
-            // Gap is positive when text is clear of the field; negative means slight overlap.
-            // We normalise to 0 when within tolerance so the sorting still works.
-            let raw = text_bounds.x - field_bounds.right();
-            if raw < Decimal::ZERO {
-                Decimal::ZERO
-            } else {
-                raw
-            }
-        } else if allow_overlapping_caption {
-            // Check for overlapping caption: text starts at approximately the field's
-            // x position (within 2pt) and extends beyond the field's right edge.
-            // This handles XFA horizontal radio layouts where the caption text is placed
-            // overlapping the radio-button widget rather than to its right.
-            //
-            // Extra guard: the text must be narrow (short label), not a full-width
-            // paragraph that happens to start at the same left margin as the field.
-            let x_diff = (text_bounds.x - field_bounds.x).abs();
-            let x_tolerance = Decimal::from_str("2.0").unwrap();
-            let max_caption_width = Decimal::from_str("100.0").unwrap();
-            if x_diff <= x_tolerance
-                && text_bounds.right() > field_bounds.right()
-                && text_bounds.width <= max_caption_width
-            {
-                Decimal::ZERO
-            } else {
-                return None;
-            }
-        } else {
-            return None;
-        };
-
-        if gap > self.max_label_distance {
-            return None;
-        }
-
-        // Check vertical alignment (same line)
-        if !field_bounds.is_on_same_line(text_bounds, self.line_tolerance) {
-            return None;
-        }
-
-        Some(gap)
-    }
-
-    /// Find the best label on the right of a field.
-    fn find_label_on_right(
-        &self,
-        doc: &Document,
-        field_idx: usize,
-        text_candidates: &[usize],
-        allow_overlapping_caption: bool,
-    ) -> Option<usize> {
-        let field_bounds = doc.get_bounds(field_idx)?;
-
-        let mut best: Option<(usize, Decimal)> = None;
-
-        for &text_idx in text_candidates {
-            let Some(text_bounds) = doc.get_bounds(text_idx) else {
-                continue;
-            };
-
-            if let Some(gap) =
-                self.is_label_on_right(&field_bounds, &text_bounds, allow_overlapping_caption)
-                && best.map(|(_, best_gap)| gap < best_gap).unwrap_or(true)
-            {
-                best = Some((text_idx, gap));
-            }
-        }
-
-        best.map(|(idx, _)| idx)
-    }
 }
 
 impl AnalysisModule for RadioButtonDetector {
@@ -301,9 +272,15 @@ impl AnalysisModule for RadioButtonDetector {
 
             let has_excl_group = is_explicit_radio && self.has_excl_group_hint(doc, field_idx);
 
-            if let Some(label_idx) =
-                self.find_label_on_right(doc, field_idx, &available_labels, has_excl_group)
-            {
+            if let Some(label_idx) = find_best_label_on_right(
+                doc,
+                field_idx,
+                &available_labels,
+                self.max_label_distance,
+                self.line_tolerance,
+                self.label_overlap_tolerance,
+                has_excl_group,
+            ) {
                 radio_buttons.push((field_idx, label_idx));
                 used_labels.insert(label_idx);
             }

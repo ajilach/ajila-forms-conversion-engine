@@ -396,7 +396,7 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
     let mut merges: Vec<(usize, usize)> = Vec::new(); // (marker_idx, content_idx)
     let mut used: HashSet<usize> = HashSet::new();
 
-    // Collect root TextBlocks with their bounds, sorted by position.
+    // Collect root TextBlocks with their bounds.
     let mut root_tbs: Vec<(usize, Bounds)> = Vec::new();
     for &idx in &roots {
         if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
@@ -421,56 +421,67 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
             continue;
         }
 
-        // Find the next root TextBlock on the same line to the right.
-        for j in (i + 1)..root_tbs.len() {
+        // Find the closest non-marker TextBlock on the same line.
+        // Prefer: (1) wider content blocks (they likely contain the marker spatially),
+        // (2) blocks to the right of the marker.
+        let mut best: Option<(usize, i32, Decimal, Decimal)> = None; // (j, priority, x_dist, -width)
+
+        for j in 0..root_tbs.len() {
+            if j == i {
+                continue;
+            }
             let (content_idx, ref content_bounds) = root_tbs[j];
             if used.contains(&content_idx) {
                 continue;
             }
 
-            // Check if the content is on the "same line" as the marker.
-            // Three criteria:
-            //   a) Same y within tolerance (marker and content have similar top), OR
-            //   b) Marker sits directly above content (marker bottom ≈ content top), OR
-            //   c) Content top is within the marker's vertical extent (common in
-            //      XFA forms where the marker draw has a tall bounding box that
-            //      overlaps with the content draw below it).
-            // Cases (b) and (c) handle XFA forms where the marker draw element is
-            // positioned one line above the content draw element.
+            // Same line: y positions within tolerance, or marker bottom
+            // aligns with content top (within tolerance).
             let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
             let marker_bottom = marker_bounds.y + marker_bounds.height;
             let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
-            let content_within_marker =
-                content_bounds.y > marker_bounds.y && content_bounds.y < marker_bottom;
-            let on_same_line = same_y || marker_above || content_within_marker;
-
-            // Past the line – stop looking.
-            if !on_same_line {
-                break;
-            }
-
-            // For same-line / marker-above: content must be to the right.
-            // For content-within-marker: content can start at the same x
-            // (same column, line below the marker at the same indent).
-            if content_within_marker {
-                if content_bounds.x + y_tol < marker_bounds.x {
-                    continue;
-                }
-            } else if content_bounds.x <= marker_bounds.x {
+            if !same_y && !marker_above {
                 continue;
             }
 
-            // The content block must not itself be a standalone marker (avoid
-            // merging two markers).
+            // Content must not start far to the left of marker (different column).
+            // Allow content that starts somewhat to the left, as multi-line text
+            // blocks may have their first line next to the marker but wrap to
+            // the left margin on subsequent lines.
+            let max_left_offset = Decimal::from(50);
+            if content_bounds.x + max_left_offset < marker_bounds.x {
+                continue;
+            }
+
+            // Skip other standalone markers.
             let content_text = doc.get_text_content(content_idx);
             if is_standalone_marker(&content_text).is_some() {
                 continue;
             }
 
+            // Score: prefer same_y over marker_above, then wider blocks,
+            // then closest by x-distance.
+            let priority = if same_y { 0i32 } else { 1i32 };
+            let dist = (content_bounds.x - marker_bounds.x).abs();
+            let neg_width = -content_bounds.width;
+            let is_better = match best {
+                None => true,
+                Some((_, bp, bd, bw)) => {
+                    priority < bp
+                        || (priority == bp && neg_width < bw)
+                        || (priority == bp && neg_width == bw && dist < bd)
+                }
+            };
+            if is_better {
+                best = Some((j, priority, dist, neg_width));
+            }
+        }
+
+        if let Some((j, _, _, _)) = best {
+            let (content_idx, _) = root_tbs[j];
             merges.push((marker_idx, content_idx));
             used.insert(marker_idx);
             used.insert(content_idx);
-            break;
         }
     }
 
@@ -484,15 +495,138 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
     }
 }
 
+/// Merges standalone list-marker TextBlocks (e.g. a lone "–" draw) with
+/// their adjacent content TextBlocks.  Runs early in the pipeline so that
+/// downstream modules (RadioButtonDetector, CheckboxDetector, etc.) see
+/// complete text blocks rather than orphaned marker fragments.
+pub struct StandaloneMarkerMerger;
+
+impl Default for StandaloneMarkerMerger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StandaloneMarkerMerger {
+    pub fn new() -> Self {
+        StandaloneMarkerMerger
+    }
+}
+
+impl AnalysisModule for StandaloneMarkerMerger {
+    fn name(&self) -> &'static str {
+        "StandaloneMarkerMerger"
+    }
+
+    fn process(&self, doc: &mut Document) {
+        merge_standalone_markers(doc, self.name());
+        merge_adjacent_same_line_text_blocks(doc, self.name());
+    }
+}
+
+/// Merges horizontally adjacent TextBlocks that are on the same line.
+/// This handles cases where a single logical text span is split into
+/// multiple XFA draw elements (e.g. "Finanzportfolioverwalter..." and
+/// "PLF – KVG" on the same line with a small gap).
+fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
+    /// Check if any node in a group has a visible horizontal border (top or bottom).
+    fn has_horizontal_border(doc: &Document, group_idx: usize) -> bool {
+        for node in doc.collect_nodes(group_idx) {
+            if let Some(border) = &node.style.border {
+                let has_top = border.get_edge(0).is_some_and(|e| {
+                    e.presence != "hidden" && e.thickness.is_some_and(|t| t > Decimal::ZERO)
+                });
+                let has_bottom = border.get_edge(2).is_some_and(|e| {
+                    e.presence != "hidden" && e.thickness.is_some_and(|t| t > Decimal::ZERO)
+                });
+                if has_top || has_bottom {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    let roots = doc.roots();
+    let y_tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+    // Maximum horizontal gap (in points) to consider two blocks as adjacent.
+    let max_gap = Decimal::from(20);
+
+    // Collect root TextBlocks with bounds.
+    let mut tbs: Vec<(usize, Bounds)> = Vec::new();
+    for &idx in &roots {
+        if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+            continue;
+        }
+        if let Some(b) = doc.get_bounds(idx) {
+            tbs.push((idx, b));
+        }
+    }
+
+    // Sort by y then x.
+    tbs.sort_by(|a, b| a.1.y.cmp(&b.1.y).then(a.1.x.cmp(&b.1.x)));
+
+    let mut used: HashSet<usize> = HashSet::new();
+    let mut merges: Vec<(usize, usize)> = Vec::new();
+
+    for i in 0..tbs.len() {
+        let (left_idx, ref left_bounds) = tbs[i];
+        if used.contains(&left_idx) {
+            continue;
+        }
+
+        for j in (i + 1)..tbs.len() {
+            let (right_idx, ref right_bounds) = tbs[j];
+            if used.contains(&right_idx) {
+                continue;
+            }
+
+            // Must be on the same line.
+            if (right_bounds.y - left_bounds.y).abs() > y_tol {
+                // Since sorted by y, if we're past the tolerance, stop.
+                if right_bounds.y - left_bounds.y > y_tol {
+                    break;
+                }
+                continue;
+            }
+
+            // Right block must start after left block ends, with a small gap.
+            let gap = right_bounds.x - (left_bounds.x + left_bounds.width);
+            if gap < Decimal::ZERO || gap > max_gap {
+                continue;
+            }
+
+            // Don't merge bordered table cells — both blocks having horizontal
+            // borders indicates they are separate table cells, not fragments of
+            // the same text span.
+            if has_horizontal_border(doc, left_idx) && has_horizontal_border(doc, right_idx) {
+                continue;
+            }
+
+            merges.push((left_idx, right_idx));
+            used.insert(left_idx);
+            used.insert(right_idx);
+            break; // Only merge once per left block.
+        }
+    }
+
+    for (left_idx, right_idx) in merges {
+        doc.merge_inferred(
+            vec![left_idx, right_idx],
+            GroupKind::TextBlock,
+            module_name,
+        );
+    }
+}
+
 impl AnalysisModule for ListDetector {
     fn name(&self) -> &'static str {
         "ListDetector"
     }
 
     fn process(&self, doc: &mut Document) {
-        // Phase 0: Merge standalone marker blocks (e.g. a "– " text node)
-        // with their adjacent content blocks on the same line.  This handles
-        // PDFs where the bullet character is a separate text run.
+        // Phase 0 (standalone marker merge) now runs earlier in the pipeline
+        // via StandaloneMarkerMerger. Re-run here as a no-op safety net.
         merge_standalone_markers(doc, self.name());
 
         // Phase 1: Walk root groups in document order.  For each TextBlock
@@ -521,9 +655,8 @@ impl AnalysisModule for ListDetector {
         // Also collect bounds of root TextBlocks that are bold, have
         // non-empty text, and do NOT start with a list marker.  Bold
         // non-marker TextBlocks are headings or labels that naturally
-        // separate lists.  Because OverlappingTextBlockMerger creates
-        // groups with higher indices, these separator TextBlocks may
-        // appear earlier in index order than the merged list items and
+        // separate lists.  Bold non-marker TextBlocks may appear
+        // earlier in index order than the merged list items and
         // therefore won't be encountered between them during the
         // sequential Phase 1 walk.  Only bold TextBlocks are considered
         // to avoid breaking lists where a non-bold continuation paragraph
@@ -654,6 +787,73 @@ impl AnalysisModule for ListDetector {
 
         // Flush the final run
         flush(&mut current_run, &mut groups, &mut group_styles);
+
+        // Phase 1b: Sublist merging.
+        //
+        // When a run of one marker type (e.g. Dash) is interrupted by a run
+        // of a different type (e.g. LowerRoman) and then the original type
+        // resumes, the interrupting run is a sublist of the last item in the
+        // first run.  We merge the two same-type runs and record the
+        // interrupting run as a sublist.
+        //
+        // sublists[i] = vec of (after_item_count, sublist_indices, sublist_style)
+        // meaning: after item `after_item_count` in group `i`, insert a sublist.
+        let mut sublists: Vec<Vec<(usize, Vec<usize>, ListStyleType)>> =
+            vec![Vec::new(); groups.len()];
+        let mut consumed: Vec<bool> = vec![false; groups.len()];
+
+        // Scan for A-B-A patterns
+        let mut i = 0;
+        while i + 2 < groups.len() {
+            if consumed[i] || consumed[i + 1] || consumed[i + 2] {
+                i += 1;
+                continue;
+            }
+            if group_styles[i] == group_styles[i + 2] && group_styles[i] != group_styles[i + 1] {
+                // A-B-A pattern found.  Only merge when Group A already has
+                // ≥ 2 items (a proper list) so that B is genuinely a sublist.
+                // Single-item A groups are isolated markers that happen to
+                // surround a different-style run and should not be merged.
+                if groups[i].len() < 2 {
+                    i += 1;
+                    continue;
+                }
+                // merge groups[i] and groups[i+2],
+                // record groups[i+1] as sublist after the last item of groups[i].
+                let after_count = groups[i].len();
+                sublists[i].push((
+                    after_count,
+                    groups[i + 1].clone(),
+                    group_styles[i + 1],
+                ));
+                let tail: Vec<usize> = groups[i + 2].clone();
+                groups[i].extend(tail);
+                consumed[i + 1] = true;
+                consumed[i + 2] = true;
+                // Don't advance i — the merged group might form another
+                // A-B-A pattern with groups[i+3] and groups[i+4].
+                // But we need to re-check: skip consumed entries for i+1,i+2
+                // and look at the next non-consumed group pair.
+                // Actually, let's just re-scan from i to catch chained patterns.
+                continue;
+            }
+            i += 1;
+        }
+
+        // Remove consumed groups and compact
+        let mut compacted_groups: Vec<Vec<usize>> = Vec::new();
+        let mut compacted_styles: Vec<ListStyleType> = Vec::new();
+        let mut compacted_sublists: Vec<Vec<(usize, Vec<usize>, ListStyleType)>> = Vec::new();
+        for (idx, group) in groups.into_iter().enumerate() {
+            if !consumed[idx] {
+                compacted_groups.push(group);
+                compacted_styles.push(group_styles[idx]);
+                compacted_sublists.push(sublists[idx].clone());
+            }
+        }
+        let mut groups = compacted_groups;
+        let group_styles = compacted_styles;
+        let group_sublists = compacted_sublists;
 
         // Phase 2: Backward extension.
         //
@@ -1004,17 +1204,60 @@ impl AnalysisModule for ListDetector {
         // For each list group, merge into a List group (skip groups with < 2 items
         // after backward extension; these are single-item runs that didn't grow
         // enough to form a proper list).
-        for (group_indices, list_style) in groups.into_iter().zip(group_styles) {
+        for (i, (group_indices, list_style)) in
+            groups.into_iter().zip(group_styles).enumerate()
+        {
             if group_indices.len() < 2 {
                 continue;
             }
-            let child_group_indices = group_indices;
 
-            doc.merge_inferred(
-                child_group_indices,
-                GroupKind::List { list_style },
-                self.name(),
-            );
+            // Check if this group has sublists that need to be interleaved.
+            let subs = if i < group_sublists.len() {
+                &group_sublists[i]
+            } else {
+                &[][..]
+            };
+
+            if subs.is_empty() {
+                // Simple case: no sublists
+                doc.merge_inferred(
+                    group_indices,
+                    GroupKind::List { list_style },
+                    self.name(),
+                );
+            } else {
+                // Build children list interleaving TextBlock items and sublist groups.
+                // For each sublist, create a GroupKind::List group first, then
+                // include its index in the parent's children.
+                let mut child_indices: Vec<usize> = Vec::new();
+                let mut item_count = 0;
+
+                for &idx in &group_indices {
+                    child_indices.push(idx);
+                    item_count += 1;
+
+                    // After pushing this item, check if any sublists attach here.
+                    for (after_n, sub_indices, sub_style) in subs {
+                        if *after_n == item_count {
+                            // Create the sublist as a document group
+                            let sub_group_idx = doc.merge_inferred(
+                                sub_indices.clone(),
+                                GroupKind::List {
+                                    list_style: *sub_style,
+                                },
+                                self.name(),
+                            );
+                            child_indices.push(sub_group_idx);
+                        }
+                    }
+                }
+
+                doc.merge_inferred(
+                    child_indices,
+                    GroupKind::List { list_style },
+                    self.name(),
+                );
+            }
         }
     }
 }

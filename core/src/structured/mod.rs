@@ -138,9 +138,47 @@ pub enum StructuredNode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ListItem {
+    pub content: InlineText,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sublist: Option<Box<ListNode>>,
+}
+
+impl ListItem {
+    /// Create a simple list item with no sublist.
+    pub fn simple(content: InlineText) -> Self {
+        Self {
+            content,
+            sublist: None,
+        }
+    }
+
+    /// Get the plain text content of this item (excluding sublist).
+    pub fn as_plain_text(&self) -> String {
+        self.content.as_plain_text()
+    }
+
+    /// Get the plain text in a specific language (excluding sublist).
+    pub fn plain_text_in(&self, lang: &str) -> String {
+        self.content.plain_text_in(lang)
+    }
+
+    /// Collect languages from this item's content.
+    pub fn collect_languages(&self, langs: &mut std::collections::BTreeSet<String>) {
+        self.content.collect_languages(langs);
+        if let Some(sub) = &self.sublist {
+            for sub_item in &sub.items {
+                sub_item.content.collect_languages(langs);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListNode {
     pub list_style: crate::document::ListStyleType,
-    pub items: Vec<InlineText>,
+    pub items: Vec<ListItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -967,7 +1005,20 @@ impl StructuredNode {
                         || a.items
                             .iter()
                             .zip(b.items.iter())
-                            .all(|(ia, ib)| ia.structural_eq(ib)))
+                            .all(|(ia, ib)| {
+                                ia.content.structural_eq(&ib.content)
+                                    && ia.sublist.is_some() == ib.sublist.is_some()
+                                    && match (&ia.sublist, &ib.sublist) {
+                                        (Some(sa), Some(sb)) => {
+                                            StructuredNode::List(sa.as_ref().clone())
+                                                .structural_cmp(
+                                                    &StructuredNode::List(sb.as_ref().clone()),
+                                                    mode,
+                                                )
+                                        }
+                                        _ => true,
+                                    }
+                            }))
             }
             // Different variants are never structurally equal
             _ => false,
@@ -1047,7 +1098,12 @@ impl StructuredNode {
             }
             StructuredNode::List(l) => {
                 for item in &l.items {
-                    item.collect_languages(langs);
+                    item.content.collect_languages(langs);
+                    if let Some(sub) = &item.sublist {
+                        for sub_item in &sub.items {
+                            sub_item.content.collect_languages(langs);
+                        }
+                    }
                 }
             }
             _ => {}

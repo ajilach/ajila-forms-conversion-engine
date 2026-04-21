@@ -971,7 +971,7 @@ pub fn get_list_item_text<'a>(
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let parent = get_node_at_path(content, &parent_path)?;
     if let StructuredNode::List(l) = parent {
-        l.items.get(item_idx)
+        l.items.get(item_idx).map(|item| &item.content)
     } else {
         None
     }
@@ -985,7 +985,7 @@ pub fn get_list_item_text_mut<'a>(
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let parent = get_node_at_path_mut(content, &parent_path)?;
     if let StructuredNode::List(l) = parent {
-        l.items.get_mut(item_idx)
+        l.items.get_mut(item_idx).map(|item| &mut item.content)
     } else {
         None
     }

@@ -11,7 +11,7 @@ use blueprint::structured::GridLayoutElement;
 use blueprint::structured::TableRow as StructTableRow;
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    InlineText, ListNode, ParagraphNode, StructuredNode,
+    InlineText, ListItem, ListNode, ParagraphNode, StructuredNode,
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
@@ -676,7 +676,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             if let Some(node) = get_node_at_path_mut(&mut env.content, &parent) {
                                 if let StructuredNode::List(l) = node {
                                     let insert_idx = index.min(l.items.len());
-                                    l.items.insert(insert_idx, InlineText::plain("New item"));
+                                    l.items.insert(insert_idx, ListItem::simple(InlineText::plain("New item")));
                                     let mut path = parent.clone();
                                     path.push(PathSegment::ListItem(insert_idx));
                                     Some(path)
@@ -793,7 +793,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             }),
                             NewNodeType::List => StructuredNode::List(ListNode {
                                 list_style: ListStyleType::Disc,
-                                items: vec![InlineText::plain("New item")],
+                                items: vec![ListItem::simple(InlineText::plain("New item"))],
                             }),
                             NewNodeType::Group => {
                                 StructuredNode::Group(GroupNode { children: vec![] })
@@ -1084,7 +1084,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             .iter()
                             .map(|item| {
                                 StructuredNode::Paragraph(ParagraphNode {
-                                    content: item.clone(),
+                                    content: item.content.clone(),
                                     som_path: None,
                                     source_name: None,
                                 })
@@ -1127,11 +1127,11 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
         }
         ConvertTarget::List => {
             // Converting multiple items to a single list
-            let items: Vec<InlineText> = nodes
+            let items: Vec<ListItem> = nodes
                 .iter()
                 .filter_map(|n| match n {
-                    StructuredNode::Paragraph(p) => Some(p.content.clone()),
-                    StructuredNode::Heading(h) => Some(h.content.clone()),
+                    StructuredNode::Paragraph(p) => Some(ListItem::simple(p.content.clone())),
+                    StructuredNode::Heading(h) => Some(ListItem::simple(h.content.clone())),
                     _ => None,
                 })
                 .collect();

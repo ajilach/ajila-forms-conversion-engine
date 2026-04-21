@@ -23,7 +23,7 @@ use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
+    HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
@@ -761,7 +761,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             // List → ListNode
             GroupKind::List { list_style } => {
                 let group = self.doc.get_group(group_idx)?;
-                let mut items = Vec::new();
+                let mut items: Vec<ListItem> = Vec::new();
                 // Sort children by reading order
                 let mut children = group.children.clone();
                 children.sort_by(|&a, &b| {
@@ -770,12 +770,30 @@ impl<'a, 'b> Converter<'a, 'b> {
                     compare_bounds_reading_order(bounds_a, bounds_b)
                 });
                 for &child_idx in &children {
+                    // Check if this child is a nested List (sublist)
+                    if let Some(child_group) = self.doc.get_group(child_idx) {
+                        if let GroupKind::List {
+                            list_style: _,
+                        } = &child_group.kind
+                        {
+                            // Convert the sublist recursively
+                            if let Some(StructuredNode::List(sub_list)) =
+                                self.convert_group(child_idx)
+                            {
+                                // Attach as sublist of the previous item
+                                if let Some(last_item) = items.last_mut() {
+                                    last_item.sublist = Some(Box::new(sub_list));
+                                }
+                            }
+                            continue;
+                        }
+                    }
                     let text = self.extract_inline_text(child_idx);
                     if !text.is_empty() {
                         // Strip list marker prefix from the item text
                         let stripped = strip_list_marker_from_inline_text(text);
                         if !stripped.is_empty() {
-                            items.push(stripped);
+                            items.push(ListItem::simple(stripped));
                         }
                     }
                 }

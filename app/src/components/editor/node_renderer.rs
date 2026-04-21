@@ -363,7 +363,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                     // Item content or editor
                                                     if is_editing {
                                                         TextEditor {
-                                                            content: InlineTextWrapper(item.clone()),
+                                                            content: InlineTextWrapper(item.content.clone()),
                                                             path: item_path.clone(),
                                                             languages: languages.clone(),
                                                             on_action,

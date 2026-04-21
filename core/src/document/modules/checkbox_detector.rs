@@ -185,6 +185,8 @@ impl AnalysisModule for CheckboxDetector {
                 &available_labels,
                 self.max_label_distance,
                 self.line_tolerance,
+                Decimal::ZERO,
+                false,
             )
             // If no label to the right, try finding an overlapping label
             // (text that starts at the same x position and extends beyond the checkbox)

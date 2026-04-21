@@ -286,11 +286,16 @@ fn generate_list(l: &ListNode, ind: &str) -> String {
         ind, tag, style_attr
     );
     for item in &l.items {
+        let item_html = generate_inline_text(&item.content);
+        let sub_html = item
+            .sublist
+            .as_ref()
+            .map(|sub| generate_list(sub, &format!("{ind}    ")))
+            .unwrap_or_default();
         html.push_str(&format!(
-            "{}  <li>{}</li>
+            "{}  <li>{}{}</li>
 ",
-            ind,
-            generate_inline_text(item)
+            ind, item_html, sub_html
         ));
     }
     html.push_str(&format!(

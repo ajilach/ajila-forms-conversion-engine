@@ -125,6 +125,7 @@ pub use structured::{
     ImageNode,
     InlineNode,
     InlineText,
+    ListItem,
     ListNode,
     MergeError,
     MergeInput,

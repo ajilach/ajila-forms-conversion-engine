@@ -159,7 +159,7 @@ impl RadioButtonGrouper {
                     // (which would have its own inset content below it)
                     let is_radio_related = doc
                         .get_group(root_idx)
-                        .map(|g| matches!(g.kind, GroupKind::RadioButton { .. }))
+                        .map(|g| matches!(g.kind, GroupKind::RadioButton { .. } | GroupKind::RadioButtonGroup))
                         .unwrap_or(false);
 
                     if !is_radio_related {
@@ -186,16 +186,20 @@ impl RadioButtonGrouper {
                 continue;
             }
 
-            let Some(rb_bounds) = doc.get_bounds(rb_idx) else {
+            // Use the field (circle) bounds for alignment, not the full group bounds
+            // (which include the potentially wide label and would skew alignment checks).
+            let Some(rb_field_bounds) = self.get_field_bounds(doc, rb_idx) else {
                 continue;
             };
+            let rb_group_bounds = doc.get_bounds(rb_idx).unwrap_or(rb_field_bounds);
 
             let mut group: Vec<usize> = vec![rb_idx];
             grouped.insert(rb_idx);
 
             // Try to find adjacent radio buttons in horizontal direction
             let mut found_horizontal = true;
-            let mut last_bounds = rb_bounds;
+            let mut last_field_bounds = rb_field_bounds;
+            let mut last_group_bounds = rb_group_bounds;
 
             while found_horizontal {
                 found_horizontal = false;
@@ -205,29 +209,35 @@ impl RadioButtonGrouper {
                         continue;
                     }
 
-                    let Some(candidate_bounds) = doc.get_bounds(candidate_idx) else {
+                    let Some(candidate_field_bounds) =
+                        self.get_field_bounds(doc, candidate_idx)
+                    else {
                         continue;
                     };
 
-                    // Check if horizontally aligned and close
-                    if last_bounds
-                        .is_horizontally_aligned(&candidate_bounds, self.alignment_tolerance)
+                    // Check horizontal alignment using field bounds (not skewed by labels)
+                    if last_field_bounds
+                        .is_horizontally_aligned(&candidate_field_bounds, self.alignment_tolerance)
                     {
-                        let distance = last_bounds
-                            .horizontal_gap_to(&candidate_bounds)
+                        // Measure gap using full group bounds (labels fill horizontal space)
+                        let candidate_group_bounds =
+                            doc.get_bounds(candidate_idx).unwrap_or(candidate_field_bounds);
+                        let distance = last_group_bounds
+                            .horizontal_gap_to(&candidate_group_bounds)
                             .unwrap_or(Decimal::MAX);
 
                         if distance <= self.max_horizontal_gap
                             && !self.has_elements_between(
                                 doc,
-                                &last_bounds,
-                                &candidate_bounds,
+                                &last_field_bounds,
+                                &candidate_field_bounds,
                                 &radio_button_set,
                             )
                         {
                             group.push(candidate_idx);
                             grouped.insert(candidate_idx);
-                            last_bounds = candidate_bounds;
+                            last_field_bounds = candidate_field_bounds;
+                            last_group_bounds = candidate_group_bounds;
                             found_horizontal = true;
                             break;
                         }
@@ -238,7 +248,7 @@ impl RadioButtonGrouper {
             // Try to find adjacent radio buttons in vertical direction
             // For vertical grouping, we allow a larger gap if the content between is inset
             let mut found_vertical = true;
-            last_bounds = rb_bounds;
+            let mut last_field_bounds = rb_field_bounds;
 
             while found_vertical {
                 found_vertical = false;
@@ -248,24 +258,26 @@ impl RadioButtonGrouper {
                         continue;
                     }
 
-                    let Some(candidate_bounds) = doc.get_bounds(candidate_idx) else {
+                    let Some(candidate_field_bounds) =
+                        self.get_field_bounds(doc, candidate_idx)
+                    else {
                         continue;
                     };
 
                     // Check if vertically aligned
-                    if last_bounds
-                        .is_vertically_aligned(&candidate_bounds, self.alignment_tolerance)
+                    if last_field_bounds
+                        .is_vertically_aligned(&candidate_field_bounds, self.alignment_tolerance)
                     {
-                        let distance = last_bounds
-                            .vertical_gap_to(&candidate_bounds)
+                        let distance = last_field_bounds
+                            .vertical_gap_to(&candidate_field_bounds)
                             .unwrap_or(Decimal::MAX);
                         let inset_threshold = Decimal::from_str("10.0").unwrap();
 
                         // Check if there's only inset content between (no blocking elements)
                         let has_blocking_elements = self.has_non_inset_elements_between(
                             doc,
-                            &last_bounds,
-                            &candidate_bounds,
+                            &last_field_bounds,
+                            &candidate_field_bounds,
                             &radio_button_set,
                             inset_threshold,
                         );
@@ -282,7 +294,7 @@ impl RadioButtonGrouper {
                         if distance <= max_gap && !has_blocking_elements {
                             group.push(candidate_idx);
                             grouped.insert(candidate_idx);
-                            last_bounds = candidate_bounds;
+                            last_field_bounds = candidate_field_bounds;
                             found_vertical = true;
                             break;
                         }

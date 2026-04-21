@@ -433,13 +433,7 @@ fn convert_paragraph(
     }
 }
 
-fn convert_list(
-    list: &ListNode,
-    _config: &AemConfig,
-    ctx: &mut ConversionContext,
-    colspan: u32,
-    dor_colspan: Option<u32>,
-) -> AemNode {
+pub(crate) fn render_list_html(list: &ListNode, lang: &str) -> String {
     let tag = if list.list_style.is_ordered() {
         "ol"
     } else {
@@ -457,15 +451,30 @@ fn convert_list(
         .items
         .iter()
         .map(|item| {
-            let html = inline_text_to_html(item, &ctx.language);
-            format!("<li>{html}</li>")
+            let html = inline_text_to_html(&item.content, lang);
+            let sub_html = item
+                .sublist
+                .as_ref()
+                .map(|sub| render_list_html(sub, lang))
+                .unwrap_or_default();
+            format!("<li>{html}{sub_html}</li>")
         })
         .collect();
-    let content = format!("<{tag}{style_attr}>{items_html}</{tag}>");
+    format!("<{tag}{style_attr}>{items_html}</{tag}>")
+}
+
+fn convert_list(
+    list: &ListNode,
+    _config: &AemConfig,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> AemNode {
+    let content = render_list_html(list, &ctx.language);
     let first_item_text = list
         .items
         .first()
-        .map(|i| i.plain_text_in(&ctx.language))
+        .map(|i| i.content.plain_text_in(&ctx.language))
         .unwrap_or_default();
     let name = ctx.make_name("ST", &first_item_text);
     let uuid = ctx.uuid(&name);
@@ -1549,8 +1558,8 @@ mod tests {
         let nodes = vec![StructuredNode::List(ListNode {
             list_style: crate::document::ListStyleType::Disc,
             items: vec![
-                InlineText::plain("First item"),
-                InlineText::plain("Second item"),
+                ListItem::simple(InlineText::plain("First item")),
+                ListItem::simple(InlineText::plain("Second item")),
             ],
         })];
         let root = convert_to_aem(&nodes, &default_config());
@@ -1572,7 +1581,7 @@ mod tests {
     fn convert_ordered_list_produces_textdraw() {
         let nodes = vec![StructuredNode::List(ListNode {
             list_style: crate::document::ListStyleType::Decimal,
-            items: vec![InlineText::plain("Step one"), InlineText::plain("Step two")],
+            items: vec![ListItem::simple(InlineText::plain("Step one")), ListItem::simple(InlineText::plain("Step two"))],
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);

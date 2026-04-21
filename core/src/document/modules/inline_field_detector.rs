@@ -345,19 +345,19 @@ mod tests {
             },
             vec![
                 FlattenedNode::new_text(
-                    "Enter name:".to_string(),
+                    "Please enter your full legal name in the following field".to_string(),
                     num(10.0),
                     "Helvetica".to_string(),
                     num(10.0),
                     num(100.0),
-                    num(60.0),
+                    num(300.0),
                     num(12.0),
                 ),
                 FlattenedNode::new_field(
                     "TF_Name".to_string(),
                     "".to_string(),
                     "Name".to_string(),
-                    num(75.0),
+                    num(315.0),
                     num(98.0),
                     num(100.0),
                     num(20.0),

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::structured::{
     ConditionalNode, FieldNode, FieldType, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
-    InlineNode, InlineText, ListNode, NameValue, ParagraphNode, RepeatableNode, StructuredNode,
-    TableHeader, TableNode, TableRow, TranslatableString, TranslationMap,
+    InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode, RepeatableNode,
+    StructuredNode, TableHeader, TableNode, TableRow, TranslatableString, TranslationMap,
 };
 
 /// Compute the LCS (longest common subsequence) table for two node slices,
@@ -467,7 +467,12 @@ fn fill_node(node: &mut StructuredNode, all_languages: &[String], primary_langua
         }
         StructuredNode::List(l) => {
             for item in &mut l.items {
-                fill_inline_text(item, all_languages, primary_language);
+                fill_inline_text(&mut item.content, all_languages, primary_language);
+                if let Some(sub) = &mut item.sublist {
+                    for sub_item in &mut sub.items {
+                        fill_inline_text(&mut sub_item.content, all_languages, primary_language);
+                    }
+                }
             }
         }
         StructuredNode::Image(_) | StructuredNode::Empty => {}
@@ -1212,7 +1217,22 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
             items: list
                 .items
                 .iter()
-                .map(|item| localize_inline_text(item, lang))
+                .map(|item| ListItem {
+                    content: localize_inline_text(&item.content, lang),
+                    sublist: item.sublist.as_ref().map(|sub| {
+                        Box::new(ListNode {
+                            list_style: sub.list_style,
+                            items: sub
+                                .items
+                                .iter()
+                                .map(|si| ListItem {
+                                    content: localize_inline_text(&si.content, lang),
+                                    sublist: None,
+                                })
+                                .collect(),
+                        })
+                    }),
+                })
                 .collect(),
         }),
     }
@@ -2329,11 +2349,11 @@ fn merge_grid_elements(
 
 /// Merge two `List` item vectors.
 fn merge_list_items(
-    base: &[InlineText],
+    base: &[ListItem],
     base_lang: &str,
-    other: &[InlineText],
+    other: &[ListItem],
     other_lang: &str,
-) -> Vec<InlineText> {
+) -> Vec<ListItem> {
     if base.len() != other.len() {
         log::warn!(
             "List item count mismatch when merging {} and {} translations: \
@@ -2345,26 +2365,33 @@ fn merge_list_items(
         );
     }
     let paired = base.len().min(other.len());
-    let mut items: Vec<InlineText> = base
+    let mut items: Vec<ListItem> = base
         .iter()
         .zip(other.iter())
-        .map(|(ia, ib)| merge_inline_text(ia, base_lang, ib, other_lang))
+        .map(|(ia, ib)| {
+            let content = merge_inline_text(&ia.content, base_lang, &ib.content, other_lang);
+            // For sublists, prefer base's sublist (sublists are typically language-independent)
+            let sublist = ia.sublist.clone().or_else(|| ib.sublist.clone());
+            ListItem { content, sublist }
+        })
         .collect();
     for ia in &base[paired..] {
-        let map = inline_text_to_text_map(ia, base_lang);
-        items.push(if map.is_empty() {
-            ia.clone()
+        let map = inline_text_to_text_map(&ia.content, base_lang);
+        let content = if map.is_empty() {
+            ia.content.clone()
         } else {
             InlineText(vec![InlineNode::TranslatedText(map)])
-        });
+        };
+        items.push(ListItem { content, sublist: ia.sublist.clone() });
     }
     for ib in &other[paired..] {
-        let map = inline_text_to_text_map(ib, other_lang);
-        items.push(if map.is_empty() {
-            ib.clone()
+        let map = inline_text_to_text_map(&ib.content, other_lang);
+        let content = if map.is_empty() {
+            ib.content.clone()
         } else {
             InlineText(vec![InlineNode::TranslatedText(map)])
-        });
+        };
+        items.push(ListItem { content, sublist: ib.sublist.clone() });
     }
     items
 }

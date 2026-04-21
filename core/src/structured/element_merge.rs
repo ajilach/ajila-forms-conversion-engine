@@ -4,7 +4,7 @@
 //! nodes in the editor UI. Different node type combinations have different
 //! merge behaviors.
 
-use super::{HeadingLevel, ParagraphNode, StructuredNode};
+use super::{HeadingLevel, ListItem, ParagraphNode, StructuredNode};
 
 /// Errors that can occur during element merging.
 #[derive(Debug, Clone, PartialEq)]
@@ -175,25 +175,25 @@ pub fn merge_two(
 
         // Paragraph + List: add paragraph as new list item
         (Paragraph(src), List(mut tgt)) => {
-            tgt.items.push(src.content);
+            tgt.items.push(ListItem::simple(src.content));
             List(tgt)
         }
 
         // List + Paragraph: prepend paragraph as first list item
         (List(mut src), Paragraph(tgt)) => {
-            src.items.insert(0, tgt.content);
+            src.items.insert(0, ListItem::simple(tgt.content));
             List(src)
         }
 
         // Heading + List: convert heading to list item, prepend
         (Heading(src), List(mut tgt)) => {
-            tgt.items.insert(0, src.content);
+            tgt.items.insert(0, ListItem::simple(src.content));
             List(tgt)
         }
 
         // List + Heading: convert heading to list item, append
         (List(mut src), Heading(tgt)) => {
-            src.items.push(tgt.content);
+            src.items.push(ListItem::simple(tgt.content));
             List(src)
         }
 
@@ -293,11 +293,11 @@ mod tests {
     fn test_merge_lists() {
         let l1 = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![InlineText::plain("Item 1")],
+            items: vec![ListItem::simple(InlineText::plain("Item 1"))],
         });
         let l2 = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![InlineText::plain("Item 2")],
+            items: vec![ListItem::simple(InlineText::plain("Item 2"))],
         });
 
         let merged = merge_two(l1, l2).unwrap();
@@ -317,7 +317,7 @@ mod tests {
         });
         let l = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![InlineText::plain("Existing item")],
+            items: vec![ListItem::simple(InlineText::plain("Existing item"))],
         });
 
         let merged = merge_two(p, l).unwrap();

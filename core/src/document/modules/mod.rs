@@ -24,6 +24,9 @@
 //! TextBlockGrouper            ─── wraps each text node in a TextBlock
 //!     │
 //!     ▼
+//! StandaloneMarkerMerger      ─── merges lone bullet/dash markers with content
+//!     │
+//!     ▼
 //! PlaceholderFilter           ─── claims placeholder text ("...", "___")
 //!     │
 //!     ▼
@@ -40,9 +43,6 @@
 //!     │
 //!     ▼
 //! SelectionInlineFieldDetector ── detects inline fields next to checkboxes/radio buttons
-//!     │
-//!     ▼
-//! OverlappingTextBlockMerger  ─── merges text blocks contained within others
 //!     │
 //!     ▼
 //! TextBlockMerger             ─── merges nearby unclaimed TextBlocks with same font
@@ -98,7 +98,6 @@ mod label_attacher;
 mod list_detector;
 mod master_page_detector;
 mod no_print_detector;
-mod overlapping_text_block_merger;
 mod placeholder_filter;
 mod radio_button_content;
 mod radio_button_detector;
@@ -119,10 +118,9 @@ pub use heading_detector::{GlobalFontStats, HeadingDetector};
 pub use inline_field_date_picker::InlineFieldDatePicker;
 pub use inline_field_detector::InlineFieldDetector;
 pub use label_attacher::LabelAttacher;
-pub use list_detector::ListDetector;
+pub use list_detector::{ListDetector, StandaloneMarkerMerger};
 pub use master_page_detector::MasterPageDetector;
 pub use no_print_detector::NoPrintDetector;
-pub use overlapping_text_block_merger::OverlappingTextBlockMerger;
 pub use placeholder_filter::PlaceholderFilter;
 pub use radio_button_content::RadioButtonContentDetector;
 pub use radio_button_detector::RadioButtonDetector;
@@ -196,7 +194,7 @@ pub fn run_analysis_pipeline_with_context(
     FieldGrouper::new().process_with_context(doc, ctx);
     DateFieldDetector::new().process_with_context(doc, ctx);
     InlineFieldDatePicker::new().process_with_context(doc, ctx);
-    OverlappingTextBlockMerger::new().process_with_context(doc, ctx);
+    StandaloneMarkerMerger::new().process_with_context(doc, ctx);
 
     RadioButtonDetector::new().process_with_context(doc, ctx);
     CheckboxDetector::new().process_with_context(doc, ctx);

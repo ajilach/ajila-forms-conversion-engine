@@ -725,35 +725,19 @@ fn extract_rich_text_translations(
 fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut I18nDictionary) {
     let mut langs = BTreeSet::new();
     for item in &list.items {
-        item.collect_languages(&mut langs);
+        item.content.collect_languages(&mut langs);
+        if let Some(sub) = &item.sublist {
+            for sub_item in &sub.items {
+                sub_item.content.collect_languages(&mut langs);
+            }
+        }
     }
     if langs.len() <= 1 {
         return;
     }
 
     let render_list = |lang: &str| -> String {
-        let tag = if list.list_style.is_ordered() {
-            "ol"
-        } else {
-            "ul"
-        };
-        let style_attr = if list.list_style.needs_css() {
-            format!(
-                " style=\"list-style-type: {};\"",
-                list.list_style.css_value()
-            )
-        } else {
-            String::new()
-        };
-        let items_html: String = list
-            .items
-            .iter()
-            .map(|item| {
-                let html = inline_text_to_html(item, lang);
-                format!("<li>{html}</li>")
-            })
-            .collect();
-        format!("<{tag}{style_attr}>{items_html}</{tag}>")
+        crate::aem::converter::render_list_html(list, lang)
     };
 
     let master_html = render_list(master_lang);
@@ -1434,7 +1418,7 @@ mod tests {
     #[test]
     fn translation_key_equals_fd_prefix_plus_value_for_list() {
         use crate::document::ListStyleType;
-        use crate::structured::{InlineNode, InlineText, ListNode, StructuredNode};
+        use crate::structured::{InlineNode, InlineText, ListItem, ListNode, StructuredNode};
         use std::collections::HashMap;
 
         let mut tmap1 = HashMap::new();
@@ -1447,8 +1431,8 @@ mod tests {
         let node = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
             items: vec![
-                InlineText(vec![InlineNode::TranslatedText(tmap1)]),
-                InlineText(vec![InlineNode::TranslatedText(tmap2)]),
+                ListItem::simple(InlineText(vec![InlineNode::TranslatedText(tmap1)])),
+                ListItem::simple(InlineText(vec![InlineNode::TranslatedText(tmap2)])),
             ],
         });
 

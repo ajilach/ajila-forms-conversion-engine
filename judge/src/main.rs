@@ -412,7 +412,12 @@ fn count_translation_slots(nodes: &[StructuredNode]) -> (usize, usize) {
             }
             StructuredNode::List(list) => {
                 for item in &list.items {
-                    count_inline_text_slots(item, &mut total, &mut missing);
+                    count_inline_text_slots(&item.content, &mut total, &mut missing);
+                    if let Some(sub) = &item.sublist {
+                        for sub_item in &sub.items {
+                            count_inline_text_slots(&sub_item.content, &mut total, &mut missing);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -581,7 +586,12 @@ fn collect_translated_text_groups(nodes: &[StructuredNode], out: &mut Vec<Vec<St
             }
             StructuredNode::List(list) => {
                 for item in &list.items {
-                    collect_from_inline_text(item, out);
+                    collect_from_inline_text(&item.content, out);
+                    if let Some(sub) = &item.sublist {
+                        for sub_item in &sub.items {
+                            collect_from_inline_text(&sub_item.content, out);
+                        }
+                    }
                 }
             }
             _ => {}

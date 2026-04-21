@@ -951,10 +951,11 @@ impl<'a> Document<'a> {
 
         for node_idx in node_indices {
             if let Some(node) = self.source.iter_nodes().nth(node_idx) {
-                min_x = min_x.min(node.x);
-                min_y = min_y.min(node.y);
-                max_x = max_x.max(node.x + node.width);
-                max_y = max_y.max(node.y + node.height);
+                let tb = node.text_bounds();
+                min_x = min_x.min(tb.x);
+                min_y = min_y.min(tb.y);
+                max_x = max_x.max(tb.x + tb.width);
+                max_y = max_y.max(tb.y + tb.height);
             }
         }
 
@@ -1380,13 +1381,16 @@ mod tests {
         assert!(bounds.is_some());
 
         let (min_x, min_y, max_x, max_y) = bounds.unwrap();
-        // First node: x=10, y=10, w=30, h=12
-        // Second node: x=42, y=10, w=35, h=12
-        // Expected bounds: min_x=10, min_y=10, max_x=77, max_y=22
+        // First node: text "First" at x=10, font_size=10
+        // Second node: text "Name:" at x=42, font_size=10
+        // text_bounds() measures tight content bounds, not element bounds
+        // So max_x and max_y depend on measured text width/height
         assert_eq!(min_x, num(10.0));
         assert_eq!(min_y, num(10.0));
-        assert_eq!(max_x, num(77.0)); // 42 + 35
-        assert_eq!(max_y, num(22.0)); // 10 + 12
+        // text_bounds are tighter than element bounds; just verify they're
+        // within reasonable range
+        assert!(max_x > num(60.0) && max_x < num(80.0), "max_x={}", max_x);
+        assert!(max_y > num(15.0) && max_y < num(25.0), "max_y={}", max_y);
     }
 
     #[test]

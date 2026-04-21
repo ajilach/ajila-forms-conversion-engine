@@ -6248,8 +6248,8 @@ fn test_aaoe_merged_has_dropdown_conditionals() {
 }
 
 #[test]
-fn test_aaei_overlapping_text_block_merger() {
-    // Test that the OverlappingTextBlockMerger correctly merges the "–" bullet
+fn test_aaei_standalone_marker_merger() {
+    // Test that the StandaloneMarkerMerger correctly merges the "–" bullet
     // markers with their corresponding paragraph text blocks in the AAEI form.
     //
     // The XFA has two overlapping <draw name="T_Left"> elements:
@@ -6302,7 +6302,7 @@ fn test_aaei_overlapping_text_block_merger() {
 #[test]
 fn test_aaei_has_one_unordered_list_with_two_items() {
     // The AAEI form has two paragraphs prefixed with "–" (en-dash) bullet markers.
-    // After the overlapping text block merger merges the dashes with their text,
+    // After the standalone marker merger merges the dashes with their text,
     // the list detector should group them into a single unordered list with 2 items.
     use crate::structured::{ListNode, StructuredNode};
 
@@ -6369,6 +6369,7 @@ fn test_aaei_has_one_unordered_list_with_two_items() {
 
     println!("\n✓ AAEI has one unordered list with 2 items");
 }
+
 #[test]
 fn test_aaoe_has_one_ordered_list_with_three_items() {
     use crate::structured::{ListNode, StructuredNode};
@@ -6848,7 +6849,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
     use crate::document::modules::{
-        AnalysisModule, GlobalContext, HeadingDetector, OverlappingTextBlockMerger,
+        AnalysisModule, GlobalContext, HeadingDetector,
         TextBlockGrouper, TextBlockMerger, run_analysis_pipeline_with_context,
     };
     use crate::document::{Document, GroupKind};
@@ -7172,7 +7173,12 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
 
     assert!(
         group.is_some(),
-        "Expected a radio group with options 'Freigabe der Kaution inkl. Zinsen zugunsten Mieter' and 'Restbetrag der Kaution inkl. Zinsen zugunsten Mieter'"
+        "Expected a radio group with options 'Freigabe der Kaution inkl. Zinsen zugunsten Mieter' and 'Restbetrag der Kaution inkl. Zinsen zugunsten Mieter'\nRadio groups found: {:?}",
+        radio_fields.iter().filter_map(|f| {
+            if let FieldType::Radio { options } = &f.input_type {
+                Some(options.iter().map(|o| o.name.clone()).collect::<Vec<_>>())
+            } else { None }
+        }).collect::<Vec<_>>()
     );
 }
 
@@ -11284,9 +11290,9 @@ fn test_aaoe_dichiarazione_is_bold() {
             .find(|item| item.as_plain_text().contains("Diritto all"))
             .expect("Should find list item with 'Diritto all'");
         assert!(
-            has_strong_with(&diritto_item.0, "Diritto all"),
+            has_strong_with(&diritto_item.content.0, "Diritto all"),
             "'Diritto all'applicabilità' list item should be bold (Strong), got: {:?}",
-            diritto_item.0
+            diritto_item.content.0
         );
     }
 
@@ -11407,7 +11413,7 @@ fn test_baqm_partial_bold_in_paragraph() {
                 StructuredNode::List(l) => {
                     for item in &l.items {
                         if item.as_plain_text().contains(text) {
-                            println!("  Found in List item: {:?}", item.0);
+                            println!("  Found in List item: {:?}", item.content.0);
                         }
                     }
                 }
@@ -13701,23 +13707,39 @@ fn test_aaai_inline_field_vertragsbank() {
     );
     let field_pos = field_pos.unwrap();
 
-    // Check the paragraph before
+    // Check the two paragraphs before the Vertragsbank field.
+    // With text_bounds, the flowing text is split into two paragraphs
+    // both appearing before the field (rather than one before, one after).
     assert!(
-        field_pos > 0,
-        "There should be a paragraph before the Vertragsbank field"
+        field_pos >= 2,
+        "There should be at least two paragraphs before the Vertragsbank field"
     );
-    let (before_kind, before_text) = &sequence[field_pos - 1];
+    let (before2_kind, before2_text) = &sequence[field_pos - 2];
     assert_eq!(
-        *before_kind, "paragraph",
-        "Node before Vertragsbank field should be a paragraph, got: {}",
-        before_kind
+        *before2_kind, "paragraph",
+        "Node two before Vertragsbank field should be a paragraph, got: {}",
+        before2_kind
     );
     let expected_before = "Der Kunde beauftragt hiermit UBS Europe SE (nachstehend UBS), sämtliche über das SWIFT-Netz von der";
     assert!(
-        before_text.contains(expected_before),
-        "Paragraph before field should contain '{}', got: '{}'",
+        before2_text.contains(expected_before),
+        "Paragraph two before field should contain '{}', got: '{}'",
         expected_before,
-        before_text
+        before2_text
+    );
+
+    let (before1_kind, before1_text) = &sequence[field_pos - 1];
+    assert_eq!(
+        *before1_kind, "paragraph",
+        "Node before Vertragsbank field should be a paragraph, got: {}",
+        before1_kind
+    );
+    let expected_before_1 = "(nachstehend Vertragsbank) eingehenden Aufträge zu Lasten seiner bei UBS geführten Konten auszuführen. Die für den EFT-Service freigeschalteten Konten werden separat über das Kontenblatt EFT seitens des Kunden bestimmt.";
+    assert!(
+        before1_text.contains(expected_before_1),
+        "Paragraph before field should contain '{}', got: '{}'",
+        expected_before_1,
+        before1_text
     );
 
     // Check the paragraph after
@@ -13731,7 +13753,7 @@ fn test_aaai_inline_field_vertragsbank() {
         "Node after Vertragsbank field should be a paragraph, got: {}",
         after_kind
     );
-    let expected_after = "(nachstehend Vertragsbank) eingehenden Aufträge zu Lasten seiner bei UBS geführten Konten auszuführen. Die für den EFT-Service freigeschalteten Konten werden separat über das Kontenblatt EFT seitens des Kunden bestimmt.";
+    let expected_after = "Gleichzeitig erkennt der Kunde";
     assert!(
         after_text.contains(expected_after),
         "Paragraph after field should contain '{}', got: '{}'",
@@ -19139,14 +19161,14 @@ fn test_aabk_periodische_due_diligence_radio_group() {
         _ => unreachable!(),
     };
 
+    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+
     assert_eq!(
         options.len(),
         3,
         "Expected 3 radio options, found {}",
         options.len()
     );
-
-    let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
 
     let expected = [
         "BBI",
@@ -20627,9 +20649,9 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
-        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
+        PlaceholderFilter, RadioButtonContentDetector,
         RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
-        TextBlockMerger, run_analysis_pipeline,
+        TextBlockMerger, StandaloneMarkerMerger, run_analysis_pipeline,
     };
     use crate::document::{Document, GroupKind};
 
@@ -20647,7 +20669,7 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
     FieldGrouper::new().process(&mut doc);
     DateFieldDetector::new().process(&mut doc);
     InlineFieldDatePicker::new().process(&mut doc);
-    OverlappingTextBlockMerger::new().process(&mut doc);
+    StandaloneMarkerMerger::new().process(&mut doc);
     RadioButtonDetector::new().process(&mut doc);
     CheckboxDetector::new().process(&mut doc);
     ListDetector::new().process(&mut doc);
@@ -20925,8 +20947,9 @@ fn debug_aais_container_vs_content_height() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
-        OverlappingTextBlockMerger, PlaceholderFilter, RadioButtonContentDetector,
+        PlaceholderFilter, RadioButtonContentDetector,
         RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
+        StandaloneMarkerMerger,
     };
     use crate::flattened::FlattenedNodeKind;
 
@@ -20986,7 +21009,7 @@ fn debug_aais_container_vs_content_height() {
         FieldGrouper::new().process(&mut doc);
         DateFieldDetector::new().process(&mut doc);
         InlineFieldDatePicker::new().process(&mut doc);
-        OverlappingTextBlockMerger::new().process(&mut doc);
+        StandaloneMarkerMerger::new().process(&mut doc);
         RadioButtonDetector::new().process(&mut doc);
         CheckboxDetector::new().process(&mut doc);
         ListDetector::new().process(&mut doc);
@@ -22836,9 +22859,9 @@ fn debug_bage_list_detection() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         FieldTableDetector, HeadingDetector, InlineFieldDatePicker, ListDetector,
-        MasterPageDetector, NoPrintDetector, OverlappingTextBlockMerger, PlaceholderFilter,
+        MasterPageDetector, NoPrintDetector, PlaceholderFilter,
         RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
-        SelectionInlineFieldDetector, TableDetector, TextBlockGrouper, TextBlockMerger,
+        SelectionInlineFieldDetector, StandaloneMarkerMerger, TableDetector, TextBlockGrouper, TextBlockMerger,
     };
     use crate::document::{Document, GroupKind};
 
@@ -22937,8 +22960,8 @@ fn debug_bage_list_detection() {
     FieldGrouper::new().process(&mut doc);
     DateFieldDetector::new().process(&mut doc);
     InlineFieldDatePicker::new().process(&mut doc);
-    OverlappingTextBlockMerger::new().process(&mut doc);
-    print_relevant(&doc, "After OverlappingTextBlockMerger");
+    StandaloneMarkerMerger::new().process(&mut doc);
+    print_relevant(&doc, "After StandaloneMarkerMerger");
 
     RadioButtonDetector::new().process(&mut doc);
     CheckboxDetector::new().process(&mut doc);
@@ -23388,4 +23411,63 @@ fn test_aari_has_radio_button_with_fiscal_regime_options() {
             })
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn test_aaor_has_unordered_list_with_declarations() {
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAOR_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on AAOR_033_IT.pdf");
+
+    let lists = helpers::collect_lists(&structured_nodes);
+
+    let expected_items = &[
+        // Item 0 has a sublist — its (i)-(v) sub-items are separate TextBlocks
+        "di avere ricevuto in tempo utile prima della sottoscrizione del Contratto il documento denominato «Informativa Precontrattuale di UBS Europe SE, Succursale Italia» e un esemplare del Contratto e di aver letto attentamente e di avere già aderito e di aderire nuovamente per iscritto – in segno di integrale accettazione – alle Condizioni Generali di Contratto di cui al «Contratto Unico per la Prestazione di Servizi di Investimento» ed in particolare di accettare le disposizioni contrattuali di cui alle seguenti Sezioni delle Condizioni Generali di Contratto:",
+        "di essere consapevole che la presente richiesta di attivazione con i relativi allegati congiuntamente alle Condizioni Generali di Contratto di cui al «Contratto Unico per la Prestazione di Servizi di Investimento» con i relativi allegati costituiscono il Contratto;",
+        "di avere letto attentamente e di avere preso atto delle caratteristiche della/e Linea/e di Gestione prescelta/e (sub Allegato 1) ed in particolare di essere stato informato: (i) sul metodo e frequenza della valutazione degli strumenti e/o prodotti finanziari contenuti nel portafoglio del Cliente; (ii) sul parametro di riferimento con il quale verrà raffrontato il rendimento del portafoglio del Cliente; (iii) sui tipi di strumenti finanziari che possono essere inclusi nel portafoglio ed i tipi di operazioni che possono essere realizzate; (iv) sugli obiettivi della gestione, il livello di rischio entro il quale il gestore può esercitare la propria discrezionalità, ed eventuali restrizioni a tale discrezionalità;",
+        "di avere letto attentamente e di avere preso atto delle modalità e delle caratteristiche della Delega di Gestione (sub Allegato 1);",
+        "di avere letto e accettare le condizioni economiche relative ai servizi richiesti, contenute nel documento «Commissioni e Spese» allegato alla presente richiesta di attivazione (sub Allegato 2);",
+        "di avere letto attentamente e di accettare la Strategia di Esecuzione e Trasmissione degli Ordini adottata dalla Banca e contenuta nella sopra menzionata «Informativa Precontrattuale di UBS Europe SE, Succursale Italia», che è stata consegnata al Cliente medesimo prima della firma del Contratto. Il Cliente dichiara, altresì, di essere stato compiutamente informato che eventuali proprie istruzioni specifiche potrebbero comprometterne i risultati;",
+        "di avere preso atto e di essere consapevole che in caso di conclusione del presente Contratto fuori sede, l'efficacia dello stesso è sospesa per un periodo di 7 (sette) giorni, decorrenti dalla data di sottoscrizione da parte del Cliente. Entro detto termine, il Cliente può recedere dal Contratto, senza spese e penalità e senza giustificarne il motivo, facendo pervenire alla Banca o al consulente abilitato all'offerta fuori sede (i.e. Client Advisor) una apposita comunicazione scritta;",
+        // Item 7 has a sublist — its (i)-(iv) sub-items are separate TextBlocks
+        "di essere consapevole del fatto che la presente Richiesta di Attivazione può essere sottoscritta, se tale possibilità è resa disponibile per il Cliente da UBS, mediante tecniche di comunicazione a distanza, quale il servizio E-Signature e che, in tal caso, la Banca utilizza una apposita sezione del servizio Mailbox per la consegna dei seguenti documenti:",
+        "di essere altresì consapevole del fatto che la presente richiesta di attivazione può essere sottoscritta, se tale possibilità è resa disponibile per il Cliente da UBS, (i) mediante firma elettronica qualificata (o altra tipologia di firma idonea a integrare il requisito della forma scritta ai sensi della normativa tempo per tempo applicabile) fornita da un provider terzo qualificato ai sensi del Regolamento EIDAS oppure (ii) mediante firma digitale, firma elettronica qualificata, firma elettronica avanzata o altra tipologia di firma idonea a integrare il requisito della forma scritta ai sensi della normativa tempo per tempo applicabile messa a disposizione del Cliente da UBS, anche tramite provider terzi, secondo le modalità e la procedura tempo per tempo comunicate dalla Banca;",
+        "di essere stato informato, in conformità con il disposto dell'art. 67-duodecies del Codice del Consumo, del diritto di recedere dal presente Contratto qualora sottoscritto mediante il servizio E-Signature o altra modalità alternativa di sottoscrizione della documentazione, senza penali e senza dover indicare il motivo del recesso, entro il termine di 14 giorni dalla data di conclusione del Contratto stesso;",
+        "di essere stato informato, in conformità con il disposto dell'art. 67-terdecies del Codice del Consumo e durante la pendenza del termine per l'esercizio del diritto di recesso, della possibilità di richiedere alla Banca l'avvio immediato del Contratto: in tal caso, il diritto di recesso non si applica qualora gli investimenti siano avviati;",
+        "di avere personalmente compilato la presente Richiesta di Attivazione, esprimendo la propria scelta anche con riferimento al \"Regime Fiscale\" e alle \"Operazioni Fuori Mercato\", nonché di aver espresso la propria scelta e consenso attraverso un diverso modulo in relazione a: (i) \"Regime di Cointestazione\"; (ii) \"Consenso al trattamento dei dati personali relativi ai servizi di pagamento\"; (iii) \"Indirizzo di Corrispondenza\"; (iv)\"Eventuali richieste del Cliente e personalizzazioni della Linea di Gestione\".",
+    ];
+
+    // Find the unordered list that contains the declaration items
+    let declaration_list = lists
+        .iter()
+        .find(|l| !l.list_style.is_ordered() && l.items.len() == expected_items.len());
+    assert!(
+        declaration_list.is_some(),
+        "AAOR should have an unordered list with {} items, found lists with sizes: {:?}",
+        expected_items.len(),
+        lists.iter().map(|l| l.items.len()).collect::<Vec<_>>()
+    );
+
+    let list = declaration_list.unwrap();
+    for (i, expected) in expected_items.iter().enumerate() {
+        let actual = list.items[i].as_plain_text();
+        assert_eq!(actual.trim(), *expected, "List item {} mismatch", i);
+    }
+
+    // Item 7 should have a LowerRoman sublist with 4 items
+    let item7 = &list.items[7];
+    assert!(
+        item7.sublist.is_some(),
+        "Item 7 should have a sublist with (i)-(iv) sub-items"
+    );
+    let sublist = item7.sublist.as_ref().unwrap();
+    assert_eq!(
+        sublist.list_style,
+        crate::document::ListStyleType::LowerRoman,
+        "Sublist should be LowerRoman"
+    );
+    assert_eq!(sublist.items.len(), 4, "Sublist should have 4 items");
+    assert!(sublist.items[0].as_plain_text().contains("documentazione informativa"));
 }
