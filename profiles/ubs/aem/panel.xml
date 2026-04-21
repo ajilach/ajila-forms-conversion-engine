@@ -10,7 +10,6 @@
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
     {% if is_page %}dorExcludeTitle="true"{% endif %}
-    {% if dor_exclude %}dorExclusion="{{ dor_exclude }}"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
     name="{{ name }}"

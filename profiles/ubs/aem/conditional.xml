@@ -9,7 +9,6 @@
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
     dorExcludeTitle="true"
-    {% if dor_exclude %}dorExclusion="{{ dor_exclude }}"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
     {% if variables.use_summary == "true" %}hideTitle="{Boolean}true"{% endif %}
