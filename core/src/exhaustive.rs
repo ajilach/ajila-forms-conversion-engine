@@ -1346,11 +1346,11 @@ fn explore_checkbox(
             )
             .map_err(crate::Error::FormCreation)?;
 
-            let result = new_form.set_value_as_user(field.path.as_str(), raw_value);
+            let _result = new_form.set_value_as_user(field.path.as_str(), raw_value);
             #[cfg(test)]
             eprintln!(
                 "[explore_checkbox] {} = {} → set_value result: {:?}",
-                field.path, raw_value, result
+                field.path, raw_value, _result
             );
 
             let mut state = exploration_state.clone();

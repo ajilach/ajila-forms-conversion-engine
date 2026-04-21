@@ -289,6 +289,7 @@ pub fn get_node_at_path<'a>(
 /// Get a table cell at a given path.
 ///
 /// For paths ending with TableCell, this returns the cell's StructuredNode.
+#[allow(dead_code)]
 pub fn get_table_cell_at_path<'a>(
     content: &'a [StructuredNode],
     path: &NodePath,
@@ -506,6 +507,7 @@ pub fn get_list_at_path_mut<'a>(
 }
 
 /// Get a mutable reference to a table cell at a given path.
+#[allow(dead_code)]
 pub fn get_table_cell_at_path_mut<'a>(
     content: &'a mut [StructuredNode],
     path: &NodePath,
@@ -914,6 +916,7 @@ pub fn available_conversions(
 }
 
 /// Check if a path refers to a pseudo-node (ListItem, TableRow, TableHeader, TableCell).
+#[allow(dead_code)]
 pub fn is_pseudo_node_path(path: &NodePath) -> bool {
     path.last().map_or(false, |seg| {
         matches!(
@@ -1035,6 +1038,7 @@ pub fn move_table_row_down(content: &mut Vec<StructuredNode>, path: &NodePath) -
 }
 
 /// Get the list item text at a path for editing.
+#[allow(dead_code)]
 pub fn get_list_item_text<'a>(
     content: &'a [StructuredNode],
     path: &NodePath,

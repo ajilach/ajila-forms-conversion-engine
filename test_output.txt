@@ -798,3 +798,380 @@ test tests::test_aahq_h3_headings has been running for over 60 seconds
 test tests::test_aahq_has_neuanlage_aenderung_radio_button_group has been running for over 60 seconds
 test tests::test_aaam_pipeline_multilingual_merge_succeeds ... ok
 test tests::test_aahq_nachname_vorname_in_same_row has been running for over 60 seconds
+test tests::test_aahq_anredesprache_dropdown ... ok
+test tests::test_aahq_dritte_partei_has_radio_buttons ... ok
+test tests::test_aahq_dritte_partei_is_repeatable ... ok
+test tests::test_aais_019_aem_disclosure_texts_not_in_conditional ... ok
+test tests::test_aahq_dritte_partei_has_korrespondenzadresse_h3 ... ok
+test tests::test_aais_019_dash_markers_alignment ... ok
+test tests::test_aais_019_de_real_estate_aif_continuation_stays_in_right_column ... ok
+test tests::test_aais_019_de_row_separator_spans_both_columns ... ok
+test tests::test_aahq_endkunde_conditional_fields_for_bereits_vorhanden ... ok
+test tests::test_aahq_endkunde_radio_bereits_vorhanden_anzulegen ... ok
+test tests::test_aais_019_en_list_marker_paragraph_alignment ... ok
+test tests::test_aahq_endkunde_conditional_fields_for_anzulegen ... ok
+test tests::test_aais_019_en_text_block_merger_paragraph_separation ... ok
+test tests::test_aais_019_de_umlauts_preserved ... ok
+test tests::test_aais_019_disclosure_headings_detected ... ok
+test tests::test_aais_019_fee_table_pairs_are_side_by_side_in_flattened ... ok
+test tests::test_aais_019_hyphenation_paragraph_height ... ok
+test tests::test_aais_019_en_form_addressee_investigation ... ok
+test tests::test_aais_019_state_commission_visibility ... ok
+test tests::test_aais_019_table_detection_diagnostic ... ok
+test tests::test_aais_019_table_detection ... ok
+test tests::test_aaki_has_exactly_two_signature_fragments ... ok
+test tests::test_aahq_h1_heading ... ok
+test tests::test_aais_019_company_field_recognized_per_language ... ok
+test tests::test_aahq_h2_headings ... ok
+test tests::test_aaki_has_list_with_expected_items ... ok
+test tests::test_aahq_h3_headings ... ok
+test tests::test_aahq_has_neuanlage_aenderung_radio_button_group ... ok
+test tests::test_aaks_checkboxes ... ok
+test tests::test_aane_multilingual_merge_no_duplicate_h2 ... ok
+test tests::test_aaks_heading_structure ... ok
+test tests::test_aaks_nachname_vorname_firma_on_single_row ... ok
+test tests::test_aaoe_company_section_visible_when_legal_entity_selected ... ok
+test tests::test_aaks_plz_stadt_land_share_row ... ok
+test tests::test_aaoe_company_section_hidden_when_individual_selected ... ok
+test tests::test_aaoe_debug_all_section_titles_in_flattened ... ok
+test tests::test_aaoe_dropdown_has_legal_entity_and_individual_options ... ok
+test tests::test_aaoe_exhaustive_produces_two_dropdown_states ... ok
+test tests::test_aaoe_debug_dichiarazione_firme_detection ... ok
+test tests::test_aaoe_dichiarazione_and_firme_in_all_states ... ok
+test tests::test_aaoe_dichiarazione_is_bold ... ok
+test tests::test_aais_019_fee_list_recognized_and_translated ... ok
+test tests::test_aaoe_individual_street_row_below_name_row ... ok
+test tests::test_aaoe_has_exactly_one_h1_heading ... ok
+test tests::test_aaoe_labels_computed_from_javascript ... ok
+test tests::test_aaoe_h2_sections ... ok
+test tests::test_aaoe_headings_consistent_across_states ... ok
+test tests::test_aaoe_nazionalita_dichiarazione_gap_not_too_large ... ok
+test tests::test_aaoe_has_one_ordered_list_with_three_items ... ok
+test tests::test_aaoe_no_extra_spacing_above_h2_headings ... ok
+test tests::test_aais_019_structural_similarity_diagnostic ... ok
+test tests::test_aaks_radio_button_has_three_options ... ok
+test tests::test_aaoe_split_paragraph_border_not_propagated ... ok
+test tests::test_aais_019_no_missing_translation_list ... ok
+test tests::test_aaoe_merged_has_dropdown_conditionals ... ok
+test tests::test_aaqd_partial_bold_richiede ... ok
+test tests::test_aapr_has_decimal_and_dash_lists ... ok
+test tests::test_aari_has_list_with_expected_items ... ok
+test tests::test_aaoe_title_does_not_include_subtitle ... ok
+test tests::test_aari_has_radio_button_with_fiscal_regime_options ... ok
+test tests::test_aaqm_inline_field_contratto ... ok
+test tests::test_acav_exhaustive_dedup_reduces_states ... ok
+test tests::test_aaks_strasse_nr_share_row ... ok
+test tests::test_acav_field_labels_are_correct ... ok
+test tests::test_acav_freigabe_restbetrag_are_grouped ... ok
+test tests::test_acav_gesamtbetrag_teilzahlung_are_grouped ... ok
+test tests::test_aaor_has_unordered_list_with_declarations ... ok
+test tests::test_aem_profile_allows_bind_to_xsd_without_xsd_path ... ok
+test tests::test_acav_vermieter_mieter_are_grouped ... ok
+test tests::test_acav_vollsaldierung_uebertrag_are_grouped ... ok
+test tests::test_acav_vollsaldierung_uebertrag_have_radio_button_contents ... ok
+test tests::test_aais_019_translation_merge_content ... ok
+test tests::test_aem_package_valid_aaai ... ok
+test tests::test_aem_xml_valid_aaai ... ok
+test tests::test_aem_xml_valid_aaab ... ok
+test tests::test_aem_xml_valid_aaei ... ok
+test tests::test_aem_xml_valid_aace ... ok
+test tests::test_aem_xml_valid_aagg ... ok
+test tests::test_aahq_pvv_banklagernder_kunde_radio_group has been running for over 60 seconds
+test tests::test_aem_xml_valid_aaaa ... ok
+test tests::test_aem_aacq_title_translated ... ok
+test tests::test_aem_form_xml_has_utf8_declaration ... ok
+test tests::test_aem_xml_valid_aaoe ... ok
+test tests::test_aem_xml_valid_aapr ... ok
+test tests::test_aem_xml_valid_acav ... ignored, ACAV_001 lacks XFA variables required by the UBS AEM profile templates
+test tests::test_all_form_codes_pipeline ... ignored, Runs the full pipeline for all forms, which is time-consuming. Run this test manually when needed to validate all forms.
+test tests::test_antrag_debug_title_text_runs ... ok
+test tests::test_antrag_sozialhilfe_font_generic_family_not_monospace ... ok
+test tests::test_aem_package_valid_aacq ... ok
+test tests::test_antrag_sozialhilfe_multipage_merge ... ok
+test tests::test_aem_xml_valid_aaqm ... ok
+test tests::test_aem_xml_valid_aacq ... ok
+test tests::test_aem_xml_valid_aags ... ok
+test tests::test_bage_checkbox_label_sofern_abweichend ... ok
+test tests::test_bage_has_no_ordered_list_only_numbered_headings ... ok
+test tests::test_bage_t_indent_first_dash_y_alignment ... ok
+test tests::test_bage_tindent_numbers_have_explicit_zero_margin ... ok
+test tests::test_aem_xml_valid_aaks ... ok
+test tests::test_bago_019_bullet_list_alignment ... ok
+test tests::test_bago_019_numbered_list_alignment ... ok
+test tests::test_bago_019_paragraph_diagnostic ... ok
+test tests::test_bage_numbered_headings_keep_number_prefix ... ok
+test tests::test_bago_019_table_detection_diagnostic ... ok
+test tests::test_bagq_debug_selectable_fields ... ok
+test tests::test_bage_unordered_lists ... ok
+test tests::test_bago_019_table_detection ... ok
+test tests::test_aem_xml_valid_aacb ... ok
+test tests::test_bind_refs_multi_type_match ... ok
+test tests::test_bind_refs_nested_subsections ... ok
+test tests::test_bind_refs_no_match_inline ... ok
+test tests::test_bind_refs_preamble_fields ... ok
+test tests::test_bind_refs_single_type_match ... ok
+test tests::test_context_extraction_from_aaai_pdf ... ok
+test tests::test_context_extraction_from_aaei_pdf ... ok
+test tests::test_context_extraction_from_aaoe_pdf ... ok
+test tests::test_context_serialization_includes_variables ... ok
+test tests::test_debug_aaab_fim_company_xfa_structure ... ok
+test tests::test_baqn_parenthesized_roman_list ... ok
+test tests::test_debug_des_postalcode_structure ... ok
+test tests::test_debug_aaei_investmentvermogen_title ... ok
+test tests::test_debug_postal_code_structure ... ok
+test tests::test_debug_xfa_positioning ... ok
+test tests::test_bage_headings_no_missing_translation ... ok
+test tests::test_debug_fim_company_font ... ok
+test tests::test_draw_text_extraction ... ok
+test tests::test_dump_aaai_xfa ... ok
+test tests::test_des_firstname_gets_vorname_via_embed ... ok
+test tests::test_dump_xfa ... ok
+test tests::test_flattened_key_different_labels ... ok
+test tests::test_flattened_key_different_position ... ok
+test tests::test_flattened_key_different_text_content ... ok
+test tests::test_flattened_key_hashing ... ok
+test tests::test_flattened_key_ignores_checked_state ... ok
+test tests::test_flattened_key_ignores_field_values ... ok
+test tests::test_explore_xfa_embed_structure ... ok
+test tests::test_baqm_partial_bold_in_paragraph ... ok
+test tests::test_flattened_with_scripts_has_vorname ... ok
+test tests::test_grid_layout_equal_widths_use_span_1 ... ok
+test tests::test_grid_layout_proportional_colspan_1_1_2 ... ok
+test tests::test_grid_layout_proportional_colspan_1_to_2 ... ok
+test tests::test_merge_pages_50_percent_threshold ... ok
+test tests::test_merge_pages_footer_detection ... ok
+test tests::test_merge_pages_header_and_footer_together ... ok
+test tests::test_merge_pages_header_boundary_includes_all_elements_in_region ... ok
+test tests::test_merge_pages_header_detection ... ok
+test tests::test_merge_pages_no_repeated_elements_no_hints ... ok
+test tests::test_merge_pages_single_page_passthrough ... ok
+test tests::test_merge_pages_stacks_vertically ... ok
+test tests::test_fully_parse_aaab_structure ... ok
+test tests::test_parse_xfa_from_aaab_document ... ok
+test tests::test_flatten_aaab_xfa ... ok
+test tests::test_set_value_as_user_fires_change_event_on_checkbox ... ok
+test tests::test_subform_border_reuses_single_edge_for_bottom_propagation ... ok
+test tests::test_table_collection_infrastructure ... ok
+test tests::test_to_aem_panics_when_bind_to_xsd_without_xsd_config - should panic ... ok
+test tests::test_fragments_work_without_bind_to_xsd ... ok
+test tests::test_ubs_profile_entity_folder_mapping ... ok
+test tests::test_set_value_as_user_fires_change_event_on_dropdown ... ok
+test tests::test_vorname_visible_after_xfa_form_refresh ... ok
+test tests::test_xsd_basic_field_generation ... ok
+test tests::test_xsd_child_validation_extra_child ... ok
+test tests::test_xsd_child_validation_required_missing ... ok
+test tests::test_xsd_child_validation_required_present ... ok
+test tests::test_xsd_conditional_creates_choice ... ok
+test tests::test_xsd_extract_declared_names ... ok
+test tests::test_xsd_field_with_restrictions ... ok
+test tests::test_xsd_heading_creates_complex_type ... ok
+test tests::test_xsd_heading_with_type_ref ... ok
+test tests::test_xsd_includes_deduplicated_by_path ... ok
+test tests::test_xsd_includes_only_emitted_when_type_is_used ... ok
+test tests::test_xsd_nested_heading_levels ... ok
+test tests::test_xsd_no_includes_no_extra_whitespace ... ok
+test tests::test_xsd_predefined_types_included ... ok
+test tests::test_xsd_profile_master_language_defaults_to_none ... ok
+test tests::test_xsd_profile_master_language_from_toml_is_applied ... ok
+test tests::test_xsd_radio_creates_enumeration ... ok
+test tests::test_xsd_repeatable_min_max_occurs ... ok
+test tests::test_xsd_snake_case_conversion ... ok
+test tests::test_xsd_unmatched_field_uses_snake_case ... ok
+test tests::test_xsd_unused_includes_not_emitted ... ok
+test xfa::context_extraction_tests::test_collect_text_variables ... ok
+test xfa::context_extraction_tests::test_extract_context_from_nodes ... ok
+test xfa::context_extraction_tests::test_extract_language_fallback_empty_tree ... ok
+test xfa::context_extraction_tests::test_extract_language_fallback_no_locale ... ok
+test xfa::context_extraction_tests::test_extract_language_from_locale_de_de ... ok
+test xfa::context_extraction_tests::test_extract_language_from_locale_it_it ... ok
+test xfa::context_extraction_tests::test_extract_language_from_locale_language_only ... ok
+test xfa::context_extraction_tests::test_find_root_subform_skips_page_set ... ok
+test xfa::font_manager::tests::test_default_xfa_font ... ok
+test xfa::font_manager::tests::test_embedded_font_registration ... ok
+test xfa::font_manager::tests::test_fallback_font ... ok
+test xfa::font_manager::tests::test_font_manager_creation ... ok
+test xfa::font_manager::tests::test_font_variant_creation ... ok
+test xfa::font_manager::tests::test_generic_family_fallbacks ... ok
+test xfa::font_manager::tests::test_generic_family_parsing ... ok
+test xfa::font_manager::tests::test_strict_mode_error ... ok
+test xfa::hyphenation::tests::test_emergency_hyphenation ... ok
+test xfa::hyphenation::tests::test_exclude_all_caps ... ok
+test xfa::hyphenation::tests::test_exclude_initial_cap ... ok
+test xfa::hyphenation::tests::test_german_compound_word_hyphenation ... ok
+test xfa::hyphenation::tests::test_hyphenation_disabled ... ok
+test xfa::hyphenation::tests::test_remain_push_filtering ... ok
+test xfa::hyphenation::tests::test_short_word_excluded ... ok
+test xfa::hyphenation::tests::test_word_with_digits_ineligible ... ok
+test xfa::script_executor::tests::test_calculate_result_replaces_field_value ... ok
+test xfa::script_executor::tests::test_calculate_runs_before_initialize ... ok
+test xfa::script_executor::tests::test_dynamic_inactive_suppresses_later_phases ... ok
+test xfa::script_executor::tests::test_inactive_container_suppresses_children ... ok
+test xfa::script_executor::tests::test_inactive_presence_suppresses_form_ready_event ... ok
+test xfa::script_executor::tests::test_inactive_presence_suppresses_initialize_event ... ok
+test xfa::script_executor::tests::test_intra_phase_init_presence_suppression ... ok
+test xfa::script_executor::tests::test_validate_runs_after_calculate_before_initialize ... ok
+test xfa::scripting::script_object::tests::test_extract_bare_assignments ... ok
+test xfa::scripting::script_object::tests::test_extract_function_names ... ok
+test xfa::scripting::script_object::tests::test_extract_var_names ... ok
+test xfa::scripting::script_object::tests::test_wrap_script_object_bare_assignments ... ok
+test xfa::scripting::script_object::tests::test_wrap_script_object_empty_content ... ok
+test xfa::scripting::script_object::tests::test_wrap_script_object_global_this ... ok
+test xfa::scripting::script_object::tests::test_wrap_script_object_xfa_spec_example ... ok
+test xfa::scripting::tests::test_border_color_settable ... ok
+test xfa::scripting::tests::test_border_property_accessible ... ok
+test xfa::scripting::tests::test_calc_already_convergent_single_pass ... ok
+test xfa::scripting::tests::test_calc_convergence_chain_three_fields ... ok
+test xfa::scripting::tests::test_calc_convergence_forward_order ... ok
+test xfa::scripting::tests::test_calc_convergence_reverse_order ... ok
+test xfa::scripting::tests::test_caption_and_assist_accessible ... ok
+test xfa::scripting::tests::test_change_event_full_text_is_new_value ... ok
+test xfa::scripting::tests::test_change_event_prev_text_is_old_value ... ok
+test xfa::scripting::tests::test_change_event_sets_new_text ... ok
+test xfa::scripting::tests::test_context_aware_field_resolution ... ok
+test xfa::scripting::tests::test_dependency_cascade ... ok
+test xfa::scripting::tests::test_dependency_tracker ... ok
+test xfa::scripting::tests::test_event_activity_name ... ok
+test xfa::scripting::tests::test_event_activity_parsing ... ok
+test xfa::scripting::tests::test_event_all_properties_accessible ... ok
+test xfa::scripting::tests::test_event_cancel_action_writable ... ok
+test xfa::scripting::tests::test_event_change_property_for_change_event ... ok
+test xfa::scripting::tests::test_event_modifier_defaults_false ... ok
+test xfa::scripting::tests::test_event_name_property ... ok
+test xfa::scripting::tests::test_event_ref_parsing ... ok
+test xfa::scripting::tests::test_event_target_property ... ok
+test xfa::scripting::tests::test_exclgroup_child_to_parent_propagation ... ok
+test xfa::scripting::tests::test_exclgroup_dedup_full_path_keys ... ok
+test xfa::scripting::tests::test_exclgroup_dedup_selected_vs_deselected ... ok
+test xfa::scripting::tests::test_exclgroup_deselection_preserves_empty_values ... ok
+test xfa::scripting::tests::test_exclgroup_non_child_does_not_propagate ... ok
+test xfa::scripting::tests::test_exclgroup_off_value_used_when_deactivated ... ok
+test xfa::scripting::tests::test_exclgroup_parent_to_child_deselects_previous ... ok
+test xfa::scripting::tests::test_exclgroup_parent_to_child_propagation ... ok
+test xfa::scripting::tests::test_exclgroup_parent_to_child_via_script ... ok
+test xfa::scripting::tests::test_exclgroup_propagates_empty_value ... ok
+test xfa::scripting::tests::test_exclgroup_propagates_zero_value ... ok
+test xfa::scripting::tests::test_exclgroup_script_sets_child_rawvalue ... ok
+test xfa::scripting::tests::test_exclgroup_structural_detection_no_naming_convention ... ok
+test xfa::scripting::tests::test_exec_event_basic ... ok
+test xfa::scripting::tests::test_exec_event_calculate ... ok
+test xfa::scripting::tests::test_exec_event_inactive_fails_silently ... ok
+test xfa::scripting::tests::test_exec_event_nonexistent_activity ... ok
+test xfa::scripting::tests::test_exec_event_returns_to_caller ... ok
+test xfa::scripting::tests::test_field_object_does_not_have_instance_manager ... ok
+test xfa::scripting::tests::test_font_property_accessible ... ok
+test xfa::scripting::tests::test_get_all_field_values_for_flattening_preserves_empty_strings ... ok
+test xfa::scripting::tests::test_get_all_som_field_values_preserves_empty_strings ... ok
+test xfa::scripting::tests::test_hidden_field_calculates_value ... ok
+test xfa::scripting::tests::test_hidden_field_initializes ... ok
+test xfa::scripting::tests::test_inactive_field_presence_in_engine ... ok
+test xfa::scripting::tests::test_js_helpers_available ... ok
+test xfa::scripting::tests::test_language_switch_english ... ok
+test xfa::scripting::tests::test_language_switch_german ... ok
+test xfa::scripting::tests::test_listen_attribute_parsed ... ok
+test xfa::scripting::tests::test_presence_from_str ... ok
+test xfa::scripting::tests::test_presence_should_skip_layout ... ok
+test xfa::scripting::tests::test_property_stubs_dont_affect_raw_value ... ok
+test xfa::scripting::tests::test_relocatable_script_two_detail_subforms ... ok
+test xfa::scripting::tests::test_resolve_nodes_all_instances ... ok
+test xfa::scripting::tests::test_resolve_nodes_by_simple_name ... ok
+test xfa::scripting::tests::test_resolve_nodes_descendant_accessor ... ok
+test xfa::scripting::tests::test_resolve_nodes_nonexistent ... ok
+test xfa::scripting::tests::test_resolve_nodes_specific_index ... ok
+test xfa::scripting::tests::test_script_clearing_field_via_empty_rawvalue_is_detected ... ok
+test xfa::scripting::tests::test_script_content_type_parsing ... ok
+test xfa::scripting::tests::test_script_engine_basic ... ok
+test xfa::scripting::tests::test_script_registry_registration ... ok
+test xfa::scripting::tests::test_script_type_from_activity ... ok
+test xfa::scripting::tests::test_script_with_this_reference ... ok
+test xfa::scripting::tests::test_shortened_path_alias_detects_real_change ... ok
+test xfa::scripting::tests::test_shortened_path_aliases_carry_initial_presence ... ok
+test xfa::scripting::tests::test_shortened_path_aliases_visible_field_no_false_change ... ok
+test xfa::scripting::tests::test_som_path_creation ... ok
+test xfa::scripting::tests::test_som_path_parent ... ok
+test xfa::scripting::tests::test_som_resolver_basic ... ok
+test xfa::scripting::tests::test_som_resolver_indexed ... ok
+test xfa::scripting::tests::test_subform_object_has_instance_manager ... ok
+test xfa::scripting::tests::test_subform_via_register_field_with_presence_has_instance_manager ... ok
+test xfa::scripting::tests::test_unqualified_fails_when_not_found ... ok
+test xfa::scripting::tests::test_unqualified_resolves_ancestor_sibling ... ok
+test xfa::scripting::tests::test_unqualified_resolves_child_first ... ok
+test xfa::scripting::tests::test_unqualified_resolves_sibling ... ok
+test xfa::scripting::tests::test_update_field_presence_baseline_does_not_create_new_js_objects ... ok
+test xfa::scripting::tests::test_update_field_presence_baseline_presence_change_detection ... ok
+test xfa::scripting::tests::test_update_field_presence_baseline_skips_unregistered_path ... ok
+test xfa::scripting::tests::test_update_field_presence_baseline_updates_existing_entry ... ok
+test xfa::scripting::tests::test_xfa_value_as_string ... ok
+test xfa::text_metrics::tests::test_ascent_overflow_first_line ... ok
+test xfa::text_metrics::tests::test_ascent_overflow_not_applied_with_spacing_override ... ok
+test xfa::text_metrics::tests::test_baseline_shift_accumulation ... ok
+test xfa::text_metrics::tests::test_line_gap_is_20_percent ... ok
+test xfa::text_metrics::tests::test_line_metrics_baseline ... ok
+test xfa::text_metrics::tests::test_line_metrics_full_height ... ok
+test xfa::text_metrics::tests::test_text_height ... ok
+test xsd::tests::path_to_forward_slash_string_keeps_single_file_name ... ok
+test xsd::tests::path_to_forward_slash_string_uses_forward_slashes ... ok
+test tests::test_ubs_profile_aem_output_matches_legacy ... ok
+test tests::test_vorname_label_visible_in_flattened_output ... ok
+test tests::test_aem_xml_valid_aacj ... ok
+test tests::test_bagq_exhaustive_discovers_checkbox_hidden_content ... ok
+test tests::test_radio_inherits_heading_label_when_directly_above ... ok
+test tests::test_aahq_nachname_vorname_in_same_row ... ok
+test tests::test_aem_xml_valid_aacc ... ok
+test tests::test_antrag_sozialhilfe_structured_headings_and_fields ... ok
+test tests::test_antrag_sozialhilfe_has_unordered_list_with_three_items ... ok
+test tests::test_aem_xml_valid_aahq has been running for over 60 seconds
+test tests::test_aahq_pvv_banklagernder_kunde_radio_group ... ok
+test tests::test_aem_xml_valid_aahq ... ok
+
+test result: ok. 744 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1841.36s
+
+     Running unittests src/main.rs (target/release/deps/blueprint_app-81672fc2bbc23696)
+
+running 14 tests
+test components::editor::state::tests::get_node_at_path_still_resolves_regular_nodes ... ok
+test components::editor::node_renderer::tests::format_list_marker_supports_ordered_styles ... ok
+test components::editor::state::tests::compute_add_options_for_nested_list_item_keeps_nested_parent ... ok
+test components::editor::state::tests::delete_nodes_deletes_nested_list_item ... ok
+test components::editor::state::tests::get_list_item_text_mut_updates_nested_item ... ok
+test components::editor::state::tests::get_list_at_path_resolves_nested_sublist ... ok
+test components::editor::state::tests::move_list_item_up_moves_nested_item_within_sublist ... ok
+test markdown::tests::test_bold_roundtrip ... ok
+test markdown::tests::test_italic_roundtrip ... ok
+test markdown::tests::test_multilingual_display_per_language ... ok
+test markdown::tests::test_mixed_formatting ... ok
+test components::editor::node_renderer::tests::format_list_marker_supports_unordered_styles ... ok
+test markdown::tests::test_multilingual_preserves_formatting ... ok
+test markdown::tests::test_plain_text_roundtrip ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/blueprint-326d40bffe7e9453)
+
+running 3 tests
+test tests::require_profile_name_errors_when_missing ... ok
+test tests::embedded_html_loader_errors_when_profile_missing ... ok
+test tests::embedded_xsd_loader_succeeds_for_existing_profile ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/judge-eaca9c8c66a808a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests blueprint
+
+running 8 tests
+test core/src/aem/mod.rs - aem (line 16) ... ignored
+test core/src/document/mod.rs - document::Document<'a>::root_groups_matching (line 1138) ... ignored
+test core/src/document/modules/mod.rs - document::modules (line 80) ... ignored
+test core/src/lib.rs - (line 17) ... ignored
+test core/src/pipeline.rs - pipeline (line 27) ... ignored
+test core/src/pipeline.rs - pipeline::run_pipeline (line 260) ... ignored
+test core/src/xfa/scripting/engine.rs - xfa::scripting::engine::read_js_string_prop (line 32) ... ignored
+test core/src/xfa/scripting/mod.rs - xfa::scripting (line 33) ... ignored
+
+test result: ok. 0 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.65s; merged doctests compilation took 0.36s

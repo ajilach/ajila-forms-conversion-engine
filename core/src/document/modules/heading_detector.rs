@@ -588,7 +588,6 @@ impl HeadingDetector {
         let mut total_size = 0.0f32;
         let mut bold_char_count: usize = 0;
         let mut total_char_count: usize = 0;
-        let mut text_node_count = 0;
         let mut text_content = String::new();
         let mut count = 0;
         let mut top_border_count = 0;
@@ -602,7 +601,6 @@ impl HeadingDetector {
             {
                 total_size += font_size.to_f32().unwrap_or(10.0);
                 count += 1;
-                text_node_count += 1;
                 text_content.push_str(content);
                 text_content.push(' ');
 

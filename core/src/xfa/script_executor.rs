@@ -19,11 +19,11 @@
 //!                           Flattened (pure)
 //! ```
 
+use crate::xfa::XfaNode;
 use crate::xfa::scripting::{
     EventActivity, EventRef, Presence, ScriptContentType, SomPath, XfaScript, XfaScriptEngine,
     parse_events_from_node, wrap_script_object,
 };
-use crate::xfa::{XfaNode, XfaNodeKind};
 use std::collections::HashMap;
 
 /// A pair of child name and child ID.
