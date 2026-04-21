@@ -113,8 +113,30 @@ fn strip_marker_from_str(s: &str) -> Option<String> {
         }
     }
 
-    // Ordered: digits followed by . or )
+    // Ordered: parenthesized markers — (1), (a), (i), (ii), etc.
     let bytes = trimmed.as_bytes();
+    if !bytes.is_empty() && bytes[0] == b'(' {
+        if let Some(close) = bytes.iter().position(|&b| b == b')') {
+            if close >= 2 {
+                let content = &trimmed[1..close];
+                let content_bytes = content.as_bytes();
+                let is_valid = content_bytes.iter().all(|b| b.is_ascii_digit())
+                    || (content_bytes.len() == 1 && content_bytes[0].is_ascii_alphabetic())
+                    || {
+                        let roman_chars = b"ivxlcdm";
+                        content_bytes
+                            .iter()
+                            .all(|b| roman_chars.contains(&b.to_ascii_lowercase()))
+                    };
+                if is_valid {
+                    let after = &trimmed[close + 1..];
+                    return Some(after.trim_start().to_string());
+                }
+            }
+        }
+    }
+
+    // Ordered: digits followed by . or )
     if !bytes.is_empty() && bytes[0].is_ascii_digit() {
         let mut i = 0;
         while i < bytes.len() && bytes[i].is_ascii_digit() {
@@ -331,9 +353,8 @@ fn move_number_prefixes_to_headings(nodes: &mut Vec<StructuredNode>) {
                     // Prepend prefix to heading content
                     if let StructuredNode::Heading(h) = &mut nodes[i - 1] {
                         let heading_text = h.content.as_plain_text();
-                        h.content = InlineText(vec![InlineNode::Text(format!(
-                            "{prefix}{heading_text}"
-                        ))]);
+                        h.content =
+                            InlineText(vec![InlineNode::Text(format!("{prefix}{heading_text}"))]);
                     }
 
                     // Strip prefix from paragraph content
@@ -772,10 +793,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 for &child_idx in &children {
                     // Check if this child is a nested List (sublist)
                     if let Some(child_group) = self.doc.get_group(child_idx) {
-                        if let GroupKind::List {
-                            list_style: _,
-                        } = &child_group.kind
-                        {
+                        if let GroupKind::List { list_style: _ } = &child_group.kind {
                             // Convert the sublist recursively
                             if let Some(StructuredNode::List(sub_list)) =
                                 self.convert_group(child_idx)
@@ -808,7 +826,10 @@ impl<'a, 'b> Converter<'a, 'b> {
             }
 
             // Table → TableNode
-            GroupKind::Table { columns, has_header } => {
+            GroupKind::Table {
+                columns,
+                has_header,
+            } => {
                 use crate::structured::{TableHeader, TableNode, TableRow};
 
                 let group = self.doc.get_group(group_idx)?;

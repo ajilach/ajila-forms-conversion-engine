@@ -23587,6 +23587,20 @@ fn test_abfh_has_two_lists_roman_and_alpha() {
 
     let roman_texts: Vec<String> = roman_list.items.iter().map(|i| i.as_plain_text()).collect();
 
+    // Verify that the parenthesized roman numeral prefix is stripped from each item.
+    for (idx, text) in roman_texts.iter().enumerate() {
+        let trimmed = text.trim();
+        assert!(
+            !trimmed.starts_with("(i)")
+                && !trimmed.starts_with("(ii)")
+                && !trimmed.starts_with("(iii)")
+                && !trimmed.starts_with("(iv)"),
+            "Roman numeral prefix was not stripped from item {}.\nFound: {}",
+            idx,
+            text
+        );
+    }
+
     assert!(
         roman_texts[0].contains("Servizi Amministrati")
             && roman_texts[0].contains("ricezione e trasmissione ordini"),
