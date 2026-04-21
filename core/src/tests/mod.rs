@@ -6849,8 +6849,8 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
     use crate::document::modules::{
-        AnalysisModule, GlobalContext, HeadingDetector,
-        TextBlockGrouper, TextBlockMerger, run_analysis_pipeline_with_context,
+        AnalysisModule, GlobalContext, HeadingDetector, TextBlockGrouper, TextBlockMerger,
+        run_analysis_pipeline_with_context,
     };
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
@@ -7174,11 +7174,16 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
     assert!(
         group.is_some(),
         "Expected a radio group with options 'Freigabe der Kaution inkl. Zinsen zugunsten Mieter' and 'Restbetrag der Kaution inkl. Zinsen zugunsten Mieter'\nRadio groups found: {:?}",
-        radio_fields.iter().filter_map(|f| {
-            if let FieldType::Radio { options } = &f.input_type {
-                Some(options.iter().map(|o| o.name.clone()).collect::<Vec<_>>())
-            } else { None }
-        }).collect::<Vec<_>>()
+        radio_fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    Some(options.iter().map(|o| o.name.clone()).collect::<Vec<_>>())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
     );
 }
 
@@ -20649,9 +20654,9 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
-        PlaceholderFilter, RadioButtonContentDetector,
-        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
-        TextBlockMerger, StandaloneMarkerMerger, run_analysis_pipeline,
+        PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
+        SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
+        run_analysis_pipeline,
     };
     use crate::document::{Document, GroupKind};
 
@@ -20947,9 +20952,8 @@ fn debug_aais_container_vs_content_height() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
-        PlaceholderFilter, RadioButtonContentDetector,
-        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector, TextBlockGrouper,
-        StandaloneMarkerMerger,
+        PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
+        SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper,
     };
     use crate::flattened::FlattenedNodeKind;
 
@@ -22859,9 +22863,9 @@ fn debug_bage_list_detection() {
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
         FieldTableDetector, HeadingDetector, InlineFieldDatePicker, ListDetector,
-        MasterPageDetector, NoPrintDetector, PlaceholderFilter,
-        RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
-        SelectionInlineFieldDetector, StandaloneMarkerMerger, TableDetector, TextBlockGrouper, TextBlockMerger,
+        MasterPageDetector, NoPrintDetector, PlaceholderFilter, RadioButtonContentDetector,
+        RadioButtonDetector, RadioButtonGrouper, SelectionInlineFieldDetector,
+        StandaloneMarkerMerger, TableDetector, TextBlockGrouper, TextBlockMerger,
     };
     use crate::document::{Document, GroupKind};
 
@@ -23469,5 +23473,9 @@ fn test_aaor_has_unordered_list_with_declarations() {
         "Sublist should be LowerRoman"
     );
     assert_eq!(sublist.items.len(), 4, "Sublist should have 4 items");
-    assert!(sublist.items[0].as_plain_text().contains("documentazione informativa"));
+    assert!(
+        sublist.items[0]
+            .as_plain_text()
+            .contains("documentazione informativa")
+    );
 }

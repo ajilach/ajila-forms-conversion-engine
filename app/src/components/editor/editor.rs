@@ -18,7 +18,8 @@ use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_merge_selected, compute_add_options, delete_nodes,
-    get_container_child_info, get_container_children_count, get_list_item_text_mut,
+    get_container_child_info, get_container_children_count, get_list_at_path,
+    get_list_at_path_mut, get_list_item_text_mut,
     get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
     is_container_child_path, is_list_item_path, is_table_row_path, move_container_child_down,
     move_container_child_up, move_list_item_down, move_list_item_up, move_table_row_down,
@@ -197,9 +198,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             if is_list_item_path(path) {
                 if let Some(PathSegment::ListItem(idx)) = path.last() {
                     let parent_path: Vec<_> = path[..path.len() - 1].to_vec();
-                    if let Some(StructuredNode::List(l)) =
-                        super::state::get_node_at_path(&env.content, &parent_path)
-                    {
+                    if let Some(l) = get_list_at_path(&env.content, &parent_path) {
                         let can_up = *idx > 0;
                         let can_down = *idx + 1 < l.items.len();
                         (can_up, can_down)
@@ -673,16 +672,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     NewNodeType::ListItem => {
                         // Insert a new list item into the parent list
                         new_selection =
-                            if let Some(node) = get_node_at_path_mut(&mut env.content, &parent) {
-                                if let StructuredNode::List(l) = node {
-                                    let insert_idx = index.min(l.items.len());
-                                    l.items.insert(insert_idx, ListItem::simple(InlineText::plain("New item")));
-                                    let mut path = parent.clone();
-                                    path.push(PathSegment::ListItem(insert_idx));
-                                    Some(path)
-                                } else {
-                                    None
-                                }
+                            if let Some(l) = get_list_at_path_mut(&mut env.content, &parent) {
+                                let insert_idx = index.min(l.items.len());
+                                l.items
+                                    .insert(insert_idx, ListItem::simple(InlineText::plain("New item")));
+                                let mut path = parent.clone();
+                                path.push(PathSegment::ListItem(insert_idx));
+                                Some(path)
                             } else {
                                 None
                             };

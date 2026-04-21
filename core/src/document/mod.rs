@@ -1079,7 +1079,10 @@ impl<'a> Document<'a> {
             GroupKind::SelectionInlineField { label_text, .. } => {
                 format!("SelectionInlineField[{}]", label_text)
             }
-            GroupKind::Table { columns, has_header } => {
+            GroupKind::Table {
+                columns,
+                has_header,
+            } => {
                 if *has_header {
                     format!("Table[{}cols,header]", columns)
                 } else {

@@ -881,6 +881,11 @@ body > div, #main {
     padding: var(--space-xs);
 }
 
+.list-item-block {
+    display: flex;
+    flex-direction: column;
+}
+
 .list-item {
     display: flex;
     align-items: flex-start;
@@ -926,6 +931,12 @@ body > div, #main {
 
 .list-item-editor .text-editor-textarea {
     min-height: 40px;
+}
+
+.list-sublist {
+    margin-left: 28px;
+    padding-left: var(--space-xs);
+    border-left: 1px solid var(--color-border);
 }
 
 /* ---- Repeatable Content ---- */

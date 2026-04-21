@@ -3,7 +3,7 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
-use blueprint::{InlineText, StructuredNode, TableNode};
+use blueprint::{InlineText, ListNode, StructuredNode, TableNode};
 use std::collections::HashSet;
 
 /// A segment of a path to a node in the document tree.
@@ -223,7 +223,7 @@ pub enum NewNodeType {
 /// Get a node at a given path.
 ///
 /// Handles regular child navigation, as well as paths through table rows/cells.
-/// ListItem paths cannot be resolved this way (list items are InlineText, not StructuredNode).
+/// ListItem paths are not resolved by this function (use `get_list_at_path` for list traversal).
 pub fn get_node_at_path<'a>(
     content: &'a [StructuredNode],
     path: &NodePath,
@@ -328,6 +328,7 @@ pub fn get_table_cell_at_path<'a>(
 /// Get a mutable reference to a node at a given path.
 ///
 /// Handles regular child navigation, as well as paths through table rows/cells.
+/// ListItem paths are not resolved by this function (use `get_list_at_path_mut` for list traversal).
 pub fn get_node_at_path_mut<'a>(
     content: &'a mut [StructuredNode],
     path: &NodePath,
@@ -423,6 +424,85 @@ pub fn get_node_at_path_mut<'a>(
 
         Some(current)
     }
+}
+
+/// Get a list at a given path.
+///
+/// The path must start at a root/node child that resolves to a `StructuredNode::List`.
+/// Additional `ListItem(i)` segments descend into `items[i].sublist` recursively.
+pub fn get_list_at_path<'a>(
+    content: &'a [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a ListNode> {
+    if path.is_empty() {
+        return None;
+    }
+
+    let first_list_item_idx = path
+        .iter()
+        .position(|segment| matches!(segment, PathSegment::ListItem(_)));
+
+    let (list_node_path, list_path_suffix) = if let Some(i) = first_list_item_idx {
+        (&path[..i], &path[i..])
+    } else {
+        (&path[..], &path[path.len()..])
+    };
+
+    let current = get_node_at_path(content, &list_node_path.to_vec())?;
+
+    let mut list = match current {
+        StructuredNode::List(list) => list,
+        _ => return None,
+    };
+
+    for segment in list_path_suffix {
+        let PathSegment::ListItem(item_idx) = segment else {
+            return None;
+        };
+        let item = list.items.get(*item_idx)?;
+        list = item.sublist.as_deref()?;
+    }
+
+    Some(list)
+}
+
+/// Get a mutable list at a given path.
+///
+/// The path must start at a root/node child that resolves to a `StructuredNode::List`.
+/// Additional `ListItem(i)` segments descend into `items[i].sublist` recursively.
+pub fn get_list_at_path_mut<'a>(
+    content: &'a mut [StructuredNode],
+    path: &NodePath,
+) -> Option<&'a mut ListNode> {
+    if path.is_empty() {
+        return None;
+    }
+
+    let first_list_item_idx = path
+        .iter()
+        .position(|segment| matches!(segment, PathSegment::ListItem(_)));
+
+    let (list_node_path, list_path_suffix) = if let Some(i) = first_list_item_idx {
+        (&path[..i], &path[i..])
+    } else {
+        (&path[..], &path[path.len()..])
+    };
+
+    let node = get_node_at_path_mut(content, &list_node_path.to_vec())?;
+    let mut list = match node {
+        StructuredNode::List(list) => list,
+        _ => return None,
+    };
+
+    for segment in list_path_suffix {
+        let PathSegment::ListItem(item_idx) = segment else {
+            return None;
+        };
+        let item = list.items.get_mut(*item_idx)?;
+        list = item.sublist.as_deref_mut()?;
+    }
+
+    Some(list)
 }
 
 /// Get a mutable reference to a table cell at a given path.
@@ -558,11 +638,9 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::ListItem(item_idx) => {
                     // Deletion of a list item
-                    if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
-                        if let StructuredNode::List(l) = parent {
-                            if *item_idx < l.items.len() {
-                                l.items.remove(*item_idx);
-                            }
+                    if let Some(list) = get_list_at_path_mut(content, &parent_path) {
+                        if *item_idx < list.items.len() {
+                            list.items.remove(*item_idx);
                         }
                     }
                 }
@@ -627,10 +705,7 @@ pub fn get_shared_parent_path(paths: &[NodePath]) -> Option<NodePath> {
 
     // All paths must share the same parent (all but last segment)
     let first_parent = &paths[0][..paths[0].len() - 1];
-    if paths
-        .iter()
-        .all(|p| p[..p.len() - 1] == *first_parent)
-    {
+    if paths.iter().all(|p| p[..p.len() - 1] == *first_parent) {
         Some(first_parent.to_vec())
     } else {
         None
@@ -897,14 +972,12 @@ pub fn move_list_item_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> 
         return None; // Can't move first item up
     }
 
-    let parent = get_node_at_path_mut(content, &parent_path)?;
-    if let StructuredNode::List(l) = parent {
-        if item_idx < l.items.len() {
-            l.items.swap(item_idx, item_idx - 1);
-            let mut new_path = parent_path;
-            new_path.push(PathSegment::ListItem(item_idx - 1));
-            return Some(new_path);
-        }
+    let list = get_list_at_path_mut(content, &parent_path)?;
+    if item_idx < list.items.len() {
+        list.items.swap(item_idx, item_idx - 1);
+        let mut new_path = parent_path;
+        new_path.push(PathSegment::ListItem(item_idx - 1));
+        return Some(new_path);
     }
     None
 }
@@ -914,14 +987,12 @@ pub fn move_list_item_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> 
 pub fn move_list_item_down(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
 
-    let parent = get_node_at_path_mut(content, &parent_path)?;
-    if let StructuredNode::List(l) = parent {
-        if item_idx + 1 < l.items.len() {
-            l.items.swap(item_idx, item_idx + 1);
-            let mut new_path = parent_path;
-            new_path.push(PathSegment::ListItem(item_idx + 1));
-            return Some(new_path);
-        }
+    let list = get_list_at_path_mut(content, &parent_path)?;
+    if item_idx + 1 < list.items.len() {
+        list.items.swap(item_idx, item_idx + 1);
+        let mut new_path = parent_path;
+        new_path.push(PathSegment::ListItem(item_idx + 1));
+        return Some(new_path);
     }
     None
 }
@@ -969,12 +1040,8 @@ pub fn get_list_item_text<'a>(
     path: &NodePath,
 ) -> Option<&'a InlineText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
-    let parent = get_node_at_path(content, &parent_path)?;
-    if let StructuredNode::List(l) = parent {
-        l.items.get(item_idx).map(|item| &item.content)
-    } else {
-        None
-    }
+    let list = get_list_at_path(content, &parent_path)?;
+    list.items.get(item_idx).map(|item| &item.content)
 }
 
 /// Get mutable list item text at a path for editing.
@@ -983,12 +1050,8 @@ pub fn get_list_item_text_mut<'a>(
     path: &NodePath,
 ) -> Option<&'a mut InlineText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
-    let parent = get_node_at_path_mut(content, &parent_path)?;
-    if let StructuredNode::List(l) = parent {
-        l.items.get_mut(item_idx).map(|item| &mut item.content)
-    } else {
-        None
-    }
+    let list = get_list_at_path_mut(content, &parent_path)?;
+    list.items.get_mut(item_idx).map(|item| &mut item.content)
 }
 
 /// Check if a path addresses a child inside a container (Group or GridLayout).
@@ -1225,10 +1288,16 @@ fn sibling_insert_after(
     if node_path.is_empty() {
         return (vec![], 0);
     }
-    if let Some(PathSegment::Child(idx)) = node_path.last() {
-        let parent: NodePath = node_path[..node_path.len() - 1].to_vec();
-        return (parent, idx + 1);
+
+    // Find the nearest concrete node segment so nested pseudo-paths (e.g., list items)
+    // can still insert after their owning node.
+    for i in (0..node_path.len()).rev() {
+        if let PathSegment::Child(idx) = node_path[i] {
+            let parent: NodePath = node_path[..i].to_vec();
+            return (parent, idx + 1);
+        }
     }
+
     // Fallback: root index 0
     (vec![], 0)
 }
@@ -1242,4 +1311,141 @@ pub fn get_table_column_count(table: &TableNode) -> usize {
         return first_row.cells.len();
     }
     1 // default to 1 column
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueprint::{ListItem, ListNode, ParagraphNode};
+    use std::collections::HashSet;
+
+    fn make_nested_list_content() -> Vec<StructuredNode> {
+        vec![StructuredNode::List(ListNode {
+            list_style: blueprint::document::ListStyleType::Disc,
+            items: vec![
+                ListItem {
+                    content: InlineText::plain("Top 1"),
+                    sublist: Some(Box::new(ListNode {
+                        list_style: blueprint::document::ListStyleType::Disc,
+                        items: vec![
+                            ListItem::simple(InlineText::plain("Sub 1")),
+                            ListItem::simple(InlineText::plain("Sub 2")),
+                        ],
+                    })),
+                },
+                ListItem::simple(InlineText::plain("Top 2")),
+            ],
+        })]
+    }
+
+    #[test]
+    fn get_list_at_path_resolves_nested_sublist() {
+        let content = make_nested_list_content();
+        let path = vec![PathSegment::Child(0), PathSegment::ListItem(0)];
+        let sublist = get_list_at_path(&content, &path).expect("sublist should resolve");
+
+        assert_eq!(sublist.items.len(), 2);
+        assert_eq!(sublist.items[0].as_plain_text(), "Sub 1");
+    }
+
+    #[test]
+    fn get_list_item_text_mut_updates_nested_item() {
+        let mut content = make_nested_list_content();
+        let nested_item_path = vec![
+            PathSegment::Child(0),
+            PathSegment::ListItem(0),
+            PathSegment::ListItem(1),
+        ];
+
+        let nested_text = get_list_item_text_mut(&mut content, &nested_item_path)
+            .expect("nested list item text should be mutable");
+        *nested_text = InlineText::plain("Sub 2 updated");
+
+        let updated = get_list_item_text(&content, &nested_item_path)
+            .expect("nested list item text should resolve");
+        assert_eq!(updated.as_plain_text(), "Sub 2 updated");
+    }
+
+    #[test]
+    fn move_list_item_up_moves_nested_item_within_sublist() {
+        let mut content = make_nested_list_content();
+        let path = vec![
+            PathSegment::Child(0),
+            PathSegment::ListItem(0),
+            PathSegment::ListItem(1),
+        ];
+
+        let new_path = move_list_item_up(&mut content, &path).expect("move should succeed");
+        assert_eq!(
+            new_path,
+            vec![
+                PathSegment::Child(0),
+                PathSegment::ListItem(0),
+                PathSegment::ListItem(0)
+            ]
+        );
+
+        let moved = get_list_item_text(&content, &new_path).expect("moved item should resolve");
+        assert_eq!(moved.as_plain_text(), "Sub 2");
+    }
+
+    #[test]
+    fn delete_nodes_deletes_nested_list_item() {
+        let mut content = make_nested_list_content();
+        let path = vec![
+            PathSegment::Child(0),
+            PathSegment::ListItem(0),
+            PathSegment::ListItem(1),
+        ];
+
+        let mut paths = HashSet::new();
+        paths.insert(path);
+        delete_nodes(&mut content, &paths);
+
+        let sublist_path = vec![PathSegment::Child(0), PathSegment::ListItem(0)];
+        let sublist = get_list_at_path(&content, &sublist_path).expect("sublist should resolve");
+        assert_eq!(sublist.items.len(), 1);
+        assert_eq!(sublist.items[0].as_plain_text(), "Sub 1");
+    }
+
+    #[test]
+    fn compute_add_options_for_nested_list_item_keeps_nested_parent() {
+        let content = make_nested_list_content();
+        let nested_path = vec![
+            PathSegment::Child(0),
+            PathSegment::ListItem(0),
+            PathSegment::ListItem(1),
+        ];
+
+        let mut selection = SelectionState::new();
+        selection.select_single(nested_path);
+
+        let options = compute_add_options(&content, &selection);
+        let list_item_option = options
+            .iter()
+            .find(|o| o.node_type == NewNodeType::ListItem)
+            .expect("list item option should exist");
+
+        assert_eq!(
+            list_item_option.parent,
+            vec![PathSegment::Child(0), PathSegment::ListItem(0)]
+        );
+        assert_eq!(list_item_option.index, 2);
+    }
+
+    #[test]
+    fn get_node_at_path_still_resolves_regular_nodes() {
+        let content = vec![StructuredNode::Group(blueprint::GroupNode {
+            children: vec![StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Hello"),
+                som_path: None,
+                source_name: None,
+            })],
+        })];
+
+        let path = vec![PathSegment::Child(0), PathSegment::Child(0)];
+        let node = get_node_at_path(&content, &path).expect("regular child path should resolve");
+
+        assert!(matches!(node, StructuredNode::Paragraph(_)));
+    }
 }

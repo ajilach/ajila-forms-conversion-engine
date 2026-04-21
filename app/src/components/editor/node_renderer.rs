@@ -5,12 +5,13 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
-use blueprint::{FieldId, StructuredNode};
+use blueprint::document::ListStyleType;
+use blueprint::{FieldId, ListNode, StructuredNode};
 
 use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
 use super::state::{
-    EditorAction, NodePath, PathSegment, SelectionState,
-    node_has_children, node_summary, node_type_name,
+    EditorAction, NodePath, PathSegment, SelectionState, node_has_children, node_summary,
+    node_type_name,
 };
 use super::text_editor::{InlineTextWrapper, TextEditor};
 
@@ -29,6 +30,16 @@ impl PartialEq for NodesWrapper {
 pub struct NodeWrapper(pub StructuredNode);
 
 impl PartialEq for NodeWrapper {
+    fn eq(&self, _other: &Self) -> bool {
+        false // Always re-render
+    }
+}
+
+/// Wrapper for a list node.
+#[derive(Clone)]
+pub struct ListNodeWrapper(pub ListNode);
+
+impl PartialEq for ListNodeWrapper {
     fn eq(&self, _other: &Self) -> bool {
         false // Always re-render
     }
@@ -114,6 +125,205 @@ pub struct NodeItemProps {
     pub depth: usize,
     /// Callback for editor actions.
     pub on_action: EventHandler<EditorAction>,
+}
+
+/// Properties for recursive list item rendering.
+#[derive(Clone, PartialEq, Props)]
+pub struct ListItemsRendererProps {
+    /// List node to render.
+    pub list: ListNodeWrapper,
+    /// Path to the containing list node.
+    pub base_path: NodePath,
+    /// Current selection state.
+    pub selection: SelectionState,
+    /// Languages available in the document.
+    pub languages: Vec<String>,
+    /// Current list nesting depth.
+    pub list_depth: usize,
+    /// Callback for editor actions.
+    pub on_action: EventHandler<EditorAction>,
+}
+
+/// Renders list items recursively, including nested sublists.
+#[component]
+pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
+    rsx! {
+        div { class: "list-items list-depth-{props.list_depth}",
+            for (i , item) in props.list.0.items.iter().enumerate() {
+                {
+                    let item_path = {
+                        let mut p = props.base_path.clone();
+                        p.push(PathSegment::ListItem(i));
+                        p
+                    };
+                    let is_selected = props.selection.is_selected(&item_path);
+                    let is_editing = props.selection.is_editing(&item_path);
+                    let item_class = format!(
+                        "list-item pseudo-node {}{}",
+                        if is_selected { "selected " } else { "" },
+                        if is_editing { "editing" } else { "" },
+                    );
+
+                    rsx! {
+                        div { key: "{i}", class: "list-item-block",
+                            div {
+                                class: "{item_class}",
+                                onclick: {
+                                    let path = item_path.clone();
+                                    let on_action = props.on_action;
+                                    move |evt: Event<MouseData>| {
+                                        evt.stop_propagation();
+                                        if evt.modifiers().shift() {
+                                            on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                        } else {
+                                            on_action.call(EditorAction::SelectSingle(path.clone()));
+                                        }
+                                    }
+                                },
+
+                                input {
+                                    r#type: "checkbox",
+                                    class: "node-checkbox",
+                                    checked: is_selected,
+                                    onclick: {
+                                        let path = item_path.clone();
+                                        let on_action = props.on_action;
+                                        move |evt| {
+                                            evt.stop_propagation();
+                                            on_action.call(EditorAction::ToggleSelection(path.clone()));
+                                        }
+                                    },
+                                }
+
+                                span { class: "list-item-marker", "{format_list_marker(props.list.0.list_style, i)}" }
+
+                                if is_editing {
+                                    TextEditor {
+                                        content: InlineTextWrapper(item.content.clone()),
+                                        path: item_path.clone(),
+                                        languages: props.languages.clone(),
+                                        on_action: props.on_action,
+                                    }
+                                } else {
+                                    span { class: "list-item-text", "{item.as_plain_text()}" }
+                                    button {
+                                        class: "node-edit-btn",
+                                        onclick: {
+                                            let path = item_path.clone();
+                                            let on_action = props.on_action;
+                                            move |evt| {
+                                                evt.stop_propagation();
+                                                on_action.call(EditorAction::StartEditing(path.clone()));
+                                            }
+                                        },
+                                        "✎"
+                                    }
+                                }
+                            }
+
+                            if let Some(sublist) = &item.sublist {
+                                div { class: "list-sublist",
+                                    ListItemsRenderer {
+                                        list: ListNodeWrapper((**sublist).clone()),
+                                        base_path: item_path.clone(),
+                                        selection: props.selection.clone(),
+                                        languages: props.languages.clone(),
+                                        list_depth: props.list_depth + 1,
+                                        on_action: props.on_action,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn format_list_marker(style: ListStyleType, index: usize) -> String {
+    let one_based = index + 1;
+    match style {
+        ListStyleType::Disc => "•".to_string(),
+        ListStyleType::Circle => "○".to_string(),
+        ListStyleType::Square => "■".to_string(),
+        ListStyleType::Dash => "–".to_string(),
+        ListStyleType::Decimal => format!("{one_based}."),
+        ListStyleType::LowerAlpha => format!("{}.", alpha_index(one_based, false)),
+        ListStyleType::UpperAlpha => format!("{}.", alpha_index(one_based, true)),
+        ListStyleType::LowerRoman => format!("{}.", roman_index(one_based, false)),
+        ListStyleType::UpperRoman => format!("{}.", roman_index(one_based, true)),
+    }
+}
+
+fn alpha_index(mut n: usize, uppercase: bool) -> String {
+    let mut chars = Vec::new();
+    while n > 0 {
+        n -= 1;
+        chars.push((b'a' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    chars.reverse();
+    let s: String = chars.into_iter().collect();
+    if uppercase { s.to_uppercase() } else { s }
+}
+
+fn roman_index(mut n: usize, uppercase: bool) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+
+    let numerals = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+
+    let mut result = String::new();
+    for (value, token) in numerals {
+        while n >= value {
+            result.push_str(token);
+            n -= value;
+        }
+    }
+
+    if uppercase {
+        result
+    } else {
+        result.to_lowercase()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_list_marker_supports_ordered_styles() {
+        assert_eq!(format_list_marker(ListStyleType::Decimal, 2), "3.");
+        assert_eq!(format_list_marker(ListStyleType::LowerAlpha, 0), "a.");
+        assert_eq!(format_list_marker(ListStyleType::UpperAlpha, 27), "AB.");
+        assert_eq!(format_list_marker(ListStyleType::LowerRoman, 3), "iv.");
+        assert_eq!(format_list_marker(ListStyleType::UpperRoman, 8), "IX.");
+    }
+
+    #[test]
+    fn format_list_marker_supports_unordered_styles() {
+        assert_eq!(format_list_marker(ListStyleType::Disc, 0), "•");
+        assert_eq!(format_list_marker(ListStyleType::Circle, 0), "○");
+        assert_eq!(format_list_marker(ListStyleType::Square, 0), "■");
+        assert_eq!(format_list_marker(ListStyleType::Dash, 0), "–");
+    }
 }
 
 /// Renders a single node with its header and optionally children.
@@ -304,89 +514,14 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             }
                         }
                         StructuredNode::List(l) => {
-                            // Render list items as pseudo-nodes (selectable, movable, deletable)
-                            let list_path = props.path.clone();
-                            let selection = props.selection.clone();
-                            let languages = props.languages.clone();
-                            let on_action = props.on_action;
                             rsx! {
-                                div { class: "list-items",
-                                    for (i , item) in l.items.iter().enumerate() {
-                                        {
-                                            let item_path = {
-                                                let mut p = list_path.clone();
-                                                p.push(PathSegment::ListItem(i));
-                                                p
-                                            };
-                                            let is_selected = selection.is_selected(&item_path);
-                                            let is_editing = selection.is_editing(&item_path);
-                                            let item_class = format!(
-                                                "list-item pseudo-node {}{}",
-                                                if is_selected { "selected " } else { "" },
-                                                if is_editing { "editing" } else { "" }
-                                            );
-                                            rsx! {
-                                                div {
-                                                    key: "{i}",
-                                                    class: "{item_class}",
-                                                    onclick: {
-                                                        let path = item_path.clone();
-                                                        let on_action = on_action;
-                                                        move |evt: Event<MouseData>| {
-                                                            evt.stop_propagation();
-                                                            if evt.modifiers().shift() {
-                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
-                                                            } else {
-                                                                on_action.call(EditorAction::SelectSingle(path.clone()));
-                                                            }
-                                                        }
-                                                    },
-
-                                                    // Selection checkbox
-                                                    input {
-                                                        r#type: "checkbox",
-                                                        class: "node-checkbox",
-                                                        checked: is_selected,
-                                                        onclick: {
-                                                            let path = item_path.clone();
-                                                            let on_action = on_action;
-                                                            move |evt| {
-                                                                evt.stop_propagation();
-                                                                on_action.call(EditorAction::ToggleSelection(path.clone()));
-                                                            }
-                                                        },
-                                                    }
-
-                                                    // Item marker
-                                                    span { class: "list-item-marker", "{i + 1}." }
-
-                                                    // Item content or editor
-                                                    if is_editing {
-                                                        TextEditor {
-                                                            content: InlineTextWrapper(item.content.clone()),
-                                                            path: item_path.clone(),
-                                                            languages: languages.clone(),
-                                                            on_action,
-                                                        }
-                                                    } else {
-                                                        span { class: "list-item-text", "{item.as_plain_text()}" }
-                                                        button {
-                                                            class: "node-edit-btn",
-                                                            onclick: {
-                                                                let path = item_path.clone();
-                                                                let on_action = on_action;
-                                                                move |evt| {
-                                                                    evt.stop_propagation();
-                                                                    on_action.call(EditorAction::StartEditing(path.clone()));
-                                                                }
-                                                            },
-                                                            "✎"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                ListItemsRenderer {
+                                    list: ListNodeWrapper(l.clone()),
+                                    base_path: props.path.clone(),
+                                    selection: props.selection.clone(),
+                                    languages: props.languages.clone(),
+                                    list_depth: 0,
+                                    on_action: props.on_action,
                                 }
                             }
                         }
@@ -468,7 +603,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                             let is_selected = selection.is_selected(&header_path);
                                             let header_class = format!(
                                                 "table-row table-header pseudo-node {}",
-                                                if is_selected { "selected" } else { "" }
+                                                if is_selected { "selected" } else { "" },
                                             );
                                             rsx! {
                                                 div {
@@ -545,7 +680,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                             let is_selected = selection.is_selected(&row_path);
                                             let row_class = format!(
                                                 "table-row pseudo-node {}",
-                                                if is_selected { "selected" } else { "" }
+                                                if is_selected { "selected" } else { "" },
                                             );
                                             rsx! {
                                                 div {
