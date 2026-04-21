@@ -23535,3 +23535,147 @@ fn test_abfh_regime_fiscale_radio_button() {
         );
     }
 }
+
+#[test]
+fn test_abfh_has_two_lists_roman_and_alpha() {
+    use crate::document::ListStyleType;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("ABFH_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on ABFH_033_IT.pdf");
+
+    let lists = helpers::collect_lists(&structured_nodes);
+
+    // --- Roman numeral list: (i) through (iv) ---
+    let roman_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Servizi Amministrati"))
+    });
+
+    assert!(
+        roman_list.is_some(),
+        "Expected a roman numeral list containing 'Servizi Amministrati'.\nFound lists: {:?}",
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    let roman_list = roman_list.unwrap();
+
+    assert_eq!(
+        roman_list.list_style,
+        ListStyleType::LowerRoman,
+        "The (i)–(iv) list should be detected as LowerRoman"
+    );
+
+    assert_eq!(
+        roman_list.items.len(),
+        4,
+        "Expected 4 items in roman numeral list, got {}.\nItems: {:?}",
+        roman_list.items.len(),
+        roman_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
+    );
+
+    let roman_texts: Vec<String> = roman_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        roman_texts[0].contains("Servizi Amministrati")
+            && roman_texts[0].contains("ricezione e trasmissione ordini"),
+        "First item should mention 'Servizi Amministrati' and 'ricezione e trasmissione ordini'.\nFound: {}",
+        roman_texts[0]
+    );
+    assert!(
+        roman_texts[1].contains("intermediazione assicurativa"),
+        "Second item should mention 'intermediazione assicurativa'.\nFound: {}",
+        roman_texts[1]
+    );
+    assert!(
+        roman_texts[2].contains("Servizi Bancari accessori"),
+        "Third item should mention 'Servizi Bancari accessori'.\nFound: {}",
+        roman_texts[2]
+    );
+    assert!(
+        roman_texts[3].contains("Servizi di Pagamento accessori"),
+        "Fourth item should mention 'Servizi di Pagamento accessori'.\nFound: {}",
+        roman_texts[3]
+    );
+
+    // --- Alpha list: a)–d) cessione / rapporti items ---
+    let alpha_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text()
+                .contains("cessione a titolo oneroso di partecipazioni")
+        })
+    });
+
+    assert!(
+        alpha_list.is_some(),
+        "Expected an alpha list containing 'cessione a titolo oneroso di partecipazioni'.\nFound lists: {:?}",
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    let alpha_list = alpha_list.unwrap();
+
+    assert_eq!(
+        alpha_list.list_style,
+        ListStyleType::LowerAlpha,
+        "The a)–d) list should be detected as LowerAlpha"
+    );
+
+    assert_eq!(
+        alpha_list.items.len(),
+        4,
+        "Expected 4 items in alpha list, got {}.\nItems: {:?}",
+        alpha_list.items.len(),
+        alpha_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
+    );
+
+    let alpha_texts: Vec<String> = alpha_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    assert!(
+        alpha_texts.iter().any(|t| t
+            .contains("cessione a titolo oneroso di partecipazioni qualificate e non qualificate")),
+        "List should contain item about 'partecipazioni qualificate e non qualificate'.\nItems: {:?}",
+        alpha_texts
+    );
+    assert!(
+        alpha_texts.iter().any(|t| t.contains(
+            "cessione a titolo oneroso ovvero rimborso di titoli non rappresentativi di merci"
+        )),
+        "List should contain item about 'rimborso di titoli non rappresentativi di merci'.\nItems: {:?}",
+        alpha_texts
+    );
+    assert!(
+        alpha_texts
+            .iter()
+            .any(|t| t.contains("rapporti da cui deriva il diritto o l")
+                && t.contains("obbligo di cedere o acquistare a termine strumenti finanziari")),
+        "List should contain item about 'rapporti da cui deriva il diritto o l'obbligo'.\nItems: {:?}",
+        alpha_texts
+    );
+    assert!(
+        alpha_texts.iter().any(|t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi di redditi di capitale")),
+        "List should contain item about 'chiusura di rapporti produttivi di redditi di capitale'.\nItems: {:?}",
+        alpha_texts
+    );
+}
