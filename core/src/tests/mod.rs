@@ -23479,3 +23479,59 @@ fn test_aaor_has_unordered_list_with_declarations() {
             .contains("documentazione informativa")
     );
 }
+
+#[test]
+fn test_abfh_regime_fiscale_radio_button() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("ABFH_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge for ABFH");
+
+    let radios = collect_radio_fields(&structured);
+    assert!(
+        !radios.is_empty(),
+        "ABFH should have at least one radio field"
+    );
+
+    let regime_radio = radios
+        .iter()
+        .find(|f| {
+            if let FieldType::Radio { options } = &f.input_type {
+                options
+                    .iter()
+                    .any(|o| o.name.contains("Regime Fiscale Amministrato"))
+            } else {
+                false
+            }
+        })
+        .expect("Expected to find a radio field with 'Regime Fiscale Amministrato' option");
+
+    let options = match &regime_radio.input_type {
+        FieldType::Radio { options } => options,
+        other => panic!("Field should be of type 'radio', got {:?}", other),
+    };
+
+    assert_eq!(
+        options.len(),
+        2,
+        "Expected 2 radio button options, found {}",
+        options.len()
+    );
+
+    let option_names: Vec<&str> = options.iter().map(|o| o.name.as_str()).collect();
+
+    let expected_options = [
+        "di voler optare per l'applicazione dell'imposizione sostitutiva nella misura prevista dalla normativa pro-tempore vigente su ciascuna plusvalenza o altro reddito diverso realizzato (Regime Fiscale Amministrato);",
+        "di non voler optare per il Regime Fiscale Amministrato. Il Cliente dichiara, altres\u{ec}, di essere a conoscenza che, in tal caso, sar\u{e0} tenuto al regime ordinario di tassazione e quindi a dover ottemperare individualmente a tutti gli obblighi impositivi.",
+    ];
+
+    for expected in &expected_options {
+        let found = option_names.iter().any(|name| name.contains(expected));
+        assert!(
+            found,
+            "Expected to find radio option containing '{}'\nFound options: {:?}",
+            expected, option_names
+        );
+    }
+}
