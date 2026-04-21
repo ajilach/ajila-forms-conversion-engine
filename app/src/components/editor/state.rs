@@ -3,6 +3,7 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
+use blueprint::structured::NameValue;
 use blueprint::{InlineText, ListNode, StructuredNode, TableNode};
 use std::collections::HashSet;
 
@@ -193,6 +194,8 @@ pub enum NodeMetadata {
     GridElementSpan(usize),
     /// Field input type.
     FieldInputType(FieldInputKind),
+    /// Field options (for Radio/Dropdown fields).
+    FieldOptions(Vec<NameValue>),
 }
 
 /// Simplified field input type for the editor UI.

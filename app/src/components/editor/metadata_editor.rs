@@ -5,6 +5,7 @@
 
 use dioxus::prelude::*;
 
+use blueprint::structured::{InputValue, NameValue, TranslatableString};
 use blueprint::{FieldType, StructuredNode};
 
 use super::state::{EditorAction, FieldInputKind, NodeMetadata, NodePath};
@@ -96,7 +97,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
             let mut min_signal = use_signal(|| min);
             let mut max_signal = use_signal(|| max);
             let mut max_unlimited = use_signal(|| max.is_none());
-            
+
             rsx! {
                 div { class: "metadata-editor",
                     div { class: "metadata-editor-header",
@@ -186,7 +187,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
         StructuredNode::GridLayout(g) => {
             let cols = g.columns;
             let mut cols_signal = use_signal(|| cols);
-            
+
             rsx! {
                 div { class: "metadata-editor",
                     div { class: "metadata-editor-header",
@@ -261,6 +262,16 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                 FieldInputKind::Radio => "radio",
             };
 
+            let has_options = matches!(
+                &f.input_type,
+                FieldType::Radio { .. } | FieldType::Select { .. }
+            );
+            let initial_options = match &f.input_type {
+                FieldType::Radio { options } | FieldType::Select { options } => options.clone(),
+                _ => vec![],
+            };
+            let mut options_signal = use_signal(|| initial_options);
+
             rsx! {
                 div { class: "metadata-editor",
                     div { class: "metadata-editor-header",
@@ -295,6 +306,13 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                             "radio" => FieldInputKind::Radio,
                                             _ => return,
                                         };
+                                        let new_has_options = matches!(
+                                            kind,
+                                            FieldInputKind::Dropdown | FieldInputKind::Radio
+                                        );
+                                        if !new_has_options {
+                                            options_signal.set(vec![]);
+                                        }
                                         on_action
                                             .call(EditorAction::UpdateMetadata {
                                                 path: path.clone(),
@@ -312,15 +330,100 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 option { value: "radio", "Radio" }
                             }
                         }
+                        if has_options {
+                            div { class: "metadata-field",
+                                label { class: "metadata-label", "Options" }
+                                div { class: "options-list",
+                                    for (idx, option) in options_signal.read().iter().enumerate() {
+                                        {
+                                            let name_str = option.name.as_str().to_string();
+                                            let value_str = match &option.value {
+                                                InputValue::Text(s) => s.clone(),
+                                                InputValue::Number(n) => n.to_string(),
+                                                InputValue::Bool(b) => b.to_string(),
+                                            };
+                                            rsx! {
+                                                div { class: "option-row",
+                                                    input {
+                                                        class: "metadata-input option-name-input",
+                                                        r#type: "text",
+                                                        placeholder: "Label",
+                                                        value: "{name_str}",
+                                                        oninput: move |evt: Event<FormData>| {
+                                                            let mut opts = options_signal.read().clone();
+                                                            if let Some(opt) = opts.get_mut(idx) {
+                                                                opt.name = TranslatableString::Plain(evt.value());
+                                                            }
+                                                            options_signal.set(opts);
+                                                        },
+                                                    }
+                                                    input {
+                                                        class: "metadata-input option-value-input",
+                                                        r#type: "text",
+                                                        placeholder: "Value",
+                                                        value: "{value_str}",
+                                                        oninput: move |evt: Event<FormData>| {
+                                                            let mut opts = options_signal.read().clone();
+                                                            if let Some(opt) = opts.get_mut(idx) {
+                                                                opt.value = InputValue::Text(evt.value());
+                                                            }
+                                                            options_signal.set(opts);
+                                                        },
+                                                    }
+                                                    button {
+                                                        class: "option-remove-btn",
+                                                        title: "Remove option",
+                                                        onclick: move |_| {
+                                                            let mut opts = options_signal.read().clone();
+                                                            opts.remove(idx);
+                                                            options_signal.set(opts);
+                                                        },
+                                                        "✕"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    button {
+                                        class: "option-add-btn",
+                                        onclick: move |_| {
+                                            let mut opts = options_signal.read().clone();
+                                            opts.push(NameValue {
+                                                name: TranslatableString::Plain(String::new()),
+                                                value: InputValue::Text(String::new()),
+                                            });
+                                            options_signal.set(opts);
+                                        },
+                                        "+ Add Option"
+                                    }
+                                }
+                            }
+                        }
                     }
                     div { class: "metadata-editor-actions",
                         button {
                             class: "metadata-btn metadata-btn-done",
                             onclick: {
+                                let path = props.path.clone();
                                 let on_action = props.on_action;
-                                move |_| on_action.call(EditorAction::StopEditing)
+                                move |_| {
+                                    if has_options {
+                                        let opts: Vec<_> = options_signal
+                                            .read()
+                                            .iter()
+                                            .filter(|o| !o.name.as_str().is_empty())
+                                            .cloned()
+                                            .collect();
+                                        on_action
+                                            .call(EditorAction::UpdateMetadata {
+                                                path: path.clone(),
+                                                metadata: NodeMetadata::FieldOptions(opts),
+                                            });
+                                    }
+                                    on_action.call(EditorAction::StopEditing);
+                                }
                             },
-                            "Done"
+                            if has_options { "Save" } else { "Done" }
                         }
                     }
                 }

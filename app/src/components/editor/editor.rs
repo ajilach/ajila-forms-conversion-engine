@@ -16,14 +16,13 @@ use blueprint::{
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
-    SelectionState, available_conversions, can_merge_selected, compute_add_options, delete_nodes,
-    get_container_child_info, get_container_children_count, get_list_at_path,
-    get_list_at_path_mut, get_list_item_text_mut,
-    get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
-    is_container_child_path, is_list_item_path, is_table_row_path, move_container_child_down,
-    move_container_child_up, move_list_item_down, move_list_item_up, move_table_row_down,
-    move_table_row_up,
+    available_conversions, can_merge_selected, compute_add_options, delete_nodes,
+    get_container_child_info, get_container_children_count, get_list_at_path, get_list_at_path_mut,
+    get_list_item_text_mut, get_node_at_path, get_node_at_path_mut, get_shared_parent_path,
+    get_table_column_count, is_container_child_path, is_list_item_path, is_table_row_path,
+    move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
+    move_table_row_down, move_table_row_up, ConvertTarget, EditorAction, FieldInputKind,
+    NewNodeType, NodeMetadata, PathSegment, SelectionState,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -367,17 +366,12 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 StructuredNode::GridLayout(g) => {
                                     let nodes: Vec<StructuredNode> = indices
                                         .iter()
-                                        .filter_map(|&i| {
-                                            g.elements.get(i).map(|e| e.node.clone())
-                                        })
+                                        .filter_map(|&i| g.elements.get(i).map(|e| e.node.clone()))
                                         .collect();
 
                                     if let Ok(merged) = blueprint::merge_nodes(nodes) {
-                                        let merged_span = g
-                                            .elements
-                                            .get(indices[0])
-                                            .map(|e| e.span)
-                                            .unwrap_or(1);
+                                        let merged_span =
+                                            g.elements.get(indices[0]).map(|e| e.span).unwrap_or(1);
                                         for &idx in indices.iter().rev() {
                                             if idx < g.elements.len() {
                                                 g.elements.remove(idx);
@@ -634,7 +628,12 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         }
                         NodeMetadata::FieldInputType(kind) => {
                             if let StructuredNode::Field(f) = node {
-                                // Convert to new field type, preserving label and name
+                                // Convert to new field type, preserving options if switching between Radio/Dropdown
+                                let existing_options = match &f.input_type {
+                                    FieldType::Radio { options }
+                                    | FieldType::Select { options } => options.clone(),
+                                    _ => vec![],
+                                };
                                 f.input_type = match kind {
                                     FieldInputKind::Text => FieldType::Text {
                                         regex: None,
@@ -650,11 +649,24 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     FieldInputKind::Email => FieldType::Email,
                                     FieldInputKind::Tel => FieldType::Tel,
                                     FieldInputKind::Checkbox => FieldType::Bool,
-                                    FieldInputKind::Dropdown => {
-                                        FieldType::Select { options: vec![] }
-                                    }
-                                    FieldInputKind::Radio => FieldType::Radio { options: vec![] },
+                                    FieldInputKind::Dropdown => FieldType::Select {
+                                        options: existing_options,
+                                    },
+                                    FieldInputKind::Radio => FieldType::Radio {
+                                        options: existing_options,
+                                    },
                                 };
+                            }
+                        }
+                        NodeMetadata::FieldOptions(options) => {
+                            if let StructuredNode::Field(f) = node {
+                                match &mut f.input_type {
+                                    FieldType::Radio { options: opts }
+                                    | FieldType::Select { options: opts } => {
+                                        *opts = options;
+                                    }
+                                    _ => {}
+                                }
                             }
                         }
                     }
@@ -674,8 +686,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         new_selection =
                             if let Some(l) = get_list_at_path_mut(&mut env.content, &parent) {
                                 let insert_idx = index.min(l.items.len());
-                                l.items
-                                    .insert(insert_idx, ListItem::simple(InlineText::plain("New item")));
+                                l.items.insert(
+                                    insert_idx,
+                                    ListItem::simple(InlineText::plain("New item")),
+                                );
                                 let mut path = parent.clone();
                                 path.push(PathSegment::ListItem(insert_idx));
                                 Some(path)
@@ -887,10 +901,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         // Non-root conversion: collect clones first, then mutate
                         let nodes_cloned: Vec<StructuredNode> = {
                             let env_read = envelope.read();
-                            let parent = get_node_at_path(
-                                &env_read.content,
-                                &parent_path,
-                            );
+                            let parent = get_node_at_path(&env_read.content, &parent_path);
                             match parent {
                                 Some(StructuredNode::Group(g)) => indices
                                     .iter()
@@ -898,9 +909,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     .collect(),
                                 Some(StructuredNode::GridLayout(g)) => indices
                                     .iter()
-                                    .filter_map(|&i| {
-                                        g.elements.get(i).map(|e| e.node.clone())
-                                    })
+                                    .filter_map(|&i| g.elements.get(i).map(|e| e.node.clone()))
                                     .collect(),
                                 _ => vec![],
                             }
@@ -923,8 +932,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 }
                                             }
                                             let insert_idx = indices[0].min(g.children.len());
-                                            for (i, node) in
-                                                converted_nodes.into_iter().enumerate()
+                                            for (i, node) in converted_nodes.into_iter().enumerate()
                                             {
                                                 g.children.insert(insert_idx + i, node);
                                             }
@@ -941,8 +949,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 }
                                             }
                                             let insert_idx = indices[0].min(g.elements.len());
-                                            for (i, node) in
-                                                converted_nodes.into_iter().enumerate()
+                                            for (i, node) in converted_nodes.into_iter().enumerate()
                                             {
                                                 let span = if i == 0 { first_span } else { 1 };
                                                 g.elements.insert(

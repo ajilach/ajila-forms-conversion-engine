@@ -1242,3 +1242,56 @@ body > div, #main {
 .metadata-btn-done:hover {
     background: var(--primary600);
 }
+
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.option-row {
+    display: flex;
+    gap: var(--space-xs);
+    align-items: center;
+}
+
+.option-name-input {
+    flex: 1;
+}
+
+.option-value-input {
+    flex: 1;
+}
+
+.option-remove-btn {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: var(--space-xs);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.option-remove-btn:hover {
+    color: var(--danger500);
+    border-color: var(--danger500);
+}
+
+.option-add-btn {
+    background: none;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    cursor: pointer;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: var(--font-size-sm);
+    text-align: center;
+}
+
+.option-add-btn:hover {
+    border-color: var(--color-primary);
+    background: rgba(var(--primary500-rgb), 0.05);
+}
