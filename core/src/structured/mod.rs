@@ -972,11 +972,7 @@ impl StructuredNode {
                 // can produce a different number of <p> elements. merge_node_lists will
                 // use LCS to align the children correctly.
                 mode == CompareMode::IgnoreText
-                    || (a.children.len() == b.children.len()
-                        && a.children
-                            .iter()
-                            .zip(b.children.iter())
-                            .all(|(ca, cb)| ca.structural_cmp(cb, mode)))
+                    || structured_node_slices_eq(&a.children, &b.children, mode)
             }
             (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
                 if mode == CompareMode::IgnoreText {
@@ -1108,6 +1104,19 @@ fn list_nodes_structural_cmp(a: &ListNode, b: &ListNode, mode: CompareMode) -> b
                         _ => false,
                     }
             }))
+}
+
+/// Compare two node slices using structural comparison for each element.
+fn structured_node_slices_eq(
+    left: &[StructuredNode],
+    right: &[StructuredNode],
+    mode: CompareMode,
+) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(a, b)| a.structural_cmp(b, mode))
 }
 
 impl InlineText {
@@ -1248,26 +1257,14 @@ impl TableNode {
         // Compare header structure
         let header_eq = match (&self.header, &other.header) {
             (None, None) => true,
-            (Some(h1), Some(h2)) => {
-                h1.cells.len() == h2.cells.len()
-                    && h1
-                        .cells
-                        .iter()
-                        .zip(h2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_cmp(c2, mode))
-            }
+            (Some(h1), Some(h2)) => structured_node_slices_eq(&h1.cells, &h2.cells, mode),
             _ => false,
         };
 
         // Compare row structure
         let rows_eq = self.rows.len() == other.rows.len()
             && self.rows.iter().zip(other.rows.iter()).all(|(r1, r2)| {
-                r1.cells.len() == r2.cells.len()
-                    && r1
-                        .cells
-                        .iter()
-                        .zip(r2.cells.iter())
-                        .all(|(c1, c2)| c1.structural_cmp(c2, mode))
+                structured_node_slices_eq(&r1.cells, &r2.cells, mode)
             });
 
         // Caption is only compared in Full mode
