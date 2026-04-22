@@ -23296,13 +23296,6 @@ fn test_bage_t_indent_first_dash_y_alignment() {
         .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
-    // Save rendered image for manual inspection
-    let img = default_state.render_plain(2.0).expect("render failed");
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
-    let out_path = format!("{}/input/bage_render.png", manifest_dir);
-    img.save(&out_path).expect("save failed");
-    println!("Rendered to: {}", out_path);
-
     // Find the T_The_Authorized nodes
     let t_auth_nodes: Vec<_> = flattened
         .iter_nodes()
