@@ -1213,25 +1213,22 @@ impl FieldType {
             (FieldType::Email, FieldType::Email) => true,
             (FieldType::Tel, FieldType::Tel) => true,
             (FieldType::Bool, FieldType::Bool) => true,
-            (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 }) => {
-                // Compare by values and language-aware option names.
-                opts1.len() == opts2.len()
-                    && opts1
-                        .iter()
-                        .zip(opts2.iter())
-                        .all(|(o1, o2)| o1.value == o2.value && o1.name.structural_eq(&o2.name))
-            }
-            (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
-                // Compare by values and language-aware option names.
-                opts1.len() == opts2.len()
-                    && opts1
-                        .iter()
-                        .zip(opts2.iter())
-                        .all(|(o1, o2)| o1.value == o2.value && o1.name.structural_eq(&o2.name))
+            (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 })
+            | (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
+                option_name_values_structural_eq(opts1, opts2)
             }
             _ => false,
         }
     }
+}
+
+/// Compare option vectors by value and translatable name structure.
+fn option_name_values_structural_eq(opts1: &[NameValue], opts2: &[NameValue]) -> bool {
+    opts1.len() == opts2.len()
+        && opts1
+            .iter()
+            .zip(opts2.iter())
+            .all(|(o1, o2)| o1.value == o2.value && o1.name.structural_eq(&o2.name))
 }
 
 impl TableNode {
