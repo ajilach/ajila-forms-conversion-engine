@@ -27,14 +27,16 @@ pub fn ensure_ubs_fonts_loaded() {
 /// Also ensures UBS profile fonts are loaded (lazily, once).
 pub fn input_path(filename: &str) -> String {
     ensure_ubs_fonts_loaded();
-    format!("{}/input/{}", env!("CARGO_MANIFEST_DIR"), filename)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    format!("{}/input/{}", manifest_dir, filename)
 }
 
 /// Build a path to a directory or file inside the `profiles/` directory.
 ///
 /// Profiles are at the workspace root, so we go up one level from CARGO_MANIFEST_DIR.
 pub fn profiles_path(subpath: &str) -> String {
-    format!("{}/../profiles/{}", env!("CARGO_MANIFEST_DIR"), subpath)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    format!("{}/../profiles/{}", manifest_dir, subpath)
 }
 
 /// Recursively walk a tree of `StructuredNode`s, calling `callback` on every
@@ -212,19 +214,13 @@ pub fn has_text_outside_conditional(nodes: &[StructuredNode], fragment: &str) ->
                 }
             }
             StructuredNode::Repeatable(r) => {
-                if has_text_outside_conditional(
-                    std::slice::from_ref(r.item.as_ref()),
-                    fragment,
-                ) {
+                if has_text_outside_conditional(std::slice::from_ref(r.item.as_ref()), fragment) {
                     return true;
                 }
             }
             StructuredNode::GridLayout(grid) => {
                 for element in &grid.elements {
-                    if has_text_outside_conditional(
-                        std::slice::from_ref(&element.node),
-                        fragment,
-                    ) {
+                    if has_text_outside_conditional(std::slice::from_ref(&element.node), fragment) {
                         return true;
                     }
                 }
@@ -494,8 +490,8 @@ pub(super) fn build_aem_test_output(
         let env = envelopes.into_iter().next().unwrap();
         (env.context, env.content)
     } else {
-        let merged =
-            crate::structured::merge_translations(envelopes, None).expect("Failed to merge translations");
+        let merged = crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations");
         (merged.context, merged.content)
     };
 

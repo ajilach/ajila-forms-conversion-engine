@@ -4156,7 +4156,6 @@ fn test_aaai_structured_output_has_h1_heading() {
     // "Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service"
     // This is a regression test - the heading was missing when the analysis pipeline
     // was accidentally broken (modules removed from run_analysis_pipeline).
-    
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAI_019_DE.pdf");
@@ -4235,7 +4234,6 @@ fn test_aaai_structured_output_no_button_add_minus() {
     // Test that Button_Add and Button_Minus fields are NOT in the structured output.
     // These are screen-only interactive elements (relevant="-print") for adding/removing
     // repeatable sections. They should be filtered out by NoPrintDetector.
-    
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAI_019_DE.pdf");
@@ -6863,7 +6861,6 @@ fn test_aaoe_headings_consistent_across_states() {
     // heading to be detected at different levels (or not at all) depending on
     // which sections were visible, making the merge order-sensitive and flaky.
     use crate::context::Context;
-    
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6908,7 +6905,6 @@ fn test_aaoe_dichiarazione_and_firme_in_all_states() {
     // in one state but present in another, the merge becomes
     // order-dependent and the test_aaoe_h2_sections test flakes.
     use crate::context::Context;
-    
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6947,10 +6943,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // Diagnostic test: check whether "Dichiarazione" and "Firma/e" text is
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
-    use crate::document::modules::{
-        GlobalContext,
-        run_analysis_pipeline_with_context,
-    };
+    use crate::document::modules::{GlobalContext, run_analysis_pipeline_with_context};
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
 
@@ -12112,8 +12105,6 @@ fn test_aaai_nachname_vorname_equal_colspan() {
 fn test_antrag_sozialhilfe_structured_headings_and_fields() {
     // Test that the non-XFA PDF "antrag_wirtschaftliche_sozialhilfe.pdf"
     // produces the expected headings and field labels in its structured output.
-    
-    
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load antrag_wirtschaftliche_sozialhilfe PDF");
@@ -12734,7 +12725,6 @@ fn test_merge_pages_header_boundary_includes_all_elements_in_region() {
 fn test_antrag_sozialhilfe_multipage_merge() {
     // Integration test: the antrag_wirtschaftliche_sozialhilfe.pdf should
     // produce a single merged Flattened state with header/footer hints.
-    
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load PDF");
@@ -12973,7 +12963,6 @@ fn test_aahq_endkunde_conditional_fields_for_anzulegen() {
     // Test that when "Anzulegen" is selected under Endkunde,
     // the specified fields are shown.
     use crate::run_exhaustive_to_merged;
-    
 
     let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
@@ -13544,7 +13533,7 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     // list where each dash marker (–) is a separate text node positioned to
     // the left of the item text. The list detector should recognise this
     // pattern and produce a single unordered list with three items.
-    
+
     use crate::document::ListStyleType;
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
@@ -20750,6 +20739,7 @@ fn test_aais_019_en_list_marker_paragraph_alignment() {
 /// Diagnostic test – dump AAIS_019_EN text blocks to understand merger behaviour
 #[test]
 fn test_aais_019_en_text_block_merger_paragraph_separation() {
+    use crate::document::Document;
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
@@ -20757,7 +20747,6 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
     };
-    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -20873,9 +20862,8 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
 /// Diagnostic: check font properties of heading candidates in AAIS
 #[test]
 fn debug_aais_heading_font_properties() {
-    
-    use crate::document::modules::run_analysis_pipeline;
     use crate::document::Document;
+    use crate::document::modules::run_analysis_pipeline;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -23310,7 +23298,8 @@ fn test_bage_t_indent_first_dash_y_alignment() {
 
     // Save rendered image for manual inspection
     let img = default_state.render_plain(2.0).expect("render failed");
-    let out_path = format!("{}/input/bage_render.png", env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let out_path = format!("{}/input/bage_render.png", manifest_dir);
     img.save(&out_path).expect("save failed");
     println!("Rendered to: {}", out_path);
 
@@ -23518,8 +23507,6 @@ fn test_aari_has_radio_button_with_fiscal_regime_options() {
 
 #[test]
 fn test_aaor_has_unordered_list_with_declarations() {
-    
-
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAOR_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOR_033_IT.pdf");
 

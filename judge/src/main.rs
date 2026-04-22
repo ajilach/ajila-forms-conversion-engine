@@ -41,7 +41,9 @@ fn main() -> Result<()> {
     let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Semantic matcher loaded.");
 
-    let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input");
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let input_dir = Path::new(&manifest_dir).join("../core/input");
     let mut forms = discover_forms(&input_dir)?;
 
     // Filter to a single form code if requested
@@ -70,7 +72,7 @@ fn main() -> Result<()> {
 
     results.sort_by(|a, b| b.total_score.partial_cmp(&a.total_score).unwrap());
 
-    let output_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("results.csv");
+    let output_path = Path::new(&manifest_dir).join("results.csv");
     let mut wtr = csv::Writer::from_path(&output_path)?;
     wtr.write_record([
         "form_code",

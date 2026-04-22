@@ -3,7 +3,9 @@ use std::time::Duration;
 
 /// Build a path to a file in the `input/` test data directory.
 fn input_dir() -> String {
-    format!("{}/input", env!("CARGO_MANIFEST_DIR"))
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    format!("{}/input", manifest_dir)
 }
 
 fn bench_full_pipeline(c: &mut Criterion) {

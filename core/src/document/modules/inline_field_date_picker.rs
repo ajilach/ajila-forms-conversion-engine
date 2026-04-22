@@ -424,7 +424,9 @@ mod tests {
         use crate::xfa::scripting::XfaForm;
 
         // Load AAAB PDF
-        let pdf_path = format!("{}/input/AAAB_019_DE.pdf", env!("CARGO_MANIFEST_DIR"));
+        let manifest_dir =
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+        let pdf_path = format!("{}/input/AAAB_019_DE.pdf", manifest_dir);
         let xfa_data = extract_xfa_from_pdf(&pdf_path).expect("Failed to read PDF");
         assert!(xfa_data.is_some(), "PDF should contain XFA data");
 
