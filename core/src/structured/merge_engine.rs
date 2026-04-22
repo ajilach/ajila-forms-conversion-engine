@@ -256,40 +256,13 @@ fn align_and_tag_semantic(
 ) -> Vec<AlignedNode> {
     let anchors = find_som_anchors(base, other);
 
-    if anchors.is_empty() {
-        return align_segment_semantic(ctx, base, other, semantic);
-    }
-
-    let mut result = Vec::new();
-    let mut ai = 0usize;
-    let mut bi = 0usize;
-
-    for (anchor_a, anchor_b) in &anchors {
-        result.extend(align_segment_semantic(
-            ctx,
-            &base[ai..*anchor_a],
-            &other[bi..*anchor_b],
-            semantic,
-        ));
-
-        result.push(AlignedNode::Matched(TranslationPolicy::merge_matched(
-            ctx,
-            &base[*anchor_a],
-            &other[*anchor_b],
-        )));
-
-        ai = anchor_a + 1;
-        bi = anchor_b + 1;
-    }
-
-    result.extend(align_segment_semantic(
-        ctx,
-        &base[ai..],
-        &other[bi..],
-        semantic,
-    ));
-
-    result
+    align_with_anchors(
+        base,
+        other,
+        &anchors,
+        |lhs, rhs| align_segment_semantic(ctx, lhs, rhs, semantic),
+        |lhs, rhs| TranslationPolicy::merge_matched(ctx, lhs, rhs),
+    )
 }
 
 /// Like [`align_segment`] but uses precomputed semantic scores in a weighted LCS.
@@ -609,36 +582,50 @@ pub(crate) fn align_and_tag<P: MergePolicy>(
 ) -> Vec<AlignedNode> {
     let anchors = find_som_anchors(base, other);
 
+    align_with_anchors(
+        base,
+        other,
+        &anchors,
+        |lhs, rhs| align_segment::<P>(ctx, lhs, rhs),
+        |lhs, rhs| P::merge_matched(ctx, lhs, rhs),
+    )
+}
+
+/// Align two lists using anchor-constrained segmentation.
+///
+/// `anchors` must be monotonically increasing index pairs. For each segment
+/// between anchors, `segment_aligner` is used to align entries; each anchor pair
+/// is emitted as a `Matched` node produced by `merge_anchor`.
+fn align_with_anchors<Seg, Merge>(
+    base: &[StructuredNode],
+    other: &[StructuredNode],
+    anchors: &[(usize, usize)],
+    mut segment_aligner: Seg,
+    mut merge_anchor: Merge,
+) -> Vec<AlignedNode>
+where
+    Seg: FnMut(&[StructuredNode], &[StructuredNode]) -> Vec<AlignedNode>,
+    Merge: FnMut(&StructuredNode, &StructuredNode) -> StructuredNode,
+{
     if anchors.is_empty() {
-        // No anchors — plain LCS over the whole lists.
-        return align_segment::<P>(ctx, base, other);
+        return segment_aligner(base, other);
     }
 
     let mut result = Vec::new();
     let mut ai = 0usize;
     let mut bi = 0usize;
 
-    for (anchor_a, anchor_b) in &anchors {
-        // Align the segment before this anchor.
-        result.extend(align_segment::<P>(
-            ctx,
-            &base[ai..*anchor_a],
-            &other[bi..*anchor_b],
-        ));
-
-        // Emit the anchor pair as Matched.
-        result.push(AlignedNode::Matched(P::merge_matched(
-            ctx,
+    for (anchor_a, anchor_b) in anchors {
+        result.extend(segment_aligner(&base[ai..*anchor_a], &other[bi..*anchor_b]));
+        result.push(AlignedNode::Matched(merge_anchor(
             &base[*anchor_a],
             &other[*anchor_b],
         )));
-
         ai = anchor_a + 1;
         bi = anchor_b + 1;
     }
 
-    // Align the tail after the last anchor.
-    result.extend(align_segment::<P>(ctx, &base[ai..], &other[bi..]));
+    result.extend(segment_aligner(&base[ai..], &other[bi..]));
 
     result
 }
