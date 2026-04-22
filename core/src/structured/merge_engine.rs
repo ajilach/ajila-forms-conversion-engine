@@ -2276,17 +2276,32 @@ fn merge_field_type(
 ) -> FieldType {
     match (base, other) {
         (FieldType::Radio { options: opts_a }, FieldType::Radio { options: opts_b }) => {
-            FieldType::Radio {
-                options: merge_name_values(opts_a, base_lang, opts_b, other_lang),
-            }
+            merge_option_field_type(opts_a, base_lang, opts_b, other_lang, |options| {
+                FieldType::Radio { options }
+            })
         }
         (FieldType::Select { options: opts_a }, FieldType::Select { options: opts_b }) => {
-            FieldType::Select {
-                options: merge_name_values(opts_a, base_lang, opts_b, other_lang),
-            }
+            merge_option_field_type(opts_a, base_lang, opts_b, other_lang, |options| {
+                FieldType::Select { options }
+            })
         }
         _ => base.clone(),
     }
+}
+
+/// Merge option-bearing field variants (e.g. radio/select) with shared logic.
+fn merge_option_field_type<F>(
+    base_options: &[NameValue],
+    base_lang: &str,
+    other_options: &[NameValue],
+    other_lang: &str,
+    build: F,
+) -> FieldType
+where
+    F: FnOnce(Vec<NameValue>) -> FieldType,
+{
+    let options = merge_name_values(base_options, base_lang, other_options, other_lang);
+    build(options)
 }
 
 /// Merge two `GridLayout` element vectors.
