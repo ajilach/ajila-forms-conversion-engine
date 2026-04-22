@@ -1145,7 +1145,7 @@ mod tests {
     use crate::structured::{
         HeadingLevel, HeadingNode, InlineNode, InlineText, ParagraphNode, StructuredNode,
     };
-    use std::collections::HashMap;
+    
 
     fn translated_text(entries: &[(&str, &str)]) -> InlineText {
         let map: crate::structured::TranslationMap = entries

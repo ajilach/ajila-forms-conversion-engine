@@ -1409,7 +1409,7 @@ fn test_debug_postal_code_structure() {
 fn test_aaai_header_positioning() {
     // Test that "UBS Europe SE" text is positioned ABOVE the form title
     // "Vereinbarung für die Erteilung von Zahlungsaufträgen..."
-    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
+    let bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let form = bp.form().expect("should be XFA PDF");
     let nodes = form.xfa_nodes();
 
@@ -3584,7 +3584,7 @@ fn test_aaab_merged_has_expected_conditionals() {
     // - One or more inside "Löschung" for nested radio selections
     // - Possibly one for the default state if different
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{HeadingLevel, InlineNode, StructuredNode};
+    use crate::structured::{HeadingLevel, StructuredNode};
 
     // Get merged structured nodes directly without file I/O
     let merged = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4156,7 +4156,7 @@ fn test_aaai_structured_output_has_h1_heading() {
     // "Vereinbarung für die Erteilung von Zahlungsaufträgen über den Electronic Funds Transfer (EFT)-Service"
     // This is a regression test - the heading was missing when the analysis pipeline
     // was accidentally broken (modules removed from run_analysis_pipeline).
-    use crate::structured::StructuredNode;
+    
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAI_019_DE.pdf");
@@ -4235,7 +4235,7 @@ fn test_aaai_structured_output_no_button_add_minus() {
     // Test that Button_Add and Button_Minus fields are NOT in the structured output.
     // These are screen-only interactive elements (relevant="-print") for adding/removing
     // repeatable sections. They should be filtered out by NoPrintDetector.
-    use crate::structured::StructuredNode;
+    
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAI_019_DE.pdf");
@@ -4335,7 +4335,7 @@ fn test_aaab_heading_structure() {
 fn test_aaab_direktvereinbarung2_isin_not_duplicated() {
     // Test using structured nodes directly instead of reading from file
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, HeadingNode, InlineNode, StructuredNode};
+    use crate::structured::{FieldNode, HeadingNode, StructuredNode};
 
     // Get merged structured nodes directly
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4497,7 +4497,7 @@ fn test_aaab_direktvereinbarung2_column_headers_absorbed() {
     // The column headers (Fondsprovider, Satz in %, Ab, ISIN) above repeatable sections
     // should be absorbed as column labels, not appear as standalone h2 headings.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{HeadingNode, InlineNode, StructuredNode};
+    use crate::structured::{HeadingNode, StructuredNode};
 
     // Get merged structured nodes directly
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4606,7 +4606,7 @@ fn test_aaab_loeschung_radio_buttons_are_grouped() {
     // - Löschung Sonderkondition
     // - Löschung Direktvereinbarung
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     // Get merged structured nodes directly without file I/O
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
@@ -4661,7 +4661,7 @@ fn test_aaab_loeschung_retro_rueckverguetung_has_radio_button_content() {
     // The "Löschung Retro Rückvergütung" option of the RB_Group_Retro radio field
     // must have its own ConditionalNode wrapping the content that belongs to it.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("AAAB_019_DE.pdf"))
         .expect("Failed to run exhaustive merge");
@@ -4716,7 +4716,7 @@ fn test_aaab_isin_repeatable_not_inside_radio_button_content() {
     // per-state ConditionalNodes keyed on RB_Group_Retro so it is NOT
     // shown unconditionally (it must not appear when RB_4 is selected).
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, InputValue, RepeatableNode, StructuredNode};
+    use crate::structured::{FieldType, InputValue, RepeatableNode, StructuredNode};
 
     fn repeatable_has_isin_field(rep: &RepeatableNode) -> bool {
         has_field_with_label(&[rep.item.as_ref().clone()], "ISIN")
@@ -4924,7 +4924,7 @@ fn test_aaab_fim3_text_inside_rb2_conditional() {
     // Conditional(RB_Group_Retro=RB_2) node, because it appears between
     // the second and third radio button options.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, InputValue, StructuredNode};
+    use crate::structured::{FieldType, InputValue, StructuredNode};
 
     /// Check if FIM3 text appears unconditionally (not inside an RB_Group_Retro conditional)
     fn has_unconditional_fim3_text(
@@ -5528,7 +5528,7 @@ fn test_aaaa_019_checkbox_detection() {
     // Expected checkboxes:
     // - "wirtschaftlich Berechtigter" (CB_Beneficial_Owner)
     // - "Bevollmächtigter" (CB_Attorney)
-    use crate::structured::{FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let merged = crate::run_exhaustive_to_merged(input_path("AAAA_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAA_019_DE.pdf");
@@ -6863,7 +6863,7 @@ fn test_aaoe_headings_consistent_across_states() {
     // heading to be detected at different levels (or not at all) depending on
     // which sections were visible, making the merge order-sensitive and flaky.
     use crate::context::Context;
-    use crate::structured::{HeadingLevel, StructuredNode};
+    
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6908,7 +6908,7 @@ fn test_aaoe_dichiarazione_and_firme_in_all_states() {
     // in one state but present in another, the merge becomes
     // order-dependent and the test_aaoe_h2_sections test flakes.
     use crate::context::Context;
-    use crate::structured::{HeadingLevel, StructuredNode};
+    
 
     let mut bp = Blueprint::from_pdf(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to create Blueprint from AAOE PDF");
@@ -6948,7 +6948,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
     use crate::document::modules::{
-        AnalysisModule, GlobalContext, HeadingDetector, TextBlockGrouper, TextBlockMerger,
+        GlobalContext,
         run_analysis_pipeline_with_context,
     };
     use crate::document::{Document, GroupKind};
@@ -7181,7 +7181,7 @@ fn test_acav_vollsaldierung_uebertrag_are_grouped() {
     // The vertical radio button group "Vollsaldierung" / "Übertrag/Mutation"
     // must be detected and grouped into a single FieldType::Radio with ≥2 options.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -7221,7 +7221,7 @@ fn test_acav_gesamtbetrag_teilzahlung_are_grouped() {
     // The vertical radio button group "Gesamtbetrag inkl. Zinsen ..." / "Teilzahlung von CHF"
     // must be detected and grouped into a single FieldType::Radio with ≥2 options.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -7249,7 +7249,7 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
     // The vertical radio button group "Freigabe der Kaution inkl. Zinsen zugunsten Mieter" /
     // "Restbetrag der Kaution inkl. Zinsen zugunsten Mieter" must be detected and grouped.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -7290,7 +7290,7 @@ fn test_acav_freigabe_restbetrag_are_grouped() {
 fn test_acav_vermieter_mieter_are_grouped() {
     // The horizontal radio button group "Vermieter" / "Mieter" must be detected and grouped.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -7404,7 +7404,7 @@ fn test_acav_vollsaldierung_uebertrag_have_radio_button_contents() {
     // The inset content below each button must be detected and wrapped in a
     // ConditionalNode keyed to that option's value.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{ConditionalNode, FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("ACAV_001_DE.pdf"))
         .expect("Failed to process ACAV PDF");
@@ -8570,7 +8570,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     // part of an inline field's context — what matters is that all three
     // language translations are merged into the same TranslatedText node.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode, TranslatableString};
+    use crate::structured::{self, InlineNode, StructuredNode};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
@@ -10685,7 +10685,7 @@ fn test_aaks_radio_button_has_three_options() {
     // - Aktiengesellschaft (börsennotiert)
     // - öffentlich-rechtliche Anstalt oder Körperschaft
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, FieldType, StructuredNode};
+    use crate::structured::FieldType;
 
     let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
@@ -10862,7 +10862,7 @@ fn test_aaks_nachname_vorname_firma_on_single_row() {
     // The field "Nachname, Vorname(n) / Firma" should appear as a standalone field
     // NOT inside a multi-column GridLayout (i.e., it occupies its own full row).
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, StructuredNode};
+    use crate::structured::StructuredNode;
 
     let structured = run_exhaustive_to_merged(input_path("AAKS_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAKS");
@@ -11548,7 +11548,7 @@ fn test_baqm_partial_bold_in_paragraph() {
         paragraphs.len()
     );
 
-    let mut strong_in_structured = false;
+    let mut _strong_in_structured = false;
     for (i, node) in paragraphs.iter().enumerate() {
         if let StructuredNode::Paragraph(p) = node {
             println!("Paragraph {i}:");
@@ -11563,7 +11563,7 @@ fn test_baqm_partial_bold_in_paragraph() {
             println!("  InlineNodes: {:?}", p.content.0);
 
             if has_strong_containing(&p.content.0, search_text) {
-                strong_in_structured = true;
+                _strong_in_structured = true;
                 println!("  -> HAS Strong containing '{search_text}'");
             } else {
                 println!("  -> NO Strong containing '{search_text}'");
@@ -12112,8 +12112,8 @@ fn test_aaai_nachname_vorname_equal_colspan() {
 fn test_antrag_sozialhilfe_structured_headings_and_fields() {
     // Test that the non-XFA PDF "antrag_wirtschaftliche_sozialhilfe.pdf"
     // produces the expected headings and field labels in its structured output.
-    use crate::context::Context;
-    use crate::structured::{FieldNode, HeadingLevel, HeadingNode, InlineText, StructuredNode};
+    
+    
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load antrag_wirtschaftliche_sozialhilfe PDF");
@@ -12209,6 +12209,7 @@ fn make_text_node(
 }
 
 /// Helper: build a simple field FlattenedNode at given position.
+#[allow(dead_code)]
 fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
     use rust_decimal::Decimal;
@@ -12562,7 +12563,7 @@ fn test_merge_pages_header_and_footer_together() {
 #[test]
 fn test_merge_pages_no_repeated_elements_no_hints() {
     // Three pages with NO repeated elements → no header/footer hints.
-    use crate::flattened::{Hint, MasterPageRegion};
+    use crate::flattened::Hint;
     use crate::pdf_parser::merge_pages;
 
     let mut pages = Vec::new();
@@ -12733,7 +12734,7 @@ fn test_merge_pages_header_boundary_includes_all_elements_in_region() {
 fn test_antrag_sozialhilfe_multipage_merge() {
     // Integration test: the antrag_wirtschaftliche_sozialhilfe.pdf should
     // produce a single merged Flattened state with header/footer hints.
-    use crate::flattened::{Hint, MasterPageRegion};
+    
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
         .expect("Failed to load PDF");
@@ -12924,7 +12925,7 @@ fn test_aahq_endkunde_conditional_fields_for_bereits_vorhanden() {
     // Test that when "Bereits vorhanden" is selected under Endkunde,
     // the fields "Nr. des Korrespondenzempfängers" and "Adress Nummer" are shown.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{ConditionalNode, FieldType, StructuredNode};
+    use crate::structured::StructuredNode;
 
     let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
@@ -12972,7 +12973,7 @@ fn test_aahq_endkunde_conditional_fields_for_anzulegen() {
     // Test that when "Anzulegen" is selected under Endkunde,
     // the specified fields are shown.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::StructuredNode;
+    
 
     let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
         .expect("Failed to run exhaustive merge for AAHQ");
@@ -13543,7 +13544,7 @@ fn test_antrag_sozialhilfe_has_unordered_list_with_three_items() {
     // list where each dash marker (–) is a separate text node positioned to
     // the left of the item text. The list detector should recognise this
     // pattern and produce a single unordered list with three items.
-    use crate::context::Context;
+    
     use crate::document::ListStyleType;
 
     let mut bp = Blueprint::from_pdf(input_path("antrag_wirtschaftliche_sozialhilfe.pdf"))
@@ -19020,13 +19021,13 @@ fn test_aaaq_selection_inline_fields_structured_output() {
     // Verify that SelectionInlineField groups produce correct ConditionalNodes
     // in the structured output with proper labels and conditions.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldType, InputValue};
+    use crate::structured::InputValue;
 
     let structured = run_exhaustive_to_merged(input_path("AAAQ_019_DE.pdf"))
         .expect("Failed to process AAAQ PDF");
 
     let conditionals = collect_conditionals(&structured);
-    let all_fields = collect_fields(&structured);
+    let _all_fields = collect_fields(&structured);
 
     // Checkbox "Aufschalten wie Vertrag": should have a conditional with Bool(true)
     // where the content is a field labeled "Aufschalten wie Vertrag".
@@ -20755,9 +20756,8 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
         InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
-        run_analysis_pipeline,
     };
-    use crate::document::{Document, GroupKind};
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -20873,9 +20873,9 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
 /// Diagnostic: check font properties of heading candidates in AAIS
 #[test]
 fn debug_aais_heading_font_properties() {
-    use crate::document::modules::AnalysisModule;
-    use crate::document::modules::{HeadingDetector, TextBlockMerger, run_analysis_pipeline};
-    use crate::document::{Document, GroupKind};
+    
+    use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -21172,7 +21172,7 @@ fn debug_aais_container_vs_content_height() {
 #[test]
 fn debug_aacj_snippets_structure() {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
+    use crate::structured::{self, StructuredNode};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
@@ -21486,7 +21486,7 @@ fn test_radio_inherits_heading_label_when_directly_above() {
     // above them (with nothing in between) as their label.
     // The heading itself must still be present in the output.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldType, StructuredNode};
+    use crate::structured::StructuredNode;
 
     let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
         .expect("Failed to process AABK PDF");
@@ -22717,7 +22717,7 @@ fn test_baqn_parenthesized_roman_list() {
     // (ii) ai sensi dell'art. 67-duodecies, ...
     // (iii) ai sensi dell'art. 67-terdecies, ...
     // This test verifies that these markers are detected and grouped as a list.
-    use crate::document::{GroupKind, ListStyleType};
+    use crate::document::ListStyleType;
     use crate::structured::{ListNode, StructuredNode};
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("BAQN_033_IT.pdf"))
@@ -23518,7 +23518,7 @@ fn test_aari_has_radio_button_with_fiscal_regime_options() {
 
 #[test]
 fn test_aaor_has_unordered_list_with_declarations() {
-    use crate::structured::{ListNode, StructuredNode};
+    
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAOR_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOR_033_IT.pdf");
