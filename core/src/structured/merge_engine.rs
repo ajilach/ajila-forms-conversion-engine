@@ -2315,9 +2315,14 @@ fn merge_grid_elements(
             node: merge_node(&ea.node, base_lang, &eb.node, other_lang),
         })
         .collect();
-    elements.extend(base[paired..].iter().cloned());
-    elements.extend(other[paired..].iter().cloned());
+    extend_unmatched_tail(&mut elements, base, other, paired);
     elements
+}
+
+/// Append cloned unmatched tail elements from both sides after a paired prefix.
+fn extend_unmatched_tail<T: Clone>(out: &mut Vec<T>, base: &[T], other: &[T], paired: usize) {
+    out.extend(base[paired..].iter().cloned());
+    out.extend(other[paired..].iter().cloned());
 }
 
 /// Merge two `List` item vectors.
@@ -2471,8 +2476,7 @@ pub(crate) fn merge_table(
                 TableRow { cells }
             })
             .collect();
-        rows.extend(base.rows[paired..].iter().cloned());
-        rows.extend(other.rows[paired..].iter().cloned());
+        extend_unmatched_tail(&mut rows, &base.rows, &other.rows, paired);
         rows
     };
 
