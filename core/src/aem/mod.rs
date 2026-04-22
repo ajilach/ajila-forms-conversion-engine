@@ -553,6 +553,14 @@ pub enum AemNode {
         /// XSD path for `bindRef` attribute.
         bind_ref: Option<String>,
     },
+
+    /// Optional profile-driven snippet inserted as the first item in the
+    /// first page panel when the `preface` template exists.
+    Preface { uuid: Uuid, name: String },
+
+    /// Optional profile-driven snippet inserted as the last item in the
+    /// last page panel when the `appendix` template exists.
+    Appendix { uuid: Uuid, name: String },
 }
 
 // ============================================================================
@@ -575,6 +583,8 @@ impl AemNode {
             AemNode::TitleDraw { uuid, .. } => format!("titledraw_{}", uuid.as_simple()),
             AemNode::Repeatable { uuid, .. } => format!("repeatable_{}", uuid.as_simple()),
             AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
+            AemNode::Preface { uuid, .. } => format!("preface_{}", uuid.as_simple()),
+            AemNode::Appendix { uuid, .. } => format!("appendix_{}", uuid.as_simple()),
         }
     }
 }

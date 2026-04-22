@@ -53,6 +53,8 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::TitleDraw { .. } => "titledraw",
         AemNode::Repeatable { .. } => "repeatable",
         AemNode::Fragment { .. } => "fragment",
+        AemNode::Preface { .. } => "preface",
+        AemNode::Appendix { .. } => "appendix",
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -353,6 +355,11 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("name", name);
             ctx.insert("frag_ref", frag_ref);
             ctx.insert("bind_ref", bind_ref);
+        }
+
+        AemNode::Preface { uuid, name } | AemNode::Appendix { uuid, name } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
         }
     }
 
@@ -1255,5 +1262,77 @@ mod tests {
             "Component with missing template should be omitted. Got:\n{}",
             xml
         );
+    }
+
+    /// Verify the preface template renders a fragment panel with `fragRef` that
+    /// switches on `xfa.formrange_entity`, matching the reference output of
+    /// AAOX (entity 033), AAOW (entity 019), and AACX (entity 001).
+    #[test]
+    fn preface_renders_entity_based_banking_relationship_fragment() {
+        let preface_template = include_str!("../../../profiles/ubs/aem/preface.xml");
+
+        let cases = [
+            (
+                "033",
+                "/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italiy_BankingRelationship",
+                "AAOX entity 033 should use Italy fragment",
+            ),
+            (
+                "019",
+                "/content/forms/af/afforms_germany_fragmentlib/affrg_germany_BankingRelationship",
+                "AAOW entity 019 should use Germany fragment",
+            ),
+            (
+                "001",
+                "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+                "AACX entity 001 should use CH/UBS fragment",
+            ),
+        ];
+
+        for (entity, expected_frag_ref, description) in &cases {
+            let mut config = test_config();
+            config.component_templates.insert("preface".into(), preface_template.into());
+            config.xfa_vars.insert("formrange_entity".into(), entity.to_string());
+            config.user_vars.insert("default_layout".into(), "fd/af/layouts/gridFluidLayout2".into());
+
+            let node = AemNode::Preface {
+                uuid: fixed_uuid(),
+                name: "PRF_Preface_abcdef01".into(),
+            };
+
+            let xml = render_node(&node, &config);
+
+            assert!(
+                xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
+                "{}: expected fragRef='{}' in:\n{}",
+                description,
+                expected_frag_ref,
+                xml
+            );
+            assert!(
+                xml.contains("name=\"PN_BankingRelationship\""),
+                "{}: expected name='PN_BankingRelationship' in:\n{}",
+                description,
+                xml
+            );
+            assert!(
+                xml.contains("sling:resourceType=\"fd/af/components/panel\""),
+                "{}: expected sling:resourceType='fd/af/components/panel' in:\n{}",
+                description,
+                xml
+            );
+            assert!(
+                xml.contains("guideNodeClass=\"guidePanel\""),
+                "{}: expected guideNodeClass='guidePanel' in:\n{}",
+                description,
+                xml
+            );
+            assert!(
+                xml.contains("completionExpReq=\"{Boolean}false\""),
+                "{}: expected completionExpReq in:\n{}",
+                description,
+                xml
+            );
+        }
     }
 }

@@ -320,6 +320,8 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         }
     }
 
+    inject_page_edge_templates(&mut children, config, &mut ctx);
+
     // --- Second pass: wire conditions onto trigger fields ---
     let conditions = std::mem::take(&mut ctx.collected_conditions);
     if !conditions.is_empty() {
@@ -341,6 +343,58 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     AemNode::Root {
         title: form_display_title,
         children,
+    }
+}
+
+fn inject_page_edge_templates(
+    children: &mut [AemNode],
+    config: &AemConfig,
+    ctx: &mut ConversionContext,
+) {
+    let insert_preface = config.component_templates.contains_key("preface");
+    let insert_appendix = config.component_templates.contains_key("appendix");
+    if !insert_preface && !insert_appendix {
+        return;
+    }
+
+    let page_indices: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| match node {
+            AemNode::Panel { is_page: true, .. } => Some(idx),
+            _ => None,
+        })
+        .collect();
+
+    let Some(first_page_idx) = page_indices.first().copied() else {
+        return;
+    };
+    let last_page_idx = page_indices.last().copied().unwrap_or(first_page_idx);
+
+    if insert_preface {
+        let name = ctx.make_name("PRF", "Preface");
+        let uuid = ctx.uuid(&name);
+        let preface = AemNode::Preface { uuid, name };
+        if let AemNode::Panel {
+            children: page_children,
+            ..
+        } = &mut children[first_page_idx]
+        {
+            page_children.insert(0, preface);
+        }
+    }
+
+    if insert_appendix {
+        let name = ctx.make_name("APX", "Appendix");
+        let uuid = ctx.uuid(&name);
+        let appendix = AemNode::Appendix { uuid, name };
+        if let AemNode::Panel {
+            children: page_children,
+            ..
+        } = &mut children[last_page_idx]
+        {
+            page_children.push(appendix);
+        }
     }
 }
 
@@ -1332,7 +1386,10 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::RadioButton { bind_ref, .. } => {
                 *bind_ref = None;
             }
-            AemNode::TextDraw { .. } | AemNode::TitleDraw { .. } => {}
+            AemNode::TextDraw { .. }
+            | AemNode::TitleDraw { .. }
+            | AemNode::Preface { .. }
+            | AemNode::Appendix { .. } => {}
         }
     }
 }
@@ -1581,7 +1638,10 @@ mod tests {
     fn convert_ordered_list_produces_textdraw() {
         let nodes = vec![StructuredNode::List(ListNode {
             list_style: crate::document::ListStyleType::Decimal,
-            items: vec![ListItem::simple(InlineText::plain("Step one")), ListItem::simple(InlineText::plain("Step two"))],
+            items: vec![
+                ListItem::simple(InlineText::plain("Step one")),
+                ListItem::simple(InlineText::plain("Step two")),
+            ],
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -1725,6 +1785,76 @@ mod tests {
                 assert!(content.contains("Hello world"));
             }
             other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn inserts_preface_and_appendix_into_first_and_last_page_panels() {
+        let mut config = default_config();
+        config
+            .component_templates
+            .insert("preface".into(), "<preface/>".into());
+        config
+            .component_templates
+            .insert("appendix".into(), "<appendix/>".into());
+
+        let nodes = vec![
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H2,
+                content: InlineText::plain("Page One"),
+                som_path: None,
+                source_name: None,
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("First page content"),
+                som_path: None,
+                source_name: None,
+            }),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H2,
+                content: InlineText::plain("Page Two"),
+                som_path: None,
+                source_name: None,
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: InlineText::plain("Second page content"),
+                som_path: None,
+                source_name: None,
+            }),
+        ];
+
+        let root = convert_to_aem(&nodes, &config);
+        match root {
+            AemNode::Root { children, .. } => {
+                assert_eq!(children.len(), 2, "expected two page panels");
+
+                match &children[0] {
+                    AemNode::Panel {
+                        children: page_children,
+                        ..
+                    } => {
+                        assert!(matches!(
+                            page_children.first(),
+                            Some(AemNode::Preface { .. })
+                        ));
+                    }
+                    other => panic!("Expected first child to be a panel, got {:?}", other),
+                }
+
+                match &children[1] {
+                    AemNode::Panel {
+                        children: page_children,
+                        ..
+                    } => {
+                        assert!(matches!(
+                            page_children.last(),
+                            Some(AemNode::Appendix { .. })
+                        ));
+                    }
+                    other => panic!("Expected second child to be a panel, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Root, got {:?}", other),
         }
     }
 
