@@ -2348,21 +2348,20 @@ fn merge_list_items(
             ListItem { content, sublist }
         })
         .collect();
-    for ia in &base[paired..] {
-        let content = localize_inline_text_for_language(&ia.content, base_lang);
-        items.push(ListItem {
-            content,
-            sublist: ia.sublist.clone(),
-        });
-    }
-    for ib in &other[paired..] {
-        let content = localize_inline_text_for_language(&ib.content, other_lang);
-        items.push(ListItem {
-            content,
-            sublist: ib.sublist.clone(),
-        });
-    }
+    append_unmatched_list_items(&mut items, &base[paired..], base_lang);
+    append_unmatched_list_items(&mut items, &other[paired..], other_lang);
     items
+}
+
+/// Append unmatched list items as single-language translated entries.
+fn append_unmatched_list_items(items: &mut Vec<ListItem>, unmatched: &[ListItem], language: &str) {
+    for item in unmatched {
+        let content = localize_inline_text_for_language(&item.content, language);
+        items.push(ListItem {
+            content,
+            sublist: item.sublist.clone(),
+        });
+    }
 }
 
 /// Wrap single-language inline text in a translation map for `language`.
@@ -2402,21 +2401,24 @@ fn merge_name_values(
             value: a.value.clone(),
         })
         .collect();
-    for a in &base[paired..] {
-        let name = localize_translatable_string_for_language(&a.name, base_lang);
-        options.push(NameValue {
-            name,
-            value: a.value.clone(),
-        });
-    }
-    for b in &other[paired..] {
-        let name = localize_translatable_string_for_language(&b.name, other_lang);
-        options.push(NameValue {
-            name,
-            value: b.value.clone(),
-        });
-    }
+    append_unmatched_name_values(&mut options, &base[paired..], base_lang);
+    append_unmatched_name_values(&mut options, &other[paired..], other_lang);
     options
+}
+
+/// Append unmatched option entries as single-language translated entries.
+fn append_unmatched_name_values(
+    options: &mut Vec<NameValue>,
+    unmatched: &[NameValue],
+    language: &str,
+) {
+    for entry in unmatched {
+        let name = localize_translatable_string_for_language(&entry.name, language);
+        options.push(NameValue {
+            name,
+            value: entry.value.clone(),
+        });
+    }
 }
 
 /// Wrap a translatable value as a single-language translated entry when needed.
@@ -2425,10 +2427,9 @@ fn localize_translatable_string_for_language(
     language: &str,
 ) -> TranslatableString {
     match value {
-        TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
-            language.to_string(),
-            Some(s.clone()),
-        )])),
+        TranslatableString::Plain(s) => {
+            TranslatableString::Translated(HashMap::from([(language.to_string(), Some(s.clone()))]))
+        }
         TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
     }
 }
