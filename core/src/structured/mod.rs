@@ -9,7 +9,10 @@ pub use element_merge::{
 };
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
-pub use translation_merger::{MergeError, calculate_structural_similarity, merge_translations};
+pub use translation_merger::{
+    MergeError, MergeError as TranslationMergeError, calculate_structural_similarity,
+    merge_translations,
+};
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -999,26 +1002,7 @@ impl StructuredNode {
                     })
             }
             (StructuredNode::List(a), StructuredNode::List(b)) => {
-                a.list_style == b.list_style
-                    && a.items.len() == b.items.len()
-                    && (mode == CompareMode::IgnoreText
-                        || a.items
-                            .iter()
-                            .zip(b.items.iter())
-                            .all(|(ia, ib)| {
-                                ia.content.structural_eq(&ib.content)
-                                    && ia.sublist.is_some() == ib.sublist.is_some()
-                                    && match (&ia.sublist, &ib.sublist) {
-                                        (Some(sa), Some(sb)) => {
-                                            StructuredNode::List(sa.as_ref().clone())
-                                                .structural_cmp(
-                                                    &StructuredNode::List(sb.as_ref().clone()),
-                                                    mode,
-                                                )
-                                        }
-                                        _ => true,
-                                    }
-                            }))
+                list_nodes_structural_cmp(a, b, mode)
             }
             // Different variants are never structurally equal
             _ => false,
@@ -1109,6 +1093,21 @@ impl StructuredNode {
             _ => {}
         }
     }
+}
+
+/// Structural list comparison helper used by [`StructuredNode::structural_cmp`].
+fn list_nodes_structural_cmp(a: &ListNode, b: &ListNode, mode: CompareMode) -> bool {
+    a.list_style == b.list_style
+        && a.items.len() == b.items.len()
+        && (mode == CompareMode::IgnoreText
+            || a.items.iter().zip(b.items.iter()).all(|(ia, ib)| {
+                ia.content.structural_eq(&ib.content)
+                    && match (&ia.sublist, &ib.sublist) {
+                        (Some(sa), Some(sb)) => list_nodes_structural_cmp(sa, sb, mode),
+                        (None, None) => true,
+                        _ => false,
+                    }
+            }))
 }
 
 impl InlineText {

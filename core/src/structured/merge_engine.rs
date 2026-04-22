@@ -2349,24 +2349,30 @@ fn merge_list_items(
         })
         .collect();
     for ia in &base[paired..] {
-        let map = inline_text_to_text_map(&ia.content, base_lang);
-        let content = if map.is_empty() {
-            ia.content.clone()
-        } else {
-            InlineText(vec![InlineNode::TranslatedText(map)])
-        };
-        items.push(ListItem { content, sublist: ia.sublist.clone() });
+        let content = localize_inline_text_for_language(&ia.content, base_lang);
+        items.push(ListItem {
+            content,
+            sublist: ia.sublist.clone(),
+        });
     }
     for ib in &other[paired..] {
-        let map = inline_text_to_text_map(&ib.content, other_lang);
-        let content = if map.is_empty() {
-            ib.content.clone()
-        } else {
-            InlineText(vec![InlineNode::TranslatedText(map)])
-        };
-        items.push(ListItem { content, sublist: ib.sublist.clone() });
+        let content = localize_inline_text_for_language(&ib.content, other_lang);
+        items.push(ListItem {
+            content,
+            sublist: ib.sublist.clone(),
+        });
     }
     items
+}
+
+/// Wrap single-language inline text in a translation map for `language`.
+fn localize_inline_text_for_language(content: &InlineText, language: &str) -> InlineText {
+    let map = inline_text_to_text_map(content, language);
+    if map.is_empty() {
+        content.clone()
+    } else {
+        InlineText(vec![InlineNode::TranslatedText(map)])
+    }
 }
 
 /// Merge two `NameValue` vectors by zipping and merging names.
