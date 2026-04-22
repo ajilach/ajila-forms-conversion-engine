@@ -1263,9 +1263,11 @@ impl TableNode {
 
         // Compare row structure
         let rows_eq = self.rows.len() == other.rows.len()
-            && self.rows.iter().zip(other.rows.iter()).all(|(r1, r2)| {
-                structured_node_slices_eq(&r1.cells, &r2.cells, mode)
-            });
+            && self
+                .rows
+                .iter()
+                .zip(other.rows.iter())
+                .all(|(r1, r2)| structured_node_slices_eq(&r1.cells, &r2.cells, mode));
 
         // Caption is only compared in Full mode
         let caption_eq =
