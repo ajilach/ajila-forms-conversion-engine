@@ -279,12 +279,25 @@ fn align_segment_semantic(
     let dp = lcs_table_weighted(base, other, score_fn);
     let alignment = lcs_align_weighted(base, other, &dp, score_fn);
 
+    alignment_to_nodes(base, other, alignment, |a, b| {
+        TranslationPolicy::merge_matched(ctx, a, b)
+    })
+}
+
+/// Convert index-based alignment pairs into tagged aligned nodes.
+fn alignment_to_nodes<M>(
+    base: &[StructuredNode],
+    other: &[StructuredNode],
+    alignment: Vec<(Option<usize>, Option<usize>)>,
+    mut merge_matched: M,
+) -> Vec<AlignedNode>
+where
+    M: FnMut(&StructuredNode, &StructuredNode) -> StructuredNode,
+{
     alignment
         .into_iter()
         .map(|(ai, bi)| match (ai, bi) {
-            (Some(a), Some(b)) => {
-                AlignedNode::Matched(TranslationPolicy::merge_matched(ctx, &base[a], &other[b]))
-            }
+            (Some(a), Some(b)) => AlignedNode::Matched(merge_matched(&base[a], &other[b])),
             (Some(a), None) => AlignedNode::LeftOnly(base[a].clone()),
             (None, Some(b)) => AlignedNode::RightOnly(other[b].clone()),
             (None, None) => unreachable!(),
@@ -639,15 +652,7 @@ fn align_segment<P: MergePolicy>(
     let dp = lcs_table_with(base, other, P::nodes_match);
     let alignment = lcs_align_with(base, other, &dp, P::nodes_match);
 
-    alignment
-        .into_iter()
-        .map(|(ai, bi)| match (ai, bi) {
-            (Some(a), Some(b)) => AlignedNode::Matched(P::merge_matched(ctx, &base[a], &other[b])),
-            (Some(a), None) => AlignedNode::LeftOnly(base[a].clone()),
-            (None, Some(b)) => AlignedNode::RightOnly(other[b].clone()),
-            (None, None) => unreachable!(),
-        })
-        .collect()
+    alignment_to_nodes(base, other, alignment, |a, b| P::merge_matched(ctx, a, b))
 }
 
 /// Find monotonically-increasing anchor pairs where both sides share the same
