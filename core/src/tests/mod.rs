@@ -3848,6 +3848,105 @@ fn test_aaai_kunde_heading_not_in_repeatable() {
 }
 
 #[test]
+fn test_aasu_dossier_titoli_field_is_inside_repeatable() {
+    use crate::structured::StructuredNode;
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AASU_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on AASU_033_IT.pdf");
+
+    fn has_repeatable_field_label(nodes: &[StructuredNode], label_fragment: &str) -> bool {
+        for node in nodes {
+            match node {
+                StructuredNode::Repeatable(rep) => {
+                    if contains_field_label(std::slice::from_ref(rep.item.as_ref()), label_fragment)
+                    {
+                        return true;
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if has_repeatable_field_label(&g.children, label_fragment) {
+                        return true;
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if has_repeatable_field_label(
+                        std::slice::from_ref(c.content.as_ref()),
+                        label_fragment,
+                    ) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn contains_field_label(nodes: &[StructuredNode], label_fragment: &str) -> bool {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(field) => {
+                    if field
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text().contains(label_fragment))
+                        .unwrap_or(false)
+                    {
+                        return true;
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if contains_field_label(&g.children, label_fragment) {
+                        return true;
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if contains_field_label(
+                        std::slice::from_ref(c.content.as_ref()),
+                        label_fragment,
+                    ) {
+                        return true;
+                    }
+                }
+                StructuredNode::Repeatable(rep) => {
+                    if contains_field_label(std::slice::from_ref(rep.item.as_ref()), label_fragment)
+                    {
+                        return true;
+                    }
+                }
+                StructuredNode::GridLayout(grid) => {
+                    for element in &grid.elements {
+                        if contains_field_label(std::slice::from_ref(&element.node), label_fragment)
+                        {
+                            return true;
+                        }
+                    }
+                }
+                StructuredNode::Table(table) => {
+                    if let Some(header) = &table.header {
+                        if contains_field_label(&header.cells, label_fragment) {
+                            return true;
+                        }
+                    }
+                    for row in &table.rows {
+                        if contains_field_label(&row.cells, label_fragment) {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    assert!(
+        has_repeatable_field_label(&merged, "Dossier titoli n."),
+        "Expected 'Dossier titoli n.' to be inside a Repeatable in AASU_033_IT"
+    );
+}
+
+#[test]
 fn test_aaai_watermark_not_recognized_as_field() {
     // Test that watermark (which has access="protected") is NOT recognized as a Field.
     // Only fields with access="open" should be marked as Fields.
