@@ -2403,32 +2403,34 @@ fn merge_name_values(
         })
         .collect();
     for a in &base[paired..] {
-        let name = match &a.name {
-            TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
-                base_lang.to_string(),
-                Some(s.clone()),
-            )])),
-            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
-        };
+        let name = localize_translatable_string_for_language(&a.name, base_lang);
         options.push(NameValue {
             name,
             value: a.value.clone(),
         });
     }
     for b in &other[paired..] {
-        let name = match &b.name {
-            TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
-                other_lang.to_string(),
-                Some(s.clone()),
-            )])),
-            TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
-        };
+        let name = localize_translatable_string_for_language(&b.name, other_lang);
         options.push(NameValue {
             name,
             value: b.value.clone(),
         });
     }
     options
+}
+
+/// Wrap a translatable value as a single-language translated entry when needed.
+fn localize_translatable_string_for_language(
+    value: &TranslatableString,
+    language: &str,
+) -> TranslatableString {
+    match value {
+        TranslatableString::Plain(s) => TranslatableString::Translated(HashMap::from([(
+            language.to_string(),
+            Some(s.clone()),
+        )])),
+        TranslatableString::Translated(m) => TranslatableString::Translated(m.clone()),
+    }
 }
 
 // ============================================================================
