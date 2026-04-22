@@ -45,7 +45,6 @@ pub(crate) fn lcs_align_with<F>(
 where
     F: Fn(&StructuredNode, &StructuredNode) -> bool,
 {
-    let mut result = Vec::new();
     let mut i = a.len();
     let mut j = b.len();
 
@@ -63,9 +62,21 @@ where
     }
     matches.reverse();
 
+    expand_alignment_matches(a.len(), b.len(), &matches)
+}
+
+/// Expand matched index pairs into a full alignment vector, inserting
+/// unmatched left/right entries between and after matches.
+fn expand_alignment_matches(
+    a_len: usize,
+    b_len: usize,
+    matches: &[(usize, usize)],
+) -> Vec<(Option<usize>, Option<usize>)> {
+    let mut result = Vec::new();
     let mut ai = 0;
     let mut bi = 0;
-    for (ma, mb) in &matches {
+
+    for (ma, mb) in matches {
         while ai < *ma {
             result.push((Some(ai), None));
             ai += 1;
@@ -79,11 +90,11 @@ where
         bi = mb + 1;
     }
 
-    while ai < a.len() {
+    while ai < a_len {
         result.push((Some(ai), None));
         ai += 1;
     }
-    while bi < b.len() {
+    while bi < b_len {
         result.push((None, Some(bi)));
         bi += 1;
     }
@@ -149,32 +160,7 @@ where
     }
     matches.reverse();
 
-    let mut result = Vec::new();
-    let mut ai = 0;
-    let mut bi = 0;
-    for (ma, mb) in &matches {
-        while ai < *ma {
-            result.push((Some(ai), None));
-            ai += 1;
-        }
-        while bi < *mb {
-            result.push((None, Some(bi)));
-            bi += 1;
-        }
-        result.push((Some(*ma), Some(*mb)));
-        ai = ma + 1;
-        bi = mb + 1;
-    }
-    while ai < a.len() {
-        result.push((Some(ai), None));
-        ai += 1;
-    }
-    while bi < b.len() {
-        result.push((None, Some(bi)));
-        bi += 1;
-    }
-
-    result
+    expand_alignment_matches(a.len(), b.len(), &matches)
 }
 
 /// Extract embeddable plain text from a text-bearing node.
@@ -1392,22 +1378,9 @@ pub(crate) fn merge_node_lists(
         base_lang,
         other_lang,
     };
-    let mut entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
+    let entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
 
-    consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
-    consolidate_orphan_paragraph_groups(&mut entries, base_lang, other_lang);
-    consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
-    consolidate_orphan_paragraph_into_field_label(&mut entries, base_lang, other_lang);
-    consolidate_by_neighborhood(&mut entries, base_lang, other_lang);
-
-    entries
-        .into_iter()
-        .map(|e| match e {
-            AlignedNode::Matched(node) => node,
-            AlignedNode::LeftOnly(node) => localize_structured_node(&node, base_lang),
-            AlignedNode::RightOnly(node) => localize_structured_node(&node, other_lang),
-        })
-        .collect()
+    finalize_aligned_entries(entries, base_lang, other_lang)
 }
 
 /// Same as [`merge_node_lists`] but uses semantic-weighted LCS alignment
@@ -1425,8 +1398,16 @@ pub(crate) fn merge_node_lists_semantic(
         base_lang,
         other_lang,
     };
-    let mut entries = align_and_tag_semantic(&ctx, base, other, semantic);
+    let entries = align_and_tag_semantic(&ctx, base, other, semantic);
 
+    finalize_aligned_entries(entries, base_lang, other_lang)
+}
+
+fn finalize_aligned_entries(
+    mut entries: Vec<AlignedNode>,
+    base_lang: &str,
+    other_lang: &str,
+) -> Vec<StructuredNode> {
     consolidate_orphan_paragraphs(&mut entries, base_lang, other_lang);
     consolidate_orphan_paragraph_groups(&mut entries, base_lang, other_lang);
     consolidate_orphan_conditionals(&mut entries, base_lang, other_lang);
