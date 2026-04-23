@@ -47,7 +47,7 @@
                     dorFieldStyling="{{ variables.dor_field_styling }}"
                     guideNodeClass="guideTextDraw"
                     headingLevel="2"
-                    name="TTL_{{ name }}"
+                    name="TTL_{{ name | replace(from="PN_", to="") }}"
                     summaryExclusion="true"
                     textIsRich="true"/>
             </items>

@@ -14,8 +14,7 @@
         jcr:language="{{ master_language }}"
         jcr:primaryType="cq:PageContent"
         jcr:title="{{ form_code }}"
-        sling:resourceType="{{ variables.page_resource_type }}"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="{{ variables.page_resource_type }}">
         <parsys1 jcr:primaryType="nt:unstructured" sling:resourceType="wcm/foundation/components/responsivegrid">
             <guideheader jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.custom_resource_type_base }}/controls/guideheader"/>
             <guideformtitle jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.custom_resource_type_base }}/controls/formtitle" _value="&lt;p&gt;{{ title }}&lt;/p&gt;" css="guideformtitle container" guideNodeClass="guideTextDraw" name="formTitle" textIsRich="true"/>

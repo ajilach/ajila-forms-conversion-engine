@@ -38,7 +38,7 @@ pub fn generate_aem_package(
     let form_xml = generate_aem_xml(root, config);
     let dam_xml = generate_dam_xml(config);
 
-    let package_name = format!("BlueprintFormsPackage_{}", config.form_code);
+    let package_name = config.form_code.clone();
 
     let form_dir = config.form_dir();
     let form_jcr_path = format!("/content/forms/af/{}/{}", config.form_path, form_dir);
@@ -336,9 +336,11 @@ fn generate_dam_asset_xml(config: &AemConfig) -> String {
         // <metadata>
         let mut meta = BytesStart::new("metadata");
         meta.push_attribute(("fd:version", "1.1"));
+        meta.push_attribute(("jcr:mixinTypes", "[mix:created,mix:lastModified]"));
         meta.push_attribute(("jcr:primaryType", "nt:unstructured"));
         meta.push_attribute(("allowedRenderFormat", "HTML"));
         meta.push_attribute(("author", config.author.as_str()));
+        meta.push_attribute(("availableInMobileApp", "{Boolean}false"));
         if !config.dor_template_ref.is_empty() {
             meta.push_attribute(("dorTemplateRef", config.dor_template_ref.as_str()));
         }
@@ -384,7 +386,7 @@ fn generate_manifest(package_name: &str, roots: &[String]) -> String {
         &format!("fd/export:{}", package_name),
     );
     write_manifest_entry(&mut manifest, "Content-Package-Roots", &roots_value);
-    write_manifest_entry(&mut manifest, "Content-Package-Type", "mixed");
+    write_manifest_entry(&mut manifest, "Content-Package-Type", "content");
     manifest.push_str("\r\n");
     manifest
 }
@@ -444,7 +446,7 @@ fn generate_properties_xml(package_name: &str, author: &str) -> String {
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
 <properties>
 <comment>FileVault Package Properties</comment>
-<entry key="packageType">mixed</entry>
+<entry key="packageType">content</entry>
 <entry key="lastWrappedBy">{author}</entry>
 <entry key="packageFormatVersion">2</entry>
 <entry key="group">fd/export</entry>
@@ -736,9 +738,8 @@ fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut I18nD
         return;
     }
 
-    let render_list = |lang: &str| -> String {
-        crate::aem::converter::render_list_html(list, lang)
-    };
+    let render_list =
+        |lang: &str| -> String { crate::aem::converter::render_list_html(list, lang) };
 
     let master_html = render_list(master_lang);
     let others: HashMap<String, String> = langs
