@@ -266,7 +266,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     }
 
     // Second pass: convert each section into AemNodes.
+    // Preamble content (before first H2) is merged into the first H2 section page,
+    // not wrapped in its own page. This matches the reference structure where
+    // preface/intro content appears at the start of the first content page.
     let mut children: Vec<AemNode> = Vec::new();
+    let mut preamble_nodes: Vec<AemNode> = Vec::new();
 
     for (title, section_nodes) in &sections {
         let converted: Vec<AemNode> = section_nodes
@@ -283,11 +287,21 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 .cloned();
             let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
+
+            // Prepend preamble content to the first H2 section
+            let section_children = if children.is_empty() && !preamble_nodes.is_empty() {
+                let mut merged = std::mem::take(&mut preamble_nodes);
+                merged.extend(converted);
+                merged
+            } else {
+                converted
+            };
+
             children.push(AemNode::Panel {
                 uuid,
                 name,
                 title: title.clone(),
-                children: converted,
+                children: section_children,
                 is_page: true,
                 dor_exclude: false,
                 visible: true,
@@ -298,26 +312,30 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 bind_ref,
             });
         } else {
-            // Preamble (before first H2) → also wrap in a Panel
-            if !converted.is_empty() {
-                let name = ctx.make_name("PN", "");
-                let uuid = ctx.uuid(&name);
-                children.push(AemNode::Panel {
-                    uuid,
-                    name,
-                    title: String::new(),
-                    children: converted,
-                    is_page: true,
-                    dor_exclude: false,
-                    visible: true,
-                    is_conditional: false,
-                    dor_num_cols: None,
-                    colspan: config.grid_columns,
-                    dor_colspan: None,
-                    bind_ref: None,
-                });
-            }
+            // Preamble (before first H2) → collect nodes, don't create page.
+            // These will be prepended to the first H2 section.
+            preamble_nodes = converted;
         }
+    }
+
+    // If there were only preamble nodes and no H2 sections, wrap them in a page.
+    if children.is_empty() && !preamble_nodes.is_empty() {
+        let name = ctx.make_name("PN", "");
+        let uuid = ctx.uuid(&name);
+        children.push(AemNode::Panel {
+            uuid,
+            name,
+            title: String::new(),
+            children: preamble_nodes,
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: config.grid_columns,
+            dor_colspan: None,
+            bind_ref: None,
+        });
     }
 
     inject_page_edge_templates(&mut children, config, &mut ctx);
