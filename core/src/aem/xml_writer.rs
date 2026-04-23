@@ -1291,9 +1291,16 @@ mod tests {
 
         for (entity, expected_frag_ref, description) in &cases {
             let mut config = test_config();
-            config.component_templates.insert("preface".into(), preface_template.into());
-            config.xfa_vars.insert("formrange_entity".into(), entity.to_string());
-            config.user_vars.insert("default_layout".into(), "fd/af/layouts/gridFluidLayout2".into());
+            config
+                .component_templates
+                .insert("preface".into(), preface_template.into());
+            config
+                .xfa_vars
+                .insert("formrange_entity".into(), entity.to_string());
+            config.user_vars.insert(
+                "default_layout".into(),
+                "fd/af/layouts/gridFluidLayout2".into(),
+            );
 
             let node = AemNode::Preface {
                 uuid: fixed_uuid(),
