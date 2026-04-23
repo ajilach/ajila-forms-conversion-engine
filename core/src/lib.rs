@@ -791,30 +791,197 @@ pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> 
 /// This helper reads the PDF from disk, explores all states, and merges them
 /// into a single structured representation. It does not perform any file I/O
 /// beyond reading the input PDF.
+///
+/// During tests, results are cached so that repeated calls with the same file
+/// are essentially free. The expensive `from_pdf` + `states()` work is shared
+/// across all language variants of the same PDF.
 pub fn run_exhaustive_to_merged(pdf_path: impl AsRef<Path>) -> Result<Vec<StructuredNode>, Error> {
-    let mut bp = Blueprint::from_pdf(pdf_path)?;
-    let form_states = bp.states()?;
-    let context = bp.context();
-    Ok(merge_form_states(&form_states, context))
+    run_exhaustive_to_merged_inner(pdf_path.as_ref())
+}
+
+fn run_exhaustive_to_merged_inner(pdf_path: &Path) -> Result<Vec<StructuredNode>, Error> {
+    #[cfg(test)]
+    {
+        let envelope = test_cache::cached_envelope(pdf_path, None);
+        return Ok(envelope.content);
+    }
+
+    #[cfg(not(test))]
+    {
+        let mut bp = Blueprint::from_pdf(pdf_path)?;
+        let form_states = bp.states()?;
+        let context = bp.context();
+        Ok(merge_form_states(&form_states, context))
+    }
 }
 
 /// Run exhaustive exploration on a PDF file and return a `DocumentEnvelope`.
 ///
 /// The caller controls the language value stored in the envelope context.
+///
+/// During tests, results are cached so that repeated calls with the same
+/// arguments are essentially free. The expensive `from_pdf` + `states()` work
+/// is shared across all language variants of the same PDF.
 pub fn run_exhaustive_to_envelope(
     pdf_path: impl AsRef<Path>,
     language: &str,
 ) -> Result<DocumentEnvelope, Error> {
-    let mut bp = Blueprint::from_pdf(pdf_path)?;
-    let form_states = bp.states()?;
-    let state_count = form_states.len();
-    let mut context = bp.context();
-    // Override language if caller provides one (e.g. for translation merging)
-    context.set_language(language.to_string());
-    let content = merge_form_states(&form_states, context.clone());
-    Ok(DocumentEnvelope {
-        context,
-        content,
-        state_count,
-    })
+    run_exhaustive_to_envelope_inner(pdf_path.as_ref(), language)
+}
+
+fn run_exhaustive_to_envelope_inner(
+    pdf_path: &Path,
+    language: &str,
+) -> Result<DocumentEnvelope, Error> {
+    #[cfg(test)]
+    {
+        return Ok(test_cache::cached_envelope(pdf_path, Some(language)));
+    }
+
+    #[cfg(not(test))]
+    {
+        let mut bp = Blueprint::from_pdf(pdf_path)?;
+        let form_states = bp.states()?;
+        let state_count = form_states.len();
+        let mut context = bp.context();
+        context.set_language(language.to_string());
+        let content = merge_form_states(&form_states, context.clone());
+        Ok(DocumentEnvelope {
+            context,
+            content,
+            state_count,
+        })
+    }
+}
+
+// ============================================================================
+// Test-only two-tier cache
+// ============================================================================
+//
+// Tier 1 – **states cache** (keyed by canonical path):
+//   Runs `Blueprint::from_pdf` + `bp.states()` once per PDF.  Shared across
+//   all language variants so the expensive XFA scripting / state exploration
+//   never repeats.
+//
+// Tier 2 – **envelope cache** (keyed by canonical path + language):
+//   Runs `merge_form_states` (analysis pipeline + recursive merge) once per
+//   `(PDF, language)` pair.
+//
+// Both tiers use `Arc<OnceLock<T>>` entries so that concurrent test threads
+// requesting the same key block on the first computation instead of all
+// computing in parallel.
+// ============================================================================
+
+#[cfg(test)]
+mod test_cache {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    /// Cached result of `Blueprint::from_pdf` + `bp.states()`.
+    struct CachedStates {
+        states: FormStates,
+        context: Context,
+    }
+
+    // -- tier 1: states --
+
+    type StatesEntry = Arc<OnceLock<Arc<CachedStates>>>;
+
+    fn states_cache() -> &'static Mutex<HashMap<std::path::PathBuf, StatesEntry>> {
+        static CACHE: OnceLock<Mutex<HashMap<std::path::PathBuf, StatesEntry>>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn cached_states(pdf_path: &Path) -> Arc<CachedStates> {
+        let key = pdf_path
+            .canonicalize()
+            .unwrap_or_else(|_| pdf_path.to_path_buf());
+        let entry = {
+            let mut guard = states_cache().lock().unwrap();
+            Arc::clone(
+                guard
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(OnceLock::new())),
+            )
+        };
+        let was_empty = entry.get().is_none();
+        if was_empty {
+            println!("[cache] states: computing {}", pdf_path.display());
+        } else {
+            println!("[cache] states: reusing {}", pdf_path.display());
+        }
+        let data = entry.get_or_init(|| {
+            let mut bp = Blueprint::from_pdf(pdf_path)
+                .unwrap_or_else(|e| panic!("Failed to load {}: {e}", pdf_path.display()));
+            let context = bp.context();
+            let states = bp.states().unwrap_or_else(|e| {
+                panic!("Failed to explore states for {}: {e}", pdf_path.display())
+            });
+            Arc::new(CachedStates { states, context })
+        });
+        Arc::clone(data)
+    }
+
+    // -- tier 2: envelope --
+
+    type EnvelopeEntry = Arc<OnceLock<DocumentEnvelope>>;
+
+    fn envelope_cache() -> &'static Mutex<HashMap<(std::path::PathBuf, String), EnvelopeEntry>> {
+        static CACHE: OnceLock<Mutex<HashMap<(std::path::PathBuf, String), EnvelopeEntry>>> =
+            OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    /// Get a `DocumentEnvelope` from the two-tier cache.
+    ///
+    /// When `language` is `None` the auto-detected language from the PDF is
+    /// used (matching what `run_exhaustive_to_merged` does).
+    pub(super) fn cached_envelope(pdf_path: &Path, language: Option<&str>) -> DocumentEnvelope {
+        let form_data = cached_states(pdf_path);
+        let lang = language
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| form_data.context.language().to_string());
+
+        let key = (
+            pdf_path
+                .canonicalize()
+                .unwrap_or_else(|_| pdf_path.to_path_buf()),
+            lang.clone(),
+        );
+        let entry = {
+            let mut guard = envelope_cache().lock().unwrap();
+            Arc::clone(
+                guard
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(OnceLock::new())),
+            )
+        };
+        let was_empty = entry.get().is_none();
+        if was_empty {
+            println!(
+                "[cache] envelope: computing {} ({})",
+                pdf_path.display(),
+                lang
+            );
+        } else {
+            println!(
+                "[cache] envelope: reusing {} ({})",
+                pdf_path.display(),
+                lang
+            );
+        }
+        let value = entry.get_or_init(|| {
+            let state_count = form_data.states.len();
+            let mut context = form_data.context.clone();
+            context.set_language(lang.clone());
+            let content = merge_form_states(&form_data.states, context.clone());
+            DocumentEnvelope {
+                context,
+                content,
+                state_count,
+            }
+        });
+        value.clone()
+    }
 }
