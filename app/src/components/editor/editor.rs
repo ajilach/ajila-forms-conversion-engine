@@ -16,13 +16,13 @@ use blueprint::{
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::state::{
-    available_conversions, can_merge_selected, compute_add_options, delete_nodes,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
+    SelectionState, available_conversions, can_merge_selected, compute_add_options, delete_nodes,
     get_container_child_info, get_container_children_count, get_list_at_path, get_list_at_path_mut,
     get_list_item_text_mut, get_node_at_path, get_node_at_path_mut, get_shared_parent_path,
     get_table_column_count, is_container_child_path, is_list_item_path, is_table_row_path,
     move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
-    move_table_row_down, move_table_row_up, ConvertTarget, EditorAction, FieldInputKind,
-    NewNodeType, NodeMetadata, PathSegment, SelectionState,
+    move_table_row_down, move_table_row_up,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
