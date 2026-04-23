@@ -1731,44 +1731,31 @@ mod tests {
         let root = convert_to_aem(&nodes, &default_config());
         match &root {
             AemNode::Root { children, .. } => {
-                // Preamble panel + Panel "Section A" + Panel "Section B"
+                // Preamble merged into first section: Panel "Section A" + Panel "Section B"
                 assert_eq!(
                     children.len(),
-                    3,
-                    "Expected 3 root children: preamble panel + 2 section panels"
+                    2,
+                    "Expected 2 root children: 2 section panels (preamble merged into first)"
                 );
 
-                // First child: preamble panel wrapping the paragraph
+                // First child: Panel for Section A (preamble TextDraw + fieldA)
                 match &children[0] {
                     AemNode::Panel {
                         title,
                         children: panel_children,
                         ..
                     } => {
-                        assert!(title.is_empty(), "Preamble panel should have empty title");
-                        assert_eq!(panel_children.len(), 1);
-                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
-                    }
-                    other => panic!("Expected Panel for preamble, got {:?}", other),
-                }
-
-                // Second child: Panel for Section A
-                match &children[1] {
-                    AemNode::Panel {
-                        title,
-                        children: panel_children,
-                        ..
-                    } => {
                         assert_eq!(title, "Section A");
-                        // Only fieldA (H2 heading is NOT converted to TextDraw)
-                        assert_eq!(panel_children.len(), 1);
-                        assert!(matches!(&panel_children[0], AemNode::TextField { .. }));
+                        // preamble paragraph + fieldA
+                        assert_eq!(panel_children.len(), 2);
+                        assert!(matches!(&panel_children[0], AemNode::TextDraw { .. }));
+                        assert!(matches!(&panel_children[1], AemNode::TextField { .. }));
                     }
                     other => panic!("Expected Panel for Section A, got {:?}", other),
                 }
 
-                // Third child: Panel for Section B
-                match &children[2] {
+                // Second child: Panel for Section B
+                match &children[1] {
                     AemNode::Panel {
                         title,
                         children: panel_children,
