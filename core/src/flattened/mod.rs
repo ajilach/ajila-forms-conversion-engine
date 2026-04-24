@@ -3358,7 +3358,7 @@ impl Flattened {
     ///
     /// Returns a Vec of (pageArea, contentArea) pairs for all pageAreas found.
     fn find_all_page_areas(nodes: &[XfaNode]) -> Vec<(&XfaNode, &XfaNode)> {
-        fn find_content_area_in_page<'a>(page_area: &'a XfaNode) -> &'a XfaNode {
+        fn find_content_area_in_page(page_area: &XfaNode) -> &XfaNode {
             for child in &page_area.children {
                 if matches!(child.kind, XfaNodeKind::ContentArea) {
                     return child;
@@ -7580,7 +7580,7 @@ impl Flattened {
             // - Middle lines: DS each
             // - Last line: TH + MB (no line gap)
             let first_line = margin_top + line_spacing;
-            let middle_lines = (num_lines - 2).max(0) as f32 * line_spacing;
+            let middle_lines = (num_lines - 2) as f32 * line_spacing;
             let last_line = text_height + margin_bottom;
 
             first_line + middle_lines + last_line

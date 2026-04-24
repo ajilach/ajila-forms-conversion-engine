@@ -332,7 +332,7 @@ fn detect_parenthesized_marker(text: &str) -> Option<(usize, ListStyleType)> {
             let is_upper = content
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_ascii_uppercase());
+                .is_some_and(|c| c.is_ascii_uppercase());
             if is_upper {
                 ListStyleType::UpperRoman
             } else {
@@ -342,7 +342,7 @@ fn detect_parenthesized_marker(text: &str) -> Option<(usize, ListStyleType)> {
             && content
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_ascii_alphabetic())
+                .is_some_and(|c| c.is_ascii_alphabetic())
         {
             // Single non-roman letter: (a), (b), (A), (B) - but not (i), (v), (x) which are roman
             let ch = content.chars().next().unwrap();
@@ -611,11 +611,7 @@ fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
     }
 
     for (left_idx, right_idx) in merges {
-        doc.merge_inferred(
-            vec![left_idx, right_idx],
-            GroupKind::TextBlock,
-            module_name,
-        );
+        doc.merge_inferred(vec![left_idx, right_idx], GroupKind::TextBlock, module_name);
     }
 }
 
@@ -821,11 +817,7 @@ impl AnalysisModule for ListDetector {
                 // merge groups[i] and groups[i+2],
                 // record groups[i+1] as sublist after the last item of groups[i].
                 let after_count = groups[i].len();
-                sublists[i].push((
-                    after_count,
-                    groups[i + 1].clone(),
-                    group_styles[i + 1],
-                ));
+                sublists[i].push((after_count, groups[i + 1].clone(), group_styles[i + 1]));
                 let tail: Vec<usize> = groups[i + 2].clone();
                 groups[i].extend(tail);
                 consumed[i + 1] = true;
@@ -1204,9 +1196,7 @@ impl AnalysisModule for ListDetector {
         // For each list group, merge into a List group (skip groups with < 2 items
         // after backward extension; these are single-item runs that didn't grow
         // enough to form a proper list).
-        for (i, (group_indices, list_style)) in
-            groups.into_iter().zip(group_styles).enumerate()
-        {
+        for (i, (group_indices, list_style)) in groups.into_iter().zip(group_styles).enumerate() {
             if group_indices.len() < 2 {
                 continue;
             }
@@ -1220,11 +1210,7 @@ impl AnalysisModule for ListDetector {
 
             if subs.is_empty() {
                 // Simple case: no sublists
-                doc.merge_inferred(
-                    group_indices,
-                    GroupKind::List { list_style },
-                    self.name(),
-                );
+                doc.merge_inferred(group_indices, GroupKind::List { list_style }, self.name());
             } else {
                 // Build children list interleaving TextBlock items and sublist groups.
                 // For each sublist, create a GroupKind::List group first, then
@@ -1252,11 +1238,7 @@ impl AnalysisModule for ListDetector {
                     }
                 }
 
-                doc.merge_inferred(
-                    child_indices,
-                    GroupKind::List { list_style },
-                    self.name(),
-                );
+                doc.merge_inferred(child_indices, GroupKind::List { list_style }, self.name());
             }
         }
     }

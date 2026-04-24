@@ -181,7 +181,7 @@ impl DateFieldDetector {
         lines
             .into_iter()
             .map(|mut line| {
-                line.sort_by(|a, b| a.1.cmp(&b.1));
+                line.sort_by_key(|a| a.1);
                 line.into_iter().map(|(idx, x, _)| (idx, x)).collect()
             })
             .collect()

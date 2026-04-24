@@ -510,7 +510,7 @@ fn ensure_all_languages(map: &mut TranslationMap, langs: &[String]) {
     // language keys that are absent from the map or already set to None.
     let has_real_content = map
         .values()
-        .any(|v| v.as_ref().map_or(false, |s| !s.trim().is_empty()));
+        .any(|v| v.as_ref().is_some_and(|s| !s.trim().is_empty()));
 
     for lang in langs {
         match map.get(lang) {

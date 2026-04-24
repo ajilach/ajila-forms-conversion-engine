@@ -393,7 +393,7 @@ fn move_number_prefixes_to_headings(nodes: &mut Vec<StructuredNode>) {
                 let mut children: Vec<StructuredNode> =
                     gl.elements.iter().map(|e| e.node.clone()).collect();
                 move_number_prefixes_to_headings(&mut children);
-                for (elem, new_node) in gl.elements.iter_mut().zip(children.into_iter()) {
+                for (elem, new_node) in gl.elements.iter_mut().zip(children) {
                     elem.node = new_node;
                 }
             }

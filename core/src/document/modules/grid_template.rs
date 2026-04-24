@@ -178,7 +178,7 @@ impl GridTemplateDetector {
         }
 
         // Sort by x coordinate (left to right)
-        bounded_groups.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+        bounded_groups.sort_by_key(|a| a.1.x);
 
         // Derive proportional colspans from field widths
         let widths: Vec<Decimal> = bounded_groups.iter().map(|(_, b)| b.width).collect();

@@ -602,10 +602,10 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
 
         if path.len() == 1 {
             // Root level deletion
-            if let PathSegment::Child(idx) = last_segment {
-                if *idx < content.len() {
-                    content.remove(*idx);
-                }
+            if let PathSegment::Child(idx) = last_segment
+                && *idx < content.len()
+            {
+                content.remove(*idx);
             }
         } else {
             // Get parent path (all but last segment)
@@ -617,25 +617,21 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                     // Deletion of a child node
                     if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
                         match parent {
-                            StructuredNode::Group(g) => {
-                                if *child_idx < g.children.len() {
-                                    g.children.remove(*child_idx);
-                                }
+                            StructuredNode::Group(g)
+                                if *child_idx < g.children.len() => {
+                                g.children.remove(*child_idx);
                             }
-                            StructuredNode::GridLayout(g) => {
-                                if *child_idx < g.elements.len() {
-                                    g.elements.remove(*child_idx);
-                                }
+                            StructuredNode::GridLayout(g)
+                                if *child_idx < g.elements.len() => {
+                                g.elements.remove(*child_idx);
                             }
-                            StructuredNode::Repeatable(r) => {
-                                if *child_idx == 0 {
-                                    *r.item = StructuredNode::Empty;
-                                }
+                            StructuredNode::Repeatable(r)
+                                if *child_idx == 0 => {
+                                *r.item = StructuredNode::Empty;
                             }
-                            StructuredNode::Conditional(c) => {
-                                if *child_idx == 0 {
-                                    *c.content = StructuredNode::Empty;
-                                }
+                            StructuredNode::Conditional(c)
+                                if *child_idx == 0 => {
+                                *c.content = StructuredNode::Empty;
                             }
                             _ => {}
                         }
@@ -643,28 +639,24 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::ListItem(item_idx) => {
                     // Deletion of a list item
-                    if let Some(list) = get_list_at_path_mut(content, &parent_path) {
-                        if *item_idx < list.items.len() {
-                            list.items.remove(*item_idx);
-                        }
+                    if let Some(list) = get_list_at_path_mut(content, &parent_path)
+                        && *item_idx < list.items.len()
+                    {
+                        list.items.remove(*item_idx);
                     }
                 }
                 PathSegment::TableRow(row_idx) => {
                     // Deletion of a table row
-                    if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
-                        if let StructuredNode::Table(t) = parent {
-                            if *row_idx < t.rows.len() {
-                                t.rows.remove(*row_idx);
-                            }
-                        }
+                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path)
+                        && *row_idx < t.rows.len()
+                    {
+                        t.rows.remove(*row_idx);
                     }
                 }
                 PathSegment::TableHeader => {
                     // Deletion of table header
-                    if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
-                        if let StructuredNode::Table(t) = parent {
-                            t.header = None;
-                        }
+                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path) {
+                        t.header = None;
                     }
                 }
                 PathSegment::TableCell(_) => {
@@ -921,7 +913,7 @@ pub fn available_conversions(
 /// Check if a path refers to a pseudo-node (ListItem, TableRow, TableHeader, TableCell).
 #[allow(dead_code)]
 pub fn is_pseudo_node_path(path: &NodePath) -> bool {
-    path.last().map_or(false, |seg| {
+    path.last().is_some_and(|seg| {
         matches!(
             seg,
             PathSegment::ListItem(_)
@@ -935,19 +927,19 @@ pub fn is_pseudo_node_path(path: &NodePath) -> bool {
 /// Check if a path refers to a list item.
 pub fn is_list_item_path(path: &NodePath) -> bool {
     path.last()
-        .map_or(false, |seg| matches!(seg, PathSegment::ListItem(_)))
+        .is_some_and(|seg| matches!(seg, PathSegment::ListItem(_)))
 }
 
 /// Check if a path refers to a table row.
 pub fn is_table_row_path(path: &NodePath) -> bool {
     path.last()
-        .map_or(false, |seg| matches!(seg, PathSegment::TableRow(_)))
+        .is_some_and(|seg| matches!(seg, PathSegment::TableRow(_)))
 }
 
 /// Check if a path refers to a table cell.
 pub fn is_table_cell_path(path: &NodePath) -> bool {
     path.last()
-        .map_or(false, |seg| matches!(seg, PathSegment::TableCell(_)))
+        .is_some_and(|seg| matches!(seg, PathSegment::TableCell(_)))
 }
 
 /// Get the parent path and item index for a list item path.
@@ -972,7 +964,7 @@ pub fn get_table_row_info(path: &NodePath) -> Option<(NodePath, usize)> {
 
 /// Move a list item up within its list.
 /// Returns the new path if the move was successful.
-pub fn move_list_item_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+pub fn move_list_item_up(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
     if item_idx == 0 {
         return None; // Can't move first item up
@@ -990,7 +982,7 @@ pub fn move_list_item_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> 
 
 /// Move a list item down within its list.
 /// Returns the new path if the move was successful.
-pub fn move_list_item_down(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+pub fn move_list_item_down(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
 
     let list = get_list_at_path_mut(content, &parent_path)?;
@@ -1005,37 +997,37 @@ pub fn move_list_item_down(content: &mut Vec<StructuredNode>, path: &NodePath) -
 
 /// Move a table row up within its table.
 /// Returns the new path if the move was successful.
-pub fn move_table_row_up(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+pub fn move_table_row_up(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
     let (parent_path, row_idx) = get_table_row_info(path)?;
     if row_idx == 0 {
         return None; // Can't move first row up
     }
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
-    if let StructuredNode::Table(t) = parent {
-        if row_idx < t.rows.len() {
-            t.rows.swap(row_idx, row_idx - 1);
-            let mut new_path = parent_path;
-            new_path.push(PathSegment::TableRow(row_idx - 1));
-            return Some(new_path);
-        }
+    if let StructuredNode::Table(t) = parent
+        && row_idx < t.rows.len()
+    {
+        t.rows.swap(row_idx, row_idx - 1);
+        let mut new_path = parent_path;
+        new_path.push(PathSegment::TableRow(row_idx - 1));
+        return Some(new_path);
     }
     None
 }
 
 /// Move a table row down within its table.
 /// Returns the new path if the move was successful.
-pub fn move_table_row_down(content: &mut Vec<StructuredNode>, path: &NodePath) -> Option<NodePath> {
+pub fn move_table_row_down(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
     let (parent_path, row_idx) = get_table_row_info(path)?;
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
-    if let StructuredNode::Table(t) = parent {
-        if row_idx + 1 < t.rows.len() {
-            t.rows.swap(row_idx, row_idx + 1);
-            let mut new_path = parent_path;
-            new_path.push(PathSegment::TableRow(row_idx + 1));
-            return Some(new_path);
-        }
+    if let StructuredNode::Table(t) = parent
+        && row_idx + 1 < t.rows.len()
+    {
+        t.rows.swap(row_idx, row_idx + 1);
+        let mut new_path = parent_path;
+        new_path.push(PathSegment::TableRow(row_idx + 1));
+        return Some(new_path);
     }
     None
 }
@@ -1074,11 +1066,11 @@ pub fn is_container_child_path(path: &NodePath) -> bool {
 
 /// Get the parent path and child index for a container child path.
 pub fn get_container_child_info(path: &NodePath) -> Option<(NodePath, usize)> {
-    if let Some(PathSegment::Child(idx)) = path.last() {
-        if path.len() >= 2 {
-            let parent_path: NodePath = path[..path.len() - 1].to_vec();
-            return Some((parent_path, *idx));
-        }
+    if let Some(PathSegment::Child(idx)) = path.last()
+        && path.len() >= 2
+    {
+        let parent_path: NodePath = path[..path.len() - 1].to_vec();
+        return Some((parent_path, *idx));
     }
     None
 }
@@ -1099,7 +1091,7 @@ pub fn get_container_children_count(
 /// Move a child up within its container (Group or GridLayout).
 /// Returns the new path if the move was successful.
 pub fn move_container_child_up(
-    content: &mut Vec<StructuredNode>,
+    content: &mut [StructuredNode],
     path: &NodePath,
 ) -> Option<NodePath> {
     let (parent_path, child_idx) = get_container_child_info(path)?;
@@ -1109,21 +1101,19 @@ pub fn move_container_child_up(
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g) => {
-            if child_idx < g.children.len() {
-                g.children.swap(child_idx, child_idx - 1);
-                let mut new_path = parent_path;
-                new_path.push(PathSegment::Child(child_idx - 1));
-                return Some(new_path);
-            }
+        StructuredNode::Group(g)
+            if child_idx < g.children.len() => {
+            g.children.swap(child_idx, child_idx - 1);
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            return Some(new_path);
         }
-        StructuredNode::GridLayout(g) => {
-            if child_idx < g.elements.len() {
-                g.elements.swap(child_idx, child_idx - 1);
-                let mut new_path = parent_path;
-                new_path.push(PathSegment::Child(child_idx - 1));
-                return Some(new_path);
-            }
+        StructuredNode::GridLayout(g)
+            if child_idx < g.elements.len() => {
+            g.elements.swap(child_idx, child_idx - 1);
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            return Some(new_path);
         }
         _ => {}
     }
@@ -1133,28 +1123,26 @@ pub fn move_container_child_up(
 /// Move a child down within its container (Group or GridLayout).
 /// Returns the new path if the move was successful.
 pub fn move_container_child_down(
-    content: &mut Vec<StructuredNode>,
+    content: &mut [StructuredNode],
     path: &NodePath,
 ) -> Option<NodePath> {
     let (parent_path, child_idx) = get_container_child_info(path)?;
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g) => {
-            if child_idx + 1 < g.children.len() {
-                g.children.swap(child_idx, child_idx + 1);
-                let mut new_path = parent_path;
-                new_path.push(PathSegment::Child(child_idx + 1));
-                return Some(new_path);
-            }
+        StructuredNode::Group(g)
+            if child_idx + 1 < g.children.len() => {
+            g.children.swap(child_idx, child_idx + 1);
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx + 1));
+            return Some(new_path);
         }
-        StructuredNode::GridLayout(g) => {
-            if child_idx + 1 < g.elements.len() {
-                g.elements.swap(child_idx, child_idx + 1);
-                let mut new_path = parent_path;
-                new_path.push(PathSegment::Child(child_idx + 1));
-                return Some(new_path);
-            }
+        StructuredNode::GridLayout(g)
+            if child_idx + 1 < g.elements.len() => {
+            g.elements.swap(child_idx, child_idx + 1);
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx + 1));
+            return Some(new_path);
         }
         _ => {}
     }
@@ -1249,17 +1237,17 @@ pub fn compute_add_options(
 /// a new element is inserted directly below the selected element.
 fn insertion_target_from_path(content: &[StructuredNode], path: &NodePath) -> (NodePath, usize) {
     // Root-level node: insert at root after this element
-    if path.len() == 1 {
-        if let Some(PathSegment::Child(idx)) = path.first() {
-            return (vec![], idx + 1);
-        }
+    if path.len() == 1
+        && let Some(PathSegment::Child(idx)) = path.first()
+    {
+        return (vec![], idx + 1);
     }
 
     // Container child (Group/GridLayout): insert after this child in the same container
-    if is_container_child_path(path) {
-        if let Some((parent_path, child_idx)) = get_container_child_info(path) {
-            return (parent_path, child_idx + 1);
-        }
+    if is_container_child_path(path)
+        && let Some((parent_path, child_idx)) = get_container_child_info(path)
+    {
+        return (parent_path, child_idx + 1);
     }
 
     // List item selected: standard nodes go after the parent list at sibling level

@@ -375,7 +375,7 @@ impl RepeatableDetector {
             .filter_map(|(idx, min, max)| doc.get_bounds(idx).map(|b| (idx, min, max, b)))
             .collect();
 
-        sorted.sort_by(|a, b| a.3.y.cmp(&b.3.y));
+        sorted.sort_by_key(|a| a.3.y);
 
         // Group by occurrence constraints and vertical proximity
         let mut sections: Vec<RepeatableSection> = Vec::new();

@@ -610,7 +610,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                     class: "{header_class}",
                                                     onclick: {
                                                         let path = header_path.clone();
-                                                        let on_action = on_action;
                                                         move |evt: Event<MouseData>| {
                                                             evt.stop_propagation();
                                                             if evt.modifiers().shift() {
@@ -628,7 +627,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                         checked: is_selected,
                                                         onclick: {
                                                             let path = header_path.clone();
-                                                            let on_action = on_action;
                                                             move |evt| {
                                                                 evt.stop_propagation();
                                                                 on_action.call(EditorAction::ToggleSelection(path.clone()));
@@ -688,7 +686,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                     class: "{row_class}",
                                                     onclick: {
                                                         let path = row_path.clone();
-                                                        let on_action = on_action;
                                                         move |evt: Event<MouseData>| {
                                                             evt.stop_propagation();
                                                             if evt.modifiers().shift() {
@@ -706,7 +703,6 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                         checked: is_selected,
                                                         onclick: {
                                                             let path = row_path.clone();
-                                                            let on_action = on_action;
                                                             move |evt| {
                                                                 evt.stop_propagation();
                                                                 on_action.call(EditorAction::ToggleSelection(path.clone()));

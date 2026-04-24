@@ -1395,11 +1395,10 @@ impl XfaForm {
             let ancestor = &path_str[..dot];
             let ancestor_path = SomPath::new(ancestor);
 
-            let has_calc = self
+            let has_calc = !self
                 .script_registry
                 .get_event_scripts(&ancestor_path, &EventActivity::Calculate)
-                .len()
-                > 0;
+                .is_empty();
 
             if has_calc {
                 // Use execute_event to correctly handle presence changes,

@@ -279,7 +279,7 @@ fn convert_to_translated(
     existing_translations: &std::collections::HashMap<String, String>,
 ) -> Vec<InlineNode> {
     // Count total text length in the new structure to distribute translations proportionally
-    let total_len: usize = nodes.iter().map(|n| text_length(n)).sum();
+    let total_len: usize = nodes.iter().map(text_length).sum();
 
     if total_len == 0 {
         return nodes;

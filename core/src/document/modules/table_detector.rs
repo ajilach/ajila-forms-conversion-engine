@@ -124,7 +124,7 @@ impl TableDetector {
 
         // Sort by Y position (top of block)
         let mut sorted: Vec<_> = blocks.to_vec();
-        sorted.sort_by(|a, b| a.1.y.cmp(&b.1.y));
+        sorted.sort_by_key(|a| a.1.y);
 
         let mut rows: Vec<Vec<(usize, Bounds)>> = vec![];
         let mut current_row: Vec<(usize, Bounds)> = vec![];
@@ -139,7 +139,7 @@ impl TableDetector {
                     // Start a new row
                     if !current_row.is_empty() {
                         // Sort current row by X position before adding
-                        current_row.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+                        current_row.sort_by_key(|a| a.1.x);
                         rows.push(std::mem::take(&mut current_row));
                     }
                     current_row.push((idx, bounds));
@@ -152,7 +152,7 @@ impl TableDetector {
         }
 
         if !current_row.is_empty() {
-            current_row.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+            current_row.sort_by_key(|a| a.1.x);
             rows.push(current_row);
         }
 
@@ -295,7 +295,7 @@ impl TableDetector {
                 .collect();
 
             // Sort by X position
-            row_blocks.sort_by(|a, b| a.1.x.cmp(&b.1.x));
+            row_blocks.sort_by_key(|a| a.1.x);
 
             expanded_rows.push(row_blocks);
         }

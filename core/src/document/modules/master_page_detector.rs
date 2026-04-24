@@ -75,7 +75,7 @@ impl MasterPageDetector {
             .collect();
 
         // Sort by Y
-        with_y.sort_by(|a, b| a.1.cmp(&b.1));
+        with_y.sort_by_key(|a| a.1);
 
         // Split into clusters at large gaps
         let mut clusters: Vec<Vec<usize>> = Vec::new();
@@ -117,11 +117,7 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in header_clusters {
             if !cluster.is_empty() {
-                doc.merge_inferred(
-                    cluster,
-                    GroupKind::Header,
-                    self.name(),
-                );
+                doc.merge_inferred(cluster, GroupKind::Header, self.name());
             }
         }
 
@@ -131,11 +127,7 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in footer_clusters {
             if !cluster.is_empty() {
-                doc.merge_inferred(
-                    cluster,
-                    GroupKind::Footer,
-                    self.name(),
-                );
+                doc.merge_inferred(cluster, GroupKind::Footer, self.name());
             }
         }
 
@@ -145,11 +137,7 @@ impl AnalysisModule for MasterPageDetector {
 
         for cluster in bg_clusters {
             if !cluster.is_empty() {
-                doc.merge_inferred(
-                    cluster,
-                    GroupKind::Background,
-                    self.name(),
-                );
+                doc.merge_inferred(cluster, GroupKind::Background, self.name());
             }
         }
     }

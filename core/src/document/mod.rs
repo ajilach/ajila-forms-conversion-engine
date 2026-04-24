@@ -995,7 +995,7 @@ impl<'a> Document<'a> {
         }
 
         // Sort by primary coordinate
-        bounded_fields.sort_by(|a, b| primary_coord(&a.1).cmp(&primary_coord(&b.1)));
+        bounded_fields.sort_by_key(|a| primary_coord(&a.1));
 
         // Group items whose primary coordinate is within tolerance of the first item in the group
         let mut groups: Vec<Vec<(usize, Bounds)>> = Vec::new();
@@ -1017,7 +1017,7 @@ impl<'a> Document<'a> {
 
         // Sort each group by secondary coordinate
         for group in &mut groups {
-            group.sort_by(|a, b| secondary_coord(&a.1).cmp(&secondary_coord(&b.1)));
+            group.sort_by_key(|a| secondary_coord(&a.1));
         }
 
         groups
