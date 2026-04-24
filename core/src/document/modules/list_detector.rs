@@ -459,6 +459,14 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
+            // When the candidate is below the marker (marker_above) rather
+            // than on the exact same line, also skip candidates that start
+            // with their own list marker.  Those are separate list items,
+            // not the continuation content of the standalone marker above.
+            if !same_y && detect_marker(&content_text).is_some() {
+                continue;
+            }
+
             // Score: prefer same_y over marker_above, then wider blocks,
             // then closest by x-distance.
             let priority = if same_y { 0i32 } else { 1i32 };
@@ -792,50 +800,82 @@ impl AnalysisModule for ListDetector {
         // first run.  We merge the two same-type runs and record the
         // interrupting run as a sublist.
         //
-        // sublists[i] = vec of (after_item_count, sublist_indices, sublist_style)
-        // meaning: after item `after_item_count` in group `i`, insert a sublist.
-        let mut sublists: Vec<Vec<(usize, Vec<usize>, ListStyleType)>> =
-            vec![Vec::new(); groups.len()];
+        // Each SublistEntry records where (after which item) to insert a
+        // sublist, plus the sublist's own indices, style, and *children*
+        // (sub-sublists that were attached by an earlier inner merge).
+        #[derive(Clone, Debug)]
+        struct SublistEntry {
+            after_item: usize,
+            indices: Vec<usize>,
+            style: ListStyleType,
+            children: Vec<SublistEntry>,
+        }
+
+        let mut sublists: Vec<Vec<SublistEntry>> = vec![Vec::new(); groups.len()];
         let mut consumed: Vec<bool> = vec![false; groups.len()];
 
-        // Scan for A-B-A patterns
-        let mut i = 0;
-        while i + 2 < groups.len() {
-            if consumed[i] || consumed[i + 1] || consumed[i + 2] {
-                i += 1;
-                continue;
-            }
-            if group_styles[i] == group_styles[i + 2] && group_styles[i] != group_styles[i + 1] {
-                // A-B-A pattern found.  Only merge when Group A already has
-                // ≥ 2 items (a proper list) so that B is genuinely a sublist.
-                // Single-item A groups are isolated markers that happen to
-                // surround a different-style run and should not be merged.
-                if groups[i].len() < 2 {
-                    i += 1;
-                    continue;
+        // Scan for A-B-A patterns among unconsumed groups.
+        //
+        // After an inner merge (e.g. Alpha-Roman-Alpha), the consumed groups
+        // leave gaps in the index sequence.  The outer pattern
+        // (e.g. Dash-Alpha-Dash) then has non-consecutive raw indices and
+        // would be missed by a simple i/i+1/i+2 scan.  We therefore iterate
+        // over *unconsumed* indices and repeat until no more merges occur.
+        loop {
+            let active: Vec<usize> = (0..groups.len())
+                .filter(|&j| !consumed[j])
+                .collect();
+            let mut merged_any = false;
+            let mut k = 0;
+            while k + 2 < active.len() {
+                let a1 = active[k];
+                let b = active[k + 1];
+                let a2 = active[k + 2];
+                if group_styles[a1] == group_styles[a2]
+                    && group_styles[a1] != group_styles[b]
+                {
+                    // A-B-A pattern found.  Only merge when Group A already
+                    // has ≥ 2 items so that B is genuinely a sublist.
+                    if groups[a1].len() < 2 {
+                        k += 1;
+                        continue;
+                    }
+                    let after_count = groups[a1].len();
+                    // Take B's sublists first to avoid borrow conflicts.
+                    let b_children = std::mem::take(&mut sublists[b]);
+                    sublists[a1].push(SublistEntry {
+                        after_item: after_count,
+                        indices: groups[b].clone(),
+                        style: group_styles[b],
+                        children: b_children,
+                    });
+                    let tail: Vec<usize> = groups[a2].clone();
+                    groups[a1].extend(tail);
+                    // Transfer any sublists that were already recorded on a2
+                    // (from an earlier inner merge) so they stay attached to
+                    // the correct item offsets after merging.
+                    for mut entry in std::mem::take(&mut sublists[a2]) {
+                        entry.after_item += after_count;
+                        sublists[a1].push(entry);
+                    }
+                    consumed[b] = true;
+                    consumed[a2] = true;
+                    merged_any = true;
+                    // Don't advance k — re-check from same position for
+                    // chained patterns.
+                    break;
                 }
-                // merge groups[i] and groups[i+2],
-                // record groups[i+1] as sublist after the last item of groups[i].
-                let after_count = groups[i].len();
-                sublists[i].push((after_count, groups[i + 1].clone(), group_styles[i + 1]));
-                let tail: Vec<usize> = groups[i + 2].clone();
-                groups[i].extend(tail);
-                consumed[i + 1] = true;
-                consumed[i + 2] = true;
-                // Don't advance i — the merged group might form another
-                // A-B-A pattern with groups[i+3] and groups[i+4].
-                // But we need to re-check: skip consumed entries for i+1,i+2
-                // and look at the next non-consumed group pair.
-                // Actually, let's just re-scan from i to catch chained patterns.
-                continue;
+                k += 1;
             }
-            i += 1;
+            if !merged_any {
+                break;
+            }
         }
 
         // Remove consumed groups and compact
         let mut compacted_groups: Vec<Vec<usize>> = Vec::new();
         let mut compacted_styles: Vec<ListStyleType> = Vec::new();
-        let mut compacted_sublists: Vec<Vec<(usize, Vec<usize>, ListStyleType)>> = Vec::new();
+        let mut compacted_sublists: Vec<Vec<SublistEntry>> = Vec::new();
         for (idx, group) in groups.into_iter().enumerate() {
             if !consumed[idx] {
                 compacted_groups.push(group);
@@ -1212,32 +1252,51 @@ impl AnalysisModule for ListDetector {
                 // Simple case: no sublists
                 doc.merge_inferred(group_indices, GroupKind::List { list_style }, self.name());
             } else {
-                // Build children list interleaving TextBlock items and sublist groups.
-                // For each sublist, create a GroupKind::List group first, then
-                // include its index in the parent's children.
-                let mut child_indices: Vec<usize> = Vec::new();
-                let mut item_count = 0;
+                // Recursive helper: build the child_indices for a list,
+                // interleaving item indices and sublist groups (which may
+                // themselves have sub-sublists).
+                fn build_list_children(
+                    doc: &mut Document,
+                    group_indices: &[usize],
+                    subs: &[SublistEntry],
+                    module_name: &str,
+                ) -> Vec<usize> {
+                    let mut child_indices: Vec<usize> = Vec::new();
+                    let mut item_count = 0usize;
 
-                for &idx in &group_indices {
-                    child_indices.push(idx);
-                    item_count += 1;
+                    for &idx in group_indices {
+                        child_indices.push(idx);
+                        item_count += 1;
 
-                    // After pushing this item, check if any sublists attach here.
-                    for (after_n, sub_indices, sub_style) in subs {
-                        if *after_n == item_count {
-                            // Create the sublist as a document group
-                            let sub_group_idx = doc.merge_inferred(
-                                sub_indices.clone(),
-                                GroupKind::List {
-                                    list_style: *sub_style,
-                                },
-                                self.name(),
-                            );
-                            child_indices.push(sub_group_idx);
+                        for entry in subs {
+                            if entry.after_item == item_count {
+                                // Recursively build children for this sublist
+                                let sub_children = if entry.children.is_empty() {
+                                    entry.indices.clone()
+                                } else {
+                                    build_list_children(
+                                        doc,
+                                        &entry.indices,
+                                        &entry.children,
+                                        module_name,
+                                    )
+                                };
+                                let sub_group_idx = doc.merge_inferred(
+                                    sub_children,
+                                    GroupKind::List {
+                                        list_style: entry.style,
+                                    },
+                                    module_name,
+                                );
+                                child_indices.push(sub_group_idx);
+                            }
                         }
                     }
+                    child_indices
                 }
 
+                let child_indices =
+                    build_list_children(doc, &group_indices, subs, self.name());
                 doc.merge_inferred(child_indices, GroupKind::List { list_style }, self.name());
             }
         }

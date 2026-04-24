@@ -23772,3 +23772,189 @@ fn test_abfh_has_two_lists_roman_and_alpha() {
         alpha_texts
     );
 }
+
+#[test]
+fn test_aacx_nested_lists_structure() {
+    // AACX_033_IT has a deeply nested list structure:
+    //
+    //   – «Legge» ...
+    //   – «FINRA» ...
+    //   – «SEC» ...
+    //   – «Consulenza relativa a titoli» indica:
+    //       a) la fornitura di servizi discrezionali di asset management;
+    //       b) comunicazioni in merito a
+    //           (i) l'opportunità di acquistare ...
+    //           ...
+    //           (vi) selezione o mantenimento di altri consulenti di investimento; e
+    //       c) la fornitura di strumenti elettronici ...
+    //   – «Stati Uniti» o «USA» indicano ...   ← same dash list, after the sublist
+    //   – «Categorie di US Person» indica ...
+    //       (i) qualsiasi persona fisica ...
+    //       ...
+    //
+    // The test verifies:
+    //   1) The dash list includes items both before and after the alpha sublist
+    //   2) «Consulenza» has a lower-alpha sublist
+    //   3) Alpha item b) has a lower-roman sublist
+    //   4) List continuity: «Stati Uniti» appears in the same dash list as
+    //      «Consulenza», proving the dash list resumes after the alpha sublist
+    use crate::document::ListStyleType;
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AACX_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on AACX_033_IT.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // ── 1. Dash (unordered) definitions list ──────────────────────────
+    // Find the dash list that contains the «Consulenza» item.
+    let dash_list = lists
+        .iter()
+        .find(|l| {
+            !l.list_style.is_ordered()
+                && l.items
+                    .iter()
+                    .any(|i| i.as_plain_text().contains("Consulenza relativa a titoli\u{bb} indica"))
+        })
+        .expect("Expected an unordered list containing the 'Consulenza relativa a titoli' definition");
+
+    let dash_texts: Vec<String> = dash_list.items.iter().map(|i| i.as_plain_text()).collect();
+
+    // Well-known items that appear before «Consulenza»
+    assert!(
+        dash_texts.iter().any(|t| t.contains("FINRA")),
+        "Dash list should contain «FINRA».\nItems: {:?}",
+        dash_texts
+    );
+    assert!(
+        dash_texts.iter().any(|t| t.contains("SEC")),
+        "Dash list should contain «SEC».\nItems: {:?}",
+        dash_texts
+    );
+
+    // «Stati Uniti» must appear in the SAME dash list, after the alpha sublist
+    assert!(
+        dash_texts
+            .iter()
+            .any(|t| t.contains("Stati Uniti") && t.contains("USA")),
+        "Dash list should contain «Stati Uniti» o «USA» — the dash list must \
+         resume after the alpha sublist of «Consulenza».\nItems: {:?}",
+        dash_texts
+    );
+
+    // ── 2. «Consulenza» → alpha sublist ───────────────────────────────
+    let consulenza_item = dash_list
+        .items
+        .iter()
+        .find(|i| i.as_plain_text().contains("Consulenza relativa a titoli\u{bb} indica"))
+        .expect("Dash list must contain the 'Consulenza relativa a titoli' definition item");
+
+    let alpha_sublist = consulenza_item
+        .sublist
+        .as_ref()
+        .expect("'Consulenza relativa a titoli' should have a lower-alpha sublist");
+
+    assert_eq!(
+        alpha_sublist.list_style,
+        ListStyleType::LowerAlpha,
+        "Sublist of 'Consulenza' should be LowerAlpha, got {:?}",
+        alpha_sublist.list_style
+    );
+    assert!(
+        alpha_sublist.items.len() >= 3,
+        "Alpha sublist should have at least 3 items (a, b, c), found {}",
+        alpha_sublist.items.len()
+    );
+
+    let alpha_texts: Vec<String> = alpha_sublist
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
+
+    // a) is about discretionary asset management
+    assert!(
+        alpha_texts
+            .first()
+            .is_some_and(|t| t.contains("fornitura di servizi discrezionali di asset management")),
+        "Alpha a) should be about discretionary asset management.\nItems: {:?}",
+        alpha_texts
+    );
+    // c) is about electronic tools — must stay in the alpha list even though
+    // there is a nested roman sublist between b) and c).
+    assert!(
+        alpha_texts
+            .last()
+            .is_some_and(|t| t.contains("selezione o mantenimento di altri consulenti di investimento")),
+        "Alpha c) should be the last alpha item.\nItems: {:?}",
+        alpha_texts
+    );
+
+    // ── 3. Alpha b) → roman sublist ──────────────────────────────────
+    let comunicazioni_item = alpha_sublist
+        .items
+        .iter()
+        .find(|i| i.as_plain_text().contains("comunicazioni in merito"))
+        .expect("Alpha sublist should contain b) 'comunicazioni in merito a'");
+
+    let roman_sublist = comunicazioni_item
+        .sublist
+        .as_ref()
+        .expect("Alpha b) 'comunicazioni in merito a' should have a roman sublist");
+
+    assert_eq!(
+        roman_sublist.list_style,
+        ListStyleType::LowerRoman,
+        "Sublist of b) should be LowerRoman, got {:?}",
+        roman_sublist.list_style
+    );
+    assert!(
+        roman_sublist.items.len() >= 5,
+        "Roman sublist should have at least 5 items (i–vi), found {}",
+        roman_sublist.items.len()
+    );
+
+    let roman_texts: Vec<String> = roman_sublist
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
+
+    assert!(
+        roman_texts
+            .first()
+            .is_some_and(|t| t.contains("opportunit")),
+        "Roman (i) should mention 'opportunità'.\nRoman items: {:?}",
+        roman_texts
+    );
+    assert!(
+        roman_texts
+            .last()
+            .is_some_and(|t| t.contains("vantaggi di investire in titoli")),
+        "Roman (vi) should be the last roman item.\nRoman items: {:?}",
+        roman_texts
+    );
+}
+
