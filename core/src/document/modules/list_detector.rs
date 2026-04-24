@@ -868,6 +868,118 @@ impl AnalysisModule for ListDetector {
             }
         }
 
+        // Phase 1c: Trailing A-B sublist detection.
+        //
+        // After A-B-A merging, some groups remain as A-B without a trailing A
+        // (e.g. Dash → Roman at end of document).  We merge B as a sublist of
+        // A's last item when EITHER:
+        //   (a) B is visually indented to the right of A (different x-position), OR
+        //   (b) A's last item text ends with ':' — a strong intro signal that
+        //       the following items of a different style belong to it.
+        //
+        // We also handle chains: A-B-B-B where multiple consecutive B groups
+        // are all sublists of A's last item (e.g. three separate roman groups
+        // that are all sublists of the same parent dash list).
+        {
+            let active: Vec<usize> = (0..groups.len())
+                .filter(|&j| !consumed[j])
+                .collect();
+
+            // Compute the median x-position for a group's items.
+            let group_x = |gi: usize| -> Option<Decimal> {
+                let mut xs: Vec<Decimal> = groups[gi]
+                    .iter()
+                    .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.x))
+                    .collect();
+                if xs.is_empty() {
+                    return None;
+                }
+                xs.sort();
+                Some(xs[xs.len() / 2])
+            };
+
+            // Check whether the last item of a group ends with ':' (sublist intro).
+            let last_item_is_intro = |gi: usize| -> bool {
+                if let Some(&last_idx) = groups[gi].last() {
+                    let text = doc.get_text_content(last_idx);
+                    let trimmed = text.trim();
+                    trimmed.ends_with(':') || trimmed.ends_with("：")
+                } else {
+                    false
+                }
+            };
+
+            let mut k = 0;
+            while k + 1 < active.len() {
+                let a = active[k];
+
+                // A must have ≥ 2 items to be a genuine parent list.
+                if groups[a].len() < 2 {
+                    k += 1;
+                    continue;
+                }
+
+                let a_x = group_x(a);
+                let intro = last_item_is_intro(a);
+
+                // Consume consecutive groups that qualify as sublists of A.
+                let mut j = k + 1;
+                let mut merging = false; // set once first B is confirmed
+                while j < active.len() {
+                    let b = active[j];
+                    if group_styles[a] == group_styles[b] {
+                        break; // same style → not a sublist, stop
+                    }
+
+                    // Check signal (a): indentation
+                    let indented = match (a_x, group_x(b)) {
+                        (Some(ax), Some(bx)) => bx > ax + x_tol,
+                        _ => false,
+                    };
+
+                    // Check signal (b): A's last item is an intro ending with ':'
+                    let is_intro_sublist = intro && j == k + 1;
+
+                    // Once we've started merging (first B confirmed), subsequent
+                    // groups of the same style as B continue the sublist chain.
+                    let continues_chain = merging
+                        && j > k + 1
+                        && sublists[a].last().map(|s| s.style) == Some(group_styles[b]);
+
+                    if !indented && !is_intro_sublist && !continues_chain {
+                        break;
+                    }
+                    merging = true;
+
+                    // If B has the same style as the last sublist entry we
+                    // just added, extend that entry (combine split runs into
+                    // one sublist) instead of creating a separate SublistEntry
+                    // that would overwrite the previous one in the converter.
+                    let b_children = std::mem::take(&mut sublists[b]);
+                    if let Some(last_entry) = sublists[a].last_mut() {
+                        if last_entry.style == group_styles[b] {
+                            last_entry.indices.extend(groups[b].iter().copied());
+                            last_entry.children.extend(b_children);
+                            consumed[b] = true;
+                            j += 1;
+                            continue;
+                        }
+                    }
+
+                    let after_count = groups[a].len();
+                    sublists[a].push(SublistEntry {
+                        after_item: after_count,
+                        indices: groups[b].clone(),
+                        style: group_styles[b],
+                        children: b_children,
+                    });
+                    consumed[b] = true;
+                    j += 1;
+                }
+                k = if j > k + 1 { j } else { k + 1 };
+            }
+        }
+
         // Remove consumed groups and compact
         let mut compacted_groups: Vec<Vec<usize>> = Vec::new();
         let mut compacted_styles: Vec<ListStyleType> = Vec::new();
@@ -1243,7 +1355,7 @@ impl AnalysisModule for ListDetector {
             } else {
                 &[][..]
             };
-
+            
             if subs.is_empty() {
                 // Simple case: no sublists
                 doc.merge_inferred(group_indices, GroupKind::List { list_style }, self.name());

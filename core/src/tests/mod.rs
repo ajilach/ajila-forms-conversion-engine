@@ -23972,15 +23972,15 @@ fn test_aacx_nested_lists_structure() {
             !l.list_style.is_ordered()
                 && l.items
                     .iter()
-                    .any(|i| i.as_plain_text().contains("Categorie di US Person"))
+                    .any(|i| i.as_plain_text().contains("Categorie di US Person\u{bb} indica"))
         })
-        .expect("Expected an unordered list containing 'Categorie di US Person'");
+        .expect("Expected an unordered list containing the 'Categorie di US Person' definition");
 
     let categorie_item = categorie_dash_list
         .items
         .iter()
-        .find(|i| i.as_plain_text().contains("Categorie di US Person"))
-        .expect("Dash list must contain 'Categorie di US Person'");
+        .find(|i| i.as_plain_text().contains("Categorie di US Person\u{bb} indica"))
+        .expect("Dash list must contain the 'Categorie di US Person' definition item");
 
     let categorie_sublist = categorie_item
         .sublist
