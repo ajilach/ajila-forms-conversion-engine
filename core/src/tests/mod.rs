@@ -23834,11 +23834,14 @@ fn test_aacx_nested_lists_structure() {
         .iter()
         .find(|l| {
             !l.list_style.is_ordered()
-                && l.items
-                    .iter()
-                    .any(|i| i.as_plain_text().contains("Consulenza relativa a titoli\u{bb} indica"))
+                && l.items.iter().any(|i| {
+                    i.as_plain_text()
+                        .contains("Consulenza relativa a titoli\u{bb} indica")
+                })
         })
-        .expect("Expected an unordered list containing the 'Consulenza relativa a titoli' definition");
+        .expect(
+            "Expected an unordered list containing the 'Consulenza relativa a titoli' definition",
+        );
 
     let dash_texts: Vec<String> = dash_list.items.iter().map(|i| i.as_plain_text()).collect();
 
@@ -23868,7 +23871,10 @@ fn test_aacx_nested_lists_structure() {
     let consulenza_item = dash_list
         .items
         .iter()
-        .find(|i| i.as_plain_text().contains("Consulenza relativa a titoli\u{bb} indica"))
+        .find(|i| {
+            i.as_plain_text()
+                .contains("Consulenza relativa a titoli\u{bb} indica")
+        })
         .expect("Dash list must contain the 'Consulenza relativa a titoli' definition item");
 
     let alpha_sublist = consulenza_item
@@ -23905,9 +23911,9 @@ fn test_aacx_nested_lists_structure() {
     // c) is about electronic tools — must stay in the alpha list even though
     // there is a nested roman sublist between b) and c).
     assert!(
-        alpha_texts
-            .last()
-            .is_some_and(|t| t.contains("selezione o mantenimento di altri consulenti di investimento")),
+        alpha_texts.last().is_some_and(
+            |t| t.contains("selezione o mantenimento di altri consulenti di investimento")
+        ),
         "Alpha c) should be the last alpha item.\nItems: {:?}",
         alpha_texts
     );
@@ -23956,5 +23962,49 @@ fn test_aacx_nested_lists_structure() {
         "Roman (vi) should be the last roman item.\nRoman items: {:?}",
         roman_texts
     );
-}
 
+    // ── 4. «Categorie di US Person» → roman sublist ──────────────────
+    // «Categorie di US Person» should have a lower-roman sublist starting
+    // with "qualsiasi persona fisica domiciliata negli USA;"
+    let categorie_dash_list = lists
+        .iter()
+        .find(|l| {
+            !l.list_style.is_ordered()
+                && l.items
+                    .iter()
+                    .any(|i| i.as_plain_text().contains("Categorie di US Person"))
+        })
+        .expect("Expected an unordered list containing 'Categorie di US Person'");
+
+    let categorie_item = categorie_dash_list
+        .items
+        .iter()
+        .find(|i| i.as_plain_text().contains("Categorie di US Person"))
+        .expect("Dash list must contain 'Categorie di US Person'");
+
+    let categorie_sublist = categorie_item
+        .sublist
+        .as_ref()
+        .expect("'Categorie di US Person' should have a lower-roman sublist");
+
+    assert_eq!(
+        categorie_sublist.list_style,
+        ListStyleType::LowerRoman,
+        "Sublist of 'Categorie di US Person' should be LowerRoman, got {:?}",
+        categorie_sublist.list_style
+    );
+
+    let categorie_roman_texts: Vec<String> = categorie_sublist
+        .items
+        .iter()
+        .map(|i| i.as_plain_text())
+        .collect();
+
+    assert!(
+        categorie_roman_texts
+            .first()
+            .is_some_and(|t| t.contains("qualsiasi persona fisica domiciliata negli USA")),
+        "'Categorie di US Person' roman (i) should be 'qualsiasi persona fisica domiciliata negli USA'.\nItems: {:?}",
+        categorie_roman_texts
+    );
+}

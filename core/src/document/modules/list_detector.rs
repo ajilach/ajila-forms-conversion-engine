@@ -822,18 +822,14 @@ impl AnalysisModule for ListDetector {
         // would be missed by a simple i/i+1/i+2 scan.  We therefore iterate
         // over *unconsumed* indices and repeat until no more merges occur.
         loop {
-            let active: Vec<usize> = (0..groups.len())
-                .filter(|&j| !consumed[j])
-                .collect();
+            let active: Vec<usize> = (0..groups.len()).filter(|&j| !consumed[j]).collect();
             let mut merged_any = false;
             let mut k = 0;
             while k + 2 < active.len() {
                 let a1 = active[k];
                 let b = active[k + 1];
                 let a2 = active[k + 2];
-                if group_styles[a1] == group_styles[a2]
-                    && group_styles[a1] != group_styles[b]
-                {
+                if group_styles[a1] == group_styles[a2] && group_styles[a1] != group_styles[b] {
                     // A-B-A pattern found.  Only merge when Group A already
                     // has ≥ 2 items so that B is genuinely a sublist.
                     if groups[a1].len() < 2 {
@@ -1295,8 +1291,7 @@ impl AnalysisModule for ListDetector {
                     child_indices
                 }
 
-                let child_indices =
-                    build_list_children(doc, &group_indices, subs, self.name());
+                let child_indices = build_list_children(doc, &group_indices, subs, self.name());
                 doc.merge_inferred(child_indices, GroupKind::List { list_style }, self.name());
             }
         }
