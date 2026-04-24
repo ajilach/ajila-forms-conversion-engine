@@ -100,4 +100,15 @@ pub struct AemProfile {
     /// fragment_paths = "afforms_ubs_fragmentlib/affrg_Address1,afforms_ubs_fragmentlib/affrg_IBAN1"
     /// ```
     pub fragment_paths: Option<String>,
+
+    /// Default translations for predefined UI elements (toolbar buttons,
+    /// message boxes, etc.) that are not part of the form content tree.
+    ///
+    /// Loaded from `translations.json` in the profile directory.
+    /// Structure: `{ "master_text": { "lang": "translated_text", ... }, ... }`.
+    ///
+    /// These are merged into the Sling i18n dictionaries at package generation
+    /// time. Form-content translations take precedence over defaults.
+    #[serde(default)]
+    pub default_translations: HashMap<String, HashMap<String, String>>,
 }

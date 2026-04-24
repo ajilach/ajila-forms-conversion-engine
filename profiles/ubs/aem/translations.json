@@ -1,0 +1,62 @@
+{
+    "Back": {
+        "de": "Zurück",
+        "fr": "Retour",
+        "it": "Indietro"
+    },
+    "Next": {
+        "de": "Weiter",
+        "fr": "Suivant",
+        "it": "Avanti"
+    },
+    "Submit": {
+        "de": "Absenden",
+        "fr": "Soumettre",
+        "it": "Invia"
+    },
+    "Preview": {
+        "de": "Vorschau",
+        "fr": "Aperçu",
+        "it": "Anteprima"
+    },
+    "Save Progress": {
+        "de": "Fortschritt speichern",
+        "fr": "Enregistrer la progression",
+        "it": "Salva progressi"
+    },
+    "Add": {
+        "de": "Hinzufügen",
+        "fr": "Ajouter",
+        "it": "Aggiungi"
+    },
+    "Submission failed": {
+        "de": "Übermittlung fehlgeschlagen",
+        "fr": "Échec de l'envoi",
+        "it": "Invio non riuscito"
+    },
+    "<p>The form could not be sent. Please try again later.</p>": {
+        "de": "<p>Das Formular konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.</p>",
+        "fr": "<p>Le formulaire n'a pas pu être envoyé. Veuillez réessayer plus tard.</p>",
+        "it": "<p>Il modulo non è stato inviato. Si prega di riprovare più tardi.</p>"
+    },
+    "Thank you for submitting the form.": {
+        "de": "Vielen Dank für das Einreichen des Formulars.",
+        "fr": "Merci d'avoir soumis le formulaire.",
+        "it": "Grazie per aver inviato il modulo."
+    },
+    "<p>By clicking on \"Preview\", you can review your document before submission.</p><p>After clicking \"Submit\", you will no longer be able to edit the document and the PDF will be created for signing.</p>": {
+        "de": "<p>Durch Klicken auf \"Vorschau\" können Sie Ihr Dokument vor dem Absenden überprüfen.</p><p>Nach dem Klicken auf \"Absenden\" können Sie das Dokument nicht mehr bearbeiten und das PDF wird zur Unterschrift erstellt.</p>",
+        "fr": "<p>En cliquant sur \"Aperçu\", vous pouvez consulter votre document avant l'envoi.</p><p>Après avoir cliqué sur \"Soumettre\", vous ne pourrez plus modifier le document et le PDF sera créé pour signature.</p>",
+        "it": "<p>Cliccando su \"Anteprima\", è possibile verificare il documento prima dell'invio.</p><p>Dopo aver cliccato su \"Invia\", non sarà più possibile modificare il documento e il PDF verrà creato per la firma.</p>"
+    },
+    "Summary of form information": {
+        "de": "Zusammenfassung der Formulardaten",
+        "fr": "Résumé des informations du formulaire",
+        "it": "Riepilogo delle informazioni del modulo"
+    },
+    "Summary": {
+        "de": "Zusammenfassung",
+        "fr": "Résumé",
+        "it": "Riepilogo"
+    }
+}

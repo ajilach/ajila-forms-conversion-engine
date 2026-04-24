@@ -47,7 +47,17 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
         .get_dir(format!("{name}/aem"))
         .ok_or_else(|| format!("Profile '{name}' has no aem/ subdirectory"))?;
 
-    let profile: AemProfile = read_profile_config_toml(name, "aem")?;
+    let mut profile: AemProfile = read_profile_config_toml(name, "aem")?;
+
+    // Load optional translations.json for predefined UI element translations.
+    if let Some(translations_file) = aem_dir.get_file(format!("{name}/aem/translations.json")) {
+        if let Some(content) = translations_file.contents_utf8() {
+            let translations: HashMap<String, HashMap<String, String>> =
+                serde_json::from_str(content)
+                    .map_err(|e| format!("Failed to parse translations.json: {e}"))?;
+            profile.default_translations = translations;
+        }
+    }
 
     let mut templates = HashMap::new();
     for entry in aem_dir.files() {

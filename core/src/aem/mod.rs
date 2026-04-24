@@ -148,6 +148,13 @@ pub struct AemConfig {
 
     /// Parsed fragments loaded from the `fragments/` subdirectory.
     pub fragments: Vec<ParsedFragment>,
+
+    /// Default translations for predefined UI elements (toolbar buttons,
+    /// message boxes, etc.) that are not part of the form content tree.
+    ///
+    /// Merged into the Sling i18n dictionaries at package generation time.
+    /// Form-content translations take precedence over defaults.
+    pub default_translations: HashMap<String, HashMap<String, String>>,
 }
 
 impl AemConfig {
@@ -239,6 +246,8 @@ impl AemConfig {
                 None => Vec::new(),
             },
             fragments: Vec::new(),
+
+            default_translations: profile.default_translations.clone(),
         })
     }
 
@@ -331,6 +340,8 @@ impl AemConfig {
             fragment_ref_prefix: "/content/forms/af/".into(),
             fragment_paths: Vec::new(),
             fragments: Vec::new(),
+
+            default_translations: HashMap::new(),
         }
     }
 }

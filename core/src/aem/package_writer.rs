@@ -161,7 +161,16 @@ pub fn generate_aem_package(
     write_entry(&mut zip, &opts, &dam_content_path, &dam_xml);
 
     // ── Translation dictionaries ────────────────────────────────────────
-    let translations = extract_translations(content, &config.master_language);
+    let mut translations = extract_translations(content, &config.master_language);
+
+    // Merge default translations from the profile (toolbar buttons, messages, etc.).
+    // Form-content translations take precedence over defaults.
+    for (key, lang_map) in &config.default_translations {
+        translations
+            .entry(key.clone())
+            .or_insert_with(|| lang_map.clone());
+    }
+
     if !translations.is_empty() {
         let dict_base = format!(
             "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
@@ -1594,6 +1603,184 @@ mod tests {
             !dam_xml.contains("xsdRef"),
             "DAM metadata should NOT include xsdRef when xsd_path is empty, got: {}",
             dam_xml
+        );
+    }
+
+    #[test]
+    fn default_translations_appear_in_package_dictionary() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.languages = vec!["en".into(), "de".into(), "fr".into()];
+        config.master_language = "en".into();
+        config.default_translations = {
+            let mut map = HashMap::new();
+            map.insert("Back".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("de".into(), "Zurück".into());
+                lm.insert("fr".into(), "Retour".into());
+                lm
+            });
+            map.insert("Submit".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("de".into(), "Absenden".into());
+                lm.insert("fr".into(), "Soumettre".into());
+                lm
+            });
+            map
+        };
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        // No form content — only default translations should appear
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let dict_base = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary",
+            config.form_path
+        );
+
+        // German dictionary must exist and contain toolbar translations
+        let de_path = format!("{}/de.xml", dict_base);
+        let mut de_xml = String::new();
+        archive
+            .by_name(&de_path)
+            .unwrap_or_else(|_| panic!("German dictionary must exist at {}", de_path))
+            .read_to_string(&mut de_xml)
+            .unwrap();
+        assert!(
+            de_xml.contains("sling:key=\"fd_Back\""),
+            "German dictionary must contain 'Back' key, got: {}",
+            de_xml
+        );
+        assert!(
+            de_xml.contains("sling:message=\"Zurück\""),
+            "German dictionary must contain 'Zurück' translation, got: {}",
+            de_xml
+        );
+        assert!(
+            de_xml.contains("sling:key=\"fd_Submit\""),
+            "German dictionary must contain 'Submit' key, got: {}",
+            de_xml
+        );
+
+        // French dictionary must also exist
+        let fr_path = format!("{}/fr.xml", dict_base);
+        let mut fr_xml = String::new();
+        archive
+            .by_name(&fr_path)
+            .unwrap_or_else(|_| panic!("French dictionary must exist at {}", fr_path))
+            .read_to_string(&mut fr_xml)
+            .unwrap();
+        assert!(
+            fr_xml.contains("sling:message=\"Retour\""),
+            "French dictionary must contain 'Retour' translation, got: {}",
+            fr_xml
+        );
+    }
+
+    #[test]
+    fn default_translations_do_not_override_form_content_translations() {
+        use crate::structured::{
+            FieldId, FieldNode, FieldType, InlineNode, InlineText, StructuredNode,
+        };
+
+        let mut config = AemConfig::test_default("TEST");
+        config.languages = vec!["en".into(), "de".into()];
+        config.master_language = "en".into();
+        // Default says "Company" → "Unternehmen"
+        config.default_translations = {
+            let mut map = HashMap::new();
+            map.insert("Company".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("de".into(), "Unternehmen".into());
+                lm
+            });
+            map
+        };
+
+        // But form content says "Company" → "Firma"
+        let mut tmap = HashMap::new();
+        tmap.insert("en".into(), Some("Company".into()));
+        tmap.insert("de".into(), Some("Firma".into()));
+
+        let content = vec![StructuredNode::Field(FieldNode {
+            label: Some(InlineText(vec![InlineNode::TranslatedText(tmap)])),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            name: FieldId::from("test"),
+            som_path: None,
+            value: None,
+            placeholder: None,
+        })];
+
+        let mut translations = extract_translations(&content, "en");
+
+        // Merge defaults — form content should win
+        for (key, lang_map) in &config.default_translations {
+            translations
+                .entry(key.clone())
+                .or_insert_with(|| lang_map.clone());
+        }
+
+        assert_eq!(
+            translations["Company"]["de"], "Firma",
+            "Form-content translation must take precedence over default"
+        );
+    }
+
+    #[test]
+    fn default_translations_generate_synonym_dictionaries() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.languages = vec!["en".into(), "de".into()];
+        config.master_language = "en".into();
+        // de → ["de-ch"] synonym is already set in test_default
+        config.default_translations = {
+            let mut map = HashMap::new();
+            map.insert("Next".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("de".into(), "Weiter".into());
+                lm
+            });
+            map
+        };
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let dict_base = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary",
+            config.form_path
+        );
+
+        // de-ch synonym dictionary must also be generated
+        let de_ch_path = format!("{}/de-ch.xml", dict_base);
+        let mut de_ch_xml = String::new();
+        archive
+            .by_name(&de_ch_path)
+            .unwrap_or_else(|_| panic!("de-ch synonym dictionary must exist at {}", de_ch_path))
+            .read_to_string(&mut de_ch_xml)
+            .unwrap();
+        assert!(
+            de_ch_xml.contains("sling:message=\"Weiter\""),
+            "de-ch synonym dictionary must contain the same translations as de, got: {}",
+            de_ch_xml
         );
     }
 }
