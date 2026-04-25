@@ -23911,9 +23911,9 @@ fn test_aacx_nested_lists_structure() {
     // c) is about electronic tools — must stay in the alpha list even though
     // there is a nested roman sublist between b) and c).
     assert!(
-        alpha_texts.last().is_some_and(
-            |t| t.contains("fornitura di strumenti elettronici")
-        ),
+        alpha_texts
+            .last()
+            .is_some_and(|t| t.contains("fornitura di strumenti elettronici")),
         "Alpha c) should be about electronic tools.\nItems: {:?}",
         alpha_texts
     );
@@ -24021,7 +24021,10 @@ fn test_aacx_nested_lists_structure() {
 fn test_aacx_overlapping_draw_paragraph_alignment() {
     let mut bp = Blueprint::from_pdf(input_path("AACX_033_IT.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Collect Text and Indent columns from STP_Definitions_1
@@ -24030,8 +24033,13 @@ fn test_aacx_overlapping_draw_paragraph_alignment() {
 
     for node in flattened.iter_nodes() {
         if let crate::FlattenedNodeKind::Text { content, .. } = &node.kind {
-            let som = node.som_path().map(|p| p.as_str().to_string()).unwrap_or_default();
-            if !som.contains("STP_Definitions_1") { continue; }
+            let som = node
+                .som_path()
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_default();
+            if !som.contains("STP_Definitions_1") {
+                continue;
+            }
             let y = node.y.to_f32().unwrap_or(0.0);
             let h = node.height.to_f32().unwrap_or(0.0);
             let entry = (y, h, content.clone());
@@ -24046,8 +24054,16 @@ fn test_aacx_overlapping_draw_paragraph_alignment() {
     text_col.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     indent_col.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-    assert!(text_col.len() >= 10, "Expected at least 10 text paragraphs, got {}", text_col.len());
-    assert!(indent_col.len() >= 10, "Expected at least 10 indent markers, got {}", indent_col.len());
+    assert!(
+        text_col.len() >= 10,
+        "Expected at least 10 text paragraphs, got {}",
+        text_col.len()
+    );
+    assert!(
+        indent_col.len() >= 10,
+        "Expected at least 10 indent markers, got {}",
+        indent_col.len()
+    );
 
     // The first 3 paragraphs (before any wrapping) must be aligned.
     for i in 0..3 {
@@ -24056,7 +24072,11 @@ fn test_aacx_overlapping_draw_paragraph_alignment() {
         assert!(
             (ty - iy).abs() < 0.5,
             "Paragraph {}: text y={:.1} ({:?}) != indent y={:.1} ({:?})",
-            i, ty, &tc[..tc.len().min(40)], iy, &ic[..ic.len().min(20)]
+            i,
+            ty,
+            &tc[..tc.len().min(40)],
+            iy,
+            &ic[..ic.len().min(20)]
         );
     }
 
