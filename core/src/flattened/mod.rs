@@ -8939,8 +8939,13 @@ impl Flattened {
             // paragraph's runs. The XFA <font> element may specify weight="bold",
             // but the rich text HTML CSS can override this
             // (e.g. <p style="font-weight:normal">). Since layout_rich_text uses
-            // a single font for all tokens, we use the dominant run style to
-            // select the correct font variant for measurement.
+            // a single font for all tokens, we pick the dominant style.
+            //
+            // When a paragraph has BOTH bold and normal runs, we use the weight
+            // that covers the majority of the text (by character count). This
+            // prevents a short bold prefix from forcing the bold font for width
+            // measurement, which would inflate line widths and cause incorrect
+            // wrapping (e.g. AACX STP_Definitions_1 «Servizi» paragraph).
             if !para.runs.is_empty() {
                 let has_bold = para
                     .runs
@@ -8953,6 +8958,23 @@ impl Flattened {
                 if has_normal && !has_bold {
                     // All content runs are non-bold: CSS overrides XFA bold to normal
                     para_xfa_font.weight = FontWeight::Normal;
+                } else if has_normal && has_bold {
+                    // Mixed: use the dominant weight by character count
+                    let bold_chars: usize = para
+                        .runs
+                        .iter()
+                        .filter(|r| r.bold && !r.text.trim().is_empty())
+                        .map(|r| r.text.len())
+                        .sum();
+                    let normal_chars: usize = para
+                        .runs
+                        .iter()
+                        .filter(|r| !r.bold && !r.text.trim().is_empty())
+                        .map(|r| r.text.len())
+                        .sum();
+                    if normal_chars > bold_chars {
+                        para_xfa_font.weight = FontWeight::Normal;
+                    }
                 }
                 let has_italic = para
                     .runs

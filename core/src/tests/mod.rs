@@ -23912,9 +23912,9 @@ fn test_aacx_nested_lists_structure() {
     // there is a nested roman sublist between b) and c).
     assert!(
         alpha_texts.last().is_some_and(
-            |t| t.contains("selezione o mantenimento di altri consulenti di investimento")
+            |t| t.contains("fornitura di strumenti elettronici")
         ),
-        "Alpha c) should be the last alpha item.\nItems: {:?}",
+        "Alpha c) should be about electronic tools.\nItems: {:?}",
         alpha_texts
     );
 
@@ -23958,8 +23958,8 @@ fn test_aacx_nested_lists_structure() {
     assert!(
         roman_texts
             .last()
-            .is_some_and(|t| t.contains("vantaggi di investire in titoli")),
-        "Roman (vi) should be the last roman item.\nRoman items: {:?}",
+            .is_some_and(|t| t.contains("selezione o mantenimento di altri consulenti")),
+        "Roman (vi) should be about selecting/maintaining other advisors.\nRoman items: {:?}",
         roman_texts
     );
 
@@ -23970,16 +23970,20 @@ fn test_aacx_nested_lists_structure() {
         .iter()
         .find(|l| {
             !l.list_style.is_ordered()
-                && l.items
-                    .iter()
-                    .any(|i| i.as_plain_text().contains("Categorie di US Person\u{bb} indica"))
+                && l.items.iter().any(|i| {
+                    i.as_plain_text()
+                        .contains("Categorie di US Person\u{bb} indica")
+                })
         })
         .expect("Expected an unordered list containing the 'Categorie di US Person' definition");
 
     let categorie_item = categorie_dash_list
         .items
         .iter()
-        .find(|i| i.as_plain_text().contains("Categorie di US Person\u{bb} indica"))
+        .find(|i| {
+            i.as_plain_text()
+                .contains("Categorie di US Person\u{bb} indica")
+        })
         .expect("Dash list must contain the 'Categorie di US Person' definition item");
 
     let categorie_sublist = categorie_item
@@ -24006,5 +24010,69 @@ fn test_aacx_nested_lists_structure() {
             .is_some_and(|t| t.contains("qualsiasi persona fisica domiciliata negli USA")),
         "'Categorie di US Person' roman (i) should be 'qualsiasi persona fisica domiciliata negli USA'.\nItems: {:?}",
         categorie_roman_texts
+    );
+}
+
+/// Verify that the font weight selection for mixed bold/normal paragraphs
+/// uses the dominant weight. This prevents a short bold prefix from inflating
+/// text width measurements, which would cause incorrect wrapping and
+/// misalignment in overlapping Draw columns (AACX STP_Definitions_1).
+#[test]
+fn test_aacx_overlapping_draw_paragraph_alignment() {
+    let mut bp = Blueprint::from_pdf(input_path("AACX_033_IT.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states.iter().next().expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    // Collect Text and Indent columns from STP_Definitions_1
+    let mut text_col: Vec<(f32, f32, String)> = Vec::new(); // (y, h, content)
+    let mut indent_col: Vec<(f32, f32, String)> = Vec::new();
+
+    for node in flattened.iter_nodes() {
+        if let crate::FlattenedNodeKind::Text { content, .. } = &node.kind {
+            let som = node.som_path().map(|p| p.as_str().to_string()).unwrap_or_default();
+            if !som.contains("STP_Definitions_1") { continue; }
+            let y = node.y.to_f32().unwrap_or(0.0);
+            let h = node.height.to_f32().unwrap_or(0.0);
+            let entry = (y, h, content.clone());
+            if som.contains(".Text") {
+                text_col.push(entry);
+            } else if som.contains("T_Indent") || som.contains(".Indent") {
+                indent_col.push(entry);
+            }
+        }
+    }
+
+    text_col.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    indent_col.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    assert!(text_col.len() >= 10, "Expected at least 10 text paragraphs, got {}", text_col.len());
+    assert!(indent_col.len() >= 10, "Expected at least 10 indent markers, got {}", indent_col.len());
+
+    // The first 3 paragraphs (before any wrapping) must be aligned.
+    for i in 0..3 {
+        let (ty, _, ref tc) = text_col[i];
+        let (iy, _, ref ic) = indent_col[i];
+        assert!(
+            (ty - iy).abs() < 0.5,
+            "Paragraph {}: text y={:.1} ({:?}) != indent y={:.1} ({:?})",
+            i, ty, &tc[..tc.len().min(40)], iy, &ic[..ic.len().min(20)]
+        );
+    }
+
+    // text[3] is the «Servizi di esecuzione titoli» paragraph — it wraps
+    // but with correct font weight selection it should wrap to at most 2 lines
+    // (h ≤ 18pt), not 3 lines (h=27pt) which was the bug.
+    let (_, th3, ref tc3) = text_col[3];
+    assert!(
+        tc3.contains("Servizi di esecuzione titoli"),
+        "text[3] should be the 'Servizi' paragraph, got {:?}",
+        &tc3[..tc3.len().min(60)]
+    );
+    assert!(
+        th3 <= 19.0,
+        "text[3] ('Servizi...') should wrap to at most 2 lines (h≤18pt), got h={:.1}pt. \
+         If h=27, the bold font is being used for measurement instead of the dominant normal font.",
+        th3
     );
 }
