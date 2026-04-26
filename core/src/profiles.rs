@@ -482,3 +482,129 @@ mod tests {
         );
     }
 }
+
+/// Resolve a `fragRef` path to the fragment's `.content.xml` content from
+/// the embedded profiles.
+///
+/// Strips known JCR path prefixes (`/content/dam/formsanddocuments/` or
+/// `/content/forms/af/`) and looks up the fragment under each profile's
+/// `aem/fragments/` directory.  Returns the XML as a `String` if found.
+pub fn resolve_embedded_fragment_xml(frag_ref: &str) -> Option<String> {
+    let (_, fragment_xml_path) = resolve_embedded_fragment_paths(frag_ref)?;
+    PROFILES_DIR
+        .get_file(&fragment_xml_path)
+        .and_then(|f| f.contents_utf8())
+        .map(|s| s.to_string())
+}
+
+/// Load Sling i18n dictionary files for an embedded fragment.
+///
+/// Returns a map of `(language, xml_content)` pairs from the fragment's
+/// `_jcr_content/guideContainer/assets/dictionary/` directory.
+pub fn resolve_embedded_fragment_dictionaries(frag_ref: &str) -> Vec<(String, String)> {
+    let Some((profile_and_relative, _)) = resolve_embedded_fragment_paths(frag_ref) else {
+        return Vec::new();
+    };
+
+    let dict_dir_path = format!(
+        "{profile_and_relative}/_jcr_content/guideContainer/assets/dictionary"
+    );
+
+    let Some(dict_dir) = PROFILES_DIR.get_dir(&dict_dir_path) else {
+        return Vec::new();
+    };
+
+    dict_dir
+        .files()
+        .filter_map(|f| {
+            let filename = f.path().file_name()?.to_str()?;
+            if !filename.ends_with(".xml") {
+                return None;
+            }
+            let lang = filename.strip_suffix(".xml")?;
+            let content = f.contents_utf8()?;
+            Some((lang.to_string(), content.to_string()))
+        })
+        .collect()
+}
+
+/// Load all dictionaries from every fragment in the same library as the given fragRef.
+///
+/// In AEM, Sling dictionaries are shared across a content subtree. Fragments in the same
+/// library (e.g. `afforms_italy_fragmentlib`) share dictionaries even if they don't
+/// directly reference each other. This function loads all `dictionary/*.xml` files
+/// from all sibling fragments to enable correct translation resolution.
+pub fn resolve_embedded_library_dictionaries(frag_ref: &str) -> Vec<(String, String)> {
+    let relative = frag_ref
+        .strip_prefix("/content/dam/formsanddocuments/")
+        .or_else(|| frag_ref.strip_prefix("/content/forms/af/"));
+
+    let Some(relative) = relative else {
+        return Vec::new();
+    };
+
+    // Extract the library path (first segment of the relative path)
+    // e.g. "afforms_italy_fragmentlib/affrg_ClientSignature1" → "afforms_italy_fragmentlib"
+    let library = relative.split('/').next().unwrap_or(relative);
+
+    let mut results = Vec::new();
+    for profile_dir in PROFILES_DIR.dirs() {
+        let Some(profile_name) = profile_dir.path().file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let lib_path = format!("{profile_name}/aem/fragments/{library}");
+        let Some(lib_dir) = PROFILES_DIR.get_dir(&lib_path) else {
+            continue;
+        };
+
+        // Recursively collect all dictionary XML files from the library
+        collect_dictionary_files(lib_dir, &mut results);
+    }
+
+    results
+}
+
+/// Recursively collect dictionary XML files from a directory tree.
+fn collect_dictionary_files(dir: &Dir<'_>, results: &mut Vec<(String, String)>) {
+    let dir_name = dir
+        .path()
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    if dir_name == "dictionary" {
+        // This is a dictionary directory — collect its XML files
+        for file in dir.files() {
+            if let Some(filename) = file.path().file_name().and_then(|n| n.to_str()) {
+                if let Some(lang) = filename.strip_suffix(".xml") {
+                    if let Some(content) = file.contents_utf8() {
+                        results.push((lang.to_string(), content.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse into subdirectories
+    for subdir in dir.dirs() {
+        collect_dictionary_files(subdir, results);
+    }
+}
+
+/// Resolve a fragRef to (profile_name/aem/fragments/relative, xml_path).
+fn resolve_embedded_fragment_paths(frag_ref: &str) -> Option<(String, String)> {
+    let relative = frag_ref
+        .strip_prefix("/content/dam/formsanddocuments/")
+        .or_else(|| frag_ref.strip_prefix("/content/forms/af/"))?;
+
+    for profile_dir in PROFILES_DIR.dirs() {
+        let profile_name = profile_dir.path().file_name()?.to_str()?;
+        let base = format!("{profile_name}/aem/fragments/{relative}");
+        let xml_path = format!("{base}/.content.xml");
+        if PROFILES_DIR.get_file(&xml_path).is_some() {
+            return Some((base, xml_path));
+        }
+    }
+
+    None
+}

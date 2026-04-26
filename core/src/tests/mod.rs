@@ -4,7 +4,7 @@ use helpers::{
     assert_aem_package_valid_for, assert_aem_xml_valid_for, collect_conditionals,
     collect_field_labels, collect_field_labels_trimmed, collect_field_names, collect_fields,
     collect_headings, collect_radio_fields, count_conditionals, find_field_by_name,
-    find_field_id_by_suffix, input_path, load_ubs_profile,
+    find_field_id_by_suffix, input_path, load_ubs_profile, walk_structured_nodes,
 };
 
 use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
@@ -24095,4 +24095,225 @@ fn test_aacx_overlapping_draw_paragraph_alignment() {
          If h=27, the bold font is being used for measurement instead of the dominant normal font.",
         th3
     );
+}
+
+// ============================================================================
+// AEM ZIP input tests
+// ============================================================================
+
+#[test]
+fn test_aacx_zip_structured_output() {
+    use crate::structured::StructuredNode;
+
+    let zip_bytes = std::fs::read(input_path("AACX.zip")).expect("Failed to read AACX.zip");
+    let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AACX.zip");
+    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let nodes = &envelope.content;
+
+    // Collect all field labels
+    let fields = collect_fields(nodes);
+    let labels: Vec<String> = fields
+        .iter()
+        .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+        .collect();
+
+    // 1) Must contain a field with label "Tipo"
+    let tipo_field = fields.iter().find(|f| {
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains("Tipo"))
+            .unwrap_or(false)
+    });
+    assert!(
+        tipo_field.is_some(),
+        "Expected a field with label 'Tipo', but none found.\nAll labels: {:?}",
+        labels
+    );
+
+    // 2) Must contain a field "Nome della società"
+    let nome_societa = fields.iter().find(|f| {
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains("Nome della societ"))
+            .unwrap_or(false)
+    });
+    assert!(
+        nome_societa.is_some(),
+        "Expected a field with label containing 'Nome della società', but none found.\nAll labels: {:?}",
+        labels
+    );
+
+    // 3) Must contain a Repeatable that includes fields "Cognome" and "Nome/i"
+    let mut repeatables = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Repeatable(rep) = node {
+            repeatables.push(rep.clone());
+        }
+    });
+
+    assert!(
+        !repeatables.is_empty(),
+        "Expected at least one Repeatable node in AACX, but found none"
+    );
+
+    // Check that some repeatable contains both "Cognome" and "Nome/i" (Italian translations)
+    let has_matching_repeatable = repeatables.iter().any(|rep| {
+        let rep_fields = collect_fields(std::slice::from_ref(
+            &StructuredNode::Repeatable(rep.clone()),
+        ));
+
+        let has_cognome = rep_fields.iter().any(|f| {
+            f.label.as_ref().map_or(false, |l| {
+                l.as_plain_text().contains("Cognome")
+                    || l.plain_text_in("it").contains("Cognome")
+                    || l.plain_text_in("it-ch").contains("Cognome")
+            })
+        });
+        let has_nomi = rep_fields.iter().any(|f| {
+            f.label.as_ref().map_or(false, |l| {
+                let plain = l.as_plain_text();
+                let it = l.plain_text_in("it");
+                let it_ch = l.plain_text_in("it-ch");
+                plain.contains("Nome")
+                    || it.contains("Nome")
+                    || it_ch.contains("Nome")
+                    || plain.contains("First name")
+                    || it.contains("First name")
+            })
+        });
+        has_cognome && has_nomi
+    });
+
+    assert!(
+        has_matching_repeatable,
+        "Expected a Repeatable containing fields 'Cognome' and 'Nome/i', but none found.\n\
+         Repeatables found: {}",
+        repeatables.len()
+    );
+}
+
+#[test]
+fn test_aaox_zip_structured_output() {
+    use crate::structured::{ConditionalNode, InputValue, StructuredNode};
+
+    let zip_bytes = std::fs::read(input_path("AAOX.zip")).expect("Failed to read AAOX.zip");
+    let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAOX.zip");
+    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let nodes = &envelope.content;
+
+    // Helper: check if a label matches text in any Italian variant
+    let label_contains = |label: &crate::structured::InlineText, text: &str| -> bool {
+        label.as_plain_text().contains(text)
+            || label.plain_text_in("it").contains(text)
+            || label.plain_text_in("it-ch").contains(text)
+    };
+
+    let field_has_label = |f: &crate::structured::FieldNode, text: &str| -> bool {
+        f.label.as_ref().map_or(false, |l| label_contains(l, text))
+    };
+
+    // Helper: check if nodes contain a repeatable with Cognome and Nome/i
+    let has_repeatable_with_cognome_nomi = |nodes: &[StructuredNode]| -> bool {
+        let mut found = false;
+        walk_structured_nodes(nodes, &mut |node| {
+            if let StructuredNode::Repeatable(rep) = node {
+                let rep_fields = collect_fields(std::slice::from_ref(
+                    &StructuredNode::Repeatable(rep.clone()),
+                ));
+                let has_cognome = rep_fields.iter().any(|f| field_has_label(f, "Cognome"));
+                let has_nomi = rep_fields.iter().any(|f| {
+                    field_has_label(f, "Nome/i") || field_has_label(f, "First name")
+                });
+                if has_cognome && has_nomi {
+                    found = true;
+                }
+            }
+        });
+        found
+    };
+
+    // 1) Must contain a dropdown "Tipo"
+    let fields = collect_fields(nodes);
+    let all_labels: Vec<String> = fields
+        .iter()
+        .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+        .collect();
+
+    let tipo_field = fields.iter().find(|f| field_has_label(f, "Tipo"));
+    assert!(
+        tipo_field.is_some(),
+        "Expected a field with label 'Tipo', but none found.\nAll labels: {:?}",
+        all_labels
+    );
+
+    // 2) Collect all Conditional nodes
+    let mut conditionals: Vec<ConditionalNode> = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Conditional(cond) = node {
+            conditionals.push(cond.clone());
+        }
+    });
+
+    assert!(
+        conditionals.len() >= 2,
+        "Expected at least 2 Conditional nodes, found {}",
+        conditionals.len()
+    );
+
+    // 3) Conditional with value "Legal Entity": contains "Nome della società" and a repeatable
+    let legal_entity_cond = conditionals.iter().find(|c| {
+        matches!(&c.condition.value, InputValue::Text(v) if v == "Legal Entity")
+    });
+    assert!(
+        legal_entity_cond.is_some(),
+        "Expected a Conditional with value 'Legal Entity', but none found.\n\
+         Conditional values: {:?}",
+        conditionals.iter().map(|c| &c.condition.value).collect::<Vec<_>>()
+    );
+
+    let legal_entity_nodes =
+        std::slice::from_ref(legal_entity_cond.unwrap().content.as_ref());
+    let le_fields = collect_fields(legal_entity_nodes);
+
+    let has_nome_societa = le_fields.iter().any(|f| field_has_label(f, "Nome della societ"));
+    assert!(
+        has_nome_societa,
+        "Legal Entity conditional should contain 'Nome della società'.\n\
+         Fields: {:?}",
+        le_fields.iter().filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text())).collect::<Vec<_>>()
+    );
+
+    assert!(
+        has_repeatable_with_cognome_nomi(legal_entity_nodes),
+        "Legal Entity conditional should contain a Repeatable with 'Cognome' and 'Nome/i'"
+    );
+
+    // 4) Conditional with value "Individual": contains only the repeatable
+    let individual_cond = conditionals.iter().find(|c| {
+        matches!(&c.condition.value, InputValue::Text(v) if v == "Individual")
+    });
+    assert!(
+        individual_cond.is_some(),
+        "Expected a Conditional with value 'Individual', but none found.\n\
+         Conditional values: {:?}",
+        conditionals.iter().map(|c| &c.condition.value).collect::<Vec<_>>()
+    );
+
+    let individual_nodes =
+        std::slice::from_ref(individual_cond.unwrap().content.as_ref());
+
+    assert!(
+        has_repeatable_with_cognome_nomi(individual_nodes),
+        "Individual conditional should contain a Repeatable with 'Cognome' and 'Nome/i'"
+    );
+
+    // 5) Must contain fields "Luogo", "Data", "Nome del Cliente"
+    for expected_label in &["Luogo", "Data", "Nome del cliente"] {
+        let found = fields.iter().any(|f| field_has_label(f, expected_label));
+        assert!(
+            found,
+            "Expected a field with label '{}', but none found.\nAll labels: {:?}",
+            expected_label, all_labels
+        );
+    }
 }

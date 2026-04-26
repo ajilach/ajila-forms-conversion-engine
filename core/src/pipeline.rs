@@ -275,7 +275,12 @@ pub fn run_pipeline(
 
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (filename, bytes) in files {
-        let bp = Blueprint::from_pdf_bytes(bytes)?;
+        // Auto-detect AEM ZIP vs PDF
+        let bp = if crate::aem::detect_aem_zip(bytes) {
+            Blueprint::from_aem_zip(bytes)?
+        } else {
+            Blueprint::from_pdf_bytes(bytes)?
+        };
         let language = bp.language().to_string();
         blueprints.push((filename.clone(), language, bp));
     }
@@ -286,15 +291,30 @@ pub fn run_pipeline(
     ));
 
     // (filename, language, form_states, context)
+    // For AEM inputs, form_states is None and we store the envelope directly.
     let mut explored: Vec<(String, String, crate::FormStates, Context)> = Vec::new();
+    let mut aem_envelopes: Vec<(String, String, DocumentEnvelope)> = Vec::new();
+
     for (filename, language, mut bp) in blueprints {
-        let form_states = bp.states()?;
-        on_event(PipelineEvent::StatesFound {
-            file: filename.clone(),
-            count: form_states.len(),
-        });
-        let context = bp.context();
-        explored.push((filename, language, form_states, context));
+        if bp.is_aem() {
+            // AEM path: skip FormStates, get structured output directly
+            let envelope = bp.aem_structured().ok_or_else(|| {
+                Error::Conversion("AEM structured conversion failed".into())
+            })?;
+            on_event(PipelineEvent::StatesFound {
+                file: filename.clone(),
+                count: 1,
+            });
+            aem_envelopes.push((filename, language, envelope));
+        } else {
+            let form_states = bp.states()?;
+            on_event(PipelineEvent::StatesFound {
+                file: filename.clone(),
+                count: form_states.len(),
+            });
+            let context = bp.context();
+            explored.push((filename, language, form_states, context));
+        }
     }
 
     // ── Phase 3: Flattening — plain and annotated renders ─────────────────────
@@ -397,6 +417,41 @@ pub fn run_pipeline(
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Merging));
+
+    // If we only have AEM envelopes (no PDF states), merge them directly.
+    if per_language_state_maps.is_empty() && !aem_envelopes.is_empty() {
+        let merged = if aem_envelopes.len() == 1 {
+            aem_envelopes.into_iter().next().unwrap().2
+        } else {
+            let envelopes: Vec<DocumentEnvelope> =
+                aem_envelopes.into_iter().map(|(_, _, e)| e).collect();
+
+            #[cfg(feature = "semantic-matching")]
+            let semantic_matcher = {
+                match crate::semantic::SemanticMatcher::new() {
+                    Ok(m) => Some(m),
+                    Err(_) => None,
+                }
+            };
+            #[cfg(feature = "semantic-matching")]
+            let semantic_ref = semantic_matcher.as_ref();
+            #[cfg(not(feature = "semantic-matching"))]
+            let semantic_ref: Option<&crate::structured::SemanticCtx> = None;
+
+            crate::merge_translations(envelopes, semantic_ref)
+                .map_err(|e| Error::Conversion(e.to_string()))?
+        };
+
+        on_event(PipelineEvent::StepChanged(PipelineStep::Complete));
+
+        return Ok(PipelineOutput {
+            plain_renders,
+            annotated_renders,
+            labelled_renders,
+            state_labels,
+            merged,
+        });
+    }
 
     if per_language_state_maps.is_empty() {
         return Err(Error::Conversion("No envelopes to merge".into()));

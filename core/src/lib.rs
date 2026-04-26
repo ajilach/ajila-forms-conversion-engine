@@ -145,8 +145,9 @@ pub use structured::{
 
 // AEM generation
 pub use aem::{
-    AemConfig, AemNode, AemProfile, ParsedFragment, collect_languages, convert_to_aem,
-    generate_aem_package, generate_aem_xml, parse_fragment_content, scan_fragments,
+    AemConfig, AemNode, AemProfile, AemScriptEngine, ParsedAemPackage, ParsedFragment,
+    aem_to_structured, collect_languages, convert_to_aem, detect_aem_zip, generate_aem_package,
+    generate_aem_xml, parse_aem_zip, parse_fragment_content, scan_fragments,
 };
 
 // GraphViz decision-flow output
@@ -411,6 +412,11 @@ enum BlueprintInner {
         /// Pre-parsed flattened pages (one per PDF page).
         pages: Vec<Flattened>,
     },
+    /// AEM Adaptive Form input pipeline: parsed from ZIP package.
+    Aem {
+        /// The parsed AEM package (node tree, scripts, translations).
+        package: ParsedAemPackage,
+    },
 }
 
 impl Blueprint {
@@ -445,6 +451,23 @@ impl Blueprint {
                 Self::from_acroform_bytes(pdf_bytes)
             }
         }
+    }
+
+    /// Create a `Blueprint` from an AEM ZIP content package.
+    ///
+    /// Parses the ZIP, extracts the Adaptive Form structure, runs scripts
+    /// for visibility/value determination, and builds the AEM node tree.
+    pub fn from_aem_zip(zip_bytes: &[u8]) -> Result<Self, Error> {
+        let package = aem::parse_aem_zip(zip_bytes)
+            .map_err(|e| Error::PdfParse(format!("AEM ZIP parse error: {e}")))?;
+
+        let language = package.language.clone();
+
+        Ok(Blueprint {
+            inner: BlueprintInner::Aem { package },
+            language,
+            variables: std::collections::HashMap::new(),
+        })
     }
 
     /// Create a `Blueprint` from a non-XFA PDF's raw bytes.
@@ -508,6 +531,11 @@ impl Blueprint {
         matches!(&self.inner, BlueprintInner::AcroForm { .. })
     }
 
+    /// Returns `true` if this Blueprint was created from an AEM ZIP package.
+    pub fn is_aem(&self) -> bool {
+        matches!(&self.inner, BlueprintInner::Aem { .. })
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // Accessors
     // ────────────────────────────────────────────────────────────────────────
@@ -528,7 +556,7 @@ impl Blueprint {
     pub fn form(&self) -> Option<&XfaForm> {
         match &self.inner {
             BlueprintInner::Xfa { form, .. } => Some(form),
-            BlueprintInner::AcroForm { .. } => None,
+            _ => None,
         }
     }
 
@@ -538,7 +566,7 @@ impl Blueprint {
     pub fn form_mut(&mut self) -> Option<&mut XfaForm> {
         match &mut self.inner {
             BlueprintInner::Xfa { form, .. } => Some(form),
-            BlueprintInner::AcroForm { .. } => None,
+            _ => None,
         }
     }
 
@@ -582,7 +610,78 @@ impl Blueprint {
                     .collect();
                 Ok(FormStates::new(collected))
             }
+            BlueprintInner::Aem { .. } => {
+                // AEM doesn't use FormStates. Use aem_structured() instead.
+                Err(Error::StateExploration(
+                    "AEM input does not support FormStates. Use aem_structured() instead.".into(),
+                ))
+            }
         }
+    }
+
+    /// Get structured output for an AEM input.
+    ///
+    /// Runs the script engine to determine field visibility and values,
+    /// then converts the AEM node tree to `StructuredNode`s.
+    ///
+    /// Returns `None` if this Blueprint is not an AEM input.
+    pub fn aem_structured(&self) -> Option<DocumentEnvelope> {
+        let package = match &self.inner {
+            BlueprintInner::Aem { package } => package,
+            _ => return None,
+        };
+
+        // Collect all field names and their initial visibility
+        let field_names = collect_aem_field_names(&package.root);
+        let initial_values = std::collections::HashMap::new();
+
+        // Run script engine
+        let mut engine = aem::AemScriptEngine::new(&field_names, &initial_values);
+
+        // Collect all scripts and execute them
+        let all_scripts: Vec<aem::AemScript> = package
+            .scripts
+            .values()
+            .flat_map(|v| v.iter().cloned())
+            .collect();
+        engine.execute_all(&all_scripts);
+
+        // Read back visibility state
+        let visibility = engine.read_visibility();
+
+        // Convert to structured nodes
+        let languages: Vec<String> = if package.translations.entries.is_empty() {
+            vec![package.language.clone()]
+        } else {
+            let mut langs: Vec<String> = package
+                .translations
+                .entries
+                .values()
+                .flat_map(|m| m.keys().cloned())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            if !langs.contains(&package.language) {
+                langs.push(package.language.clone());
+            }
+            langs
+        };
+
+        let content = aem::aem_to_structured(
+            &package.root,
+            &visibility,
+            &package.translations,
+            &languages,
+            &package.language,
+            &package.visibility_conditions,
+        );
+
+        let context = self.context();
+        Some(DocumentEnvelope {
+            context,
+            content,
+            state_count: 1,
+        })
     }
 
     /// Run full exhaustive exploration *and* merge all state trees into a
@@ -591,6 +690,13 @@ impl Blueprint {
     /// Equivalent to calling [`states()`](Self::states), converting each state
     /// to structured output, and then running `RecursiveMerger`.
     pub fn merged_structured(&mut self) -> Result<DocumentEnvelope, Error> {
+        // For AEM input, use the direct AEM structured path
+        if self.is_aem() {
+            return self
+                .aem_structured()
+                .ok_or_else(|| Error::Conversion("AEM structured conversion failed".into()));
+        }
+
         let form_states = self.states()?;
         let state_count = form_states.len();
         let context = self.context();
@@ -601,6 +707,76 @@ impl Blueprint {
             content: merged,
             state_count,
         })
+    }
+}
+
+// ============================================================================
+// AEM field name collection
+// ============================================================================
+
+/// Recursively collect all field/panel names from an AEM node tree.
+///
+/// Returns `(name, visible)` pairs for use with the script engine.
+fn collect_aem_field_names(node: &AemNode) -> Vec<(String, bool)> {
+    let mut names = Vec::new();
+    collect_aem_field_names_recursive(node, &mut names);
+    names
+}
+
+fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bool)>) {
+    match node {
+        AemNode::Root { children, .. } => {
+            for child in children {
+                collect_aem_field_names_recursive(child, names);
+            }
+        }
+        AemNode::Panel {
+            name,
+            children,
+            visible,
+            ..
+        } => {
+            names.push((name.clone(), *visible));
+            for child in children {
+                collect_aem_field_names_recursive(child, names);
+            }
+        }
+        AemNode::TextField { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::NumberField { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::DatePicker { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::Dropdown { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::Checkbox { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::RadioButton { name, visible, .. } => {
+            names.push((name.clone(), *visible));
+        }
+        AemNode::TextDraw { name, .. } => {
+            names.push((name.clone(), true));
+        }
+        AemNode::TitleDraw { name, .. } => {
+            names.push((name.clone(), true));
+        }
+        AemNode::Repeatable {
+            name, children, ..
+        } => {
+            names.push((name.clone(), true));
+            for child in children {
+                collect_aem_field_names_recursive(child, names);
+            }
+        }
+        AemNode::Fragment { name, .. } => {
+            names.push((name.clone(), true));
+        }
+        AemNode::Preface { .. } | AemNode::Appendix { .. } => {}
     }
 }
 

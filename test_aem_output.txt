@@ -1,0 +1,132 @@
+
+running 119 tests
+test aem::converter::tests::convert_date_field ... ok
+test aem::converter::tests::convert_group_produces_panel ... ok
+test aem::converter::tests::convert_checkbox_from_bool ... ok
+test aem::converter::tests::conditional_produces_hidden_panel_and_wires_trigger ... ok
+test aem::converter::tests::convert_paragraph_produces_textdraw ... ok
+test aem::converter::tests::convert_heading_produces_titledraw ... ok
+test aem::converter::tests::convert_select_field ... ok
+test aem::converter::tests::convert_radio_field ... ok
+test aem::converter::tests::convert_ordered_list_produces_textdraw ... ok
+test aem::converter::tests::convert_text_field ... ok
+test aem::converter::tests::convert_unordered_list_produces_textdraw ... ok
+test aem::converter::tests::convert_repeatable ... ok
+test aem::converter::tests::deterministic_uuids_are_reproducible ... ok
+test aem::converter::tests::email_field_uses_eml_prefix ... ok
+test aem::converter::tests::empty_nodes_are_skipped ... ok
+test aem::converter::tests::field_name_falls_back_to_som_path ... ok
+test aem::converter::tests::field_name_uses_label_text ... ok
+test aem::converter::tests::grid_layout_distributes_colspan ... ok
+test aem::converter::tests::h2_headings_create_section_panels ... ok
+test aem::converter::tests::h2_section_panel_name_uses_title ... ok
+test aem::converter::tests::heading_name_uses_text_content ... ok
+test aem::converter::tests::inserts_preface_and_appendix_into_first_and_last_page_panels ... ok
+test aem::converter::tests::make_name_deterministic_across_runs ... ok
+test aem::converter::tests::make_name_unique_for_identical_labels ... ok
+test aem::converter::tests::make_name_with_text_produces_prefix_camel_uuid ... ok
+test aem::converter::tests::make_name_without_text_produces_prefix_uuid ... ok
+test aem::converter::tests::multiple_conditions_same_trigger_grouped ... ok
+test aem::converter::tests::number_field_uses_nb_prefix ... ok
+test aem::converter::tests::panel_leaves_subset_of_fragment_requires_all_leaves ... ok
+test aem::converter::tests::paragraph_name_uses_text_content ... ok
+test aem::converter::tests::root_title_falls_back_to_form_code_without_h1 ... ok
+test aem::converter::tests::root_title_uses_h1_heading_text ... ok
+test aem::converter::tests::short_uuid_returns_8_hex_chars ... ok
+test aem::converter::tests::tel_field_uses_tel_prefix ... ok
+test aem::converter::tests::to_camel_case_basic ... ok
+test aem::converter::tests::to_camel_case_empty_input ... ok
+test aem::converter::tests::to_camel_case_numeric_input ... ok
+test aem::converter::tests::to_camel_case_strips_html ... ok
+test aem::converter::tests::to_camel_case_strips_special_chars ... ok
+test aem::converter::tests::to_camel_case_truncates_at_word_boundary ... ok
+test aem::fragment_parser::tests::test_extract_attr_value ... ok
+test aem::fragment_parser::tests::test_extract_bind_ref_elements ... ok
+test aem::fragment_parser::tests::test_extract_bind_ref_elements_nested_ignored ... ok
+test aem::fragment_parser::tests::test_parse_fragment_name_generation ... ok
+test aem::package_writer::tests::dam_asset_xml_has_correct_resource_type ... ok
+test aem::package_writer::tests::dam_asset_xml_uses_configured_xsd_ref ... ok
+test aem::package_writer::tests::dam_intermediate_folders_use_sling_folder ... ok
+test aem::package_writer::tests::default_translations_do_not_override_form_content_translations ... ok
+test aem::package_writer::tests::dam_template_receives_resolved_xsd_ref ... ok
+test aem::package_writer::tests::field_label_translation_key_is_plain_text ... ok
+test aem::package_writer::tests::bind_to_xsd_without_xsd_path_omits_xsd_from_package ... ok
+test aem::package_writer::tests::default_translations_appear_in_package_dictionary ... ok
+test aem::package_writer::tests::translation_key_equals_fd_prefix_plus_value_for_paragraph ... ok
+test aem::package_writer::tests::translation_key_for_h1_guideformtitle_includes_html_wrapping ... ok
+test aem::package_writer::tests::translation_key_equals_fd_prefix_plus_value_for_list ... ok
+test aem::package_writer::tests::package_contains_dam_and_form_content ... ok
+test aem::package_writer::tests::translation_key_for_h2_panel_title_is_plain_text ... ok
+test aem::package_writer::tests::default_translations_generate_synonym_dictionaries ... ok
+test aem::package_writer::tests::translation_key_for_h3_titledraw_includes_html_wrapping ... ok
+test aem::parser::tests::test_detect_aem_zip_false_for_non_zip ... ok
+test aem::parser::tests::test_parse_jcr_array ... ok
+test aem::parser::tests::test_parse_fd_scripts_json ... ok
+test aem::template::tests::test_render_string_with_context ... ok
+test aem::package_writer::tests::xsd_path_without_leading_slash_is_normalized ... ok
+test aem::package_writer::tests::package_uses_configured_xsd_zip_path ... ok
+test aem::package_writer::tests::xsd_filter_root_included_in_package ... ok
+test aem::template::tests::test_resolve_simple_variables ... ok
+test aem::to_structured::tests::test_field_id_from_name ... ok
+test aem::template::tests::test_resolve_chained_variables ... ok
+test aem::to_structured::tests::test_simple_conversion ... ok
+test aem::to_structured::tests::test_strip_html_tags ... ok
+test aem::xml_writer::tests::checkbox_with_conditions_emits_scripts ... ok
+test aem::xml_writer::tests::dor_colspan_not_emitted_when_none ... ok
+test aem::xml_writer::tests::checkbox_options_serialized ... ok
+test aem::script_engine::tests::test_ubs_hide_helper ... ok
+test aem::script_engine::tests::test_value_setting ... ok
+test aem::xml_writer::tests::dor_colspan_emitted_on_fields_in_grid_panel ... ok
+test aem::xml_writer::tests::dropdown_has_options ... ok
+test aem::script_engine::tests::test_conditional_visibility ... ok
+test aem::xml_writer::tests::dropdown_with_conditions_emits_scripts ... ok
+test aem::script_engine::tests::test_basic_visibility ... ok
+test aem::script_engine::tests::test_disabled_script_skipped ... ok
+test aem::xml_writer::tests::missing_template_omits_component ... ok
+test aem::xml_writer::tests::hidden_panel_emits_visible_false ... ok
+test aem::xml_writer::tests::value_commit_json_has_correct_structure ... ok
+test aem::xml_writer::tests::value_commit_script_uses_single_quotes ... ok
+test aem::xml_writer::tests::radio_without_conditions_has_no_scripts ... ok
+test aem::xml_writer::tests::repeatable_has_min_max_occur ... ok
+test aem::xml_writer::tests::radio_button_with_conditions_emits_scripts ... ok
+test aem::xml_writer::tests::text_field_has_responsive_width ... ok
+test aem::xml_writer::tests::xml_output_renders_textdraw ... ok
+test aem::xml_writer::tests::preface_renders_entity_based_banking_relationship_fragment ... ok
+test tests::test_aem_profile_allows_bind_to_xsd_without_xsd_path ... ok
+test tests::test_aaab_aem_config_form_path_title_code ... ok
+test aem::fragment_parser::tests::test_scan_fragments_with_real_directory ... ok
+test tests::test_aem_xml_valid_aaai ... ok
+test tests::test_aem_package_valid_aaai ... ok
+test tests::test_aem_xml_valid_aaei ... ok
+test tests::test_aem_xml_valid_aaab ... ok
+test tests::test_aem_xml_valid_aagg ... ok
+test tests::test_aem_xml_valid_aace ... ok
+test tests::test_aem_xml_valid_aaaa ... ok
+test tests::test_aem_xml_valid_aaoe ... ok
+test tests::test_aem_xml_valid_aapr ... ok
+test tests::test_aem_xml_valid_aacq ... ok
+test tests::test_aem_xml_valid_acav ... ignored, ACAV_001 lacks XFA variables required by the UBS AEM profile templates
+test tests::test_to_aem_panics_when_bind_to_xsd_without_xsd_config - should panic ... ok
+test tests::test_aem_aacq_title_translated ... ok
+test tests::test_aem_package_valid_aacq ... ok
+test tests::test_aem_xml_valid_aaqm ... ok
+test tests::test_aem_form_xml_has_utf8_declaration ... ok
+test tests::test_aais_019_aem_disclosure_texts_not_in_conditional ... ok
+test tests::test_ubs_profile_aem_output_matches_legacy ... ok
+test tests::test_aem_xml_valid_aags ... ok
+test tests::test_aem_xml_valid_aaks ... ok
+test tests::test_aem_xml_valid_aacb ... ok
+test tests::test_aem_xml_valid_aacj ... ok
+test tests::test_aem_xml_valid_aacc ... ok
+test tests::test_aem_xml_valid_aahq has been running for over 60 seconds
+test tests::test_aem_xml_valid_aahq ... ok
+
+test result: ok. 118 passed; 0 failed; 1 ignored; 0 measured; 651 filtered out; finished in 225.91s
+
+
+running 1 test
+test core/src/aem/mod.rs - aem (line 16) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+all doctests ran in 0.36s; merged doctests compilation took 0.11s
