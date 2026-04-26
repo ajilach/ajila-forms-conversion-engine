@@ -24317,3 +24317,51 @@ fn test_aaox_zip_structured_output() {
         );
     }
 }
+
+#[test]
+fn test_aaow_zip_structured_output() {
+    use crate::structured::{FieldType, StructuredNode};
+
+    let zip_bytes = std::fs::read(input_path("AAOW.zip")).expect("Failed to read AAOW.zip");
+    let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAOW.zip");
+    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let nodes = &envelope.content;
+
+    // Collect all radio button fields
+    let radios = collect_radio_fields(nodes);
+
+    // Find a radio button whose options contain both "Congiunto" and "Disgiunto"
+    let option_name_contains = |name: &crate::structured::TranslatableString, text: &str| -> bool {
+        name.as_str().contains(text)
+            || name.get("it").map_or(false, |s| s.contains(text))
+            || name.get("it-ch").map_or(false, |s| s.contains(text))
+    };
+
+    let matching_radio = radios.iter().find(|f| {
+        if let FieldType::Radio { options } = &f.input_type {
+            let has_congiunto = options.iter().any(|o| option_name_contains(&o.name, "Congiunto"));
+            let has_disgiunto = options.iter().any(|o| option_name_contains(&o.name, "Disgiunto"));
+            has_congiunto && has_disgiunto
+        } else {
+            false
+        }
+    });
+
+    let all_radio_options: Vec<Vec<String>> = radios
+        .iter()
+        .filter_map(|f| {
+            if let FieldType::Radio { options } = &f.input_type {
+                Some(options.iter().map(|o| o.name.as_str().to_string()).collect())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert!(
+        matching_radio.is_some(),
+        "Expected a radio button with options 'Congiunto' and 'Disgiunto', but none found.\n\
+         All radio option sets: {:?}",
+        all_radio_options
+    );
+}
