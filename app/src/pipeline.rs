@@ -145,32 +145,6 @@ pub async fn run_blueprint_pipeline(
         on_progress(&state);
         async_sleep_ms(0).await;
 
-        if let Some(ref profile_name) = profile
-            && blueprint::has_aem_config(profile_name)
-        {
-            let aem_config = match blueprint::load_aem_config(profile_name, &merged.context) {
-                Ok(cfg) => cfg,
-                Err(e) => fail!(format!("Failed to load AEM profile: {e}")),
-            };
-            let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
-            state.form_code = Some(aem_config.form_code.clone());
-            state.aem_package = Some(aem_zip);
-        }
-
-        state.step_progress = Some(0.9);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        if let Some(ref profile_name) = profile
-            && blueprint::has_xsd_config(profile_name)
-        {
-            let xsd_config = match blueprint::load_xsd_config(profile_name) {
-                Ok(cfg) => cfg,
-                Err(e) => fail!(format!("Failed to load XSD profile: {e}")),
-            };
-            state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
-        }
-
         state.step_progress = Some(1.0);
         on_progress(&state);
         async_sleep_ms(0).await;
@@ -432,6 +406,7 @@ pub async fn run_blueprint_pipeline(
 
     if let Some(ref profile_name) = profile
         && blueprint::has_aem_config(profile_name)
+        && !merged.context.variables.is_empty()
     {
         let aem_config = match blueprint::load_aem_config(profile_name, &merged.context) {
             Ok(cfg) => cfg,
@@ -448,6 +423,7 @@ pub async fn run_blueprint_pipeline(
 
     if let Some(ref profile_name) = profile
         && blueprint::has_xsd_config(profile_name)
+        && !merged.context.variables.is_empty()
     {
         let xsd_config = match blueprint::load_xsd_config(profile_name) {
             Ok(cfg) => cfg,
