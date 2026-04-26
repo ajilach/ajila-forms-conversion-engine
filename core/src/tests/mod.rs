@@ -24107,7 +24107,9 @@ fn test_aacx_zip_structured_output() {
 
     let zip_bytes = std::fs::read(input_path("AACX.zip")).expect("Failed to read AACX.zip");
     let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AACX.zip");
-    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let envelope = bp
+        .aem_structured()
+        .expect("Failed to get AEM structured output");
     let nodes = &envelope.content;
 
     // Collect all field labels
@@ -24158,9 +24160,9 @@ fn test_aacx_zip_structured_output() {
 
     // Check that some repeatable contains both "Cognome" and "Nome/i" (Italian translations)
     let has_matching_repeatable = repeatables.iter().any(|rep| {
-        let rep_fields = collect_fields(std::slice::from_ref(
-            &StructuredNode::Repeatable(rep.clone()),
-        ));
+        let rep_fields = collect_fields(std::slice::from_ref(&StructuredNode::Repeatable(
+            rep.clone(),
+        )));
 
         let has_cognome = rep_fields.iter().any(|f| {
             f.label.as_ref().map_or(false, |l| {
@@ -24198,7 +24200,9 @@ fn test_aaox_zip_structured_output() {
 
     let zip_bytes = std::fs::read(input_path("AAOX.zip")).expect("Failed to read AAOX.zip");
     let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAOX.zip");
-    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let envelope = bp
+        .aem_structured()
+        .expect("Failed to get AEM structured output");
     let nodes = &envelope.content;
 
     // Helper: check if a label matches text in any Italian variant
@@ -24217,13 +24221,13 @@ fn test_aaox_zip_structured_output() {
         let mut found = false;
         walk_structured_nodes(nodes, &mut |node| {
             if let StructuredNode::Repeatable(rep) = node {
-                let rep_fields = collect_fields(std::slice::from_ref(
-                    &StructuredNode::Repeatable(rep.clone()),
-                ));
+                let rep_fields = collect_fields(std::slice::from_ref(&StructuredNode::Repeatable(
+                    rep.clone(),
+                )));
                 let has_cognome = rep_fields.iter().any(|f| field_has_label(f, "Cognome"));
-                let has_nomi = rep_fields.iter().any(|f| {
-                    field_has_label(f, "Nome/i") || field_has_label(f, "First name")
-                });
+                let has_nomi = rep_fields
+                    .iter()
+                    .any(|f| field_has_label(f, "Nome/i") || field_has_label(f, "First name"));
                 if has_cognome && has_nomi {
                     found = true;
                 }
@@ -24261,26 +24265,33 @@ fn test_aaox_zip_structured_output() {
     );
 
     // 3) Conditional with value "Legal Entity": contains "Nome della società" and a repeatable
-    let legal_entity_cond = conditionals.iter().find(|c| {
-        matches!(&c.condition.value, InputValue::Text(v) if v == "Legal Entity")
-    });
+    let legal_entity_cond = conditionals
+        .iter()
+        .find(|c| matches!(&c.condition.value, InputValue::Text(v) if v == "Legal Entity"));
     assert!(
         legal_entity_cond.is_some(),
         "Expected a Conditional with value 'Legal Entity', but none found.\n\
          Conditional values: {:?}",
-        conditionals.iter().map(|c| &c.condition.value).collect::<Vec<_>>()
+        conditionals
+            .iter()
+            .map(|c| &c.condition.value)
+            .collect::<Vec<_>>()
     );
 
-    let legal_entity_nodes =
-        std::slice::from_ref(legal_entity_cond.unwrap().content.as_ref());
+    let legal_entity_nodes = std::slice::from_ref(legal_entity_cond.unwrap().content.as_ref());
     let le_fields = collect_fields(legal_entity_nodes);
 
-    let has_nome_societa = le_fields.iter().any(|f| field_has_label(f, "Nome della societ"));
+    let has_nome_societa = le_fields
+        .iter()
+        .any(|f| field_has_label(f, "Nome della societ"));
     assert!(
         has_nome_societa,
         "Legal Entity conditional should contain 'Nome della società'.\n\
          Fields: {:?}",
-        le_fields.iter().filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text())).collect::<Vec<_>>()
+        le_fields
+            .iter()
+            .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
     );
 
     assert!(
@@ -24289,18 +24300,20 @@ fn test_aaox_zip_structured_output() {
     );
 
     // 4) Conditional with value "Individual": contains only the repeatable
-    let individual_cond = conditionals.iter().find(|c| {
-        matches!(&c.condition.value, InputValue::Text(v) if v == "Individual")
-    });
+    let individual_cond = conditionals
+        .iter()
+        .find(|c| matches!(&c.condition.value, InputValue::Text(v) if v == "Individual"));
     assert!(
         individual_cond.is_some(),
         "Expected a Conditional with value 'Individual', but none found.\n\
          Conditional values: {:?}",
-        conditionals.iter().map(|c| &c.condition.value).collect::<Vec<_>>()
+        conditionals
+            .iter()
+            .map(|c| &c.condition.value)
+            .collect::<Vec<_>>()
     );
 
-    let individual_nodes =
-        std::slice::from_ref(individual_cond.unwrap().content.as_ref());
+    let individual_nodes = std::slice::from_ref(individual_cond.unwrap().content.as_ref());
 
     assert!(
         has_repeatable_with_cognome_nomi(individual_nodes),
@@ -24324,7 +24337,9 @@ fn test_aaow_zip_structured_output() {
 
     let zip_bytes = std::fs::read(input_path("AAOW.zip")).expect("Failed to read AAOW.zip");
     let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAOW.zip");
-    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let envelope = bp
+        .aem_structured()
+        .expect("Failed to get AEM structured output");
     let nodes = &envelope.content;
 
     // Collect all radio button fields
@@ -24339,8 +24354,12 @@ fn test_aaow_zip_structured_output() {
 
     let matching_radio = radios.iter().find(|f| {
         if let FieldType::Radio { options } = &f.input_type {
-            let has_congiunto = options.iter().any(|o| option_name_contains(&o.name, "Congiunto"));
-            let has_disgiunto = options.iter().any(|o| option_name_contains(&o.name, "Disgiunto"));
+            let has_congiunto = options
+                .iter()
+                .any(|o| option_name_contains(&o.name, "Congiunto"));
+            let has_disgiunto = options
+                .iter()
+                .any(|o| option_name_contains(&o.name, "Disgiunto"));
             has_congiunto && has_disgiunto
         } else {
             false
@@ -24351,7 +24370,12 @@ fn test_aaow_zip_structured_output() {
         .iter()
         .filter_map(|f| {
             if let FieldType::Radio { options } = &f.input_type {
-                Some(options.iter().map(|o| o.name.as_str().to_string()).collect())
+                Some(
+                    options
+                        .iter()
+                        .map(|o| o.name.as_str().to_string())
+                        .collect(),
+                )
             } else {
                 None
             }
