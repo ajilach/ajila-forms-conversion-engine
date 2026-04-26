@@ -23,8 +23,8 @@
 
 mod converter;
 pub mod fragment_parser;
-pub mod parser;
 mod package_writer;
+pub mod parser;
 pub mod profile;
 pub mod script_engine;
 pub mod template;
@@ -34,7 +34,10 @@ mod xml_writer;
 pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{collect_languages, generate_aem_package};
-pub use parser::{AemScript, ParsedAemPackage, TranslationData, VisibilityCondition, detect_aem_zip, parse_aem_zip};
+pub use parser::{
+    AemScript, ParsedAemPackage, TranslationData, VisibilityCondition, detect_aem_zip,
+    parse_aem_zip,
+};
 pub use profile::AemProfile;
 pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;

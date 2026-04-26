@@ -216,8 +216,7 @@ fn find_form_content_xml(zip_files: &HashMap<String, Vec<u8>>) -> Result<String,
     let mut finished_candidates: Vec<String> = zip_files
         .keys()
         .filter(|path| {
-            path.contains("jcr_root/content/forms/af/")
-                && path.ends_with("/.content-finished.xml")
+            path.contains("jcr_root/content/forms/af/") && path.ends_with("/.content-finished.xml")
         })
         .cloned()
         .collect();
@@ -282,8 +281,8 @@ impl<'a> ParseContext<'a> {
         let input = format!("{seed}_{}", self.counter);
         Uuid::new_v5(
             &Uuid::from_bytes([
-                0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f,
-                0xd4, 0x30, 0xc8,
+                0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4,
+                0x30, 0xc8,
             ]),
             input.as_bytes(),
         )
@@ -295,10 +294,7 @@ impl<'a> ParseContext<'a> {
 // ============================================================================
 
 /// Parse the main form XML into an AemNode tree.
-fn parse_form_xml(
-    xml: &str,
-    ctx: &mut ParseContext,
-) -> Result<(AemNode, String, String), String> {
+fn parse_form_xml(xml: &str, ctx: &mut ParseContext) -> Result<(AemNode, String, String), String> {
     // Use a SAX-like approach: build a tree of JCR nodes first, then convert to AemNode.
     let jcr_tree = parse_jcr_xml(xml)?;
 
@@ -508,10 +504,7 @@ fn convert_items_to_aem_nodes(
 }
 
 /// Convert a single JcrNode to an AemNode based on its `sling:resourceType`.
-fn convert_jcr_to_aem(
-    node: &JcrNode,
-    ctx: &mut ParseContext,
-) -> Result<Option<AemNode>, String> {
+fn convert_jcr_to_aem(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNode>, String> {
     let resource_type = node.resource_type().unwrap_or("");
     let comp_name = node.component_name().unwrap_or(&node.tag_name);
 
@@ -567,9 +560,7 @@ fn convert_textbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     let uuid = ctx.next_uuid(&name);
     let visible = parse_visible(node);
     let mandatory = parse_bool_attr(node, "mandatory");
-    let max_chars = node
-        .attr("maxChars")
-        .and_then(|v| v.parse::<usize>().ok());
+    let max_chars = node.attr("maxChars").and_then(|v| v.parse::<usize>().ok());
 
     AemNode::TextField {
         uuid,
@@ -748,16 +739,13 @@ fn convert_titledraw(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     }
 }
 
-fn convert_panel(
-    node: &JcrNode,
-    ctx: &mut ParseContext,
-) -> Result<Option<AemNode>, String> {
+fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNode>, String> {
     let name = node.component_name().unwrap_or(&node.tag_name).to_string();
     let title = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
     let visible = parse_visible(node);
-    let dor_exclude = parse_bool_attr(node, "dorExclusion")
-        || parse_bool_attr(node, "dorExcludeTitle");
+    let dor_exclude =
+        parse_bool_attr(node, "dorExclusion") || parse_bool_attr(node, "dorExcludeTitle");
 
     // Check for repeatable
     let min_occur = node
@@ -835,10 +823,7 @@ fn convert_panel(
     }
 }
 
-fn convert_fragment(
-    node: &JcrNode,
-    ctx: &mut ParseContext,
-) -> Result<Option<AemNode>, String> {
+fn convert_fragment(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNode>, String> {
     let frag_ref = node.attr("fragRef").unwrap_or("").to_string();
     let name = node.component_name().unwrap_or(&node.tag_name).to_string();
     let uuid = ctx.next_uuid(&name);
@@ -857,36 +842,37 @@ fn convert_fragment(
     let fragment_xml_path = resolve_fragment_path(&frag_ref, ctx.zip_files);
 
     // Helper closure to parse fragment XML and produce a Panel node
-    let parse_fragment_xml = |xml_str: &str, ctx: &mut ParseContext| -> Result<Option<AemNode>, String> {
-        ctx.fragment_stack.push(frag_ref.clone());
+    let parse_fragment_xml =
+        |xml_str: &str, ctx: &mut ParseContext| -> Result<Option<AemNode>, String> {
+            ctx.fragment_stack.push(frag_ref.clone());
 
-        let fragment_tree = parse_jcr_xml(xml_str)?;
-        let content_node = find_fragment_content(&fragment_tree);
+            let fragment_tree = parse_jcr_xml(xml_str)?;
+            let content_node = find_fragment_content(&fragment_tree);
 
-        let children = if let Some(content) = content_node {
-            convert_items_to_aem_nodes(content, ctx)?
-        } else {
-            Vec::new()
+            let children = if let Some(content) = content_node {
+                convert_items_to_aem_nodes(content, ctx)?
+            } else {
+                Vec::new()
+            };
+
+            ctx.fragment_stack.pop();
+
+            let title = node.attr("jcr:title").unwrap_or("").to_string();
+            Ok(Some(AemNode::Panel {
+                uuid,
+                name: name.clone(),
+                title,
+                children,
+                is_page: false,
+                dor_exclude: false,
+                visible: parse_visible(node),
+                is_conditional: false,
+                dor_num_cols: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+            }))
         };
-
-        ctx.fragment_stack.pop();
-
-        let title = node.attr("jcr:title").unwrap_or("").to_string();
-        Ok(Some(AemNode::Panel {
-            uuid,
-            name: name.clone(),
-            title,
-            children,
-            is_page: false,
-            dor_exclude: false,
-            visible: parse_visible(node),
-            is_conditional: false,
-            dor_num_cols: None,
-            colspan: 12,
-            dor_colspan: None,
-            bind_ref: node.attr("bindRef").map(|s| s.to_string()),
-        }))
-    };
 
     // First: try resolving from the ZIP
     if let Some(xml_path) = fragment_xml_path {
@@ -899,8 +885,7 @@ fn convert_fragment(
     // Second: try resolving from embedded profiles (on-disk fragments)
     if let Some(xml_str) = crate::profiles::resolve_embedded_fragment_xml(&frag_ref) {
         // Load dictionaries from the specific fragment
-        for (lang, dict_xml) in crate::profiles::resolve_embedded_fragment_dictionaries(&frag_ref)
-        {
+        for (lang, dict_xml) in crate::profiles::resolve_embedded_fragment_dictionaries(&frag_ref) {
             parse_sling_dictionary(&dict_xml, &lang, &mut ctx.translations);
         }
 
@@ -938,10 +923,7 @@ fn convert_fragment(
 /// `fragRef` looks like `/content/dam/formsanddocuments/path/to/fragment` or
 /// `/content/forms/af/path/to/fragment`. We need to find the corresponding
 /// `.content.xml` in the ZIP.
-fn resolve_fragment_path(
-    frag_ref: &str,
-    zip_files: &HashMap<String, Vec<u8>>,
-) -> Option<String> {
+fn resolve_fragment_path(frag_ref: &str, zip_files: &HashMap<String, Vec<u8>>) -> Option<String> {
     // Try direct mapping: fragRef → jcr_root/{fragRef}/.content.xml
     let clean_ref = frag_ref.trim_start_matches('/');
     let direct_path = format!("jcr_root/{clean_ref}/.content.xml");
@@ -1126,7 +1108,10 @@ fn parse_fd_scripts_json(raw: &str, default_event: &str) -> Option<Vec<AemScript
             .get("field")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+        let enabled = item
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
 
         if !content.is_empty() {
             scripts.push(AemScript {
