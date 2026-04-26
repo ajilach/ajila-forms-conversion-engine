@@ -59,7 +59,12 @@ pub async fn run_blueprint_pipeline(
     let total_files = files.len();
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (i, (filename, bytes)) in files.iter().enumerate() {
-        match Blueprint::from_pdf_bytes(bytes) {
+        let result = if blueprint::detect_aem_zip(bytes) {
+            Blueprint::from_aem_zip(bytes)
+        } else {
+            Blueprint::from_pdf_bytes(bytes)
+        };
+        match result {
             Ok(bp) => {
                 let language = bp.language().to_string();
                 blueprints.push((filename.clone(), language, bp));
@@ -69,6 +74,112 @@ pub async fn run_blueprint_pipeline(
         state.step_progress = Some((i + 1) as f32 / total_files as f32);
         on_progress(&state);
         async_sleep_ms(0).await;
+    }
+
+    // ── AEM shortcut: skip exploration/rendering, use direct structured ──
+    let any_aem = blueprints.iter().any(|(_, _, bp)| bp.is_aem());
+    let all_aem = blueprints.iter().all(|(_, _, bp)| bp.is_aem());
+    if any_aem && !all_aem {
+        fail!("Cannot mix PDF and AEM ZIP files. Please upload only PDFs or only AEM ZIPs.".into());
+    }
+    if all_aem {
+        state.step = ProcessingStep::Structuring;
+        state.step_progress = Some(0.0);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        let mut envelopes: Vec<DocumentEnvelope> = Vec::new();
+        for (i, (filename, _language, bp)) in blueprints.iter().enumerate() {
+            match bp.aem_structured() {
+                Some(env) => envelopes.push(env),
+                None => fail!(format!("AEM structured conversion failed for {filename}")),
+            }
+            state.step_progress = Some((i + 1) as f32 / blueprints.len() as f32);
+            on_progress(&state);
+            async_sleep_ms(0).await;
+        }
+
+        state.step = ProcessingStep::Merging;
+        state.step_progress = Some(0.0);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        let merged = if envelopes.len() > 1 {
+            match merge_translations(envelopes, None) {
+                Ok(m) => m,
+                Err(e) => fail!(format!("{e}")),
+            }
+        } else {
+            envelopes.into_iter().next().unwrap()
+        };
+
+        state.envelope = Some(merged.clone());
+        state.step_progress = Some(0.5);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        // Jump to post-processing
+        let json = match serde_json::to_string_pretty(&merged) {
+            Ok(j) => j,
+            Err(e) => fail!(format!("Failed to serialize JSON: {e}")),
+        };
+
+        state.step_progress = Some(0.7);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        if let Some(ref profile_name) = profile
+            && blueprint::has_html_config(profile_name)
+        {
+            let html_config = match blueprint::load_html_custom_styles(profile_name) {
+                Ok(styles) => HtmlConfig {
+                    custom_styles: Some(styles),
+                    ..HtmlConfig::default()
+                },
+                Err(e) => fail!(format!("Failed to load HTML profile: {e}")),
+            };
+            state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
+        }
+
+        state.step_progress = Some(0.8);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        if let Some(ref profile_name) = profile
+            && blueprint::has_aem_config(profile_name)
+        {
+            let aem_config = match blueprint::load_aem_config(profile_name, &merged.context) {
+                Ok(cfg) => cfg,
+                Err(e) => fail!(format!("Failed to load AEM profile: {e}")),
+            };
+            let aem_zip = blueprint::to_aem_package(&merged.content, &aem_config);
+            state.form_code = Some(aem_config.form_code.clone());
+            state.aem_package = Some(aem_zip);
+        }
+
+        state.step_progress = Some(0.9);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        if let Some(ref profile_name) = profile
+            && blueprint::has_xsd_config(profile_name)
+        {
+            let xsd_config = match blueprint::load_xsd_config(profile_name) {
+                Ok(cfg) => cfg,
+                Err(e) => fail!(format!("Failed to load XSD profile: {e}")),
+            };
+            state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
+        }
+
+        state.step_progress = Some(1.0);
+        on_progress(&state);
+        async_sleep_ms(0).await;
+
+        state.step = ProcessingStep::Complete;
+        state.step_progress = None;
+        state.merged_json = Some(json);
+        on_progress(&state);
+        return;
     }
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────

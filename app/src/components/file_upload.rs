@@ -40,17 +40,17 @@ pub fn FileUploadSection(
 
         div { class: "upload-dropzone",
 
-            h2 { "Upload PDF Files" }
-            p { class: "upload-hint", "Select multiple PDF files in different languages" }
+            h2 { "Upload Files" }
+            p { class: "upload-hint", "Select PDF files in different languages or an AEM content package ZIP" }
 
-            label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose PDF Files" }
+            label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose Files" }
 
             input {
                 id: "file-input",
                 class: "upload-input-hidden",
                 r#type: "file",
                 multiple: true,
-                accept: ".pdf",
+                accept: ".pdf,.zip",
                 disabled: is_processing,
                 onchange: move |evt: Event<FormData>| {
                     async move {
