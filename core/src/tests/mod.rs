@@ -24414,3 +24414,60 @@ fn test_aacx_no_duplicate_headings() {
         titolare_count, headings
     );
 }
+
+#[test]
+fn test_aari_normativa_citata_radio_has_label_and_options() {
+    // Test that AARI_033_IT.pdf has a radio button group with label
+    // "Ai sensi della normativa citata il Cliente dichiara:" and two options about
+    // the fiscal regime (Amministrato).
+    use crate::Blueprint;
+    use crate::structured::FieldType;
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
+
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let state = form_states.iter().next().unwrap();
+    let envelope = state.structured(ctx);
+
+    let radio_fields = collect_radio_fields(&envelope.content);
+
+    // Find the radio button group with the two fiscal regime options
+    let group = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            options.len() == 2
+                && options.iter().any(|opt| {
+                    let text = opt.name.to_string();
+                    text.contains("voler optare per l")
+                        && text.contains("imposizione sostitutiva")
+                        && text.contains("Regime Fiscale Amministrato")
+                })
+                && options.iter().any(|opt| {
+                    let text = opt.name.to_string();
+                    text.contains("non voler optare per il Regime Fiscale Amministrato")
+                })
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        group.is_some(),
+        "Expected a radio button group with 2 fiscal regime options"
+    );
+
+    let group = group.unwrap();
+
+    // Assert that the radio group has the expected label
+    let label_text = group
+        .label
+        .as_ref()
+        .expect("Radio button group should have a label attached")
+        .as_plain_text();
+    assert!(
+        label_text.contains("Ai sensi della normativa citata il Cliente dichiara"),
+        "Expected label to contain 'Ai sensi della normativa citata il Cliente dichiara', got: '{}'",
+        label_text
+    );
+}

@@ -172,10 +172,20 @@ impl LabelAttacher {
                 LabelPosition::Left => self.check_left(&text_bounds, &field_bounds),
             };
 
-            if let Some(g) = gap
-                && best.map(|(_, best_gap)| g < best_gap).unwrap_or(true)
-            {
-                best = Some((text_idx, g));
+            if gap.is_some() {
+                // For the Above case, rank by distance from the text's top (y)
+                // to the field's top. This prefers the text that *starts*
+                // closest to the field, rather than the text whose bottom
+                // edge happens to be closest (which can be wrong for tall
+                // multi-line text blocks).
+                let rank = match position {
+                    LabelPosition::Above => field_bounds.y - text_bounds.y,
+                    _ => gap.unwrap(),
+                };
+
+                if best.map(|(_, best_rank)| rank < best_rank).unwrap_or(true) {
+                    best = Some((text_idx, rank));
+                }
             }
         }
 
