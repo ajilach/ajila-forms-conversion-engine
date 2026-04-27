@@ -24389,3 +24389,28 @@ fn test_aaow_zip_structured_output() {
         all_radio_options
     );
 }
+
+#[test]
+fn test_aacx_no_duplicate_headings() {
+    // AACX has a heading "Titolare del conto (di seguito il Cliente)" that should
+    // appear exactly once. Previously it appeared three times because hidden panels
+    // (with visible=false and no visibility condition) still contributed headings.
+    let zip_bytes = std::fs::read(input_path("AACX.zip")).expect("Failed to read AACX.zip");
+    let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AACX.zip");
+    let envelope = bp
+        .aem_structured()
+        .expect("Failed to get AEM structured output");
+
+    let headings = collect_headings(&envelope.content);
+    let titolare_count = headings
+        .iter()
+        .filter(|(_, text)| text.contains("Titolare del conto"))
+        .count();
+
+    assert_eq!(
+        titolare_count, 1,
+        "Expected heading 'Titolare del conto (di seguito il Cliente)' exactly once, \
+         but found it {} times.\nAll headings: {:?}",
+        titolare_count, headings
+    );
+}

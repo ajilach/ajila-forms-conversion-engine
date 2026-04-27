@@ -12,13 +12,12 @@
 
 use std::collections::HashMap;
 
-use super::{AemNode, AemOption};
 use super::parser::{TranslationData, VisibilityCondition};
+use super::{AemNode, AemOption};
 use crate::structured::{
-    ConditionalNode, FieldCondition,
-    FieldId, FieldNode, FieldType, GridLayout,
-    GridLayoutElement, GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue,
-    NameValue, ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslationMap,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GridLayout, GridLayoutElement,
+    GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslationMap,
 };
 use crate::xfa::scripting::SomPath;
 
@@ -95,18 +94,12 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
 
         AemNode::Panel {
             name,
-            title,
             children,
             visible,
-            is_page,
             dor_num_cols,
             ..
         } => {
-            let is_visible = ctx
-                .visibility
-                .get(name)
-                .copied()
-                .unwrap_or(*visible);
+            let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
 
             let child_nodes: Vec<_> = children
                 .iter()
@@ -120,20 +113,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             // Build panel content
             let mut panel_children = Vec::new();
 
-            // Add title as heading if non-empty
-            if !title.is_empty() {
-                let heading_text = translate_string(title, name, "jcr:title", ctx);
-                panel_children.push(StructuredNode::Heading(HeadingNode {
-                    level: if *is_page {
-                        HeadingLevel::H2
-                    } else {
-                        HeadingLevel::H3
-                    },
-                    content: inline_from_translatable(&heading_text),
-                    som_path: None,
-                    source_name: Some(name.clone()),
-                }));
-            }
+            // Panel titles are ignored — only TitleDraw nodes produce headings.
 
             // Add children, potentially in a grid layout
             if let Some(cols) = dor_num_cols {
@@ -141,10 +121,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                     // Wrap children in a grid layout
                     let elements: Vec<_> = child_nodes
                         .into_iter()
-                        .map(|n| GridLayoutElement {
-                            span: 1,
-                            node: n,
-                        })
+                        .map(|n| GridLayoutElement { span: 1, node: n })
                         .collect();
                     panel_children.push(StructuredNode::GridLayout(GridLayout {
                         columns: *cols as usize,
@@ -176,15 +153,15 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 }));
             }
 
-            if !is_visible {
-                None
-            } else {
-                Some(content)
-            }
+            if !is_visible { None } else { Some(content) }
         }
 
         AemNode::TextField {
-            name, label, visible, max_chars, ..
+            name,
+            label,
+            visible,
+            max_chars,
+            ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
             if !is_visible {
@@ -209,7 +186,10 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
         }
 
         AemNode::NumberField {
-            name, label, visible, ..
+            name,
+            label,
+            visible,
+            ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
             if !is_visible {
@@ -234,7 +214,10 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
         }
 
         AemNode::DatePicker {
-            name, label, visible, ..
+            name,
+            label,
+            visible,
+            ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
             if !is_visible {
@@ -324,9 +307,9 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             let field_id = field_id_from_name(name);
             // Single checkbox → Bool field; multiple → Select
             if options.len() <= 1 {
-                let label_text = options.first().map(|o| {
-                    TranslatableString::Plain(o.label.clone())
-                });
+                let label_text = options
+                    .first()
+                    .map(|o| TranslatableString::Plain(o.label.clone()));
 
                 Some(StructuredNode::Field(FieldNode {
                     name: field_id,
@@ -426,15 +409,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             }
 
             let mut panel_children = Vec::new();
-            if !title.is_empty() {
-                let heading_text = translate_string(title, name, "jcr:title", ctx);
-                panel_children.push(StructuredNode::Heading(HeadingNode {
-                    level: HeadingLevel::H3,
-                    content: inline_from_translatable(&heading_text),
-                    som_path: None,
-                    source_name: Some(name.clone()),
-                }));
-            }
+            // Repeatable titles are ignored — only TitleDraw nodes produce headings.
             panel_children.extend(child_nodes);
 
             let item = if panel_children.len() == 1 {
@@ -506,10 +481,7 @@ fn translate_string(
         let mut translation_map: TranslationMap = HashMap::new();
 
         // Add master language with the default value
-        translation_map.insert(
-            ctx.master_language.to_string(),
-            Some(default.to_string()),
-        );
+        translation_map.insert(ctx.master_language.to_string(), Some(default.to_string()));
 
         // Add available translations
         for (lang, message) in lang_map {
