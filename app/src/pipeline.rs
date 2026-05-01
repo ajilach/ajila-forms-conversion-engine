@@ -104,8 +104,11 @@ pub async fn run_blueprint_pipeline(
         on_progress(&state);
         async_sleep_ms(0).await;
 
+        let semantic_matcher = blueprint::semantic::SemanticMatcher::new().ok();
+        let semantic_ref = semantic_matcher.as_ref();
+
         let merged = if envelopes.len() > 1 {
-            match merge_translations(envelopes, None) {
+            match merge_translations(envelopes, semantic_ref) {
                 Ok(m) => m,
                 Err(e) => fail!(format!("{e}")),
             }
@@ -309,6 +312,10 @@ pub async fn run_blueprint_pipeline(
     }
 
     let total_signatures = expected_signatures.len();
+
+    let semantic_matcher_state = blueprint::semantic::SemanticMatcher::new().ok();
+    let semantic_ref_state = semantic_matcher_state.as_ref();
+
     let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();
     for (i, signature) in expected_signatures.iter().enumerate() {
         let mut canonical_selections: Option<Vec<Selection>> = None;
@@ -335,7 +342,7 @@ pub async fn run_blueprint_pipeline(
         }
 
         let merged_state = if state_envelopes.len() > 1 {
-            match merge_translations(state_envelopes, None) {
+            match merge_translations(state_envelopes, semantic_ref_state) {
                 Ok(m) => m,
                 Err(e) => fail!(format!("{e}")),
             }
