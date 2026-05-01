@@ -573,8 +573,7 @@ fn selection_signature(selections: &[Selection]) -> String {
         .iter()
         .map(|selection| {
             format!(
-                "{}|{}|{}",
-                selection.condition_path(),
+                "{}|{}",
                 selection_kind_name(selection),
                 selection.option_index,
             )
@@ -594,8 +593,6 @@ fn selection_kind_name(selection: &Selection) -> &'static str {
 fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b.iter()).all(|(left, right)| {
-            left.condition_path() == right.condition_path()
-                && left.kind == right.kind
-                && left.option_index == right.option_index
+            left.kind == right.kind && left.option_index == right.option_index
         })
 }

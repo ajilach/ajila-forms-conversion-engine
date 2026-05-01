@@ -474,7 +474,7 @@ fn selection_signature(selections: &[blueprint::Selection]) -> String {
                 blueprint::SelectionKind::Checkbox => "checkbox",
                 blueprint::SelectionKind::Dropdown => "dropdown",
             };
-            format!("{}|{}|{}", s.condition_path(), kind, s.option_index)
+            format!("{}|{}", kind, s.option_index)
         })
         .collect::<Vec<_>>()
         .join("->")
@@ -483,8 +483,6 @@ fn selection_signature(selections: &[blueprint::Selection]) -> String {
 fn selections_match(a: &[blueprint::Selection], b: &[blueprint::Selection]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b.iter()).all(|(left, right)| {
-            left.condition_path() == right.condition_path()
-                && left.kind == right.kind
-                && left.option_index == right.option_index
+            left.kind == right.kind && left.option_index == right.option_index
         })
 }

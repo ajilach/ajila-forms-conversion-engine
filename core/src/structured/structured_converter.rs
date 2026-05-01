@@ -527,7 +527,7 @@ impl<'a, 'b> Converter<'a, 'b> {
 
             // Heading → HeadingNode
             GroupKind::Heading { level } => {
-                let text = self.extract_inline_text(group_idx);
+                let text = self.extract_inline_text(group_idx).to_plain();
                 let som_path = self.extract_group_som_path(group_idx);
                 let source_name = self.extract_group_source_name(group_idx);
                 Some(StructuredNode::Heading(HeadingNode {
@@ -586,7 +586,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let label_group = group.children.get(*label).copied()?;
                 let field_group = group.children.get(*field).copied()?;
 
-                let label_text = self.extract_inline_text(label_group);
+                let label_text = self.extract_inline_text(label_group).to_plain();
 
                 // Dispatch based on the kind of the wrapped field group
                 let field_kind = self.doc.get_group(field_group).map(|g| g.kind.clone());
@@ -606,7 +606,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let label_group = group.children.get(*label).copied()?;
                 let field_group = group.children.get(*field).copied()?;
 
-                let label_text = self.extract_inline_text(label_group);
+                let label_text = self.extract_inline_text(label_group).to_plain();
                 self.convert_field_group(field_group, Some(label_text))
             }
 
@@ -615,7 +615,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let label_group = group.children.get(*label).copied()?;
                 let field_group = group.children.get(*field).copied()?;
 
-                let label_text = self.extract_inline_text(label_group);
+                let label_text = self.extract_inline_text(label_group).to_plain();
                 self.convert_field_group(field_group, Some(label_text))
             }
 
