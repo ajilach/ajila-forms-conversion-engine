@@ -24471,3 +24471,57 @@ fn test_aari_normativa_citata_radio_has_label_and_options() {
         label_text
     );
 }
+
+#[test]
+fn test_bagy_paragraphs_merged_de_en() {
+    // The BAGY form has corresponding paragraphs across DE and EN that describe
+    // the risk information overview. They should be merged into a single
+    // TranslatedText node during multilingual merge.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("BAGY_019_DE.pdf"), "de")
+        .expect("Failed to process BAGY_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("BAGY_019_EN.pdf"), "en")
+        .expect("Failed to process BAGY_019_EN");
+
+    #[cfg(feature = "semantic-matching")]
+    let semantic =
+        crate::semantic::SemanticMatcher::new().expect("Failed to load semantic matcher");
+    #[cfg(feature = "semantic-matching")]
+    let semantic_ref = Some(&semantic as &crate::structured::SemanticCtx);
+    #[cfg(not(feature = "semantic-matching"))]
+    let semantic_ref: Option<&crate::structured::SemanticCtx> = None;
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope], semantic_ref).unwrap();
+
+    let de_fragment = "Die Übersicht ist nicht vollständig, sondern konzentriert sich auf die wesentlichen Unterschiede des Kundenschutzes.";
+    let en_fragment =
+        "The overview is not exhaustive, but focuses on the differences in client protection.";
+
+    let mut found = false;
+    walk_structured_nodes(&merged.content, &mut |node| {
+        if let StructuredNode::Paragraph(p) = node {
+            for inline in &p.content.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let has_de = map.get("de").map_or(false, |t| {
+                        t.as_ref().map_or(false, |s| s.contains(de_fragment))
+                    });
+                    let has_en = map.get("en").map_or(false, |t| {
+                        t.as_ref().map_or(false, |s| s.contains(en_fragment))
+                    });
+                    if has_de && has_en {
+                        found = true;
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        found,
+        "Expected the DE paragraph ('Die Übersicht ist nicht vollständig...') and EN paragraph \
+         ('The overview is not exhaustive...') to be merged into the same TranslatedText node in BAGY"
+    );
+}
