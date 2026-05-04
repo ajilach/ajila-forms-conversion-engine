@@ -10,7 +10,7 @@ use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, S
 
 use super::{
     XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
-    to_snake_case,
+    to_pascal_case,
 };
 
 // ============================================================================
@@ -43,7 +43,7 @@ pub fn generate_xsd_schema(nodes: &[StructuredNode], config: &XsdConfig) -> XsdS
         .collect();
 
     let root = XsdNode::Element {
-        name: "form".to_string(),
+        name: config.root_element_name(),
         type_ref: None,
         min_occurs: None,
         max_occurs: None,
@@ -78,6 +78,11 @@ fn collect_type_refs<'a>(node: &'a XsdNode, refs: &mut std::collections::HashSet
             if let Some(child) = content {
                 collect_type_refs(child, refs);
             }
+        }
+        XsdNode::Ref { ref_name, .. } => {
+            // A ref= references a global element; look up its type in the
+            // include index so the corresponding file is included.
+            refs.insert(ref_name.as_str());
         }
         XsdNode::ComplexType { sequence, .. } => {
             for child in sequence {
@@ -262,14 +267,14 @@ fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) 
     match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_snake_case(&label);
+            let name = to_pascal_case(&label);
 
             // Collect child (name, type) pairs and try auto-matching
             let child_pairs = collect_child_name_type_pairs(section, config);
             let matched = find_matching_types(&child_pairs, &config.registered_types);
 
             if matched.len() == 1 {
-                // Single type covers all children
+                // Single type covers all children.
                 out.push(XsdNode::Element {
                     name,
                     type_ref: Some(matched[0].name.clone()),
@@ -366,7 +371,7 @@ fn collect_node_name_type_pairs(
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),
-                None => (to_snake_case(&label), "xs:string".to_string()),
+                None => (to_pascal_case(&label), "xs:string".to_string()),
             };
             pairs.push((name, type_ref));
         }
@@ -488,7 +493,7 @@ fn build_field(
 
     let (name, type_ref) = match resolve_element(&label, &config.profile) {
         Some(res) => (res.name, res.type_ref),
-        None => (to_snake_case(&label), "xs:string".to_string()),
+        None => (to_pascal_case(&label), "xs:string".to_string()),
     };
 
     let restrictions = collect_restrictions(field);
@@ -645,9 +650,10 @@ pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) ->
         fields: std::collections::HashMap::new(),
         sections: std::collections::HashMap::new(),
     };
+    let root_path = format!("/{}", config.root_element_name());
     let sections = build_heading_hierarchy(nodes);
     for section in &sections {
-        collect_section_bind_refs(section, "/form", config, &mut maps);
+        collect_section_bind_refs(section, &root_path, config, &mut maps);
     }
     maps
 }
@@ -662,7 +668,7 @@ fn collect_section_bind_refs(
     let current_path = match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_snake_case(&label);
+            let name = to_pascal_case(&label);
             let path = format!("{}/{}", parent_path, name);
             // Use or_insert so that the first (shallowest) heading with a
             // given label wins.  The AEM converter only creates panels for
@@ -771,9 +777,9 @@ fn collect_node_bind_refs(
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),
-                None => (to_snake_case(&label), "xs:string".to_string()),
+                None => (to_pascal_case(&label), "xs:string".to_string()),
             };
-            if !name.is_empty() && name != "unknown" {
+            if !name.is_empty() && name != "Unknown" {
                 let base_path = wrappers
                     .and_then(|wp| wp.get(&(name.clone(), type_ref)))
                     .map(|s| s.as_str())
