@@ -656,6 +656,22 @@ impl AnalysisModule for ListDetector {
             .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
             .collect();
 
+        // Collect y-positions of whitespace-only Leaf roots separately.
+        // These are typically empty placeholder draw elements.  For non-bold
+        // list candidates they are ignored as intervening content because they
+        // do not represent meaningful separators between list items.
+        let ws_leaf_ys: HashSet<Decimal> = roots
+            .iter()
+            .filter(|&&idx| {
+                if let GroupKind::Leaf { .. } = doc.groups[idx].kind {
+                    doc.get_text_content(idx).trim().is_empty()
+                } else {
+                    false
+                }
+            })
+            .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
+            .collect();
+
         // Also collect bounds of root TextBlocks that are bold, have
         // non-empty text, and do NOT start with a list marker.  Bold
         // non-marker TextBlocks are headings or labels that naturally
@@ -746,33 +762,43 @@ impl AnalysisModule for ListDetector {
                     } else {
                         (curr_top, last_bottom)
                     };
-                    let has_intervening = non_tb_root_ys
-                        .iter()
-                        .any(|&y| y > range_lo && y < range_hi)
-                        || non_marker_tb_bounds.iter().any(|sep| {
-                            // Check vertical overlap: separator spans
-                            // [y, y+h], gap spans (range_lo, range_hi).
-                            let sep_bottom = sep.y + sep.height;
-                            let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
-                            // Check horizontal overlap: separator must
-                            // share x-range with the list items to avoid
-                            // false positives from unrelated columns.
-                            let item_x_lo = last.2.x.min(bounds.x);
-                            let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
-                            let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
-                            // The separator must bridge to the next item:
-                            // the gap between separator bottom and the
-                            // next item's top must be less than the
-                            // same-line tolerance.  This prevents body
-                            // paragraphs (under numbered headings) from
-                            // breaking the list — they typically end well
-                            // above the next heading item.
-                            let gap_after_sep = range_hi - sep_bottom;
-                            let tol =
-                                Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
-                            let bridges = gap_after_sep < tol;
-                            y_overlap && x_overlap && bridges
-                        });
+                    // For non-bold list candidates, whitespace-only Leaf
+                    // nodes are not considered meaningful separators.
+                    let both_non_bold = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
+                    let has_intervening = non_tb_root_ys.iter().any(|&y| {
+                        if y > range_lo && y < range_hi {
+                            // Skip whitespace-only leaf positions for
+                            // non-bold candidates.
+                            if both_non_bold && ws_leaf_ys.contains(&y) {
+                                return false;
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }) || non_marker_tb_bounds.iter().any(|sep| {
+                        // Check vertical overlap: separator spans
+                        // [y, y+h], gap spans (range_lo, range_hi).
+                        let sep_bottom = sep.y + sep.height;
+                        let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
+                        // Check horizontal overlap: separator must
+                        // share x-range with the list items to avoid
+                        // false positives from unrelated columns.
+                        let item_x_lo = last.2.x.min(bounds.x);
+                        let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
+                        let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
+                        // The separator must bridge to the next item:
+                        // the gap between separator bottom and the
+                        // next item's top must be less than the
+                        // same-line tolerance.  This prevents body
+                        // paragraphs (under numbered headings) from
+                        // breaking the list — they typically end well
+                        // above the next heading item.
+                        let gap_after_sep = range_hi - sep_bottom;
+                        let tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+                        let bridges = gap_after_sep < tol;
+                        y_overlap && x_overlap && bridges
+                    });
 
                     if same_kind && similar_x && !has_intervening {
                         current_run.push((idx, text, bounds, marker));
@@ -881,9 +907,7 @@ impl AnalysisModule for ListDetector {
         // are all sublists of A's last item (e.g. three separate roman groups
         // that are all sublists of the same parent dash list).
         {
-            let active: Vec<usize> = (0..groups.len())
-                .filter(|&j| !consumed[j])
-                .collect();
+            let active: Vec<usize> = (0..groups.len()).filter(|&j| !consumed[j]).collect();
 
             // Compute the median x-position for a group's items.
             let group_x = |gi: usize| -> Option<Decimal> {
@@ -1355,7 +1379,7 @@ impl AnalysisModule for ListDetector {
             } else {
                 &[][..]
             };
-            
+
             if subs.is_empty() {
                 // Simple case: no sublists
                 doc.merge_inferred(group_indices, GroupKind::List { list_style }, self.name());

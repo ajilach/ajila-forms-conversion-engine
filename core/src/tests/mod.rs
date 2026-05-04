@@ -24829,3 +24829,96 @@ fn test_adcl_contains_roman_numeral_list() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn test_adcl_contains_alpha_list() {
+    use crate::document::ListStyleType;
+    use crate::structured::{ListNode, StructuredNode};
+
+    let merged = crate::run_exhaustive_to_merged(input_path("ADCL_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on ADCL_033_IT.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&merged);
+
+    // Find alpha (letter) lists
+    let alpha_lists: Vec<_> = lists
+        .iter()
+        .filter(|l| {
+            matches!(
+                l.list_style,
+                ListStyleType::LowerAlpha | ListStyleType::UpperAlpha
+            )
+        })
+        .collect();
+
+    assert!(
+        !alpha_lists.is_empty(),
+        "Expected at least one alpha list in ADCL_033_IT, found none.\n\
+         All list styles: {:?}",
+        lists.iter().map(|l| &l.list_style).collect::<Vec<_>>()
+    );
+
+    // Expected fragments from the 7 items (a-g)
+    let expected_fragments = [
+        "la Banca non \u{00e8} tenuta a comunicare agli altri cointestatari",
+        "rimossa sin d'ora ogni eccezione anche ai sensi",
+        "la presente procura sar\u{00e0} valida ed efficace sino al ricevimento",
+        "in ogni caso, la presente procura sar\u{00e0} valida ed efficace sino al recesso",
+        "nelle ipotesi di cui alle precedenti lettere c) e d)",
+        "la modifica dei poteri conferiti con la presente procura",
+        "i sottoscritti cointestatari rimangono pienamente responsabili",
+    ];
+
+    // Collect all items across alpha lists (currently detected as two separate lists)
+    let all_alpha_items: Vec<String> = alpha_lists
+        .iter()
+        .flat_map(|l| l.items.iter().map(|i| i.as_plain_text()))
+        .collect();
+
+    for fragment in &expected_fragments {
+        assert!(
+            all_alpha_items.iter().any(|item| item.contains(fragment)),
+            "Expected an alpha list item containing '{}' in ADCL_033_IT.\n\
+             All alpha list items: {:?}",
+            fragment,
+            all_alpha_items
+        );
+    }
+
+    // Should be a single alpha list with 7 items (a-g)
+    assert_eq!(
+        alpha_lists.len(),
+        1,
+        "Expected 1 alpha list in ADCL_033_IT, found {}",
+        alpha_lists.len()
+    );
+
+    assert_eq!(
+        alpha_lists[0].items.len(),
+        7,
+        "Expected 7 items (a-g) in the alpha list, found {}",
+        alpha_lists[0].items.len()
+    );
+}
