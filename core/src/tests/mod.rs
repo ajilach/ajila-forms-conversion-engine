@@ -24551,9 +24551,8 @@ fn test_aaij_multilingual_merge_content() {
     let it_envelope = run_exhaustive_to_envelope(input_path("AAIJ_033_IT.pdf"), "it")
         .expect("Failed to process AAIJ_033_IT");
 
-    let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, it_envelope], None)
-            .expect("Failed to merge AAIJ DE/EN/IT");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope, it_envelope], None)
+        .expect("Failed to merge AAIJ DE/EN/IT");
 
     assert!(
         !merged.content.is_empty(),
@@ -24612,3 +24611,47 @@ fn test_aaij_multilingual_merge_content() {
     );
 }
 
+#[test]
+fn test_aaij_pipeline_multilingual_state_signature_mismatch() {
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+
+    let files = vec![
+        (
+            "AAIJ_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AAIJ_019_DE.pdf")).expect("Failed to read AAIJ DE PDF"),
+        ),
+        (
+            "AAIJ_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AAIJ_019_EN.pdf")).expect("Failed to read AAIJ EN PDF"),
+        ),
+        (
+            "AAIJ_033_IT.pdf".to_string(),
+            std::fs::read(input_path("AAIJ_033_IT.pdf")).expect("Failed to read AAIJ IT PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let result = run_pipeline(&files, &config, |_| {});
+
+    let err = match result {
+        Err(e) => e,
+        Ok(_) => panic!(
+            "AAIJ pipeline should fail with state signature mismatch for DE/EN (019) vs IT (033)"
+        ),
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("State signature mismatch"),
+        "Expected state signature mismatch error, got: {msg}"
+    );
+    assert!(
+        msg.contains("dropdown|0"),
+        "Expected dropdown|0 in mismatch error, got: {msg}"
+    );
+}
