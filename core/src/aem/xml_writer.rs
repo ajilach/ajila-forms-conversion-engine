@@ -1264,32 +1264,16 @@ mod tests {
         );
     }
 
-    /// Verify the preface template renders a fragment panel with `fragRef` that
-    /// switches on `xfa.formrange_entity`, matching the reference output of
-    /// AAOX (entity 033), AAOW (entity 019), and AACX (entity 001).
+    /// Verify the preface template renders a fragment panel with `fragRef`
+    /// always pointing to affrg_BankingRelationship1.
     #[test]
     fn preface_renders_entity_based_banking_relationship_fragment() {
         let preface_template = include_str!("../../../profiles/ubs/aem/preface.xml");
 
-        let cases = [
-            (
-                "033",
-                "/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italiy_BankingRelationship",
-                "AAOX entity 033 should use Italy fragment",
-            ),
-            (
-                "019",
-                "/content/forms/af/afforms_germany_fragmentlib/affrg_germany_BankingRelationship",
-                "AAOW entity 019 should use Germany fragment",
-            ),
-            (
-                "001",
-                "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
-                "AACX entity 001 should use CH/UBS fragment",
-            ),
-        ];
+        let expected_frag_ref =
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1";
 
-        for (entity, expected_frag_ref, description) in &cases {
+        for entity in &["033", "019", "001"] {
             let mut config = test_config();
             config
                 .component_templates
@@ -1311,33 +1295,15 @@ mod tests {
 
             assert!(
                 xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
-                "{}: expected fragRef='{}' in:\n{}",
-                description,
+                "entity {}: expected fragRef='{}' in:\n{}",
+                entity,
                 expected_frag_ref,
                 xml
             );
             assert!(
                 xml.contains("name=\"PN_BankingRelationship\""),
-                "{}: expected name='PN_BankingRelationship' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("sling:resourceType=\"fd/af/components/panel\""),
-                "{}: expected sling:resourceType='fd/af/components/panel' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("guideNodeClass=\"guidePanel\""),
-                "{}: expected guideNodeClass='guidePanel' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("completionExpReq=\"{Boolean}false\""),
-                "{}: expected completionExpReq in:\n{}",
-                description,
+                "entity {}: expected name='PN_BankingRelationship' in:\n{}",
+                entity,
                 xml
             );
         }

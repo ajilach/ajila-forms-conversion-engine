@@ -6,7 +6,7 @@
     jcr:primaryType="nt:unstructured"
     sling:resourceType="fd/af/components/panel"
     completionExpReq="{Boolean}false"
-    fragRef="{% if xfa.formrange_entity == '019' %}/content/forms/af/afforms_germany_fragmentlib/affrg_germany_BankingRelationship{% elif xfa.formrange_entity == '001' %}/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1{% else %}/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italiy_BankingRelationship{% endif %}"
+    fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
     guideNodeClass="guidePanel"
     name="PN_BankingRelationship"
     textIsRich="true"
