@@ -24975,3 +24975,181 @@ fn test_adcl_contains_alpha_list() {
         alpha_lists[0].items.len()
     );
 }
+
+#[test]
+fn test_fragment_bind_refs_use_configured_prefix() {
+    // Fragment bindRef paths should use the configured fragmentBindRefPrefix
+    // (e.g. "/UBSAF/...") rather than the form-specific root element name
+    // (e.g. "/UBSAF_AAAI/...").
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    // Configure with a form-specific root and a different fragment prefix.
+    let mut xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    xsd_config.form_code = Some("AAAI".to_string());
+    // Set a form-specific root element name so we can distinguish it from the
+    // fragment prefix.
+    xsd_config.profile.root_element_name = "UBSAF_{{ form_code }}".to_string();
+    // The profile already has fragmentBindRefPrefix = "UBSAF" from the TOML.
+
+    config.bind_to_xsd = true;
+    config.use_fragments = true;
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // All fragment bindRefs should start with "/UBSAF/" (the fragment prefix),
+    // NOT with "/UBSAF_AAAI/" (the form root).
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+    assert!(
+        !fragment_refs.is_empty(),
+        "Expected at least one fragment node"
+    );
+    for (frag_ref, bind_ref) in &fragment_refs {
+        let br = bind_ref
+            .as_deref()
+            .unwrap_or_else(|| panic!("Fragment '{}' should have a bind_ref", frag_ref));
+        assert!(
+            br.starts_with("/UBSAF/"),
+            "Fragment '{}' bindRef should start with '/UBSAF/' (fragment prefix), got: {}",
+            frag_ref,
+            br
+        );
+        assert!(
+            !br.starts_with("/UBSAF_AAAI/"),
+            "Fragment '{}' bindRef must NOT use form-specific root '/UBSAF_AAAI/'. Got: {}",
+            frag_ref,
+            br
+        );
+    }
+
+    // Non-fragment panels with bind_to_xsd=true should still use the form root.
+    let mut found_form_root = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let crate::aem::AemNode::Panel {
+            bind_ref: Some(br), ..
+        } = node
+        {
+            if br.starts_with("/UBSAF_AAAI/") {
+                found_form_root = true;
+            }
+        }
+    });
+    assert!(
+        found_form_root,
+        "Expected at least one panel with form-specific root '/UBSAF_AAAI/'"
+    );
+}
+
+#[test]
+fn test_repeatable_panels_have_bind_ref() {
+    // Repeatable inner panels should receive a bindRef attribute derived from
+    // the XSD structure (e.g. the bind path of their inner section).
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    config.bind_to_xsd = true;
+    config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // Collect all Repeatable nodes
+    let mut repeatables: Vec<(String, Option<String>)> = Vec::new();
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { name, bind_ref, .. } = node {
+            repeatables.push((name.clone(), bind_ref.clone()));
+        }
+    });
+
+    assert!(
+        !repeatables.is_empty(),
+        "AAAI should have at least one Repeatable panel"
+    );
+
+    // Every Repeatable whose inner section has a heading (and therefore a
+    // bind_ref) should have a non-empty bind_ref.
+    let with_bind_ref: Vec<_> = repeatables.iter().filter(|(_, br)| br.is_some()).collect();
+    assert!(
+        !with_bind_ref.is_empty(),
+        "At least one Repeatable should have a bind_ref.\nAll repeatables: {:?}",
+        repeatables
+    );
+
+    // The bind_ref should be a valid XSD-style path starting with "/"
+    for (name, bind_ref) in &with_bind_ref {
+        let br = bind_ref.as_deref().unwrap();
+        assert!(
+            br.starts_with('/'),
+            "Repeatable '{}' bind_ref should start with '/', got: {}",
+            name,
+            br
+        );
+    }
+}
+
+#[test]
+fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
+    // When bind_to_xsd=false, Repeatable nodes should have their bind_ref
+    // cleared, just like Panel nodes.
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    config.bind_to_xsd = false;
+    config.use_fragments = true;
+    config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // No Repeatable should have a bind_ref when bind_to_xsd is disabled
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { name, bind_ref, .. } = node {
+            assert!(
+                bind_ref.is_none(),
+                "Repeatable '{}' should have no bind_ref when bind_to_xsd=false, got: {:?}",
+                name,
+                bind_ref
+            );
+        }
+    });
+}

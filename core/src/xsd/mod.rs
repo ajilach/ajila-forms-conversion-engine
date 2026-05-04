@@ -304,6 +304,17 @@ pub struct XsdProfile {
     /// Example: `rootElementName = "UBSAF_{{ form_code }}"`
     #[serde(default = "default_root_element_name")]
     pub root_element_name: String,
+
+    /// Prefix used for fragment `bindRef` paths.
+    ///
+    /// In reference forms, fragments use a generic prefix (e.g. `/UBSAF/`)
+    /// instead of the form-specific root so the same fragment can be reused
+    /// across forms.  May contain `{{ form_code }}`.
+    ///
+    /// Defaults to the same value as `root_element_name` (i.e. fragments
+    /// use the form-specific root unless overridden).
+    #[serde(default)]
+    pub fragment_bind_ref_prefix: Option<String>,
 }
 
 impl Default for XsdProfile {
@@ -313,6 +324,7 @@ impl Default for XsdProfile {
             schema_location_prefix: default_schema_location_prefix(),
             master_language: None,
             root_element_name: default_root_element_name(),
+            fragment_bind_ref_prefix: None,
         }
     }
 }
@@ -458,6 +470,21 @@ impl XsdConfig {
         match &self.form_code {
             Some(code) => template.replace("{{ form_code }}", code),
             None => template.clone(),
+        }
+    }
+
+    /// Compute the fragment bind-ref prefix.
+    ///
+    /// If the profile specifies `fragmentBindRefPrefix`, expand
+    /// `{{ form_code }}` in it.  Otherwise fall back to the root element
+    /// name (so fragments use the same root as the form by default).
+    pub fn fragment_bind_ref_prefix(&self) -> String {
+        match &self.profile.fragment_bind_ref_prefix {
+            Some(template) => match &self.form_code {
+                Some(code) => template.replace("{{ form_code }}", code),
+                None => template.clone(),
+            },
+            None => self.root_element_name(),
         }
     }
 

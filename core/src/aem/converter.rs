@@ -352,6 +352,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
 
+    // --- Fourth pass: propagate bind_ref from section panels to repeatables ---
+    // In reference forms, the repeatable inner panel (with maxOccur) carries the
+    // bindRef, not the wrapping section panel.  Move the section panel's bind_ref
+    // to its child Repeatable when applicable.
+    propagate_bind_ref_to_repeatables(&mut children);
+
     // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
     // (bind_refs were only needed internally for fragment matching).
     if !config.bind_to_xsd {
@@ -840,6 +846,7 @@ fn convert_repeatable(
         children,
         min_occur: r.min_occurrences,
         max_occur: r.max_occurrences.unwrap_or(config.repeatable_max_occur),
+        bind_ref: None,
     }
 }
 
@@ -1207,6 +1214,30 @@ fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
 ///    for a matched type is individually replaced.
 ///
 /// Recurses depth-first so inner nodes are processed before parents.
+/// Rewrite a bind_ref path from the form-specific root to the fragment
+/// prefix when the XSD config provides a distinct `fragmentBindRefPrefix`.
+///
+/// For example, if the form root is `UBSAF_BBRR` and the fragment prefix is
+/// `UBSAF`, then `/UBSAF_BBRR/AccountHolder` becomes `/UBSAF/AccountHolder`.
+fn to_fragment_bind_ref(bind_ref: &str, xsd_config: Option<&crate::xsd::XsdConfig>) -> String {
+    let Some(cfg) = xsd_config else {
+        return bind_ref.to_string();
+    };
+    let form_root = cfg.root_element_name();
+    let frag_prefix = cfg.fragment_bind_ref_prefix();
+    if form_root == frag_prefix {
+        return bind_ref.to_string();
+    }
+    let form_root_prefix = format!("/{}/", form_root);
+    if let Some(rest) = bind_ref.strip_prefix(&form_root_prefix) {
+        format!("/{}/{}", frag_prefix, rest)
+    } else if bind_ref == format!("/{}", form_root) {
+        format!("/{}", frag_prefix)
+    } else {
+        bind_ref.to_string()
+    }
+}
+
 fn replace_with_fragments(
     nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
@@ -1252,7 +1283,7 @@ fn replace_with_fragments(
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
                         let fragment = fragment.clone();
-                        let bind_ref = Some(br.clone());
+                        let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
                         let name = ctx.make_name("PN_affrg", &fragment.dir_name);
                         let uuid = ctx.uuid(&name);
                         nodes[i] = AemNode::Fragment {
@@ -1313,11 +1344,12 @@ fn replace_with_fragments(
                         for (int_path, fragment) in &matched {
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
                             let uuid = ctx.uuid(&name);
+                            let full_path = format!("{}/{}", br, int_path);
                             frag_nodes.push(AemNode::Fragment {
                                 uuid,
                                 name,
                                 frag_ref: fragment.frag_ref.clone(),
-                                bind_ref: Some(format!("{}/{}", br, int_path)),
+                                bind_ref: Some(to_fragment_bind_ref(&full_path, xsd_config)),
                             });
                         }
 
@@ -1376,6 +1408,51 @@ fn compute_intermediate_matches(
     matched
 }
 
+/// Move `bind_ref` from section Panels to their child Repeatable nodes.
+///
+/// In reference AEM forms, the repeatable inner panel (with `maxOccur`)
+/// carries the `bindRef` — not the wrapping section panel.  This function
+/// walks the tree and, for any Panel that has a `bind_ref` and contains a
+/// `Repeatable` child, moves the bind_ref to the Repeatable.
+fn propagate_bind_ref_to_repeatables(nodes: &mut [AemNode]) {
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Panel {
+                children, bind_ref, ..
+            } => {
+                // First recurse into children
+                propagate_bind_ref_to_repeatables(children);
+
+                // If this panel has a bind_ref and contains a Repeatable child,
+                // move the bind_ref to the Repeatable (the section panel itself
+                // should not emit bindRef — the repeatable inner panel owns it).
+                if bind_ref.is_some() {
+                    let has_repeatable = children
+                        .iter()
+                        .any(|c| matches!(c, AemNode::Repeatable { .. }));
+                    if has_repeatable {
+                        let br = bind_ref.take().unwrap();
+                        for child in children.iter_mut() {
+                            if let AemNode::Repeatable {
+                                bind_ref: rep_br, ..
+                            } = child
+                            {
+                                if rep_br.is_none() {
+                                    *rep_br = Some(br.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+                propagate_bind_ref_to_repeatables(children);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Recursively clear `bind_ref` on all nodes except `Fragment` nodes.
 ///
 /// Used when `use_fragments` is enabled but `bind_to_xsd` is disabled:
@@ -1387,7 +1464,13 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             AemNode::Fragment { .. } => {
                 // Keep bind_ref on fragments — it is the data bind path.
             }
-            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+            AemNode::Root { children, .. } => {
+                strip_bind_refs(children);
+            }
+            AemNode::Repeatable {
+                children, bind_ref, ..
+            } => {
+                *bind_ref = None;
                 strip_bind_refs(children);
             }
             AemNode::Panel {

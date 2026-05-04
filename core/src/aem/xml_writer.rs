@@ -329,6 +329,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             children,
             min_occur,
             max_occur,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -336,6 +337,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("min_occur", min_occur);
             ctx.insert("max_occur", max_occur);
             ctx.insert("children", &render_children(children, config));
+            ctx.insert("bind_ref", bind_ref);
 
             // Pre-compute the repeatable button scripts as template variables.
             // These contain complex JCR-escaped JSON that would be very messy
@@ -853,6 +855,7 @@ mod tests {
                 children: vec![],
                 min_occur: 1,
                 max_occur: 10,
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
