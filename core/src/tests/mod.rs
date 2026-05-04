@@ -24922,3 +24922,50 @@ fn test_adcl_contains_alpha_list() {
         alpha_lists[0].items.len()
     );
 }
+
+/// Verify that radio button labels containing commas are properly escaped in AEM output.
+///
+/// AATO has radio buttons with labels like "Si, ..." that contain commas.
+/// AEM uses comma-separated lists for option serialization, so unescaped commas
+/// in labels would corrupt the option list.
+#[test]
+fn test_aato_radio_options_with_commas_escaped_in_aem() {
+    use crate::structured::FieldType;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AATO_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on AATO_033_IT.pdf");
+
+    let radio_fields = collect_radio_fields(&structured_nodes);
+    // Collect radio options whose labels contain commas
+    let mut found_comma_label = false;
+    for field in &radio_fields {
+        if let FieldType::Radio { options } = &field.input_type {
+            for opt in options {
+                if opt.name.as_str().contains(',') {
+                    found_comma_label = true;
+                }
+            }
+        }
+    }
+    assert!(
+        found_comma_label,
+        "AATO should have at least one radio option label containing a comma. \
+         Radio fields found: {:?}",
+        radio_fields
+            .iter()
+            .filter_map(|f| if let FieldType::Radio { options } = &f.input_type {
+                Some(
+                    options
+                        .iter()
+                        .map(|o| o.name.as_str().to_string())
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            })
+            .collect::<Vec<_>>()
+    );
+
+    // Generate AEM XML and verify comma labels are escaped
+    assert_aem_xml_valid_for(&[("AATO_033_IT.pdf", "AATO")]);
+}

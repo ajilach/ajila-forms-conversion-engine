@@ -540,11 +540,25 @@ fn alignment_str(a: OptionAlignment) -> &'static str {
     }
 }
 
+/// Escape a string for use inside a JCR comma-separated list.
+///
+/// Backslashes and commas must be backslash-escaped so that the list can be
+/// split unambiguously on unescaped commas when parsed back.
+fn jcr_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace(',', "\\,")
+}
+
 /// Format options for checkbox/radio/dropdown as `[value1=label1,value2=label2,...]`.
 fn format_options_attr(options: &[AemOption]) -> String {
     let inner: Vec<String> = options
         .iter()
-        .map(|o| format!("{}={}", xml_escape(&o.value), xml_escape(&o.label)))
+        .map(|o| {
+            format!(
+                "{}={}",
+                jcr_escape(&xml_escape(&o.value)),
+                jcr_escape(&xml_escape(&o.label)),
+            )
+        })
         .collect();
     format!("[{}]", inner.join(","))
 }
@@ -840,6 +854,112 @@ mod tests {
         let xml = generate_aem_xml(&root, &test_config());
         assert!(xml.contains("options=\"[1=Yes,0=No]\""));
         assert!(xml.contains("alignment=\"horizontal\""));
+    }
+
+    #[test]
+    fn radio_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::RadioButton {
+                uuid: fixed_uuid(),
+                name: "RB_comma".into(),
+                label: "Choose".into(),
+                options: vec![
+                    AemOption {
+                        label: "Yes, definitely".into(),
+                        value: "1".into(),
+                    },
+                    AemOption {
+                        label: "No, thanks".into(),
+                        value: "2".into(),
+                    },
+                ],
+                alignment: OptionAlignment::Vertical,
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // Commas inside labels must be escaped as \, so the list stays parseable
+        assert!(
+            xml.contains(r#"options="[1=Yes\, definitely,2=No\, thanks]""#),
+            "Commas in option labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn dropdown_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Dropdown {
+                uuid: fixed_uuid(),
+                name: "DD_comma".into(),
+                label: "Pick".into(),
+                options: vec![
+                    AemOption {
+                        label: "Option A, first".into(),
+                        value: "a".into(),
+                    },
+                    AemOption {
+                        label: "Option B".into(),
+                        value: "b".into(),
+                    },
+                ],
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains(r#"options="[a=Option A\, first,b=Option B]""#),
+            "Commas in dropdown labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn checkbox_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Checkbox {
+                uuid: fixed_uuid(),
+                name: "CB_comma".into(),
+                options: vec![
+                    AemOption {
+                        label: "I agree, fully".into(),
+                        value: "1".into(),
+                    },
+                    AemOption {
+                        label: "No".into(),
+                        value: "0".into(),
+                    },
+                ],
+                alignment: OptionAlignment::Horizontal,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains(r#"options="[1=I agree\, fully,0=No]""#),
+            "Commas in checkbox labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
     }
 
     #[test]
