@@ -24655,3 +24655,177 @@ fn test_aaij_pipeline_multilingual_state_signature_mismatch() {
         "Expected dropdown|0 in mismatch error, got: {msg}"
     );
 }
+
+#[test]
+fn test_adcl_repeatable_contains_cognome_and_nomi() {
+    use crate::structured::StructuredNode;
+
+    let merged = crate::run_exhaustive_to_merged(input_path("ADCL_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on ADCL_033_IT.pdf");
+
+    fn contains_field_label(nodes: &[StructuredNode], label_fragment: &str) -> bool {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(field) => {
+                    if field
+                        .label
+                        .as_ref()
+                        .map(|l| l.as_plain_text().contains(label_fragment))
+                        .unwrap_or(false)
+                    {
+                        return true;
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if contains_field_label(&g.children, label_fragment) {
+                        return true;
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if contains_field_label(
+                        std::slice::from_ref(c.content.as_ref()),
+                        label_fragment,
+                    ) {
+                        return true;
+                    }
+                }
+                StructuredNode::Repeatable(rep) => {
+                    if contains_field_label(std::slice::from_ref(rep.item.as_ref()), label_fragment)
+                    {
+                        return true;
+                    }
+                }
+                StructuredNode::GridLayout(grid) => {
+                    for element in &grid.elements {
+                        if contains_field_label(std::slice::from_ref(&element.node), label_fragment)
+                        {
+                            return true;
+                        }
+                    }
+                }
+                StructuredNode::Table(table) => {
+                    if let Some(header) = &table.header {
+                        if contains_field_label(&header.cells, label_fragment) {
+                            return true;
+                        }
+                    }
+                    for row in &table.rows {
+                        if contains_field_label(&row.cells, label_fragment) {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn has_repeatable_with_fields(nodes: &[StructuredNode], labels: &[&str]) -> bool {
+        for node in nodes {
+            match node {
+                StructuredNode::Repeatable(rep) => {
+                    let item = std::slice::from_ref(rep.item.as_ref());
+                    if labels.iter().all(|l| contains_field_label(item, l)) {
+                        return true;
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if has_repeatable_with_fields(&g.children, labels) {
+                        return true;
+                    }
+                }
+                StructuredNode::Conditional(c) => {
+                    if has_repeatable_with_fields(std::slice::from_ref(c.content.as_ref()), labels)
+                    {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    assert!(
+        has_repeatable_with_fields(&merged, &["Cognome", "Nome"]),
+        "Expected a Repeatable containing fields 'Cognome' and 'Nome/i' in ADCL_033_IT"
+    );
+}
+
+#[test]
+fn test_adcl_contains_roman_numeral_list() {
+    use crate::document::ListStyleType;
+    use crate::structured::{ListNode, StructuredNode};
+
+    let merged = crate::run_exhaustive_to_merged(input_path("ADCL_033_IT.pdf"))
+        .expect("Failed to run exhaustive merge on ADCL_033_IT.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&merged);
+
+    // Find a roman numeral list
+    let roman_lists: Vec<_> = lists
+        .iter()
+        .filter(|l| {
+            matches!(
+                l.list_style,
+                ListStyleType::LowerRoman | ListStyleType::UpperRoman
+            )
+        })
+        .collect();
+
+    assert!(
+        !roman_lists.is_empty(),
+        "Expected at least one roman numeral list in ADCL_033_IT, found none.\n\
+         All list styles: {:?}",
+        lists.iter().map(|l| &l.list_style).collect::<Vec<_>>()
+    );
+
+    // Check that one of the roman numeral lists contains the expected items
+    let expected_fragment_1 = "avr\u{00e0} il potere e il diritto di sottoscrivere";
+    let expected_fragment_2 = "autorizza la Banca, le societ\u{00e0} emittenti";
+
+    let has_matching_list = roman_lists.iter().any(|l| {
+        let has_item1 = l
+            .items
+            .iter()
+            .any(|item| item.as_plain_text().contains(expected_fragment_1));
+        let has_item2 = l
+            .items
+            .iter()
+            .any(|item| item.as_plain_text().contains(expected_fragment_2));
+        has_item1 && has_item2
+    });
+
+    assert!(
+        has_matching_list,
+        "Expected a roman numeral list containing both expected items in ADCL_033_IT.\n\
+         Roman numeral list items: {:?}",
+        roman_lists
+            .iter()
+            .flat_map(|l| l.items.iter().map(|i| i.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+}
