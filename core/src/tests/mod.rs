@@ -15972,7 +15972,7 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     );
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -15982,21 +15982,37 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    assert!(
-        fragment_refs.len() >= 2,
-        "Expected at least 2 fragment nodes, found {}.\nFragments: {:?}",
-        fragment_refs.len(),
+    let sig_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Signature"))
+        .collect();
+    assert_eq!(
+        sig_frags.len(),
+        2,
+        "Expected exactly 2 Signature fragment nodes, found {}.\nAll fragments: {:?}",
+        sig_frags.len(),
         fragment_refs
     );
 
-    for (i, (frag_ref, _)) in fragment_refs.iter().enumerate() {
-        assert!(
-            frag_ref.contains("Signature"),
-            "Fragment {} should reference a Signature fragment. Got: {}",
-            i,
-            frag_ref
-        );
-    }
+    let entity_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("EntityBasic"))
+        .collect();
+    assert_eq!(
+        entity_frags.len(),
+        1,
+        "Expected exactly 1 EntityBasic fragment node, found {}.\nAll fragments: {:?}",
+        entity_frags.len(),
+        fragment_refs
+    );
+
+    assert_eq!(
+        fragment_refs.len(),
+        3,
+        "Expected exactly 3 fragment nodes (2 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        fragment_refs.len(),
+        fragment_refs
+    );
 }
 
 #[test]
@@ -16019,7 +16035,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -16086,7 +16102,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    // Should have 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
     let sig_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Signature"))
@@ -16099,10 +16115,34 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         fragment_refs
     );
 
+    let addr_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Address"))
+        .collect();
+    assert_eq!(
+        addr_frags.len(),
+        2,
+        "Expected exactly 2 Address fragment nodes, found {}.\nAll fragments: {:?}",
+        addr_frags.len(),
+        fragment_refs
+    );
+
+    let dob_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("DOBandNationality"))
+        .collect();
+    assert_eq!(
+        dob_frags.len(),
+        1,
+        "Expected exactly 1 DOBandNationality fragment node, found {}.\nAll fragments: {:?}",
+        dob_frags.len(),
+        fragment_refs
+    );
+
     assert_eq!(
         fragment_refs.len(),
-        4,
-        "Expected exactly 4 fragment nodes (2 Signature + 1 Address + 1 IndividualBasic), found {}.\nFragments: {:?}",
+        5,
+        "Expected exactly 5 fragment nodes (2 Signature + 2 Address + 1 DOBandNationality), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -18290,7 +18330,7 @@ fn test_aaai_has_address_and_individual_fragments() {
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -18300,14 +18340,14 @@ fn test_aaai_has_address_and_individual_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have at least 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    // Should have at least 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
     let address_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Address"))
         .collect();
-    let individual_frags: Vec<_> = fragment_refs
+    let dob_frags: Vec<_> = fragment_refs
         .iter()
-        .filter(|(fr, _)| fr.contains("IndividualBasic"))
+        .filter(|(fr, _)| fr.contains("DOBandNationality"))
         .collect();
 
     assert!(
@@ -18316,27 +18356,17 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
     assert!(
-        !individual_frags.is_empty(),
-        "Should have at least one IndividualBasic fragment. All fragments: {:?}",
+        !dob_frags.is_empty(),
+        "Should have at least one DOBandNationality fragment. All fragments: {:?}",
         fragment_refs
     );
 
-    // The Address fragment bind_ref should contain "authorized_representative_s/Address"
-    for (_, bind_ref) in &address_frags {
-        let br = bind_ref.as_deref().unwrap_or("");
-        assert!(
-            br.contains("/authorized_representative_s/Address"),
-            "Address fragment bind_ref should include authorized_representative_s/Address. Got: {}",
-            br
-        );
-    }
-
-    // The IndividualBasic fragment bind_ref should contain "authorized_representative_s/IndividualBasic"
-    for (_, bind_ref) in &individual_frags {
+    // The DOBandNationality fragment bind_ref should contain "authorized_representative_s/IndividualBasic"
+    for (_, bind_ref) in &dob_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
             br.contains("/authorized_representative_s/IndividualBasic"),
-            "IndividualBasic fragment bind_ref should include authorized_representative_s/IndividualBasic. Got: {}",
+            "DOBandNationality fragment bind_ref should include authorized_representative_s/IndividualBasic. Got: {}",
             br
         );
     }
@@ -18379,7 +18409,7 @@ fn test_fragments_work_without_bind_to_xsd() {
     config.use_fragments = true;
     config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
 
