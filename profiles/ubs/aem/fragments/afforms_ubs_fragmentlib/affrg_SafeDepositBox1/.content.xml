@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:mixinTypes="[]"
     jcr:primaryType="cq:Page">
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2025-12-16T11:13:13.293+01:00"
-        cq:lastModifiedBy="t650041"
+        cq:lastModified="{Date}2026-03-24T12:59:40.912+01:00"
+        cq:lastModifiedBy="t647287"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="UBS Fragment - Safe Deposit Box 1  "
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
@@ -77,22 +77,23 @@
                             jcr:primaryType="nt:unstructured"
                             sling:resourceType="fd/af/layouts/gridFluidLayout2">
                             <numericbox
-                                jcr:lastModified="{Date}2025-05-06T05:52:24.137+02:00"
-                                jcr:lastModifiedBy="t653607"
+                                jcr:lastModified="{Date}2026-03-11T12:56:55.524+01:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="BC no."
-                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/numericbox"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
                                 bindRef="/SafeDepositBoxType/BranchCode"
-                                displayPatternType="custom"
-                                displayPictureClause="text{9999}"
+                                css="widget_ajila-forms-ubs-textbox"
                                 dorColspan="1"
                                 dorExclusion="true"
                                 dorFieldStyling="Default"
-                                guideNodeClass="guideNumericBox"
+                                guideNodeClass="guideTextBox"
                                 leadDigits="4"
                                 mandatory="true"
+                                maxChars="4"
                                 name="txtBcNoXsd"
-                                textIsRich="[true,true,true]">
+                                textIsRich="[true,true,true,true]">
                                 <cq:responsive jcr:primaryType="nt:unstructured">
                                     <default
                                         jcr:primaryType="nt:unstructured"
@@ -172,11 +173,32 @@
                                         width="6"/>
                                 </cq:responsive>
                             </numericbox_1152226871>
+                            <textbox_841066747
+                                jcr:created="{Date}2026-02-22T09:51:52.334+01:00"
+                                jcr:createdBy="t518977"
+                                jcr:lastModified="{Date}2026-02-22T10:13:04.713+01:00"
+                                jcr:lastModifiedBy="t518977"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Safe Depoist Box Number"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                bindRef="/SafeDepositBoxType/SafeDepositBoxNumber"
+                                css="widget_ajila-forms-ubs-textbox"
+                                dorExclusion="true"
+                                guideNodeClass="guideTextBox"
+                                name="TXT_SafeDepoistBoxNumber"
+                                textIsRich="[true,true,true,true]"
+                                visible="{Boolean}false">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_SafeDepositBoxXSD.TXT_SafeDepoistBoxNumber&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if(txtBcNoXsd.value &amp;&amp; txtAgencyXsd.value &amp;&amp; txtSafeDepositBoxNoXsd.value) {\\n  this.value = txtBcNoXsd.value +\\&quot; - \\&quot;+ txtAgencyXsd.value +\\&quot; \\&quot;+ txtSafeDepositBoxNoXsd.value;\\n} else {\\n  this.value = \\&quot;\\&quot;;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox_841066747>
                         </items>
                     </panel_54094826>
                     <panel_54094826_copy
-                        jcr:lastModified="Mon May 05 2025 13:43:42 GMT+0200"
-                        jcr:lastModifiedBy="t653607"
+                        jcr:lastModified="{Date}2026-02-22T09:16:45.569+01:00"
+                        jcr:lastModifiedBy="t518977"
                         jcr:primaryType="nt:unstructured"
                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                         dorExcludeDescription="true"
@@ -199,21 +221,22 @@
                             jcr:primaryType="nt:unstructured"
                             sling:resourceType="fd/af/layouts/gridFluidLayout2">
                             <numericbox
-                                jcr:lastModified="Mon May 05 2025 12:34:49 GMT+0200"
-                                jcr:lastModifiedBy="t650041"
+                                jcr:lastModified="{Date}2026-03-11T12:58:49.762+01:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="BC no."
-                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/numericbox"
-                                displayPatternType="custom"
-                                displayPictureClause="text{9999}"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
                                 dorColspan="1"
                                 dorExclusion="true"
                                 dorFieldStyling="Default"
-                                guideNodeClass="guideNumericBox"
+                                guideNodeClass="guideTextBox"
                                 leadDigits="4"
                                 mandatory="true"
+                                maxChars="4"
                                 name="txtBcNo"
-                                textIsRich="[true,true,true]">
+                                textIsRich="[true,true,true,true]">
                                 <cq:responsive jcr:primaryType="nt:unstructured">
                                     <default
                                         jcr:primaryType="nt:unstructured"

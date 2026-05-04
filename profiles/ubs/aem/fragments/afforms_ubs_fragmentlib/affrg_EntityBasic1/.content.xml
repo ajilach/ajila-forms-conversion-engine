@@ -4,15 +4,14 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-02-12T14:05:05.109+01:00"
-        cq:lastModifiedBy="t406261"
+        cq:lastModified="{Date}2026-05-03T15:51:23.959+02:00"
+        cq:lastModifiedBy="t518977"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##4073&quot;}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="UBS Fragment - Entity Basic 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

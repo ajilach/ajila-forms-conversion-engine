@@ -4,26 +4,26 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_CustodyAccount1/jcr:content/guideContainer/assets/dictionary">
-    <_x0031_1e25857-e36f-46f2-bb20-e31a327128d0
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_Clearing number"
-        sling:message="Clearing number"/>
-    <_x0033_9b6feb2-e0c2-4e5b-a263-e35de8c6ccd6
+    <_x0031_53eead2-95b6-4a11-8e46-3e9ba79a939b
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Object number"
         sling:message="Object number"/>
+    <_x0038_6840e60-48b9-40e8-9af0-9ea95d9e14ea
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Account number"
+        sling:message="Account number"/>
+    <_x0038_984063d-6055-49db-ac21-205efdb6022d
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Clearing number"
+        sling:message="Clearing number"/>
     <_x0039_58567da-86b9-472c-a180-c6fecee9676d
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_UBS Fragment - Custody Account 1"
         sling:message="UBS Fragment - Custody Account 1"/>
-    <f9518bd6-8c6b-4559-bc69-f0ffa8ea2651
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_Account number"
-        sling:message="Account number"/>
     <fd__x003c_p_x003e__x003c_b_x003e_Bank-355201254
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
