@@ -24995,12 +24995,10 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
 
     // Configure with a form-specific root and a different fragment prefix.
+    // The profile has rootElementName = "UBSAF_{{ form_code }}" and
+    // fragmentBindRefPrefix = "UBSAF" from the TOML.
     let mut xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     xsd_config.form_code = Some("AAAI".to_string());
-    // Set a form-specific root element name so we can distinguish it from the
-    // fragment prefix.
-    xsd_config.profile.root_element_name = "UBSAF_{{ form_code }}".to_string();
-    // The profile already has fragmentBindRefPrefix = "UBSAF" from the TOML.
 
     config.bind_to_xsd = true;
     config.use_fragments = true;

@@ -469,7 +469,7 @@ impl XsdConfig {
         let template = &self.profile.root_element_name;
         match &self.form_code {
             Some(code) => template.replace("{{ form_code }}", code),
-            None => template.clone(),
+            None => template.replace("{{ form_code }}", ""),
         }
     }
 
