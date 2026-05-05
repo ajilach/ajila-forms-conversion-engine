@@ -87,7 +87,9 @@ pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
 
     if config.bind_to_xsd || config.use_fragments {
         if has_xsd_config(name) {
-            config.xsd_config = Some(load_xsd_config(name)?);
+            let mut xsd_config = load_xsd_config(name)?;
+            xsd_config.form_code = Some(config.form_code.clone());
+            config.xsd_config = Some(xsd_config);
         } else if config.bind_to_xsd {
             return Err(format!(
                 "bind_to_xsd=true requires profile '{name}' to provide xsd/config.toml"
@@ -506,9 +508,8 @@ pub fn resolve_embedded_fragment_dictionaries(frag_ref: &str) -> Vec<(String, St
         return Vec::new();
     };
 
-    let dict_dir_path = format!(
-        "{profile_and_relative}/_jcr_content/guideContainer/assets/dictionary"
-    );
+    let dict_dir_path =
+        format!("{profile_and_relative}/_jcr_content/guideContainer/assets/dictionary");
 
     let Some(dict_dir) = PROFILES_DIR.get_dir(&dict_dir_path) else {
         return Vec::new();

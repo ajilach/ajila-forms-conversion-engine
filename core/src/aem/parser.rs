@@ -779,6 +779,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
                     children,
                     min_occur: min_occur.max(1),
                     max_occur,
+                    bind_ref: node.attr("bindRef").map(|s| s.to_string()),
                 }));
             }
         }
@@ -804,6 +805,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
             children,
             min_occur: min_occur.max(1),
             max_occur,
+            bind_ref: node.attr("bindRef").map(|s| s.to_string()),
         }))
     } else {
         Ok(Some(AemNode::Panel {

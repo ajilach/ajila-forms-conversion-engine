@@ -79,8 +79,11 @@ fn App() -> Element {
         // Regenerate XSD if profile supports it
         if let Some(ref profile_name) = profile
             && blueprint::has_xsd_config(profile_name)
-            && let Ok(xsd_config) = blueprint::load_xsd_config(profile_name)
+            && let Ok(mut xsd_config) = blueprint::load_xsd_config(profile_name)
         {
+            if let Some(ref fc) = state.form_code {
+                xsd_config.form_code = Some(fc.clone());
+            }
             state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
         }
 

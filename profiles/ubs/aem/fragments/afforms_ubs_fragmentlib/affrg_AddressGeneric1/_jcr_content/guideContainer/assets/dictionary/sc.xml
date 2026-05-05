@@ -3,7 +3,7 @@
     jcr:language="sc"
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:OrderedFolder"
-    sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1/jcr:content/guideContainer/assets/dictionary">
+    sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1/jcr:content/guideContainer/assets/dictionary">
     <d4c0186a-c57d-4747-8c0f-af147c350ad0
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

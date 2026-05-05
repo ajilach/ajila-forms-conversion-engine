@@ -68,6 +68,12 @@ pub enum XsdNode {
         max_occurs: Option<Option<u32>>,
         content: Option<Box<XsdNode>>,
     },
+    /// `<xs:element ref="..."/>` — reference to a global element declaration.
+    Ref {
+        ref_name: String,
+        min_occurs: Option<u32>,
+        max_occurs: Option<Option<u32>>,
+    },
     /// `<xs:complexType>` (inline when `name` is `None`, named when `Some`)
     ComplexType {
         name: Option<String>,
@@ -145,6 +151,18 @@ impl XsdNode {
                         out.push('\n');
                     }
                 }
+            }
+            XsdNode::Ref {
+                ref_name,
+                min_occurs,
+                max_occurs,
+            } => {
+                let occur = build_occurrence_attrs(*min_occurs, *max_occurs);
+                out.push_str(&format!(
+                    "{}<xs:element ref=\"{}\"{}/>",
+                    pad, ref_name, occur
+                ));
+                out.push('\n');
             }
             XsdNode::ComplexType { name, sequence } => {
                 match name {
@@ -247,9 +265,13 @@ fn default_schema_location_prefix() -> String {
     "../".to_string()
 }
 
+fn default_root_element_name() -> String {
+    "form".to_string()
+}
+
 /// TOML-deserializable XSD profile loaded from
 /// `profiles/{name}/xsd/config.toml`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct XsdProfile {
     /// Mapping from canonical element names to their config.
@@ -273,6 +295,38 @@ pub struct XsdProfile {
     /// prefer that language.
     #[serde(default)]
     pub master_language: Option<String>,
+
+    /// Template for the root element name in generated XSD schemas.
+    ///
+    /// May contain `{{ form_code }}` which is replaced at generation time
+    /// with the actual form code.  Defaults to `"form"`.
+    ///
+    /// Example: `rootElementName = "UBSAF_{{ form_code }}"`
+    #[serde(default = "default_root_element_name")]
+    pub root_element_name: String,
+
+    /// Prefix used for fragment `bindRef` paths.
+    ///
+    /// In reference forms, fragments use a generic prefix (e.g. `/UBSAF/`)
+    /// instead of the form-specific root so the same fragment can be reused
+    /// across forms.  May contain `{{ form_code }}`.
+    ///
+    /// Defaults to the same value as `root_element_name` (i.e. fragments
+    /// use the form-specific root unless overridden).
+    #[serde(default)]
+    pub fragment_bind_ref_prefix: Option<String>,
+}
+
+impl Default for XsdProfile {
+    fn default() -> Self {
+        Self {
+            elements: HashMap::new(),
+            schema_location_prefix: default_schema_location_prefix(),
+            master_language: None,
+            root_element_name: default_root_element_name(),
+            fragment_bind_ref_prefix: None,
+        }
+    }
 }
 
 /// Configuration for an element synonym mapping.
@@ -357,6 +411,12 @@ pub struct XsdConfig {
     /// prefer the translation in this language instead of picking an
     /// arbitrary first entry from the translation map.
     pub master_language: Option<String>,
+
+    /// Optional form code (e.g. `"ABFA"`).
+    ///
+    /// Used to expand `{{ form_code }}` in the profile's `root_element_name`
+    /// template.
+    pub form_code: Option<String>,
 }
 
 impl XsdConfig {
@@ -374,6 +434,7 @@ impl XsdConfig {
             registered_types,
             type_to_element_name,
             master_language,
+            form_code: None,
         }
     }
 
@@ -386,6 +447,7 @@ impl XsdConfig {
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
             master_language,
+            form_code: None,
         }
     }
 
@@ -393,6 +455,37 @@ impl XsdConfig {
     pub fn with_master_language(mut self, lang: impl Into<String>) -> Self {
         self.master_language = Some(lang.into());
         self
+    }
+
+    /// Set the form code for root element name expansion.
+    pub fn with_form_code(mut self, code: impl Into<String>) -> Self {
+        self.form_code = Some(code.into());
+        self
+    }
+
+    /// Compute the root element name by expanding `{{ form_code }}` in the
+    /// profile's `root_element_name` template.
+    pub fn root_element_name(&self) -> String {
+        let template = &self.profile.root_element_name;
+        match &self.form_code {
+            Some(code) => template.replace("{{ form_code }}", code),
+            None => template.replace("{{ form_code }}", ""),
+        }
+    }
+
+    /// Compute the fragment bind-ref prefix.
+    ///
+    /// If the profile specifies `fragmentBindRefPrefix`, expand
+    /// `{{ form_code }}` in it.  Otherwise fall back to the root element
+    /// name (so fragments use the same root as the form by default).
+    pub fn fragment_bind_ref_prefix(&self) -> String {
+        match &self.profile.fragment_bind_ref_prefix {
+            Some(template) => match &self.form_code {
+                Some(code) => template.replace("{{ form_code }}", code),
+                None => template.clone(),
+            },
+            None => self.root_element_name(),
+        }
     }
 
     /// Get the plain text from an `InlineText`, preferring the master
@@ -1084,4 +1177,45 @@ pub fn to_snake_case(label: &str) -> String {
         .map(|w| w.to_lowercase())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+/// Convert a label string to a PascalCase identifier suitable for XSD names.
+///
+/// - Strips non-alphanumeric characters
+/// - Splits on whitespace / punctuation boundaries
+/// - Each word is title-cased (first letter uppercase, rest lowercase)
+///   unless the word is fully uppercase (treated as an acronym and kept as-is)
+///
+/// Example: `"Date of Birth"` → `"DateOfBirth"`
+/// Example: `"IBAN"` → `"IBAN"`
+pub fn to_pascal_case(label: &str) -> String {
+    let words: Vec<&str> = label
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    if words.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    words
+        .iter()
+        .map(|w| {
+            if w.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
+                // Acronym or number — keep as-is
+                w.to_string()
+            } else {
+                // Title-case
+                let mut chars = w.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => {
+                        let upper: String = first.to_uppercase().collect();
+                        upper + &chars.as_str().to_lowercase()
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }

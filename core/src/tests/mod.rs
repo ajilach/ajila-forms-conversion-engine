@@ -15972,7 +15972,7 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     );
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -15982,21 +15982,37 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    assert!(
-        fragment_refs.len() >= 2,
-        "Expected at least 2 fragment nodes, found {}.\nFragments: {:?}",
-        fragment_refs.len(),
+    let sig_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Signature"))
+        .collect();
+    assert_eq!(
+        sig_frags.len(),
+        2,
+        "Expected exactly 2 Signature fragment nodes, found {}.\nAll fragments: {:?}",
+        sig_frags.len(),
         fragment_refs
     );
 
-    for (i, (frag_ref, _)) in fragment_refs.iter().enumerate() {
-        assert!(
-            frag_ref.contains("Signature"),
-            "Fragment {} should reference a Signature fragment. Got: {}",
-            i,
-            frag_ref
-        );
-    }
+    let entity_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("EntityBasic"))
+        .collect();
+    assert_eq!(
+        entity_frags.len(),
+        1,
+        "Expected exactly 1 EntityBasic fragment node, found {}.\nAll fragments: {:?}",
+        entity_frags.len(),
+        fragment_refs
+    );
+
+    assert_eq!(
+        fragment_refs.len(),
+        3,
+        "Expected exactly 3 fragment nodes (2 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        fragment_refs.len(),
+        fragment_refs
+    );
 }
 
 #[test]
@@ -16019,7 +16035,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -16086,7 +16102,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    // Should have 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
     let sig_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Signature"))
@@ -16099,10 +16115,34 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         fragment_refs
     );
 
+    let addr_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Address"))
+        .collect();
+    assert_eq!(
+        addr_frags.len(),
+        2,
+        "Expected exactly 2 Address fragment nodes, found {}.\nAll fragments: {:?}",
+        addr_frags.len(),
+        fragment_refs
+    );
+
+    let dob_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("DOBandNationality"))
+        .collect();
+    assert_eq!(
+        dob_frags.len(),
+        1,
+        "Expected exactly 1 DOBandNationality fragment node, found {}.\nAll fragments: {:?}",
+        dob_frags.len(),
+        fragment_refs
+    );
+
     assert_eq!(
         fragment_refs.len(),
-        4,
-        "Expected exactly 4 fragment nodes (2 Signature + 1 Address + 1 IndividualBasic), found {}.\nFragments: {:?}",
+        5,
+        "Expected exactly 5 fragment nodes (2 Signature + 2 Address + 1 DOBandNationality), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -16181,10 +16221,10 @@ fn test_xsd_unmatched_field_uses_snake_case() {
     let config = XsdConfig::from_profile(XsdProfile::default());
     let xsd = generate_xsd(&nodes, &config);
 
-    // Unmatched field should use snake_case name and xs:string type
+    // Unmatched field should use PascalCase name and xs:string type
     assert!(
-        xsd.contains("<xs:element name=\"date_of_birth\" type=\"xs:string\"/>"),
-        "Unmatched field should use snake_case name. Got:\n{}",
+        xsd.contains("<xs:element name=\"DateOfBirth\" type=\"xs:string\"/>"),
+        "Unmatched field should use PascalCase name. Got:\n{}",
         xsd
     );
 }
@@ -16261,7 +16301,7 @@ fn test_xsd_heading_creates_complex_type() {
 
     // Should match AccountType (IBAN is a subset) and use type ref
     assert!(
-        xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
         "Should create element with matched type. Got:\n{}",
         xsd
     );
@@ -16339,7 +16379,7 @@ fn test_xsd_heading_with_type_ref() {
 
     // Should reference the registered type and emit include
     assert!(
-        xsd.contains("<xs:element name=\"account_details\" type=\"AccountType\"/>"),
+        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
         "Should reference registered type. Got:\n{}",
         xsd
     );
@@ -16445,7 +16485,7 @@ fn test_xsd_child_validation_required_present() {
 
     // Both children are a subset of AccountType → match
     assert!(
-        xsd.contains("<xs:element name=\"account\" type=\"AccountType\"/>"),
+        xsd.contains("<xs:element name=\"Account\" type=\"AccountType\"/>"),
         "Should use type ref when children are subset. Got:\n{}",
         xsd
     );
@@ -16523,7 +16563,7 @@ fn test_xsd_child_validation_required_missing() {
         xsd
     );
     assert!(
-        xsd.contains("<xs:element name=\"account\">"),
+        xsd.contains("<xs:element name=\"Account\">"),
         "Should fall back to inline complexType. Got:\n{}",
         xsd
     );
@@ -16646,7 +16686,7 @@ fn test_xsd_child_validation_extra_child() {
         xsd
     );
     assert!(
-        xsd.contains("<xs:element name=\"account\">"),
+        xsd.contains("<xs:element name=\"Account\">"),
         "Should fall back to inline complexType. Got:\n{}",
         xsd
     );
@@ -16724,13 +16764,13 @@ fn test_xsd_conditional_creates_choice() {
     );
 
     assert!(
-        xsd.contains("field_a"),
-        "Should contain field_a. Got:\n{}",
+        xsd.contains("FieldA"),
+        "Should contain FieldA. Got:\n{}",
         xsd
     );
     assert!(
-        xsd.contains("field_b"),
-        "Should contain field_b. Got:\n{}",
+        xsd.contains("FieldB"),
+        "Should contain FieldB. Got:\n{}",
         xsd
     );
 }
@@ -16959,18 +16999,18 @@ fn test_xsd_nested_heading_levels() {
 
     // H1 should create outer complexType, H2 should create inner complexType
     assert!(
-        xsd.contains("top_section"),
-        "Should contain top_section. Got:\n{}",
+        xsd.contains("TopSection"),
+        "Should contain TopSection. Got:\n{}",
         xsd
     );
     assert!(
-        xsd.contains("sub_section"),
-        "Should contain sub_section. Got:\n{}",
+        xsd.contains("SubSection"),
+        "Should contain SubSection. Got:\n{}",
         xsd
     );
     assert!(
-        xsd.contains("inner_field"),
-        "Should contain inner_field. Got:\n{}",
+        xsd.contains("InnerField"),
+        "Should contain InnerField. Got:\n{}",
         xsd
     );
 
@@ -17342,6 +17382,11 @@ fn test_aaai_en_xsd_signature_type_matching() {
                     find_elements_by_name(child, name, results);
                 }
             }
+            XsdNode::Ref { ref_name, .. } => {
+                if ref_name == name {
+                    results.push(node);
+                }
+            }
             XsdNode::ComplexType { sequence, .. } => {
                 for child in sequence {
                     find_elements_by_name(child, name, results);
@@ -17358,53 +17403,52 @@ fn test_aaai_en_xsd_signature_type_matching() {
         }
     }
 
-    // 5) Assert "client" (under Signature(s)) has type SignatureType
-    //    There are two "client" elements in the tree (one under the
-    //    main H1 and one under "Signature(s)"). The one under signatures
+    // 5) Assert "Client" (under Signature(s)) has type SignatureType
+    //    There are two "Client" elements in the tree (one under the
+    //    main H2 and one under "Signature(s)"). The one under signatures
     //    is the second occurrence (depth-first).
     let mut client_matches = Vec::new();
-    find_elements_by_name(&schema.root, "client", &mut client_matches);
+    find_elements_by_name(&schema.root, "Client", &mut client_matches);
     assert!(
         client_matches.len() >= 2,
-        "Should find at least 2 elements named 'client' (one main, one signature). Found: {}",
+        "Should find at least 2 elements named 'Client' (one main, one signature). Found: {}",
         client_matches.len()
     );
-    // The second "client" is the one under Signature(s)
+    // The second "Client" is the one under Signature(s)
     if let XsdNode::Element { type_ref, .. } = client_matches[1] {
         assert_eq!(
             type_ref.as_deref(),
             Some("SignatureType"),
-            "Signature 'client' element should be matched to SignatureType"
+            "Signature 'Client' element should be matched to SignatureType"
         );
     }
 
-    // 6) Assert "ubs_europe_se" has type SignatureType
+    // 6) Assert "UBSEuropeSE" has type SignatureType
     let mut ubs_matches = Vec::new();
-    find_elements_by_name(&schema.root, "ubs_europe_se", &mut ubs_matches);
+    find_elements_by_name(&schema.root, "UBSEuropeSE", &mut ubs_matches);
     assert!(
         !ubs_matches.is_empty(),
-        "Should find an element named 'ubs_europe_se' in the XSD tree"
+        "Should find an element named 'UBSEuropeSE' in the XSD tree"
     );
     if let XsdNode::Element { type_ref, .. } = ubs_matches[0] {
         assert_eq!(
             type_ref.as_deref(),
             Some("SignatureType"),
-            "Element 'ubs_europe_se' should be matched to SignatureType"
+            "Element 'UBSEuropeSE' should be matched to SignatureType"
         );
     }
 
-    // 7) Assert the authorized_representative_s section is matched to multiple types
-    //    (LetterAddressType + AddressType), so it contains typed references instead
-    //    of individual child elements like "LastName".
+    // 7) Assert the AuthorizedRepresentativeS section is matched to multiple types
+    //    (IndividualBasicType + AddressType), so it contains typed child elements.
     let mut auth_rep_matches = Vec::new();
     find_elements_by_name(
         &schema.root,
-        "authorized_representative_s",
+        "AuthorizedRepresentativeS",
         &mut auth_rep_matches,
     );
     assert!(
         !auth_rep_matches.is_empty(),
-        "Should find 'authorized_representative_s' element"
+        "Should find 'AuthorizedRepresentativeS' element"
     );
     if let XsdNode::Element {
         content, type_ref, ..
@@ -17412,7 +17456,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
     {
         assert!(
             type_ref.is_none(),
-            "authorized_representative_s should have inline content (multi-type match)"
+            "AuthorizedRepresentativeS should have inline content (multi-type match)"
         );
         let content = content.as_ref().expect("Should have inline content");
         if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
@@ -17437,7 +17481,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
                 child_type_refs
             );
         } else {
-            panic!("Expected ComplexType content for authorized_representative_s");
+            panic!("Expected ComplexType content for AuthorizedRepresentativeS");
         }
     }
 }
@@ -17511,7 +17555,7 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
 
     let schema = generate_xsd_schema(&nodes, &config);
 
-    // Walk the tree to find "authorized_representative_s"
+    // Walk the tree to find \"authorized_representative_s\"
     fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
         match node {
             XsdNode::Element {
@@ -17522,6 +17566,11 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
                 }
                 if let Some(child) = content {
                     find_elements_by_name(child, name, results);
+                }
+            }
+            XsdNode::Ref { ref_name, .. } => {
+                if ref_name == name {
+                    results.push(node);
                 }
             }
             XsdNode::ComplexType { sequence, .. } => {
@@ -17541,10 +17590,10 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     }
 
     let mut matches = Vec::new();
-    find_elements_by_name(&schema.root, "authorized_representative_s", &mut matches);
+    find_elements_by_name(&schema.root, "AuthorizedRepresentativeS", &mut matches);
     assert!(
         !matches.is_empty(),
-        "Should find 'authorized_representative_s' element"
+        "Should find 'AuthorizedRepresentativeS' element"
     );
 
     // It should be an inline complexType containing two typed child elements
@@ -17554,7 +17603,7 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     {
         assert!(
             type_ref.is_none(),
-            "authorized_representative_s should NOT have a single type_ref"
+            "AuthorizedRepresentativeS should NOT have a single type_ref"
         );
         let content = content.as_ref().expect("Should have inline content");
         if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
@@ -17637,15 +17686,15 @@ fn test_bind_refs_no_match_inline() {
 
     assert_eq!(
         maps.sections.get("Personal Data"),
-        Some(&"/form/personal_data".to_string()),
+        Some(&"/form/PersonalData".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.first")),
-        Some(&"/form/personal_data/first_name".to_string()),
+        Some(&"/form/PersonalData/FirstName".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.last")),
-        Some(&"/form/personal_data/last_name".to_string()),
+        Some(&"/form/PersonalData/LastName".to_string()),
     );
 }
 
@@ -17738,20 +17787,20 @@ fn test_bind_refs_single_type_match() {
 
     assert_eq!(
         maps.sections.get("Signature"),
-        Some(&"/form/signature".to_string()),
+        Some(&"/form/Signature".to_string()),
     );
     // Single-type match: no wrapper segment needed.
     assert_eq!(
         maps.fields.get(&FieldId::from("f.place")),
-        Some(&"/form/signature/Place".to_string()),
+        Some(&"/form/Signature/Place".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.name")),
-        Some(&"/form/signature/Name".to_string()),
+        Some(&"/form/Signature/Name".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.date")),
-        Some(&"/form/signature/Date".to_string()),
+        Some(&"/form/Signature/Date".to_string()),
     );
 }
 
@@ -17873,28 +17922,28 @@ fn test_bind_refs_multi_type_match() {
 
     assert_eq!(
         maps.sections.get("Representative"),
-        Some(&"/form/representative".to_string()),
+        Some(&"/form/Representative".to_string()),
     );
     // Multi-type match: fields must include wrapper segment.
     assert_eq!(
         maps.fields.get(&FieldId::from("f.last")),
-        Some(&"/form/representative/IndividualBasic/LastName".to_string()),
+        Some(&"/form/Representative/IndividualBasic/LastName".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.first")),
-        Some(&"/form/representative/IndividualBasic/FirstName".to_string()),
+        Some(&"/form/Representative/IndividualBasic/FirstName".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.street")),
-        Some(&"/form/representative/Address/Street".to_string()),
+        Some(&"/form/Representative/Address/Street".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.city")),
-        Some(&"/form/representative/Address/City".to_string()),
+        Some(&"/form/Representative/Address/City".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.country")),
-        Some(&"/form/representative/Address/Country".to_string()),
+        Some(&"/form/Representative/Address/Country".to_string()),
     );
 }
 
@@ -17916,16 +17965,16 @@ fn test_bind_refs_nested_subsections() {
 
     assert_eq!(
         maps.sections.get("Section A"),
-        Some(&"/form/section_a".to_string()),
+        Some(&"/form/SectionA".to_string()),
     );
     assert_eq!(
         maps.sections.get("Sub B"),
-        Some(&"/form/section_a/sub_b".to_string()),
+        Some(&"/form/SectionA/SubB".to_string()),
     );
     // Inner field is under the H3 subsection.
     assert_eq!(
         maps.fields.get(&FieldId::from("f.inner")),
-        Some(&"/form/section_a/sub_b/inner_field".to_string()),
+        Some(&"/form/SectionA/SubB/InnerField".to_string()),
     );
 }
 
@@ -17946,11 +17995,11 @@ fn test_bind_refs_preamble_fields() {
 
     assert_eq!(
         maps.fields.get(&FieldId::from("f.top")),
-        Some(&"/form/top_level".to_string()),
+        Some(&"/form/TopLevel".to_string()),
     );
     assert_eq!(
         maps.fields.get(&FieldId::from("f.inside")),
-        Some(&"/form/section/inside".to_string()),
+        Some(&"/form/Section/Inside".to_string()),
     );
 }
 
@@ -18068,6 +18117,17 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
                 }
             }
             XsdNode::SimpleType { .. } => {}
+            XsdNode::Ref { ref_name, .. } => {
+                let path = format!("{}/{}", parent, ref_name);
+                paths.insert(path.clone());
+                // Expand ref: find the registered type matching this global
+                // element and add its children as sub-paths.
+                for rt in registered_types.values() {
+                    for elem in &rt.elements {
+                        paths.insert(format!("{}/{}", path, elem.name));
+                    }
+                }
+            }
         }
     }
     use std::collections::HashSet;
@@ -18091,25 +18151,25 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     let auth_rep_fields: Vec<_> = maps
         .fields
         .iter()
-        .filter(|(_, path)| path.contains("/authorized_representative_s/"))
+        .filter(|(_, path)| path.contains("/AuthorizedRepresentativeS/"))
         .collect();
     assert!(
         !auth_rep_fields.is_empty(),
-        "Should have fields under authorized_representative_s section"
+        "Should have fields under AuthorizedRepresentativeS section"
     );
     // At least some fields should go through wrapper elements (IndividualBasic or Address),
-    // not be directly under authorized_representative_s.
+    // not be directly under AuthorizedRepresentativeS.
     let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
-        // Find the part after "authorized_representative_s/"
+        // Find the part after "AuthorizedRepresentativeS/"
         let after = path
-            .split("/authorized_representative_s/")
+            .split("/AuthorizedRepresentativeS/")
             .last()
             .unwrap_or("");
         after.contains('/') // has another segment before the field name (= wrapper)
     });
     assert!(
         has_wrapper_paths,
-        "Multi-type section authorized_representative_s should have wrapper paths. Got: {:?}",
+        "Multi-type section AuthorizedRepresentativeS should have wrapper paths. Got: {:?}",
         auth_rep_fields
     );
 }
@@ -18151,6 +18211,9 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
                     collect_element_names(child, out);
                 }
             }
+            XsdNode::Ref { ref_name, .. } => {
+                out.push(ref_name.clone());
+            }
             XsdNode::ComplexType { sequence, .. } => {
                 for child in sequence {
                     collect_element_names(child, out);
@@ -18169,29 +18232,29 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
     let mut names = Vec::new();
     collect_element_names(&schema.root, &mut names);
 
-    // 5) The heading "Kunde" (DE) / "Client" (EN) should produce "client",
-    //    not "kunde", when the master language is "en".
+    // 5) The heading "Kunde" (DE) / "Client" (EN) should produce "Client",
+    //    not "Kunde", when the master language is "en".
     assert!(
-        names.contains(&"client".to_string()),
-        "XSD should contain element 'client' (English), not 'kunde' (German). Got: {:?}",
+        names.contains(&"Client".to_string()),
+        "XSD should contain element 'Client' (English), not 'Kunde' (German). Got: {:?}",
         names
     );
     assert!(
-        !names.contains(&"kunde".to_string()),
-        "XSD should NOT contain element 'kunde' (German) when master language is 'en'. Got: {:?}",
+        !names.contains(&"Kunde".to_string()),
+        "XSD should NOT contain element 'Kunde' (German) when master language is 'en'. Got: {:?}",
         names
     );
 
     // 6) Similarly, "Unterschrift(en)" / "Signature(s)" should produce
-    //    "signature_s" not "unterschrift_en".
+    //    "SignatureS" not "UnterschriftEn".
     assert!(
-        names.contains(&"signature_s".to_string()),
-        "XSD should contain element 'signature_s' (English). Got: {:?}",
+        names.contains(&"SignatureS".to_string()),
+        "XSD should contain element 'SignatureS' (English). Got: {:?}",
         names
     );
     assert!(
-        !names.contains(&"unterschrift_en".to_string()),
-        "XSD should NOT contain element 'unterschrift_en' (German). Got: {:?}",
+        !names.contains(&"UnterschriftEn".to_string()),
+        "XSD should NOT contain element 'UnterschriftEn' (German). Got: {:?}",
         names
     );
 }
@@ -18253,15 +18316,15 @@ fn test_aaai_section_bind_ref_client_not_under_signature() {
         .expect("sections map should contain 'Client'");
 
     // "Client" is a direct child of the H1 heading, so its path should be
-    // /form/<h1_slug>/client — NOT /form/<h1_slug>/signature_s/client.
+    // /form/<h1_slug>/Client — NOT /form/<h1_slug>/SignatureS/Client.
     assert!(
-        !client_path.contains("/signature_s/"),
-        "Client section bind_ref should NOT be under signature_s. Got: {}",
+        !client_path.contains("/SignatureS/"),
+        "Client section bind_ref should NOT be under SignatureS. Got: {}",
         client_path
     );
     assert!(
-        client_path.ends_with("/client"),
-        "Client section bind_ref should end with /client. Got: {}",
+        client_path.ends_with("/Client"),
+        "Client section bind_ref should end with /Client. Got: {}",
         client_path
     );
 }
@@ -18290,7 +18353,7 @@ fn test_aaai_has_address_and_individual_fragments() {
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
     config.use_fragments = true;
@@ -18300,14 +18363,14 @@ fn test_aaai_has_address_and_individual_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have at least 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
+    // Should have at least 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
     let address_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Address"))
         .collect();
-    let individual_frags: Vec<_> = fragment_refs
+    let dob_frags: Vec<_> = fragment_refs
         .iter()
-        .filter(|(fr, _)| fr.contains("IndividualBasic"))
+        .filter(|(fr, _)| fr.contains("DOBandNationality"))
         .collect();
 
     assert!(
@@ -18316,27 +18379,17 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
     assert!(
-        !individual_frags.is_empty(),
-        "Should have at least one IndividualBasic fragment. All fragments: {:?}",
+        !dob_frags.is_empty(),
+        "Should have at least one DOBandNationality fragment. All fragments: {:?}",
         fragment_refs
     );
 
-    // The Address fragment bind_ref should contain "authorized_representative_s/Address"
-    for (_, bind_ref) in &address_frags {
+    // The DOBandNationality fragment bind_ref should contain "AuthorizedRepresentativeS/IndividualBasic"
+    for (_, bind_ref) in &dob_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
-            br.contains("/authorized_representative_s/Address"),
-            "Address fragment bind_ref should include authorized_representative_s/Address. Got: {}",
-            br
-        );
-    }
-
-    // The IndividualBasic fragment bind_ref should contain "authorized_representative_s/IndividualBasic"
-    for (_, bind_ref) in &individual_frags {
-        let br = bind_ref.as_deref().unwrap_or("");
-        assert!(
-            br.contains("/authorized_representative_s/IndividualBasic"),
-            "IndividualBasic fragment bind_ref should include authorized_representative_s/IndividualBasic. Got: {}",
+            br.contains("/AuthorizedRepresentativeS/IndividualBasic"),
+            "DOBandNationality fragment bind_ref should include AuthorizedRepresentativeS/IndividualBasic. Got: {}",
             br
         );
     }
@@ -18379,7 +18432,7 @@ fn test_fragments_work_without_bind_to_xsd() {
     config.use_fragments = true;
     config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
 
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments");
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
     let fragments_dir = std::path::Path::new(&fragments_path);
     config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
 
@@ -24968,4 +25021,180 @@ fn test_aato_radio_options_with_commas_escaped_in_aem() {
 
     // Generate AEM XML and verify comma labels are escaped
     assert_aem_xml_valid_for(&[("AATO_033_IT.pdf", "AATO")]);
+}
+
+#[test]
+fn test_fragment_bind_refs_use_configured_prefix() {
+    // Fragment bindRef paths should use the configured fragmentBindRefPrefix
+    // (e.g. "/UBSAF/...") rather than the form-specific root element name
+    // (e.g. "/UBSAF_AAAI/...").
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    // Configure with a form-specific root and a different fragment prefix.
+    // The profile has rootElementName = "UBSAF_{{ form_code }}" and
+    // fragmentBindRefPrefix = "UBSAF" from the TOML.
+    let mut xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    xsd_config.form_code = Some("AAAI".to_string());
+
+    config.bind_to_xsd = true;
+    config.use_fragments = true;
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // All fragment bindRefs should start with "/UBSAF/" (the fragment prefix),
+    // NOT with "/UBSAF_AAAI/" (the form root).
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+    assert!(
+        !fragment_refs.is_empty(),
+        "Expected at least one fragment node"
+    );
+    for (frag_ref, bind_ref) in &fragment_refs {
+        let br = bind_ref
+            .as_deref()
+            .unwrap_or_else(|| panic!("Fragment '{}' should have a bind_ref", frag_ref));
+        assert!(
+            br.starts_with("/UBSAF/"),
+            "Fragment '{}' bindRef should start with '/UBSAF/' (fragment prefix), got: {}",
+            frag_ref,
+            br
+        );
+        assert!(
+            !br.starts_with("/UBSAF_AAAI/"),
+            "Fragment '{}' bindRef must NOT use form-specific root '/UBSAF_AAAI/'. Got: {}",
+            frag_ref,
+            br
+        );
+    }
+
+    // Non-fragment panels with bind_to_xsd=true should still use the form root.
+    let mut found_form_root = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let crate::aem::AemNode::Panel {
+            bind_ref: Some(br), ..
+        } = node
+        {
+            if br.starts_with("/UBSAF_AAAI/") {
+                found_form_root = true;
+            }
+        }
+    });
+    assert!(
+        found_form_root,
+        "Expected at least one panel with form-specific root '/UBSAF_AAAI/'"
+    );
+}
+
+#[test]
+fn test_repeatable_panels_have_bind_ref() {
+    // Repeatable inner panels should receive a bindRef attribute derived from
+    // the XSD structure (e.g. the bind path of their inner section).
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    config.bind_to_xsd = true;
+    config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // Collect all Repeatable nodes
+    let mut repeatables: Vec<(String, Option<String>)> = Vec::new();
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { name, bind_ref, .. } = node {
+            repeatables.push((name.clone(), bind_ref.clone()));
+        }
+    });
+
+    assert!(
+        !repeatables.is_empty(),
+        "AAAI should have at least one Repeatable panel"
+    );
+
+    // Every Repeatable whose inner section has a heading (and therefore a
+    // bind_ref) should have a non-empty bind_ref.
+    let with_bind_ref: Vec<_> = repeatables.iter().filter(|(_, br)| br.is_some()).collect();
+    assert!(
+        !with_bind_ref.is_empty(),
+        "At least one Repeatable should have a bind_ref.\nAll repeatables: {:?}",
+        repeatables
+    );
+
+    // The bind_ref should be a valid XSD-style path starting with "/"
+    for (name, bind_ref) in &with_bind_ref {
+        let br = bind_ref.as_deref().unwrap();
+        assert!(
+            br.starts_with('/'),
+            "Repeatable '{}' bind_ref should start with '/', got: {}",
+            name,
+            br
+        );
+    }
+}
+
+#[test]
+fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
+    // When bind_to_xsd=false, Repeatable nodes should have their bind_ref
+    // cleared, just like Panel nodes.
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    config.bind_to_xsd = false;
+    config.use_fragments = true;
+    config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // No Repeatable should have a bind_ref when bind_to_xsd is disabled
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { name, bind_ref, .. } = node {
+            assert!(
+                bind_ref.is_none(),
+                "Repeatable '{}' should have no bind_ref when bind_to_xsd=false, got: {:?}",
+                name,
+                bind_ref
+            );
+        }
+    });
 }

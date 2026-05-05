@@ -559,6 +559,8 @@ pub enum AemNode {
         children: Vec<AemNode>,
         min_occur: u32,
         max_occur: u32,
+        /// XSD path for `bindRef` attribute on the repeatable inner panel.
+        bind_ref: Option<String>,
     },
 
     /// Fragment reference — replaces a panel whose XSD type matches a

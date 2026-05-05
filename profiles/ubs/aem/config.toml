@@ -31,7 +31,7 @@ fragment_ref_prefix = "/content/forms/af/"
 # Paths are relative to fragments/ and can be:
 # - A fragment library directory (scanned recursively): "afforms_ubs_fragmentlib"
 # - A specific fragment: "afforms_ubs_fragmentlib/affrg_Address1"
-fragment_paths = """{% if xfa.formrange_entity == "019" %}afforms_ubs_fragmentlib,afforms_germany_fragmentlib{% elif xfa.formrange_entity == "033" %}afforms_ubs_fragmentlib,afforms_italy_fragmentlib{% elif xfa.formrange_entity == "001" %}afforms_ubs_fragmentlib,afforms_ch_fragmentlib{% else %}afforms_ubs_fragmentlib{% endif %}"""
+fragment_paths = "afforms_ubs_fragmentlib"
 
 form_path = "{{ variables.entity_dir }}/{{ variables.prefix_dir }}"
 

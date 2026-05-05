@@ -39,7 +39,4 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_Banking relationship for Bound Data XSD"
         sling:message="Banking relationship for Bound Data XSD"/>
-    <fd_Banking_x0020_relationship
-        jcr:primaryType="sling:MessageEntry"
-        sling:message="Relazione bancaria"/>
 </jcr:root>

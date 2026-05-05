@@ -4,13 +4,12 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2025-12-16T11:13:15.062+01:00"
-        cq:lastModifiedBy="t653607"
+        cq:lastModified="{Date}2026-05-03T13:51:35.169+02:00"
+        cq:lastModifiedBy="t353355"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:primaryType="cq:PageContent"
-        jcr:title="UBS Fragment - Address 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        jcr:title="UBS Fragment - Address Generic 1"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
@@ -105,6 +104,29 @@
                                         width="6"/>
                                 </cq:responsive>
                             </textbox_1670023831_c>
+                            <textbox_547590052_co_1725847881
+                                jcr:created="{Date}2020-09-02T09:03:06.935+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2025-12-17T08:07:37.249+01:00"
+                                jcr:lastModifiedBy="t518977"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Street, no."
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                bindRef="/AddressType/StreetNumber"
+                                css="widget_ajila-forms-ubs-textbox"
+                                dorColspan="2"
+                                dorExclusion="true"
+                                guideNodeClass="guideTextBox"
+                                name="TXT_StreetNumber"
+                                textIsRich="[true,true,true,true]"
+                                visible="{Boolean}false">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_StreetNumber&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if(this.value) {\\n  window.forms.ubs.showAFShowDor(this);\\n  window.forms.ubs.hideAFHideDor(TXT_Street_AddressBlock);\\n  window.forms.ubs.hideAFHideDor(TXT_StreetNo_AddressBlock);\\n} else {\\n  window.forms.ubs.hideAFHideDor(this);\\n  window.forms.ubs.showAFShowDor(TXT_Street_AddressBlock);\\n  window.forms.ubs.showAFShowDor(TXT_StreetNo_AddressBlock);\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_StreetNumber&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if(this.value) {\\n  window.forms.ubs.showAFShowDor(this);\\n  window.forms.ubs.hideAFHideDor(TXT_Street_AddressBlock);\\n  window.forms.ubs.hideAFHideDor(TXT_StreetNo_AddressBlock);\\n} else {\\n  window.forms.ubs.hideAFHideDor(this);\\n  window.forms.ubs.showAFShowDor(TXT_Street_AddressBlock);\\n  window.forms.ubs.showAFShowDor(TXT_StreetNo_AddressBlock);\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox_547590052_co_1725847881>
                             <textbox_547590052_co
                                 jcr:created="{Date}2020-09-02T09:03:06.935+02:00"
                                 jcr:createdBy="t649798"
@@ -165,9 +187,32 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_City_AddressBlock&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;window.com.ajila.forms.ubs.components.setMandatory(this\, true);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_City_AddressBlock&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox_copy_copy_76_1545673901>
+                            <textbox_547590052_co_552784993
+                                jcr:created="{Date}2020-09-02T09:03:06.935+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2025-12-17T08:46:11.781+01:00"
+                                jcr:lastModifiedBy="t518977"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Postal code, city"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                bindRef="/AddressType/PostalCodeCity"
+                                css="widget_ajila-forms-ubs-textbox"
+                                dorColspan="2"
+                                dorExclusion="true"
+                                guideNodeClass="guideTextBox"
+                                name="TXT_PostalCodeCity"
+                                textIsRich="[true,true,true,true]"
+                                visible="{Boolean}false">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_PostalCodeCity&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if(this.value) {\\n  window.forms.ubs.showAFShowDor(this);\\n  window.forms.ubs.hideAFHideDor(TXT_PostalCode_AddressBlock);\\n  window.forms.ubs.hideAFHideDor(TXT_City_AddressBlock);\\n} else {\\n  window.forms.ubs.hideAFHideDor(this);\\n  window.forms.ubs.showAFShowDor(TXT_PostalCode_AddressBlock);\\n  window.forms.ubs.showAFShowDor(TXT_City_AddressBlock);\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_PostalCodeCity&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if(this.value) {\\n  window.forms.ubs.showAFShowDor(this);\\n  window.forms.ubs.hideAFHideDor(TXT_PostalCode_AddressBlock);\\n  window.forms.ubs.hideAFHideDor(TXT_City_AddressBlock);\\n} else {\\n  window.forms.ubs.hideAFHideDor(this);\\n  window.forms.ubs.showAFShowDor(TXT_PostalCode_AddressBlock);\\n  window.forms.ubs.showAFShowDor(TXT_City_AddressBlock);\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox_547590052_co_552784993>
                             <textbox_1259885548_c
                                 jcr:created="{Date}2020-09-02T09:04:04.338+02:00"
                                 jcr:createdBy="t649798"
@@ -189,33 +234,42 @@
                                         offset="0"
                                         width="6"/>
                                 </cq:responsive>
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_State_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var mandator = txtMandator.value;\\n\\nif (mandator === \\&quot;030\\&quot; || mandator === \\&quot;046\\&quot;) {\\n  this.visible = false;\\n  this.dorExclusion = true;\\n} else {\\n  this.visible = true;\\n  this.dorExclusion = false;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
                             </textbox_1259885548_c>
-                            <textbox_1259885548_c_518434277
-                                jcr:created="{Date}2020-09-02T09:04:04.338+02:00"
-                                jcr:createdBy="t649798"
-                                jcr:lastModified="{Date}2021-06-25T07:22:21.055+02:00"
-                                jcr:lastModifiedBy="t649798"
+                            <textbox
+                                jcr:created="{Date}2026-04-27T10:09:05.452+02:00"
+                                jcr:createdBy="t518977"
+                                jcr:lastModified="{Date}2026-04-30T14:40:02.278+02:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Province/State/District/Region"
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
                                 autofillFieldKeyword="name"
+                                bindRef="/AddressType/ProvinceStateDistrictRegion"
                                 css="widget_ajila-forms-ubs-textbox"
                                 dorColspan="1"
                                 guideNodeClass="guideTextBox"
-                                name="TXT_State_AddressBlock_APAC"
-                                textIsRich="[true,true,true]">
+                                name="TXT_District_AddressBlock_APAC"
+                                textIsRich="[true,true,true,true]">
                                 <cq:responsive jcr:primaryType="nt:unstructured">
                                     <default
                                         jcr:primaryType="nt:unstructured"
                                         offset="0"
                                         width="6"/>
                                 </cq:responsive>
-                            </textbox_1259885548_c_518434277>
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.TXT_District_AddressBlock_APAC&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var mandator = txtMandator.value;\\n\\nif (mandator === \\&quot;030\\&quot; || mandator === \\&quot;046\\&quot;) {\\n  this.visible = true;\\n  this.dorExclusion = false;\\n} else {\\n  this.visible = false;\\n  this.dorExclusion = true;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox>
                             <dropdownlist_copy_co
                                 jcr:created="{Date}2021-04-23T12:55:04.000+02:00"
                                 jcr:createdBy="t650038"
-                                jcr:lastModified="{Date}2025-05-21T09:54:04.051+02:00"
-                                jcr:lastModifiedBy="t624800"
+                                jcr:lastModified="{Date}2025-09-17T17:39:06.664+02:00"
+                                jcr:lastModifiedBy="t406261"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Country"
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/dropdownlist"
@@ -236,14 +290,12 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nwindow.forms.ubs.referencedata.getCountryList(metadata.mandator\, metadata.language\, 'DOMICILE_INDIVIDUAL'\, this);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nvar entity = metadata.mandator == \\&quot;101\\&quot; ? \\&quot;001\\&quot; : metadata.mandator;\\nwindow.forms.ubs.referencedata.getCountryList(entity\, metadata.language\, 'DOMICILE_INDIVIDUAL'\, this);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </dropdownlist_copy_co>
                         </items>
                         <fd:rules jcr:primaryType="nt:unstructured"/>
-                        <fd:scripts
-                            fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nif(metadata.mandator==\\&quot;030\\&quot; || metadata.mandator==\\&quot;046\\&quot;){\\n  window.forms.ubs.showAFShowDor(TXT_State_AddressBlock_APAC);\\n  window.forms.ubs.hideAFHideDor(TXT_State_AddressBlock);\\n} else{\\n  window.forms.ubs.showAFShowDor(TXT_State_AddressBlock);\\n  window.forms.ubs.hideAFHideDor(TXT_State_AddressBlock_APAC);\\n}&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-                            jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts jcr:primaryType="nt:unstructured"/>
                     </panel_copy_copy_copy>
                 </items>
             </rootPanel>
@@ -260,6 +312,8 @@
                     <tc/>
                     <it/>
                     <de/>
+                    <pt-br/>
+                    <en-gb/>
                 </dictionary>
             </assets>
             <signerInfo

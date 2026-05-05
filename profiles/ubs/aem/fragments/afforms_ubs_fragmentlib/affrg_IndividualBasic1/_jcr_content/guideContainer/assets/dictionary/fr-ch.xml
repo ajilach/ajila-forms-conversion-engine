@@ -4,16 +4,21 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_IndividualBasic1/jcr:content/guideContainer/assets/dictionary">
-    <_x0036_419b768-a867-42b4-a22e-9cacb9236a0a
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_UBS Fragment - Individual Basic 1"
-        sling:message="UBS Fragment - Individual Basic 1"/>
     <ae5ffcca-feb5-494f-8e93-378da26b40a8
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Fragment#2 Personal Details (Last Name, First Name)"
         sling:message="Fragment#2 Personal Details (Last Name, First Name)"/>
+    <c5921f7d-a750-43ee-b0fd-d1329d564102
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_UBS Fragment - Individual Basic 1"
+        sling:message="UBS Fragment - Individual Basic 1"/>
+    <cbdc297d-6309-4d80-b053-16193a1d1c81
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_CH Fragment - Individual Basic 1"
+        sling:message="CH Fragment - Individual Basic 1"/>
     <d323276d-866d-41e2-ad87-0e7f65db6462
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
@@ -53,7 +58,7 @@
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Last name"
-        sling:message="Nom de famille"/>
+        sling:message="Nom"/>
     <fd_Last_x0020_name_x0028_36480617
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

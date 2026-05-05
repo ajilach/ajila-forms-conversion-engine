@@ -3,12 +3,22 @@
     jcr:language="pt"
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
-    sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1/jcr:content/guideContainer/assets/dictionary">
+    sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1/jcr:content/guideContainer/assets/dictionary">
+    <_x0031_31ee87f-4335-4a90-9071-f70a3b570498
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Postal code, city"
+        sling:message="CEP, cidade"/>
     <_x0036_965d8cb-6865-427c-849a-82b95f1fcec1
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_CH Fragment - Address 1"
         sling:message="CH Fragment - Address 1"/>
+    <_x0039_bede7ff-822f-4ea9-adc0-7795878e8c70
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Street, no."
+        sling:message="Street, no."/>
     <fd_Additional-353888195
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

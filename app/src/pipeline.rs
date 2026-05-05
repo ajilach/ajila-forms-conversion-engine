@@ -432,10 +432,13 @@ pub async fn run_blueprint_pipeline(
         && blueprint::has_xsd_config(profile_name)
         && !merged.context.variables.is_empty()
     {
-        let xsd_config = match blueprint::load_xsd_config(profile_name) {
+        let mut xsd_config = match blueprint::load_xsd_config(profile_name) {
             Ok(cfg) => cfg,
             Err(e) => fail!(format!("Failed to load XSD profile: {e}")),
         };
+        if let Some(ref fc) = state.form_code {
+            xsd_config.form_code = Some(fc.clone());
+        }
         state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
     }
 
@@ -482,7 +485,7 @@ fn selection_signature(selections: &[blueprint::Selection]) -> String {
 
 fn selections_match(a: &[blueprint::Selection], b: &[blueprint::Selection]) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(left, right)| {
-            left.kind == right.kind && left.option_index == right.option_index
-        })
+        && a.iter()
+            .zip(b.iter())
+            .all(|(left, right)| left.kind == right.kind && left.option_index == right.option_index)
 }
