@@ -242,7 +242,7 @@ impl AemConfig {
             fragment_ref_prefix: profile
                 .fragment_ref_prefix
                 .clone()
-                .unwrap_or_else(|| "/content/forms/af/".into()),
+                .unwrap_or_else(|| "/content/dam/formsanddocuments/".into()),
             fragment_paths: match &profile.fragment_paths {
                 Some(tmpl) => {
                     let rendered = template::render_string(tmpl, &tera_ctx)?;
@@ -346,7 +346,7 @@ impl AemConfig {
             xsd_config: None,
 
             use_fragments: false,
-            fragment_ref_prefix: "/content/forms/af/".into(),
+            fragment_ref_prefix: "/content/dam/formsanddocuments/".into(),
             fragment_paths: Vec::new(),
             fragments: Vec::new(),
 
@@ -570,7 +570,7 @@ pub enum AemNode {
         uuid: Uuid,
         name: String,
         /// JCR path to the fragment (e.g.
-        /// `"/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1"`).
+        /// `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
         frag_ref: String,
         /// XSD path for `bindRef` attribute.
         bind_ref: Option<String>,

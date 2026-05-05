@@ -2804,7 +2804,7 @@ mod tests {
     fn panel_leaves_subset_of_fragment_requires_all_leaves() {
         let fragment = ParsedFragment {
             dir_name: "frag1".to_string(),
-            frag_ref: "/content/forms/af/frag1".to_string(),
+            frag_ref: "/content/dam/formsanddocuments/frag1".to_string(),
             name: "Frag1".to_string(),
             xsd_type_name: "SomeType".to_string(),
             bound_elements: vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()],
