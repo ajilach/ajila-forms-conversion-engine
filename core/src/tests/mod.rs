@@ -18285,6 +18285,118 @@ fn test_xsd_profile_master_language_defaults_to_none() {
 }
 
 #[test]
+fn test_xsd_section_name_override_via_pattern() {
+    use crate::structured::*;
+    use crate::xsd::generate_xsd;
+    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
+    use std::collections::HashMap;
+
+    // A section with heading "Step 4" but body content mentioning "signature"
+    // and "client" should be renamed to "AccountHolderSignature" by pattern.
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Step 4"),
+            som_path: None,
+            source_name: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.sig_name"),
+            som_path: None,
+            label: Some(InlineText::plain("Signature of client")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut sections = HashMap::new();
+    sections.insert(
+        "AccountHolderSignature".to_string(),
+        SectionMapping {
+            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
+        },
+    );
+
+    let profile = XsdProfile {
+        sections,
+        ..Default::default()
+    };
+    let config = XsdConfig::from_profile(profile);
+
+    let xsd = generate_xsd(&nodes, &config);
+
+    // The section should use the configured name, not PascalCase of "Step 4"
+    assert!(
+        xsd.contains("name=\"AccountHolderSignature\""),
+        "XSD section should use configured name 'AccountHolderSignature'. Got:\n{}",
+        xsd
+    );
+    assert!(
+        !xsd.contains("name=\"Step4\""),
+        "XSD section should NOT use heading-derived name 'Step4'. Got:\n{}",
+        xsd
+    );
+}
+
+#[test]
+fn test_xsd_section_name_override_no_match_falls_back() {
+    use crate::structured::*;
+    use crate::xsd::generate_xsd;
+    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
+    use std::collections::HashMap;
+
+    // A section that does NOT match any pattern should use the default name
+    let nodes = vec![
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::H2,
+            content: InlineText::plain("Personal Data"),
+            som_path: None,
+            source_name: None,
+        }),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("test.name"),
+            som_path: None,
+            label: Some(InlineText::plain("Full Name")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+        }),
+    ];
+
+    let mut sections = HashMap::new();
+    sections.insert(
+        "AccountHolderSignature".to_string(),
+        SectionMapping {
+            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
+        },
+    );
+
+    let profile = XsdProfile {
+        sections,
+        ..Default::default()
+    };
+    let config = XsdConfig::from_profile(profile);
+
+    let xsd = generate_xsd(&nodes, &config);
+
+    // The section should use the default PascalCase name since no pattern matched
+    assert!(
+        xsd.contains("name=\"PersonalData\""),
+        "XSD section should fall back to PascalCase 'PersonalData'. Got:\n{}",
+        xsd
+    );
+}
+
+#[test]
 #[should_panic(expected = "bind_to_xsd=true requires xsd_config to be set")]
 fn test_to_aem_panics_when_bind_to_xsd_without_xsd_config() {
     use crate::aem::AemConfig;

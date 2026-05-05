@@ -152,4 +152,14 @@ type = "xs:string"
 [elements.CorrespondenceLanguage]
 synonyms = ["Correspondence Language", "Korrespondenzsprache"]
 type = "xs:string"
- 
+
+# ─── Sections ──────────────────────────────────────────────────────────────────
+#
+# [sections.<name>]       — section name overrides based on content matching
+#   patterns              — list of regex patterns (case-insensitive) matched
+#                           against the full section text (heading + body).
+#                           Longest match wins when multiple patterns match.
+#
+# Example:
+# [sections.AccountHolderSignature]
+# patterns = ["(?:signature|unterschrift).*(?:client|kunde)"]

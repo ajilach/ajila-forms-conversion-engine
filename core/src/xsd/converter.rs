@@ -10,7 +10,7 @@ use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, S
 
 use super::{
     XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
-    to_pascal_case,
+    resolve_section_name, to_pascal_case,
 };
 
 // ============================================================================
@@ -259,6 +259,84 @@ fn flatten_group_for_hierarchy(group: &GroupNode) -> Vec<FlatItem> {
 }
 
 // ============================================================================
+// Section text extraction (for keyword/regex matching)
+// ============================================================================
+
+/// Collect all plain text from a section (heading + all children) into a
+/// single string suitable for keyword/regex matching.
+fn section_full_text(section: &Section, config: &XsdConfig) -> String {
+    let mut parts = Vec::new();
+    if let Some(heading) = &section.heading {
+        parts.push(config.label_text(&heading.content));
+    }
+    for item in &section.children {
+        collect_item_text(item, config, &mut parts);
+    }
+    parts.join(" ")
+}
+
+/// Recursively collect text from a SectionItem.
+fn collect_item_text(item: &SectionItem, config: &XsdConfig, parts: &mut Vec<String>) {
+    match item {
+        SectionItem::SubSection(sub) => {
+            if let Some(heading) = &sub.heading {
+                parts.push(config.label_text(&heading.content));
+            }
+            for child in &sub.children {
+                collect_item_text(child, config, parts);
+            }
+        }
+        SectionItem::Node(node) => {
+            collect_node_text(node, config, parts);
+        }
+    }
+}
+
+/// Recursively collect text from a StructuredNode.
+fn collect_node_text(node: &StructuredNode, config: &XsdConfig, parts: &mut Vec<String>) {
+    match node {
+        StructuredNode::Heading(h) => {
+            parts.push(config.label_text(&h.content));
+        }
+        StructuredNode::Paragraph(p) => {
+            parts.push(config.label_text(&p.content));
+        }
+        StructuredNode::Field(f) => {
+            if let Some(label) = &f.label {
+                parts.push(config.label_text(label));
+            }
+        }
+        StructuredNode::Group(g) => {
+            for child in &g.children {
+                collect_node_text(child, config, parts);
+            }
+        }
+        StructuredNode::Repeatable(r) => {
+            collect_node_text(&r.item, config, parts);
+        }
+        StructuredNode::Conditional(c) => {
+            collect_node_text(&c.content, config, parts);
+        }
+        StructuredNode::GridLayout(grid) => {
+            for elem in &grid.elements {
+                collect_node_text(&elem.node, config, parts);
+            }
+        }
+        StructuredNode::List(list) => {
+            for item in &list.items {
+                parts.push(config.label_text(&item.content));
+            }
+        }
+        StructuredNode::Table(table) => {
+            if let Some(caption) = &table.caption {
+                parts.push(config.label_text(caption));
+            }
+        }
+        StructuredNode::Image(_) | StructuredNode::Empty => {}
+    }
+}
+
+// ============================================================================
 // Section → XsdNode building
 // ============================================================================
 
@@ -267,7 +345,8 @@ fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) 
     match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_pascal_case(&label);
+            let name = resolve_section_name(&section_full_text(section, config), &config.profile)
+                .unwrap_or_else(|| to_pascal_case(&label));
 
             // Collect child (name, type) pairs and try auto-matching
             let child_pairs = collect_child_name_type_pairs(section, config);
@@ -668,7 +747,8 @@ fn collect_section_bind_refs(
     let current_path = match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_pascal_case(&label);
+            let name = resolve_section_name(&section_full_text(section, config), &config.profile)
+                .unwrap_or_else(|| to_pascal_case(&label));
             let path = format!("{}/{}", parent_path, name);
             // Use or_insert so that the first (shallowest) heading with a
             // given label wins.  The AEM converter only creates panels for

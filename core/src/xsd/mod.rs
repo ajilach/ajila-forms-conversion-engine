@@ -278,6 +278,14 @@ pub struct XsdProfile {
     #[serde(default)]
     pub elements: HashMap<String, ElementMapping>,
 
+    /// Mapping from canonical section names to their regex-based config.
+    ///
+    /// When a section's full text (heading + body until next heading) matches
+    /// one of the configured patterns, the section's XSD element name is
+    /// overridden with the TOML key.
+    #[serde(default)]
+    pub sections: HashMap<String, SectionMapping>,
+
     /// Prefix prepended to every auto-discovered include path.
     ///
     /// For example, if the types directory contains `AFFragments/Signature.xsd`
@@ -321,6 +329,7 @@ impl Default for XsdProfile {
     fn default() -> Self {
         Self {
             elements: HashMap::new(),
+            sections: HashMap::new(),
             schema_location_prefix: default_schema_location_prefix(),
             master_language: None,
             root_element_name: default_root_element_name(),
@@ -342,6 +351,18 @@ pub struct ElementMapping {
     /// predefined type name like `"CurrencyType"`).
     #[serde(rename = "type")]
     pub type_ref: String,
+}
+
+/// Configuration for a section name override.
+///
+/// When a section's full text content (heading + body) matches one of the
+/// `patterns` (regex, case-insensitive), the resulting XSD element uses
+/// the canonical name (the TOML key) instead of the heading-derived name.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SectionMapping {
+    /// Regex patterns to match against the full section text.
+    /// Matched case-insensitively.
+    pub patterns: Vec<String>,
 }
 
 // ============================================================================
@@ -1153,6 +1174,31 @@ pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElem
         }
     }
     best.map(|(_, resolved)| resolved)
+}
+
+/// Attempt to resolve a section name by matching the full section text against
+/// the `[sections]` config patterns.
+///
+/// Finds the best match by picking the pattern whose regex match is longest
+/// (most specific). Patterns are matched case-insensitively.
+///
+/// Returns `Some(configured_name)` if a pattern matches, `None` otherwise.
+pub fn resolve_section_name(section_text: &str, profile: &XsdProfile) -> Option<String> {
+    let mut best: Option<(usize, String)> = None;
+    for (name, mapping) in &profile.sections {
+        for pattern in &mapping.patterns {
+            let case_insensitive_pattern = format!("(?i){}", pattern);
+            if let Ok(re) = regex_lite::Regex::new(&case_insensitive_pattern) {
+                if let Some(m) = re.find(section_text) {
+                    let len = m.len();
+                    if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
+                        best = Some((len, name.clone()));
+                    }
+                }
+            }
+        }
+    }
+    best.map(|(_, name)| name)
 }
 
 /// Convert a label string to a snake_case identifier suitable for XSD names.
