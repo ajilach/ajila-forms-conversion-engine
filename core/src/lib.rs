@@ -181,6 +181,7 @@ pub use image::RgbaImage;
 // Pipeline
 pub use pipeline::{
     PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, StateMap, run_pipeline,
+    run_pipeline_async,
 };
 
 use std::path::Path;

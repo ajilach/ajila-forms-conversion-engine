@@ -1,9 +1,9 @@
-//! Core blueprint processing pipeline.
+//! Core blueprint processing pipeline (app wrapper).
 //!
-//! Provides a single async entry point, [`run_blueprint_pipeline`], that drives
-//! each phase of the pipeline individually and yields between phases so the
-//! caller can reflect incremental progress (UI re-render, session store update,
-//! etc.).
+//! Provides [`run_blueprint_pipeline`] which delegates to the core
+//! [`blueprint::run_pipeline_async`] and maps its events into the app's
+//! [`ProcessingState`].  Post-processing (HTML / AEM / XSD generation) is
+//! handled after the core pipeline completes.
 
 use crate::models::{ProcessingState, ProcessingStep};
 use crate::platform::async_sleep_ms;
@@ -23,11 +23,7 @@ pub async fn run_blueprint_pipeline(
     profile: Option<String>,
     mut on_progress: impl FnMut(&ProcessingState),
 ) {
-    use blueprint::{
-        Blueprint, Context, DocumentEnvelope, HtmlConfig, MergeInput, RecursiveMerger, Selection,
-        StateMap, merge_translations,
-    };
-    use std::collections::{BTreeSet, HashMap};
+    use blueprint::{HtmlConfig, PipelineConfig, PipelineEvent, PipelineStep as CoreStep};
 
     let mut state = ProcessingState::new();
 
@@ -50,341 +46,79 @@ pub async fn run_blueprint_pipeline(
         }};
     }
 
-    // ── Phase 1: Parsing ─────────────────────────────────────────────────
     state.step = ProcessingStep::Parsing;
     state.step_progress = Some(0.0);
     on_progress(&state);
-    async_sleep_ms(0).await;
 
-    let total_files = files.len();
-    let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
-    for (i, (filename, bytes)) in files.iter().enumerate() {
-        let result = if blueprint::detect_aem_zip(bytes) {
-            Blueprint::from_aem_zip(bytes)
-        } else {
-            Blueprint::from_pdf_bytes(bytes)
-        };
-        match result {
-            Ok(bp) => {
-                let language = bp.language().to_string();
-                blueprints.push((filename.clone(), language, bp));
-            }
-            Err(e) => fail!(format!("{e}")),
-        }
-        state.step_progress = Some((i + 1) as f32 / total_files as f32);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-    }
+    let config = PipelineConfig::default();
 
-    // ── AEM shortcut: skip exploration/rendering, use direct structured ──
-    let any_aem = blueprints.iter().any(|(_, _, bp)| bp.is_aem());
-    let all_aem = blueprints.iter().all(|(_, _, bp)| bp.is_aem());
-    if any_aem && !all_aem {
-        fail!("Cannot mix PDF and AEM ZIP files. Please upload only PDFs or only AEM ZIPs.".into());
-    }
-    if all_aem {
-        state.step = ProcessingStep::Structuring;
-        state.step_progress = Some(0.0);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        let mut envelopes: Vec<DocumentEnvelope> = Vec::new();
-        for (i, (filename, _language, bp)) in blueprints.iter().enumerate() {
-            match bp.aem_structured() {
-                Some(env) => envelopes.push(env),
-                None => fail!(format!("AEM structured conversion failed for {filename}")),
-            }
-            state.step_progress = Some((i + 1) as f32 / blueprints.len() as f32);
-            on_progress(&state);
-            async_sleep_ms(0).await;
-        }
-
-        state.step = ProcessingStep::Merging;
-        state.step_progress = Some(0.0);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        let semantic_matcher = blueprint::semantic::SemanticMatcher::new().ok();
-        let semantic_ref = semantic_matcher.as_ref();
-
-        let merged = if envelopes.len() > 1 {
-            match merge_translations(envelopes, semantic_ref) {
-                Ok(m) => m,
-                Err(e) => fail!(format!("{e}")),
-            }
-        } else {
-            envelopes.into_iter().next().unwrap()
-        };
-
-        state.envelope = Some(merged.clone());
-        state.step_progress = Some(0.5);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        // Jump to post-processing
-        let json = match serde_json::to_string_pretty(&merged) {
-            Ok(j) => j,
-            Err(e) => fail!(format!("Failed to serialize JSON: {e}")),
-        };
-
-        state.step_progress = Some(0.7);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        if let Some(ref profile_name) = profile
-            && blueprint::has_html_config(profile_name)
-        {
-            let html_config = match blueprint::load_html_custom_styles(profile_name) {
-                Ok(styles) => HtmlConfig {
-                    custom_styles: Some(styles),
-                    ..HtmlConfig::default()
-                },
-                Err(e) => fail!(format!("Failed to load HTML profile: {e}")),
-            };
-            state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
-        }
-
-        state.step_progress = Some(0.8);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        state.step_progress = Some(1.0);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-
-        state.step = ProcessingStep::Complete;
-        state.step_progress = None;
-        state.merged_json = Some(json);
-        on_progress(&state);
-        return;
-    }
-
-    // ── Phase 2: Exhaustive exploration ──────────────────────────────────
-    state.step = ProcessingStep::ExhaustiveSearching;
-    state.step_progress = Some(0.0);
-    on_progress(&state);
-    async_sleep_ms(0).await;
-
-    let total_blueprints = blueprints.len();
-    let mut explored: Vec<(String, String, blueprint::FormStates, Context)> = Vec::new();
-    for (i, (filename, language, mut bp)) in blueprints.into_iter().enumerate() {
-        match bp.states() {
-            Ok(form_states) => {
-                let context = bp.context();
-                explored.push((filename, language, form_states, context));
-            }
-            Err(e) => fail!(format!("{e}")),
-        }
-        state.step_progress = Some((i + 1) as f32 / total_blueprints as f32);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-    }
-
-    // ── Phase 3: Flattening ──────────────────────────────────────────────
-    state.step = ProcessingStep::Flattening;
-    state.step_progress = Some(0.0);
-    on_progress(&state);
-    async_sleep_ms(0).await;
-
-    let config = blueprint::PipelineConfig::default();
-
-    if config.render_plain {
-        let total_plain: usize = explored.iter().map(|(_, _, fs, _)| fs.len()).sum();
-        let mut done_plain: usize = 0;
-        for (_filename, language, form_states, _context) in &explored {
-            for (state_idx, form_state) in form_states.iter().enumerate() {
-                let label = format!("{}_{}", language, state_idx);
-                match form_state.render_plain(config.scale) {
-                    Ok(image) => {
-                        let mut png_bytes = Vec::new();
-                        match encode_rgba_to_png(&image, &mut png_bytes) {
-                            Ok(()) => {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                                state.plain_images.insert(label, b64);
-                            }
-                            Err(e) => state
-                                .warnings
-                                .push(format!("PNG encode failed for {label}: {e}")),
-                        }
-                    }
-                    Err(e) => state
-                        .warnings
-                        .push(format!("Plain render failed for {label}: {e}")),
-                }
-                done_plain += 1;
-                state.step_progress = Some(done_plain as f32 / total_plain as f32);
+    // Run the core pipeline with async yields.
+    let result = blueprint::run_pipeline_async(
+        files,
+        &config,
+        |event| match event {
+            PipelineEvent::StepChanged(step) => {
+                state.step = match step {
+                    CoreStep::Parsing => ProcessingStep::Parsing,
+                    CoreStep::ExhaustiveSearching => ProcessingStep::ExhaustiveSearching,
+                    CoreStep::Flattening => ProcessingStep::Flattening,
+                    CoreStep::Structuring => ProcessingStep::Structuring,
+                    CoreStep::Merging => ProcessingStep::Merging,
+                    CoreStep::Complete => ProcessingStep::Complete,
+                };
+                state.step_progress = Some(0.0);
                 on_progress(&state);
-                async_sleep_ms(0).await;
             }
-        }
-    }
-
-    // ── Phase 4: Structuring ─────────────────────────────────────────────
-    state.step = ProcessingStep::Structuring;
-    state.step_progress = Some(0.0);
-    on_progress(&state);
-    async_sleep_ms(0).await;
-
-    let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
-
-    let total_structuring: usize = explored.iter().map(|(_, _, fs, _)| fs.len()).sum();
-    let mut done_structuring: usize = 0;
-
-    for (_filename, language, form_states, context) in &explored {
-        let mut state_map: StateMap = HashMap::new();
-
-        for (state_idx, form_state) in form_states.iter().enumerate() {
-            let label = format!("{}_{}", language, state_idx);
-
-            if config.render_labelled {
-                match form_state.render_labelled(config.scale) {
-                    Ok(image) => {
-                        let mut png_bytes = Vec::new();
-                        match encode_rgba_to_png(&image, &mut png_bytes) {
-                            Ok(()) => {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                                state.labelled_images.insert(label.clone(), b64);
-                            }
-                            Err(e) => state
-                                .warnings
-                                .push(format!("PNG encode failed for {label}: {e}")),
-                        }
+            PipelineEvent::StatesFound { .. } => {}
+            PipelineEvent::PlainRender { label, image } => {
+                let mut png_bytes = Vec::new();
+                match encode_rgba_to_png(&image, &mut png_bytes) {
+                    Ok(()) => {
+                        let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                        state.plain_images.insert(label, b64);
                     }
                     Err(e) => state
                         .warnings
-                        .push(format!("Labelled render failed for {label}: {e}")),
+                        .push(format!("PNG encode failed for {label}: {e}")),
                 }
+                on_progress(&state);
             }
-
-            let envelope = form_state.structured(context.clone());
-            let signature = selection_signature(&form_state.selections);
-
-            if state_map
-                .insert(signature.clone(), (form_state.selections.clone(), envelope))
-                .is_some()
-            {
-                fail!(format!(
-                    "Duplicate state signature '{signature}' found in language '{language}'"
-                ));
-            }
-
-            done_structuring += 1;
-            state.step_progress = Some(done_structuring as f32 / total_structuring as f32);
-            on_progress(&state);
-            async_sleep_ms(0).await;
-        }
-
-        per_language_state_maps.push((language.clone(), state_map));
-    }
-
-    // ── Phase 5: Merging ─────────────────────────────────────────────────
-    state.step = ProcessingStep::Merging;
-    state.step_progress = Some(0.0);
-    on_progress(&state);
-    async_sleep_ms(0).await;
-
-    if per_language_state_maps.is_empty() {
-        fail!("No envelopes to merge".into());
-    }
-
-    let mut expected_signatures = BTreeSet::new();
-    if let Some((_, first_map)) = per_language_state_maps.first() {
-        expected_signatures.extend(first_map.keys().cloned());
-    }
-
-    for (language, state_map) in per_language_state_maps.iter().skip(1) {
-        let signatures: BTreeSet<String> = state_map.keys().cloned().collect();
-        if signatures != expected_signatures {
-            let missing: Vec<String> = expected_signatures
-                .difference(&signatures)
-                .cloned()
-                .collect();
-            let extra: Vec<String> = signatures
-                .difference(&expected_signatures)
-                .cloned()
-                .collect();
-            fail!(format!(
-                "State signature mismatch for language '{language}'. Missing: [{}], Extra: [{}]",
-                missing.join(", "),
-                extra.join(", ")
-            ));
-        }
-    }
-
-    let total_signatures = expected_signatures.len();
-
-    let semantic_matcher_state = blueprint::semantic::SemanticMatcher::new().ok();
-    let semantic_ref_state = semantic_matcher_state.as_ref();
-
-    let mut translated_states: Vec<(Vec<Selection>, DocumentEnvelope)> = Vec::new();
-    for (i, signature) in expected_signatures.iter().enumerate() {
-        let mut canonical_selections: Option<Vec<Selection>> = None;
-        let mut state_envelopes: Vec<DocumentEnvelope> = Vec::new();
-
-        for (language, state_map) in &per_language_state_maps {
-            let Some((selections, envelope)) = state_map.get(signature) else {
-                fail!(format!(
-                    "State signature '{signature}' missing for language '{language}'"
-                ));
-            };
-
-            if let Some(existing) = &canonical_selections {
-                if !selections_match(existing, selections) {
-                    fail!(format!(
-                        "Selection mismatch for state signature '{signature}' between languages"
-                    ));
+            PipelineEvent::LabelledRender { label, image } => {
+                let mut png_bytes = Vec::new();
+                match encode_rgba_to_png(&image, &mut png_bytes) {
+                    Ok(()) => {
+                        let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                        state.labelled_images.insert(label, b64);
+                    }
+                    Err(e) => state
+                        .warnings
+                        .push(format!("PNG encode failed for {label}: {e}")),
                 }
-            } else {
-                canonical_selections = Some(selections.clone());
+                on_progress(&state);
             }
-
-            state_envelopes.push(envelope.clone());
-        }
-
-        let merged_state = if state_envelopes.len() > 1 {
-            match merge_translations(state_envelopes, semantic_ref_state) {
-                Ok(m) => m,
-                Err(e) => fail!(format!("{e}")),
+            PipelineEvent::AnnotatedRender { .. } => {}
+            PipelineEvent::Warning(msg) => {
+                state.warnings.push(msg);
+                on_progress(&state);
             }
-        } else {
-            state_envelopes.into_iter().next().unwrap()
-        };
+        },
+        || async_sleep_ms(0),
+    )
+    .await;
 
-        translated_states.push((canonical_selections.unwrap_or_default(), merged_state));
-
-        state.step_progress = Some((i + 1) as f32 / total_signatures as f32 * 0.5);
-        on_progress(&state);
-        async_sleep_ms(0).await;
-    }
-
-    if translated_states.is_empty() {
-        fail!("No translated states to merge".into());
-    }
-
-    let merged_context = translated_states[0].1.context.clone();
-
-    let merge_inputs: Vec<MergeInput> = translated_states
-        .iter()
-        .map(|(selections, envelope)| MergeInput::new(selections.clone(), envelope.content.clone()))
-        .collect();
-    let merged_content = if merge_inputs.is_empty() {
-        Vec::new()
-    } else {
-        RecursiveMerger::new(merge_inputs).merge()
+    let output = match result {
+        Ok(o) => o,
+        Err(e) => fail!(format!("{e}")),
     };
 
-    let merged = DocumentEnvelope {
-        context: merged_context,
-        content: merged_content,
-        state_count: translated_states.len(),
-    };
-    // Store the envelope for the editor
+    // ── Post-processing ──────────────────────────────────────────────────
+    let merged = output.merged;
+
     state.envelope = Some(merged.clone());
     state.step_progress = Some(0.6);
     on_progress(&state);
     async_sleep_ms(0).await;
 
-    // ── Post-processing ──────────────────────────────────────────────────
     let json = match serde_json::to_string_pretty(&merged) {
         Ok(j) => j,
         Err(e) => fail!(format!("Failed to serialize JSON: {e}")),
@@ -466,26 +200,4 @@ pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> R
     encoder
         .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
         .map_err(|e| format!("PNG encoding error: {}", e))
-}
-
-fn selection_signature(selections: &[blueprint::Selection]) -> String {
-    selections
-        .iter()
-        .map(|s| {
-            let kind = match s.kind {
-                blueprint::SelectionKind::Radio => "radio",
-                blueprint::SelectionKind::Checkbox => "checkbox",
-                blueprint::SelectionKind::Dropdown => "dropdown",
-            };
-            format!("{}|{}", kind, s.option_index)
-        })
-        .collect::<Vec<_>>()
-        .join("->")
-}
-
-fn selections_match(a: &[blueprint::Selection], b: &[blueprint::Selection]) -> bool {
-    a.len() == b.len()
-        && a.iter()
-            .zip(b.iter())
-            .all(|(left, right)| left.kind == right.kind && left.option_index == right.option_index)
 }
