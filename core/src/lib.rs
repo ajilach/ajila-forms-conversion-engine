@@ -169,6 +169,7 @@ pub use xsd::{
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
     extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema,
     load_xsd_config_from_dir, parse_schema, resolve_section_name,
+    resolve_section_name_with_heading,
 };
 
 // XFA layer

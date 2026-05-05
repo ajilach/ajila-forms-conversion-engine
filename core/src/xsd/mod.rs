@@ -1184,21 +1184,100 @@ pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElem
 ///
 /// Returns `Some(configured_name)` if a pattern matches, `None` otherwise.
 pub fn resolve_section_name(section_text: &str, profile: &XsdProfile) -> Option<String> {
-    let mut best: Option<(usize, String)> = None;
+    resolve_section_name_with_heading(section_text, None, profile)
+}
+
+/// Resolve a section name by matching patterns against heading and body text.
+///
+/// If `heading_text` is provided, patterns are first tried against only the
+/// heading. Any heading match wins over a body-text-only match regardless of
+/// match length. Among heading-only matches (or body-only matches), the longest
+/// match wins.
+///
+/// When no heading pattern matches but the heading appears "meaningful" (not
+/// just a step number or generic prefix), body-text matches are suppressed
+/// to let the PascalCase fallback take over.
+pub fn resolve_section_name_with_heading(
+    section_text: &str,
+    heading_text: Option<&str>,
+    profile: &XsdProfile,
+) -> Option<String> {
+    let mut best_heading: Option<(usize, String)> = None;
+    let mut best_body: Option<(usize, String)> = None;
+
     for (name, mapping) in &profile.sections {
         for pattern in &mapping.patterns {
             let case_insensitive_pattern = format!("(?i){}", pattern);
             if let Ok(re) = regex_lite::Regex::new(&case_insensitive_pattern) {
+                // Try heading first (higher priority)
+                if let Some(ht) = heading_text {
+                    if let Some(m) = re.find(ht) {
+                        let len = m.len();
+                        if best_heading
+                            .as_ref()
+                            .is_none_or(|(best_len, _)| len > *best_len)
+                        {
+                            best_heading = Some((len, name.clone()));
+                        }
+                    }
+                }
+                // Try full text (lower priority)
                 if let Some(m) = re.find(section_text) {
                     let len = m.len();
-                    if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
-                        best = Some((len, name.clone()));
+                    if best_body
+                        .as_ref()
+                        .is_none_or(|(best_len, _)| len > *best_len)
+                    {
+                        best_body = Some((len, name.clone()));
                     }
                 }
             }
         }
     }
-    best.map(|(_, name)| name)
+
+    // Heading matches always take priority
+    if best_heading.is_some() {
+        return best_heading.map(|(_, name)| name);
+    }
+
+    // Body-text matches only apply when the heading is generic (a step number,
+    // a bare digit, etc.) — otherwise let the caller fall back to PascalCase.
+    if let Some(ht) = heading_text {
+        if !is_generic_heading(ht) {
+            return None;
+        }
+    }
+
+    best_body.map(|(_, name)| name)
+}
+
+/// Returns true if a heading is "generic" (not descriptive enough to use as a
+/// section name). Generic headings are e.g. "Step 4", "1", "Schritt 2", etc.
+fn is_generic_heading(heading: &str) -> bool {
+    let trimmed = heading.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    // Pure digits or digits with a trailing dot/paren
+    if trimmed
+        .trim_end_matches(|c: char| c == '.' || c == ')' || c == ' ')
+        .chars()
+        .all(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    // "Step N", "Schritt N", "Étape N", "Fase N", "Paso N"
+    let lower = trimmed.to_lowercase();
+    let prefixes = ["step", "schritt", "étape", "fase", "paso"];
+    for prefix in &prefixes {
+        if lower.starts_with(prefix) {
+            let rest = lower[prefix.len()..].trim_start();
+            if rest.is_empty() || rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Convert a label string to a snake_case identifier suitable for XSD names.

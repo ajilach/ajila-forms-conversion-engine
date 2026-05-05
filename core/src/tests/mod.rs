@@ -17438,17 +17438,17 @@ fn test_aaai_en_xsd_signature_type_matching() {
         );
     }
 
-    // 7) Assert the AuthorizedRepresentativeS section is matched to multiple types
+    // 7) Assert the AuthRep section is matched to multiple types
     //    (IndividualBasicType + AddressType), so it contains typed child elements.
     let mut auth_rep_matches = Vec::new();
     find_elements_by_name(
         &schema.root,
-        "AuthorizedRepresentativeS",
+        "AuthRep",
         &mut auth_rep_matches,
     );
     assert!(
         !auth_rep_matches.is_empty(),
-        "Should find 'AuthorizedRepresentativeS' element"
+        "Should find 'AuthRep' element"
     );
     if let XsdNode::Element {
         content, type_ref, ..
@@ -17456,7 +17456,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
     {
         assert!(
             type_ref.is_none(),
-            "AuthorizedRepresentativeS should have inline content (multi-type match)"
+            "AuthRep should have inline content (multi-type match)"
         );
         let content = content.as_ref().expect("Should have inline content");
         if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
@@ -17481,7 +17481,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
                 child_type_refs
             );
         } else {
-            panic!("Expected ComplexType content for AuthorizedRepresentativeS");
+            panic!("Expected ComplexType content for AuthRep");
         }
     }
 }
@@ -17590,10 +17590,10 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     }
 
     let mut matches = Vec::new();
-    find_elements_by_name(&schema.root, "AuthorizedRepresentativeS", &mut matches);
+    find_elements_by_name(&schema.root, "AuthRep", &mut matches);
     assert!(
         !matches.is_empty(),
-        "Should find 'AuthorizedRepresentativeS' element"
+        "Should find 'AuthRep' element"
     );
 
     // It should be an inline complexType containing two typed child elements
@@ -17603,7 +17603,7 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     {
         assert!(
             type_ref.is_none(),
-            "AuthorizedRepresentativeS should NOT have a single type_ref"
+            "AuthRep should NOT have a single type_ref"
         );
         let content = content.as_ref().expect("Should have inline content");
         if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
@@ -18151,25 +18151,25 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     let auth_rep_fields: Vec<_> = maps
         .fields
         .iter()
-        .filter(|(_, path)| path.contains("/AuthorizedRepresentativeS/"))
+        .filter(|(_, path)| path.contains("/AuthRep/"))
         .collect();
     assert!(
         !auth_rep_fields.is_empty(),
-        "Should have fields under AuthorizedRepresentativeS section"
+        "Should have fields under AuthRep section"
     );
     // At least some fields should go through wrapper elements (IndividualBasic or Address),
-    // not be directly under AuthorizedRepresentativeS.
+    // not be directly under AuthRep.
     let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
-        // Find the part after "AuthorizedRepresentativeS/"
+        // Find the part after "AuthRep/"
         let after = path
-            .split("/AuthorizedRepresentativeS/")
+            .split("/AuthRep/")
             .last()
             .unwrap_or("");
         after.contains('/') // has another segment before the field name (= wrapper)
     });
     assert!(
         has_wrapper_paths,
-        "Multi-type section AuthorizedRepresentativeS should have wrapper paths. Got: {:?}",
+        "Multi-type section AuthRep should have wrapper paths. Got: {:?}",
         auth_rep_fields
     );
 }
@@ -18246,10 +18246,10 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
     );
 
     // 6) Similarly, "Unterschrift(en)" / "Signature(s)" should produce
-    //    "SignatureS" not "UnterschriftEn".
+    //    "Signature" (from config pattern) not "UnterschriftEn".
     assert!(
-        names.contains(&"SignatureS".to_string()),
-        "XSD should contain element 'SignatureS' (English). Got: {:?}",
+        names.contains(&"Signature".to_string()),
+        "XSD should contain element 'Signature' (from config pattern). Got: {:?}",
         names
     );
     assert!(
@@ -18496,12 +18496,12 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
 
-    // The DOBandNationality fragment bind_ref should contain "AuthorizedRepresentativeS/IndividualBasic"
+    // The DOBandNationality fragment bind_ref should contain "AuthRep/IndividualBasic"
     for (_, bind_ref) in &dob_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
-            br.contains("/AuthorizedRepresentativeS/IndividualBasic"),
-            "DOBandNationality fragment bind_ref should include AuthorizedRepresentativeS/IndividualBasic. Got: {}",
+            br.contains("/AuthRep/IndividualBasic"),
+            "DOBandNationality fragment bind_ref should include AuthRep/IndividualBasic. Got: {}",
             br
         );
     }

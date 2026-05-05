@@ -10,7 +10,7 @@ use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, S
 
 use super::{
     XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
-    resolve_section_name, to_pascal_case,
+    resolve_section_name_with_heading, to_pascal_case,
 };
 
 // ============================================================================
@@ -345,8 +345,13 @@ fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) 
     match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = resolve_section_name(&section_full_text(section, config), &config.profile)
-                .unwrap_or_else(|| to_pascal_case(&label));
+            let heading_text = config.label_text(&heading.content);
+            let name = resolve_section_name_with_heading(
+                &section_full_text(section, config),
+                Some(&heading_text),
+                &config.profile,
+            )
+            .unwrap_or_else(|| to_pascal_case(&label));
 
             // Collect child (name, type) pairs and try auto-matching
             let child_pairs = collect_child_name_type_pairs(section, config);
@@ -747,8 +752,13 @@ fn collect_section_bind_refs(
     let current_path = match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = resolve_section_name(&section_full_text(section, config), &config.profile)
-                .unwrap_or_else(|| to_pascal_case(&label));
+            let heading_text = config.label_text(&heading.content);
+            let name = resolve_section_name_with_heading(
+                &section_full_text(section, config),
+                Some(&heading_text),
+                &config.profile,
+            )
+            .unwrap_or_else(|| to_pascal_case(&label));
             let path = format!("{}/{}", parent_path, name);
             // Use or_insert so that the first (shallowest) heading with a
             // given label wins.  The AEM converter only creates panels for
