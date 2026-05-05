@@ -617,20 +617,16 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                     // Deletion of a child node
                     if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
                         match parent {
-                            StructuredNode::Group(g)
-                                if *child_idx < g.children.len() => {
+                            StructuredNode::Group(g) if *child_idx < g.children.len() => {
                                 g.children.remove(*child_idx);
                             }
-                            StructuredNode::GridLayout(g)
-                                if *child_idx < g.elements.len() => {
+                            StructuredNode::GridLayout(g) if *child_idx < g.elements.len() => {
                                 g.elements.remove(*child_idx);
                             }
-                            StructuredNode::Repeatable(r)
-                                if *child_idx == 0 => {
+                            StructuredNode::Repeatable(r) if *child_idx == 0 => {
                                 *r.item = StructuredNode::Empty;
                             }
-                            StructuredNode::Conditional(c)
-                                if *child_idx == 0 => {
+                            StructuredNode::Conditional(c) if *child_idx == 0 => {
                                 *c.content = StructuredNode::Empty;
                             }
                             _ => {}
@@ -647,7 +643,8 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::TableRow(row_idx) => {
                     // Deletion of a table row
-                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path)
+                    if let Some(StructuredNode::Table(t)) =
+                        get_node_at_path_mut(content, &parent_path)
                         && *row_idx < t.rows.len()
                     {
                         t.rows.remove(*row_idx);
@@ -655,7 +652,9 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::TableHeader => {
                     // Deletion of table header
-                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path) {
+                    if let Some(StructuredNode::Table(t)) =
+                        get_node_at_path_mut(content, &parent_path)
+                    {
                         t.header = None;
                     }
                 }
@@ -1101,15 +1100,13 @@ pub fn move_container_child_up(
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g)
-            if child_idx < g.children.len() => {
+        StructuredNode::Group(g) if child_idx < g.children.len() => {
             g.children.swap(child_idx, child_idx - 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
             return Some(new_path);
         }
-        StructuredNode::GridLayout(g)
-            if child_idx < g.elements.len() => {
+        StructuredNode::GridLayout(g) if child_idx < g.elements.len() => {
             g.elements.swap(child_idx, child_idx - 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
@@ -1130,15 +1127,13 @@ pub fn move_container_child_down(
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g)
-            if child_idx + 1 < g.children.len() => {
+        StructuredNode::Group(g) if child_idx + 1 < g.children.len() => {
             g.children.swap(child_idx, child_idx + 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx + 1));
             return Some(new_path);
         }
-        StructuredNode::GridLayout(g)
-            if child_idx + 1 < g.elements.len() => {
+        StructuredNode::GridLayout(g) if child_idx + 1 < g.elements.len() => {
             g.elements.swap(child_idx, child_idx + 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx + 1));

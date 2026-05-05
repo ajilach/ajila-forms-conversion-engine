@@ -699,26 +699,27 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                     NewNodeType::TableRow => {
                         // Insert a new table row into the parent table
-                        new_selection =
-                            if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(&mut env.content, &parent) {
-                                let col_count = get_table_column_count(t);
-                                let cells: Vec<StructuredNode> = (0..col_count)
-                                    .map(|_| {
-                                        StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(""),
-                                            som_path: None,
-                                            source_name: None,
-                                        })
+                        new_selection = if let Some(StructuredNode::Table(t)) =
+                            get_node_at_path_mut(&mut env.content, &parent)
+                        {
+                            let col_count = get_table_column_count(t);
+                            let cells: Vec<StructuredNode> = (0..col_count)
+                                .map(|_| {
+                                    StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(""),
+                                        som_path: None,
+                                        source_name: None,
                                     })
-                                    .collect();
-                                let insert_idx = index.min(t.rows.len());
-                                t.rows.insert(insert_idx, StructTableRow { cells });
-                                let mut path = parent.clone();
-                                path.push(PathSegment::TableRow(insert_idx));
-                                Some(path)
-                            } else {
-                                None
-                            };
+                                })
+                                .collect();
+                            let insert_idx = index.min(t.rows.len());
+                            t.rows.insert(insert_idx, StructTableRow { cells });
+                            let mut path = parent.clone();
+                            path.push(PathSegment::TableRow(insert_idx));
+                            Some(path)
+                        } else {
+                            None
+                        };
                     }
                     NewNodeType::TableCell => {
                         // Insert a new column into the table (all rows + header)
@@ -733,45 +734,41 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             if let Some(StructuredNode::Table(t)) =
                                 get_node_at_path_mut(&mut env.content, &table_path)
                             {
-                                    let insert_idx = index;
-                                    let make_cell = || {
-                                        StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(""),
-                                            som_path: None,
-                                            source_name: None,
-                                        })
-                                    };
-                                    // Insert into header if present
-                                    if let Some(header) = &mut t.header {
-                                        let idx = insert_idx.min(header.cells.len());
-                                        header.cells.insert(idx, make_cell());
-                                    }
-                                    // Insert into all rows
-                                    for row in &mut t.rows {
-                                        let idx = insert_idx.min(row.cells.len());
-                                        row.cells.insert(idx, make_cell());
-                                    }
-                                    // Select the newly inserted cell in the originating row
-                                    let mut path = parent.clone();
-                                    let cell_idx = match &row_segment {
-                                        Some(PathSegment::TableRow(row_idx)) => t
-                                            .rows
-                                            .get(*row_idx)
-                                            .map(|r| {
-                                                insert_idx.min(r.cells.len().saturating_sub(1))
-                                            })
-                                            .unwrap_or(insert_idx),
-                                        Some(PathSegment::TableHeader) => t
-                                            .header
-                                            .as_ref()
-                                            .map(|h| {
-                                                insert_idx.min(h.cells.len().saturating_sub(1))
-                                            })
-                                            .unwrap_or(insert_idx),
-                                        _ => insert_idx,
-                                    };
-                                    path.push(PathSegment::TableCell(cell_idx));
-                                    Some(path)
+                                let insert_idx = index;
+                                let make_cell = || {
+                                    StructuredNode::Paragraph(ParagraphNode {
+                                        content: InlineText::plain(""),
+                                        som_path: None,
+                                        source_name: None,
+                                    })
+                                };
+                                // Insert into header if present
+                                if let Some(header) = &mut t.header {
+                                    let idx = insert_idx.min(header.cells.len());
+                                    header.cells.insert(idx, make_cell());
+                                }
+                                // Insert into all rows
+                                for row in &mut t.rows {
+                                    let idx = insert_idx.min(row.cells.len());
+                                    row.cells.insert(idx, make_cell());
+                                }
+                                // Select the newly inserted cell in the originating row
+                                let mut path = parent.clone();
+                                let cell_idx = match &row_segment {
+                                    Some(PathSegment::TableRow(row_idx)) => t
+                                        .rows
+                                        .get(*row_idx)
+                                        .map(|r| insert_idx.min(r.cells.len().saturating_sub(1)))
+                                        .unwrap_or(insert_idx),
+                                    Some(PathSegment::TableHeader) => t
+                                        .header
+                                        .as_ref()
+                                        .map(|h| insert_idx.min(h.cells.len().saturating_sub(1)))
+                                        .unwrap_or(insert_idx),
+                                    _ => insert_idx,
+                                };
+                                path.push(PathSegment::TableCell(cell_idx));
+                                Some(path)
                             } else {
                                 None
                             }

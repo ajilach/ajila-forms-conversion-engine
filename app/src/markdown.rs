@@ -290,14 +290,25 @@ fn convert_to_translated(
 
     nodes
         .into_iter()
-        .map(|node| convert_node_to_translated(node, edited_lang, existing_translations, total_len, &mut position))
+        .map(|node| {
+            convert_node_to_translated(
+                node,
+                edited_lang,
+                existing_translations,
+                total_len,
+                &mut position,
+            )
+        })
         .collect()
 }
 
 fn text_length(node: &InlineNode) -> usize {
     match node {
         InlineNode::Text(s) => s.len(),
-        InlineNode::TranslatedText(map) => map.values().find_map(|o| o.as_ref().map(|s| s.len())).unwrap_or(0),
+        InlineNode::TranslatedText(map) => map
+            .values()
+            .find_map(|o| o.as_ref().map(|s| s.len()))
+            .unwrap_or(0),
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => text_length(inner),
         InlineNode::Link(link) => link.content.0.iter().map(text_length).sum(),
     }
@@ -341,7 +352,10 @@ fn convert_node_to_translated(
         }
         InlineNode::TranslatedText(mut map) => {
             // Already translated, just update position tracking
-            let node_len = map.values().find_map(|o| o.as_ref().map(|s| s.len())).unwrap_or(0);
+            let node_len = map
+                .values()
+                .find_map(|o| o.as_ref().map(|s| s.len()))
+                .unwrap_or(0);
             *position += node_len;
 
             // Ensure edited language is present
@@ -351,30 +365,34 @@ fn convert_node_to_translated(
 
             InlineNode::TranslatedText(map)
         }
-        InlineNode::Strong(inner) => {
-            InlineNode::Strong(Box::new(convert_node_to_translated(
-                *inner,
-                edited_lang,
-                existing_translations,
-                total_len,
-                position,
-            )))
-        }
-        InlineNode::Emphasis(inner) => {
-            InlineNode::Emphasis(Box::new(convert_node_to_translated(
-                *inner,
-                edited_lang,
-                existing_translations,
-                total_len,
-                position,
-            )))
-        }
+        InlineNode::Strong(inner) => InlineNode::Strong(Box::new(convert_node_to_translated(
+            *inner,
+            edited_lang,
+            existing_translations,
+            total_len,
+            position,
+        ))),
+        InlineNode::Emphasis(inner) => InlineNode::Emphasis(Box::new(convert_node_to_translated(
+            *inner,
+            edited_lang,
+            existing_translations,
+            total_len,
+            position,
+        ))),
         InlineNode::Link(mut link) => {
             link.content.0 = link
                 .content
                 .0
                 .into_iter()
-                .map(|n| convert_node_to_translated(n, edited_lang, existing_translations, total_len, position))
+                .map(|n| {
+                    convert_node_to_translated(
+                        n,
+                        edited_lang,
+                        existing_translations,
+                        total_len,
+                        position,
+                    )
+                })
                 .collect();
             InlineNode::Link(link)
         }
@@ -385,14 +403,14 @@ fn convert_node_to_translated(
 fn extract_substring_safe(s: &str, start: usize, end: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
     let char_count = chars.len();
-    
+
     // Convert byte indices to approximate char indices
     let start_char = (start as f64 / s.len() as f64 * char_count as f64).round() as usize;
     let end_char = (end as f64 / s.len() as f64 * char_count as f64).round() as usize;
-    
+
     let start_char = start_char.min(char_count);
     let end_char = end_char.min(char_count);
-    
+
     chars[start_char..end_char].iter().collect()
 }
 

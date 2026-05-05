@@ -106,7 +106,12 @@ pub fn ProgressDisplay(
 }
 
 #[component]
-pub fn StepIndicator(name: String, is_current: bool, is_complete: bool, progress: Option<f32>) -> Element {
+pub fn StepIndicator(
+    name: String,
+    is_current: bool,
+    is_complete: bool,
+    progress: Option<f32>,
+) -> Element {
     let class = if is_complete {
         "step step-complete"
     } else if is_current {
