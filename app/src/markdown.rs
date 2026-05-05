@@ -59,8 +59,11 @@ fn inline_node_to_markdown(node: &InlineNode, language: Option<&str>, out: &mut 
 /// Supports bold (**text**), italic (*text*), and links [text](url).
 /// Returns plain text nodes plus Strong/Emphasis wrappers as appropriate.
 pub fn markdown_to_inline_text(markdown: &str) -> InlineText {
+    // Escape block-level syntax (lists, blockquotes) that would otherwise consume
+    // user text. We only want inline formatting (bold, italic, links).
+    let escaped = escape_block_syntax(markdown);
     let options = Options::empty();
-    let parser = Parser::new_ext(markdown, options);
+    let parser = Parser::new_ext(&escaped, options);
 
     let mut nodes: Vec<InlineNode> = Vec::new();
     let mut stack: Vec<FormattingContext> = Vec::new();
@@ -157,6 +160,68 @@ pub fn markdown_to_inline_text(markdown: &str) -> InlineText {
     let merged = merge_adjacent_text_nodes(nodes);
 
     InlineText(merged)
+}
+
+/// Escape block-level markdown syntax so that only inline formatting is parsed.
+/// This prevents text like "3. foo" from being consumed as a list item.
+fn escape_block_syntax(input: &str) -> String {
+    use std::fmt::Write;
+    let mut result = String::with_capacity(input.len() + 8);
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("> ") || trimmed.starts_with(">") && trimmed.len() == 1 {
+            // Blockquote
+            let prefix = &line[..line.len() - trimmed.len()];
+            let _ = write!(result, "{prefix}\\>{}", &trimmed[1..]);
+        } else if is_ordered_list_start(trimmed) {
+            // Ordered list: "1. ", "2) " etc.
+            let prefix = &line[..line.len() - trimmed.len()];
+            let dot_pos = trimmed.find(|c| c == '.' || c == ')').unwrap();
+            let _ = write!(
+                result,
+                "{prefix}{}\\{}{}",
+                &trimmed[..dot_pos],
+                &trimmed[dot_pos..dot_pos + 1],
+                &trimmed[dot_pos + 1..]
+            );
+        } else if is_unordered_list_start(trimmed) {
+            // Unordered list: "- ", "* ", "+ "
+            let prefix = &line[..line.len() - trimmed.len()];
+            let _ = write!(result, "{prefix}\\{}", trimmed);
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+    // Remove trailing newline if input didn't end with one
+    if !input.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+    result
+}
+
+fn is_ordered_list_start(s: &str) -> bool {
+    // CommonMark: up to 9 digits, followed by '.' or ')', followed by space
+    let mut chars = s.chars();
+    let first = chars.next();
+    if !first.is_some_and(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    for c in chars {
+        if c == '.' || c == ')' {
+            // Must be followed by a space (or end)
+            let rest = &s[s.find(c).unwrap() + 1..];
+            return rest.is_empty() || rest.starts_with(' ');
+        }
+        if !c.is_ascii_digit() {
+            return false;
+        }
+    }
+    false
+}
+
+fn is_unordered_list_start(s: &str) -> bool {
+    matches!(s.as_bytes(), [b'-' | b'*' | b'+', b' ', ..])
 }
 
 #[derive(Debug, PartialEq)]
@@ -531,5 +596,32 @@ mod tests {
         // Display for English
         let md_en = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md_en, "**bold** text");
+    }
+
+    #[test]
+    fn test_numbered_prefix_not_consumed_as_list() {
+        // "3. Section Title" should NOT be treated as an ordered list
+        let result = markdown_to_inline_text("3. Section Title");
+        assert_eq!(result.as_plain_text(), "3. Section Title");
+
+        let result = markdown_to_inline_text("12. Another heading");
+        assert_eq!(result.as_plain_text(), "12. Another heading");
+
+        // Unordered list markers should also be preserved
+        let result = markdown_to_inline_text("- some text");
+        assert_eq!(result.as_plain_text(), "- some text");
+
+        let result = markdown_to_inline_text("* starred text");
+        assert_eq!(result.as_plain_text(), "* starred text");
+
+        // Blockquote marker
+        let result = markdown_to_inline_text("> quoted");
+        assert_eq!(result.as_plain_text(), "> quoted");
+
+        // Inline formatting should still work with escaped block syntax
+        let result = markdown_to_inline_text("3. **bold** title");
+        assert_eq!(result.0.len(), 3);
+        assert_eq!(result.as_plain_text(), "3. bold title");
+        assert!(matches!(&result.0[1], InlineNode::Strong(_)));
     }
 }
