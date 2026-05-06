@@ -25548,27 +25548,6 @@ fn test_aaav_column_layout_detects_four_sections() {
     );
 }
 
-#[test]
-fn test_debug_column_detection_forms() {
-    use crate::document::modules::ColumnLayoutDetector;
-    use crate::document::modules::AnalysisModule;
-    use crate::document::{Document, GroupKind};
-
-    for form in &["AACS_019_DE.pdf", "AACW_019_DE.pdf", "AACE_019_DE.pdf", "AACC_019_DE.pdf"] {
-        let path = input_path(form);
-        if !std::path::Path::new(&path).exists() { continue; }
-        let mut bp = Blueprint::from_pdf(&path).unwrap();
-        let states = bp.states().unwrap();
-        let first_state = states.iter().next().unwrap();
-        let mut doc = Document::from_flattened(&first_state.flattened);
-        let roots_before = doc.roots().len();
-        ColumnLayoutDetector::new().process(&mut doc);
-        let roots_after = doc.roots();
-        let col_groups = roots_after.iter().filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown)).count();
-        let noprint = roots_after.iter().filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::NoPrint)).count();
-        println!("{}: roots_before={} roots_after={} column_groups={} noprint={}", form, roots_before, roots_after.len(), col_groups, noprint);
-    }
-}
 
 #[test]
 fn test_aaav_column_layout_left_before_right() {
@@ -25676,29 +25655,3 @@ fn test_aabh_column_layout_left_before_right() {
     );
 }
 
-#[test]
-fn test_aabh_column_layout_narrow_overlays_removed() {
-    // AABH narrow overlay elements (T_Left_Indent/T_Right_Indent) should be
-    // discarded as NoPrint by the column detector.
-    use crate::document::modules::{ColumnLayoutDetector, AnalysisModule};
-    use crate::document::{Document, GroupKind};
-
-    let mut bp = Blueprint::from_pdf(input_path("AABH_019_DE.pdf")).unwrap();
-    let states = bp.states().unwrap();
-    let first_state = states.iter().next().unwrap();
-    let mut doc = Document::from_flattened(&first_state.flattened);
-    ColumnLayoutDetector::new().process(&mut doc);
-
-    let roots = doc.roots();
-    let noprint_groups: Vec<usize> = roots
-        .iter()
-        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::NoPrint))
-        .copied()
-        .collect();
-
-    // The narrow indent overlays should be marked as NoPrint
-    assert!(
-        !noprint_groups.is_empty(),
-        "AABH should have narrow overlays marked as NoPrint"
-    );
-}

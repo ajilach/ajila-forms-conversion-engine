@@ -11,7 +11,6 @@
 //! The detector handles:
 //! - Full-width elements (headings, signatures) that are excluded from columns
 //! - Multiple column sections separated by page breaks or full-width elements
-//! - Narrow overlay elements (width ≤ 10mm) that are discarded as NoPrint
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind, GroupSource};
@@ -36,10 +35,6 @@ const MAX_ELEMENT_WIDTH_RATIO: &str = "0.6";
 /// a column element (elements narrower than this are excluded as
 /// page furniture like footers, page numbers, etc.).
 const MIN_ELEMENT_WIDTH_RATIO: &str = "0.15";
-
-/// Maximum width (in points) for an element to be considered a narrow overlay.
-/// Approximately 10mm ≈ 28.35pt.
-const NARROW_OVERLAY_WIDTH_PT: &str = "28.35";
 
 /// Minimum vertical gap (in points) between consecutive column elements
 /// to consider it a section break. This should be larger than normal
@@ -129,14 +124,13 @@ impl ColumnLayoutDetector {
     }
 
     /// Detect column sections among the given root groups.
-    /// Returns detected sections and overlay indices to discard.
+    /// Returns detected sections if a multi-column layout is found.
     fn detect_column_sections(
         doc: &Document,
         roots: &[usize],
-    ) -> Option<(Vec<ColumnSection>, Vec<usize>)> {
+    ) -> Option<Vec<ColumnSection>> {
         let max_width_ratio = Decimal::from_str(MAX_ELEMENT_WIDTH_RATIO).unwrap();
         let min_width_ratio = Decimal::from_str(MIN_ELEMENT_WIDTH_RATIO).unwrap();
-        let narrow_threshold = Decimal::from_str(NARROW_OVERLAY_WIDTH_PT).unwrap();
         let section_gap = Decimal::from_str(SECTION_GAP_THRESHOLD_PT).unwrap();
         let min_vertical_extent = Decimal::from_str(MIN_VERTICAL_EXTENT_PT).unwrap();
 
@@ -160,19 +154,16 @@ impl ColumnLayoutDetector {
         }
 
         // Classify elements into categories
-        let mut overlays: Vec<usize> = Vec::new();
         let mut full_width: Vec<(usize, Bounds)> = Vec::new();
         let mut column_candidates: Vec<(usize, Bounds)> = Vec::new();
 
         for (idx, bounds) in &bounded {
-            if bounds.width <= narrow_threshold {
-                overlays.push(*idx);
-            } else if bounds.width > content_width * max_width_ratio {
+            if bounds.width > content_width * max_width_ratio {
                 full_width.push((*idx, bounds.clone()));
             } else if bounds.width >= content_width * min_width_ratio {
                 column_candidates.push((*idx, bounds.clone()));
             }
-            // Elements between narrow and min_width_ratio are ignored
+            // Elements smaller than min_width_ratio are ignored
             // (page furniture like footers, timestamps, page numbers)
         }
 
@@ -307,81 +298,7 @@ impl ColumnLayoutDetector {
             return None;
         }
 
-        // Collect overlays that are true column-number overlays:
-        // They must be narrow, overlap vertically with a section, AND
-        // share the same x-position as a column's left edge (indicating
-        // they're numbering overlays for that column, not regular content).
-        // Additionally, they must span a significant portion of the section height.
-        let relevant_overlays: Vec<usize> = overlays
-            .into_iter()
-            .filter(|&idx| {
-                let Some(b) = Self::get_element_bounds(doc, idx) else {
-                    return false;
-                };
-
-                sections.iter().any(|section| {
-                    // Get section vertical extent
-                    let section_min_y = section
-                        .left
-                        .iter()
-                        .chain(section.right.iter())
-                        .filter_map(|&i| Self::get_element_bounds(doc, i).map(|b| b.top()))
-                        .min();
-                    let section_max_y = section
-                        .left
-                        .iter()
-                        .chain(section.right.iter())
-                        .filter_map(|&i| Self::get_element_bounds(doc, i).map(|b| b.bottom()))
-                        .max();
-
-                    let (Some(min_y), Some(max_y)) = (section_min_y, section_max_y) else {
-                        return false;
-                    };
-
-                    // Must overlap vertically with the section
-                    if b.top() >= max_y || b.bottom() <= min_y {
-                        return false;
-                    }
-
-                    // Must span at least 30% of the section height
-                    // (true number overlays span most/all of the column)
-                    let section_height = max_y - min_y;
-                    let overlay_height = b.height;
-                    if section_height <= Decimal::ZERO
-                        || overlay_height < section_height * Decimal::from_str("0.3").unwrap()
-                    {
-                        return false;
-                    }
-
-                    // Must align with the left edge of either column
-                    let left_x = section
-                        .left
-                        .iter()
-                        .filter_map(|&i| Self::get_element_bounds(doc, i).map(|b| b.left()))
-                        .min();
-                    let right_x = section
-                        .right
-                        .iter()
-                        .filter_map(|&i| Self::get_element_bounds(doc, i).map(|b| b.left()))
-                        .min();
-
-                    let x_tolerance = Decimal::from_str("5.0").unwrap();
-                    let aligned = match (left_x, right_x) {
-                        (Some(lx), Some(rx)) => {
-                            (b.left() - lx).abs() <= x_tolerance
-                                || (b.left() - rx).abs() <= x_tolerance
-                        }
-                        (Some(lx), None) => (b.left() - lx).abs() <= x_tolerance,
-                        (None, Some(rx)) => (b.left() - rx).abs() <= x_tolerance,
-                        (None, None) => false,
-                    };
-
-                    aligned
-                })
-            })
-            .collect();
-
-        Some((sections, relevant_overlays))
+        Some(sections)
     }
 
     /// Compute the vertical extent (max_bottom - min_top) of a set of groups.
@@ -456,20 +373,9 @@ impl AnalysisModule for ColumnLayoutDetector {
     fn process(&self, doc: &mut Document) {
         let roots = doc.roots();
 
-        let Some((sections, overlays)) = Self::detect_column_sections(doc, &roots) else {
+        let Some(sections) = Self::detect_column_sections(doc, &roots) else {
             return;
         };
-
-        // Claim narrow overlays as NoPrint (discard them)
-        for idx in overlays {
-            doc.merge(
-                vec![idx],
-                GroupKind::NoPrint,
-                GroupSource::Inferred {
-                    module: self.name().to_string(),
-                },
-            );
-        }
 
         // Process each section: wrap left and right elements into groups
         for section in sections {
@@ -617,9 +523,11 @@ mod tests {
     }
 
     #[test]
-    fn test_narrow_overlays_discarded() {
+    fn test_narrow_elements_not_treated_as_columns() {
+        // Narrow elements (like number overlays) should simply be ignored
+        // by column detection — not marked as NoPrint or treated as columns.
         let nodes = vec![
-            // Narrow overlays (≤10mm ≈ 28.35pt) aligned with column left edges
+            // Narrow elements (≤ min_width_ratio of content width)
             text_node(30.0, 10.0, 25.0, 170.0, "1. 2. 3. 4."),
             text_node(280.0, 10.0, 25.0, 170.0, "5. 6. 7."),
             // Left column elements (5+ for min threshold, consistent width)
@@ -653,8 +561,16 @@ mod tests {
             .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
             .count();
 
-        assert_eq!(noprint_count, 2, "Expected 2 NoPrint groups for overlays");
+        // No NoPrint — column detector doesn't discard elements
+        assert_eq!(noprint_count, 0, "Column detector should not mark anything as NoPrint");
+        // 2 column groups created
         assert_eq!(unknown_count, 2, "Expected 2 Unknown groups for columns");
+        // The narrow elements remain as unclaimed leaves
+        let leaf_count = roots
+            .iter()
+            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Leaf { .. }))
+            .count();
+        assert_eq!(leaf_count, 2, "Narrow elements should remain as leaves");
     }
 
     #[test]
