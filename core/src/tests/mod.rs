@@ -22702,20 +22702,8 @@ fn test_bage_headings_no_missing_translation() {
     collect_headings(&merged.content, &mut headings);
 
     // No heading should have any segment with a missing translation in any language,
-    // EXCEPT where one language genuinely omits a section (e.g. EN omits section 6).
     for (level, maps) in &headings {
         for map in maps {
-            // Skip headings where DE content exists but EN doesn't — this is
-            // expected when the EN version omits a numbered section.
-            let de_text = map
-                .get("de")
-                .and_then(|v| v.as_ref())
-                .unwrap_or(&String::new())
-                .clone();
-            if de_text.starts_with("6.") {
-                continue;
-            }
-
             for (lang, val) in map {
                 assert!(
                     val.is_some(),
@@ -25415,4 +25403,120 @@ fn test_bage_intro_paragraph_not_list_item() {
         comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
     );
 }
+
+/// Regression test: BAGE section "6. Dauer der Vollmacht" (DE) must be merged
+/// with "6. Duration to this Power of Attorney" (EN). Previously the English
+/// heading was detected at a wrong heading level and could not be merged.
+#[test]
+fn test_bage_section6_heading_merged_with_english() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, StructuredNode};
+
+    let de = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE_019_EN");
+
+    let merged = structured::merge_translations(vec![de, en], None).unwrap();
+
+    // Collect all headings with their translations.
+    fn collect_headings(
+        nodes: &[StructuredNode],
+        out: &mut Vec<(u8, String)>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    let text = h.content.as_plain_text();
+                    out.push((h.level.as_u8(), text));
+                    // Also check translations
+                    for inline in &h.content.0 {
+                        if let InlineNode::TranslatedText(map) = inline {
+                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            if de_text.contains("6.") && de_text.contains("Dauer") {
+                                out.push((h.level.as_u8(), format!("DE={} | EN={}", de_text, en_text)));
+                            }
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => collect_headings(&g.children, out),
+                StructuredNode::Conditional(c) => collect_headings(&[(*c.content).clone()], out),
+                StructuredNode::Repeatable(r) => collect_headings(&[(*r.item).clone()], out),
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_headings(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut headings = Vec::new();
+    collect_headings(&merged.content, &mut headings);
+
+    // Find the heading that contains "6." and "Dauer der Vollmacht"
+    let section6_de = headings.iter().find(|(_, text)| {
+        text.contains("6.") && text.contains("Dauer")
+    });
+    assert!(
+        section6_de.is_some(),
+        "Should find heading '6. Dauer der Vollmacht' in merged output.\nHeadings: {:?}",
+        headings
+    );
+
+    // The heading must have a merged English translation "6. Duration to this Power of Attorney"
+    // Check via the TranslatedText map
+    fn find_section6_translation(
+        nodes: &[StructuredNode],
+    ) -> Option<(String, String)> {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    for inline in &h.content.0 {
+                        if let InlineNode::TranslatedText(map) = inline {
+                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            if de_text.contains("6.") && de_text.contains("Dauer") {
+                                let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                                return Some((de_text, en_text));
+                            }
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => {
+                    if let Some(r) = find_section6_translation(&g.children) { return Some(r); }
+                }
+                StructuredNode::Conditional(c) => {
+                    if let Some(r) = find_section6_translation(&[(*c.content).clone()]) { return Some(r); }
+                }
+                StructuredNode::Repeatable(r) => {
+                    if let Some(r) = find_section6_translation(&[(*r.item).clone()]) { return Some(r); }
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    if let Some(r) = find_section6_translation(&children) { return Some(r); }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    let translation = find_section6_translation(&merged.content);
+    assert!(
+        translation.is_some(),
+        "Section 6 heading should exist as a TranslatedText node.\nHeadings: {:?}",
+        headings
+    );
+
+    let (de_text, en_text) = translation.unwrap();
+    assert!(
+        en_text.contains("Duration") && en_text.contains("Power of Attorney"),
+        "English translation of section 6 should be '6. Duration to this Power of Attorney', \
+         but got: DE='{}', EN='{}'",
+        de_text,
+        en_text
+    );
+}
+
 

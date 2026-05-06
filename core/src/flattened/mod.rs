@@ -8875,6 +8875,30 @@ impl Flattened {
     /// Per XFA spec (section on "Line Height" and "Paragraph Spacing"):
     /// - Each paragraph's height is computed from text wrapping within the draw width,
     ///   using AXTE line metrics (ascent, descent, line gap = 20% of font size).
+    /// Determine the font weight override from a rich text paragraph's runs.
+    /// Returns `Some(Bold)` if all content runs are bold, `Some(Normal)` if all
+    /// are normal, or `None` for mixed/empty paragraphs.
+    fn rich_paragraph_weight_override(para: &RichParagraph) -> Option<FontWeight> {
+        if para.runs.is_empty() {
+            return None;
+        }
+        let has_bold = para
+            .runs
+            .iter()
+            .any(|r| !r.text.trim().is_empty() && r.bold);
+        let has_normal = para
+            .runs
+            .iter()
+            .any(|r| !r.text.trim().is_empty() && !r.bold);
+        if has_bold && !has_normal {
+            Some(FontWeight::Bold)
+        } else if has_normal && !has_bold {
+            Some(FontWeight::Normal)
+        } else {
+            None
+        }
+    }
+
     /// - spaceAbove/spaceBelow on RichParagraph add inter-paragraph spacing.
     /// - Empty paragraphs (is_empty=true) are preserved as spacing nodes.
     ///
@@ -8886,7 +8910,24 @@ impl Flattened {
         // Extract rich text; if absent or single paragraph, return unchanged
         let rich_text = match node.rich_text() {
             Some(rt) if rt.paragraphs.len() > 1 => rt.clone(),
-            _ => return vec![FlattenedKind::Node(node)],
+            _ => {
+                // Even for single-paragraph (or absent) rich text, override the
+                // node's font weight when the CSS in the rich text runs disagrees
+                // with the XFA <font> element.  This mirrors the multi-paragraph
+                // logic below and fixes cases where the XFA font says Normal but
+                // all rich text runs are bold (or vice versa).
+                let mut node = node;
+                let weight_override = node
+                    .rich_text()
+                    .and_then(|rt| rt.paragraphs.first())
+                    .and_then(Self::rich_paragraph_weight_override);
+                if let Some(weight) = weight_override {
+                    if let Some(ref mut font) = node.style.font {
+                        font.weight = weight;
+                    }
+                }
+                return vec![FlattenedKind::Node(node)];
+            }
         };
 
         // Get font info from the node for text measurement
@@ -8955,7 +8996,10 @@ impl Flattened {
                     .runs
                     .iter()
                     .any(|r| !r.text.trim().is_empty() && !r.bold);
-                if has_normal && !has_bold {
+                if has_bold && !has_normal {
+                    // All content runs are bold: CSS overrides XFA normal to bold
+                    para_xfa_font.weight = FontWeight::Bold;
+                } else if has_normal && !has_bold {
                     // All content runs are non-bold: CSS overrides XFA bold to normal
                     para_xfa_font.weight = FontWeight::Normal;
                 } else if has_normal && has_bold {
@@ -9223,23 +9267,11 @@ impl Flattened {
             // Override font weight based on CSS in rich text runs.
             // The XFA <font> element may specify weight="bold", but the HTML CSS
             // in individual paragraphs can override this (e.g. font-weight:normal).
-            // Only override when ALL content runs are non-bold — this handles the
-            // case where <p style="font-weight:normal"> explicitly resets the XFA
-            // bold default. Mixed paragraphs (bold heading + non-bold subtitle)
-            // keep the XFA weight so heading detection still works correctly.
-            if !para.runs.is_empty() {
-                let has_bold = para
-                    .runs
-                    .iter()
-                    .any(|r| !r.text.trim().is_empty() && r.bold);
-                let has_normal = para
-                    .runs
-                    .iter()
-                    .any(|r| !r.text.trim().is_empty() && !r.bold);
+            // Conversely, the XFA font may say Normal but all CSS runs are bold.
+            // We override in both directions when all content runs agree.
+            if let Some(weight) = Self::rich_paragraph_weight_override(para) {
                 if let Some(ref mut font) = para_style.font {
-                    if has_normal && !has_bold {
-                        font.weight = FontWeight::Normal;
-                    }
+                    font.weight = weight;
                 }
             }
 
