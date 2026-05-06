@@ -1203,6 +1203,15 @@ impl AnalysisModule for ListDetector {
                 Some(ListStyleType::Dash) | Some(ListStyleType::Disc)
             );
 
+            // Compute maximum text length of marked items in the group.
+            // Used to guard against absorbing introductory paragraphs that
+            // are longer than all actual list items.
+            let max_item_text_len: usize = group
+                .iter()
+                .map(|&idx| doc.get_text_content(idx).trim().len())
+                .max()
+                .unwrap_or(0);
+
             // Helper to check if a candidate meets single-item criteria
             let check_single_item = |cand_idx: usize| -> bool {
                 let cand_bounds = match doc.get_bounds(cand_idx) {
@@ -1226,7 +1235,14 @@ impl AnalysisModule for ListDetector {
                 let is_adjacent =
                     gap >= Decimal::ZERO && gap <= max_item_height * Decimal::new(3, 1);
 
-                not_heading_like && is_single_line && is_adjacent
+                // Must not be longer than all marked items — a candidate that
+                // is longer than every item in the group is likely an
+                // introductory paragraph (e.g. "Dies umfasst ... insbesondere")
+                // rather than a list item that lost its marker.
+                let cand_len = cand_trimmed.len();
+                let not_too_long = cand_len <= max_item_text_len || cand_len <= 40;
+
+                not_heading_like && is_single_line && is_adjacent && not_too_long
             };
 
             let should_extend = if prepend.len() >= 5 && group.len() >= 2 {

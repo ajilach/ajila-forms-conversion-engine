@@ -25368,3 +25368,51 @@ fn test_bage_bevollmaechtigten_sentence_is_not_heading() {
     );
 }
 
+/// Regression test: "Dies umfasst sämtliche für mich/uns bestimmten Mitteilungen
+/// und sonstigen Sendungen jeder Art, insbesondere" is a paragraph that introduces
+/// the list below it, not a list item itself. The backward extension should not
+/// absorb it into the list.
+#[test]
+fn test_bage_intro_paragraph_not_list_item() {
+    use crate::run_exhaustive_to_envelope;
+
+    let doc = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE_019_DE");
+
+    let lists = helpers::collect_lists(&doc.content);
+
+    // Find the communication types list (contains "Depotaufstellungen")
+    let comm_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Depotaufstellungen"))
+    });
+    assert!(
+        comm_list.is_some(),
+        "Expected to find a list containing 'Depotaufstellungen'"
+    );
+    let comm_list = comm_list.unwrap();
+
+    // "Dies umfasst sämtliche..." should NOT be a list item
+    let has_intro_as_item = comm_list.items.iter().any(|item| {
+        item.as_plain_text()
+            .contains("Dies umfasst sämtliche")
+    });
+    assert!(
+        !has_intro_as_item,
+        "The introductory sentence 'Dies umfasst sämtliche für mich/uns bestimmten Mitteilungen \
+         und sonstigen Sendungen jeder Art, insbesondere' should be a paragraph, not a list item.\n\
+         List items: {:?}",
+        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+
+    // The list should have exactly 4 items (the actual bullet points)
+    assert_eq!(
+        comm_list.items.len(),
+        4,
+        "Communication types list should have 4 items (without the intro paragraph).\n\
+         Actual items: {:?}",
+        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+    );
+}
+
