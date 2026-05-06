@@ -25520,3 +25520,95 @@ fn test_bage_section6_heading_merged_with_english() {
 }
 
 
+
+#[test]
+fn test_aaav_column_layout_detection_explore() {
+    use crate::flattened::{FlattenedKind, FlattenedNodeKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAV_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().expect("should have at least one state");
+    let flattened = &first_state.flattened;
+
+    println!("Total leaf nodes: {}", flattened.node_count());
+    println!("Top-level children: {}", flattened.children.len());
+
+    // Show structure of top-level children
+    for (i, child) in flattened.children.iter().enumerate() {
+        match child {
+            FlattenedKind::Group { children, hints } => {
+                let node_count = child.node_count();
+                println!(
+                    "  [{}] Group({} nodes, {} hints, {} direct children)",
+                    i,
+                    node_count,
+                    hints.len(),
+                    children.len()
+                );
+                // Show first few leaf nodes with x positions
+                for node in child.iter_nodes().take(3) {
+                    let x = node.x.to_f32().unwrap_or(0.0);
+                    let w = node.width.to_f32().unwrap_or(0.0);
+                    match &node.kind {
+                        FlattenedNodeKind::Text { content, .. } => {
+                            println!(
+                                "    text: x={:.0} w={:.0} '{}'",
+                                x,
+                                w,
+                                content.chars().take(50).collect::<String>()
+                            );
+                        }
+                        FlattenedNodeKind::Field { name, .. } => {
+                            println!("    field: x={:.0} w={:.0} '{}'", x, w, name);
+                        }
+                    }
+                }
+            }
+            FlattenedKind::Node(node) => {
+                let x = node.x.to_f32().unwrap_or(0.0);
+                let w = node.width.to_f32().unwrap_or(0.0);
+                match &node.kind {
+                    FlattenedNodeKind::Text { content, .. } => {
+                        println!(
+                            "  [{}] Node(text) x={:.0} w={:.0} '{}'",
+                            i,
+                            x,
+                            w,
+                            content.chars().take(50).collect::<String>()
+                        );
+                    }
+                    FlattenedNodeKind::Field { name, .. } => {
+                        println!("  [{}] Node(field) x={:.0} w={:.0} '{}'", i, x, w, name);
+                    }
+                }
+            }
+        }
+    }
+
+    // Specifically look for nodes with x > 200 (potential right column content)
+    println!("\n--- Nodes with x > 200 (potential right column) ---");
+    let mut right_count = 0;
+    for node in flattened.iter_nodes() {
+        let x = node.x.to_f32().unwrap_or(0.0);
+        if x > 200.0 {
+            let w = node.width.to_f32().unwrap_or(0.0);
+            let y = node.y.to_f32().unwrap_or(0.0);
+            match &node.kind {
+                FlattenedNodeKind::Text { content, .. } => {
+                    if right_count < 20 {
+                        println!(
+                            "  x={:.0} y={:.0} w={:.0} '{}'",
+                            x,
+                            y,
+                            w,
+                            content.chars().take(50).collect::<String>()
+                        );
+                    }
+                    right_count += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    println!("  Total right-side nodes: {}", right_count);
+}
