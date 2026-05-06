@@ -25310,3 +25310,48 @@ fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
         }
     });
 }
+
+/// Regression test: In BAGE, the long sentence "Dies gilt insbesondere für die
+/// Aufklärung und Information über Chancen und Risiken jeder Art von Finanztermin-
+/// und Devisentermingeschäften." should be a paragraph, not a heading.
+/// It's a full sentence that happens to be bold but is clearly body text.
+#[test]
+fn test_bage_long_bold_sentence_is_not_heading() {
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(helpers::input_path("BAGE_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for BAGE");
+
+    let target_text = "Dies gilt insbesondere für die Aufklärung und Information über Chancen und Risiken jeder Art von Finanztermin- und Devisentermingeschäften.";
+
+    let headings = helpers::collect_headings(&structured);
+    let found_as_heading = headings.iter().any(|(_, h)| h.contains(target_text));
+    assert!(
+        !found_as_heading,
+        "The sentence '{}' should NOT be classified as a heading. It is a normal paragraph.\nHeadings found: {:?}",
+        target_text,
+        headings.iter().filter(|(_, h)| h.contains("Dies gilt")).collect::<Vec<_>>()
+    );
+}
+
+/// Regression test: In BAGE, the sentence "Es ist im übrigen Sache des
+/// Bevollmächtigten, mich/uns über seine Handlungen zu unterrichten." should be
+/// a paragraph, not a heading. It's a full sentence that happens to be bold.
+#[test]
+fn test_bage_bevollmaechtigten_sentence_is_not_heading() {
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(helpers::input_path("BAGE_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for BAGE");
+
+    let target_text = "Es ist im übrigen Sache des Bevollmächtigten, mich/uns über seine Handlungen zu unterrichten.";
+
+    let headings = helpers::collect_headings(&structured);
+    let found_as_heading = headings.iter().any(|(_, h)| h.contains(target_text));
+    assert!(
+        !found_as_heading,
+        "The sentence '{}' should NOT be classified as a heading. It is a normal paragraph.\nHeadings found: {:?}",
+        target_text,
+        headings.iter().filter(|(_, h)| h.contains("Bevollmächtigten")).collect::<Vec<_>>()
+    );
+}

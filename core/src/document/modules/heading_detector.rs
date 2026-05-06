@@ -546,6 +546,13 @@ impl HeadingDetector {
             return None;
         }
 
+        // Bold section headers (bold at body size) ending with sentence-ending
+        // punctuation are body text, not headings. Real headings are noun phrases
+        // or short titles that don't end with '.', '!', or '?'.
+        if is_bold_section_header && text_content.ends_with(['.', '!', '?']) {
+            return None;
+        }
+
         // Light frequency guard for size-based headings only: if this exact
         // style accounts for too much of the document's text, it's body text.
         // Bold section headers (bold at body size) are exempt — the x-alignment
