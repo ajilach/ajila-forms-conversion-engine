@@ -9220,6 +9220,29 @@ impl Flattened {
                 }
             }
 
+            // Override font weight based on CSS in rich text runs.
+            // The XFA <font> element may specify weight="bold", but the HTML CSS
+            // in individual paragraphs can override this (e.g. font-weight:normal).
+            // Only override when ALL content runs are non-bold — this handles the
+            // case where <p style="font-weight:normal"> explicitly resets the XFA
+            // bold default. Mixed paragraphs (bold heading + non-bold subtitle)
+            // keep the XFA weight so heading detection still works correctly.
+            if !para.runs.is_empty() {
+                let has_bold = para
+                    .runs
+                    .iter()
+                    .any(|r| !r.text.trim().is_empty() && r.bold);
+                let has_normal = para
+                    .runs
+                    .iter()
+                    .any(|r| !r.text.trim().is_empty() && !r.bold);
+                if let Some(ref mut font) = para_style.font {
+                    if has_normal && !has_bold {
+                        font.weight = FontWeight::Normal;
+                    }
+                }
+            }
+
             // Per XFA spec, the border is a rectangle around the *entire* draw
             // element. When we split into separate paragraph nodes, each node
             // must only keep the border edges that correspond to its position:
