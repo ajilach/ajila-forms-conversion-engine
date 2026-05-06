@@ -4146,24 +4146,74 @@ impl Flattened {
                     {
                         if occur.is_repeatable() && occur.has_initial_instances() {
                             // Create a group for repeatable sections that have initial instances
-                            let mut group_children = Vec::new();
-                            let subform_ctx = layout_ctx.with_occur_constraints(occur);
-                            let height = Self::flatten_nodes(
-                                &node.children,
-                                content_pos,
-                                layout,
-                                &mut group_children,
-                                &subform_ctx,
-                            )?;
                             let hints = vec![Hint::Occurrence {
                                 min: occur.min,
                                 max: occur.max,
                             }];
-                            flattened_children.push(FlattenedKind::Group {
-                                children: group_children,
-                                hints,
+                            let subform_ctx = layout_ctx.with_occur_constraints(occur);
+
+                            // Check if this node has multiple dynamic instance subforms
+                            // (created by clone_child_instances with _inst0, _inst1 naming).
+                            // If so, flatten each into its own occurrence group so they become
+                            // separate sections in the Document pipeline.
+                            let has_dynamic_instances = node.children.iter().any(|c| {
+                                matches!(c.kind, XfaNodeKind::Subform)
+                                    && c.name
+                                        .as_ref()
+                                        .is_some_and(|n| n.contains("_inst"))
                             });
-                            height
+
+                            if has_dynamic_instances {
+                                // Multiple subform instances: each gets its own occurrence group
+                                let mut instance_y = content_pos.y;
+                                for child in &node.children {
+                                    if matches!(child.kind, XfaNodeKind::Subform) {
+                                        let instance_pos = Position::new(
+                                            content_pos.x,
+                                            instance_y,
+                                            content_pos.width,
+                                            content_pos.height,
+                                        );
+                                        let mut instance_children = Vec::new();
+                                        let h = Self::flatten_nodes(
+                                            std::slice::from_ref(child),
+                                            instance_pos,
+                                            layout,
+                                            &mut instance_children,
+                                            &subform_ctx,
+                                        )?;
+                                        flattened_children.push(FlattenedKind::Group {
+                                            children: instance_children,
+                                            hints: hints.clone(),
+                                        });
+                                        instance_y += h;
+                                    } else {
+                                        Self::flatten_nodes(
+                                            std::slice::from_ref(child),
+                                            content_pos,
+                                            layout,
+                                            flattened_children,
+                                            &subform_ctx,
+                                        )?;
+                                    }
+                                }
+                                instance_y - content_pos.y
+                            } else {
+                                // Single or no subform children: flatten as before
+                                let mut group_children = Vec::new();
+                                let h = Self::flatten_nodes(
+                                    &node.children,
+                                    content_pos,
+                                    layout,
+                                    &mut group_children,
+                                    &subform_ctx,
+                                )?;
+                                flattened_children.push(FlattenedKind::Group {
+                                    children: group_children,
+                                    hints,
+                                });
+                                h
+                            }
                         } else if occur.is_repeatable() && !occur.has_initial_instances() {
                             // Repeatable but initial=0: skip entirely (no instances exist yet)
                             Decimal::ZERO

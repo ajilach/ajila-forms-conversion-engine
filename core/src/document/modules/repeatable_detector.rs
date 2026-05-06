@@ -95,6 +95,26 @@ impl RepeatableDetector {
             sections: &mut Vec<RepeatableSection>,
             current_index: &mut usize,
         ) {
+            // Pre-scan: check if any sibling occurrence group at this level
+            // has dynamic instance markers (_inst).  If so, ALL occurrence groups
+            // at this level are part of the same dynamic set and should not be
+            // filtered as "signature-only".
+            let has_dynamic_instance_sibling = children.iter().any(|c| {
+                if let crate::flattened::FlattenedKind::Group {
+                    children: gc,
+                    hints,
+                    ..
+                } = c
+                {
+                    let is_occurrence = hints
+                        .iter()
+                        .any(|h| matches!(h, crate::flattened::Hint::Occurrence { .. }));
+                    is_occurrence && sibling_has_inst_markers(gc)
+                } else {
+                    false
+                }
+            });
+
             for child in children {
                 match child {
                     crate::flattened::FlattenedKind::Group {
@@ -115,9 +135,11 @@ impl RepeatableDetector {
                             let is_repeatable = max.map(|m| m > 1).unwrap_or(true);
                             let has_nested_repeatable =
                                 contains_nested_repeatable_group(group_children);
+                            let is_sig_only = !has_dynamic_instance_sibling
+                                && is_signature_only_repeatable(group_children);
                             if is_repeatable
                                 && group_contains_interactive_field(group_children)
-                                && !is_signature_only_repeatable(group_children)
+                                && !is_sig_only
                                 && !has_nested_repeatable
                             {
                                 // Collect node indices for this group
@@ -201,6 +223,31 @@ impl RepeatableDetector {
 
                     if contains_nested_repeatable_group(group_children) {
                         return true;
+                    }
+                }
+            }
+            false
+        }
+
+        /// Check if any field in a group's children has a `_inst` suffix in its SOM path,
+        /// indicating it's a dynamically-created instance from setInstances(N).
+        fn sibling_has_inst_markers(children: &[crate::flattened::FlattenedKind]) -> bool {
+            for child in children {
+                match child {
+                    crate::flattened::FlattenedKind::Node(node) => {
+                        if let Some(path) = node.som_path() {
+                            if path.as_str().contains("_inst") {
+                                return true;
+                            }
+                        }
+                    }
+                    crate::flattened::FlattenedKind::Group {
+                        children: group_children,
+                        ..
+                    } => {
+                        if sibling_has_inst_markers(group_children) {
+                            return true;
+                        }
                     }
                 }
             }

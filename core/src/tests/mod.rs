@@ -25519,4 +25519,156 @@ fn test_bage_section6_heading_merged_with_english() {
     );
 }
 
+#[test]
+fn test_bage_minderjaehrige_signature_two_blocks() {
+    // When FormularAdressat is set to "Minderjährige", the Unterschriften section
+    // should contain two signature blocks:
+    //   Block 1: Ort, Datum, Name des gesetzlichen Vertreters 1
+    //   Block 2: Ort, Datum, Name des gesetzlichen Vertreters 2
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldId, InputValue, StructuredNode};
+
+    let merged = run_exhaustive_to_merged(input_path("BAGE_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on BAGE");
+
+    // Find the CL_ClientType field
+    let client_type_id = find_field_id_by_suffix(&merged, "CL_ClientType")
+        .expect("CL_ClientType field must exist in the merged tree");
+
+    // Collect the structure inside the Minderjährige conditional
+    // We need to find conditional nodes for Minderjährige and check their
+    // structure — specifically that signatures are split into two groups.
+    fn find_minderjaehrige_signature_fields(
+        nodes: &[StructuredNode],
+        field_id: &FieldId,
+    ) -> Vec<Vec<String>> {
+        // Find all conditional nodes for Minderjährige and collect groups of fields
+        let mut blocks: Vec<Vec<String>> = Vec::new();
+
+        fn walk(
+            nodes: &[StructuredNode],
+            field_id: &FieldId,
+            blocks: &mut Vec<Vec<String>>,
+            inside_minderjaehrige: bool,
+        ) {
+            for node in nodes {
+                match node {
+                    StructuredNode::Conditional(c) => {
+                        let is_minder = c.condition.field_name == *field_id
+                            && matches!(&c.condition.value, InputValue::Text(v) if v == "Minderjährige");
+                        walk(
+                            &[(*c.content).clone()],
+                            field_id,
+                            blocks,
+                            inside_minderjaehrige || is_minder,
+                        );
+                    }
+                    StructuredNode::Group(g) => {
+                        if inside_minderjaehrige {
+                            // Check if this group directly contains signature fields
+                            let mut fields_in_group = Vec::new();
+                            collect_field_labels_in(&g.children, &mut fields_in_group);
+                            if !fields_in_group.is_empty() {
+                                blocks.push(fields_in_group);
+                            } else {
+                                // Group might contain Repeatables — recurse
+                                walk(&g.children, field_id, blocks, true);
+                            }
+                        } else {
+                            walk(&g.children, field_id, blocks, inside_minderjaehrige);
+                        }
+                    }
+                    StructuredNode::Repeatable(r) => {
+                        if inside_minderjaehrige {
+                            // Treat each repeatable instance as a signature block
+                            let mut fields_in_block = Vec::new();
+                            collect_field_labels_in(&[(*r.item).clone()], &mut fields_in_block);
+                            if !fields_in_block.is_empty() {
+                                blocks.push(fields_in_block);
+                            }
+                        } else {
+                            walk(&[(*r.item).clone()], field_id, blocks, inside_minderjaehrige);
+                        }
+                    }
+                    _ => {
+                        if inside_minderjaehrige {
+                            // We're at the top level of a Minderjährige conditional
+                            // that's not a group — just collect fields directly
+                        }
+                    }
+                }
+            }
+        }
+
+        walk(nodes, field_id, &mut blocks, false);
+        blocks
+    }
+
+    fn collect_field_labels_in(nodes: &[StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(f) => {
+                    if let Some(label) = &f.label {
+                        let t = label.as_plain_text();
+                        if !t.is_empty() {
+                            out.push(t);
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => collect_field_labels_in(&g.children, out),
+                StructuredNode::GridLayout(grid) => {
+                    let children: Vec<_> = grid.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_field_labels_in(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let blocks = find_minderjaehrige_signature_fields(&merged, &client_type_id);
+
+    // We expect exactly 2 signature blocks
+    assert_eq!(
+        blocks.len(),
+        2,
+        "Expected 2 signature blocks for Minderjährige, got {}: {:?}",
+        blocks.len(),
+        blocks
+    );
+
+    // First block: Ort, Datum, Name des gesetzlichen Vertreters 1
+    assert!(
+        blocks[0].iter().any(|l| l.contains("Ort")),
+        "First signature block should contain 'Ort', got: {:?}",
+        blocks[0]
+    );
+    assert!(
+        blocks[0].iter().any(|l| l.contains("Datum")),
+        "First signature block should contain 'Datum', got: {:?}",
+        blocks[0]
+    );
+    assert!(
+        blocks[0].iter().any(|l| l.contains("gesetzlichen Vertreters 1")),
+        "First signature block should contain 'Name des gesetzlichen Vertreters 1', got: {:?}",
+        blocks[0]
+    );
+
+    // Second block: Ort, Datum, Name des gesetzlichen Vertreters 2
+    assert!(
+        blocks[1].iter().any(|l| l.contains("Ort")),
+        "Second signature block should contain 'Ort', got: {:?}",
+        blocks[1]
+    );
+    assert!(
+        blocks[1].iter().any(|l| l.contains("Datum")),
+        "Second signature block should contain 'Datum', got: {:?}",
+        blocks[1]
+    );
+    assert!(
+        blocks[1].iter().any(|l| l.contains("gesetzlichen Vertreters 2")),
+        "Second signature block should contain 'Name des gesetzlichen Vertreters 2', got: {:?}",
+        blocks[1]
+    );
+}
+
 
