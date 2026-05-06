@@ -211,10 +211,6 @@ pub fn run_analysis_pipeline_with_context(
     // that form a grid pattern.
     TableDetector::new().process_with_context(doc, ctx);
 
-    // ColumnLayoutDetector: Detect multi-column layouts and group elements
-    // by column so that left-column content precedes right-column content.
-    ColumnLayoutDetector::new().process_with_context(doc, ctx);
-
     TextBlockMerger::new().process_with_context(doc, ctx);
 
     FieldTableDetector::new().process_with_context(doc, ctx);
@@ -227,4 +223,11 @@ pub fn run_analysis_pipeline_with_context(
     //FieldTableDetectorVertical::new().process_with_context(doc, ctx);
 
     RepeatableDetector::new().process_with_context(doc, ctx);
+
+    // ColumnLayoutDetector: Detect multi-column layouts and group elements
+    // by column so that left-column content precedes right-column content.
+    // Runs after all other analysis modules since text block merging,
+    // heading detection, and grid detection work correctly regardless of
+    // column ordering (they use spatial proximity, not document order).
+    ColumnLayoutDetector::new().process_with_context(doc, ctx);
 }

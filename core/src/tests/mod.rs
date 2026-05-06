@@ -25522,93 +25522,183 @@ fn test_bage_section6_heading_merged_with_english() {
 
 
 #[test]
-fn test_aaav_column_layout_detection_explore() {
-    use crate::flattened::{FlattenedKind, FlattenedNodeKind};
+fn test_aaav_column_layout_detects_four_sections() {
+    use crate::document::modules::ColumnLayoutDetector;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::{Document, GroupKind};
 
     let mut bp = Blueprint::from_pdf(input_path("AAAV_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let first_state = states.iter().next().expect("should have at least one state");
-    let flattened = &first_state.flattened;
+    let first_state = states.iter().next().unwrap();
+    let mut doc = Document::from_flattened(&first_state.flattened);
+    ColumnLayoutDetector::new().process(&mut doc);
 
-    println!("Total leaf nodes: {}", flattened.node_count());
-    println!("Top-level children: {}", flattened.children.len());
+    let roots_after = doc.roots();
+    let column_groups: Vec<usize> = roots_after
+        .iter()
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .copied()
+        .collect();
 
-    // Show structure of top-level children
-    for (i, child) in flattened.children.iter().enumerate() {
-        match child {
-            FlattenedKind::Group { children, hints } => {
-                let node_count = child.node_count();
-                println!(
-                    "  [{}] Group({} nodes, {} hints, {} direct children)",
-                    i,
-                    node_count,
-                    hints.len(),
-                    children.len()
-                );
-                // Show first few leaf nodes with x positions
-                for node in child.iter_nodes().take(3) {
-                    let x = node.x.to_f32().unwrap_or(0.0);
-                    let w = node.width.to_f32().unwrap_or(0.0);
-                    match &node.kind {
-                        FlattenedNodeKind::Text { content, .. } => {
-                            println!(
-                                "    text: x={:.0} w={:.0} '{}'",
-                                x,
-                                w,
-                                content.chars().take(50).collect::<String>()
-                            );
-                        }
-                        FlattenedNodeKind::Field { name, .. } => {
-                            println!("    field: x={:.0} w={:.0} '{}'", x, w, name);
-                        }
-                    }
-                }
-            }
-            FlattenedKind::Node(node) => {
-                let x = node.x.to_f32().unwrap_or(0.0);
-                let w = node.width.to_f32().unwrap_or(0.0);
-                match &node.kind {
-                    FlattenedNodeKind::Text { content, .. } => {
-                        println!(
-                            "  [{}] Node(text) x={:.0} w={:.0} '{}'",
-                            i,
-                            x,
-                            w,
-                            content.chars().take(50).collect::<String>()
-                        );
-                    }
-                    FlattenedNodeKind::Field { name, .. } => {
-                        println!("  [{}] Node(field) x={:.0} w={:.0} '{}'", i, x, w, name);
-                    }
-                }
-            }
-        }
+    // AAAV has 4 multi-column sections (each producing 2 groups: left + right)
+    assert_eq!(
+        column_groups.len(),
+        8,
+        "AAAV should have 8 column groups (4 sections × 2 columns)"
+    );
+}
+
+#[test]
+fn test_debug_column_detection_forms() {
+    use crate::document::modules::ColumnLayoutDetector;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::{Document, GroupKind};
+
+    for form in &["AACS_019_DE.pdf", "AACW_019_DE.pdf", "AACE_019_DE.pdf", "AACC_019_DE.pdf"] {
+        let path = input_path(form);
+        if !std::path::Path::new(&path).exists() { continue; }
+        let mut bp = Blueprint::from_pdf(&path).unwrap();
+        let states = bp.states().unwrap();
+        let first_state = states.iter().next().unwrap();
+        let mut doc = Document::from_flattened(&first_state.flattened);
+        let roots_before = doc.roots().len();
+        ColumnLayoutDetector::new().process(&mut doc);
+        let roots_after = doc.roots();
+        let col_groups = roots_after.iter().filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown)).count();
+        let noprint = roots_after.iter().filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::NoPrint)).count();
+        println!("{}: roots_before={} roots_after={} column_groups={} noprint={}", form, roots_before, roots_after.len(), col_groups, noprint);
     }
+}
 
-    // Specifically look for nodes with x > 200 (potential right column content)
-    println!("\n--- Nodes with x > 200 (potential right column) ---");
-    let mut right_count = 0;
-    for node in flattened.iter_nodes() {
-        let x = node.x.to_f32().unwrap_or(0.0);
-        if x > 200.0 {
-            let w = node.width.to_f32().unwrap_or(0.0);
-            let y = node.y.to_f32().unwrap_or(0.0);
-            match &node.kind {
-                FlattenedNodeKind::Text { content, .. } => {
-                    if right_count < 20 {
-                        println!(
-                            "  x={:.0} y={:.0} w={:.0} '{}'",
-                            x,
-                            y,
-                            w,
-                            content.chars().take(50).collect::<String>()
-                        );
-                    }
-                    right_count += 1;
+#[test]
+fn test_aaav_column_layout_left_before_right() {
+    // After full pipeline, left column content should precede right column content.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AAAV_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AAAV_019_DE");
+
+    // Collect all text content in order
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
                 }
                 _ => {}
             }
         }
     }
-    println!("  Total right-side nodes: {}", right_count);
+    collect_text(&structured, &mut all_text);
+
+    // AAAV left column starts with "Verwendete Konten" related content
+    // Right column has "Kontodokumentation" related content
+    // Left column text should appear before right column text
+    let left_pos = all_text
+        .iter()
+        .position(|t| t.contains("Verwendete Konten"));
+    let right_pos = all_text
+        .iter()
+        .position(|t| t.contains("Kontodokumentation"));
+
+    if let (Some(l), Some(r)) = (left_pos, right_pos) {
+        assert!(
+            l < r,
+            "Left column text ('Verwendete Konten' at {}) should come before right column text ('Kontodokumentation' at {})",
+            l, r
+        );
+    }
+}
+
+#[test]
+fn test_aabh_column_layout_left_before_right() {
+    // AABH has a Vereinbarung section with two side-by-side text columns.
+    // After column detection, left column content should precede right column.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AABH_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AABH_019_DE");
+
+    // Collect all text content in order
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text);
+
+    // Left column should contain "UBS Europe SE" text before right column "Kontodokumentation"
+    let left_pos = all_text
+        .iter()
+        .position(|t| t.contains("UBS Europe SE"));
+    let right_pos = all_text
+        .iter()
+        .position(|t| t.contains("Kontodokumentation"));
+
+    assert!(
+        left_pos.is_some(),
+        "Should find 'UBS Europe SE' in output text"
+    );
+    assert!(
+        right_pos.is_some(),
+        "Should find 'Kontodokumentation' in output text"
+    );
+    assert!(
+        left_pos.unwrap() < right_pos.unwrap(),
+        "Left column text ('UBS Europe SE' at {}) should come before right column text ('Kontodokumentation' at {})",
+        left_pos.unwrap(),
+        right_pos.unwrap()
+    );
+}
+
+#[test]
+fn test_aabh_column_layout_narrow_overlays_removed() {
+    // AABH narrow overlay elements (T_Left_Indent/T_Right_Indent) should be
+    // discarded as NoPrint by the column detector.
+    use crate::document::modules::{ColumnLayoutDetector, AnalysisModule};
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AABH_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let mut doc = Document::from_flattened(&first_state.flattened);
+    ColumnLayoutDetector::new().process(&mut doc);
+
+    let roots = doc.roots();
+    let noprint_groups: Vec<usize> = roots
+        .iter()
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::NoPrint))
+        .copied()
+        .collect();
+
+    // The narrow indent overlays should be marked as NoPrint
+    assert!(
+        !noprint_groups.is_empty(),
+        "AABH should have narrow overlays marked as NoPrint"
+    );
 }
