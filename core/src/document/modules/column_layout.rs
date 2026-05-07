@@ -151,15 +151,17 @@ impl ColumnLayoutDetector {
 
         // Classify elements into categories
         let mut column_candidates: Vec<(usize, Bounds)> = Vec::new();
+        let mut narrow_items: Vec<(usize, Bounds)> = Vec::new();
 
         for (idx, bounds) in &bounded {
             if bounds.width > content_width * max_width_ratio {
                 // Full-width elements are excluded from column detection
             } else if bounds.width >= content_width * min_width_ratio {
                 column_candidates.push((*idx, *bounds));
+            } else {
+                // Narrow elements (section numbers, overlays) — collect for later injection
+                narrow_items.push((*idx, *bounds));
             }
-            // Elements smaller than min_width_ratio are ignored
-            // (page furniture like footers, timestamps, page numbers)
         }
 
         if column_candidates.len() < MIN_ELEMENTS_PER_COLUMN * 2 {
@@ -259,17 +261,30 @@ impl ColumnLayoutDetector {
         let mut sections: Vec<ColumnSection> = Vec::new();
 
         for (start_y, end_y) in &section_bounds {
-            let section_left: Vec<usize> = left_elements
+            let mut section_left: Vec<usize> = left_elements
                 .iter()
                 .filter(|(_, y)| y >= start_y && y < end_y)
                 .map(|(idx, _)| *idx)
                 .collect();
 
-            let section_right: Vec<usize> = right_elements
+            let mut section_right: Vec<usize> = right_elements
                 .iter()
                 .filter(|(_, y)| y >= start_y && y < end_y)
                 .map(|(idx, _)| *idx)
                 .collect();
+
+            // Inject narrow items (section numbers, etc.) into the correct column side
+            for (idx, bounds) in &narrow_items {
+                let y = bounds.top();
+                if y < *start_y || y >= *end_y {
+                    continue;
+                }
+                if bounds.center_x() < split_x {
+                    section_left.push(*idx);
+                } else {
+                    section_right.push(*idx);
+                }
+            }
 
             // Only create a section if both columns have content
             if !section_left.is_empty() && !section_right.is_empty() {
@@ -554,8 +569,9 @@ mod tests {
 
     #[test]
     fn test_narrow_elements_not_treated_as_columns() {
-        // Narrow elements (like number overlays) should simply be ignored
-        // by column detection — not marked as NoPrint or treated as columns.
+        // Narrow elements (like number overlays) should be captured into the
+        // ColumnSection alongside their column — not left as stray roots or
+        // marked as NoPrint.
         let nodes = vec![
             // Narrow elements (≤ min_width_ratio of content width)
             text_node(30.0, 10.0, 25.0, 170.0, "1. 2. 3. 4."),
@@ -595,12 +611,12 @@ mod tests {
             .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
             .count();
         assert_eq!(column_section_count, 1, "Expected 1 ColumnSection group");
-        // The narrow elements remain as unclaimed leaves
+        // Narrow elements are captured into the ColumnSection (not left as stray leaves)
         let leaf_count = roots
             .iter()
             .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Leaf { .. }))
             .count();
-        assert_eq!(leaf_count, 2, "Narrow elements should remain as leaves");
+        assert_eq!(leaf_count, 0, "Narrow elements should be captured into ColumnSection, not left as stray leaves");
     }
 
     #[test]

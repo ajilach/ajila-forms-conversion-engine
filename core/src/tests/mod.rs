@@ -25585,7 +25585,6 @@ fn test_aaai_no_column_layout_detected() {
     );
 }
 
-
 #[test]
 fn test_aaav_column_layout_left_before_right() {
     // After full pipeline, left column content should precede right column content.
