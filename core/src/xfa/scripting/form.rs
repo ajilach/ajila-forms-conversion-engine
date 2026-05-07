@@ -907,8 +907,15 @@ impl XfaForm {
                 // Clone the child subform N times within this parent
                 Self::clone_child_instances(subform, &child_name, count, &instance_values);
             } else {
-                // Fallback: resolve embeds on the subform itself (single instance)
+                // Fallback: no nested repeatable child subform found.
+                // Use draw-duplication approach: create copies of draw/field nodes
+                // for instances 1..N, then resolve embeds on original with instance 0.
                 let id_map = Self::build_subform_id_map(subform);
+
+                for i in 1..count {
+                    Self::insert_instance_draws(subform, &id_map, &instance_values[i], i);
+                }
+
                 Self::write_instance_values(subform, &instance_values[0]);
                 Self::resolve_embeds_in_subtree(subform, &id_map, &instance_values[0]);
             }
@@ -938,6 +945,63 @@ impl XfaForm {
             }
         }
         None
+    }
+
+    /// Insert additional draw nodes into a subform for a specific instance.
+    ///
+    /// Walks the subform tree to find draws (and fields used as labels) and creates
+    /// copies with per-instance resolved text.  Each copy gets a unique name suffix
+    /// and a vertical offset so it doesn't overlap with the original.
+    fn insert_instance_draws(
+        node: &mut XfaNode,
+        id_map: &HashMap<String, String>,
+        values: &HashMap<String, String>,
+        instance_idx: usize,
+    ) {
+        let mut inserts: Vec<(usize, XfaNode)> = Vec::new();
+
+        for (idx, child) in node.children.iter().enumerate() {
+            let is_draw = matches!(child.kind, XfaNodeKind::Draw);
+            let is_field = matches!(child.kind, XfaNodeKind::Field);
+
+            if is_draw || is_field {
+                if let Some(name) = &child.name {
+                    let has_instance_specific = values
+                        .keys()
+                        .any(|k| k == name || k.starts_with(&format!("{}.", name)));
+
+                    if has_instance_specific || Self::node_has_embeds(child) {
+                        let mut clone = child.clone();
+                        if let Some(ref mut n) = clone.name {
+                            *n = format!("{}_inst{}", n, instance_idx);
+                        }
+                        let h = child.h.unwrap_or_else(|| crate::xfa::num(20.0));
+                        let original_y = child.y.unwrap_or(rust_decimal::Decimal::ZERO);
+                        clone.y =
+                            Some(original_y + h * rust_decimal::Decimal::from(instance_idx as u32));
+                        Self::write_instance_values(&mut clone, values);
+                        Self::resolve_embeds_in_subtree(&mut clone, id_map, values);
+                        inserts.push((idx, clone));
+                    }
+                }
+            }
+        }
+
+        for (idx, clone) in inserts.into_iter().rev() {
+            node.children.insert(idx + 1, clone);
+        }
+
+        for child in &mut node.children {
+            if matches!(child.kind, XfaNodeKind::Subform)
+                && !child
+                    .name
+                    .as_deref()
+                    .map(|n| n.contains("_inst"))
+                    .unwrap_or(false)
+            {
+                Self::insert_instance_draws(child, id_map, values, instance_idx);
+            }
+        }
     }
 
     /// Clone a child subform N times within its parent, applying per-instance values.

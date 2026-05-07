@@ -18634,6 +18634,88 @@ fn test_aaha_de_nachname_label_is_not_contaminated_with_agreement_text() {
 }
 
 #[test]
+fn test_aaha_de_has_one_repeatable_with_nachname_vorname() {
+    // AAHA DE should have exactly one repeatable section containing "Nachname" and
+    // "Vorname(n)" fields. The signature section should NOT be a repeatable (it has
+    // no add/remove buttons).
+    use crate::structured::StructuredNode;
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AAHA_019_DE.pdf"))
+        .expect("Failed to process AAHA_019_DE.pdf");
+
+    fn collect_repeatables(nodes: &[StructuredNode]) -> Vec<Vec<String>> {
+        let mut result = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::Repeatable(rep) => {
+                    let mut labels = Vec::new();
+                    collect_labels(std::slice::from_ref(rep.item.as_ref()), &mut labels);
+                    result.push(labels);
+                    // Also check for nested repeatables
+                    result.extend(collect_repeatables(std::slice::from_ref(rep.item.as_ref())));
+                }
+                StructuredNode::Group(g) => result.extend(collect_repeatables(&g.children)),
+                StructuredNode::Conditional(c) => {
+                    result.extend(collect_repeatables(std::slice::from_ref(c.content.as_ref())));
+                }
+                _ => {}
+            }
+        }
+        result
+    }
+
+    fn collect_labels(nodes: &[StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Field(f) => {
+                    if let Some(label) = &f.label {
+                        let t = label.as_plain_text();
+                        if !t.is_empty() {
+                            out.push(t);
+                        }
+                    }
+                }
+                StructuredNode::Group(g) => collect_labels(&g.children, out),
+                StructuredNode::GridLayout(grid) => {
+                    for element in &grid.elements {
+                        collect_labels(std::slice::from_ref(&element.node), out);
+                    }
+                }
+                StructuredNode::Repeatable(rep) => {
+                    collect_labels(std::slice::from_ref(rep.item.as_ref()), out);
+                }
+                StructuredNode::Conditional(c) => {
+                    collect_labels(std::slice::from_ref(c.content.as_ref()), out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let repeatables = collect_repeatables(&merged);
+
+    assert_eq!(
+        repeatables.len(),
+        1,
+        "AAHA DE should have exactly 1 repeatable section, found {}: {:?}",
+        repeatables.len(),
+        repeatables
+    );
+
+    let labels = &repeatables[0];
+    assert!(
+        labels.iter().any(|l| l.contains("Nachname")),
+        "Repeatable should contain 'Nachname', got: {:?}",
+        labels
+    );
+    assert!(
+        labels.iter().any(|l| l.contains("Vorname")),
+        "Repeatable should contain 'Vorname(n)', got: {:?}",
+        labels
+    );
+}
+
+#[test]
 fn test_aaaq_de_field_row_ordering() {
     // In AAAQ DE, the fields under the first section should be on separate rows:
     //   Row 1: Nachname, Vorname(n)
@@ -25565,14 +25647,19 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
                     }
                     StructuredNode::Group(g) => {
                         if inside_minderjaehrige {
-                            // Check if this group directly contains signature fields
-                            let mut fields_in_group = Vec::new();
-                            collect_field_labels_in(&g.children, &mut fields_in_group);
-                            if !fields_in_group.is_empty() {
-                                blocks.push(fields_in_group);
-                            } else {
-                                // Group might contain Repeatables — recurse
+                            // If this group has child groups, recurse to find
+                            // individual signature blocks deeper in the tree.
+                            let has_child_groups = g.children.iter().any(|c| {
+                                matches!(c, StructuredNode::Group(_))
+                            });
+                            if has_child_groups {
                                 walk(&g.children, field_id, blocks, true);
+                            } else {
+                                let mut fields_in_group = Vec::new();
+                                collect_field_labels_in(&g.children, &mut fields_in_group);
+                                if !fields_in_group.is_empty() {
+                                    blocks.push(fields_in_group);
+                                }
                             }
                         } else {
                             walk(&g.children, field_id, blocks, inside_minderjaehrige);

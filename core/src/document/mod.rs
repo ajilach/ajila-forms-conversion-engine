@@ -221,6 +221,9 @@ pub enum GroupKind {
         min_occurrences: u32,
         /// Maximum occurrences allowed (None = unlimited)
         max_occurrences: Option<u32>,
+        /// Whether this section is user-repeatable (has add/remove buttons).
+        /// Script-managed sections (e.g., signatures) have this set to false.
+        is_user_repeatable: bool,
     },
 
     /// An inline field - a field with text directly before/after but no label above/below
@@ -1051,9 +1054,10 @@ impl<'a> Document<'a> {
             GroupKind::RepeatableSection {
                 min_occurrences,
                 max_occurrences,
+                is_user_repeatable,
             } => match max_occurrences {
-                Some(max) => format!("RepeatableSection[{}-{}]", min_occurrences, max),
-                None => format!("RepeatableSection[{}+]", min_occurrences),
+                Some(max) => format!("RepeatableSection[{}-{}{}]", min_occurrences, max, if *is_user_repeatable { "" } else { ",script" }),
+                None => format!("RepeatableSection[{}+{}]", min_occurrences, if *is_user_repeatable { "" } else { ",script" }),
             },
             GroupKind::InlineField { .. } => "InlineField".to_string(),
             GroupKind::InlineDateField { generated_name, .. } => {
