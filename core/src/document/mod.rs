@@ -322,6 +322,14 @@ pub enum GroupKind {
         /// Whether the first row is a header row (typically bold text).
         has_header: bool,
     },
+
+    /// A multi-column text section detected by `ColumnLayoutDetector`.
+    ///
+    /// Children are individual items in reading order: all left-column items
+    /// (sorted by y) first, then all right-column items (sorted by y).
+    /// The structured converter must preserve this order without re-sorting,
+    /// since the right column may start at a lower y than the left column.
+    ColumnSection,
 }
 
 impl<'a> Document<'a> {
@@ -1093,6 +1101,7 @@ impl<'a> Document<'a> {
                     format!("Table[{}cols]", columns)
                 }
             }
+            GroupKind::ColumnSection => "ColumnSection".to_string(),
         }
     }
 
