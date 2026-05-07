@@ -326,9 +326,9 @@ where
     for (filename, language, mut bp) in blueprints {
         if bp.is_aem() {
             // AEM path: skip FormStates, get structured output directly
-            let envelope = bp.aem_structured().ok_or_else(|| {
-                Error::Conversion("AEM structured conversion failed".into())
-            })?;
+            let envelope = bp
+                .aem_structured()
+                .ok_or_else(|| Error::Conversion("AEM structured conversion failed".into()))?;
             on_event(PipelineEvent::StatesFound {
                 file: filename.clone(),
                 count: 1,
@@ -648,7 +648,7 @@ fn selection_kind_name(selection: &Selection) -> &'static str {
 
 fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(left, right)| {
-            left.kind == right.kind && left.option_index == right.option_index
-        })
+        && a.iter()
+            .zip(b.iter())
+            .all(|(left, right)| left.kind == right.kind && left.option_index == right.option_index)
 }

@@ -141,8 +141,7 @@ impl RepeatableDetector {
                             } else {
                                 false
                             };
-                            let passes_button_check =
-                                !is_xfa || has_button || nearby_button;
+                            let passes_button_check = !is_xfa || has_button || nearby_button;
                             if is_repeatable
                                 && group_contains_interactive_field(group_children)
                                 && !has_nested_repeatable
@@ -239,9 +238,7 @@ impl RepeatableDetector {
             for child in children {
                 match child {
                     crate::flattened::FlattenedKind::Node(node) => {
-                        if node.widget_type()
-                            == Some(&crate::flattened::WidgetKind::Button)
-                        {
+                        if node.widget_type() == Some(&crate::flattened::WidgetKind::Button) {
                             return true;
                         }
                     }
@@ -267,15 +264,13 @@ impl RepeatableDetector {
                 for child in children {
                     match child {
                         crate::flattened::FlattenedKind::Node(node) => {
-                            if node.widget_type()
-                                == Some(&crate::flattened::WidgetKind::Button)
-                            {
+                            if node.widget_type() == Some(&crate::flattened::WidgetKind::Button) {
                                 out.push((node.y, node.y + node.height));
                             }
                         }
-                        crate::flattened::FlattenedKind::Group {
-                            children: gc, ..
-                        } => walk(gc, out),
+                        crate::flattened::FlattenedKind::Group { children: gc, .. } => {
+                            walk(gc, out)
+                        }
                     }
                 }
             }
@@ -370,7 +365,12 @@ impl RepeatableDetector {
         }
 
         let mut current_index = 0;
-        search_groups(&doc.source.children, &mut sections, &mut current_index, &button_y_ranges);
+        search_groups(
+            &doc.source.children,
+            &mut sections,
+            &mut current_index,
+            &button_y_ranges,
+        );
         sections
     }
 
@@ -741,7 +741,10 @@ mod tests {
                 height: num(842.0),
             },
             children: vec![FlattenedKind::Group {
-                children: vec![FlattenedKind::Node(field_node), FlattenedKind::Node(button_node)],
+                children: vec![
+                    FlattenedKind::Node(field_node),
+                    FlattenedKind::Node(button_node),
+                ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
             language: String::new(),
@@ -888,7 +891,10 @@ mod tests {
                             min: 0,
                             max: Some(3),
                         }],
-                        children: vec![FlattenedKind::Node(nested_field_node), FlattenedKind::Node(nested_button)],
+                        children: vec![
+                            FlattenedKind::Node(nested_field_node),
+                            FlattenedKind::Node(nested_button),
+                        ],
                     },
                 ],
             }],

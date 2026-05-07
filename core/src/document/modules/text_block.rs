@@ -62,11 +62,7 @@ impl AnalysisModule for TextBlockGrouper {
                 continue;
             }
 
-            doc.merge_inferred(
-                vec![leaf_idx],
-                GroupKind::TextBlock,
-                self.name(),
-            );
+            doc.merge_inferred(vec![leaf_idx], GroupKind::TextBlock, self.name());
         }
     }
 }

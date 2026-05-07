@@ -767,9 +767,7 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         AemNode::TitleDraw { name, .. } => {
             names.push((name.clone(), true));
         }
-        AemNode::Repeatable {
-            name, children, ..
-        } => {
+        AemNode::Repeatable { name, children, .. } => {
             names.push((name.clone(), true));
             for child in children {
                 collect_aem_field_names_recursive(child, names);

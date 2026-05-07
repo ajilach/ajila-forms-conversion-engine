@@ -95,11 +95,7 @@ impl AnalysisModule for PlaceholderFilter {
 
         // Claim each placeholder by wrapping it in a NoPrint group
         for group_idx in placeholder_groups {
-            doc.merge_inferred(
-                vec![group_idx],
-                GroupKind::NoPrint,
-                self.name(),
-            );
+            doc.merge_inferred(vec![group_idx], GroupKind::NoPrint, self.name());
         }
     }
 }

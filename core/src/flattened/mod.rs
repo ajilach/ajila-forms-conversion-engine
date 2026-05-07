@@ -981,9 +981,18 @@ impl FlattenedNode {
         let para = &self.style.para;
 
         // --- extract paragraph properties first --------------------------------
-        let h_align = para.as_ref().map(|p| p.h_align).unwrap_or(crate::xfa::HAlign::Left);
-        let margin_left = para.as_ref().and_then(|p| p.margin_left).unwrap_or(Decimal::ZERO);
-        let margin_right = para.as_ref().and_then(|p| p.margin_right).unwrap_or(Decimal::ZERO);
+        let h_align = para
+            .as_ref()
+            .map(|p| p.h_align)
+            .unwrap_or(crate::xfa::HAlign::Left);
+        let margin_left = para
+            .as_ref()
+            .and_then(|p| p.margin_left)
+            .unwrap_or(Decimal::ZERO);
+        let margin_right = para
+            .as_ref()
+            .and_then(|p| p.margin_right)
+            .unwrap_or(Decimal::ZERO);
         let available_width = (self.width - margin_left - margin_right).max(Decimal::ONE);
 
         // --- measure text block ------------------------------------------------
@@ -998,25 +1007,22 @@ impl FlattenedNode {
 
         // --- horizontal placement ----------------------------------------------
         let text_x = match h_align {
-            crate::xfa::HAlign::Left | crate::xfa::HAlign::Justify | crate::xfa::HAlign::JustifyAll => {
-                self.x + margin_left
-            }
-            crate::xfa::HAlign::Center => {
-                self.x + (self.width - text_width) / Decimal::TWO
-            }
-            crate::xfa::HAlign::Right => {
-                self.x + self.width - text_width - margin_right
-            }
-            crate::xfa::HAlign::Radix => {
-                self.x + self.width / Decimal::TWO
-            }
+            crate::xfa::HAlign::Left
+            | crate::xfa::HAlign::Justify
+            | crate::xfa::HAlign::JustifyAll => self.x + margin_left,
+            crate::xfa::HAlign::Center => self.x + (self.width - text_width) / Decimal::TWO,
+            crate::xfa::HAlign::Right => self.x + self.width - text_width - margin_right,
+            crate::xfa::HAlign::Radix => self.x + self.width / Decimal::TWO,
         };
 
         // Use measured text width, capped at available width.
         let effective_width = text_width.min(available_width);
 
         // --- vertical placement ------------------------------------------------
-        let v_align = para.as_ref().map(|p| p.v_align).unwrap_or(crate::xfa::VAlign::Top);
+        let v_align = para
+            .as_ref()
+            .map(|p| p.v_align)
+            .unwrap_or(crate::xfa::VAlign::Top);
         let v_offset = metrics.first_line_offset(self.height, v_align);
         let text_y = self.y + v_offset;
 
@@ -1025,7 +1031,12 @@ impl FlattenedNode {
 
     /// Approximate text bounds when font metrics are unavailable.
     fn approximate_text_bounds(&self, content: &str) -> Bounds {
-        let font_size = self.style.font.as_ref().map(|f| f.size).unwrap_or(num(10.0));
+        let font_size = self
+            .style
+            .font
+            .as_ref()
+            .map(|f| f.size)
+            .unwrap_or(num(10.0));
         let char_width = font_size * num(0.6);
         let text_width = char_width * Decimal::from(content.chars().count() as u32);
         let text_width = text_width.min(self.width);
@@ -1046,8 +1057,18 @@ impl FlattenedNode {
         }
         let text_height = (line_height * Decimal::from(num_lines as u32)).min(self.height);
 
-        let margin_left = self.style.para.as_ref().and_then(|p| p.margin_left).unwrap_or(Decimal::ZERO);
-        Bounds::new(self.x + margin_left, self.y, text_width.min(self.width - margin_left), text_height)
+        let margin_left = self
+            .style
+            .para
+            .as_ref()
+            .and_then(|p| p.margin_left)
+            .unwrap_or(Decimal::ZERO);
+        Bounds::new(
+            self.x + margin_left,
+            self.y,
+            text_width.min(self.width - margin_left),
+            text_height,
+        )
     }
 
     // ========================================================================
@@ -3184,7 +3205,8 @@ impl Flattened {
                     rich_text,
                 );
                 // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
-                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node, &ctx.language);
+                let mut draw_kinds =
+                    Self::split_draw_into_paragraph_nodes(draw_node, &ctx.language);
                 // Add NoPrint hint if relevant="-print" or inherited from parent
                 if Self::is_no_print(node) || ctx.has_inherited_hint(&Hint::NoPrint) {
                     for kind in &mut draw_kinds {
@@ -3373,7 +3395,10 @@ impl Flattened {
             page_area
         }
 
-        fn collect_recursive<'a>(nodes: &'a [XfaNode], result: &mut Vec<(&'a XfaNode, &'a XfaNode)>) {
+        fn collect_recursive<'a>(
+            nodes: &'a [XfaNode],
+            result: &mut Vec<(&'a XfaNode, &'a XfaNode)>,
+        ) {
             for node in nodes {
                 // Check for PageArea node type
                 if matches!(node.kind, XfaNodeKind::PageArea) {
@@ -3449,7 +3474,7 @@ impl Flattened {
     /// Find the last leaf `FlattenedNode` in a mutable slice of `FlattenedKind`,
     /// recursing into Groups.
     fn last_leaf_node_mut(kinds: &mut [FlattenedKind]) -> Option<&mut FlattenedNode> {
-        for kind in  kinds.iter_mut().rev() {
+        for kind in kinds.iter_mut().rev() {
             match kind {
                 FlattenedKind::Node(node) => return Some(node),
                 FlattenedKind::Group { children, .. } => {
@@ -4158,9 +4183,7 @@ impl Flattened {
                             // separate sections in the Document pipeline.
                             let has_dynamic_instances = node.children.iter().any(|c| {
                                 matches!(c.kind, XfaNodeKind::Subform)
-                                    && c.name
-                                        .as_ref()
-                                        .is_some_and(|n| n.contains("_inst"))
+                                    && c.name.as_ref().is_some_and(|n| n.contains("_inst"))
                             });
 
                             if has_dynamic_instances {
@@ -4313,8 +4336,7 @@ impl Flattened {
                             + node.margin_top.unwrap_or(Decimal::ZERO)
                             + node.margin_bottom.unwrap_or(Decimal::ZERO);
                         let effective_height = actual_height.max(consumed_height);
-                        let node_bottom =
-                            (outer_pos.y - parent_position.y) + effective_height;
+                        let node_bottom = (outer_pos.y - parent_position.y) + effective_height;
                         max_extent_y = max_extent_y.max(node_bottom);
                     }
                 }
@@ -4495,7 +4517,8 @@ impl Flattened {
                             rich_text,
                         );
                         // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
-                        let mut draw_kinds = Self::split_draw_into_paragraph_nodes(draw_node, &child_ctx.language);
+                        let mut draw_kinds =
+                            Self::split_draw_into_paragraph_nodes(draw_node, &child_ctx.language);
                         // Add NoPrint hint if relevant="-print" or inherited from parent
                         if Self::is_no_print(node) || child_ctx.has_inherited_hint(&Hint::NoPrint) {
                             for kind in &mut draw_kinds {
@@ -4601,8 +4624,7 @@ impl Flattened {
                             + node.margin_top.unwrap_or(Decimal::ZERO)
                             + node.margin_bottom.unwrap_or(Decimal::ZERO);
                         let effective_height = actual_height.max(consumed_height);
-                        let node_bottom =
-                            (outer_pos.y - parent_position.y) + effective_height;
+                        let node_bottom = (outer_pos.y - parent_position.y) + effective_height;
                         max_extent_y = max_extent_y.max(node_bottom);
                     }
                 }
@@ -4902,8 +4924,10 @@ impl Flattened {
                                     rich_text,
                                 );
                                 // Split multi-paragraph draw nodes into one FlattenedNode per paragraph
-                                let mut draw_kinds =
-                                    Self::split_draw_into_paragraph_nodes(draw_node, &child_ctx.language);
+                                let mut draw_kinds = Self::split_draw_into_paragraph_nodes(
+                                    draw_node,
+                                    &child_ctx.language,
+                                );
                                 // Add NoPrint hint if relevant="-print" or inherited from parent
                                 if Self::is_no_print(node)
                                     || child_ctx.has_inherited_hint(&Hint::NoPrint)
@@ -5219,17 +5243,15 @@ impl Flattened {
         });
 
         let table_slot = if matches!(parent_layout, Layout::Row | Layout::RightToLeftRow) {
-            ctx.table_column_widths
-                .as_ref()
-                .and_then(|widths| {
-                    Self::compute_table_cell_slot(
-                        widths,
-                        *current_x,
-                        parent_position,
-                        parent_layout,
-                        Self::extract_col_span(node),
-                    )
-                })
+            ctx.table_column_widths.as_ref().and_then(|widths| {
+                Self::compute_table_cell_slot(
+                    widths,
+                    *current_x,
+                    parent_position,
+                    parent_layout,
+                    Self::extract_col_span(node),
+                )
+            })
         } else {
             None
         };
@@ -5262,7 +5284,6 @@ impl Flattened {
                     // use per-paragraph measurement so the height accurately reflects
                     // different font sizes and CSS space_above/space_below per paragraph.
                     let natural_content_height = if Self::has_html_exdata(&node.children) {
-                        
                         Self::calculate_rich_text_draw_height(
                             &node.children,
                             &node.font,
@@ -6164,11 +6185,7 @@ impl Flattened {
             .map(|(idx, width)| {
                 width.unwrap_or_else(|| {
                     let w = widest_auto_cols[idx];
-                    if w > Decimal::ZERO {
-                        w
-                    } else {
-                        num(20.0)
-                    }
+                    if w > Decimal::ZERO { w } else { num(20.0) }
                 })
             })
             .collect()
@@ -6897,7 +6914,10 @@ impl Flattened {
                             base_font,
                             scale,
                             letter_spacing,
-                            node.style.para.as_ref().and_then(|p| p.hyphenation.as_ref()),
+                            node.style
+                                .para
+                                .as_ref()
+                                .and_then(|p| p.hyphenation.as_ref()),
                             None, // dict resolved at call site if needed
                         );
 
@@ -7032,8 +7052,7 @@ impl Flattened {
                     .unwrap_or(Rgba([0u8, 0u8, 0u8, 255u8]));
 
                 // Use render bounds for all edges when available
-                let (edge_x, edge_y, edge_w, edge_h) =
-                    (render_x, render_y, render_w, render_h);
+                let (edge_x, edge_y, edge_w, edge_h) = (render_x, render_y, render_w, render_h);
 
                 // Draw based on stroke style
                 match edge.stroke {
@@ -7802,9 +7821,8 @@ impl Flattened {
                                 underline: false,
                             });
                         } else if !preserve_spaces
-                            && segment.contains(|c: char| {
-                                c.is_ascii_whitespace() || c == '\u{00A0}'
-                            })
+                            && segment
+                                .contains(|c: char| c.is_ascii_whitespace() || c == '\u{00A0}')
                         {
                             // Whitespace-only text node between inline elements
                             // (e.g. "<span>text1</span>   <span>text2</span>").
@@ -7862,7 +7880,8 @@ impl Flattened {
                                 // Parse CSS margin-left/margin-right for paragraph width reduction
                                 // Per XFA spec Chapter 27: margin-left reduces available width for text wrapping
                                 para.margin_left = Self::parse_css_dimension(style, "margin-left");
-                                para.margin_right = Self::parse_css_dimension(style, "margin-right");
+                                para.margin_right =
+                                    Self::parse_css_dimension(style, "margin-right");
                                 // Only override h_align if CSS specifies it
                                 let css_align = Self::parse_css_alignment_optional(style);
                                 if let Some(align) = css_align {
@@ -8085,10 +8104,7 @@ impl Flattened {
                             // where each <p> should produce exactly ONE paragraph slot.
                             if let Some(last_para) = paragraphs.last_mut() {
                                 if last_para.runs.is_empty()
-                                    || last_para
-                                        .runs
-                                        .iter()
-                                        .all(|r| r.text.trim().is_empty())
+                                    || last_para.runs.iter().all(|r| r.text.trim().is_empty())
                                 {
                                     // Current paragraph is empty, just mark it
                                     last_para.is_empty = true;
@@ -8496,7 +8512,8 @@ impl Flattened {
             let para_margin_left = para.margin_left.map(|m| m * scale);
             let para_margin_right = para.margin_right.unwrap_or(0.0) * scale;
             let para_margin_left_val = para_margin_left.unwrap_or(0.0);
-            let para_effective_width = (max_width - para_margin_left_val - para_margin_right).max(0.0);
+            let para_effective_width =
+                (max_width - para_margin_left_val - para_margin_right).max(0.0);
 
             // Calculate effective indent (in pixels after scaling)
             let para_indent = para.text_indent.unwrap_or(0.0) * scale;
@@ -8520,18 +8537,17 @@ impl Flattened {
             }
 
             // Word-wrap the tokens using effective width (reduced by margins, using resolved value)
-            let para_lines =
-                Self::wrap_tokens_to_lines(
-                    &tokens,
-                    para_effective_width,
-                    para_indent,
-                    space_width,
-                    hyph_settings,
-                    hyph_dict,
-                    Some(font),
-                    font_size,
-                    letter_spacing,
-                );
+            let para_lines = Self::wrap_tokens_to_lines(
+                &tokens,
+                para_effective_width,
+                para_indent,
+                space_width,
+                hyph_settings,
+                hyph_dict,
+                Some(font),
+                font_size,
+                letter_spacing,
+            );
             let num_para_lines = para_lines.len();
 
             for (i, line_tokens) in para_lines.into_iter().enumerate() {
@@ -8673,8 +8689,12 @@ impl Flattened {
                             letter_spacing,
                         );
                     } else {
-                        let width =
-                            Self::measure_text_width(&current_word, font_size, font, letter_spacing);
+                        let width = Self::measure_text_width(
+                            &current_word,
+                            font_size,
+                            font,
+                            letter_spacing,
+                        );
                         tokens.push(LayoutToken {
                             text: current_word,
                             width,
@@ -8839,7 +8859,8 @@ impl Flattened {
             for &byte_idx in break_points.iter().rev() {
                 let first_part = &token.text[..byte_idx];
                 let first_width =
-                    Self::measure_text_width(first_part, font_size, font, letter_spacing) + hyphen_width;
+                    Self::measure_text_width(first_part, font_size, font, letter_spacing)
+                        + hyphen_width;
 
                 if first_width <= available_width || available_width <= 0.0 {
                     let second_part = &token.text[byte_idx..];
@@ -9188,10 +9209,9 @@ impl Flattened {
             // in AAIS forms where T_Left paragraphs have margin-left:25.512pt).
             let para_margin_left = para.margin_left.unwrap_or(0.0);
             let para_margin_right = para.margin_right.unwrap_or(0.0);
-            let effective_width_f32 = (max_width.to_f32().unwrap_or(500.0)
-                - para_margin_left
-                - para_margin_right)
-                .max(0.0);
+            let effective_width_f32 =
+                (max_width.to_f32().unwrap_or(500.0) - para_margin_left - para_margin_right)
+                    .max(0.0);
             let effective_width = num(effective_width_f32 as f64);
 
             // Get the font for layout_rich_text
@@ -9248,7 +9268,8 @@ impl Flattened {
                         paragraph_heights.push(height);
                     }
                     Err(_) => {
-                        let estimated_chars_per_line = effective_width / (para_font_size * num(0.5));
+                        let estimated_chars_per_line =
+                            effective_width / (para_font_size * num(0.5));
                         let estimated_lines = if estimated_chars_per_line > Decimal::ZERO {
                             let text_len = num(plain_text.len() as f64);
                             (text_len / estimated_chars_per_line).ceil()
@@ -9266,9 +9287,8 @@ impl Flattened {
         // Determine first/last non-empty paragraph indices.
         // Border edges should be anchored to visible content paragraphs, not
         // to leading/trailing empty paragraphs introduced by rich-text markup.
-        let is_non_empty_para = |p: &RichParagraph| {
-            !p.is_empty && p.runs.iter().any(|r| !r.text.trim().is_empty())
-        };
+        let is_non_empty_para =
+            |p: &RichParagraph| !p.is_empty && p.runs.iter().any(|r| !r.text.trim().is_empty());
         let first_non_empty_idx = rich_text
             .paragraphs
             .iter()
@@ -9502,11 +9522,17 @@ impl Flattened {
                 HAlign::Left => (box_x as f32 + line_margin_left + line.text_indent, 0.0),
                 HAlign::Center => {
                     let offset = (available_width - line.content_width) / 2.0;
-                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
+                    (
+                        box_x as f32 + line_margin_left + line.text_indent + offset,
+                        0.0,
+                    )
                 }
                 HAlign::Right => {
                     let offset = available_width - line.content_width;
-                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
+                    (
+                        box_x as f32 + line_margin_left + line.text_indent + offset,
+                        0.0,
+                    )
                 }
                 HAlign::Justify | HAlign::JustifyAll => {
                     // Only justify if not the last line (unless JustifyAll)
@@ -9517,7 +9543,10 @@ impl Flattened {
                         // Distribute extra space between words
                         let extra = available_width - line.content_width;
                         let gaps = (line.words.len() - 1) as f32;
-                        (box_x as f32 + line_margin_left + line.text_indent, extra / gaps)
+                        (
+                            box_x as f32 + line_margin_left + line.text_indent,
+                            extra / gaps,
+                        )
                     } else {
                         (box_x as f32 + line_margin_left + line.text_indent, 0.0)
                     }
@@ -9525,7 +9554,10 @@ impl Flattened {
                 HAlign::Radix => {
                     // Simplified: treat as center
                     let offset = (available_width - line.content_width) / 2.0;
-                    (box_x as f32 + line_margin_left + line.text_indent + offset, 0.0)
+                    (
+                        box_x as f32 + line_margin_left + line.text_indent + offset,
+                        0.0,
+                    )
                 }
             };
 
@@ -9872,14 +9904,8 @@ mod tests {
             )
         };
 
-        let rich = Flattened::parse_rich_text_from_html(
-            &[body],
-            HAlign::Left,
-            None,
-            None,
-            false,
-            false,
-        );
+        let rich =
+            Flattened::parse_rich_text_from_html(&[body], HAlign::Left, None, None, false, false);
 
         let text: String = rich
             .paragraphs
@@ -9961,10 +9987,7 @@ mod tests {
 
         // First paragraph should be bold
         let p1_runs = &rich.paragraphs[0].runs;
-        assert!(
-            !p1_runs.is_empty(),
-            "First paragraph should have runs"
-        );
+        assert!(!p1_runs.is_empty(), "First paragraph should have runs");
         assert!(
             p1_runs[0].bold,
             "First paragraph text should be bold (has font-weight:bold)"
@@ -9972,10 +9995,7 @@ mod tests {
 
         // Second paragraph should NOT be bold
         let p2_runs = &rich.paragraphs[1].runs;
-        assert!(
-            !p2_runs.is_empty(),
-            "Second paragraph should have runs"
-        );
+        assert!(!p2_runs.is_empty(), "Second paragraph should have runs");
         assert!(
             !p2_runs[0].bold,
             "Second paragraph text should NOT be bold (no font-weight in style)"
@@ -10007,17 +10027,24 @@ mod tests {
         let p = XfaNode {
             children: vec![
                 XfaNode::new(
-                    XfaNodeKind::Text { content: "prefix ".to_string() },
+                    XfaNodeKind::Text {
+                        content: "prefix ".to_string(),
+                    },
                     std::collections::HashMap::new(),
                 ),
                 bold_span,
                 XfaNode::new(
-                    XfaNodeKind::Text { content: " suffix".to_string() },
+                    XfaNodeKind::Text {
+                        content: " suffix".to_string(),
+                    },
                     std::collections::HashMap::new(),
                 ),
             ],
             ..XfaNode::new(
-                XfaNodeKind::Element { tag_name: "p".to_string(), text_content: None },
+                XfaNodeKind::Element {
+                    tag_name: "p".to_string(),
+                    text_content: None,
+                },
                 std::collections::HashMap::new(),
             )
         };
@@ -10025,12 +10052,16 @@ mod tests {
         let body = XfaNode {
             children: vec![p],
             ..XfaNode::new(
-                XfaNodeKind::Element { tag_name: "body".to_string(), text_content: None },
+                XfaNodeKind::Element {
+                    tag_name: "body".to_string(),
+                    text_content: None,
+                },
                 std::collections::HashMap::new(),
             )
         };
 
-        let rich = Flattened::parse_rich_text_from_html(&[body], HAlign::Left, None, None, false, false);
+        let rich =
+            Flattened::parse_rich_text_from_html(&[body], HAlign::Left, None, None, false, false);
 
         assert_eq!(rich.paragraphs.len(), 1);
         let runs = &rich.paragraphs[0].runs;
@@ -10091,7 +10122,12 @@ mod tests {
         let tokens = Flattened::tokenize_paragraph_runs(&runs, 12.0, &font, 0.0);
 
         // Should have 3 tokens: "normal", "bold", "suffix"
-        assert_eq!(tokens.len(), 3, "Expected 3 tokens: {:?}", tokens.iter().map(|t| &t.text).collect::<Vec<_>>());
+        assert_eq!(
+            tokens.len(),
+            3,
+            "Expected 3 tokens: {:?}",
+            tokens.iter().map(|t| &t.text).collect::<Vec<_>>()
+        );
 
         // First token: "normal", not bold
         assert_eq!(tokens[0].text, "normal");

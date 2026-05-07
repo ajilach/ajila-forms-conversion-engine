@@ -123,10 +123,7 @@ impl ColumnLayoutDetector {
 
     /// Detect column sections among the given root groups.
     /// Returns detected sections if a multi-column layout is found.
-    fn detect_column_sections(
-        doc: &Document,
-        roots: &[usize],
-    ) -> Option<Vec<ColumnSection>> {
+    fn detect_column_sections(doc: &Document, roots: &[usize]) -> Option<Vec<ColumnSection>> {
         let max_width_ratio = Decimal::from_str(MAX_ELEMENT_WIDTH_RATIO).unwrap();
         let min_width_ratio = Decimal::from_str(MIN_ELEMENT_WIDTH_RATIO).unwrap();
 
@@ -174,9 +171,8 @@ impl ColumnLayoutDetector {
         // Verify the gap is clean: no column candidate spans across it
         for (_, bounds) in &column_candidates {
             let cx = bounds.center_x();
-            let half_gap_region =
-                (split_x - Decimal::from_str("5.0").unwrap())
-                    ..=(split_x + Decimal::from_str("5.0").unwrap());
+            let half_gap_region = (split_x - Decimal::from_str("5.0").unwrap())
+                ..=(split_x + Decimal::from_str("5.0").unwrap());
             if half_gap_region.contains(&cx) {
                 // Element sits right on the split — not a clean column layout
                 return None;
@@ -538,7 +534,12 @@ mod tests {
 
         let roots = doc.roots();
         // Should have 1 ColumnSection containing all column items in order
-        assert_eq!(roots.len(), 1, "Expected 1 ColumnSection group, got {}", roots.len());
+        assert_eq!(
+            roots.len(),
+            1,
+            "Expected 1 ColumnSection group, got {}",
+            roots.len()
+        );
 
         let group = doc.get_group(roots[0]).unwrap();
         assert!(matches!(group.kind, GroupKind::ColumnSection));
@@ -604,7 +605,10 @@ mod tests {
             .count();
 
         // No NoPrint — column detector doesn't discard elements
-        assert_eq!(noprint_count, 0, "Column detector should not mark anything as NoPrint");
+        assert_eq!(
+            noprint_count, 0,
+            "Column detector should not mark anything as NoPrint"
+        );
         // 1 ColumnSection group created (containing all column items directly)
         let column_section_count = roots
             .iter()
@@ -616,7 +620,10 @@ mod tests {
             .iter()
             .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Leaf { .. }))
             .count();
-        assert_eq!(leaf_count, 0, "Narrow elements should be captured into ColumnSection, not left as stray leaves");
+        assert_eq!(
+            leaf_count, 0,
+            "Narrow elements should be captured into ColumnSection, not left as stray leaves"
+        );
     }
 
     #[test]
@@ -690,16 +697,15 @@ mod tests {
         let roots = doc.roots();
         let column_section_count = roots
             .iter()
-            .filter(|&&idx| {
-                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
-            })
+            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
             .count();
         // Full-width element remains as root leaf, column elements grouped into 1 ColumnSection
+        assert_eq!(column_section_count, 1, "Expected 1 ColumnSection group");
         assert_eq!(
-            column_section_count, 1,
-            "Expected 1 ColumnSection group"
+            roots.len(),
+            2,
+            "Expected 2 roots: 1 full-width + 1 ColumnSection"
         );
-        assert_eq!(roots.len(), 2, "Expected 2 roots: 1 full-width + 1 ColumnSection");
     }
 
     #[test]
@@ -743,9 +749,7 @@ mod tests {
         let roots = doc.roots();
         let column_section_count = roots
             .iter()
-            .filter(|&&idx| {
-                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
-            })
+            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
             .count();
         // 2 pages = 2 ColumnSection groups
         assert_eq!(
@@ -782,9 +786,7 @@ mod tests {
         let roots = doc.roots();
         let column_section_count = roots
             .iter()
-            .filter(|&&idx| {
-                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
-            })
+            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
             .count();
         assert_eq!(
             column_section_count, 1,

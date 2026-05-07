@@ -204,7 +204,6 @@ impl RadioButtonDetector {
             _ => true,
         }
     }
-
 }
 
 impl AnalysisModule for RadioButtonDetector {

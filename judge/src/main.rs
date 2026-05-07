@@ -41,8 +41,7 @@ fn main() -> Result<()> {
     let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Semantic matcher loaded.");
 
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     let input_dir = Path::new(&manifest_dir).join("../core/input");
     let mut forms = discover_forms(&input_dir)?;
 

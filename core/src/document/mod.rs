@@ -1064,8 +1064,17 @@ impl<'a> Document<'a> {
                 max_occurrences,
                 is_user_repeatable,
             } => match max_occurrences {
-                Some(max) => format!("RepeatableSection[{}-{}{}]", min_occurrences, max, if *is_user_repeatable { "" } else { ",script" }),
-                None => format!("RepeatableSection[{}+{}]", min_occurrences, if *is_user_repeatable { "" } else { ",script" }),
+                Some(max) => format!(
+                    "RepeatableSection[{}-{}{}]",
+                    min_occurrences,
+                    max,
+                    if *is_user_repeatable { "" } else { ",script" }
+                ),
+                None => format!(
+                    "RepeatableSection[{}+{}]",
+                    min_occurrences,
+                    if *is_user_repeatable { "" } else { ",script" }
+                ),
             },
             GroupKind::InlineField { .. } => "InlineField".to_string(),
             GroupKind::InlineDateField { generated_name, .. } => {

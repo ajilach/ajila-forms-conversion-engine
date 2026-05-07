@@ -45,10 +45,7 @@ impl AemScriptEngine {
     ///
     /// `field_names` is a list of (component_name, initially_visible) pairs.
     /// `initial_values` maps component_name → initial value string.
-    pub fn new(
-        field_names: &[(String, bool)],
-        initial_values: &HashMap<String, String>,
-    ) -> Self {
+    pub fn new(field_names: &[(String, bool)], initial_values: &HashMap<String, String>) -> Self {
         let mut context = Context::default();
         setup_environment(&mut context, field_names, initial_values);
         Self { context }
@@ -237,9 +234,7 @@ fn should_skip_script(content: &str) -> bool {
         "prompt(",
     ];
 
-    skip_patterns
-        .iter()
-        .any(|pat| content.contains(pat))
+    skip_patterns.iter().any(|pat| content.contains(pat))
 }
 
 #[cfg(test)]

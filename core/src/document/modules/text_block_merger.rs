@@ -124,7 +124,11 @@ impl TextBlockMerger {
         };
 
         // Determine which is above and which is below
-        let top_idx = if bounds_a.y <= bounds_b.y { idx_a } else { idx_b };
+        let top_idx = if bounds_a.y <= bounds_b.y {
+            idx_a
+        } else {
+            idx_b
+        };
         let (top, bottom) = if bounds_a.y <= bounds_b.y {
             (&bounds_a, &bounds_b)
         } else {
