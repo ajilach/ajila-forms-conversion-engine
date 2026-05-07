@@ -7,7 +7,7 @@ use helpers::{
     find_field_id_by_suffix, input_path, load_ubs_profile, walk_structured_nodes,
 };
 
-use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
+use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
@@ -1672,7 +1672,7 @@ fn test_aaai_subform_no_overlap() {
 #[test]
 fn test_aaab_script_extraction_and_execution() {
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -1802,7 +1802,7 @@ fn test_aaab_script_extraction_and_execution() {
 #[test]
 fn test_aaab_ff_firstname_gets_vorname() {
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -2431,7 +2431,7 @@ fn test_aaai_ffdesignature_script_execution() {
     // Test that the ffDesSignature and ffDesFullName scripts execute correctly
     // when the parent subform sets their values
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -2866,7 +2866,7 @@ fn test_aaab_hidden_field_with_computed_value_not_visible() {
 /// This requires click events on RB_1 to be executed even when it's the default selection.
 #[test]
 fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
-    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::scripting::{parse_events_from_node, EventActivity};
 
     // Extract and parse XFA from AAAB via Blueprint
     let bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
@@ -6627,7 +6627,7 @@ fn test_aapr_has_decimal_and_dash_lists() {
 fn test_aaei_repeatable_buttons_have_scripts() {
     // Test that the AEM output for AAEI has proper add/remove button scripts
     // on the repeatable section.
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
@@ -6943,7 +6943,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // Diagnostic test: check whether "Dichiarazione" and "Firma/e" text is
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
-    use crate::document::modules::{GlobalContext, run_analysis_pipeline_with_context};
+    use crate::document::modules::{run_analysis_pipeline_with_context, GlobalContext};
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
 
@@ -9090,7 +9090,7 @@ fn build_aaam_default_merged() -> crate::DocumentEnvelope {
 
 #[test]
 fn test_aaam_pipeline_multilingual_merge_succeeds() {
-    use crate::pipeline::{PipelineConfig, run_pipeline};
+    use crate::pipeline::{run_pipeline, PipelineConfig};
     use std::collections::BTreeSet;
 
     let files = vec![
@@ -10068,7 +10068,7 @@ fn test_aaam_nachname_label_not_merged_with_adjacent_text_block() {
 fn test_subform_border_reuses_single_edge_for_bottom_propagation() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::scripting::Presence;
-    use crate::xfa::{Border, Edge, StrokeStyle, XfaNode, XfaNodeKind, num};
+    use crate::xfa::{num, Border, Edge, StrokeStyle, XfaNode, XfaNodeKind};
     use std::collections::HashMap;
 
     let mut subform = XfaNode::new(
@@ -12189,8 +12189,8 @@ fn make_text_node(
     font_size: f64,
 ) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     FlattenedNodeBuilder::new()
@@ -12203,8 +12203,8 @@ fn make_text_node(
 #[allow(dead_code)]
 fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     FlattenedNodeBuilder::new()
@@ -12216,8 +12216,8 @@ fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flatten
 /// Helper: build a Flattened page from nodes.
 fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode>) -> Flattened {
     use crate::flattened::{FlattenedKind, Page};
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     Flattened::new(
@@ -12233,8 +12233,8 @@ fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode
 fn test_merge_pages_single_page_passthrough() {
     // A single page should pass through unchanged (no merging needed).
     use crate::pdf_parser::merge_pages;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let page = make_page(
         595.0,
@@ -12257,8 +12257,8 @@ fn test_merge_pages_single_page_passthrough() {
 fn test_merge_pages_stacks_vertically() {
     // Two pages should be stacked: second page nodes offset by first page height.
     use crate::pdf_parser::merge_pages;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap();
 
@@ -14040,7 +14040,7 @@ bind_to_xsd = true
 fn test_ubs_profile_aem_output_matches_legacy() {
     // Full pipeline test: verify that the UBS profile produces correct AEM
     // XML output for a real PDF.
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
@@ -15469,7 +15469,7 @@ fn test_aais_019_structural_similarity_diagnostic() {
 ///      visible layouts → deduplicated to one state, no conditional generated
 #[test]
 fn test_aais_019_en_form_addressee_investigation() {
-    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::scripting::{parse_events_from_node, EventActivity};
     use crate::xfa::{XfaNode, XfaNodeKind};
     use crate::{Blueprint, SomPath};
 
@@ -15774,8 +15774,8 @@ fn test_aais_019_en_form_addressee_investigation() {
 fn test_aacj_state_count_diagnostic() {
     // Diagnostic: compare what each AACJ language variant produces when
     // different CL_ClientType dropdown values are selected.
-    use crate::Blueprint;
     use crate::flattened::FlattenedNodeKind;
+    use crate::Blueprint;
 
     // Compare DE and EN flattened outputs for "Private Person" vs "Firma"
     for (file, lang) in [("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en")] {
@@ -15952,8 +15952,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     // AAKI_019_SP has two XSD elements of type SignatureType: `ubs_europe_se`
     // inside `nombres_de_los_apoderados` and `unterschrift_en` inside
     // `anexomifid_ii_...`. Both should be replaced with fragment nodes.
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
@@ -16019,8 +16019,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 fn test_aaai_has_exactly_two_signature_fragments() {
     // AAAI_019_DE should produce exactly two SignatureType fragment nodes
     // in the AEM output.
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -17307,8 +17307,8 @@ fn test_aaai_en_xsd_signature_type_matching() {
     // subset of SignatureType's children.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -17441,11 +17441,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
     // 7) Assert the AuthRep section is matched to multiple types
     //    (IndividualBasicType + AddressType), so it contains typed child elements.
     let mut auth_rep_matches = Vec::new();
-    find_elements_by_name(
-        &schema.root,
-        "AuthRep",
-        &mut auth_rep_matches,
-    );
+    find_elements_by_name(&schema.root, "AuthRep", &mut auth_rep_matches);
     assert!(
         !auth_rep_matches.is_empty(),
         "Should find 'AuthRep' element"
@@ -17496,8 +17492,8 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     // of type AddressType, making them non-disjoint at the leaf level.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -17591,10 +17587,7 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
 
     let mut matches = Vec::new();
     find_elements_by_name(&schema.root, "AuthRep", &mut matches);
-    assert!(
-        !matches.is_empty(),
-        "Should find 'AuthRep' element"
-    );
+    assert!(!matches.is_empty(), "Should find 'AuthRep' element");
 
     // It should be an inline complexType containing two typed child elements
     if let XsdNode::Element {
@@ -17673,7 +17666,7 @@ fn make_heading(level: u8, text: &str) -> crate::structured::HeadingNode {
 fn test_bind_refs_no_match_inline() {
     // When no registered types exist, fields get flat paths under the section.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Personal Data")),
@@ -17704,8 +17697,8 @@ fn test_bind_refs_single_type_match() {
     // flat paths (no wrapper level needed).
     use crate::structured::*;
     use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-        compute_bind_refs,
+        compute_bind_refs, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig,
+        XsdProfile,
     };
     use std::collections::HashMap;
 
@@ -17810,8 +17803,8 @@ fn test_bind_refs_multi_type_match() {
     // the wrapper element segment in their paths.
     use crate::structured::*;
     use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-        compute_bind_refs,
+        compute_bind_refs, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig,
+        XsdProfile,
     };
     use std::collections::HashMap;
 
@@ -17951,7 +17944,7 @@ fn test_bind_refs_multi_type_match() {
 fn test_bind_refs_nested_subsections() {
     // Nested headings produce nested path segments.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Section A")),
@@ -17982,7 +17975,7 @@ fn test_bind_refs_nested_subsections() {
 fn test_bind_refs_preamble_fields() {
     // Fields before any heading go directly under /form.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Field(make_field("f.top", "Top Level")),
@@ -18011,8 +18004,8 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // must appear in the bindRef field paths.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, compute_bind_refs,
-        extract_declared_names, generate_xsd_schema, parse_schema,
+        build_registered_types, compute_bind_refs, extract_declared_names, generate_xsd_schema,
+        parse_schema, XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -18161,10 +18154,7 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // not be directly under AuthRep.
     let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
         // Find the part after "AuthRep/"
-        let after = path
-            .split("/AuthRep/")
-            .last()
-            .unwrap_or("");
+        let after = path.split("/AuthRep/").last().unwrap_or("");
         after.contains('/') // has another segment before the field name (= wrapper)
     });
     assert!(
@@ -18186,7 +18176,7 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
     // headings like "Kunde" appeared instead of "client".
     use crate::run_exhaustive_to_envelope;
     use crate::structured;
-    use crate::xsd::{XsdNode, generate_xsd_schema};
+    use crate::xsd::{generate_xsd_schema, XsdNode};
 
     // 1) Merge DE + EN (DE first so it appears first in maps)
     let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
@@ -18449,8 +18439,8 @@ fn test_aaai_has_address_and_individual_fragments() {
     // Country).  The fragment replacement logic should insert Fragment
     // nodes for each matched type as children of the wrapping panel,
     // rather than replacing the wrapping panel itself.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -18526,8 +18516,8 @@ fn test_fragments_work_without_bind_to_xsd() {
     // use_fragments should work independently of bind_to_xsd.
     // When bind_to_xsd=false but use_fragments=true, fragment nodes should
     // still be produced, and non-fragment nodes should have no bind_ref.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -18656,7 +18646,9 @@ fn test_aaha_de_has_one_repeatable_with_nachname_vorname() {
                 }
                 StructuredNode::Group(g) => result.extend(collect_repeatables(&g.children)),
                 StructuredNode::Conditional(c) => {
-                    result.extend(collect_repeatables(std::slice::from_ref(c.content.as_ref())));
+                    result.extend(collect_repeatables(std::slice::from_ref(
+                        c.content.as_ref(),
+                    )));
                 }
                 _ => {}
             }
@@ -19602,11 +19594,9 @@ fn test_aabk_erfullt_der_kunde_radio_group() {
 
     let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
     assert!(option_names.iter().any(|n| n.contains("Nein")));
-    assert!(
-        option_names
-            .iter()
-            .any(|n| n.contains("Professionalisierung"))
-    );
+    assert!(option_names
+        .iter()
+        .any(|n| n.contains("Professionalisierung")));
 }
 
 #[test]
@@ -20991,7 +20981,6 @@ fn test_aais_019_en_list_marker_paragraph_alignment() {
 /// Diagnostic test – dump AAIS_019_EN text blocks to understand merger behaviour
 #[test]
 fn test_aais_019_en_text_block_merger_paragraph_separation() {
-    use crate::document::Document;
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
@@ -20999,6 +20988,7 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
     };
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -21114,8 +21104,8 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
 /// Diagnostic: check font properties of heading candidates in AAIS
 #[test]
 fn debug_aais_heading_font_properties() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -21286,7 +21276,6 @@ fn test_aacs_de_glossary_headings_detected() {
 /// Diagnostic: check container height vs estimated content height for text blocks.
 #[test]
 fn debug_aais_container_vs_content_height() {
-    use crate::document::Document;
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
@@ -21294,6 +21283,7 @@ fn debug_aais_container_vs_content_height() {
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper,
     };
+    use crate::document::Document;
     use crate::flattened::FlattenedNodeKind;
 
     // Check AAIS
@@ -22195,8 +22185,8 @@ fn test_aais_019_table_detection_diagnostic() {
 /// Table 2: Country/Currency table (2 columns, 30+ rows)
 #[test]
 fn test_bago_019_table_detection() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
     use crate::structured::{StructuredNode, TableNode};
 
     let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
@@ -22298,8 +22288,8 @@ fn test_bago_019_table_detection() {
 /// Table: 2 columns x 9 rows (fund type + fee percentage)
 #[test]
 fn test_aais_019_table_detection() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
     use crate::structured::{StructuredNode, TableNode};
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
@@ -22619,7 +22609,7 @@ fn test_aais_019_de_umlauts_preserved() {
 /// implementations fall back to ISO-8859-1, causing "ü" → "u?" corruption.
 #[test]
 fn test_aem_form_xml_has_utf8_declaration() {
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("Failed to load AAIS PDF");
@@ -23684,8 +23674,8 @@ fn test_bage_t_indent_first_dash_y_alignment() {
 
 #[test]
 fn test_aari_has_radio_button_with_fiscal_regime_options() {
-    use crate::Blueprint;
     use crate::structured::FieldType;
+    use crate::Blueprint;
 
     let mut bp =
         Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
@@ -23804,11 +23794,9 @@ fn test_aaor_has_unordered_list_with_declarations() {
         "Sublist should be LowerRoman"
     );
     assert_eq!(sublist.items.len(), 4, "Sublist should have 4 items");
-    assert!(
-        sublist.items[0]
-            .as_plain_text()
-            .contains("documentazione informativa")
-    );
+    assert!(sublist.items[0]
+        .as_plain_text()
+        .contains("documentazione informativa"));
 }
 
 #[test]
@@ -24672,8 +24660,8 @@ fn test_aari_normativa_citata_radio_has_label_and_options() {
     // Test that AARI_033_IT.pdf has a radio button group with label
     // "Ai sensi della normativa citata il Cliente dichiara:" and two options about
     // the fiscal regime (Amministrato).
-    use crate::Blueprint;
     use crate::structured::FieldType;
+    use crate::Blueprint;
 
     let mut bp =
         Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
@@ -24860,7 +24848,7 @@ fn test_aaij_multilingual_merge_content() {
 
 #[test]
 fn test_aaij_pipeline_multilingual_state_signature_mismatch() {
-    use crate::pipeline::{PipelineConfig, run_pipeline};
+    use crate::pipeline::{run_pipeline, PipelineConfig};
 
     let files = vec![
         (
@@ -25222,8 +25210,8 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     // Fragment bindRef paths should use the configured fragmentBindRefPrefix
     // (e.g. "/UBSAF/...") rather than the form-specific root element name
     // (e.g. "/UBSAF_AAAI/...").
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -25299,8 +25287,8 @@ fn test_fragment_bind_refs_use_configured_prefix() {
 fn test_repeatable_panels_have_bind_ref() {
     // Repeatable inner panels should receive a bindRef attribute derived from
     // the XSD structure (e.g. the bind path of their inner section).
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -25356,8 +25344,8 @@ fn test_repeatable_panels_have_bind_ref() {
 fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
     // When bind_to_xsd=false, Repeatable nodes should have their bind_ref
     // cleared, just like Panel nodes.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -25464,16 +25452,20 @@ fn test_bage_intro_paragraph_not_list_item() {
     let comm_list = comm_list.unwrap();
 
     // "Dies umfasst sämtliche..." should NOT be a list item
-    let has_intro_as_item = comm_list.items.iter().any(|item| {
-        item.as_plain_text()
-            .contains("Dies umfasst sämtliche")
-    });
+    let has_intro_as_item = comm_list
+        .items
+        .iter()
+        .any(|item| item.as_plain_text().contains("Dies umfasst sämtliche"));
     assert!(
         !has_intro_as_item,
         "The introductory sentence 'Dies umfasst sämtliche für mich/uns bestimmten Mitteilungen \
          und sonstigen Sendungen jeder Art, insbesondere' should be a paragraph, not a list item.\n\
          List items: {:?}",
-        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        comm_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
     // The list should have exactly 4 items (the actual bullet points)
@@ -25482,7 +25474,11 @@ fn test_bage_intro_paragraph_not_list_item() {
         4,
         "Communication types list should have 4 items (without the intro paragraph).\n\
          Actual items: {:?}",
-        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        comm_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25502,10 +25498,7 @@ fn test_bage_section6_heading_merged_with_english() {
     let merged = structured::merge_translations(vec![de, en], None).unwrap();
 
     // Collect all headings with their translations.
-    fn collect_headings(
-        nodes: &[StructuredNode],
-        out: &mut Vec<(u8, String)>,
-    ) {
+    fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
@@ -25514,10 +25507,21 @@ fn test_bage_section6_heading_merged_with_english() {
                     // Also check translations
                     for inline in &h.content.0 {
                         if let InlineNode::TranslatedText(map) = inline {
-                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
-                            let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            let de_text = map
+                                .get("de")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
+                            let en_text = map
+                                .get("en")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
                             if de_text.contains("6.") && de_text.contains("Dauer") {
-                                out.push((h.level.as_u8(), format!("DE={} | EN={}", de_text, en_text)));
+                                out.push((
+                                    h.level.as_u8(),
+                                    format!("DE={} | EN={}", de_text, en_text),
+                                ));
                             }
                         }
                     }
@@ -25538,9 +25542,9 @@ fn test_bage_section6_heading_merged_with_english() {
     collect_headings(&merged.content, &mut headings);
 
     // Find the heading that contains "6." and "Dauer der Vollmacht"
-    let section6_de = headings.iter().find(|(_, text)| {
-        text.contains("6.") && text.contains("Dauer")
-    });
+    let section6_de = headings
+        .iter()
+        .find(|(_, text)| text.contains("6.") && text.contains("Dauer"));
     assert!(
         section6_de.is_some(),
         "Should find heading '6. Dauer der Vollmacht' in merged output.\nHeadings: {:?}",
@@ -25549,34 +25553,48 @@ fn test_bage_section6_heading_merged_with_english() {
 
     // The heading must have a merged English translation "6. Duration to this Power of Attorney"
     // Check via the TranslatedText map
-    fn find_section6_translation(
-        nodes: &[StructuredNode],
-    ) -> Option<(String, String)> {
+    fn find_section6_translation(nodes: &[StructuredNode]) -> Option<(String, String)> {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
                     for inline in &h.content.0 {
                         if let InlineNode::TranslatedText(map) = inline {
-                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            let de_text = map
+                                .get("de")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
                             if de_text.contains("6.") && de_text.contains("Dauer") {
-                                let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                                let en_text = map
+                                    .get("en")
+                                    .and_then(|v| v.as_ref())
+                                    .cloned()
+                                    .unwrap_or_default();
                                 return Some((de_text, en_text));
                             }
                         }
                     }
                 }
                 StructuredNode::Group(g) => {
-                    if let Some(r) = find_section6_translation(&g.children) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&g.children) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(r) = find_section6_translation(&[(*c.content).clone()]) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&[(*c.content).clone()]) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(r) = find_section6_translation(&[(*r.item).clone()]) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&[(*r.item).clone()]) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::GridLayout(g) => {
                     let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
-                    if let Some(r) = find_section6_translation(&children) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&children) {
+                        return Some(r);
+                    }
                 }
                 _ => {}
             }
@@ -25649,9 +25667,10 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
                         if inside_minderjaehrige {
                             // If this group has child groups, recurse to find
                             // individual signature blocks deeper in the tree.
-                            let has_child_groups = g.children.iter().any(|c| {
-                                matches!(c, StructuredNode::Group(_))
-                            });
+                            let has_child_groups = g
+                                .children
+                                .iter()
+                                .any(|c| matches!(c, StructuredNode::Group(_)));
                             if has_child_groups {
                                 walk(&g.children, field_id, blocks, true);
                             } else {
@@ -25674,7 +25693,12 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
                                 blocks.push(fields_in_block);
                             }
                         } else {
-                            walk(&[(*r.item).clone()], field_id, blocks, inside_minderjaehrige);
+                            walk(
+                                &[(*r.item).clone()],
+                                field_id,
+                                blocks,
+                                inside_minderjaehrige,
+                            );
                         }
                     }
                     _ => {
@@ -25735,7 +25759,9 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
         blocks[0]
     );
     assert!(
-        blocks[0].iter().any(|l| l.contains("gesetzlichen Vertreters 1")),
+        blocks[0]
+            .iter()
+            .any(|l| l.contains("gesetzlichen Vertreters 1")),
         "First signature block should contain 'Name des gesetzlichen Vertreters 1', got: {:?}",
         blocks[0]
     );
@@ -25752,13 +25778,13 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
         blocks[1]
     );
     assert!(
-        blocks[1].iter().any(|l| l.contains("gesetzlichen Vertreters 2")),
+        blocks[1]
+            .iter()
+            .any(|l| l.contains("gesetzlichen Vertreters 2")),
         "Second signature block should contain 'Name des gesetzlichen Vertreters 2', got: {:?}",
         blocks[1]
     );
 }
-
-
 
 #[test]
 fn test_aaav_column_layout_detects_four_sections() {
@@ -25812,10 +25838,12 @@ fn test_aaai_no_column_layout_detected() {
 
     let column_groups = roots_after
         .iter()
-        .filter(|&&idx| matches!(
-            doc.get_group(idx).unwrap().kind,
-            GroupKind::Unknown | GroupKind::ColumnSection
-        ))
+        .filter(|&&idx| {
+            matches!(
+                doc.get_group(idx).unwrap().kind,
+                GroupKind::Unknown | GroupKind::ColumnSection
+            )
+        })
         .count();
 
     assert_eq!(
@@ -25885,13 +25913,17 @@ fn test_aaav_column_layout_left_before_right() {
         assert!(
             pos.is_some(),
             "Should find '{}' in output text. Total items: {}",
-            label, all_text.len()
+            label,
+            all_text.len()
         );
         if let (Some(prev), Some(curr)) = (last_pos, pos) {
             assert!(
                 prev < curr,
                 "'{}' (pos {}) should come before '{}' (pos {})",
-                last_label, prev, label, curr
+                last_label,
+                prev,
+                label,
+                curr
             );
         }
         last_pos = pos;
@@ -25954,7 +25986,10 @@ fn test_aaav_column_layout_end_sections_order() {
             assert!(
                 prev < curr,
                 "'{}' (pos {}) should come before '{}' (pos {})",
-                last_label, prev, label, curr
+                last_label,
+                prev,
+                label,
+                curr
             );
         }
         last_pos = pos;
@@ -25995,9 +26030,7 @@ fn test_aabh_column_layout_left_before_right() {
     collect_text(&structured, &mut all_text);
 
     // Left column should contain "UBS Europe SE" text before right column "Kontodokumentation"
-    let left_pos = all_text
-        .iter()
-        .position(|t| t.contains("UBS Europe SE"));
+    let left_pos = all_text.iter().position(|t| t.contains("UBS Europe SE"));
     let right_pos = all_text
         .iter()
         .position(|t| t.contains("Kontodokumentation"));
@@ -26029,7 +26062,7 @@ fn test_aabh_column_layout_left_before_right() {
         "Kontodokumentation",
         "Informationsaustausch zwischen UBS (D) und UBS (CH)",
     ];
-    
+
     // All left markers should come before all right markers
     for left_marker in &left_markers {
         let lpos = all_text.iter().position(|t| t.contains(left_marker));
@@ -26040,9 +26073,87 @@ fn test_aabh_column_layout_left_before_right() {
             assert!(
                 lpos.unwrap() < rpos.unwrap(),
                 "Left column '{}' (pos {}) should come before right column '{}' (pos {})",
-                left_marker, lpos.unwrap(), right_marker, rpos.unwrap()
+                left_marker,
+                lpos.unwrap(),
+                right_marker,
+                rpos.unwrap()
             );
         }
     }
 }
 
+#[test]
+fn test_aabh_order_of_elements() {
+    // AABH_019_DE has a multi-column layout in the Vereinbarung section.
+    // After column detection and merging, the top-level sections and their
+    // introductory paragraphs should appear in reading order (top to bottom,
+    // left column before right column).
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AABH_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AABH_019_DE");
+
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text);
+
+    // These labels must appear in this exact order in the merged output.
+    let expected_order = [
+        "Vereinbarung",
+        "UBS Europe SE, Frankfurt am Main",
+        "Verwendete Konten",
+        "Der Kunde verwendet für die Dienstleistung",
+        "Eingehende Zahlungen",
+        "Hiermit beauftragt der Kunde UBS (D), jeden Zahlungseingang",
+        "Übermittlung von Aufträgen",
+        "Hiermit berechtigt der Kunde UBS (D), die durch die UBS (CH) übermittelten",
+        "Währungen",
+        "Fremdwährungszahlungen",
+        "Kontodokumentation",
+        "Sofern der Kunde eine der oben angebotenen Optionen",
+        "Informationsaustausch zwischen UBS (D) und UBS (CH)",
+        "Der Kunde ermächtigt UBS (D), alle Daten",
+    ];
+
+    let mut last_pos: Option<usize> = None;
+    let mut last_label = "";
+    for &label in &expected_order {
+        let pos = all_text.iter().position(|t| t.contains(label));
+        assert!(
+            pos.is_some(),
+            "Should find '{}' in output text. Total items: {}",
+            label,
+            all_text.len()
+        );
+        if let (Some(prev), Some(curr)) = (last_pos, pos) {
+            assert!(
+                prev < curr,
+                "'{}' (pos {}) should come before '{}' (pos {})",
+                last_label,
+                prev,
+                label,
+                curr
+            );
+        }
+        last_pos = pos;
+        last_label = label;
+    }
+}
