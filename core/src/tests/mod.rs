@@ -25548,6 +25548,38 @@ fn test_aaav_column_layout_detects_four_sections() {
     );
 }
 
+#[test]
+fn test_aaai_no_column_layout_detected() {
+    // AAAI has side-by-side form fields (grid layout), not flowing text columns.
+    // The column detector should NOT trigger on it.
+    use crate::document::modules::ColumnLayoutDetector;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let mut doc = Document::from_flattened(&first_state.flattened);
+    let roots_before = doc.roots().len();
+    ColumnLayoutDetector::new().process(&mut doc);
+    let roots_after = doc.roots();
+
+    let column_groups = roots_after
+        .iter()
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .count();
+
+    assert_eq!(
+        column_groups, 0,
+        "AAAI should not have column layout detection (has grid fields, not text columns)"
+    );
+    assert_eq!(
+        roots_before,
+        roots_after.len(),
+        "AAAI root count should be unchanged"
+    );
+}
+
 
 #[test]
 fn test_aaav_column_layout_left_before_right() {
