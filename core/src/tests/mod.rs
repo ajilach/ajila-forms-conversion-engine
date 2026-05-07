@@ -25523,60 +25523,65 @@ fn test_bage_section6_heading_merged_with_english() {
 
 #[test]
 fn test_aaav_column_layout_detects_four_sections() {
-    use crate::document::modules::ColumnLayoutDetector;
-    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::run_analysis_pipeline;
     use crate::document::{Document, GroupKind};
 
     let mut bp = Blueprint::from_pdf(input_path("AAAV_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
     let first_state = states.iter().next().unwrap();
     let mut doc = Document::from_flattened(&first_state.flattened);
-    ColumnLayoutDetector::new().process(&mut doc);
+    run_analysis_pipeline(&mut doc);
 
     let roots_after = doc.roots();
-    let column_groups: Vec<usize> = roots_after
+    let column_sections: Vec<usize> = roots_after
         .iter()
-        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
         .copied()
         .collect();
 
-    // AAAV has 4 multi-column sections (each producing 2 groups: left + right)
+    // AAAV has 4 multi-column sections, each wrapped in a ColumnSection group
     assert_eq!(
-        column_groups.len(),
-        8,
-        "AAAV should have 8 column groups (4 sections × 2 columns)"
+        column_sections.len(),
+        4,
+        "AAAV should have 4 ColumnSection groups"
     );
+
+    // Each ColumnSection should have multiple children (left + right items directly)
+    for &idx in &column_sections {
+        let group = doc.get_group(idx).unwrap();
+        assert!(
+            group.children.len() >= 10,
+            "Each ColumnSection should have at least 10 children (combined left + right items), got {}",
+            group.children.len()
+        );
+    }
 }
 
 #[test]
 fn test_aaai_no_column_layout_detected() {
     // AAAI has side-by-side form fields (grid layout), not flowing text columns.
     // The column detector should NOT trigger on it.
-    use crate::document::modules::ColumnLayoutDetector;
-    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::run_analysis_pipeline;
     use crate::document::{Document, GroupKind};
 
     let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
     let first_state = states.iter().next().unwrap();
     let mut doc = Document::from_flattened(&first_state.flattened);
-    let roots_before = doc.roots().len();
-    ColumnLayoutDetector::new().process(&mut doc);
+    run_analysis_pipeline(&mut doc);
     let roots_after = doc.roots();
 
     let column_groups = roots_after
         .iter()
-        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .filter(|&&idx| matches!(
+            doc.get_group(idx).unwrap().kind,
+            GroupKind::Unknown | GroupKind::ColumnSection
+        ))
         .count();
 
     assert_eq!(
         column_groups, 0,
         "AAAI should not have column layout detection (has grid fields, not text columns)"
-    );
-    assert_eq!(
-        roots_before,
-        roots_after.len(),
-        "AAAI root count should be unchanged"
     );
 }
 
@@ -25584,6 +25589,8 @@ fn test_aaai_no_column_layout_detected() {
 #[test]
 fn test_aaav_column_layout_left_before_right() {
     // After full pipeline, left column content should precede right column content.
+    // The expected order reflects all left-column content before right-column content
+    // within each multi-column section.
     use crate::run_exhaustive_to_merged;
 
     let structured = run_exhaustive_to_merged(input_path("AAAV_019_DE.pdf"))
@@ -25612,22 +25619,45 @@ fn test_aaav_column_layout_left_before_right() {
     }
     collect_text(&structured, &mut all_text);
 
-    // AAAV left column starts with "Verwendete Konten" related content
-    // Right column has "Kontodokumentation" related content
-    // Left column text should appear before right column text
-    let left_pos = all_text
-        .iter()
-        .position(|t| t.contains("Verwendete Konten"));
-    let right_pos = all_text
-        .iter()
-        .position(|t| t.contains("Kontodokumentation"));
+    // Expected order of headings/sections across the multi-column layout.
+    // Left column content should appear before right column content in each section.
+    let expected_order = [
+        "Gegenstand der Vereinbarung",
+        "Konto- und Depotführung für Endkunden",
+        "Handel und Abwicklung",
+        "Gegenstand der Dienstleistungen",
+        "Auftragserteilung",
+        "Rolle des Finanzanlagenvermittlers",
+        "Rolle von UBS",
+        "Zusammenarbeit zwischen UBS und dem Finanzanlagenvermittler",
+        "Ansprechpartner FIM",
+        "Kundenschutz",
+        "Anstellung ehemaliger UBS-Mitarbeiter durch den Finanzanlagenvermittler",
+        "Konditionen",
+        "Sorgfaltspflichten des Finanzanlagenvermittlers",
+        "Aufsichtsrechtliche Anforderungen",
+        "Produktinformationsdokumente",
+    ];
 
-    if let (Some(l), Some(r)) = (left_pos, right_pos) {
+    // Find positions of each expected item in the output
+    let mut last_pos: Option<usize> = None;
+    let mut last_label = "";
+    for &label in &expected_order {
+        let pos = all_text.iter().position(|t| t.contains(label));
         assert!(
-            l < r,
-            "Left column text ('Verwendete Konten' at {}) should come before right column text ('Kontodokumentation' at {})",
-            l, r
+            pos.is_some(),
+            "Should find '{}' in output text. Total items: {}",
+            label, all_text.len()
         );
+        if let (Some(prev), Some(curr)) = (last_pos, pos) {
+            assert!(
+                prev < curr,
+                "'{}' (pos {}) should come before '{}' (pos {})",
+                last_label, prev, label, curr
+            );
+        }
+        last_pos = pos;
+        last_label = label;
     }
 }
 
@@ -25685,5 +25715,33 @@ fn test_aabh_column_layout_left_before_right() {
         left_pos.unwrap(),
         right_pos.unwrap()
     );
+
+    // Additional ordering checks: key left-column sections should appear before right-column sections
+    let left_markers = [
+        "UBS Europe SE, Frankfurt am Main",
+        "Verwendete Konten",
+        "Eingehende Zahlungen",
+        "Übermittlung von Aufträgen",
+        "Währungen",
+    ];
+    let right_markers = [
+        "Kontodokumentation",
+        "Informationsaustausch zwischen UBS (D) und UBS (CH)",
+    ];
+    
+    // All left markers should come before all right markers
+    for left_marker in &left_markers {
+        let lpos = all_text.iter().position(|t| t.contains(left_marker));
+        assert!(lpos.is_some(), "Should find '{}' in output", left_marker);
+        for right_marker in &right_markers {
+            let rpos = all_text.iter().position(|t| t.contains(right_marker));
+            assert!(rpos.is_some(), "Should find '{}' in output", right_marker);
+            assert!(
+                lpos.unwrap() < rpos.unwrap(),
+                "Left column '{}' (pos {}) should come before right column '{}' (pos {})",
+                left_marker, lpos.unwrap(), right_marker, rpos.unwrap()
+            );
+        }
+    }
 }
 

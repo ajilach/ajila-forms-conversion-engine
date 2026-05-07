@@ -705,6 +705,20 @@ impl<'a, 'b> Converter<'a, 'b> {
                 }
             }
 
+            // ColumnSection → GroupNode with children in preserved order (left then right).
+            // Children must NOT be re-sorted by position because the right column may start
+            // at a lower y-coordinate than the left column.
+            GroupKind::ColumnSection => {
+                let children = self.convert_children_ordered(group_idx);
+                if children.is_empty() {
+                    None
+                } else if children.len() == 1 {
+                    children.into_iter().next()
+                } else {
+                    Some(StructuredNode::Group(GroupNode { children }))
+                }
+            }
+
             // RadioButtonContent → ConditionalNode wrapping the child content
             GroupKind::RadioButtonContent {
                 excl_group_som_path,
@@ -903,6 +917,22 @@ impl<'a, 'b> Converter<'a, 'b> {
             .collect();
 
         inherit_heading_labels_for_radios(&mut result);
+
+        result
+    }
+
+    /// Convert all children of a group in their stored order (no re-sorting).
+    /// Used for ColumnSection groups where left-column always precedes right-column.
+    fn convert_children_ordered(&self, group_idx: usize) -> Vec<StructuredNode> {
+        let Some(group) = self.doc.get_group(group_idx) else {
+            return vec![];
+        };
+
+        let result: Vec<StructuredNode> = group
+            .children
+            .iter()
+            .filter_map(|&child_idx| self.convert_group(child_idx))
+            .collect();
 
         result
     }

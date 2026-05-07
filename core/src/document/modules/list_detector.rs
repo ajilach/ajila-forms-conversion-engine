@@ -453,6 +453,15 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
+            // Content must not be too far to the right of the marker either
+            // (different column). The content should start near the marker's
+            // right edge, not hundreds of points away.
+            let marker_right = marker_bounds.x + marker_bounds.width;
+            let max_right_gap = Decimal::from(50);
+            if content_bounds.x > marker_right + max_right_gap {
+                continue;
+            }
+
             // Skip other standalone markers.
             let content_text = doc.get_text_content(content_idx);
             if is_standalone_marker(&content_text).is_some() {
@@ -555,6 +564,30 @@ fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
         false
     }
 
+    /// Check if two groups have overlapping container bounds (using node.bounds(),
+    /// not text_bounds). This prevents merging elements that are in different
+    /// columns — their containers won't overlap horizontally even if their
+    /// text content has a small gap.
+    fn containers_overlap_horizontally(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
+        let nodes_a: Vec<_> = doc.collect_nodes(idx_a);
+        let nodes_b: Vec<_> = doc.collect_nodes(idx_b);
+        if nodes_a.is_empty() || nodes_b.is_empty() {
+            return false;
+        }
+        // Use the container bounds of the first node as representative
+        let a_bounds = nodes_a[0].bounds();
+        let b_bounds = nodes_b[0].bounds();
+        let a_right = a_bounds.x + a_bounds.width;
+        let b_left = b_bounds.x;
+        let b_right = b_bounds.x + b_bounds.width;
+        let a_left = a_bounds.x;
+        // Check if containers overlap or are adjacent (within 5pt)
+        let tolerance = Decimal::from(5);
+        let overlap_left = a_left.max(b_left);
+        let overlap_right = a_right.min(b_right);
+        overlap_right + tolerance >= overlap_left
+    }
+
     let roots = doc.roots();
     let y_tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
     // Maximum horizontal gap (in points) to consider two blocks as adjacent.
@@ -608,6 +641,24 @@ fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
             // borders indicates they are separate table cells, not fragments of
             // the same text span.
             if has_horizontal_border(doc, left_idx) && has_horizontal_border(doc, right_idx) {
+                continue;
+            }
+
+            // Don't merge blocks with very different heights.
+            // Fragments of the same text span have similar heights (both are
+            // single-line or both are multi-line). A tall multi-line paragraph
+            // next to a short single-line element indicates they are separate
+            // content (e.g., different columns at the same y-position).
+            let short_h = left_bounds.height.min(right_bounds.height);
+            let tall_h = left_bounds.height.max(right_bounds.height);
+            if tall_h > Decimal::ZERO && short_h * Decimal::from(3) < tall_h {
+                continue;
+            }
+
+            // Don't merge blocks whose containers are in different columns.
+            // Text fragments of the same line have adjacent/overlapping containers,
+            // while elements in different columns have clearly separated containers.
+            if !containers_overlap_horizontally(doc, left_idx, right_idx) {
                 continue;
             }
 

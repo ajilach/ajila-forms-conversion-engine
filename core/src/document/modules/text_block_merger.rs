@@ -172,13 +172,13 @@ impl TextBlockMerger {
         let overlap_left = bounds_a.x.max(bounds_b.x);
         let overlap_right = bounds_a.right().min(bounds_b.right());
 
-        // Require at least some horizontal overlap or very close horizontal proximity
+        // Require horizontal overlap or very small gap. Same-column blocks share
+        // a left margin and always overlap. A large gap (> 15pt) indicates different
+        // columns that shouldn't be merged.
         if overlap_right < overlap_left {
-            // No horizontal overlap — check if they're close enough
             let horiz_gap = overlap_left - overlap_right;
-            let max_width = bounds_a.width.max(bounds_b.width);
-            // Allow small horizontal gap (< 20% of the wider block)
-            if horiz_gap > max_width / Decimal::from(5) {
+            let small_gap_tolerance = Decimal::from(15);
+            if horiz_gap > small_gap_tolerance {
                 return false;
             }
         }

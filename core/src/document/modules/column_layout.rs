@@ -21,11 +21,8 @@ use rust_decimal::prelude::*;
 /// Minimum horizontal gap (in points) between columns to trigger detection.
 const MIN_GAP_PT: &str = "10.0";
 
-/// Minimum number of elements required in each column band per section.
+/// Minimum number of elements required in each column band (overall).
 const MIN_ELEMENTS_PER_COLUMN: usize = 5;
-
-/// Minimum vertical extent (in points) that a section's columns must span.
-const MIN_VERTICAL_EXTENT_PT: &str = "150.0";
 
 /// Maximum element width relative to content width to be considered
 /// a column element (elements wider than this are full-width).
@@ -35,11 +32,6 @@ const MAX_ELEMENT_WIDTH_RATIO: &str = "0.6";
 /// a column element (elements narrower than this are excluded as
 /// page furniture like footers, page numbers, etc.).
 const MIN_ELEMENT_WIDTH_RATIO: &str = "0.15";
-
-/// Minimum vertical gap (in points) between consecutive column elements
-/// to consider it a section break. This should be larger than normal
-/// paragraph spacing but catch page breaks.
-const SECTION_GAP_THRESHOLD_PT: &str = "85.0";
 
 /// A detected column section containing left and right element indices.
 struct ColumnSection {
@@ -66,6 +58,12 @@ impl ColumnLayoutDetector {
     /// using the node's specified width/height rather than text content bounds.
     /// This is important for column detection because element positioning
     /// reflects the form layout, not text content length.
+    /// Public accessor for tests
+    #[cfg(test)]
+    pub fn get_element_bounds_static(doc: &Document, group_idx: usize) -> Option<Bounds> {
+        Self::get_element_bounds(doc, group_idx)
+    }
+
     fn get_element_bounds(doc: &Document, group_idx: usize) -> Option<Bounds> {
         let node_indices = doc.collect_node_indices(group_idx);
         if node_indices.is_empty() {
@@ -131,8 +129,6 @@ impl ColumnLayoutDetector {
     ) -> Option<Vec<ColumnSection>> {
         let max_width_ratio = Decimal::from_str(MAX_ELEMENT_WIDTH_RATIO).unwrap();
         let min_width_ratio = Decimal::from_str(MIN_ELEMENT_WIDTH_RATIO).unwrap();
-        let section_gap = Decimal::from_str(SECTION_GAP_THRESHOLD_PT).unwrap();
-        let min_vertical_extent = Decimal::from_str(MIN_VERTICAL_EXTENT_PT).unwrap();
 
         // Collect roots with valid bounds (element-level bounds for layout detection)
         let bounded: Vec<(usize, Bounds)> = roots
@@ -154,14 +150,13 @@ impl ColumnLayoutDetector {
         }
 
         // Classify elements into categories
-        let mut full_width: Vec<(usize, Bounds)> = Vec::new();
         let mut column_candidates: Vec<(usize, Bounds)> = Vec::new();
 
         for (idx, bounds) in &bounded {
             if bounds.width > content_width * max_width_ratio {
-                full_width.push((*idx, bounds.clone()));
+                // Full-width elements are excluded from column detection
             } else if bounds.width >= content_width * min_width_ratio {
-                column_candidates.push((*idx, bounds.clone()));
+                column_candidates.push((*idx, *bounds));
             }
             // Elements smaller than min_width_ratio are ignored
             // (page furniture like footers, timestamps, page numbers)
@@ -172,10 +167,7 @@ impl ColumnLayoutDetector {
         }
 
         // Find horizontal split
-        let split_x = match Self::find_horizontal_split(&column_candidates) {
-            Some(x) => x,
-            None => return None,
-        };
+        let split_x = Self::find_horizontal_split(&column_candidates)?;
 
         // Verify the gap is clean: no column candidate spans across it
         for (_, bounds) in &column_candidates {
@@ -218,10 +210,18 @@ impl ColumnLayoutDetector {
             return None;
         }
 
-        // Find section boundaries by looking at merged y-positions of all
-        // column candidates. A section break occurs where there's a large
-        // vertical gap with no column elements, or where a full-width element
-        // interrupts.
+        // Left-edge alignment check: real text columns have all elements
+        // aligned to the same left margin. Form grids have elements scattered
+        // at varying x positions.
+        let alignment_tolerance = Decimal::from_str("5.0").unwrap();
+        if !Self::has_consistent_alignment(&column_candidates, split_x, alignment_tolerance) {
+            return None;
+        }
+
+        // Build sections split at page boundaries.
+        // Within each page section, we output left items first, then right items.
+        // This produces correct reading order: left col page 1, right col page 1,
+        // left col page 2, right col page 2, etc.
         let mut all_ys: Vec<Decimal> = left_elements
             .iter()
             .chain(right_elements.iter())
@@ -230,29 +230,23 @@ impl ColumnLayoutDetector {
         all_ys.sort();
         all_ys.dedup();
 
-        // Collect section break y-values (gaps in merged column elements)
-        let mut break_ys: Vec<Decimal> = Vec::new();
-        for i in 1..all_ys.len() {
-            if all_ys[i] - all_ys[i - 1] > section_gap {
-                // Midpoint of the gap
-                break_ys.push((all_ys[i - 1] + all_ys[i]) / Decimal::TWO);
-            }
-        }
-
-        // Also break at full-width elements that fall within the column range
         let col_min_y = all_ys.first().copied()?;
         let col_max_y = all_ys.last().copied()?;
-        for (_, bounds) in &full_width {
-            let fw_y = bounds.top();
-            if fw_y > col_min_y && fw_y < col_max_y {
-                break_ys.push(fw_y);
+
+        // Determine page boundaries from the document's page height
+        let page_height = doc.source.page.height;
+        let mut break_ys: Vec<Decimal> = Vec::new();
+        if page_height > Decimal::ZERO {
+            let mut page_y = page_height;
+            while page_y < col_max_y {
+                if page_y > col_min_y {
+                    break_ys.push(page_y);
+                }
+                page_y += page_height;
             }
         }
 
-        break_ys.sort();
-        break_ys.dedup();
-
-        // Build sections from breaks
+        // Build section bounds from page breaks
         let mut section_bounds: Vec<(Decimal, Decimal)> = Vec::new();
         let mut prev_y = col_min_y;
         for br in &break_ys {
@@ -277,20 +271,12 @@ impl ColumnLayoutDetector {
                 .map(|(idx, _)| *idx)
                 .collect();
 
-            // Only create a section if both columns have enough elements
-            if section_left.len() >= MIN_ELEMENTS_PER_COLUMN
-                && section_right.len() >= MIN_ELEMENTS_PER_COLUMN
-            {
-                // Check vertical extent
-                let left_extent = Self::vertical_extent(doc, &section_left);
-                let right_extent = Self::vertical_extent(doc, &section_right);
-
-                if left_extent >= min_vertical_extent && right_extent >= min_vertical_extent {
-                    sections.push(ColumnSection {
-                        left: section_left,
-                        right: section_right,
-                    });
-                }
+            // Only create a section if both columns have content
+            if !section_left.is_empty() && !section_right.is_empty() {
+                sections.push(ColumnSection {
+                    left: section_left,
+                    right: section_right,
+                });
             }
         }
 
@@ -301,27 +287,12 @@ impl ColumnLayoutDetector {
         Some(sections)
     }
 
-    /// Compute the vertical extent (max_bottom - min_top) of a set of groups.
-    fn vertical_extent(doc: &Document, indices: &[usize]) -> Decimal {
-        let bounds: Vec<Bounds> = indices
-            .iter()
-            .filter_map(|&idx| Self::get_element_bounds(doc, idx))
-            .collect();
-
-        if bounds.is_empty() {
-            return Decimal::ZERO;
-        }
-
-        let min_top = bounds.iter().map(|b| b.top()).min().unwrap();
-        let max_bottom = bounds.iter().map(|b| b.bottom()).max().unwrap();
-
-        max_bottom - min_top
-    }
-
     /// Check that both column bands have consistent element widths.
     /// Returns true if in each band, the most common width accounts for
     /// at least 50% of elements (indicating a uniform column container
     /// rather than a form grid with varying field widths).
+    /// Also checks that left and right columns have similar dominant widths
+    /// (real columns are similar size, unlike form labels + fields).
     fn has_consistent_widths(
         candidates: &[(usize, Bounds)],
         split_x: Decimal,
@@ -339,29 +310,97 @@ impl ColumnLayoutDetector {
             .map(|(_, b)| b.width)
             .collect();
 
-        Self::dominant_width_ratio(&left_widths, tolerance) >= Decimal::from_str("0.5").unwrap()
-            && Self::dominant_width_ratio(&right_widths, tolerance)
-                >= Decimal::from_str("0.5").unwrap()
+        let min_ratio = Decimal::from_str("0.5").unwrap();
+        if Self::dominant_value_ratio(&left_widths, tolerance) < min_ratio
+            || Self::dominant_value_ratio(&right_widths, tolerance) < min_ratio
+        {
+            return false;
+        }
+
+        // The dominant widths of left and right columns must be similar.
+        // Real multi-column layouts have roughly equal column widths.
+        // A narrow label column (108pt) next to a wide content area (240pt) is a form, not columns.
+        let left_dominant = Self::find_dominant_value(&left_widths, tolerance);
+        let right_dominant = Self::find_dominant_value(&right_widths, tolerance);
+        if let (Some(lw), Some(rw)) = (left_dominant, right_dominant) {
+            let narrow = lw.min(rw);
+            let wide = lw.max(rw);
+            // Columns should be within 2:1 ratio of each other
+            if wide > Decimal::ZERO && narrow * Decimal::TWO < wide {
+                return false;
+            }
+        }
+
+        true
     }
 
-    /// Compute what fraction of widths match the most common width (±tolerance).
-    fn dominant_width_ratio(widths: &[Decimal], tolerance: Decimal) -> Decimal {
-        if widths.is_empty() {
+    /// Check that both column bands have consistent left-edge alignment.
+    /// Real text columns share a common left margin; form grids have elements
+    /// scattered at varying x positions. Returns true if at least 70% of
+    /// elements in each band share a common left edge.
+    fn has_consistent_alignment(
+        candidates: &[(usize, Bounds)],
+        split_x: Decimal,
+        tolerance: Decimal,
+    ) -> bool {
+        let left_xs: Vec<Decimal> = candidates
+            .iter()
+            .filter(|(_, b)| b.center_x() < split_x)
+            .map(|(_, b)| b.x)
+            .collect();
+
+        let right_xs: Vec<Decimal> = candidates
+            .iter()
+            .filter(|(_, b)| b.center_x() >= split_x)
+            .map(|(_, b)| b.x)
+            .collect();
+
+        let threshold = Decimal::from_str("0.7").unwrap();
+        Self::dominant_value_ratio(&left_xs, tolerance) >= threshold
+            && Self::dominant_value_ratio(&right_xs, tolerance) >= threshold
+    }
+
+    /// Compute what fraction of values match the most common value (±tolerance).
+    fn dominant_value_ratio(values: &[Decimal], tolerance: Decimal) -> Decimal {
+        if values.is_empty() {
             return Decimal::ZERO;
         }
 
         let mut best_count = 0usize;
-        for w in widths {
-            let count = widths
+        for v in values {
+            let count = values
                 .iter()
-                .filter(|other| (*other - w).abs() <= tolerance)
+                .filter(|other| (*other - v).abs() <= tolerance)
                 .count();
             if count > best_count {
                 best_count = count;
             }
         }
 
-        Decimal::from(best_count as u64) / Decimal::from(widths.len() as u64)
+        Decimal::from(best_count as u64) / Decimal::from(values.len() as u64)
+    }
+
+    /// Find the most common value in a set (±tolerance). Returns the value with
+    /// the highest count of nearby matches.
+    fn find_dominant_value(values: &[Decimal], tolerance: Decimal) -> Option<Decimal> {
+        if values.is_empty() {
+            return None;
+        }
+
+        let mut best_count = 0usize;
+        let mut best_value = values[0];
+        for v in values {
+            let count = values
+                .iter()
+                .filter(|other| (*other - v).abs() <= tolerance)
+                .count();
+            if count > best_count {
+                best_count = count;
+                best_value = *v;
+            }
+        }
+
+        Some(best_value)
     }
 }
 
@@ -377,47 +416,36 @@ impl AnalysisModule for ColumnLayoutDetector {
             return;
         };
 
-        // Process each section: wrap left and right elements into groups
+        // Process each section: merge all items into a single ColumnSection group
+        // with left-column items first (sorted by y), then right-column items (sorted by y).
+        // The ColumnSection tells the structured converter to preserve this order
+        // without re-sorting by position.
         for section in sections {
-            // Sort left column by y (top-to-bottom)
             let mut left_sorted: Vec<(usize, Decimal)> = section
                 .left
                 .iter()
                 .filter_map(|&idx| Self::get_element_bounds(doc, idx).map(|b| (idx, b.y)))
                 .collect();
             left_sorted.sort_by_key(|(_, y)| *y);
-            let left_indices: Vec<usize> = left_sorted.into_iter().map(|(idx, _)| idx).collect();
 
-            // Sort right column by y (top-to-bottom)
             let mut right_sorted: Vec<(usize, Decimal)> = section
                 .right
                 .iter()
                 .filter_map(|&idx| Self::get_element_bounds(doc, idx).map(|b| (idx, b.y)))
                 .collect();
             right_sorted.sort_by_key(|(_, y)| *y);
-            let right_indices: Vec<usize> =
-                right_sorted.into_iter().map(|(idx, _)| idx).collect();
 
-            // Wrap each column into a composite group
-            if !left_indices.is_empty() {
-                doc.merge(
-                    left_indices,
-                    GroupKind::Unknown,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
-            }
+            let mut ordered_indices: Vec<usize> = Vec::new();
+            ordered_indices.extend(left_sorted.into_iter().map(|(idx, _)| idx));
+            ordered_indices.extend(right_sorted.into_iter().map(|(idx, _)| idx));
 
-            if !right_indices.is_empty() {
-                doc.merge(
-                    right_indices,
-                    GroupKind::Unknown,
-                    GroupSource::Inferred {
-                        module: self.name().to_string(),
-                    },
-                );
-            }
+            doc.merge(
+                ordered_indices,
+                GroupKind::ColumnSection,
+                GroupSource::Inferred {
+                    module: self.name().to_string(),
+                },
+            );
         }
     }
 }
@@ -494,11 +522,13 @@ mod tests {
         ColumnLayoutDetector::new().process(&mut doc);
 
         let roots = doc.roots();
-        assert_eq!(roots.len(), 2, "Expected 2 column groups, got {}", roots.len());
+        // Should have 1 ColumnSection containing all column items in order
+        assert_eq!(roots.len(), 1, "Expected 1 ColumnSection group, got {}", roots.len());
 
-        let left_bounds = doc.get_bounds(roots[0]).unwrap();
-        let right_bounds = doc.get_bounds(roots[1]).unwrap();
-        assert!(left_bounds.center_x() < right_bounds.center_x());
+        let group = doc.get_group(roots[0]).unwrap();
+        assert!(matches!(group.kind, GroupKind::ColumnSection));
+        // 9 left + 9 right = 18 children
+        assert_eq!(group.children.len(), 18);
     }
 
     #[test]
@@ -556,15 +586,15 @@ mod tests {
             .iter()
             .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::NoPrint))
             .count();
-        let unknown_count = roots
-            .iter()
-            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
-            .count();
 
         // No NoPrint — column detector doesn't discard elements
         assert_eq!(noprint_count, 0, "Column detector should not mark anything as NoPrint");
-        // 2 column groups created
-        assert_eq!(unknown_count, 2, "Expected 2 Unknown groups for columns");
+        // 1 ColumnSection group created (containing all column items directly)
+        let column_section_count = roots
+            .iter()
+            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection))
+            .count();
+        assert_eq!(column_section_count, 1, "Expected 1 ColumnSection group");
         // The narrow elements remain as unclaimed leaves
         let leaf_count = roots
             .iter()
@@ -642,19 +672,26 @@ mod tests {
         ColumnLayoutDetector::new().process(&mut doc);
 
         let roots = doc.roots();
-        let unknown_count = roots
+        let column_section_count = roots
             .iter()
-            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+            .filter(|&&idx| {
+                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
+            })
             .count();
-        assert_eq!(unknown_count, 2, "Expected 2 column groups");
-        assert_eq!(roots.len(), 3, "Expected 3 roots: 1 full-width + 2 columns");
+        // Full-width element remains as root leaf, column elements grouped into 1 ColumnSection
+        assert_eq!(
+            column_section_count, 1,
+            "Expected 1 ColumnSection group"
+        );
+        assert_eq!(roots.len(), 2, "Expected 2 roots: 1 full-width + 1 ColumnSection");
     }
 
     #[test]
     fn test_multiple_column_sections() {
-        // Two separate column sections separated by a large vertical gap (>85pt)
+        // Two separate column sections on different pages.
+        // Page height is 842pt, so section 2 at y=900+ is on page 2.
         let nodes = vec![
-            // Section 1: y=10 to y=170 (span=160 > 150pt)
+            // Section 1 (page 1): y=10 to y=170
             text_node(0.0, 10.0, 200.0, 14.0, "S1 Left text 1 content"),
             text_node(0.0, 40.0, 200.0, 14.0, "S1 Left text 2 content"),
             text_node(0.0, 70.0, 200.0, 14.0, "S1 Left text 3 content"),
@@ -667,19 +704,19 @@ mod tests {
             text_node(260.0, 100.0, 200.0, 14.0, "S1 Right text 4 content"),
             text_node(260.0, 130.0, 200.0, 14.0, "S1 Right text 5 content"),
             text_node(260.0, 170.0, 200.0, 14.0, "S1 Right text 6 content"),
-            // Section 2: y=300 to y=460 (gap of 130pt from section 1)
-            text_node(0.0, 300.0, 200.0, 14.0, "S2 Left text 1 content"),
-            text_node(0.0, 330.0, 200.0, 14.0, "S2 Left text 2 content"),
-            text_node(0.0, 360.0, 200.0, 14.0, "S2 Left text 3 content"),
-            text_node(0.0, 390.0, 200.0, 14.0, "S2 Left text 4 content"),
-            text_node(0.0, 420.0, 200.0, 14.0, "S2 Left text 5 content"),
-            text_node(0.0, 460.0, 200.0, 14.0, "S2 Left text 6 content"),
-            text_node(260.0, 300.0, 200.0, 14.0, "S2 Right text 1 content"),
-            text_node(260.0, 330.0, 200.0, 14.0, "S2 Right text 2 content"),
-            text_node(260.0, 360.0, 200.0, 14.0, "S2 Right text 3 content"),
-            text_node(260.0, 390.0, 200.0, 14.0, "S2 Right text 4 content"),
-            text_node(260.0, 420.0, 200.0, 14.0, "S2 Right text 5 content"),
-            text_node(260.0, 460.0, 200.0, 14.0, "S2 Right text 6 content"),
+            // Section 2 (page 2): y=900 to y=1060
+            text_node(0.0, 900.0, 200.0, 14.0, "S2 Left text 1 content"),
+            text_node(0.0, 930.0, 200.0, 14.0, "S2 Left text 2 content"),
+            text_node(0.0, 960.0, 200.0, 14.0, "S2 Left text 3 content"),
+            text_node(0.0, 990.0, 200.0, 14.0, "S2 Left text 4 content"),
+            text_node(0.0, 1020.0, 200.0, 14.0, "S2 Left text 5 content"),
+            text_node(0.0, 1060.0, 200.0, 14.0, "S2 Left text 6 content"),
+            text_node(260.0, 900.0, 200.0, 14.0, "S2 Right text 1 content"),
+            text_node(260.0, 930.0, 200.0, 14.0, "S2 Right text 2 content"),
+            text_node(260.0, 960.0, 200.0, 14.0, "S2 Right text 3 content"),
+            text_node(260.0, 990.0, 200.0, 14.0, "S2 Right text 4 content"),
+            text_node(260.0, 1020.0, 200.0, 14.0, "S2 Right text 5 content"),
+            text_node(260.0, 1060.0, 200.0, 14.0, "S2 Right text 6 content"),
         ];
 
         let flattened = make_flattened(nodes);
@@ -688,18 +725,23 @@ mod tests {
         ColumnLayoutDetector::new().process(&mut doc);
 
         let roots = doc.roots();
-        let unknown_count = roots
+        let column_section_count = roots
             .iter()
-            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+            .filter(|&&idx| {
+                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
+            })
             .count();
-        // 2 sections × 2 columns = 4 column groups
-        assert_eq!(unknown_count, 4, "Expected 4 column groups (2 sections × 2)");
+        // 2 pages = 2 ColumnSection groups
+        assert_eq!(
+            column_section_count, 2,
+            "Expected 2 ColumnSection groups (one per page)"
+        );
     }
 
     #[test]
     fn test_columns_with_different_y_start_same_section() {
-        // Columns that start at different y but are within the same section
-        // (gap < 85pt threshold) — should still detect as one section
+        // Columns that start at different y positions — both on page 1,
+        // so they should end up in a single ColumnSection.
         let nodes = vec![
             text_node(0.0, 50.0, 200.0, 14.0, "Left column text 1 here"),
             text_node(0.0, 80.0, 200.0, 14.0, "Left column text 2 here"),
@@ -707,7 +749,7 @@ mod tests {
             text_node(0.0, 140.0, 200.0, 14.0, "Left column text 4 here"),
             text_node(0.0, 170.0, 200.0, 14.0, "Left column text 5 here"),
             text_node(0.0, 210.0, 200.0, 14.0, "Left column text 6 here"),
-            // Right column starts 30pt lower (within threshold)
+            // Right column starts 30pt lower
             text_node(300.0, 80.0, 200.0, 14.0, "Right column text 1 here"),
             text_node(300.0, 110.0, 200.0, 14.0, "Right column text 2 here"),
             text_node(300.0, 140.0, 200.0, 14.0, "Right column text 3 here"),
@@ -722,10 +764,15 @@ mod tests {
         ColumnLayoutDetector::new().process(&mut doc);
 
         let roots = doc.roots();
-        let unknown_count = roots
+        let column_section_count = roots
             .iter()
-            .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+            .filter(|&&idx| {
+                matches!(doc.get_group(idx).unwrap().kind, GroupKind::ColumnSection)
+            })
             .count();
-        assert_eq!(unknown_count, 2, "Expected 2 column groups");
+        assert_eq!(
+            column_section_count, 1,
+            "Expected 1 ColumnSection (all on same page)"
+        );
     }
 }
