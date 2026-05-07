@@ -25661,6 +25661,69 @@ fn test_aaav_column_layout_left_before_right() {
 }
 
 #[test]
+fn test_aaav_column_layout_end_sections_order() {
+    // AAAV ends with sections 12–14 and a signature block that are outside the
+    // multi-column area. They should appear after all column content, in order.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AAAV_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AAAV_019_DE");
+
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text);
+
+    let expected_order = [
+        "Laufzeit und Kündigung",
+        "Diese Vereinbarung wird mit Unterzeichnung wirksam. Ihre Laufzeit ist",
+        "Allgemeine Bedingungen der UBS",
+        "Es gelten zusätzlich die Allgemeinen Geschäftsbedingungen von UBS in",
+        "Schlussbestimmungen",
+        "Die Übertragung von Rechten und Pflichten nach diesem Vertrag auf",
+        "Unterschrift(en)",
+    ];
+
+    let mut last_pos: Option<usize> = None;
+    let mut last_label = "";
+    for &label in &expected_order {
+        let pos = all_text.iter().position(|t| t.contains(label));
+        assert!(
+            pos.is_some(),
+            "Should find '{}' in output text. Total items: {}",
+            label,
+            all_text.len()
+        );
+        if let (Some(prev), Some(curr)) = (last_pos, pos) {
+            assert!(
+                prev < curr,
+                "'{}' (pos {}) should come before '{}' (pos {})",
+                last_label, prev, label, curr
+            );
+        }
+        last_pos = pos;
+        last_label = label;
+    }
+}
+
+#[test]
 fn test_aabh_column_layout_left_before_right() {
     // AABH has a Vereinbarung section with two side-by-side text columns.
     // After column detection, left column content should precede right column.
