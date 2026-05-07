@@ -25672,3 +25672,170 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
 }
 
 
+
+#[test]
+fn test_aaav_column_layout_detects_four_sections() {
+    use crate::document::modules::ColumnLayoutDetector;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAV_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let mut doc = Document::from_flattened(&first_state.flattened);
+    ColumnLayoutDetector::new().process(&mut doc);
+
+    let roots_after = doc.roots();
+    let column_groups: Vec<usize> = roots_after
+        .iter()
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .copied()
+        .collect();
+
+    // AAAV has 4 multi-column sections (each producing 2 groups: left + right)
+    assert_eq!(
+        column_groups.len(),
+        8,
+        "AAAV should have 8 column groups (4 sections × 2 columns)"
+    );
+}
+
+#[test]
+fn test_aaai_no_column_layout_detected() {
+    // AAAI has side-by-side form fields (grid layout), not flowing text columns.
+    // The column detector should NOT trigger on it.
+    use crate::document::modules::ColumnLayoutDetector;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::{Document, GroupKind};
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let first_state = states.iter().next().unwrap();
+    let mut doc = Document::from_flattened(&first_state.flattened);
+    let roots_before = doc.roots().len();
+    ColumnLayoutDetector::new().process(&mut doc);
+    let roots_after = doc.roots();
+
+    let column_groups = roots_after
+        .iter()
+        .filter(|&&idx| matches!(doc.get_group(idx).unwrap().kind, GroupKind::Unknown))
+        .count();
+
+    assert_eq!(
+        column_groups, 0,
+        "AAAI should not have column layout detection (has grid fields, not text columns)"
+    );
+    assert_eq!(
+        roots_before,
+        roots_after.len(),
+        "AAAI root count should be unchanged"
+    );
+}
+
+
+#[test]
+fn test_aaav_column_layout_left_before_right() {
+    // After full pipeline, left column content should precede right column content.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AAAV_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AAAV_019_DE");
+
+    // Collect all text content in order
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text);
+
+    // AAAV left column starts with "Verwendete Konten" related content
+    // Right column has "Kontodokumentation" related content
+    // Left column text should appear before right column text
+    let left_pos = all_text
+        .iter()
+        .position(|t| t.contains("Verwendete Konten"));
+    let right_pos = all_text
+        .iter()
+        .position(|t| t.contains("Kontodokumentation"));
+
+    if let (Some(l), Some(r)) = (left_pos, right_pos) {
+        assert!(
+            l < r,
+            "Left column text ('Verwendete Konten' at {}) should come before right column text ('Kontodokumentation' at {})",
+            l, r
+        );
+    }
+}
+
+#[test]
+fn test_aabh_column_layout_left_before_right() {
+    // AABH has a Vereinbarung section with two side-by-side text columns.
+    // After column detection, left column content should precede right column.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AABH_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AABH_019_DE");
+
+    // Collect all text content in order
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    collect_text(&g.children, out);
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text);
+
+    // Left column should contain "UBS Europe SE" text before right column "Kontodokumentation"
+    let left_pos = all_text
+        .iter()
+        .position(|t| t.contains("UBS Europe SE"));
+    let right_pos = all_text
+        .iter()
+        .position(|t| t.contains("Kontodokumentation"));
+
+    assert!(
+        left_pos.is_some(),
+        "Should find 'UBS Europe SE' in output text"
+    );
+    assert!(
+        right_pos.is_some(),
+        "Should find 'Kontodokumentation' in output text"
+    );
+    assert!(
+        left_pos.unwrap() < right_pos.unwrap(),
+        "Left column text ('UBS Europe SE' at {}) should come before right column text ('Kontodokumentation' at {})",
+        left_pos.unwrap(),
+        right_pos.unwrap()
+    );
+}
+

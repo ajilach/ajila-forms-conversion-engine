@@ -87,6 +87,7 @@
 
 mod checkbox_content;
 mod checkbox_detector;
+mod column_layout;
 mod date_field_detector;
 mod field_grouper;
 mod field_table_detector;
@@ -110,6 +111,7 @@ mod text_block_merger;
 
 pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
+pub use column_layout::ColumnLayoutDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
@@ -221,4 +223,11 @@ pub fn run_analysis_pipeline_with_context(
     //FieldTableDetectorVertical::new().process_with_context(doc, ctx);
 
     RepeatableDetector::new().process_with_context(doc, ctx);
+
+    // ColumnLayoutDetector: Detect multi-column layouts and group elements
+    // by column so that left-column content precedes right-column content.
+    // Runs after all other analysis modules since text block merging,
+    // heading detection, and grid detection work correctly regardless of
+    // column ordering (they use spatial proximity, not document order).
+    ColumnLayoutDetector::new().process_with_context(doc, ctx);
 }
