@@ -645,6 +645,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             GroupKind::RepeatableSection {
                 min_occurrences,
                 max_occurrences,
+                is_user_repeatable,
             } => {
                 let children = self.convert_children(group_idx);
                 if children.is_empty() {
@@ -655,6 +656,12 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     StructuredNode::Group(GroupNode { children })
                 };
+
+                // Script-managed sections (no buttons) → plain Group, not Repeatable
+                if !is_user_repeatable {
+                    return Some(item);
+                }
+
                 // Only create a RepeatableNode if it contains at least one field
                 if contains_fields(&item) {
                     Some(StructuredNode::Repeatable(RepeatableNode {
