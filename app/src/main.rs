@@ -9,12 +9,25 @@ use dioxus::prelude::*;
 
 use components::{
     EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection,
-    StructuredEditor,
+    SettingsPanel, StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
 
 fn main() {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Start with always-on-top enabled (previous behaviour preserved by default).
+        let config = dioxus::desktop::Config::new()
+            .with_window(
+                dioxus::desktop::WindowBuilder::new()
+                    .with_always_on_top(false)
+                    .with_title("Ajila Forms Conversion Engine"),
+            );
+        dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
+    }
+
+    #[cfg(target_arch = "wasm32")]
     dioxus::launch(App);
 }
 
@@ -25,9 +38,12 @@ fn App() -> Element {
     let mut enlarged_image = use_signal(|| None::<(String, String)>);
     let selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
+    let mut settings_open = use_signal(|| false);
+    let mut always_on_top = use_signal(|| false);
 
     let profiles = blueprint::list_profiles();
 
+    // ── Pipeline ──────────────────────────────────────────────────────────────
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
         processing_state.set(ProcessingState {
@@ -90,6 +106,7 @@ fn App() -> Element {
         editor_envelope.set(None);
     };
 
+    // ── Render ────────────────────────────────────────────────────────────────
     rsx! {
         document::Stylesheet { href: asset!("/assets/styles.css") }
 
@@ -100,8 +117,29 @@ fn App() -> Element {
                 src: asset!("/assets/company-logo.webp"),
                 alt: "Company Logo",
             }
-            h1 { class: "app-header-title", "Forms Conversion Engine" }
-            span { class: "app-header-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
+            div { class: "app-header-right",
+                h1 { class: "app-header-title", "Forms Conversion Engine" }
+                span { class: "app-header-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
+            }
+            button {
+                class: "settings-btn",
+                title: "Settings",
+                onclick: move |_| settings_open.set(true),
+                "⚙"
+            }
+        }
+
+        // Settings modal
+        SettingsPanel {
+            open: *settings_open.read(),
+            on_close: move |_| settings_open.set(false),
+            always_on_top: *always_on_top.read(),
+            on_toggle_always_on_top: move |value: bool| {
+                always_on_top.set(value);
+                // Window API only exists on native desktop targets.
+                #[cfg(not(target_arch = "wasm32"))]
+                dioxus::desktop::use_window().set_always_on_top(value);
+            },
         }
 
         // Show either the editor (full page) or the main app content
