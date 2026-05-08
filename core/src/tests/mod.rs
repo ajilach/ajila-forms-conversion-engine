@@ -10505,10 +10505,7 @@ fn test_flattened_key_hashing() {
     use std::hash::{Hash, Hasher};
 
     let make_flattened = |value: &str| Flattened {
-        page: Page {
-            width: num(210.0),
-            height: num(297.0),
-        },
+        page: Page::new(num(210.0), num(297.0)),
         children: vec![FlattenedKind::Node(FlattenedNode {
             kind: FlattenedNodeKind::Field {
                 name: "f".to_string(),
@@ -11738,10 +11735,7 @@ fn test_grid_layout_proportional_colspan_1_to_2() {
     // Two fields on the same row: width 100 and width 200
     // Expected: columns=12, spans=[4, 8]
     let flattened = Flattened::from_nodes(
-        Page {
-            width: num(595.0),
-            height: num(842.0),
-        },
+        Page::new(num(595.0), num(842.0)),
         vec![
             FlattenedNode::new_field(
                 "A".into(),
@@ -11790,10 +11784,7 @@ fn test_grid_layout_equal_widths_use_span_1() {
 
     // Three fields of identical width → should keep span=1 each, columns=3
     let flattened = Flattened::from_nodes(
-        Page {
-            width: num(595.0),
-            height: num(842.0),
-        },
+        Page::new(num(595.0), num(842.0)),
         vec![
             FlattenedNode::new_field(
                 "A".into(),
@@ -11851,10 +11842,7 @@ fn test_grid_layout_proportional_colspan_1_1_2() {
 
     // Three fields: width 100, 100, 200 → columns=12, spans=[3, 3, 6]
     let flattened = Flattened::from_nodes(
-        Page {
-            width: num(595.0),
-            height: num(842.0),
-        },
+        Page::new(num(595.0), num(842.0)),
         vec![
             FlattenedNode::new_field(
                 "A".into(),
@@ -12221,10 +12209,7 @@ fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     Flattened::new(
-        Page {
-            width: to(width),
-            height: to(height),
-        },
+        Page::new(to(width), to(height)),
         nodes.into_iter().map(FlattenedKind::Node).collect(),
     )
 }
@@ -26169,6 +26154,84 @@ fn test_aabh_order_of_elements() {
 }
 
 #[test]
+fn test_aabh_page_break_separates_column_sections() {
+    // Regression: the column detector failed to split column sections at page
+    // boundaries, causing text from STP_Vereinbarung1 (page 2) to appear
+    // directly after STP_Vereinbarung's left column (page 1) instead of after
+    // its right column.  Specifically, "Personenkreis..." (page 2 left column)
+    // must NOT appear between "Fremdwährungszahlungen..." (page 1 left) and
+    // "Kontodokumentation" (page 1 right).
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AABH_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AABH_019_DE");
+
+    let mut all_text: Vec<String> = Vec::new();
+    fn collect_text(nodes: &[crate::structured::StructuredNode], out: &mut Vec<String>, depth: usize) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(p.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Group(g) => {
+                    out.push(format!("__GROUP_START_d{}_n{}__", depth, g.children.len()));
+                    collect_text(&g.children, out, depth + 1);
+                    out.push(format!("__GROUP_END_d{}__", depth));
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(h.content.as_plain_text());
+                }
+                crate::structured::StructuredNode::Conditional(c) => {
+                    collect_text(&[*c.content.clone()], out, depth + 1);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect_text(&structured, &mut all_text, 0);
+
+    // Debug: print text around the area of interest
+    for (i, t) in all_text.iter().enumerate() {
+        let prefix: String = t.chars().take(80).collect();
+        eprintln!("[{:3}] {}", i, prefix);
+    }
+
+    let waehrungen_pos = all_text
+        .iter()
+        .position(|t| t.contains("Fremdwährungszahlungen"));
+    let kontodoku_pos = all_text
+        .iter()
+        .position(|t| t.contains("Kontodokumentation"));
+    let personenkreis_pos = all_text
+        .iter()
+        .position(|t| t.contains("Personenkreis"));
+
+    assert!(waehrungen_pos.is_some(), "Should find 'Fremdwährungszahlungen'");
+    assert!(kontodoku_pos.is_some(), "Should find 'Kontodokumentation'");
+    assert!(personenkreis_pos.is_some(), "Should find 'Personenkreis'");
+
+    let w = waehrungen_pos.unwrap();
+    let k = kontodoku_pos.unwrap();
+    let p = personenkreis_pos.unwrap();
+
+    // "Kontodokumentation" (right column, page 1) must come before
+    // "Personenkreis" (left column, page 2)
+    assert!(
+        k < p,
+        "'Kontodokumentation' (pos {}) must come before 'Personenkreis' (pos {})",
+        k, p
+    );
+
+    // "Fremdwährungszahlungen" (left column, page 1) must come before
+    // "Kontodokumentation" (right column, page 1)
+    assert!(
+        w < k,
+        "'Fremdwährungszahlungen' (pos {}) must come before 'Kontodokumentation' (pos {})",
+        w, k
+    );
+}
+
+#[test]
 fn test_aabh_heading_detection() {
     // AABH_019_DE has numbered section headings that must be detected as headings.
     use crate::run_exhaustive_to_merged;
@@ -26206,4 +26269,3 @@ fn test_aabh_heading_detection() {
         );
     }
 }
-

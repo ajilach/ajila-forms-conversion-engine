@@ -176,6 +176,29 @@ impl<'a> Iterator for FlattenedNodeIter<'a> {
 pub struct Page {
     pub width: Num,
     pub height: Num,
+    /// Y offset of the content area within the page (from XFA contentArea element).
+    /// For PDF-sourced documents this is 0.
+    pub content_area_y: Num,
+    /// Height of the content area within the page (from XFA contentArea element).
+    /// For PDF-sourced documents this equals `height`.
+    pub content_area_height: Num,
+    /// Pre-computed Y positions where page breaks occur in the flattened coordinate space.
+    /// These are computed during flattening based on content subform boundaries and
+    /// content area overflow, rather than from simple page-height arithmetic.
+    pub page_breaks: Vec<Num>,
+}
+
+impl Page {
+    /// Create a Page where the content area spans the full page.
+    pub fn new(width: Num, height: Num) -> Self {
+        Page {
+            width,
+            height,
+            content_area_y: Decimal::ZERO,
+            content_area_height: height,
+            page_breaks: Vec::new(),
+        }
+    }
 }
 
 // ============================================================================
@@ -2576,10 +2599,10 @@ impl Flattened {
         let mut flattened_children: Vec<FlattenedKind> = Vec::new();
 
         // Default to A4 size (210mm x 297mm in points)
-        let mut page = Page {
-            width: XfaNode::parse_dimension("210mm").unwrap_or_else(|_| num(595.27)),
-            height: XfaNode::parse_dimension("297mm").unwrap_or_else(|_| num(841.89)),
-        };
+        let mut page = Page::new(
+            XfaNode::parse_dimension("210mm").unwrap_or_else(|_| num(595.27)),
+            XfaNode::parse_dimension("297mm").unwrap_or_else(|_| num(841.89)),
+        );
 
         // Find page dimensions and contentArea offset from pageArea
         let mut content_offset_x = Decimal::ZERO;
@@ -2606,6 +2629,10 @@ impl Flattened {
             content_offset_y = first_content_area.y.unwrap_or(Decimal::ZERO);
             content_width = first_content_area.w.unwrap_or(page.width);
             content_height = first_content_area.h.unwrap_or(page.height);
+
+            // Store content area info in Page for downstream use (e.g. column layout detection)
+            page.content_area_y = content_offset_y;
+            page.content_area_height = content_height;
         }
 
         // ============================================================
@@ -2685,6 +2712,7 @@ impl Flattened {
             // Per XFA spec, the root container's layout (typically "tb") determines
             // how sibling content subforms are arranged.
             let mut current_content_y = content_offset_y;
+            let is_single_subform = content_subforms.len() == 1;
 
             for (content_subform, content_path) in &content_subforms {
                 // Create flatten context with the content subform's path prefix
@@ -2718,6 +2746,113 @@ impl Flattened {
                     &mut flattened_children,
                     &ctx,
                 )?;
+
+                // For single-subform forms where content overflows the content area,
+                // compute page breaks, then snap each break to the nearest positioned-
+                // subform boundary. In XFA, positioned-layout subforms that straddle
+                // a page boundary are pushed entirely to the next page.
+                if is_single_subform
+                    && consumed_height > content_height
+                    && content_height > Decimal::ZERO
+                {
+                    let mut break_y = current_content_y + content_height;
+                    let content_end = current_content_y + consumed_height;
+                    let midpoint_x =
+                        content_offset_x + content_width / Decimal::TWO;
+                    let wide_threshold = content_width * num(0.3);
+
+                    // Detect positioned-subform boundaries from the flattened
+                    // output. At a genuine boundary (like the start of
+                    // STP_Vereinbarung or STP_Vereinbarung1), BOTH the left-
+                    // column and right-column primary draw elements begin at
+                    // the same Y (since they have y=0 within the positioned
+                    // parent). We identify these Y values by checking for wide
+                    // elements on both sides of the midpoint.
+                    let mut y_info: std::collections::HashMap<
+                        rust_decimal::Decimal,
+                        (bool, bool),
+                    > = std::collections::HashMap::new();
+                    fn collect_wide_columns(
+                        nodes: &[FlattenedKind],
+                        midpoint_x: Num,
+                        wide_threshold: Num,
+                        info: &mut std::collections::HashMap<
+                            rust_decimal::Decimal,
+                            (bool, bool),
+                        >,
+                    ) {
+                        for kind in nodes {
+                            match kind {
+                                FlattenedKind::Node(node) => {
+                                    if node.width >= wide_threshold {
+                                        let entry =
+                                            info.entry(node.y).or_insert((false, false));
+                                        let center = node.x + node.width / Decimal::TWO;
+                                        if center < midpoint_x {
+                                            entry.0 = true;
+                                        } else {
+                                            entry.1 = true;
+                                        }
+                                    }
+                                }
+                                FlattenedKind::Group { children, .. } => {
+                                    collect_wide_columns(
+                                        children,
+                                        midpoint_x,
+                                        wide_threshold,
+                                        info,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    collect_wide_columns(
+                        &flattened_children,
+                        midpoint_x,
+                        wide_threshold,
+                        &mut y_info,
+                    );
+
+                    // Subform boundaries: Y values with wide elements on both sides
+                    let mut subform_boundaries: Vec<Num> = y_info
+                        .iter()
+                        .filter(|(_, (has_left, has_right))| *has_left && *has_right)
+                        .map(|(&y, _)| y)
+                        .collect();
+                    subform_boundaries.sort();
+
+                    while break_y < content_end {
+                        // Find the last subform boundary before the theoretical break
+                        // whose content extends past it (the subform overflows).
+                        // Only snap if the boundary is close to the break (within
+                        // 10% of content height) — this avoids false positives from
+                        // coincidental paragraph alignments.
+                        let max_snap_distance = content_height / num(10.0);
+                        let snapped = subform_boundaries
+                            .iter()
+                            .rev()
+                            .filter(|&&b| {
+                                b < break_y
+                                    && b > current_content_y
+                                    && (break_y - b) <= max_snap_distance
+                            })
+                            .find(|&&b| {
+                                // Check the content from this boundary extends past
+                                // the theoretical break: the next boundary (or content
+                                // end) is past break_y.
+                                let next_boundary = subform_boundaries
+                                    .iter()
+                                    .find(|&&nb| nb > b)
+                                    .copied()
+                                    .unwrap_or(content_end);
+                                next_boundary > break_y
+                            })
+                            .copied();
+
+                        page.page_breaks.push(snapped.unwrap_or(break_y));
+                        break_y += content_height;
+                    }
+                }
 
                 // Advance y-offset for the next content subform
                 // Use the subform's explicit height if set, otherwise use consumed height

@@ -497,10 +497,7 @@ mod tests {
     fn test_horizontal_radio_button_grouping() {
         // Create a flattened document with 3 horizontally aligned radio buttons
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Radio button 1
                 FlattenedNode::new_field(

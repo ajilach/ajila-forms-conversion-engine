@@ -387,10 +387,7 @@ mod tests {
     #[test]
     fn test_label_above_field() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Labels above fields (this pattern should be detected as dominant)
                 FlattenedNode::new_text(
@@ -445,10 +442,7 @@ mod tests {
     #[test]
     fn test_label_left_of_field() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Labels to left of fields (this pattern should be detected as dominant)
                 FlattenedNode::new_text(
@@ -508,10 +502,7 @@ mod tests {
     fn test_statistical_analysis_chooses_dominant_position() {
         // Mix of positions, but "above" should dominate (3 above vs 1 left)
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Three labels above
                 FlattenedNode::new_text(
@@ -584,10 +575,7 @@ mod tests {
     #[test]
     fn test_no_label_for_distant_field() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Text at top
                 FlattenedNode::new_text(

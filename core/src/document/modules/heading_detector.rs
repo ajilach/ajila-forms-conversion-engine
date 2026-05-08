@@ -1249,10 +1249,7 @@ mod tests {
     #[test]
     fn test_detect_headings_by_size() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large heading (should be h1 or h2)
                 make_text_node("Main Title", 24.0, 10.0, 10.0),
@@ -1312,10 +1309,7 @@ mod tests {
     fn test_bold_larger_text_detected_as_heading() {
         // Bold text that is LARGER than body size should still be detected as heading
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Bold text at larger size (should be detected as heading)
                 make_bold_text_node("Bold Subheading", 14.0, 10.0, 10.0),
@@ -1344,10 +1338,7 @@ mod tests {
         let long_text = "This is a very long paragraph that should not be detected as a heading even though it might have a larger font size because headings are typically short and concise not rambling on like this text which goes on and on.";
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large font but too long to be heading (>200 chars)
                 make_text_node(long_text, 18.0, 10.0, 10.0),
@@ -1378,10 +1369,7 @@ mod tests {
     #[test]
     fn test_insufficient_samples() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Only Title", 24.0, 10.0, 10.0),
                 make_text_node("Single paragraph.", 10.0, 10.0, 50.0),
@@ -1405,10 +1393,7 @@ mod tests {
     #[test]
     fn test_heading_level_ordering() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Huge Title", 32.0, 10.0, 10.0),
                 make_text_node("Large Title", 24.0, 10.0, 50.0),
@@ -1468,10 +1453,7 @@ mod tests {
         let multi_sentence = "First sentence here. Second sentence follows.";
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large font but multiple sentences
                 make_text_node(multi_sentence, 20.0, 10.0, 10.0),
@@ -1503,10 +1485,7 @@ mod tests {
     fn test_single_sentence_heading() {
         // Single sentence with ending punctuation is valid
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Introduction.", 20.0, 10.0, 10.0),
                 make_text_node("Body paragraph one.", 10.0, 10.0, 50.0),
@@ -1627,10 +1606,7 @@ mod tests {
     fn test_headings_ordered_top_to_bottom() {
         // Headings placed out of order in y-coordinate should be sorted
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Headings in wrong vertical order in the vector
                 make_text_node("Section B", 18.0, 10.0, 100.0), // y=100
@@ -1683,10 +1659,7 @@ mod tests {
         // When multiple bold section headers exist, those with underlines should be h2,
         // those without should be h3
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large title (h1)
                 make_text_node("Main Title", 18.0, 10.0, 10.0),

@@ -1198,10 +1198,7 @@ mod tests {
 
     fn create_test_flattened() -> Flattened {
         Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "First".to_string(),

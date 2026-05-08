@@ -231,16 +231,29 @@ impl ColumnLayoutDetector {
         let col_min_y = all_ys.first().copied()?;
         let col_max_y = all_ys.last().copied()?;
 
-        // Determine page boundaries from the document's page height
-        let page_height = doc.source.page.height;
-        let mut break_ys: Vec<Decimal> = Vec::new();
-        if page_height > Decimal::ZERO {
-            let mut page_y = page_height;
-            while page_y < col_max_y {
-                if page_y > col_min_y {
-                    break_ys.push(page_y);
+        // Use pre-computed page breaks from the flattener (content subform boundaries).
+        // Filter to breaks within the column content range.
+        let mut break_ys: Vec<Decimal> = doc
+            .source
+            .page
+            .page_breaks
+            .iter()
+            .copied()
+            .filter(|&y| y > col_min_y && y < col_max_y)
+            .collect();
+
+        // If no subform boundary breaks fall within the column content, fall back
+        // to page-height arithmetic (the original behavior).
+        if break_ys.is_empty() {
+            let page_height = doc.source.page.height;
+            if page_height > Decimal::ZERO {
+                let mut page_y = page_height;
+                while page_y < col_max_y {
+                    if page_y > col_min_y {
+                        break_ys.push(page_y);
+                    }
+                    page_y += page_height;
                 }
-                page_y += page_height;
             }
         }
 
@@ -431,7 +444,7 @@ impl AnalysisModule for ColumnLayoutDetector {
         // with left-column items first (sorted by y), then right-column items (sorted by y).
         // The ColumnSection tells the structured converter to preserve this order
         // without re-sorting by position.
-        for section in sections {
+        for (_sec_idx, section) in sections.iter().enumerate() {
             let mut left_sorted: Vec<(usize, Decimal)> = section
                 .left
                 .iter()
@@ -492,10 +505,7 @@ mod tests {
     fn make_flattened(nodes: Vec<FlattenedNode>) -> Flattened {
         let children: Vec<FlattenedKind> = nodes.into_iter().map(FlattenedKind::Node).collect();
         Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children,
             language: "de".to_string(),
             cached_key: None,

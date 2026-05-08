@@ -577,10 +577,7 @@ mod tests {
         )];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -606,10 +603,7 @@ mod tests {
         )];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -629,10 +623,7 @@ mod tests {
         ];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -656,10 +647,7 @@ mod tests {
         ];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -687,10 +675,7 @@ mod tests {
         );
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 children: vec![FlattenedKind::Node(text_node)],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
@@ -736,10 +721,7 @@ mod tests {
         button_node.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 children: vec![
                     FlattenedKind::Node(field_node),
@@ -799,10 +781,7 @@ mod tests {
         button_node.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 children: vec![
                     FlattenedKind::Node(text_node),
@@ -875,10 +854,7 @@ mod tests {
         outer_button.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 // Outer wrapper is repeatable too, but should be ignored in favor
                 // of the nested repeatable subgroup.
@@ -959,10 +935,7 @@ mod tests {
         )));
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
                 children: vec![

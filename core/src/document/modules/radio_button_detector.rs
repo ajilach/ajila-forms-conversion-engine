@@ -338,10 +338,7 @@ mod tests {
     fn test_radio_button_detection() {
         // Create a flattened document with a square field and label on right
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Small square field at (50, 100)
                 FlattenedNode::new_field(
@@ -385,10 +382,7 @@ mod tests {
     fn test_non_square_field_not_detected() {
         // Create a non-square field
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Rectangular field
                 FlattenedNode::new_field(

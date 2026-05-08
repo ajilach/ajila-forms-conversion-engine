@@ -1616,10 +1616,7 @@ mod tests {
     #[test]
     fn test_groups_unordered_list() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- First item".to_string(),
@@ -1672,10 +1669,7 @@ mod tests {
     #[test]
     fn test_groups_ordered_list() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "1. First".to_string(),
@@ -1717,10 +1711,7 @@ mod tests {
     #[test]
     fn test_does_not_group_mixed_markers() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- Unordered item".to_string(),
@@ -1758,10 +1749,7 @@ mod tests {
     #[test]
     fn test_does_not_group_single_item() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![FlattenedNode::new_text(
                 "- Only one item".to_string(),
                 num(10.0),
@@ -1784,10 +1772,7 @@ mod tests {
     #[test]
     fn test_non_list_text_blocks_untouched() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Normal text".to_string(),
@@ -1853,10 +1838,7 @@ mod tests {
     fn test_different_x_positions_not_grouped() {
         // Text blocks at very different x positions should not be grouped
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- Left item".to_string(),

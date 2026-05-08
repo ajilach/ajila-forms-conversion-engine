@@ -113,10 +113,7 @@ pub fn parse_pdf(pdf_bytes: &[u8]) -> Result<Vec<Flattened>, String> {
             }
         }
 
-        let page = Page {
-            width: to_num(page_w),
-            height: to_num(page_h),
-        };
+        let page = Page::new(to_num(page_w), to_num(page_h));
 
         result.push(Flattened::new(page, children));
     }
@@ -533,10 +530,7 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
     if pages.len() <= 1 {
         return pages.into_iter().next().unwrap_or_else(|| {
             Flattened::new(
-                Page {
-                    width: Decimal::ZERO,
-                    height: Decimal::ZERO,
-                },
+                Page::new(Decimal::ZERO, Decimal::ZERO),
                 Vec::new(),
             )
         });
@@ -640,10 +634,7 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
 
     let total_height: Num = pages.iter().map(|p| p.page.height).sum();
 
-    let merged_page = Page {
-        width: max_width,
-        height: total_height,
-    };
+    let mut merged_page = Page::new(max_width, total_height);
 
     let mut merged_children: Vec<FlattenedKind> = Vec::new();
     let mut y_offset = Decimal::ZERO;
@@ -664,6 +655,8 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
         }
 
         y_offset += to_num(page_h);
+        // Record page boundary for column layout detection
+        merged_page.page_breaks.push(y_offset);
     }
 
     Flattened::new(merged_page, merged_children)

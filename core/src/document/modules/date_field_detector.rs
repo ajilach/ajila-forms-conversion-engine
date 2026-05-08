@@ -449,10 +449,7 @@ mod tests {
     fn test_three_fields_with_dot_delimiters() {
         // Pattern: [DayField] "." [MonthField] "." [YearField]
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "Day".to_string(),
@@ -533,10 +530,7 @@ mod tests {
     fn test_placeholder_dd_with_fields() {
         // Pattern: "dd." [MonthField] "." [YearField]
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "dd.".to_string(),
@@ -605,10 +599,7 @@ mod tests {
     fn test_fields_with_yyyy_placeholder() {
         // Pattern: [DayField] "." [MonthField] ".yyyy"
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "Day".to_string(),
@@ -677,10 +668,7 @@ mod tests {
     fn test_partial_date_month_year() {
         // Pattern: [MonthField] "/" [YearField]
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "Month".to_string(),
@@ -740,10 +728,7 @@ mod tests {
     fn test_numeric_literal_day() {
         // Pattern: "01." [MonthField] "." [YearField]
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "01.".to_string(),
@@ -806,10 +791,7 @@ mod tests {
     fn test_no_date_for_unrelated_fields() {
         // Two fields on the same line but no delimiter between them
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "FirstName".to_string(),
@@ -855,10 +837,7 @@ mod tests {
     fn test_distant_fields_not_grouped() {
         // Fields with delimiters but too far apart
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "Day".to_string(),
