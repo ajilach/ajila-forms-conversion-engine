@@ -26167,3 +26167,43 @@ fn test_aabh_order_of_elements() {
         last_label = label;
     }
 }
+
+#[test]
+fn test_aabh_heading_detection() {
+    // AABH_019_DE has numbered section headings that must be detected as headings.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AABH_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AABH_019_DE");
+
+    let headings = collect_headings(&structured);
+
+    println!("\n=== AABH Heading Structure ===");
+    for (level, text) in &headings {
+        println!("H{}: {}", level, text);
+    }
+
+    let expected_headings = [
+        "Verwendete Konten",
+        "Eingehende Zahlungen",
+        "Übermittlung von Aufträgen",
+        "Währungen",
+        "Kontodokumentation",
+        "Informationsaustausch zwischen UBS (D) und UBS (CH)",
+        "Vertretungsberechtigung",
+        "Gebühren",
+        "Kündigungsregelung",
+        "Rechtswahl und Gerichtsstand",
+    ];
+
+    for expected in &expected_headings {
+        let found = headings.iter().any(|(_, text)| text.contains(expected));
+        assert!(
+            found,
+            "'{}' should be detected as a heading. Found headings: {:?}",
+            expected,
+            headings.iter().map(|(l, t)| format!("H{}: {}", l, t)).collect::<Vec<_>>()
+        );
+    }
+}
+
