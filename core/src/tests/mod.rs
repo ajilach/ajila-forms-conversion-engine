@@ -26288,27 +26288,38 @@ fn test_aabh_en_number_7_aligns_with_power_of_representation() {
 
     let mut bp = Blueprint::from_pdf(input_path("AABH_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find "7." node in T_Right_Indent
-    let seven_dot = flattened.iter_nodes().find(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), content, .. }
+    let seven_dot = flattened
+        .iter_nodes()
+        .find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), content, .. }
             if sn == "T_Right_Indent" && content.trim() == "7.")
-    }).expect("Should find '7.' in T_Right_Indent");
+        })
+        .expect("Should find '7.' in T_Right_Indent");
 
     // Find "Power of representation" node in T_Right_Text
-    let power_of = flattened.iter_nodes().find(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Text { content, .. }
+    let power_of = flattened
+        .iter_nodes()
+        .find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, .. }
             if content.contains("Power of representation"))
-    }).expect("Should find 'Power of representation' in T_Right_Text");
+        })
+        .expect("Should find 'Power of representation' in T_Right_Text");
 
     // They should be at the same Y position (both start at y=0 in the positioned subform)
     let y_diff = (seven_dot.y - power_of.y).abs();
     assert!(
         y_diff < rust_decimal::Decimal::from_str("1.0").unwrap(),
         "'7.' (y={}) should be at the same Y as 'Power of representation' (y={}), diff={}",
-        seven_dot.y, power_of.y, y_diff
+        seven_dot.y,
+        power_of.y,
+        y_diff
     );
 }
 
@@ -26319,26 +26330,37 @@ fn test_aabh_de_number_7_aligns_with_vertretungsberechtigung() {
 
     let mut bp = Blueprint::from_pdf(input_path("AABH_019_DE.pdf")).unwrap();
     let states = bp.states().unwrap();
-    let default_state = states.iter().next().expect("should have at least one state");
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
     let flattened = &default_state.flattened;
 
     // Find "7." node in T_Right_Indent
-    let seven_dot = flattened.iter_nodes().find(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), content, .. }
+    let seven_dot = flattened
+        .iter_nodes()
+        .find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { source_name: Some(sn), content, .. }
             if sn == "T_Right_Indent" && content.trim() == "7.")
-    }).expect("Should find '7.' in T_Right_Indent");
+        })
+        .expect("Should find '7.' in T_Right_Indent");
 
     // Find "Vertretungsberechtigung" node in T_Right_Text
-    let heading = flattened.iter_nodes().find(|n| {
-        matches!(&n.kind, FlattenedNodeKind::Text { content, .. }
+    let heading = flattened
+        .iter_nodes()
+        .find(|n| {
+            matches!(&n.kind, FlattenedNodeKind::Text { content, .. }
             if content.contains("Vertretungsberechtigung"))
-    }).expect("Should find 'Vertretungsberechtigung' in T_Right_Text");
+        })
+        .expect("Should find 'Vertretungsberechtigung' in T_Right_Text");
 
     let y_diff = (seven_dot.y - heading.y).abs();
     assert!(
         y_diff < rust_decimal::Decimal::from_str("1.0").unwrap(),
         "'7.' (y={}) should be at the same Y as 'Vertretungsberechtigung' (y={}), diff={}",
-        seven_dot.y, heading.y, y_diff
+        seven_dot.y,
+        heading.y,
+        y_diff
     );
 }
 
