@@ -649,6 +649,8 @@ pub struct RichParagraph {
     /// Distinguishes `<p><br/></p>` (structural placeholder in rich text)
     /// from empty U+2029 segments in plain text (vertical spacers).
     pub has_br: bool,
+    /// Per-paragraph CSS letter-spacing (in pt). From `<p style="letter-spacing:...">`
+    pub letter_spacing: Option<f32>,
 }
 
 /// A run of text with uniform styling.
@@ -665,6 +667,8 @@ pub struct RichRun {
     pub italic: bool,
     /// Underline
     pub underline: bool,
+    /// Per-run CSS letter-spacing override (in pt). From `<span style="letter-spacing:...">`
+    pub letter_spacing: Option<f32>,
 }
 
 /// A positioned word/token ready for rendering.
@@ -4176,6 +4180,7 @@ impl Flattened {
                     bold: false,
                     italic: false,
                     underline: false,
+                    letter_spacing: None,
                 });
             } else {
                 para.is_empty = true;
@@ -7871,6 +7876,7 @@ impl Flattened {
             default_h_align,
             computed_values,
             id_to_field,
+            None,
         );
 
         // If no paragraphs were created but we have content, create a single paragraph
@@ -7894,6 +7900,7 @@ impl Flattened {
         default_h_align: HAlign,
         computed_values: Option<&std::collections::HashMap<SomPath, String>>,
         id_to_field: Option<&std::collections::HashMap<String, String>>,
+        run_letter_spacing: Option<f32>,
     ) {
         for child in children {
             match &child.kind {
@@ -7954,6 +7961,7 @@ impl Flattened {
                                 bold,
                                 italic,
                                 underline: false,
+                                letter_spacing: run_letter_spacing,
                             });
                         } else if !preserve_spaces
                             && segment
@@ -7994,6 +8002,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                run_letter_spacing,
                             );
                         }
                         "p" => {
@@ -8017,6 +8026,13 @@ impl Flattened {
                                 para.margin_left = Self::parse_css_dimension(style, "margin-left");
                                 para.margin_right =
                                     Self::parse_css_dimension(style, "margin-right");
+                                // Parse CSS letter-spacing for paragraph-level override
+                                let para_font = para.font_size.unwrap_or(8.0);
+                                para.letter_spacing = Self::parse_css_dimension_with_em(
+                                    style,
+                                    "letter-spacing",
+                                    Some(para_font),
+                                );
                                 // Only override h_align if CSS specifies it
                                 let css_align = Self::parse_css_alignment_optional(style);
                                 if let Some(align) = css_align {
@@ -8065,11 +8081,16 @@ impl Flattened {
                                         effective_bold,
                                         italic,
                                         default_h_align,
+                                        None,
                                     );
                                 }
                             }
 
-                            // Then parse children with inherited styles
+                            // Then parse children with inherited styles.
+                            // Paragraph CSS letter-spacing is applied via
+                            // the global parameter in layout_rich_text (through
+                            // para.letter_spacing). Only explicit <span>
+                            // letter-spacing should set per-run overrides.
                             Self::parse_html_nodes_to_rich_text(
                                 &child.children,
                                 paragraphs,
@@ -8079,6 +8100,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                None,
                             );
 
                             // Check if paragraph ended up empty (only whitespace spans)
@@ -8109,6 +8131,7 @@ impl Flattened {
                                         bold,
                                         italic,
                                         underline: false,
+                                        letter_spacing: run_letter_spacing,
                                     });
                                 }
                                 continue; // Don't recurse into embed spans
@@ -8151,6 +8174,15 @@ impl Flattened {
                                     (preserve_spaces, bold, italic)
                                 };
 
+                            // Parse CSS letter-spacing from span style
+                            let span_letter_spacing = if let Some(style) = child.attributes.get("style") {
+                                let span_font = paragraphs.last().and_then(|p| p.font_size).unwrap_or(8.0);
+                                Self::parse_css_dimension_with_em(style, "letter-spacing", Some(span_font))
+                                    .or(run_letter_spacing)
+                            } else {
+                                run_letter_spacing
+                            };
+
                             // Handle text_content if present
                             // Handle text_content with U+2029 support
                             // Skip when Text children are present (they preserve DOM order)
@@ -8168,6 +8200,7 @@ impl Flattened {
                                         span_bold,
                                         span_italic,
                                         default_h_align,
+                                        span_letter_spacing,
                                     );
                                 }
                             }
@@ -8182,6 +8215,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                span_letter_spacing,
                             );
                         }
                         "b" | "strong" => {
@@ -8194,6 +8228,7 @@ impl Flattened {
                                     true,
                                     italic,
                                     default_h_align,
+                                    run_letter_spacing,
                                 );
                             }
                             Self::parse_html_nodes_to_rich_text(
@@ -8205,6 +8240,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                run_letter_spacing,
                             );
                         }
                         "i" | "em" => {
@@ -8217,6 +8253,7 @@ impl Flattened {
                                     bold,
                                     true,
                                     default_h_align,
+                                    run_letter_spacing,
                                 );
                             }
                             Self::parse_html_nodes_to_rich_text(
@@ -8228,6 +8265,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                run_letter_spacing,
                             );
                         }
                         "br" => {
@@ -8273,6 +8311,7 @@ impl Flattened {
                                     bold,
                                     italic,
                                     default_h_align,
+                                    run_letter_spacing,
                                 );
                             }
                             Self::parse_html_nodes_to_rich_text(
@@ -8284,6 +8323,7 @@ impl Flattened {
                                 default_h_align,
                                 computed_values,
                                 id_to_field,
+                                run_letter_spacing,
                             );
                         }
                     }
@@ -8299,6 +8339,7 @@ impl Flattened {
                         default_h_align,
                         computed_values,
                         id_to_field,
+                        run_letter_spacing,
                     );
                 }
             }
@@ -8314,6 +8355,7 @@ impl Flattened {
         bold: bool,
         italic: bool,
         default_h_align: HAlign,
+        run_letter_spacing: Option<f32>,
     ) {
         // Split on U+2029 paragraph separator
         let segments: Vec<&str> = text.split('\u{2029}').collect();
@@ -8350,6 +8392,7 @@ impl Flattened {
                     bold,
                     italic,
                     underline: false,
+                    letter_spacing: run_letter_spacing,
                 });
             }
         }
@@ -8402,6 +8445,16 @@ impl Flattened {
     /// Parse a CSS dimension value from a style string.
     /// Looks for "property: Xpt" or "property: Xin" etc.
     fn parse_css_dimension(style: &str, property: &str) -> Option<f32> {
+        Self::parse_css_dimension_with_em(style, property, None)
+    }
+
+    /// Parse a CSS dimension value, with optional `em` unit support.
+    /// When `font_size_pt` is provided, `em` values are resolved relative to it.
+    fn parse_css_dimension_with_em(
+        style: &str,
+        property: &str,
+        font_size_pt: Option<f32>,
+    ) -> Option<f32> {
         let search = format!("{}:", property);
         if let Some(pos) = style.find(&search) {
             let rest = &style[pos + search.len()..];
@@ -8410,6 +8463,9 @@ impl Flattened {
             // Parse the dimension with unit
             if let Some(val) = value_str.strip_suffix("pt") {
                 val.trim().parse().ok()
+            } else if let Some(val) = value_str.strip_suffix("em") {
+                let em_val = val.trim().parse::<f32>().ok()?;
+                Some(em_val * font_size_pt.unwrap_or(10.0))
             } else if let Some(val) = value_str.strip_suffix("in") {
                 val.trim().parse::<f32>().ok().map(|v| v * 72.0)
             } else if let Some(val) = value_str.strip_suffix("mm") {
@@ -8744,9 +8800,10 @@ impl Flattened {
         let mut seen_word_boundary = true; // Start true so first word is not merged
 
         for run in runs {
+            let effective_ls = run.letter_spacing.unwrap_or(letter_spacing);
             if run.preserve_spaces {
                 // Preserved space run - keep as single token
-                let width = Self::measure_text_width(&run.text, font_size, font, letter_spacing);
+                let width = Self::measure_text_width(&run.text, font_size, font, effective_ls);
                 if !run.text.is_empty() {
                     tokens.push(LayoutToken {
                         text: run.text.clone(),
@@ -8781,14 +8838,14 @@ impl Flattened {
                                     &prev_token.text,
                                     font_size,
                                     font,
-                                    letter_spacing,
+                                    effective_ls,
                                 );
                             } else {
                                 let width = Self::measure_text_width(
                                     &current_word,
                                     font_size,
                                     font,
-                                    letter_spacing,
+                                    effective_ls,
                                 );
                                 tokens.push(LayoutToken {
                                     text: current_word.clone(),
@@ -8821,14 +8878,14 @@ impl Flattened {
                             &prev_token.text,
                             font_size,
                             font,
-                            letter_spacing,
+                            effective_ls,
                         );
                     } else {
                         let width = Self::measure_text_width(
                             &current_word,
                             font_size,
                             font,
-                            letter_spacing,
+                            effective_ls,
                         );
                         tokens.push(LayoutToken {
                             text: current_word,
@@ -9377,6 +9434,7 @@ impl Flattened {
                     para_xfa_font
                         .letter_spacing
                         .and_then(|ls| ls.to_f32())
+                        .or(para.letter_spacing.filter(|&ls| ls != 0.0))
                         .unwrap_or(0.0),
                     default_para.as_ref().and_then(|p| p.hyphenation.as_ref()),
                     hyph_dict,
@@ -10224,6 +10282,7 @@ mod tests {
                 italic: false,
                 underline: false,
                 preserve_spaces: false,
+                letter_spacing: None,
             },
             RichRun {
                 text: " ".to_string(), // Space-only run
@@ -10231,6 +10290,7 @@ mod tests {
                 italic: false,
                 underline: false,
                 preserve_spaces: false,
+                letter_spacing: None,
             },
             RichRun {
                 text: "bold ".to_string(),
@@ -10238,6 +10298,7 @@ mod tests {
                 italic: false,
                 underline: false,
                 preserve_spaces: false,
+                letter_spacing: None,
             },
             RichRun {
                 text: "suffix".to_string(),
@@ -10245,6 +10306,7 @@ mod tests {
                 italic: false,
                 underline: false,
                 preserve_spaces: false,
+                letter_spacing: None,
             },
         ];
 
