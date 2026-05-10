@@ -583,6 +583,15 @@ pub enum AemNode {
     /// Optional profile-driven snippet inserted as the last item in the
     /// last page panel when the `appendix` template exists.
     Appendix { uuid: Uuid, name: String },
+
+    /// Footnote text, placed at the bottom of the page where it is referenced.
+    Footnote {
+        uuid: Uuid,
+        name: String,
+        content: String,
+        colspan: u32,
+        dor_colspan: Option<u32>,
+    },
 }
 
 // ============================================================================
@@ -607,6 +616,7 @@ impl AemNode {
             AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
             AemNode::Preface { uuid, .. } => format!("preface_{}", uuid.as_simple()),
             AemNode::Appendix { uuid, .. } => format!("appendix_{}", uuid.as_simple()),
+            AemNode::Footnote { uuid, .. } => format!("footnote_{}", uuid.as_simple()),
         }
     }
 }

@@ -22,9 +22,9 @@
 use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
 use crate::structured::{
-    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TranslatableString,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
+    HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -43,6 +43,7 @@ fn contains_fields(node: &StructuredNode) -> bool {
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Footnote(_)
         | StructuredNode::Empty => false,
     }
 }
@@ -487,17 +488,16 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
         (None, Some(_)) => Ordering::Greater, // Items without bounds go to the end
         (Some(_), None) => Ordering::Less,
         (Some(a), Some(b)) => {
-            // Use a small threshold for "same line" comparison (about 2 points)
-            let line_threshold = rust_decimal::Decimal::new(20, 1); // 2.0
-
-            let y_diff = a.y - b.y;
-            if y_diff.abs() <= line_threshold {
-                // Same line - sort by x (left to right)
-                a.x.cmp(&b.x)
-            } else {
-                // Different lines - sort by y (top to bottom)
-                a.y.cmp(&b.y)
-            }
+            // Quantize y into bands so that items on roughly the same line
+            // compare equal on the primary axis.  Rounding to a fixed grid
+            // (instead of a pairwise threshold) guarantees transitivity.
+            let band = rust_decimal::Decimal::new(40, 1); // 4.0pt bands
+            let quantize = |y: rust_decimal::Decimal| -> rust_decimal::Decimal {
+                (y / band).round() * band
+            };
+            let ya = quantize(a.y);
+            let yb = quantize(b.y);
+            ya.cmp(&yb).then_with(|| a.x.cmp(&b.x))
         }
     }
 }
@@ -514,6 +514,33 @@ impl<'a, 'b> Converter<'a, 'b> {
         match &group.kind {
             // Skip header/footer/background (master page content)
             GroupKind::Header | GroupKind::Footer | GroupKind::Background => None,
+
+            // Footnote → FootnoteNode
+            GroupKind::Footnote => {
+                let text = self.extract_inline_text(group_idx);
+                let som_path = self.extract_group_som_path(group_idx);
+                let source_name = self.extract_group_source_name(group_idx);
+                // Parse marker from leading digits in the plain text
+                let plain = text.as_plain_text();
+                let marker = {
+                    let digits: String = plain
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    if digits.is_empty() {
+                        None
+                    } else {
+                        Some(digits)
+                    }
+                };
+                Some(StructuredNode::Footnote(FootnoteNode {
+                    content: text,
+                    marker,
+                    som_path,
+                    source_name,
+                }))
+            }
 
             // InlineField → Paragraph(before) + Field("UNKNOWN") + Paragraph(after)
             GroupKind::InlineField {
@@ -1974,6 +2001,11 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Wrap with strong if bold
         if run.bold {
             node = InlineNode::Strong(Box::new(node));
+        }
+
+        // Wrap with superscript if detected from vertical-align
+        if run.superscript {
+            node = InlineNode::Superscript(Box::new(node));
         }
 
         node

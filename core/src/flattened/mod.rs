@@ -667,6 +667,8 @@ pub struct RichRun {
     pub italic: bool,
     /// Underline
     pub underline: bool,
+    /// Superscript (detected from positive vertical-align + small font-size)
+    pub superscript: bool,
     /// Per-run CSS letter-spacing override (in pt). From `<span style="letter-spacing:...">`
     pub letter_spacing: Option<f32>,
 }
@@ -4180,6 +4182,7 @@ impl Flattened {
                     bold: false,
                     italic: false,
                     underline: false,
+                    superscript: false,
                     letter_spacing: None,
                 });
             } else {
@@ -7961,6 +7964,7 @@ impl Flattened {
                                 bold,
                                 italic,
                                 underline: false,
+                                superscript: false,
                                 letter_spacing: run_letter_spacing,
                             });
                         } else if !preserve_spaces
@@ -8131,6 +8135,7 @@ impl Flattened {
                                         bold,
                                         italic,
                                         underline: false,
+                                        superscript: false,
                                         letter_spacing: run_letter_spacing,
                                     });
                                 }
@@ -8173,6 +8178,19 @@ impl Flattened {
                                 } else {
                                     (preserve_spaces, bold, italic)
                                 };
+
+                            // Detect superscript from positive vertical-align + small font-size on span
+                            let span_superscript = child
+                                .attributes
+                                .get("style")
+                                .map(|style| {
+                                    Self::parse_css_dimension(style, "vertical-align")
+                                        .map_or(false, |va| va > 0.0)
+                                })
+                                .unwrap_or(false);
+
+                            // Track run count before recursion to mark new runs as superscript
+                            let runs_before: usize = paragraphs.iter().map(|p| p.runs.len()).sum();
 
                             // Parse CSS letter-spacing from span style
                             let span_letter_spacing = if let Some(style) = child.attributes.get("style") {
@@ -8217,6 +8235,26 @@ impl Flattened {
                                 id_to_field,
                                 span_letter_spacing,
                             );
+
+                            // Mark newly added runs as superscript if vertical-align was positive
+                            if span_superscript {
+                                let runs_after: usize = paragraphs.iter().map(|p| p.runs.len()).sum();
+                                if runs_after > runs_before {
+                                    let mut to_mark = runs_after - runs_before;
+                                    for para in paragraphs.iter_mut().rev() {
+                                        for run in para.runs.iter_mut().rev() {
+                                            if to_mark == 0 {
+                                                break;
+                                            }
+                                            run.superscript = true;
+                                            to_mark -= 1;
+                                        }
+                                        if to_mark == 0 {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         "b" | "strong" => {
                             // Bold text - handle U+2029 paragraph separators
@@ -8392,6 +8430,7 @@ impl Flattened {
                     bold,
                     italic,
                     underline: false,
+                    superscript: false,
                     letter_spacing: run_letter_spacing,
                 });
             }
@@ -10281,6 +10320,7 @@ mod tests {
                 bold: false,
                 italic: false,
                 underline: false,
+                superscript: false,
                 preserve_spaces: false,
                 letter_spacing: None,
             },
@@ -10289,6 +10329,7 @@ mod tests {
                 bold: false,
                 italic: false,
                 underline: false,
+                superscript: false,
                 preserve_spaces: false,
                 letter_spacing: None,
             },
@@ -10297,6 +10338,7 @@ mod tests {
                 bold: true,
                 italic: false,
                 underline: false,
+                superscript: false,
                 preserve_spaces: false,
                 letter_spacing: None,
             },
@@ -10305,6 +10347,7 @@ mod tests {
                 bold: false,
                 italic: false,
                 underline: false,
+                superscript: false,
                 preserve_spaces: false,
                 letter_spacing: None,
             },

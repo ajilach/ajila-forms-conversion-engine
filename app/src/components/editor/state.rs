@@ -792,6 +792,10 @@ pub fn node_summary(node: &StructuredNode) -> String {
             format!("Grid ({} cols, {} elements)", g.columns, g.elements.len())
         }
         StructuredNode::Empty => "Empty".to_string(),
+        StructuredNode::Footnote(n) => {
+            let preview: String = n.content.as_plain_text().chars().take(50).collect();
+            format!("Footnote: {}", preview)
+        }
     }
 }
 
@@ -809,6 +813,7 @@ pub fn node_type_name(node: &StructuredNode) -> &'static str {
         StructuredNode::Image(_) => "Image",
         StructuredNode::GridLayout(_) => "GridLayout",
         StructuredNode::Empty => "Empty",
+        StructuredNode::Footnote(_) => "Footnote",
     }
 }
 

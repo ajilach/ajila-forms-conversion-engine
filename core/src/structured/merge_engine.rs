@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::structured::{
-    ConditionalNode, FieldNode, FieldType, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
+    ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
     InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode, RepeatableNode,
     StructuredNode, TableHeader, TableNode, TableRow, TranslatableString, TranslationMap,
 };
@@ -447,6 +447,9 @@ fn fill_node(node: &mut StructuredNode, all_languages: &[String], primary_langua
                 }
             }
         }
+        StructuredNode::Footnote(n) => {
+            fill_inline_text(&mut n.content, all_languages, primary_language)
+        }
         StructuredNode::Image(_) | StructuredNode::Empty => {}
     }
 }
@@ -480,7 +483,7 @@ fn fill_inline_node(node: &mut InlineNode, all_languages: &[String], primary_lan
         InlineNode::Link(link) => {
             fill_inline_text(&mut link.content, all_languages, primary_language)
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             fill_inline_node(inner, all_languages, primary_language)
         }
     }
@@ -927,7 +930,7 @@ fn collect_projection_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_projection_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             collect_projection_languages(inner, langs);
         }
         InlineNode::Text(_) => {}
@@ -955,7 +958,7 @@ fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &m
                 append_inline_node_projection_for_lang(child, lang, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             append_inline_node_projection_for_lang(inner, lang, out)
         }
     }
@@ -978,7 +981,7 @@ fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
                 append_stable_inline_node_projection(child, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             append_stable_inline_node_projection(inner, out)
         }
     }
@@ -1064,6 +1067,9 @@ fn localize_inline_node(node: &InlineNode, lang: &str) -> InlineNode {
         }
         InlineNode::Emphasis(inner) => {
             InlineNode::Emphasis(Box::new(localize_inline_node(inner, lang)))
+        }
+        InlineNode::Superscript(inner) => {
+            InlineNode::Superscript(Box::new(localize_inline_node(inner, lang)))
         }
     }
 }
@@ -1190,6 +1196,12 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 })
                 .collect(),
         }),
+        StructuredNode::Footnote(n) => StructuredNode::Footnote(FootnoteNode {
+            content: localize_inline_text(&n.content, lang),
+            marker: n.marker.clone(),
+            som_path: n.som_path.clone(),
+            source_name: n.source_name.clone(),
+        }),
         StructuredNode::List(list) => StructuredNode::List(ListNode {
             list_style: list.list_style,
             items: list
@@ -1237,7 +1249,7 @@ fn prepend_space_to_first_inline_node(text: &mut InlineText) {
                     s.insert(0, ' ');
                 }
             }
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
                 prepend(inner);
             }
             InlineNode::Link(link) => {
@@ -1266,7 +1278,7 @@ fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_inline_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             collect_inline_languages(inner, langs);
         }
         InlineNode::Text(_) => {}

@@ -215,6 +215,11 @@ pub enum GroupKind {
     /// These are decorations, watermarks, or footnotes placed on the master page.
     Background,
 
+    /// Footnote content detected from master page footer region.
+    /// These are small-font text elements positioned at the bottom of the page
+    /// that contain footnote text (e.g., legal disclaimers, definitions).
+    Footnote,
+
     /// A repeatable section (dynamic array/table) per XFA occur element
     RepeatableSection {
         /// Minimum occurrences required
@@ -1111,6 +1116,7 @@ impl<'a> Document<'a> {
                 }
             }
             GroupKind::ColumnSection => "ColumnSection".to_string(),
+            GroupKind::Footnote => "Footnote".to_string(),
         }
     }
 

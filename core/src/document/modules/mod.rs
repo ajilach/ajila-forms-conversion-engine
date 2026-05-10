@@ -91,6 +91,7 @@ mod column_layout;
 mod date_field_detector;
 mod field_grouper;
 mod field_table_detector;
+mod footnote_detector;
 mod grid_template;
 mod heading_detector;
 mod inline_field_date_picker;
@@ -115,6 +116,7 @@ pub use column_layout::ColumnLayoutDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
+pub use footnote_detector::FootnoteDetector;
 pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
 pub use inline_field_date_picker::InlineFieldDatePicker;
@@ -191,6 +193,7 @@ pub fn run_analysis_pipeline_with_context(
 ) {
     NoPrintDetector::new().process_with_context(doc, ctx);
     MasterPageDetector::new().process_with_context(doc, ctx);
+    FootnoteDetector::new().process_with_context(doc, ctx);
     TextBlockGrouper::new().process_with_context(doc, ctx);
     PlaceholderFilter::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);

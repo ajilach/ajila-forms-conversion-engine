@@ -137,6 +137,7 @@ pub enum StructuredNode {
     Empty,
     GridLayout(GridLayout),
     List(ListNode),
+    Footnote(FootnoteNode),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -460,6 +461,19 @@ pub struct HeadingNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FootnoteNode {
+    pub content: InlineText,
+    /// The footnote marker (e.g. "1", "2") parsed from the leading text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marker: Option<String>,
+    #[serde(skip, default)]
+    pub som_path: Option<SomPath>,
+    #[serde(skip, default)]
+    pub source_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct InlineText(pub Vec<InlineNode>);
 
@@ -561,7 +575,7 @@ impl InlineText {
                         collect_text(child, out);
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
                     collect_text(inner, out);
                 }
             }
@@ -599,7 +613,7 @@ impl InlineText {
                         collect_text(child, lang, out);
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
                     collect_text(inner, lang, out);
                 }
             }
@@ -617,7 +631,7 @@ impl InlineText {
         fn strip(node: &InlineNode) -> InlineNode {
             match node {
                 InlineNode::Text(_) | InlineNode::TranslatedText(_) => node.clone(),
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => strip(inner),
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => strip(inner),
                 InlineNode::Link(link) => InlineNode::Link(LinkNode {
                     href: link.href.clone(),
                     content: link.content.to_plain(),
@@ -666,7 +680,7 @@ impl InlineText {
                 InlineNode::TranslatedText(map) => {
                     langs.extend(map.keys().cloned());
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
                     walk(inner, langs);
                 }
                 InlineNode::Link(link) => {
@@ -694,7 +708,7 @@ impl InlineText {
                         }
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
                     walk(inner, missing);
                 }
                 InlineNode::Link(link) => {
@@ -727,6 +741,7 @@ pub enum InlineNode {
     Link(LinkNode),
     Strong(Box<InlineNode>),
     Emphasis(Box<InlineNode>),
+    Superscript(Box<InlineNode>),
 }
 
 impl InlineNode {
@@ -738,7 +753,7 @@ impl InlineNode {
     pub(crate) fn trailing_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => inner.trailing_text(),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => inner.trailing_text(),
             InlineNode::TranslatedText(map) => {
                 // Prefer a value that doesn't end with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
@@ -765,7 +780,7 @@ impl InlineNode {
     pub(crate) fn leading_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => inner.leading_text(),
+            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => inner.leading_text(),
             InlineNode::TranslatedText(map) => {
                 // Prefer a value that doesn't start with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
@@ -857,6 +872,7 @@ impl StructuredNode {
             StructuredNode::Paragraph(p) => p.som_path.as_ref(),
             StructuredNode::Heading(h) => h.som_path.as_ref(),
             StructuredNode::Conditional(c) => c.content.som_path(),
+            StructuredNode::Footnote(n) => n.som_path.as_ref(),
             _ => None,
         }
     }
@@ -878,6 +894,7 @@ impl StructuredNode {
         match self {
             StructuredNode::Paragraph(p) => p.source_name.clone(),
             StructuredNode::Heading(h) => h.source_name.clone(),
+            StructuredNode::Footnote(n) => n.source_name.clone(),
             StructuredNode::Group(g) => g
                 .children
                 .iter()
@@ -1000,6 +1017,9 @@ impl StructuredNode {
             (StructuredNode::List(a), StructuredNode::List(b)) => {
                 list_nodes_structural_cmp(a, b, mode)
             }
+            (StructuredNode::Footnote(a), StructuredNode::Footnote(b)) => {
+                mode == CompareMode::IgnoreText || a.content.structural_eq(&b.content)
+            }
             // Different variants are never structurally equal
             _ => false,
         }
@@ -1020,6 +1040,7 @@ impl StructuredNode {
             StructuredNode::Empty => 8,
             StructuredNode::GridLayout(_) => 9,
             StructuredNode::List(_) => 10,
+            StructuredNode::Footnote(_) => 11,
         }
     }
 
@@ -1086,6 +1107,7 @@ impl StructuredNode {
                     }
                 }
             }
+            StructuredNode::Footnote(n) => n.content.collect_languages(langs),
             _ => {}
         }
     }
