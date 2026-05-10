@@ -101,7 +101,10 @@ impl AnalysisModule for FootnoteDetector {
                 if let Some(region) = doc.master_page_region(idx) {
                     if region == crate::flattened::MasterPageRegion::Background {
                         if let Some(node) = doc.get_node(*node_index) {
-                            if let FlattenedNodeKind::Text { font_size, content, .. } = &node.kind {
+                            if let FlattenedNodeKind::Text {
+                                font_size, content, ..
+                            } = &node.kind
+                            {
                                 if let Some(size) = font_size.to_f32() {
                                     let trimmed = content.trim_start();
                                     if size < body_size * 0.75
