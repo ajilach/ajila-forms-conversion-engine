@@ -26755,3 +26755,154 @@ fn test_aacs_de_lists() {
         all_texts
     );
 }
+
+/// AALR: The "Anlageklassen" table has one non-field column (asset class names)
+/// and two field/checkbox columns ("Alt", "Neu"). The detector should turn each
+/// row's text cell into a heading and label every checkbox with its column header.
+#[test]
+fn test_aalr_asset_class_table_detected() {
+    use crate::structured::StructuredNode;
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AALR_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AALR_019_DE.pdf");
+
+    let headings = collect_headings(&merged);
+
+    // Each data-row text must appear as a heading
+    let expected_row_texts = [
+        "Aktien (inkl. Aktienfonds und börsengehandelte Fonds)",
+        "Obligationen (inkl. Obligationenfonds und börsengehandelte Fonds)",
+        "Liquidität und Geldmarktprodukte",
+        "Edelmetalle & Rohstoffe (inkl. Fonds)",
+        "Multi-Asset-Class-Fonds (inkl. Strategie-Fonds)",
+        "Hedge Funds",
+        "Private Markets",
+        "Immobilien (inkl. Immobilienfonds)",
+        "Strukturierte Produkte (Schutz, Optimierung, Partizipation)",
+        "Andere Derivate (strukturierte Produkte mit Hebelwirkung, ETDs, OTCs)",
+    ];
+
+    for expected in &expected_row_texts {
+        assert!(
+            headings.iter().any(|(_, text)| text.contains(expected)),
+            "Expected heading containing '{}' but not found.\nAll headings: {:#?}",
+            expected,
+            headings
+        );
+    }
+
+    // Collect all checkbox fields from the ColumnOld / ColumnNew paths
+    let fields = collect_fields(&merged);
+    let table_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            let name = f.som_path_str();
+            name.contains("Table_AssetClasses.ColumnOld")
+                || name.contains("Table_AssetClasses.ColumnNew")
+        })
+        .collect();
+
+    // There should be at least 20 checkbox fields (10 rows × 2 columns)
+    assert!(
+        table_fields.len() >= 20,
+        "Expected at least 20 table checkbox fields, found {}",
+        table_fields.len()
+    );
+
+    // Every ColumnOld field must be labeled "Alt"
+    for f in &table_fields {
+        let name = f.som_path_str();
+        let label = f
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        let label = label.trim();
+
+        if name.contains("ColumnOld") {
+            assert_eq!(
+                label, "Alt",
+                "ColumnOld field should be labeled 'Alt', got '{}' (name={})",
+                label, name
+            );
+        } else if name.contains("ColumnNew") {
+            assert_eq!(
+                label, "Neu",
+                "ColumnNew field should be labeled 'Neu', got '{}' (name={})",
+                label, name
+            );
+        }
+    }
+}
+
+/// AALQ: Same "Anlageklassen" field-column table as AALR — bordered text rows
+/// become headings and each checkbox is labeled with its column header.
+#[test]
+fn test_aalq_asset_class_table_detected() {
+    let merged = crate::run_exhaustive_to_merged(input_path("AALQ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AALQ_019_DE.pdf");
+
+    let headings = collect_headings(&merged);
+
+    let expected_row_texts = [
+        "Aktien (inkl. Aktienfonds und börsengehandelte Fonds)",
+        "Obligationen (inkl. Obligationenfonds und börsengehandelte Fonds)",
+        "Liquidität und Geldmarktprodukte",
+        "Edelmetalle & Rohstoffe (inkl. Fonds)",
+        "Multi-Asset-Class-Fonds (inkl. Strategie-Fonds)",
+        "Hedge Funds",
+        "Private Markets",
+        "Immobilien (inkl. Immobilienfonds)",
+        "Strukturierte Produkte (Schutz, Optimierung, Partizipation)",
+        "Andere Derivate (strukturierte Produkte mit Hebelwirkung, ETDs, OTCs)",
+    ];
+
+    for expected in &expected_row_texts {
+        assert!(
+            headings.iter().any(|(_, text)| text.contains(expected)),
+            "Expected heading containing '{}' but not found.\nAll headings: {:#?}",
+            expected,
+            headings
+        );
+    }
+
+    let fields = collect_fields(&merged);
+    let table_fields: Vec<_> = fields
+        .iter()
+        .filter(|f| {
+            let name = f.som_path_str();
+            name.contains("Table_AssetClasses.ColumnOld")
+                || name.contains("Table_AssetClasses.ColumnNew")
+        })
+        .collect();
+
+    assert!(
+        table_fields.len() >= 20,
+        "Expected at least 20 table checkbox fields, found {}",
+        table_fields.len()
+    );
+
+    for f in &table_fields {
+        let name = f.som_path_str();
+        let label = f
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        let label = label.trim();
+
+        if name.contains("ColumnOld") {
+            assert_eq!(
+                label, "Alt",
+                "ColumnOld field should be labeled 'Alt', got '{}' (name={})",
+                label, name
+            );
+        } else if name.contains("ColumnNew") {
+            assert_eq!(
+                label, "Neu",
+                "ColumnNew field should be labeled 'Neu', got '{}' (name={})",
+                label, name
+            );
+        }
+    }
+}
