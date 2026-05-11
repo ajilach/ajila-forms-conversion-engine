@@ -1472,6 +1472,19 @@ body > div, #main {
 }
 
 /* Change list in the Smart Edit review panel */
+.smart-edit-inline-panel {
+    margin: var(--space-md);
+    padding: var(--space-md);
+    background: var(--color-bg-results, var(--color-bg));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.smart-edit-inline-panel h3 {
+    margin: 0 0 var(--space-sm) 0;
+    font-size: var(--font-size-md, 1rem);
+}
+
 .smart-edit-change-list {
     display: flex;
     flex-direction: column;

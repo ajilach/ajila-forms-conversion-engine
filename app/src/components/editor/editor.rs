@@ -17,8 +17,7 @@ use blueprint::{
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::smart_edit;
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
-    NodePath,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, NodePath, PathSegment,
     SelectionState, available_conversions, can_merge_selected, collect_selectable_paths,
     compute_add_options, delete_nodes, get_container_child_info, get_container_children_count,
     get_list_at_path, get_list_at_path_mut, get_list_item_text_mut, get_node_at_path,
@@ -28,6 +27,7 @@ use super::state::{
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
+use crate::platform::show_html_preview;
 
 #[derive(Clone, Debug)]
 enum SmartEditState {
@@ -80,6 +80,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
     // Smart edit inline state
     let mut smart_edit_state = use_signal(|| SmartEditState::Idle);
+    let mut smart_edit_session_name = use_signal(|| None::<String>);
     let smart_edit_images = props.plain_images.clone();
     let smart_edit_images_for_action = smart_edit_images.clone();
     let has_images = !smart_edit_images.is_empty();
@@ -989,6 +990,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
             EditorAction::SmartEdit => {
                 let selected_indices: Vec<usize> = Vec::new();
+                let session_name = format!("smart-edit-{}", Uuid::new_v4());
+                smart_edit_session_name.set(Some(session_name.clone()));
                 let content = envelope.read().content.clone();
                 let plain_images = smart_edit_images_for_action.clone();
                 let started_at = std::time::Instant::now();
@@ -997,8 +1000,14 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 rejected_ids.write().clear();
 
                 spawn(async move {
-                    match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images)
-                        .await
+                    match smart_edit::run_smart_edit(
+                        &content,
+                        &selected_indices,
+                        &plain_images,
+                        &session_name,
+                        false,
+                    )
+                    .await
                     {
                         Ok(result) => {
                             let elapsed_ms = started_at.elapsed().as_millis();
@@ -1075,12 +1084,23 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     SmartEditState::Idle => rsx! {},
                     SmartEditState::Loading => rsx! {},
                     SmartEditState::Preview { selected_indices, elapsed_ms, result } => {
+                        let session_name_for_retry = smart_edit_session_name.read().clone();
                         let selected_indices_for_apply = selected_indices.clone();
                         let selected_indices_for_retry = selected_indices.clone();
                         let content_for_retry = envelope.read().content.clone();
                         let plain_images_for_retry = smart_edit_images.clone();
                         let nodes_for_apply = result.nodes.clone();
-
+                        let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
+                            .is_empty()
+                        {
+                            envelope.read().content.clone()
+                        } else {
+                            selected_indices
+                                .iter()
+                                .filter_map(|&i| envelope.read().content.get(i).cloned())
+                                .collect()
+                        };
+                        let modified_nodes_for_preview = result.nodes.clone();
                         rsx! {
                             div { class: "smart-edit-inline-panel",
                                 h3 { "Smart Edit Review" }
@@ -1123,8 +1143,37 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 div { class: "smart-edit-actions",
                                     button {
                                         class: "editor-btn editor-btn-secondary",
+                                        onclick: {
+                                            let original_nodes = original_nodes_for_preview.clone();
+                                            move |_| {
+                                                let html = blueprint::to_html(
+                                                    &original_nodes,
+                                                    &blueprint::HtmlConfig::default(),
+                                                );
+                                                show_html_preview(html, "smart-edit-original-preview.html");
+                                            }
+                                        },
+                                        "Preview Original"
+                                    }
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: {
+                                            let modified_nodes = modified_nodes_for_preview.clone();
+                                            move |_| {
+                                                let html = blueprint::to_html(
+                                                    &modified_nodes,
+                                                    &blueprint::HtmlConfig::default(),
+                                                );
+                                                show_html_preview(html, "smart-edit-modified-preview.html");
+                                            }
+                                        },
+                                        "Preview Modified"
+                                    }
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
                                         onclick: move |_| {
                                             smart_edit_state.set(SmartEditState::Idle);
+                                            smart_edit_session_name.set(None);
                                         },
                                         "Dismiss"
                                     }
@@ -1141,6 +1190,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             let content = content_for_retry.clone();
                                             let plain_images = plain_images_for_retry.clone();
                                             let selected_indices = selected_indices_for_retry.clone();
+                                            let session_name = session_name_for_retry
+                                                .clone()
+                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
 
                                             rsx! {
                                                 button {
@@ -1150,6 +1202,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                         let plain_images = plain_images.clone();
                                                         let selected_indices = selected_indices.clone();
                                                         let rejected = rejected.clone();
+                                                        let session_name = session_name.clone();
                                                         let started_at = std::time::Instant::now();
                                                         smart_edit_state.set(SmartEditState::Loading);
                                                         rejected_ids.write().clear();
@@ -1159,6 +1212,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                     &selected_indices,
                                                                     &plain_images,
                                                                     &rejected,
+                                                                    &session_name,
                                                                 )
                                                                 .await
                                                             {
@@ -1181,8 +1235,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         });
                                                                 }
                                                             }
-                                                        }
-                                                        }
+                                                        });
                                                     },
                                                     "Retry with Feedback"
                                                 }
@@ -1214,6 +1267,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
                                                 selection.write().clear();
                                                 smart_edit_state.set(SmartEditState::Idle);
+                                                smart_edit_session_name.set(None);
                                             },
                                             "Apply Changes"
                                         }
@@ -1223,6 +1277,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         }
                     }
                     SmartEditState::Error { selected_indices, elapsed_ms, message } => {
+                        let session_name_for_retry = smart_edit_session_name.read().clone();
                         let selected_indices_for_retry = selected_indices.clone();
                         let content_for_retry = envelope.read().content.clone();
                         let plain_images_for_retry = smart_edit_images.clone();
@@ -1233,7 +1288,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 div { class: "smart-edit-actions",
                                     button {
                                         class: "editor-btn editor-btn-secondary",
-                                        onclick: move |_| smart_edit_state.set(SmartEditState::Idle),
+                                        onclick: move |_| {
+                                            smart_edit_state.set(SmartEditState::Idle);
+                                            smart_edit_session_name.set(None);
+                                        },
                                         "Dismiss"
                                     }
                                     button {
@@ -1242,11 +1300,21 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             let content = content_for_retry.clone();
                                             let plain_images = plain_images_for_retry.clone();
                                             let selected_indices = selected_indices_for_retry.clone();
+                                            let session_name = session_name_for_retry
+                                                .clone()
+                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+                                            let session_name = session_name.clone();
                                             let started_at = std::time::Instant::now();
                                             smart_edit_state.set(SmartEditState::Loading);
                                             rejected_ids.write().clear();
                                             spawn(async move {
-                                                match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images)
+                                                match smart_edit::run_smart_edit(
+                                                        &content,
+                                                        &selected_indices,
+                                                        &plain_images,
+                                                        &session_name,
+                                                        true,
+                                                    )
                                                     .await
                                                 {
                                                     Ok(result) => {

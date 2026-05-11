@@ -139,13 +139,14 @@ pub async fn run_copilot_smart_edit(
     prompt: &str,
     json_context: &str,
     images: &[(String, String)],
+    session_name: Option<&str>,
+    resume_session: bool,
 ) -> Result<String, String> {
     use base64::Engine;
     use std::io::Write;
 
     let tmp_dir = std::env::temp_dir().join("blueprint-smart-edit");
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
     // Write images to temp PNG files
     let mut image_paths: Vec<std::path::PathBuf> = Vec::new();
@@ -178,8 +179,17 @@ pub async fn run_copilot_smart_edit(
 
     // Build command
     let mut cmd = tokio::process::Command::new("gh");
-    cmd.arg("copilot")
-        .arg("--")
+    cmd.arg("copilot").arg("--");
+
+    if let Some(name) = session_name {
+        if resume_session {
+            cmd.arg(format!("--resume={name}"));
+        } else {
+            cmd.arg("--name").arg(name);
+        }
+    }
+
+    cmd
         .arg("-p")
         .arg(&full_prompt)
         .arg("--output-format")
@@ -237,6 +247,8 @@ pub async fn run_copilot_smart_edit(
     _prompt: &str,
     _json_context: &str,
     _images: &[(String, String)],
+    _session_name: Option<&str>,
+    _resume_session: bool,
 ) -> Result<String, String> {
     Err("Smart Edit is only supported in the desktop app. The web version cannot invoke local CLI tools.".to_string())
 }

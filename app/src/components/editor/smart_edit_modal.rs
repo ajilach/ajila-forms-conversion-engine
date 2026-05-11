@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 use blueprint::StructuredNode;
 
@@ -70,7 +71,16 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
             let selected_indices = selected_indices.clone();
             let plain_images = plain_images.clone();
             spawn(async move {
-                match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images).await {
+                let session_name = format!("smart-edit-modal-{}", Uuid::new_v4());
+                match smart_edit::run_smart_edit(
+                    &content,
+                    &selected_indices,
+                    &plain_images,
+                    &session_name,
+                    false,
+                )
+                .await
+                {
                     Ok(result) => {
                         let parsed = if result.nodes.is_empty() {
                             None
