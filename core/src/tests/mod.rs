@@ -7,7 +7,7 @@ use helpers::{
     find_field_id_by_suffix, input_path, load_ubs_profile, walk_structured_nodes,
 };
 
-use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
+use crate::{flattened, xfa, Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
@@ -1672,7 +1672,7 @@ fn test_aaai_subform_no_overlap() {
 #[test]
 fn test_aaab_script_extraction_and_execution() {
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -1802,7 +1802,7 @@ fn test_aaab_script_extraction_and_execution() {
 #[test]
 fn test_aaab_ff_firstname_gets_vorname() {
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -2431,7 +2431,7 @@ fn test_aaai_ffdesignature_script_execution() {
     // Test that the ffDesSignature and ffDesFullName scripts execute correctly
     // when the parent subform sets their values
     use crate::xfa::scripting::{
-        EventActivity, EventRef, ScriptContentType, XfaScriptEngine, parse_events_from_node,
+        parse_events_from_node, EventActivity, EventRef, ScriptContentType, XfaScriptEngine,
     };
     use std::collections::HashMap;
 
@@ -2866,7 +2866,7 @@ fn test_aaab_hidden_field_with_computed_value_not_visible() {
 /// This requires click events on RB_1 to be executed even when it's the default selection.
 #[test]
 fn test_aaab_neuanlage_section_visible_when_rb1_selected() {
-    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::scripting::{parse_events_from_node, EventActivity};
 
     // Extract and parse XFA from AAAB via Blueprint
     let bp = Blueprint::from_pdf(input_path("AAAB_019_DE.pdf")).unwrap();
@@ -6627,7 +6627,7 @@ fn test_aapr_has_decimal_and_dash_lists() {
 fn test_aaei_repeatable_buttons_have_scripts() {
     // Test that the AEM output for AAEI has proper add/remove button scripts
     // on the repeatable section.
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
@@ -6946,7 +6946,7 @@ fn test_aaoe_debug_dichiarazione_firme_detection() {
     // Diagnostic test: check whether "Dichiarazione" and "Firma/e" text is
     // present in the flattened output of each state and whether the heading
     // detector classifies them consistently.
-    use crate::document::modules::{GlobalContext, run_analysis_pipeline_with_context};
+    use crate::document::modules::{run_analysis_pipeline_with_context, GlobalContext};
     use crate::document::{Document, GroupKind};
     use crate::flattened::FlattenedNodeKind;
 
@@ -9095,7 +9095,7 @@ fn build_aaam_default_merged() -> crate::DocumentEnvelope {
 
 #[test]
 fn test_aaam_pipeline_multilingual_merge_succeeds() {
-    use crate::pipeline::{PipelineConfig, run_pipeline};
+    use crate::pipeline::{run_pipeline, PipelineConfig};
     use std::collections::BTreeSet;
 
     let files = vec![
@@ -10075,7 +10075,7 @@ fn test_aaam_nachname_label_not_merged_with_adjacent_text_block() {
 fn test_subform_border_reuses_single_edge_for_bottom_propagation() {
     use crate::flattened::FlattenedNodeKind;
     use crate::xfa::scripting::Presence;
-    use crate::xfa::{Border, Edge, StrokeStyle, XfaNode, XfaNodeKind, num};
+    use crate::xfa::{num, Border, Edge, StrokeStyle, XfaNode, XfaNodeKind};
     use std::collections::HashMap;
 
     let mut subform = XfaNode::new(
@@ -12238,8 +12238,8 @@ fn make_text_node(
     font_size: f64,
 ) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     FlattenedNodeBuilder::new()
@@ -12252,8 +12252,8 @@ fn make_text_node(
 #[allow(dead_code)]
 fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flattened::FlattenedNode {
     use crate::flattened::FlattenedNodeBuilder;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     FlattenedNodeBuilder::new()
@@ -12265,8 +12265,8 @@ fn make_field_node(name: &str, x: f64, y: f64, w: f64, h: f64) -> crate::flatten
 /// Helper: build a Flattened page from nodes.
 fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode>) -> Flattened {
     use crate::flattened::{FlattenedKind, Page};
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
     Flattened::new(
@@ -12279,8 +12279,8 @@ fn make_page(width: f64, height: f64, nodes: Vec<crate::flattened::FlattenedNode
 fn test_merge_pages_single_page_passthrough() {
     // A single page should pass through unchanged (no merging needed).
     use crate::pdf_parser::merge_pages;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let page = make_page(
         595.0,
@@ -12303,8 +12303,8 @@ fn test_merge_pages_single_page_passthrough() {
 fn test_merge_pages_stacks_vertically() {
     // Two pages should be stacked: second page nodes offset by first page height.
     use crate::pdf_parser::merge_pages;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let to = |v: f64| Decimal::from_f64(v).unwrap();
 
@@ -14086,7 +14086,7 @@ bind_to_xsd = true
 fn test_ubs_profile_aem_output_matches_legacy() {
     // Full pipeline test: verify that the UBS profile produces correct AEM
     // XML output for a real PDF.
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
@@ -15516,7 +15516,7 @@ fn test_aais_019_structural_similarity_diagnostic() {
 ///      visible layouts → deduplicated to one state, no conditional generated
 #[test]
 fn test_aais_019_en_form_addressee_investigation() {
-    use crate::xfa::scripting::{EventActivity, parse_events_from_node};
+    use crate::xfa::scripting::{parse_events_from_node, EventActivity};
     use crate::xfa::{XfaNode, XfaNodeKind};
     use crate::{Blueprint, SomPath};
 
@@ -15821,8 +15821,8 @@ fn test_aais_019_en_form_addressee_investigation() {
 fn test_aacj_state_count_diagnostic() {
     // Diagnostic: compare what each AACJ language variant produces when
     // different CL_ClientType dropdown values are selected.
-    use crate::Blueprint;
     use crate::flattened::FlattenedNodeKind;
+    use crate::Blueprint;
 
     // Compare DE and EN flattened outputs for "Private Person" vs "Firma"
     for (file, lang) in [("AACJ_019_DE.pdf", "de"), ("AACJ_019_EN.pdf", "en")] {
@@ -15999,8 +15999,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     // AAKI_019_SP has two XSD elements of type SignatureType: `ubs_europe_se`
     // inside `nombres_de_los_apoderados` and `unterschrift_en` inside
     // `anexomifid_ii_...`. Both should be replaced with fragment nodes.
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
@@ -16066,8 +16066,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 fn test_aaai_has_exactly_two_signature_fragments() {
     // AAAI_019_DE should produce exactly two SignatureType fragment nodes
     // in the AEM output.
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -17354,8 +17354,8 @@ fn test_aaai_en_xsd_signature_type_matching() {
     // subset of SignatureType's children.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -17539,8 +17539,8 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
     // of type AddressType, making them non-disjoint at the leaf level.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
+        build_registered_types, extract_declared_names, generate_xsd_schema, parse_schema,
+        XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -17713,7 +17713,7 @@ fn make_heading(level: u8, text: &str) -> crate::structured::HeadingNode {
 fn test_bind_refs_no_match_inline() {
     // When no registered types exist, fields get flat paths under the section.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Personal Data")),
@@ -17744,8 +17744,8 @@ fn test_bind_refs_single_type_match() {
     // flat paths (no wrapper level needed).
     use crate::structured::*;
     use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-        compute_bind_refs,
+        compute_bind_refs, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig,
+        XsdProfile,
     };
     use std::collections::HashMap;
 
@@ -17850,8 +17850,8 @@ fn test_bind_refs_multi_type_match() {
     // the wrapper element segment in their paths.
     use crate::structured::*;
     use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-        compute_bind_refs,
+        compute_bind_refs, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig,
+        XsdProfile,
     };
     use std::collections::HashMap;
 
@@ -17991,7 +17991,7 @@ fn test_bind_refs_multi_type_match() {
 fn test_bind_refs_nested_subsections() {
     // Nested headings produce nested path segments.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Section A")),
@@ -18022,7 +18022,7 @@ fn test_bind_refs_nested_subsections() {
 fn test_bind_refs_preamble_fields() {
     // Fields before any heading go directly under /form.
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdProfile, compute_bind_refs};
+    use crate::xsd::{compute_bind_refs, XsdConfig, XsdProfile};
 
     let nodes = vec![
         StructuredNode::Field(make_field("f.top", "Top Level")),
@@ -18051,8 +18051,8 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // must appear in the bindRef field paths.
     use crate::run_exhaustive_to_merged;
     use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, compute_bind_refs,
-        extract_declared_names, generate_xsd_schema, parse_schema,
+        build_registered_types, compute_bind_refs, extract_declared_names, generate_xsd_schema,
+        parse_schema, XsdConfig, XsdNode, XsdProfile,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -18223,7 +18223,7 @@ fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
     // headings like "Kunde" appeared instead of "client".
     use crate::run_exhaustive_to_envelope;
     use crate::structured;
-    use crate::xsd::{XsdNode, generate_xsd_schema};
+    use crate::xsd::{generate_xsd_schema, XsdNode};
 
     // 1) Merge DE + EN (DE first so it appears first in maps)
     let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
@@ -18486,8 +18486,8 @@ fn test_aaai_has_address_and_individual_fragments() {
     // Country).  The fragment replacement logic should insert Fragment
     // nodes for each matched type as children of the wrapping panel,
     // rather than replacing the wrapping panel itself.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -18563,8 +18563,8 @@ fn test_fragments_work_without_bind_to_xsd() {
     // use_fragments should work independently of bind_to_xsd.
     // When bind_to_xsd=false but use_fragments=true, fragment nodes should
     // still be produced, and non-fragment nodes should have no bind_ref.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -19641,11 +19641,9 @@ fn test_aabk_erfullt_der_kunde_radio_group() {
 
     let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
     assert!(option_names.iter().any(|n| n.contains("Nein")));
-    assert!(
-        option_names
-            .iter()
-            .any(|n| n.contains("Professionalisierung"))
-    );
+    assert!(option_names
+        .iter()
+        .any(|n| n.contains("Professionalisierung")));
 }
 
 #[test]
@@ -21030,7 +21028,6 @@ fn test_aais_019_en_list_marker_paragraph_alignment() {
 /// Diagnostic test – dump AAIS_019_EN text blocks to understand merger behaviour
 #[test]
 fn test_aais_019_en_text_block_merger_paragraph_separation() {
-    use crate::document::Document;
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
@@ -21038,6 +21035,7 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
     };
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -21153,8 +21151,8 @@ fn test_aais_019_en_text_block_merger_paragraph_separation() {
 /// Diagnostic: check font properties of heading candidates in AAIS
 #[test]
 fn debug_aais_heading_font_properties() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
     let states = bp.states().unwrap();
@@ -21326,7 +21324,6 @@ fn test_aacs_de_glossary_headings_detected() {
 /// Diagnostic: check container height vs estimated content height for text blocks.
 #[test]
 fn debug_aais_container_vs_content_height() {
-    use crate::document::Document;
     use crate::document::modules::AnalysisModule;
     use crate::document::modules::{
         CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
@@ -21334,6 +21331,7 @@ fn debug_aais_container_vs_content_height() {
         PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
         SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper,
     };
+    use crate::document::Document;
     use crate::flattened::FlattenedNodeKind;
 
     // Check AAIS
@@ -22235,8 +22233,8 @@ fn test_aais_019_table_detection_diagnostic() {
 /// Table 2: Country/Currency table (2 columns, 30+ rows)
 #[test]
 fn test_bago_019_table_detection() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
     use crate::structured::{StructuredNode, TableNode};
 
     let mut bp = Blueprint::from_pdf(input_path("BAGO_019_DE.pdf")).unwrap();
@@ -22338,8 +22336,8 @@ fn test_bago_019_table_detection() {
 /// Table: 2 columns x 9 rows (fund type + fee percentage)
 #[test]
 fn test_aais_019_table_detection() {
-    use crate::document::Document;
     use crate::document::modules::run_analysis_pipeline;
+    use crate::document::Document;
     use crate::structured::{StructuredNode, TableNode};
 
     let mut bp = Blueprint::from_pdf(input_path("AAIS_019_EN.pdf")).unwrap();
@@ -22659,7 +22657,7 @@ fn test_aais_019_de_umlauts_preserved() {
 /// implementations fall back to ISO-8859-1, causing "ü" → "u?" corruption.
 #[test]
 fn test_aem_form_xml_has_utf8_declaration() {
-    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::aem::{convert_to_aem, generate_aem_xml, AemConfig};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("Failed to load AAIS PDF");
@@ -23719,8 +23717,8 @@ fn test_bage_t_indent_first_dash_y_alignment() {
 
 #[test]
 fn test_aari_has_radio_button_with_fiscal_regime_options() {
-    use crate::Blueprint;
     use crate::structured::FieldType;
+    use crate::Blueprint;
 
     let mut bp =
         Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
@@ -23839,11 +23837,9 @@ fn test_aaor_has_unordered_list_with_declarations() {
         "Sublist should be LowerRoman"
     );
     assert_eq!(sublist.items.len(), 4, "Sublist should have 4 items");
-    assert!(
-        sublist.items[0]
-            .as_plain_text()
-            .contains("documentazione informativa")
-    );
+    assert!(sublist.items[0]
+        .as_plain_text()
+        .contains("documentazione informativa"));
 }
 
 #[test]
@@ -24707,8 +24703,8 @@ fn test_aari_normativa_citata_radio_has_label_and_options() {
     // Test that AARI_033_IT.pdf has a radio button group with label
     // "Ai sensi della normativa citata il Cliente dichiara:" and two options about
     // the fiscal regime (Amministrato).
-    use crate::Blueprint;
     use crate::structured::FieldType;
+    use crate::Blueprint;
 
     let mut bp =
         Blueprint::from_pdf(input_path("AARI_033_IT.pdf")).expect("Failed to load AARI_033_IT.pdf");
@@ -24895,7 +24891,7 @@ fn test_aaij_multilingual_merge_content() {
 
 #[test]
 fn test_aaij_pipeline_multilingual_state_signature_mismatch() {
-    use crate::pipeline::{PipelineConfig, run_pipeline};
+    use crate::pipeline::{run_pipeline, PipelineConfig};
 
     let files = vec![
         (
@@ -25257,8 +25253,8 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     // Fragment bindRef paths should use the configured fragmentBindRefPrefix
     // (e.g. "/UBSAF/...") rather than the form-specific root element name
     // (e.g. "/UBSAF_AAAI/...").
+    use crate::aem::{convert_to_aem, AemConfig};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -25334,8 +25330,8 @@ fn test_fragment_bind_refs_use_configured_prefix() {
 fn test_repeatable_panels_have_bind_ref() {
     // Repeatable inner panels should receive a bindRef attribute derived from
     // the XSD structure (e.g. the bind path of their inner section).
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -25391,8 +25387,8 @@ fn test_repeatable_panels_have_bind_ref() {
 fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
     // When bind_to_xsd=false, Repeatable nodes should have their bind_ref
     // cleared, just like Panel nodes.
+    use crate::aem::{convert_to_aem, AemConfig, AemNode};
     use crate::Blueprint;
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
 
     let mut bp =
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
@@ -26753,5 +26749,530 @@ fn test_aacs_de_lists() {
         all_texts.iter().any(|t| t.contains("Fremdkapital")),
         "Expected text containing 'Fremdkapital' in structured output.\nAll texts: {:#?}",
         all_texts
+    );
+}
+
+#[test]
+#[ignore] // Known alignment failures in AACS glossary sections — enable when merge is improved
+fn test_aacs_multilingual_translation_alignment() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACS_019_DE.pdf"), "de")
+        .expect("Failed to process AACS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACS_019_EN.pdf"), "en")
+        .expect("Failed to process AACS_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACS_019_SP.pdf"), "sp")
+        .expect("Failed to process AACS_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
+
+    // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
+    // TranslatedText node.
+    let expected_triplets: Vec<(&str, &str, &str)> = vec![
+        (
+            "Active NFE – Other/Active NFFE – Other",
+            "Active NFE – Other / Active NFFE – Other",
+            "NFE activa – Otra /NFFE activa – Otra",
+        ),
+        (
+            "Regierungsinstanz/Ausländische Regierung",
+            "Government Entity / Foreign Government",
+            "Entidad gubernamental / Gobierno extranjero",
+        ),
+        (
+            "Klassifizierung gemäß AEI",
+            "AEI Classification",
+            "Clasificación según AEI",
+        ),
+        (
+            "die in einem IGA-Land etabliert ist",
+            "Is established in an IGA jurisdiction",
+            "está constituida en una jurisdicción de IGA",
+        ),
+        (
+            "Treaty-Qualified Retirement Fund",
+            "Treaty-Qualified Retirement Fund",
+            "Fondo de jubilación cualificado por Tratado",
+        ),
+        (
+            "Beherrschende Person",
+            "Controlling Person",
+            "Persona que ejerce el control",
+        ),
+    ];
+
+    let mut triplet_found = vec![false; expected_triplets.len()];
+
+    fn collect_translated_texts<'a>(
+        node: &'a InlineNode,
+        out: &mut Vec<&'a std::collections::HashMap<String, Option<String>>>,
+    ) {
+        match node {
+            InlineNode::TranslatedText(map) => out.push(map),
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => {
+                collect_translated_texts(inner, out);
+            }
+            _ => {}
+        }
+    }
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            StructuredNode::List(l) => l.items.iter().map(|i| &i.content).collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            let mut translated_maps = Vec::new();
+            for inline in &text.0 {
+                collect_translated_texts(inline, &mut translated_maps);
+            }
+            for map in &translated_maps {
+                let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
+
+                for (i, (de_snippet, en_snippet, sp_snippet)) in
+                    expected_triplets.iter().enumerate()
+                {
+                    if de_text.contains(de_snippet)
+                        || en_text.contains(en_snippet)
+                        || sp_text.contains(sp_snippet)
+                    {
+                        assert!(
+                            de_text.contains(de_snippet)
+                                && en_text.contains(en_snippet)
+                                && sp_text.contains(sp_snippet),
+                            "Translation triplet {} should have all three languages in the \
+                             same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
+                             {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
+                             Actual SP: {:?}",
+                            i,
+                            de_snippet,
+                            en_snippet,
+                            sp_snippet,
+                            &de_text[..de_text.len().min(200)],
+                            &en_text[..en_text.len().min(200)],
+                            &sp_text[..sp_text.len().min(200)],
+                        );
+                        triplet_found[i] = true;
+                    }
+                }
+            }
+        }
+    });
+
+    for (i, (de_snippet, _, _)) in expected_triplets.iter().enumerate() {
+        assert!(
+            triplet_found[i],
+            "Translation triplet {} was not found in the merged tree.\n  DE: {:?}",
+            i, de_snippet,
+        );
+    }
+}
+
+#[test]
+fn test_aacs_en_lists_not_merged() {
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_EN");
+
+    let lists = collect_lists(&structured);
+
+    // These three lists must be SEPARATE (not merged into a single list),
+    // because there is text or a page break between them in the source document.
+
+    // List 1: Publicly traded NFE/NFFE (2 items)
+    let list1_fragments = [
+        "The stock of which is regularly traded on an established securities market",
+        "That is a Related Entity of an Entity the stock of which is regularly traded",
+    ];
+
+    // List 2: Collective Investment Vehicle / IGA (3 items)
+    // Note: "All of the interests in which" should also be in this list but is
+    // currently rendered as a paragraph due to the same bug.
+    let list2_fragments = [
+        "Is established in an IGA jurisdiction",
+        "Is regulated as a collective investment vehicle",
+    ];
+
+    // List 3: Active NFE/NFFE criteria (7 items total in the source)
+    // Note: "Less than 50%" and "Substantially all" should also be in this list
+    // but are currently rendered as paragraphs due to the same bug.
+    let list3_fragments = [
+        "The NFE / NFFE is not yet operating a business",
+        "The NFE / NFFE was not a Financial Institution in the past five years",
+        "The NFE / NFFE primarily engages in financing and hedging",
+        "The NFE / NFFE is a Non-Profit Organization",
+        "The NFFE is an Excepted NFFE",
+    ];
+
+    // Helper: find which list contains a given fragment
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    // All items of list 1 must be in the same list
+    let list1_indices: Vec<Option<usize>> =
+        list1_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list1_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 1 fragment not found in any list: '{}'",
+            list1_fragments[i]
+        );
+    }
+    let list1_idx = list1_indices[0].unwrap();
+    assert!(
+        list1_indices.iter().all(|idx| *idx == Some(list1_idx)),
+        "All List 1 items should be in the same list, but found at different indices: {:?}",
+        list1_indices
+    );
+
+    // All items of list 2 must be in the same list
+    let list2_indices: Vec<Option<usize>> =
+        list2_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list2_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 2 fragment not found in any list: '{}'",
+            list2_fragments[i]
+        );
+    }
+    let list2_idx = list2_indices[0].unwrap();
+    assert!(
+        list2_indices.iter().all(|idx| *idx == Some(list2_idx)),
+        "All List 2 items should be in the same list, but found at different indices: {:?}",
+        list2_indices
+    );
+
+    // All items of list 3 must be in the same list
+    let list3_indices: Vec<Option<usize>> =
+        list3_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list3_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 3 fragment not found in any list: '{}'",
+            list3_fragments[i]
+        );
+    }
+    let list3_idx = list3_indices[0].unwrap();
+    assert!(
+        list3_indices.iter().all(|idx| *idx == Some(list3_idx)),
+        "All List 3 items should be in the same list, but found at different indices: {:?}",
+        list3_indices
+    );
+
+    // The three lists must be DIFFERENT lists (not merged together)
+    assert_ne!(
+        list1_idx, list2_idx,
+        "List 1 (publicly traded) and List 2 (IGA/collective investment) should be separate lists"
+    );
+    assert_ne!(
+        list2_idx, list3_idx,
+        "List 2 (IGA/collective investment) and List 3 (active NFE criteria) should be separate lists"
+    );
+    assert_ne!(
+        list1_idx, list3_idx,
+        "List 1 (publicly traded) and List 3 (active NFE criteria) should be separate lists"
+    );
+}
+
+#[test]
+fn test_aacs_de_active_nfe_nffe_single_unordered_list() {
+    // The six Active NFE / NFFE criteria must all appear as items in ONE single
+    // unordered list. They must not be split across multiple lists or rendered
+    // as plain paragraphs.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "Weniger als 50% des Bruttoertrags des NFE/NFFE",
+        "Die Geschäftstätigkeit des NFE/NFFE besteht praktisch",
+        "Das NFE/NFFE geht noch keinen Geschäften nach",
+        "Das NFE/NFFE war in den letzten fünf Jahren kein Finanzinstitut",
+        "Das NFE/NFFE tätigt hauptsächlich Finanzierungs",
+        "nicht auf Gewinnerzielung gerichtete Einrichtung",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Active NFE/NFFE criterion not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "Active NFE/NFFE criterion '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "Active NFE/NFFE list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
+    );
+}
+
+#[test]
+fn test_aacs_de_retirement_fund_single_unordered_list() {
+    // The five retirement-fund types listed under «Befreite Vorsorgeeinrichtung»
+    // must all appear as items of ONE single unordered list.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "Treaty-Qualified Retirement Fund",
+        "Broad Participation Retirement Fund",
+        "Narrow Participation Retirement Fund",
+        "Pension Fund of an Exempt Beneficial Owner",
+        "Investment Entity Wholly Owned by Exempt Beneficial Owners",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Retirement fund type not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "Retirement fund type '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "Retirement fund list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
+    );
+}
+
+#[test]
+fn test_aacs_de_beteiligungen_ordered_list() {
+    // The PDF contains a LowerAlpha (a/b) list with:
+    //   a) "Ein wirtschaftlich Berechtigter gemäß FATCA hält:"
+    //   b) "Fremdkapitalbeteiligungen (zum Beispiel Anleihen oder Kredite)..."
+    // This appears as a sublist nested inside a parent dash-list item.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::ListNode;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let top_lists = collect_lists(&structured);
+
+    // Collect all sublists reachable from any list item.
+    fn collect_sublists(lists: &[ListNode]) -> Vec<ListNode> {
+        let mut out = Vec::new();
+        for list in lists {
+            for item in &list.items {
+                if let Some(sub) = &item.sublist {
+                    out.push(*sub.clone());
+                    out.extend(collect_sublists(std::slice::from_ref(sub.as_ref())));
+                }
+            }
+        }
+        out
+    }
+
+    let all_lists: Vec<ListNode> = top_lists
+        .iter()
+        .cloned()
+        .chain(collect_sublists(&top_lists))
+        .collect();
+
+    let fragments = [
+        "Ein wirtschaftlich Berechtigter",
+        "Fremdkapitalbeteiligungen",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        all_lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Beteiligungen item not found in any list (including sublists): '{}'\nAll list items: {:#?}",
+            fragments[i],
+            all_lists
+                .iter()
+                .map(|l| (format!("{:?}", l.list_style), l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    assert_eq!(
+        indices[1],
+        Some(first_idx),
+        "'Fremdkapitalbeteiligungen' is in a different list than 'Ein wirtschaftlich Berechtigter'",
+    );
+
+    let list = &all_lists[first_idx];
+    assert!(
+        list.list_style.is_ordered(),
+        "Beteiligungen list must be ordered, got style: {:?}",
+        list.list_style
+    );
+    assert_eq!(
+        list.items.len(),
+        2,
+        "Beteiligungen ordered list must have exactly 2 items, found {}",
+        list.items.len()
+    );
+}
+
+#[test]
+fn test_aacs_de_ffi_types_single_unordered_list() {
+    // The seven FFI classification types must all appear as items of ONE single
+    // unordered list.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "teilnehmendes FFI",
+        "berichtendes FFI nach Modell 1",
+        "berichtendes FFI nach Modell 2",
+        "registriertes, als FATCA-konform erachtetes FFI",
+        "gesponserte Anlagegesellschaft und beherrschte ausländische Kapitalgesellschaft",
+        "FATCA-Sponsor; und",
+        "Treuhänder eines Trusts",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "FFI type not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "FFI type '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "FFI types list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
     );
 }
