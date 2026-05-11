@@ -169,9 +169,11 @@ pub async fn run_copilot_smart_edit(
          BEGIN STRUCTURED NODES JSON\n\
          {json_context}\n\
          END STRUCTURED NODES JSON\n\n\
-         Return ONLY a valid JSON array of the corrected/improved structured nodes. \
-         The output must be directly parseable by serde_json and match the same schema \
-         as the input nodes."
+         Return ONLY a valid JSON object with exactly two keys: \
+         \"nodes\" (the replacement Vec<StructuredNode> array) and \
+         \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
+         describing each logical change you made). \
+         No surrounding prose, no markdown fences, no trailing notes."
     );
 
     // Build command

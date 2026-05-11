@@ -5,6 +5,7 @@
 use dioxus::prelude::*;
 
 use super::state::{AddOption, ConvertTarget, EditorAction, SelectionState};
+use crate::components::spinner::Spinner;
 
 /// Properties for the editor toolbar.
 #[derive(Clone, PartialEq, Props)]
@@ -23,6 +24,9 @@ pub struct ToolbarProps {
     pub add_options: Vec<AddOption>,
     /// Whether plain images are available (needed for Smart Edit).
     pub has_images: bool,
+    /// Whether a Smart Edit call is currently in progress.
+    #[props(default = false)]
+    pub is_smart_edit_loading: bool,
     /// Total number of root-level nodes (for Select All).
     pub node_count: usize,
     /// Callback when an action is triggered.
@@ -157,10 +161,14 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
             // Smart Edit button
             button {
                 class: "toolbar-btn toolbar-btn-smart",
-                disabled: !has_selection,
-                title: if has_selection { "AI-assisted editing via GitHub Copilot" } else { "Select nodes to smart edit" },
+                disabled: props.is_smart_edit_loading,
+                title: "AI-assisted editing via GitHub Copilot",
                 onclick: move |_| props.on_action.call(EditorAction::SmartEdit),
-                span { class: "toolbar-icon", "✨" }
+                if props.is_smart_edit_loading {
+                    Spinner { size: "sm" }
+                } else {
+                    span { class: "toolbar-icon", "✨" }
+                }
                 span { class: "toolbar-label", "Smart Edit" }
             }
 

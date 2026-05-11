@@ -32,15 +32,11 @@ use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multiling
 #[derive(Clone, Debug)]
 enum SmartEditState {
     Idle,
-    Loading {
-        selected_indices: Vec<usize>,
-        started_at: std::time::Instant,
-    },
+    Loading,
     Preview {
         selected_indices: Vec<usize>,
         elapsed_ms: u128,
-        raw_response: String,
-        suggested_nodes: Option<Vec<StructuredNode>>,
+        result: smart_edit::SmartEditResult,
     },
     Error {
         selected_indices: Vec<usize>,
@@ -87,6 +83,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let smart_edit_images = props.plain_images.clone();
     let smart_edit_images_for_action = smart_edit_images.clone();
     let has_images = !smart_edit_images.is_empty();
+
+    // Which change IDs the user has rejected in the current Preview round.
+    // Reset to empty whenever a new smart-edit run starts.
+    let mut rejected_ids = use_signal(|| std::collections::HashSet::<usize>::new());
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -988,31 +988,24 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 selection.write().clear();
             }
             EditorAction::SmartEdit => {
-                let selected_indices = {
-                    let sel = selection.read();
-                    selected_root_indices(&sel.selected)
-                };
+                let selected_indices: Vec<usize> = Vec::new();
                 let content = envelope.read().content.clone();
                 let plain_images = smart_edit_images_for_action.clone();
                 let started_at = std::time::Instant::now();
 
-                smart_edit_state.set(SmartEditState::Loading {
-                    selected_indices: selected_indices.clone(),
-                    started_at,
-                });
+                smart_edit_state.set(SmartEditState::Loading);
+                rejected_ids.write().clear();
 
                 spawn(async move {
                     match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images)
                         .await
                     {
-                        Ok(response) => {
+                        Ok(result) => {
                             let elapsed_ms = started_at.elapsed().as_millis();
-                            let parsed = smart_edit::parse_response_nodes(&response).ok();
                             smart_edit_state.set(SmartEditState::Preview {
                                 selected_indices,
                                 elapsed_ms,
-                                raw_response: response,
-                                suggested_nodes: parsed,
+                                result,
                             });
                         }
                         Err(message) => {
@@ -1071,6 +1064,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 available_conversions: conversions.clone(),
                 add_options: add_options.clone(),
                 has_images,
+                is_smart_edit_loading: matches!(*smart_edit_state.read(), SmartEditState::Loading),
                 node_count: envelope.read().content.len(),
                 on_action: handle_action.clone(),
             }
@@ -1079,58 +1073,51 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             {
                 match smart_edit_state.read().clone() {
                     SmartEditState::Idle => rsx! {},
-                    SmartEditState::Loading { selected_indices, started_at } => rsx! {
-                        div { class: "smart-edit-inline-panel",
-                            p { class: "smart-edit-hint", "Copilot is improving the selected structure..." }
-                            p { class: "smart-edit-hint", "Scope: {selected_indices.len()} root node(s)" }
-                            p { class: "smart-edit-hint", "Running for {started_at.elapsed().as_secs_f32():.1}s" }
-                        }
-                    },
-                    SmartEditState::Preview { selected_indices, elapsed_ms, raw_response, suggested_nodes } => {
-                        let selected_indices_for_retry = selected_indices.clone();
+                    SmartEditState::Loading => rsx! {},
+                    SmartEditState::Preview { selected_indices, elapsed_ms, result } => {
                         let selected_indices_for_apply = selected_indices.clone();
+                        let selected_indices_for_retry = selected_indices.clone();
                         let content_for_retry = envelope.read().content.clone();
                         let plain_images_for_retry = smart_edit_images.clone();
+                        let nodes_for_apply = result.nodes.clone();
 
                         rsx! {
                             div { class: "smart-edit-inline-panel",
-                                h3 { "Smart Edit Preview" }
-                                p { class: "smart-edit-hint", "Completed in {elapsed_ms}ms" }
+                                h3 { "Smart Edit Review" }
+                                p { class: "smart-edit-hint", "Completed in {elapsed_ms}ms · {result.nodes.len()} node(s)" }
 
-                                if let Some(ref nodes) = suggested_nodes {
-                                    {
-                                        let original_nodes: Vec<StructuredNode> = selected_indices
-                                            .iter()
-                                            .filter_map(|&i| envelope.read().content.get(i).cloned())
-                                            .collect();
-                                        let changed_indices =
-                                            smart_edit::compute_changed_indices(&original_nodes, nodes);
-                                        let highlight = changed_indices
-                                            .into_iter()
-                                            .map(|i| vec![PathSegment::Child(i)])
-                                            .collect();
-
-                                        rsx! {
-                                            p { class: "smart-edit-hint smart-edit-success",
-                                                "Copilot suggested {nodes.len()} node(s). Review the diff-highlighted structure below."
-                                            }
-                                            div { class: "smart-edit-tree-preview",
-                                                NodeRenderer {
-                                                    nodes: NodesWrapper(nodes.clone()),
-                                                    selection: SelectionState::new(),
-                                                    languages: languages.clone(),
-                                                    field_labels: field_labels.clone(),
-                                                    highlight,
-                                                    on_action: move |_: EditorAction| {},
+                                if result.changes.is_empty() {
+                                    p { class: "smart-edit-hint smart-edit-warning",
+                                        "Copilot did not provide a change list. Accept or dismiss the suggestion."
+                                    }
+                                } else {
+                                    p { class: "smart-edit-hint smart-edit-success",
+                                        "Review the proposed changes below. Uncheck any changes you want to reject."
+                                    }
+                                    div { class: "smart-edit-change-list",
+                                        for change in result.changes.clone() {
+                                            {
+                                                let id = change.id;
+                                                let is_rejected = rejected_ids.read().contains(&id);
+                                                rsx! {
+                                                    label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
+                                                        input {
+                                                            r#type: "checkbox",
+                                                            checked: !is_rejected,
+                                                            onchange: move |evt| {
+                                                                if evt.checked() {
+                                                                    rejected_ids.write().remove(&id);
+                                                                } else {
+                                                                    rejected_ids.write().insert(id);
+                                                                }
+                                                            },
+                                                        }
+                                                        span { "{change.description}" }
+                                                    }
                                                 }
                                             }
                                         }
                                     }
-                                } else {
-                                    p { class: "smart-edit-hint smart-edit-warning",
-                                        "⚠ Could not parse structured nodes from the response. Raw output shown below."
-                                    }
-                                    pre { class: "smart-edit-response", "{raw_response}" }
                                 }
 
                                 div { class: "smart-edit-actions",
@@ -1141,50 +1128,71 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         },
                                         "Dismiss"
                                     }
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: move |_| {
+
+                                    // Show "Retry with Feedback" when some changes are rejected.
+                                    if !rejected_ids.read().is_empty() {
+                                        {
+                                            let rejected: Vec<smart_edit::ChangeItem> = result
+                                                .changes
+                                                .iter()
+                                                .filter(|c| rejected_ids.read().contains(&c.id))
+                                                .cloned()
+                                                .collect();
                                             let content = content_for_retry.clone();
                                             let plain_images = plain_images_for_retry.clone();
                                             let selected_indices = selected_indices_for_retry.clone();
-                                            let started_at = std::time::Instant::now();
-                                            smart_edit_state.set(SmartEditState::Loading {
-                                                selected_indices: selected_indices.clone(),
-                                                started_at,
-                                            });
-                                            spawn(async move {
-                                                match smart_edit::run_smart_edit(
-                                                    &content,
-                                                    &selected_indices,
-                                                    &plain_images,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(response) => {
-                                                        let elapsed_ms = started_at.elapsed().as_millis();
-                                                        let parsed =
-                                                            smart_edit::parse_response_nodes(&response).ok();
-                                                        smart_edit_state.set(SmartEditState::Preview {
-                                                            selected_indices,
-                                                            elapsed_ms,
-                                                            raw_response: response,
-                                                            suggested_nodes: parsed,
-                                                        });
-                                                    }
-                                                    Err(message) => {
-                                                        let elapsed_ms = started_at.elapsed().as_millis();
-                                                        smart_edit_state.set(SmartEditState::Error {
-                                                            selected_indices,
-                                                            elapsed_ms,
-                                                            message,
-                                                        });
-                                                    }
+
+                                            rsx! {
+                                                button {
+                                                    class: "editor-btn editor-btn-secondary",
+                                                    onclick: move |_| {
+                                                        let content = content.clone();
+                                                        let plain_images = plain_images.clone();
+                                                        let selected_indices = selected_indices.clone();
+                                                        let rejected = rejected.clone();
+                                                        let started_at = std::time::Instant::now();
+                                                        smart_edit_state.set(SmartEditState::Loading);
+                                                        rejected_ids.write().clear();
+                                                        spawn(async move {
+                                                            match smart_edit::run_smart_edit_with_feedback(
+                                                                    &content,
+                                                                    &selected_indices,
+                                                                    &plain_images,
+                                                                    &rejected,
+                                                                )
+                                                                .await
+                                                            {
+                                                                Ok(result) => {
+                                                                    let elapsed_ms = started_at.elapsed().as_millis();
+                                                                    smart_edit_state
+                                                                        .set(SmartEditState::Preview {
+                                                                            selected_indices,
+                                                                            elapsed_ms,
+                                                                            result,
+                                                                        });
+                                                                }
+                                                                Err(message) => {
+                                                                    let elapsed_ms = started_at.elapsed().as_millis();
+                                                                    smart_edit_state
+                                                                        .set(SmartEditState::Error {
+                                                                            selected_indices,
+                                                                            elapsed_ms,
+                                                                            message,
+                                                                        });
+                                                                }
+                                                            }
+                                                        }
+                                                        }
+                                                    },
+                                                    "Retry with Feedback"
                                                 }
-                                            });
-                                        },
-                                        "Try Again"
+                                            }
+                                        }
                                     }
-                                    if let Some(nodes) = suggested_nodes {
+
+                                    // "Apply Changes" is only shown when all changes are accepted
+                                    // (nothing in rejected_ids), or when there are no changes listed.
+                                    if rejected_ids.read().is_empty() {
                                         button {
                                             class: "editor-btn editor-btn-primary",
                                             onclick: move |_| {
@@ -1199,7 +1207,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 }
                                                 let insert_at =
                                                     indices.first().copied().unwrap_or(0).min(env.content.len());
-                                                for (i, node) in nodes.clone().into_iter().enumerate() {
+                                                for (i, node) in nodes_for_apply.clone().into_iter().enumerate() {
                                                     env.content.insert(insert_at + i, node);
                                                 }
                                                 drop(env);
@@ -1218,7 +1226,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         let selected_indices_for_retry = selected_indices.clone();
                         let content_for_retry = envelope.read().content.clone();
                         let plain_images_for_retry = smart_edit_images.clone();
-
                         rsx! {
                             div { class: "smart-edit-inline-panel",
                                 p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
@@ -1236,36 +1243,29 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             let plain_images = plain_images_for_retry.clone();
                                             let selected_indices = selected_indices_for_retry.clone();
                                             let started_at = std::time::Instant::now();
-                                            smart_edit_state.set(SmartEditState::Loading {
-                                                selected_indices: selected_indices.clone(),
-                                                started_at,
-                                            });
+                                            smart_edit_state.set(SmartEditState::Loading);
+                                            rejected_ids.write().clear();
                                             spawn(async move {
-                                                match smart_edit::run_smart_edit(
-                                                    &content,
-                                                    &selected_indices,
-                                                    &plain_images,
-                                                )
-                                                .await
+                                                match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images)
+                                                    .await
                                                 {
-                                                    Ok(response) => {
+                                                    Ok(result) => {
                                                         let elapsed_ms = started_at.elapsed().as_millis();
-                                                        let parsed =
-                                                            smart_edit::parse_response_nodes(&response).ok();
-                                                        smart_edit_state.set(SmartEditState::Preview {
-                                                            selected_indices,
-                                                            elapsed_ms,
-                                                            raw_response: response,
-                                                            suggested_nodes: parsed,
-                                                        });
+                                                        smart_edit_state
+                                                            .set(SmartEditState::Preview {
+                                                                selected_indices,
+                                                                elapsed_ms,
+                                                                result,
+                                                            });
                                                     }
                                                     Err(message) => {
                                                         let elapsed_ms = started_at.elapsed().as_millis();
-                                                        smart_edit_state.set(SmartEditState::Error {
-                                                            selected_indices,
-                                                            elapsed_ms,
-                                                            message,
-                                                        });
+                                                        smart_edit_state
+                                                            .set(SmartEditState::Error {
+                                                                selected_indices,
+                                                                elapsed_ms,
+                                                                message,
+                                                            });
                                                     }
                                                 }
                                             });

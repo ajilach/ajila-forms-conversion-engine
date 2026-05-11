@@ -4,15 +4,13 @@
 //! sees a loading spinner while AI processes, then reviews the
 //! suggested changes before accepting or rejecting them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
 use blueprint::StructuredNode;
 
-use super::node_renderer::{NodeRenderer, NodesWrapper};
 use super::smart_edit;
-use super::state::{EditorAction, PathSegment, SelectionState};
 
 /// Possible states of the smart edit flow.
 #[derive(Clone, Debug)]
@@ -23,7 +21,6 @@ pub enum SmartEditPhase {
     Loading,
     /// AI returned a response (may or may not parse into nodes).
     Preview {
-        raw_response: String,
         parsed_nodes: Option<Vec<StructuredNode>>,
     },
     /// An error occurred.
@@ -74,10 +71,13 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
             let plain_images = plain_images.clone();
             spawn(async move {
                 match smart_edit::run_smart_edit(&content, &selected_indices, &plain_images).await {
-                    Ok(response) => {
-                        let parsed = smart_edit::parse_response_nodes(&response).ok();
+                    Ok(result) => {
+                        let parsed = if result.nodes.is_empty() {
+                            None
+                        } else {
+                            Some(result.nodes)
+                        };
                         phase.set(SmartEditPhase::Preview {
-                            raw_response: response,
                             parsed_nodes: parsed,
                         });
                     }
@@ -137,43 +137,15 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
                                 p { "Copilot is thinking…" }
                             }
                         },
-                        SmartEditPhase::Preview { raw_response, parsed_nodes } => rsx! {
+                        SmartEditPhase::Preview { parsed_nodes } => rsx! {
                             if let Some(ref nodes) = parsed_nodes {
-                                {
-                                    // Compute which nodes changed
-                                    let original_nodes: Vec<StructuredNode> = props
-                                        .selected_indices
-                                        .iter()
-                                        .filter_map(|&i| props.content.get(i).cloned())
-                                        .collect();
-                                    let changed_indices =
-                                        smart_edit::compute_changed_indices(&original_nodes, nodes);
-                                    let highlight: HashSet<_> = changed_indices
-                                        .into_iter()
-                                        .map(|i| vec![PathSegment::Child(i)])
-                                        .collect();
-                                    let changed_count = highlight.len();
-
-                                    rsx! {
-                                        p { class: "smart-edit-hint smart-edit-success",
-                                            "✓ Copilot suggested {nodes.len()} node(s), {changed_count} changed. Review below."
-                                        }
-                                        div { class: "smart-edit-tree-preview",
-                                            NodeRenderer {
-                                                nodes: NodesWrapper(nodes.clone()),
-                                                selection: SelectionState::new(),
-                                                languages: Vec::new(),
-                                                highlight,
-                                                on_action: move |_: EditorAction| {},
-                                            }
-                                        }
-                                    }
+                                p { class: "smart-edit-hint smart-edit-success",
+                                    "✓ Copilot suggested {nodes.len()} node(s). Accept or try again."
                                 }
                             } else {
                                 p { class: "smart-edit-hint smart-edit-warning",
-                                    "⚠ Could not parse structured nodes from the response. Raw output shown below."
+                                    "⚠ Could not parse structured nodes from the response."
                                 }
-                                pre { class: "smart-edit-response", "{raw_response}" }
                             }
                             div { class: "smart-edit-actions",
                                 button {

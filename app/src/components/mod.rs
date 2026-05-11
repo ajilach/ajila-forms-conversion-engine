@@ -3,6 +3,7 @@ mod file_upload;
 mod image_grid;
 mod progress;
 mod results;
+pub(crate) mod spinner;
 
 pub use editor::{EnvelopeWrapper, StructuredEditor};
 pub use file_upload::FileUploadSection;
