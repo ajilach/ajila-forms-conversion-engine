@@ -1,0 +1,934 @@
+{
+  "context": {
+    "language": "de",
+    "variables": {
+      "Footer_Line_APPCode": "",
+      "formrange_version": "V0",
+      "formrange_language": "DE",
+      "Footer_Line_txtformid": "66488",
+      "formrange_code": "AALQ",
+      "formrange_formsetready": "false",
+      "Footer_Line_txtlanguage": "DE",
+      "Footer_Line_txtvversion": "V0",
+      "Footer_Line_txtjversion": "N1",
+      "formrange_releasedate": "12.04.2024",
+      "formrange_htmlready": "false",
+      "Footer_Line_txtversiondate": "12.04.2024",
+      "formrange_cdokinfo": "66488",
+      "formrange_entity": "019",
+      "formrange_partnerlevel": "No",
+      "Footer_Line_MANCode": "019"
+    }
+  },
+  "content": [
+    {
+      "type": "field",
+      "name": "4c968446-b31d-5574-8741-e2d3e839ba84",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": {
+        "type": "text",
+        "value": "Empfänger"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "1d58109d-dcf0-5e00-9997-6fd8404b187f",
+      "label": null,
+      "inputType": {
+        "type": "date"
+      },
+      "value": {
+        "type": "text",
+        "value": "11. Mai 2026"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Einstufung als Privat- und Professioneller Kunde"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Form configurator"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "7e250a0e-d629-5c7a-9085-8cd8bf7632cc",
+      "label": [
+        {
+          "type": "text",
+          "content": "Niederlassung"
+        }
+      ],
+      "inputType": {
+        "type": "select",
+        "options": [
+          {
+            "name": "Berlin",
+            "value": {
+              "type": "text",
+              "value": "0"
+            }
+          },
+          {
+            "name": "Kopenhagen",
+            "value": {
+              "type": "text",
+              "value": "1"
+            }
+          },
+          {
+            "name": "Düsseldorf",
+            "value": {
+              "type": "text",
+              "value": "2"
+            }
+          },
+          {
+            "name": "Frankfurt",
+            "value": {
+              "type": "text",
+              "value": "3"
+            }
+          },
+          {
+            "name": "FIM",
+            "value": {
+              "type": "text",
+              "value": "4"
+            }
+          },
+          {
+            "name": "FIM Endkunde",
+            "value": {
+              "type": "text",
+              "value": "5"
+            }
+          },
+          {
+            "name": "Hamburg",
+            "value": {
+              "type": "text",
+              "value": "6"
+            }
+          },
+          {
+            "name": "München",
+            "value": {
+              "type": "text",
+              "value": "7"
+            }
+          },
+          {
+            "name": "Stuttgart",
+            "value": {
+              "type": "text",
+              "value": "8"
+            }
+          },
+          {
+            "name": "UBS LA",
+            "value": {
+              "type": "text",
+              "value": "9"
+            }
+          },
+          {
+            "name": "UBS LA FIM",
+            "value": {
+              "type": "text",
+              "value": "10"
+            }
+          },
+          {
+            "name": "UBS LA FIM Endkunde",
+            "value": {
+              "type": "text",
+              "value": "11"
+            }
+          },
+          {
+            "name": "GFIW",
+            "value": {
+              "type": "text",
+              "value": "12"
+            }
+          }
+        ]
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h3",
+      "content": [
+        {
+          "type": "text",
+          "content": "Anlageklassen"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+      "label": [
+        {
+          "type": "text",
+          "content": "Alt Neu"
+        }
+      ],
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": true
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bucket 1"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+      "label": [
+        {
+          "type": "text",
+          "content": "Aktien (inkl. Aktienfonds und börsengehandelte Fonds)"
+        }
+      ],
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": true
+      },
+      "placeholder": null
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Obligationen (inkl. Obligationenfonds und börsengehandelte Fonds)"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "bool"
+          },
+          "value": {
+            "type": "bool",
+            "value": false
+          },
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+      "label": null,
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": false
+      },
+      "placeholder": null
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 11,
+          "node": {
+            "type": "field",
+            "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+            "label": [
+              {
+                "type": "text",
+                "content": "Liquidität und Geldmarktprodukte"
+              }
+            ],
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 11,
+          "node": {
+            "type": "field",
+            "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+            "label": [
+              {
+                "type": "text",
+                "content": "Edelmetalle & Rohstoffe (inkl. Fonds)"
+              }
+            ],
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Multi-Asset-Class-Fonds (inkl. Strategie-Fonds)"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "bool"
+          },
+          "value": {
+            "type": "bool",
+            "value": false
+          },
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+      "label": null,
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": false
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bucket 2"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Hedge Funds"
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Private Markets"
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 11,
+          "node": {
+            "type": "field",
+            "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+            "label": [
+              {
+                "type": "text",
+                "content": "Immobilien (inkl. Immobilienfonds)"
+              }
+            ],
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bucket 3"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Strukturierte Produkte (Schutz, Optimierung, Partizipation)"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "bool"
+          },
+          "value": {
+            "type": "bool",
+            "value": false
+          },
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+      "label": null,
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": false
+      },
+      "placeholder": null
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Andere Derivate (strukturierte Produkte mit Hebelwirkung, ETDs, OTCs)"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "55e712a5-3896-5878-bc6b-d4d9e6e8c731",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "bool"
+          },
+          "value": {
+            "type": "bool",
+            "value": false
+          },
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "f1aa58eb-8a68-549b-a2ad-3fe6f9a1953d",
+      "label": null,
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": false
+      },
+      "placeholder": null
+    },
+    {
+      "type": "repeatable",
+      "item": {
+        "type": "field",
+        "name": "d6424712-8093-5ee3-b4af-d8d7d049d1cd",
+        "label": [
+          {
+            "type": "text",
+            "content": "Kundenschutz genießt bei UBS höchsten Stellenwert. Ein wichtiger Baustein in diesem Zusammenhang ist eine angemessene Einstufung unserer Kunden."
+          }
+        ],
+        "inputType": {
+          "type": "text",
+          "regex": null,
+          "max_length": null,
+          "min_length": null
+        },
+        "value": {
+          "type": "text",
+          "value": "Sehr geehrte Damen und Herren,"
+        },
+        "placeholder": null
+      },
+      "minOccurrences": 1,
+      "maxOccurrences": 2
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Im Rahmen Ihrer mit uns geführten Geschäftsbeziehung wurden Sie bisher als \"Professioneller Kunde\" für die folgenden Anlageklassen eingestuft: "
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Sie möchten in Zukunft mit einem höheren Anlegerschutz in bestimmten Anlageklassen behandelt werden. Um Ihrem Wunsch nachzukommen, werden wir Sie zukünftig für die folgenden Anlageklassen als \"Professionellen Kunden\" einstufen: "
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Dies gilt für all Ihre Bankbeziehungen bei UBS und führt dazu, dass Sie bei uns wieder den größtmöglichen Verbraucherschutz in den Anlageklassen, für die Sie als Privatkunde eingestuft werden, genießen. Bitte beachten Sie, dass bestimmte Produkte für Sie daher nicht mehr als geeignet angesehen werden können. "
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Für den Fall, dass Sie in diesen Anlageklassen zukünftig wieder als \"Professioneller Kunde\" eingestuft werden möchten, wenden Sie sich bitte an Ihren Kundenberater."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Mit freundlichen Grüßen UBS Europe SE"
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "ef6ec38e-16b3-5d6c-aed1-cdcbb7add48f",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": {
+              "type": "text",
+              "value": "CA name"
+            },
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "0d44f0a1-cd85-590f-ae25-3b4e2a60792b",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "b8be12f4-7b26-5d21-afd2-9c9ed19f01c5",
+            "label": null,
+            "inputType": {
+              "type": "select",
+              "options": [
+                {
+                  "name": "Authorized Officer",
+                  "value": {
+                    "type": "text",
+                    "value": "Authorized Officer"
+                  }
+                },
+                {
+                  "name": "Associate Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Associate Director"
+                  }
+                },
+                {
+                  "name": "Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Director"
+                  }
+                },
+                {
+                  "name": "Executive Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Executive Director"
+                  }
+                },
+                {
+                  "name": "Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Managing Director"
+                  }
+                },
+                {
+                  "name": "Group Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Group Managing Director"
+                  }
+                },
+                {
+                  "name": "Mitglied des Vorstandes",
+                  "value": {
+                    "type": "text",
+                    "value": "Mitglied des Vorstandes"
+                  }
+                },
+                {
+                  "name": "Vorstandsvorsitzender",
+                  "value": {
+                    "type": "text",
+                    "value": "Vorstandsvorsitzender"
+                  }
+                }
+              ]
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "3fde7c70-6125-5a38-b979-edd54f757c10",
+            "label": null,
+            "inputType": {
+              "type": "select",
+              "options": [
+                {
+                  "name": "Authorized Officer",
+                  "value": {
+                    "type": "text",
+                    "value": "Authorized Officer"
+                  }
+                },
+                {
+                  "name": "Associate Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Associate Director"
+                  }
+                },
+                {
+                  "name": "Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Director"
+                  }
+                },
+                {
+                  "name": "Executive Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Executive Director"
+                  }
+                },
+                {
+                  "name": "Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Managing Director"
+                  }
+                },
+                {
+                  "name": "Group Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Group Managing Director"
+                  }
+                },
+                {
+                  "name": "Mitglied des Vorstandes",
+                  "value": {
+                    "type": "text",
+                    "value": "Mitglied des Vorstandes"
+                  }
+                },
+                {
+                  "name": "Vorstandsvorsitzender",
+                  "value": {
+                    "type": "text",
+                    "value": "Vorstandsvorsitzender"
+                  }
+                }
+              ]
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    }
+  ],
+  "stateCount": 1
+}

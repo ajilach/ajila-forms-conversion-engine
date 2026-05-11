@@ -244,8 +244,7 @@ impl TextBlockMerger {
             true
         } else {
             let horiz_gap = overlap_left - overlap_right;
-            let min_width = bounds_a.width.min(bounds_b.width);
-            horiz_gap <= min_width / Decimal::from(5)
+            horiz_gap <= Decimal::from(15)
         };
 
         if !horizontal_aligned {

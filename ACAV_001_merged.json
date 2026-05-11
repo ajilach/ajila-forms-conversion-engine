@@ -1,0 +1,1120 @@
+{
+  "context": {
+    "language": "de"
+  },
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Name, Vorname und "
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": "neue "
+          }
+        },
+        {
+          "type": "text",
+          "content": "Adresse des Kontoinhabers"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Adresse der "
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "ce60fa74-550f-5fd0-ada2-b756b6900c71",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Liegenschaft"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Adresse der "
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Liegenschaft"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "767b755e-571c-5690-b262-ac65b12bb1ec",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Adresse der "
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Liegenschaft"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "2710d996-b3c1-59be-a4b5-086b03614c7f",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Mietobjekt"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "e13fd1cc-2388-5731-afe7-e2c8d0d69fde",
+      "label": [
+        {
+          "type": "text",
+          "content": "Vermieter"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "vertreten durch"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Verwaltung"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "13f1bf3c-ca3c-5856-9d44-4532a5838e37",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Strasse/Nr."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "vertreten durch"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Verwaltung"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Strasse/Nr."
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "name": "b7d4abf5-581d-5c7a-9471-4a2c05b28970",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "83ca0fc8-686d-5817-a94f-ccbb80f4f28a",
+      "label": [
+        {
+          "type": "text",
+          "content": "PLZ/Ort"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "e7468247-b9ce-5ae1-8847-454af9055a27",
+      "label": [
+        {
+          "type": "text",
+          "content": "Tel.-Nr."
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "d2c0b677-116c-526b-aaf1-5ec0a19ee22b",
+      "label": [
+        {
+          "type": "text",
+          "content": "Sachbearbeiter"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Auftrag zur Rückzahlung der Mieterkaution "
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "field",
+          "name": "9ffe6234-0694-5b23-8bf4-9bf135e9a85a",
+          "label": [
+            {
+              "type": "text",
+              "content": "UNKNOWN"
+            }
+          ],
+          "inputType": {
+            "type": "text",
+            "regex": null,
+            "max_length": null,
+            "min_length": null
+          },
+          "value": null,
+          "placeholder": null
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Das Mietverhältnis ist beendet. UBS Switzerland AG wird beauftragt, das oben erwähnte UBS Mieterkautionssparkonto zu saldieren und die Einlage von CHF                    inkl. Zinsen wie folgt zu vergüten:"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "c22fbf53-10ab-57d2-9d90-158702114139",
+      "label": null,
+      "inputType": {
+        "type": "radio",
+        "options": [
+          {
+            "name": "Vollsaldierung",
+            "value": {
+              "type": "text",
+              "value": "RB_Full_Account_Closure"
+            }
+          },
+          {
+            "name": "Übertrag/Mutation",
+            "value": {
+              "type": "text",
+              "value": "RB_Transfer_Modification"
+            }
+          }
+        ]
+      },
+      "value": {
+        "type": "text",
+        "value": "Übertrag/Mutation"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "c22fbf53-10ab-57d2-9d90-158702114139",
+        "value": {
+          "type": "text",
+          "value": "RB_Full_Account_Closure"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "492096db-528f-51f4-8cc7-ceb69790d91e",
+            "label": null,
+            "inputType": {
+              "type": "radio",
+              "options": [
+                {
+                  "name": "Gesamtbetrag inkl. Zinsen zugunsten Vermieter/Verwaltung",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Total_Amount"
+                  }
+                },
+                {
+                  "name": "Teilzahlung von CHF zugunsten Vermieter/Verwaltung",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Partial_Payment_Of_CHF"
+                  }
+                }
+              ]
+            },
+            "value": {
+              "type": "text",
+              "value": "Teilzahlung von CHF zugunsten Vermieter/Verwaltung"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "conditional",
+            "condition": {
+              "fieldName": "492096db-528f-51f4-8cc7-ceb69790d91e",
+              "value": {
+                "type": "text",
+                "value": "RB_Partial_Payment_Of_CHF"
+              }
+            },
+            "content": {
+              "type": "conditional",
+              "condition": {
+                "fieldName": "492096db-528f-51f4-8cc7-ceb69790d91e",
+                "value": {
+                  "type": "text",
+                  "value": "RB_Partial_Payment_Of_CHF"
+                }
+              },
+              "content": {
+                "type": "field",
+                "name": "e7288acd-5271-55df-9311-b06cfca5d233",
+                "label": [
+                  {
+                    "type": "text",
+                    "content": "Teilzahlung von CHF zugunsten Vermieter/Verwaltung"
+                  }
+                ],
+                "inputType": {
+                  "type": "text",
+                  "regex": null,
+                  "max_length": null,
+                  "min_length": null
+                },
+                "value": null,
+                "placeholder": null
+              }
+            }
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Überweisung an "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "2a8d7e07-bcd9-50e2-9227-4daa9baca172",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Bank/Post"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "d7d936de-02e7-5487-809d-da5574b9353b",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Ort"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "IBAN (Konto-Nr.) "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "53f70243-c84c-5a0f-af7f-c1975d2ab09d",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "field",
+            "name": "0633a4b6-dda2-522c-a573-384a7640e060",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "lautend auf"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Zahlungsgrund"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "563a2a1c-e4f2-511d-8170-1d139f211eda",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "field",
+            "name": "189c23c1-b402-50bc-bd66-b433965bba99",
+            "label": null,
+            "inputType": {
+              "type": "radio",
+              "options": [
+                {
+                  "name": "Freigabe der Kaution inkl. Zinsen zugunsten Mieter (Kontoinhaber)",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Release_Deposit"
+                  }
+                },
+                {
+                  "name": "Restbetrag der Kaution inkl. Zinsen zugunsten Mieter (Kontoinhaber)",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Remaining_Balance"
+                  }
+                }
+              ]
+            },
+            "value": {
+              "type": "text",
+              "value": "Restbetrag der Kaution inkl. Zinsen zugunsten Mieter (Kontoinhaber)"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Überweisung an "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "a528d0ca-30b9-5c75-858a-6bc4e6832025",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Bank/Post"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "0159175b-0faf-5b2b-af48-9e8ab6757b5d",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Ort"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "db578d26-e9de-50d8-95bf-95add7987075",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "IBAN (Konto-Nr.) "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "7aa253c2-e2d1-569d-8e78-e540340be0f8",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "lautend auf"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "6617d70a-2ef8-5a97-92a0-007823bc7bd0",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Zahlungsgrund"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "c22fbf53-10ab-57d2-9d90-158702114139",
+        "value": {
+          "type": "text",
+          "value": "RB_Transfer_Modification"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "8a8dff1f-9648-58c4-888d-108621d9315e",
+            "label": [
+              {
+                "type": "text",
+                "content": "Übertrag auf neues UBS Mieterkautionssparkonto-Nr."
+              }
+            ],
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": true
+            },
+            "placeholder": null
+          },
+          {
+            "type": "conditional",
+            "condition": {
+              "fieldName": "8a8dff1f-9648-58c4-888d-108621d9315e",
+              "value": {
+                "type": "bool",
+                "value": true
+              }
+            },
+            "content": {
+              "type": "field",
+              "name": "99eb55df-8903-5f35-8a18-b9465a6e8949",
+              "label": [
+                {
+                  "type": "text",
+                  "content": "Übertrag auf neues UBS Mieterkautionssparkonto-Nr."
+                }
+              ],
+              "inputType": {
+                "type": "text",
+                "regex": null,
+                "max_length": null,
+                "min_length": null
+              },
+              "value": null,
+              "placeholder": null
+            }
+          },
+          {
+            "type": "field",
+            "name": "f396dfd5-47e7-53a8-b519-6ee598b8d94a",
+            "label": null,
+            "inputType": {
+              "type": "radio",
+              "options": [
+                {
+                  "name": "Vermieter",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Lessor"
+                  }
+                },
+                {
+                  "name": "Mieter",
+                  "value": {
+                    "type": "text",
+                    "value": "RB_Lessee"
+                  }
+                }
+              ]
+            },
+            "value": {
+              "type": "text",
+              "value": "Mieter"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Teilzahlung von CHF "
+              },
+              {
+                "type": "strong",
+                "content": {
+                  "type": "text",
+                  "content": "                "
+                }
+              },
+              {
+                "type": "text",
+                "content": "zugunsten von:"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "e2304bd6-339f-5828-b9e6-83c9294d6aca",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Überweisung an "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "e2e05890-22c5-51f1-aa39-95e25158dea9",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Bank/Post"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "456f9c0c-bfa7-52dc-af52-5a3aa6764292",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Ort"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "e51d5e2b-a070-5c7d-b9c1-0f7ea6cbd87f",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "IBAN (Konto-Nr.) "
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "67124d11-eeae-5ec3-bb37-5483efc9bf0a",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "lautend auf"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Zahlungsgrund"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "434515a5-ab22-53ed-a373-f435d744e047",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 8,
+          "node": {
+            "type": "field",
+            "name": "149cbcde-5600-506a-9886-589e3051b3c3",
+            "label": [
+              {
+                "type": "text",
+                "content": "Ort"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 4,
+          "node": {
+            "type": "field",
+            "name": "b15f61f5-d107-535d-ac28-fc2f98b64e35",
+            "label": [
+              {
+                "type": "text",
+                "content": "Datum "
+              }
+            ],
+            "inputType": {
+              "type": "date"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "217ac46b-c19a-56bc-b4bc-f84a911cdd5f",
+      "label": [
+        {
+          "type": "text",
+          "content": "Unterschrift des Vermieters/der Verwaltung"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 8,
+          "node": {
+            "type": "field",
+            "name": "81311dac-453b-5b2c-8b23-388b16d283f4",
+            "label": [
+              {
+                "type": "text",
+                "content": "Ort"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 4,
+          "node": {
+            "type": "field",
+            "name": "4aa264e1-908a-5621-949d-689431c686fc",
+            "label": [
+              {
+                "type": "text",
+                "content": "Datum "
+              }
+            ],
+            "inputType": {
+              "type": "date"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "ff7b3415-d13c-5b38-a361-2b274bfbf0dc",
+      "label": [
+        {
+          "type": "text",
+          "content": "Unterschrift des Kontoinhabers"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    }
+  ],
+  "stateCount": 1
+}

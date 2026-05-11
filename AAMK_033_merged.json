@@ -1,0 +1,175 @@
+{
+  "context": {
+    "language": "it",
+    "variables": {
+      "formrange_partnerlevel": "No",
+      "formrange_language": "IT",
+      "Footer_Line_txtjversion": "N1",
+      "formrange_htmlready": "false",
+      "formrange_code": "AAMK",
+      "Footer_Line_txtformid": "66508",
+      "formrange_formsetready": "false",
+      "Footer_Line_txtlanguage": "IT",
+      "Footer_Line_txtversiondate": "01.01.2023",
+      "Footer_Line_txtvversion": "V0",
+      "formrange_releasedate": "01.01.2023",
+      "formrange_entity": "033",
+      "formrange_version": "V0",
+      "Footer_Line_MANCode": "033",
+      "Footer_Line_APPCode": "",
+      "formrange_cdokinfo": "66508"
+    }
+  },
+  "content": [
+    {
+      "type": "field",
+      "name": "7469e40b-2bed-5fbb-9f51-a782b03e671f",
+      "label": [
+        {
+          "type": "text",
+          "content": "Spettabile"
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "f8bc438d-158b-5654-92fb-17f6a81e43ce",
+      "label": null,
+      "inputType": {
+        "type": "date"
+      },
+      "value": {
+        "type": "text",
+        "value": "11 maggio 2026"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Oggetto: Classificazione come Controparte Qualificata"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Gentile Cliente,"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "con la presente la informiamo che ai sensi dell'Art. 61 del Regolamento Intermediari (adottato con Delibera n. 20307 del 15 febbraio 2018) lei è ad oggi classificato dal nostro Istituto come Controparte Qualificata. Le facciamo presente, inoltre, che UBS considererà tutti i procuratori autorizzati ad operare sui suoi rapporti controparti qualificate."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "La preghiamo di informare UBS di qualsiasi circostanza che possa influire sulla classificazione come Controparte Qualificata. Inoltre UBS rivedrà regolarmente la classificazione e si riserva il diritto di riclassificare il cliente."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Rimaniamo a sua disposizione in caso di ulteriori domande."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Distinti saluti UBS Europe SE (Succursale Italia) "
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "32003ab5-bfef-511f-bb77-90eb0b7cfc50",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": {
+        "type": "text",
+        "value": "Cognome/Nome"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "2f41ecca-36d6-5728-a4c4-be325f77530c",
+      "label": null,
+      "inputType": {
+        "type": "select",
+        "options": [
+          {
+            "name": "Authorized Officer",
+            "value": {
+              "type": "text",
+              "value": "Authorized Officer"
+            }
+          },
+          {
+            "name": "Associate Director",
+            "value": {
+              "type": "text",
+              "value": "Associate Director"
+            }
+          },
+          {
+            "name": "Director",
+            "value": {
+              "type": "text",
+              "value": "Director"
+            }
+          },
+          {
+            "name": "Executive Director",
+            "value": {
+              "type": "text",
+              "value": "Executive Director"
+            }
+          },
+          {
+            "name": "Managing Director",
+            "value": {
+              "type": "text",
+              "value": "Managing Director"
+            }
+          }
+        ]
+      },
+      "value": null,
+      "placeholder": null
+    }
+  ],
+  "stateCount": 1
+}

@@ -1,0 +1,2159 @@
+{
+  "context": {
+    "language": "es",
+    "variables": {
+      "formrange_partnerlevel": "No",
+      "Footer_Line_txtjversion": "N1",
+      "formrange_version": "V0",
+      "formrange_code": "AACS",
+      "formrange_releasedate": "31.10.2019",
+      "Footer_Line_txtvversion": "V0",
+      "Footer_Line_MANCode": "019",
+      "formrange_language": "SP",
+      "Footer_Line_txtlanguage": "SP",
+      "formrange_entity": "019",
+      "formrange_formsetready": "false",
+      "Footer_Line_APPCode": "",
+      "Footer_Line_txtversiondate": "31.10.2019",
+      "formrange_htmlready": "false",
+      "formrange_cdokinfo": "65432",
+      "Footer_Line_txtformid": "65432"
+    }
+  },
+  "content": [
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Intercambio automático de información (AEI Automatic Exchange of Information) Ley de Cumplimiento Fiscal de Cuentas en el Extranjero (FATCA) Foreign Account Tax Compliance Act (FATCA)"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Anexo a los Formularios de autocertificación de UBS y explicación adicional de términos de AEI/FATCA"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Tenga en cuenta que: estas definiciones se basan en las normas y definiciones más habituales en la aplicación de FATCA y AEI.  Sin embargo, las normas locales pueden diferir. Consulte la legislación local aplicable y otras directrices de acompañamiento para tener la seguridad de estar utilizando la acepción correcta de estos términos."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "NFE activa – Otra /NFFE activa – Otra"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos NFE activa – Otra (según AEI) y NFFE activa – Otra (según FATCA) aluden a una NFE / NFFE que cumple alguno de los siguientes criterios:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "menos del 50% de los ingresos brutos de la NFE / NFFE en el año natural anterior u otro periodo de información adecuado son ingresos pasivos y menos del 50% de los activos mantenidos por la NFE durante el  año natural anterior u otro periodo de información adecuado son activos que generan o se mantienen para generar ingresos pasivos;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "sustancialmente todas las actividades de la NFE / NFFE consisten en mantener (total o parcialmente) las acciones en circulación de una o más filiales que realicen operaciones o desarrollen negocios distintos del negocio de una Entidad financiera, o en proporcionar financiación y servicios a dichas filiales; no obstante, no se considerará que una Entidad tiene dicha condición cuando funcione (o se mantenga) como un fondo de inversión, por ejemplo un fondo de private equity, un fondo de venture capital, un fondo de compras apalancadas o cualquier vehículo de inversión cuya finalidad sea adquirir o financiar empresas para mantener participaciones en dichas empresas como activos de capital con fines de inversión;"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "la NFE / NFFE aún no tiene un negocio en funcionamiento y no tiene historial operativo, pero invierte capital en activos con la intención de poner en funcionamiento un negocio que no es el de una Entidad financiera; no obstante, la NFE / NFFE deja de reunir las condiciones para esta excepción a partir de la fecha correspondiente a 24 meses tras la fecha de organización inicial de la NFE / NFFE;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "la NFE / NFFE no fue Entidad financiera en los cinco años anteriores y se encuentra en proceso de liquidación de sus activos o está reorganizándose con la intención de continuar o reiniciar operaciones en un negocio distinto del de una Entidad financiera;"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "la NFE / NFFE desarrolla actividades principalmente en la financiación o cobertura de transacciones con/para Entidades relacionadas que no son Entidades financieras y no proporciona servicios de financiación ni cobertura a ninguna Entidad que no sea una Entidad relacionada, siempre y cuando que el grupo de dichas Entidades relacionadas se dedique principalmente a una actividad distinta de la de una Entidad financiera;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "la NFE / NFFE es una Organización sin ánimo de lucro; o"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "la NFFE es una NFFE exceptuada, según la descripción del término que figura en el Reglamento del Tesoro de EE. UU. (solo conforme a FATCA)."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "cuyas acciones se negocian regularmente en un mercado de valores organizado;"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Empresa no financiera cotizada y Empresa relacionada / NFFE cotizada o NFFE Filial de una Empresa cotizada "
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos Empresa no financiera cotizada y Empresa relacionada (según AEI) y NFFE cotizada o NFFE Filial de una Empresa cotizada (según FATCA) se refieren a una NFE / NFFE:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "que es una Entidad relacionada de una Entidad cuyas acciones se negocian regularmente en un mercado de valores organizado (según AEI: la Entidad relacionada también debe ser una empresa). «Mercado de valores organizado» es un mercado de valores oficialmente reconocido y supervisado por una autoridad gubernamental del"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "país en el que está situado el mercado, y cuyo valor anual de las acciones negociadas (o negociadas en un mercado predecesor) supera el importe de 1.000.000.000 USD en cada uno de los tres años naturales inmediatamente anteriores al año natural en el que se realiza el cálculo."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad gubernamental / Gobierno extranjero"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos Entidad gubernamental (según AEI) y Gobierno extranjero (según FATCA) se refieren al gobierno de una jurisdicción (según FATCA: jurisdicción no estadounidense), una subdivisión política de una jurisdicción (lo que, para evitar dudas, incluye estados, provincias, condados o municipios) o cualquier agencia  u órgano que pertenezca en su totalidad a una jurisdicción o a uno o varios de los anteriores.  Esta categoría incluye partes integrantes, entidades controladas y subdivisiones políticas de una jurisdicción. "
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad no financiera activa (NFE activa) / Entidad extranjera no financiera activa (NFFE activa)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos NFE activa (según AEI) y NFFE activa (según FATCA) aluden a una NFE / NFFE que cumple los criterios necesarios para ser clasificada como:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Empresa no financiera cotizada y Empresa relacionada (según AEI) / NFFE cotizada o NFFE Filial de una Empresa cotizada (según FATCA);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Entidad gubernamental (según AEI) / Gobierno extranjero (según FATCA);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Organismo internacional (según AEI y FATCA); o"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Banco central (según AEI) / Banco central extranjero (según FATCA);"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "NFE activa – Otra (según AEI) / NFFE activa  – Otra (según FATCA)."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "–"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "– Clasificación según AEI"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Clasificación según AEI significa la categoría asignada a una Entidad a efectos de AEI (por ejemplo, Entidad financiera, NFE activa o NFE pasiva).  "
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Intercambio automático de información (AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El régimen de AEI basado en la Norma común sobre revelación de información de la OCDE exige a las entidades financieras obligadas a informar (RFI o Reporting Financial Institutions) que comuniquen anualmente a sus autoridades tributarias nacionales determinada información relativa a todas las cuentas que mantienen que hayan sido identificadas como Cuentas de información obligada como consecuencia de la aplicación de procedimientos de diligencia debida pertinentes. Las autoridades tributarias nacionales, a su vez, transmitirán la información a las autoridades tributarias de la jurisdicción en la que la Persona de información obligada sea residente a efectos fiscales."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Beneficiario efectivo (conforme a normativa local de «Conozca a su cliente» / Blanqueo de dinero)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El Beneficiario efectivo suele ser la persona física/empresa operativa que, desde el punto de vista económico, es propietario en última instancia de los activos depositados en la Entidad financiera. El alcance total del término en cada jurisdicción, no obstante, depende de las especificaciones de la normativa local aplicable sobre «Conozca a su cliente» / Blanqueo de dinero."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Sucursal"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Sucursal (según AEI y FATCA) se refiere a una unidad, negocio u oficina de una Entidad que se trata como sucursal conforme al régimen normativo de una jurisdicción, o que se rige, de algún otro modo, por las leyes de una jurisdicción separada de otras oficinas, unidades o sucursales de la Entidad."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Banco central / Banco central extranjero"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos Banco central (según AEI) o Banco central extranjero (según FATCA) se refieren a una institución que es, por ley o decreto gubernamental, la principal autoridad, sin ser el propio gobierno de la jurisdicción (según FATCA: solo jurisdicción no estadounidense), que emite instrumentos destinados a circular como moneda.  Una institución de este tipo puede incluir un órgano que sea independiente del gobierno de la jurisdicción, pertenezca o no, en todo o en parte, a la jurisdicción."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI certificada considerada conforme (solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término FFI certificada considerada conforme (según FATCA) alude a una FFI que reúne las condiciones necesarias para  tal estatus en base al Reglamento pertinente del Tesoro estadounidense o de un Modelo 2 de IGA aplicable, o que sea una FFI no obligada a informar en virtud de un Modelo 1 de IGA."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Vehículo de inversión colectiva (solo IGA con Modelo 1)"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "(solo pertinente a efectos de FATCA)"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "El término Vehículo de inversión colectiva (según FATCA) se refiere a una Sociedad de inversión que:"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "está constituida en una jurisdicción de IGA;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "cuya participación (incluida deuda por encima de 50.000 USD) se mantenga por o a través de uno o más Beneficiarios efectivos exentos, NFFE activas, Personas estadounidenses que no sean Personas estadounidenses especificadas, o Entidades financieras que no sean Entidades financieras no participantes."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está regulada como vehículo de inversión colectiva; y"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Persona con Control"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Personas con Control (conforme a AEI y FATCA) alude a las personas físicas que ejercen control sobre una entidad. En el caso de Entidades que son personas jurídicas, el control sobre una entidad lo ejerce(n), generalmente, la(s) persona(s) física(s) que tienen una participación de control en última instancia en la entidad. La participación de control depende de la estructura de propiedad de la persona jurídica y puede identificarse en función de un umbral; por ejemplo, solo personas que ostenten la titularidad de más de un porcentaje determinado de la Entidad. Cuando no haya personas(s) física(s) que ejerzan el control mediante participación, la(s) Persona(s) con Control de la Entidad será(n) la(s) persona(s) física(s) que ejerza(n) el control sobre la Entidad por otras vías. Cuando no se identifiquen personas(s) física(s) que ejerza(n) control sobre la Entidad, la(s) Persona(s) con Control de la Entidad será(n) la(s) persona(s) física(s) que ocupen el cargo de director gerente sénior."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "En el caso de los fideicomisos, el término Personas con Control alude al/a los fideicomitente(s), al/a los fideicomisario(s), al/ a los administrador(es) (“protector(s)”) (en su caso), al/a los beneficiario(s) o clase(s) de beneficiarios y a cualquier otra persona física que ejerza el control efectivo en última instancia sobre el fideicomiso. El/Los fideicomitente(s), el/los fideicomisario(s), el/los administrador(es) (“protector(s)”) (en su caso), el/los beneficiario(s) o clase(s) de beneficiarios siempre deben tratarse como Personas con Control de un fideicomiso, con independencia de que todos o solo algunos de ellos ejerzan control sobre el fideicomiso. En el caso de figuras jurídicas distintas de un fideicomiso, Persona(s) con Control es/son la(s) persona(s) que ocupa(n) cargos equivalentes o similares."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Persona estadounidense con Control (solo a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Con relación a una cuenta mantenida en una jurisdicción de IGA, el término Persona estadounidense con Control (en referencia a un «Propietario estadounidense sustancial» según el Reglamento pertinente del Tesoro) alude a una Persona con Control que es una Persona estadounidense especificada."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Fondo de jubilación cualificado por Tratado;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Fondo de jubilación de participación reducida;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Sociedad de inversión propiedad al 100% de Beneficiarios efectivos exentos."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Beneficiarios efectivos según FATCA"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Fondo de jubilación de amplia participación;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Fondo de pensiones de un Beneficiario efectivo exento; o"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Conforme a FATCA, Beneficiario efectivo es cualquier persona que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "En caso de propiedad indirecta, las personas que en última instancia son propietarias de una entidad (por ejemplo, a través de una cadena de propiedad) se consideran Beneficiarios efectivos. En general, esto se refiere a las personas que tienen derecho a los ingresos a efectos fiscales y se benefician de ellos, teniendo en cuenta las circunstancias económicas, legales, factuales y otras pertinentes en las que se perciben los ingresos; no se refiere a una persona que recibe ingresos como agente, representante o intermediario de otra persona."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Clasificación según FATCA"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Clasificación según FATCA significa la categoría asignada a una Entidad a efectos de FATCA (por ejemplo, como FFI Participante, FFI de IGA obligada a informar, FFI considerada conforme, FFI de IGA no obligada a informar, Beneficiario efectivo exento, NFFE activa o NFFE pasiva).  "
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Patrocinador de FATCA"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Patrocinador de FATCA (según FATCA) se refiere a una Entidad que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está autorizada para actuar en nombre de una Sociedad de inversión patrocinada o un Vehículo de inversión cerrado patrocinado (por ejemplo, un gestor de fondos, fideicomisario, consejero de sociedad o socio gerente); ha accedido a realizar toda la diligencia debida, retenciones, información y otras obligaciones de FATCA con relación a la Cuenta financiera mantenida por la Sociedad de inversión patrocinada o el Vehículo de inversión cerrado patrocinado. En cuanto al Vehículo de inversión cerrado patrocinado, un Patrocinador de FATCA debe estar clasificado según FATCA como Entidad financiera estadounidense obligada a informar, FFI Participante, FFI obligada a informar con Modelo 1 o una FFI obligada a informar con Modelo 2."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Ley de Cumplimiento Fiscal de Cuentas en el Extranjero (FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término FATCA significa Foreign Account Tax Compliance Act (Ley de Cumplimiento Fiscal de Cuentas en el Extranjero). Las disposiciones de FATCA se incorporaron a la legislación estadounidense dentro de la Ley de Incentivos de Contratación para la Restauración del Empleo (Hiring Incentives to Restore Employment o HIRE) el 18 de marzo de 2010. Conforme a FATCA, las Entidades financieras extranjeras tienen que identificar Cuentas estadounidenses y comunicarlas, directamente o a través de sus autoridades tributarias nacionales, a las autoridades fiscales de EE. UU. (Internal Revenue Service o IRS). Aquellas Entidades financieras extranjeras y sus clientes que no cumplen los requisitos de FATCA están sujetas a retención fiscal del 30% en pagos procedentes de Títulos estadounidenses."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad financiera / Entidad financiera extranjera"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Entidad (según AEI y FATCA) significa una persona jurídica o figura jurídica, como una empresa, organización, sociedad comanditaria, fideicomiso o fundación. No incluye empresarios o propietarios individuales."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Plan de Jubilación exento (solo a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Plan de Jubilación exento (según FATCA) se refiere a una Entidad que reúne los requisitos de cualquiera de las siguientes categorías, según estas se definen en el Reglamento pertinente del Tesoro estadounidense o un IGA aplicable:"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Número de Identificación de Intermediario Global (GIIN o Global Intermediary Identification Number) (solo a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término GIIN alude al número de identificación que asigna el IRS, inter alia, a Entidades cuyas categorías según FATCA en el momento de registrarse en el IRS a efectos de FATCA son:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FFI participante;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Acuerdo Intergubernamental (IGA o Intergovernmental Agreement) (solo pertinente a efectos de FATCA)"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI obligada a informar con Modelo 1;"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FFI obligada a informar con Modelo 2;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Sociedad de inversión patrocinada y Empresa extranjera controlada (desde el 1 de enero de 2017, y los requisitos pueden variar en función de la ubicación de la entidad);"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI considerada conforme registrada;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Patrocinador de FATCA; y Fideicomisario de un Fideicomiso documentado por el Fideicomisario."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término IGA alude a un acuerdo celebrado entre Estados Unidos y un gobierno no estadounidense que rige la implementación de FATCA en dicha entidad no estadounidense. El IGA modifica las disposiciones de FATCA a fin de eliminar posibles conflictos de leyes y reducir la carga administrativa."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Intermediario"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Intermediario es una persona que actúa como agente, custodio, broker, representante, signatario, asesor de inversiones o en una capacidad similar en beneficio o por cuenta de otra persona."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Organismo internacional"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Organismo internacional (según AEI y FATCA) significa cualquier organismo internacional o una agencia u órgano que sea propiedad al 100% de ese organismo. En esta categoría se incluye cualquier organismo intergubernamental (también organismos supranacionales) (1) que esté integrado principalmente por gobiernos (según FATCA: Gobiernos no estadounidenses); (2) que tenga una sede social efectiva o un acuerdo sustancialmente similar con la jurisdicción; y (3) cuyos ingresos no sean en beneficio de personas particulares."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Asesor de Inversiones y Gestor de Inversiones"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Asesor de Inversiones y Gestor de Inversiones (según FATCA) se refiere a una FFI que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "se considera FFI solo porque desarrolla, como negocio, una o más de las siguientes actividades u operaciones en nombre de un cliente: (i) negociación de instrumentos financieros; (ii) gestión de carteras individuales o colectivas; o (iii) alguna otra forma de inversión o administración o gestión de fondos, dinero o Activos financieros en nombre de otras personas; y"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "no mantiene Cuentas financieras."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "– Dirección de correo postal"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos Entidad financiera (según AEI) o Entidad financiera extranjera (según FATCA) aluden a una Entidad (según FATCA: una Entidad no estadounidense) que es:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "una Entidad de Depositaría;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "una Entidad de Custodia;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "una Sociedad holding o Centro de Tesorería (solo pertinente para entidades situadas fuera de una jurisdicción de IGA); o"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "una Compañía de seguros especificada."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FFI obligada a informar con Modelo 1;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FFI considerada conforme;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Beneficiario efectivo exento."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Jurisdicción No Participante (solo pertinente a efectos de AEI)"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Desde la perspectiva de una jurisdicción que ha implementado AEI, el término Jurisdicción No Participante (según AEI) significa otra jurisdicción que no es Jurisdicción Participante."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "una Sociedad de inversión;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Consulte las directrices nacionales correspondientes y la CRS para obtener otras definiciones de categorías aplicables a Entidades financieras. Ejemplos habituales de Entidades financieras son bancos, fondos, broker-dealers, custodios, sociedades fiduciarias y compañías de seguros de vida."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI obligada a informar con Modelo 2;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI de IGA no obligada a informar;"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Organización sin ánimo de lucro"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Organización sin ánimo de lucro (según AEI y FATCA) significa una NFE / NFFE que reúne todos los siguientes criterios:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está establecida y en funcionamiento en su jurisdicción de residencia exclusivamente con fines religiosos, benéficos, científicos, artísticos, culturales, atléticos o educativos; o está establecida y en funcionamiento en su jurisdicción de residencia porque es una organización profesional, una liga de negocios, una cámara de comercio, una organización laboral, agrícola u horticultural, una liga cívica o una organización operada exclusivamente para promover el bienestar social;"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "de algún otro modo reúna las condiciones necesarias para ser una FFI considerada conforme o un Beneficiario efectivo exento según el Reglamento pertinente del Tesoro estadounidense."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está exenta de impuestos sobre la renta en su jurisdicción de residencia;"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "no tiene accionistas o miembros que tengan una participación en sus ingresos o activos;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "las leyes aplicables de la jurisdicción de residencia de la NFE / NFFE o los documentos de constitución de la NFE / NFFE no permiten distribuir o asignar los ingresos o activos de la NFE / NFFE en beneficio de una persona particular o una Entidad no benéfica, salvo en la realización de las actividades benéficas de la NFE / NFFE, o como pago en calidad de remuneración razonable por servicios prestados, o como pago que represente el valor de mercado razonable de bienes inmuebles que haya adquirido la NFE / NFFE; y"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "las leyes aplicables de la jurisdicción de la NFE / NFFE o los documentos de constitución de la NFE / NFFE exigen que, tras la liquidación o disolución de la NFE / NFFE, todos sus activos se distribuyan a una Entidad gubernamental u otra Organización sin ánimo de lucro, o reviertan al gobierno de la jurisdicción de residencia de la NFE / NFFE o cualquier subdivisión política del mismo."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI de IGA no obligada a informar (solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término FFI de IGA no obligada a informar (según FATCA) alude a cualquier Entidad de una jurisdicción de IGA que:"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "se describa en el Anexo II del IGA existente entre esa jurisdicción y EE. UU. como FFI de IGA no obligada a informar; o El término Dirección de correo significa cualquier dirección para entrega física de comunicaciones al cliente, como cartas o extractos de cuentas."
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad no financiera (NFE) / Entidad extranjera no financiera (NFFE)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos NFE (según AEI) o NFFE (según FATCA) aluden a una Entidad (según FATCA: una Entidad no estadounidense) que no es una Entidad financiera / Entidad financiera extranjera."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad de Grupo no financiero"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Entidad de Grupo no financiero alude a cualquier NFE (según AEI) o NFFE (según FATCA)  cuyas actividades consisten sustancialmente en mantener (total o parcialmente) las acciones en circulación de, o suministrar financiamiento y servicios a una o más filiales que realicen operaciones o desarrollen negocios distintos del negocio de una Entidad financiera, y que no funcionan (o se mantienen) como un fondo de inversión, por ejemplo un fondo de private equity, un fondo de venture capital, un fondo de compras apalancadas o cualquier vehículo de inversión cuya finalidad sea adquirir o financiar empresas para mantener participaciones en dichas empresas como activos de capital con fines de inversión."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "que ha accedido a informar al IRS, directa o indirectamente a través de sus autoridades tributarias nacionales, de toda la información pertinente relativa a cada Persona estadounidense especificada que aparece en la Declaración informativa del propietario (con algunas excepciones de propietarios indirectos)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad financiera extranjera No Participante"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "(solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Entidad financiera extranjera No Participante (según FATCA) alude a cualquier  Entidad financiera extranjera que no sea una:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FFI participante;"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "– Jurisdicción Participante (solo pertinente a efectos de AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Jurisdicción Participante alude a otra jurisdicción con la que la jurisdicción de la Entidad financiera de UBS haya firmado un acuerdo que se encuentre en vigor (o se considere en vigor)."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "Ingresos pasivos"
+              }
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Con algunas limitaciones basadas en operaciones comerciales (por ejemplo, de operadores especificados), en general se consideraría que los Ingresos pasivos incluyen la parte de los ingresos brutos que consiste en:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "cuyos ingresos brutos atribuibles a la inversión, reinversión o negociación de Activos financieros equivalen o exceden del 50% de los ingresos brutos de la Entidad durante el periodo más corto entre: (i) el trienio terminado el 31 de diciembre del año anterior al año en el que se realiza el cálculo; o (ii) el periodo de existencia de la Entidad."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "una NFE pasiva o una Sociedad de inversión Gestionada por profesionales con una o más Personas con Control que es una Persona de información obligada."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "dividendos (incluidos sustitutos de dividendos);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "intereses (incluidos ingresos equivalentes a intereses);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "anualidades;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "el excedente de ganancias de cambio de divisas sobre pérdidas de cambio de divisas;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "importes recibidos por contratos de seguros de valor efectivo."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Entidad no financiera pasiva (NFE pasiva) /"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Entidad extranjera no financiera pasiva (NFFE pasiva)"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "alquileres y regalías;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "el excedente de ganancias sobre pérdidas en la venta o el intercambio de Activos financieros que dé lugar a los ingresos pasivos descritos más arriba; el excedente de ganancias sobre pérdidas en operaciones (incluidos futuros, operaciones a plazo, opciones y otras similares) de cualquier Activo financiero;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "los ingresos netos de contratos de swap o principal teórico; o"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Los términos NFE pasiva (según AEI) y NFFE pasiva (según FATCA) aluden a una NFE / NFFE que no es una NFE / NFFE activa."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "Gestionado/a/s por profesionales"
+              }
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Una Entidad se considera Gestionada por profesionales cuando otra Entidad financiera realiza, directamente o mediante otro proveedor de servicios, alguna de las siguientes actividades u operaciones en nombre de la Entidad gestionada: (i) negociación de instrumentos financieros; (ii) gestión de carteras individuales o colectivas; o (iii) alguna otra forma de inversión o administración o gestión de fondos, dinero o Activos financieros. Una Entidad no es Gestionada por profesionales si la Entidad financiera gestora no goza de autoridad discrecional para gestionar los activos de la Entidad (total o parcialmente). Cuando una Entidad es gestionada por una combinación de Entidades financieras y otras personas, la Entidad se considera Gestionada por profesionales."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "Sociedad de inversión Gestionada por profesionales"
+              }
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Norma común sobre revelación de información"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "(Common Reporting Standard o CRS) de la OCDE"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "La CRS contiene la norma de información y diligencia debida que sostiene la Norma sobre  Intercambio automático de información de cuentas financieras (AEI). Para garantizar que el terreno de juego sea equitativo, cada jurisdicción que participe en AEI debe trasladar los requisitos de la CRS a la legislación doméstica."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad financiera extranjera documentada por el propietario (OdFFI) (solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término OdFFI (según FATCA) se refiere a una Entidad financiera extranjera que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "es una Entidad financiera extranjera solo porque es una Sociedad de inversión; no es propiedad ni parte de un Grupo Afiliado Ampliado con una FFI que sea una Entidad de Depositaría, una Entidad de Custodia o una Compañía de seguros especificada."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Persona de información obligada (solo pertinente a efectos de AEI)"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "no mantiene una cuenta financiera para una Entidad financiera extranjera No Participante;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Empresa no financiera cotizada en bolsa y Empresa relacionada;"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Persona de información obligada (según AEI) alude a una persona física o una Entidad que es residente a efectos de AEI en una Jurisdicción de información obligada, que no sea una Entidad considerada por AEI como:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "proporciona al agente de retenciones designado (por ejemplo, UBS) documentación que la identifica como OdFFI, una Declaración informativa del propietario y documentación válida de cada persona identificada en la Declaración informativa del propietario;"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Entidad financiera obligada a informar"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "(solo pertinente a efectos de AEI)"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "es residente en EE. UU. por alguna otra razón (por ejemplo, ser un cónyuge no estadounidense que presenta una declaración fiscal estadounidense conjunta con un cónyuge estadounidense o renunciar a la ciudadanía estadounidense o una residencia permanente a largo plazo en EE. UU."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "tiene un agente de retenciones designado (por ejemplo, UBS)"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Banco central;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Entidad financiera."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidad gubernamental;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Organismo internacional;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Entidad financiera obligada a informar (según AEI) alude a una Entidad financiera que es residente en una jurisdicción que ha incorporado AEI en la legislación local y está sujeta a obligaciones de diligencia debida e información."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Dirección de residencia"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Dirección de residencia significa la dirección de la residencia permanente o el domicilio de una persona. En general, una dirección del tipo: «en casa de» o un apartado de correos no es una dirección de residencia, a menos que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "se trate de un apartado de correos que forme parte de una dirección junto con, por ejemplo, una calle, un apartamento o número de habitación, o un camino rural, que identifique claramente la residencia real de la persona; u"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "otras circunstancias especiales, como las del personal militar."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Autocertificación"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Autocertificación se refiere a la certificación realizada por el Titular de la Cuenta o la Persona con Control que proporciona su estatus conforme a AEI y FATCA y cualquier otra información que pueda solicitar razonablemente la Entidad financiera a fin de cumplir sus obligaciones conforme a AEI y FATCA; por ejemplo, si el Titular de la Cuenta es residente a efectos fiscales en una Jurisdicción obligada a informar (según AEI) o en EE. UU. (según FATCA) y, en el caso de una Entidad, su categoría según AEI o FATCA."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Persona estadounidense especificada (solo a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Persona estadounidense especificada (según FATCA) significa cualquier Persona estadounidense (Entidades estadounidenses y personas físicas estadounidenses), excepto algunas Entidades excluidas de la definición conforme a un IGA aplicable o el Reglamento pertinente del Tesoro de EE. UU. Una persona física se considera Persona estadounidense si:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "es un ciudadano estadounidense (incluida doble o múltiple nacionalidad);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "es titular de una «green card» (tarjeta verde) (con independencia de su fecha de expiración);"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Sociedad de inversión Gestionada por profesionales (según AEI y FATCA) alude a una Entidad (según FATCA: una Entidad no estadounidense) que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está Gestionada por profesionales; y"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Aun reuniendo los requisitos anteriores, las Entidades podrían estar exentas de la definición de Sociedad de inversión gestionada por profesionales basándose en una exención específica conforme a las leyes de su jurisdicción de residencia."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "Cuenta de información obligada (solo pertinente a efectos de AEI)"
+              }
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Cuenta de información obligada (según AEI) significa una cuenta mantenida por:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "una o más personas de información obligada; o"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "Jurisdicción de información obligada"
+              }
+            },
+            {
+              "type": "text",
+              "content": " "
+            },
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": "(solo pertinente a efectos de AEI)"
+              }
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "relación a la Cuenta financiera mantenida por la Sociedad de inversión."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Vehículo de inversión cerrado patrocinado (solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Vehículo de inversión cerrado patrocinado (según FATCA) se refiere a una Entidad financiera extranjera que:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "es una Entidad financiera extranjera solo porque es una Sociedad de inversión;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "no es un Intermediario cualificado, una Sociedad de retenciones extranjera o un Fideicomiso de retenciones extranjero conforme al Reglamento pertinente del Tesoro estadounidense; y"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "tiene 20 o menos personas físicas como propietarios de todas las participaciones de  capital propio y ajeno de la Sociedad de inversión (sin tener en cuenta el capital ajeno  en posesión de determinadas FFI y  capital propio de otro Vehículo de inversión cerrado patrocinado que sea propietario del 100% del  capital propio de la Sociedad de inversión);"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "no se mantiene como vehículo de inversión para partes no relacionadas (criterio no aplicable en todas las jurisdicciones);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "tiene un Patrocinador de FATCA clasificado como Entidad financiera estadounidense obligada a informar, FFI Participante, FFI obligada a informar con Modelo 1 o FFI obligada a informar con Modelo 2 que está autorizado para actuar en nombre de la Sociedad de inversión (como un  gestor de fondos, fideicomisario, consejero de sociedad o socio gerente) y ha accedido a realizar toda la diligencia debida, retenciones, información y otras obligaciones de FATCA con relación a la Cuenta financiera mantenida por la Sociedad de inversión."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Número de Identificación fiscal"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El Número de Identificación fiscal (o de Contribuyente) (Taxpayer Identification Number o TIN) es una combinación única de letras o números, en cualquier definición, que asigna una jurisdicción a sus residentes fiscales y se utiliza para identificarlos a efectos de administrar la legislación fiscal de la jurisdicción (o el equivalente funcional de dicho número)."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "cumple los requisitos del Test de presencia física sustancial (es decir, presencia física en Estados Unidos al menos un total de 31 días en el año natural actual y al menos 183 días en el trienio formado por el año actual y los dos años inmediatamente anteriores; para cumplir el requisito de los 183 días, se cuentan: (i) todos los días de presencia en el año actual; (ii) un tercio de los días de presencia en el primer año antes del año actual, y (iii) un sexto de los días de presencia en el segundo año antes del año actual); o"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Sociedad de inversión patrocinada (solo pertinente a efectos de FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Sociedad de inversión patrocinada (según FATCA) se refiere a una Entidad financiera extranjera que:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "es una Sociedad de inversión;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "fideicomisos que sean Entidades financieras, que son residentes a efectos de AEI en la residencia de su(s) fideicomisarios, salvo que sean residentes fiscales conforme a las leyes de cualquier jurisdicción que haya implementado AEI y comunique a las autoridades de dicha jurisdicción toda la información necesaria en virtud del CRS respecto a la Cuenta con obligación a informar que mantengan;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "fideicomisos que sean NFE, que no tengan residencia a efectos de AEI, salvo que sean residentes fiscales conforme a las leyes de cualquier jurisdicción; y"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "sucursales, que son residentes a efectos de AEI  en la jurisdicción de Residencia fiscal de la Entidad principal (sede central) de la que son sucursales."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "tiene un Patrocinador de FATCA que está autorizado para actuar en nombre de la Sociedad de inversión (como un gestor de fondos, fideicomisario, consejero de sociedad o socio gerente) y ha accedido a realizar toda la diligencia debida, retenciones, información y otras obligaciones de FATCA con"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "que son residentes a efectos de AEI en la jurisdicción en la que está situado su lugar de gestión o control efectivo;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Si tiene alguna duda sobre la cumplimentación de este formulario o sobre el modo de determinar su(s) residencia(s) fiscal(es), recurra a su asesor fiscal o a las autoridades tributarias pertinentes. También encontrará información adicional en el portal sobre intercambio automático de información de la OCDE y en la página web de UBS sobre FATCA y Cumplimiento fiscal de intercambio automático de información (www.ubs.com/aei)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Fideicomiso documentado por el Fideicomisario"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Fideicomiso documentado por el Fideicomisario (según FATCA) se refiere a un fideicomiso que:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "– es una Entidad financiera extranjera;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "está constituido conforme a las leyes de una jurisdicción de IGA (siempre que dicha situación esté prevista en el Anexo II del IGA de dicha jurisdicción); y"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "tiene un fideicomisario que es una Entidad financiera estadounidense obligada a informar, FFI Participante, FFI obligada a informar con Modelo 1 o FFI obligada a informar con Modelo 2 y comunica toda la información obligatoria conforme al IGA con relación a todas las Cuentas estadounidenses de información obligada del fideicomiso."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Entidades estadounidenses"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "El término Entidades estadounidenses (según FATCA) significa empresas estadounidenses, sociedades estadounidenses y fideicomisos  estadounidenses. Una empresa o sociedad suele considerarse empresa  estadounidense o sociedad  estadounidense si se crea o se organiza en Estados Unidos o sometida a la ley de Estados Unidos o uno de sus estados. Un fideicomiso se considera estadounidense si: (i) un tribunal de Estados Unidos puede ejercer supervisión primaria sobre la administración del fideicomiso, y (ii) si una o más Personas estadounidenses tienen autoridad para controlar todas las decisiones sustanciales del fideicomiso."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "no es un Intermediario cualificado, una Sociedad de retenciones extranjera o un Fideicomiso de retenciones extranjero conforme al Reglamento pertinente del Tesoro estadounidense; y El término Jurisdicción de información obligada alude a otra jurisdicción con la que la jurisdicción de la Entidad financiera de UBS haya firmado un acuerdo de AEI por el que existe una obligación de proporcionar información de Cuentas financieras de forma automática."
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Residencia fiscal"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "La determinación de la residencia fiscal de una persona se basa en la legislación fiscal de las jurisdicciones pertinentes. Las leyes fiscales nacionales de las jurisdicciones pertinentes establecen las condiciones por las que una Entidad deberá tratarse como residente fiscal y, por consiguiente, estar plenamente sujeta a obligaciones tributarias. Con carácter general, una Entidad deberá ser tratada como residente fiscal en cualquier jurisdicción en la que esté sujeta a tributación debido a su domicilio, residencia, lugar de gestión o constitución u otros criterios similares, y no solo por fuentes de ingreso en esa jurisdicción. Las Entidades con dos residencias podrán basarse en normas de “desempate” descritas en convenios fiscales (en su caso) para resolver casos de doble residencia a la hora de determinar su residencia a efectos fiscales."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "–"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Según AEI, se aplican normas especiales a:"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Títulos estadounidenses"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "En general, el término Títulos estadounidenses (según FATCA) se refiere a acciones de empresas estadounidenses, bonos y fondos de inversión de emisores estadounidenses. Un fondo de inversión no estadounidense (por ejemplo, una SICAV de Luxemburgo) no se considera en general Título estadounidense conforme a FATCA. entidades fiscalmente transparentes (es decir, sociedades comanditarias, sociedades de responsabilidad limitada o figuras jurídicas similares que no tienen residencia a efectos fiscales),"
+        }
+      ]
+    }
+  ],
+  "stateCount": 1
+}

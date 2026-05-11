@@ -1,0 +1,421 @@
+{
+  "context": {
+    "language": "de",
+    "variables": {
+      "Footer_Line_txtlanguage": "DE",
+      "formrange_language": "DE",
+      "Footer_Line_APPCode": "",
+      "formrange_htmlready": "false",
+      "formrange_code": "AAIJ",
+      "formrange_partnerlevel": "No",
+      "formrange_releasedate": "01.01.2024",
+      "Footer_Line_txtformid": "66397",
+      "formrange_version": "V0",
+      "formrange_entity": "019",
+      "Footer_Line_txtvversion": "V0",
+      "Footer_Line_txtjversion": "N1",
+      "Footer_Line_MANCode": "019",
+      "formrange_formsetready": "true",
+      "formrange_cdokinfo": "66397",
+      "Footer_Line_txtversiondate": "01.01.2024"
+    }
+  },
+  "content": [
+    {
+      "type": "field",
+      "name": "f3ea26fe-fffe-5a40-bff6-d9517352145e",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "5becce0d-1fdb-5786-aaa7-c76e8e3658b9",
+      "label": null,
+      "inputType": {
+        "type": "date"
+      },
+      "value": {
+        "type": "text",
+        "value": "11. Mai 2026"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Einstufung als Professioneller Kunde kraft Gesetz"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": "h2",
+      "content": [
+        {
+          "type": "text",
+          "content": "Form configurator"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "b210a029-0246-5765-8e49-65cc0d967955",
+      "label": [
+        {
+          "type": "text",
+          "content": "Niederlassung"
+        }
+      ],
+      "inputType": {
+        "type": "select",
+        "options": [
+          {
+            "name": "Berlin",
+            "value": {
+              "type": "text",
+              "value": "0"
+            }
+          },
+          {
+            "name": "Kopenhagen",
+            "value": {
+              "type": "text",
+              "value": "1"
+            }
+          },
+          {
+            "name": "Düsseldorf",
+            "value": {
+              "type": "text",
+              "value": "2"
+            }
+          },
+          {
+            "name": "Frankfurt",
+            "value": {
+              "type": "text",
+              "value": "3"
+            }
+          },
+          {
+            "name": "FIM",
+            "value": {
+              "type": "text",
+              "value": "4"
+            }
+          },
+          {
+            "name": "FIM Endkunde",
+            "value": {
+              "type": "text",
+              "value": "5"
+            }
+          },
+          {
+            "name": "Hamburg",
+            "value": {
+              "type": "text",
+              "value": "6"
+            }
+          },
+          {
+            "name": "München",
+            "value": {
+              "type": "text",
+              "value": "7"
+            }
+          },
+          {
+            "name": "Stuttgart",
+            "value": {
+              "type": "text",
+              "value": "8"
+            }
+          },
+          {
+            "name": "UBS LA",
+            "value": {
+              "type": "text",
+              "value": "9"
+            }
+          },
+          {
+            "name": "UBS LA FIM",
+            "value": {
+              "type": "text",
+              "value": "10"
+            }
+          },
+          {
+            "name": "UBS LA FIM Endkunde",
+            "value": {
+              "type": "text",
+              "value": "11"
+            }
+          },
+          {
+            "name": "GFIW",
+            "value": {
+              "type": "text",
+              "value": "12"
+            }
+          }
+        ]
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "f3d8b774-5e70-5de0-aa0f-6083daedd94e",
+      "label": [
+        {
+          "type": "text",
+          "content": "hiermit stufen wir Sie als professionellen Kunden kraft Gesetz gemäß § 67 Absatz 2 Wertpapierhandelsgesetz ein und behandeln daher jede für Sie unterschriftsberechtigte Person ebenfalls als professionellen Kunden kraft Gesetz."
+        }
+      ],
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": {
+        "type": "text",
+        "value": "Sehr geehrte Damen und Herren,"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Sollten sich Änderungen ergeben, welche Ihre Einstufung als professioneller Kunde beeinflussen können, informieren Sie uns bitte darüber. UBS behält sich vor, den Status als professioneller Kunde regelmässig zu überprüfen und diesen zu widerrufen."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Bei Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Mit freundlichen Grüßen UBS Europe SE"
+        },
+        {
+          "type": "strong",
+          "content": {
+            "type": "text",
+            "content": " "
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "0d15159a-6b56-52ef-b3cd-9b1ba4c1a895",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "73ca649f-c51a-5afa-ac5c-5746bc1156ee",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 2,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "d1e2cd55-580a-5380-8090-0e526bbd2b08",
+            "label": null,
+            "inputType": {
+              "type": "select",
+              "options": [
+                {
+                  "name": "Authorized Officer",
+                  "value": {
+                    "type": "text",
+                    "value": "Authorized Officer"
+                  }
+                },
+                {
+                  "name": "Associate Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Associate Director"
+                  }
+                },
+                {
+                  "name": "Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Director"
+                  }
+                },
+                {
+                  "name": "Executive Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Executive Director"
+                  }
+                },
+                {
+                  "name": "Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Managing Director"
+                  }
+                },
+                {
+                  "name": "Group Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Group Managing Director"
+                  }
+                },
+                {
+                  "name": "Mitglied des Vorstandes",
+                  "value": {
+                    "type": "text",
+                    "value": "Mitglied des Vorstandes"
+                  }
+                },
+                {
+                  "name": "Vorstandsvorsitzender",
+                  "value": {
+                    "type": "text",
+                    "value": "Vorstandsvorsitzender"
+                  }
+                }
+              ]
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "4b06830e-85e0-53a1-bc74-0165c1db0231",
+            "label": null,
+            "inputType": {
+              "type": "select",
+              "options": [
+                {
+                  "name": "Authorized Officer",
+                  "value": {
+                    "type": "text",
+                    "value": "Authorized Officer"
+                  }
+                },
+                {
+                  "name": "Associate Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Associate Director"
+                  }
+                },
+                {
+                  "name": "Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Director"
+                  }
+                },
+                {
+                  "name": "Executive Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Executive Director"
+                  }
+                },
+                {
+                  "name": "Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Managing Director"
+                  }
+                },
+                {
+                  "name": "Group Managing Director",
+                  "value": {
+                    "type": "text",
+                    "value": "Group Managing Director"
+                  }
+                },
+                {
+                  "name": "Mitglied des Vorstandes",
+                  "value": {
+                    "type": "text",
+                    "value": "Mitglied des Vorstandes"
+                  }
+                },
+                {
+                  "name": "Vorstandsvorsitzender",
+                  "value": {
+                    "type": "text",
+                    "value": "Vorstandsvorsitzender"
+                  }
+                }
+              ]
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    }
+  ],
+  "stateCount": 1
+}

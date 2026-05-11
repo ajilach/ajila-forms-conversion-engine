@@ -1,0 +1,503 @@
+{
+  "context": {
+    "language": "de",
+    "variables": {
+      "formrange_htmlready": "false",
+      "formrange_formsetready": "false",
+      "Footer_Line_txtformid": "66460",
+      "Footer_Line_txtjversion": "N1",
+      "formrange_releasedate": "20.08.2020",
+      "formrange_version": "V0",
+      "formrange_cdokinfo": "66460",
+      "formrange_entity": "019",
+      "Footer_Line_txtversiondate": "20.08.2020",
+      "formrange_code": "AAKO",
+      "formrange_language": "DE",
+      "Footer_Line_APPCode": "",
+      "formrange_partnerlevel": "No",
+      "Footer_Line_txtlanguage": "DE",
+      "Footer_Line_txtvversion": "V0",
+      "Footer_Line_MANCode": "019"
+    }
+  },
+  "content": [
+    {
+      "type": "field",
+      "name": "4a648c05-eeec-5f87-b688-085c06459a96",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "UBS Europe SE"
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "4313d716-82eb-517b-b62b-a44263a67d9e",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "02b8fe23-0497-5455-a95e-eeefbe823354",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "9b3b0df2-fc74-5096-a478-59e24f36e147",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "872b0a11-284b-5dad-a737-5233069f8eed",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "d9990995-4f35-5580-b81f-a75acc9a7906",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "e45f3e9a-01fe-5e59-9ab0-9976ddc3757f",
+      "label": null,
+      "inputType": {
+        "type": "date"
+      },
+      "value": {
+        "type": "text",
+        "value": "11. Mai 2026"
+      },
+      "placeholder": null
+    },
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Verlustmeldung Jahressteuerbescheinigung  "
+        }
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "6aac791d-884d-5d76-bc4b-323480f7174a",
+        "value": {
+          "type": "text",
+          "value": "Minderjährige"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "d647ec25-d2a1-5b12-894b-4439eeed84a3",
+            "label": [
+              {
+                "type": "text",
+                "content": "Sehr geehrte Damen und Herren,"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": {
+              "type": "text",
+              "value": "Inhaber (Nachname, Vorname)"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "ich versichere, dass mir die Steuerbescheinigung von der oben genannten Bankbeziehung nicht vorliegt und bitte um Erstellung und Zusendung einer Ersatzbescheinigung an die obige Anschrift."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Mit freundlichen Grüßen"
+              }
+            ]
+          },
+          {
+            "type": "gridLayout",
+            "columns": 2,
+            "elements": [
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "a4989000-c5e3-5fdf-aa2b-51a21894cddf",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 1"
+                  },
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "962d8bd2-180e-5b66-ac50-9421e952a603",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 2"
+                  },
+                  "placeholder": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "6aac791d-884d-5d76-bc4b-323480f7174a",
+        "value": {
+          "type": "text",
+          "value": "Firma"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "d647ec25-d2a1-5b12-894b-4439eeed84a3",
+            "label": [
+              {
+                "type": "text",
+                "content": "Sehr geehrte Damen und Herren,"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": {
+              "type": "text",
+              "value": "Inhaber (Nachname, Vorname)"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "ich versichere, dass mir die Steuerbescheinigung von der oben genannten Bankbeziehung nicht vorliegt und bitte um Erstellung und Zusendung einer Ersatzbescheinigung an die obige Anschrift."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Mit freundlichen Grüßen"
+              }
+            ]
+          },
+          {
+            "type": "gridLayout",
+            "columns": 2,
+            "elements": [
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "a4989000-c5e3-5fdf-aa2b-51a21894cddf",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 1"
+                  },
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "962d8bd2-180e-5b66-ac50-9421e952a603",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 2"
+                  },
+                  "placeholder": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "6aac791d-884d-5d76-bc4b-323480f7174a",
+        "value": {
+          "type": "text",
+          "value": "GbR"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "field",
+            "name": "d647ec25-d2a1-5b12-894b-4439eeed84a3",
+            "label": [
+              {
+                "type": "text",
+                "content": "Sehr geehrte Damen und Herren,"
+              }
+            ],
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": {
+              "type": "text",
+              "value": "Inhaber (Nachname, Vorname)"
+            },
+            "placeholder": null
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "ich versichere, dass mir die Steuerbescheinigung von der oben genannten Bankbeziehung nicht vorliegt und bitte um Erstellung und Zusendung einer Ersatzbescheinigung an die obige Anschrift."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Mit freundlichen Grüßen"
+              }
+            ]
+          },
+          {
+            "type": "gridLayout",
+            "columns": 2,
+            "elements": [
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "a4989000-c5e3-5fdf-aa2b-51a21894cddf",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 1"
+                  },
+                  "placeholder": null
+                }
+              },
+              {
+                "span": 1,
+                "node": {
+                  "type": "field",
+                  "name": "962d8bd2-180e-5b66-ac50-9421e952a603",
+                  "label": null,
+                  "inputType": {
+                    "type": "text",
+                    "regex": null,
+                    "max_length": null,
+                    "min_length": null
+                  },
+                  "value": {
+                    "type": "text",
+                    "value": "Name des gesetzlichen Vertreters 2"
+                  },
+                  "placeholder": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "fieldName": "6aac791d-884d-5d76-bc4b-323480f7174a",
+        "value": {
+          "type": "text",
+          "value": "Private Person"
+        }
+      },
+      "content": {
+        "type": "group",
+        "children": [
+          {
+            "type": "repeatable",
+            "item": {
+              "type": "field",
+              "name": "d647ec25-d2a1-5b12-894b-4439eeed84a3",
+              "label": [
+                {
+                  "type": "text",
+                  "content": "Sehr geehrte Damen und Herren,"
+                }
+              ],
+              "inputType": {
+                "type": "text",
+                "regex": null,
+                "max_length": null,
+                "min_length": null
+              },
+              "value": {
+                "type": "text",
+                "value": "Inhaber (Nachname, Vorname)"
+              },
+              "placeholder": null
+            },
+            "minOccurrences": 1,
+            "maxOccurrences": 2
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "ich versichere, dass mir die Steuerbescheinigung von der oben genannten Bankbeziehung nicht vorliegt und bitte um Erstellung und Zusendung einer Ersatzbescheinigung an die obige Anschrift."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "content": "Mit freundlichen Grüßen"
+              }
+            ]
+          },
+          {
+            "type": "field",
+            "name": "d053770b-b395-530a-b5e9-b497917b16cf",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        ]
+      }
+    }
+  ],
+  "stateCount": 2
+}
