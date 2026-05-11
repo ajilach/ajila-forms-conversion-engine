@@ -27,6 +27,45 @@ pub struct TextRun {
     pub height: f64,
 }
 
+/// A filled rectangle extracted from the PDF content stream.
+#[derive(Debug, Clone)]
+pub struct FilledRect {
+    /// Absolute X position (top-left in our coordinate system).
+    pub x: f64,
+    /// Absolute Y position (top-left in our coordinate system).
+    pub y: f64,
+    /// Width in user-space points.
+    pub width: f64,
+    /// Height in user-space points.
+    pub height: f64,
+    /// Fill color as (R, G, B) in 0..255.
+    pub color: (u8, u8, u8),
+}
+
+/// A stroked line extracted from the PDF content stream.
+#[derive(Debug, Clone)]
+pub struct StrokedLine {
+    /// Start X position.
+    pub x1: f64,
+    /// Start Y position.
+    pub y1: f64,
+    /// End X position.
+    pub x2: f64,
+    /// End Y position.
+    pub y2: f64,
+    /// Line width in user-space points.
+    pub line_width: f64,
+    /// Stroke color as (R, G, B) in 0..255.
+    pub color: (u8, u8, u8),
+}
+
+/// All graphic elements extracted from a PDF page's content stream.
+#[derive(Debug, Clone, Default)]
+pub struct PageGraphics {
+    pub filled_rects: Vec<FilledRect>,
+    pub stroked_lines: Vec<StrokedLine>,
+}
+
 /// Graphics state for tracking text positioning.
 #[derive(Debug, Clone)]
 struct GraphicsState {
@@ -34,6 +73,12 @@ struct GraphicsState {
     ctm: [f64; 6],
     /// Text state parameters
     text_state: TextState,
+    /// Non-stroking (fill) color as (R, G, B) in 0.0..1.0.
+    fill_color: (f64, f64, f64),
+    /// Stroking color as (R, G, B) in 0.0..1.0.
+    stroke_color: (f64, f64, f64),
+    /// Line width in user-space points.
+    line_width: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +118,9 @@ impl Default for GraphicsState {
         GraphicsState {
             ctm: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             text_state: TextState::default(),
+            fill_color: (0.0, 0.0, 0.0),
+            stroke_color: (0.0, 0.0, 0.0),
+            line_width: 1.0,
         }
     }
 }
@@ -301,7 +349,258 @@ pub fn extract_text_runs(doc: &Document, page_id: ObjectId, page_height: f64) ->
     runs
 }
 
-/// Show a single text string and return a TextRun.
+/// Extract graphic elements (filled rectangles, stroked lines) from a PDF page.
+///
+/// Tracks the current path, fill/stroke colors, and line width to detect:
+/// - Filled rectangles (re f/F/B operators) — used for section header backgrounds
+/// - Stroked lines (m l S operators) — used for separators and underlines
+pub fn extract_page_graphics(doc: &Document, page_id: ObjectId, page_height: f64) -> PageGraphics {
+    let content_bytes = match doc.get_page_content(page_id) {
+        Ok(bytes) => bytes,
+        Err(_) => return PageGraphics::default(),
+    };
+
+    let operations = match Content::decode(&content_bytes) {
+        Ok(content) => content.operations,
+        Err(_) => return PageGraphics::default(),
+    };
+
+    let mut graphics = PageGraphics::default();
+    let mut gs_stack: Vec<GraphicsState> = Vec::new();
+    let mut gs = GraphicsState::default();
+
+    // Current path points for constructing rectangles and lines
+    let mut path_start: Option<(f64, f64)> = None;
+    let mut current_point: Option<(f64, f64)> = None;
+    // Pending rectangle from the `re` operator
+    let mut pending_rect: Option<(f64, f64, f64, f64)> = None;
+
+    for op in &operations {
+        match op.operator.as_ref() {
+            // ==== Graphics state ====
+            "q" => gs_stack.push(gs.clone()),
+            "Q" => {
+                if let Some(restored) = gs_stack.pop() {
+                    gs = restored;
+                }
+            }
+            "cm" => {
+                if let Some(m) = parse_matrix(&op.operands) {
+                    gs.ctm = mat_mul(&m, &gs.ctm);
+                }
+            }
+
+            // ==== Color operators ====
+            // Non-stroking color (fill)
+            "g" => {
+                if let Some(gray) = get_number(&op.operands, 0) {
+                    gs.fill_color = (gray, gray, gray);
+                }
+            }
+            "rg" => {
+                let r = get_number(&op.operands, 0).unwrap_or(0.0);
+                let g = get_number(&op.operands, 1).unwrap_or(0.0);
+                let b = get_number(&op.operands, 2).unwrap_or(0.0);
+                gs.fill_color = (r, g, b);
+            }
+            "k" => {
+                // CMYK fill — approximate to RGB
+                let c = get_number(&op.operands, 0).unwrap_or(0.0);
+                let m = get_number(&op.operands, 1).unwrap_or(0.0);
+                let y = get_number(&op.operands, 2).unwrap_or(0.0);
+                let k = get_number(&op.operands, 3).unwrap_or(0.0);
+                gs.fill_color = cmyk_to_rgb(c, m, y, k);
+            }
+            "cs" | "scn" | "sc" => {
+                // Color space / set color — handle common device color spaces
+                let count = op.operands.len();
+                if count == 1 {
+                    if let Some(gray) = get_number(&op.operands, 0) {
+                        gs.fill_color = (gray, gray, gray);
+                    }
+                } else if count >= 3 {
+                    let r = get_number(&op.operands, 0).unwrap_or(0.0);
+                    let g = get_number(&op.operands, 1).unwrap_or(0.0);
+                    let b = get_number(&op.operands, 2).unwrap_or(0.0);
+                    gs.fill_color = (r, g, b);
+                }
+            }
+
+            // Stroking color
+            "G" => {
+                if let Some(gray) = get_number(&op.operands, 0) {
+                    gs.stroke_color = (gray, gray, gray);
+                }
+            }
+            "RG" => {
+                let r = get_number(&op.operands, 0).unwrap_or(0.0);
+                let g = get_number(&op.operands, 1).unwrap_or(0.0);
+                let b = get_number(&op.operands, 2).unwrap_or(0.0);
+                gs.stroke_color = (r, g, b);
+            }
+            "K" => {
+                let c = get_number(&op.operands, 0).unwrap_or(0.0);
+                let m = get_number(&op.operands, 1).unwrap_or(0.0);
+                let y = get_number(&op.operands, 2).unwrap_or(0.0);
+                let k = get_number(&op.operands, 3).unwrap_or(0.0);
+                gs.stroke_color = cmyk_to_rgb(c, m, y, k);
+            }
+            "SCN" | "SC" => {
+                let count = op.operands.len();
+                if count == 1 {
+                    if let Some(gray) = get_number(&op.operands, 0) {
+                        gs.stroke_color = (gray, gray, gray);
+                    }
+                } else if count >= 3 {
+                    let r = get_number(&op.operands, 0).unwrap_or(0.0);
+                    let g = get_number(&op.operands, 1).unwrap_or(0.0);
+                    let b = get_number(&op.operands, 2).unwrap_or(0.0);
+                    gs.stroke_color = (r, g, b);
+                }
+            }
+
+            // Line width
+            "w" => {
+                gs.line_width = get_number(&op.operands, 0).unwrap_or(1.0);
+            }
+
+            // ==== Path construction ====
+            "m" => {
+                // moveto
+                let x = get_number(&op.operands, 0).unwrap_or(0.0);
+                let y = get_number(&op.operands, 1).unwrap_or(0.0);
+                let (tx, ty) = transform_point(&gs.ctm, x, y);
+                path_start = Some((tx, page_height - ty));
+                current_point = path_start;
+                pending_rect = None;
+            }
+            "l" => {
+                // lineto
+                let x = get_number(&op.operands, 0).unwrap_or(0.0);
+                let y = get_number(&op.operands, 1).unwrap_or(0.0);
+                let (tx, ty) = transform_point(&gs.ctm, x, y);
+                current_point = Some((tx, page_height - ty));
+            }
+            "re" => {
+                // Rectangle: x y w h
+                let rx = get_number(&op.operands, 0).unwrap_or(0.0);
+                let ry = get_number(&op.operands, 1).unwrap_or(0.0);
+                let rw = get_number(&op.operands, 2).unwrap_or(0.0);
+                let rh = get_number(&op.operands, 3).unwrap_or(0.0);
+                // Transform corners through CTM
+                let (x1, y1) = transform_point(&gs.ctm, rx, ry);
+                let (x2, y2) = transform_point(&gs.ctm, rx + rw, ry + rh);
+                let min_x = x1.min(x2);
+                let min_y = y1.min(y2);
+                let w = (x2 - x1).abs();
+                let h = (y2 - y1).abs();
+                pending_rect = Some((min_x, page_height - min_y - h, w, h));
+            }
+
+            // ==== Path painting ====
+            "f" | "F" | "f*" => {
+                // Fill path
+                if let Some((rx, ry, rw, rh)) = pending_rect {
+                    // Skip white fills and tiny rects
+                    if !is_white(gs.fill_color) && rw > 1.0 && rh > 1.0 {
+                        graphics.filled_rects.push(FilledRect {
+                            x: rx,
+                            y: ry,
+                            width: rw,
+                            height: rh,
+                            color: color_to_u8(gs.fill_color),
+                        });
+                    }
+                }
+                pending_rect = None;
+                path_start = None;
+                current_point = None;
+            }
+            "B" | "B*" => {
+                // Fill and stroke path
+                if let Some((rx, ry, rw, rh)) = pending_rect {
+                    if !is_white(gs.fill_color) && rw > 1.0 && rh > 1.0 {
+                        graphics.filled_rects.push(FilledRect {
+                            x: rx,
+                            y: ry,
+                            width: rw,
+                            height: rh,
+                            color: color_to_u8(gs.fill_color),
+                        });
+                    }
+                }
+                pending_rect = None;
+                path_start = None;
+                current_point = None;
+            }
+            "S" => {
+                // Stroke path
+                if let Some(start) = path_start {
+                    if let Some(end) = current_point {
+                        if !is_white(gs.stroke_color) && gs.line_width > 0.1 {
+                            graphics.stroked_lines.push(StrokedLine {
+                                x1: start.0,
+                                y1: start.1,
+                                x2: end.0,
+                                y2: end.1,
+                                line_width: gs.line_width,
+                                color: color_to_u8(gs.stroke_color),
+                            });
+                        }
+                    }
+                }
+                // Also handle stroked rectangle
+                if let Some((rx, ry, rw, rh)) = pending_rect {
+                    if !is_white(gs.stroke_color) && gs.line_width > 0.1 {
+                        // Convert rect to 4 lines
+                        let c = color_to_u8(gs.stroke_color);
+                        let lw = gs.line_width;
+                        graphics.stroked_lines.push(StrokedLine { x1: rx, y1: ry, x2: rx + rw, y2: ry, line_width: lw, color: c });
+                        graphics.stroked_lines.push(StrokedLine { x1: rx + rw, y1: ry, x2: rx + rw, y2: ry + rh, line_width: lw, color: c });
+                        graphics.stroked_lines.push(StrokedLine { x1: rx + rw, y1: ry + rh, x2: rx, y2: ry + rh, line_width: lw, color: c });
+                        graphics.stroked_lines.push(StrokedLine { x1: rx, y1: ry + rh, x2: rx, y2: ry, line_width: lw, color: c });
+                    }
+                }
+                pending_rect = None;
+                path_start = None;
+                current_point = None;
+            }
+            "n" => {
+                // End path without painting (clip path, etc.)
+                pending_rect = None;
+                path_start = None;
+                current_point = None;
+            }
+
+            _ => {}
+        }
+    }
+
+    graphics
+}
+
+/// Convert a (0.0..1.0) RGB color to (0..255) tuple.
+fn color_to_u8(c: (f64, f64, f64)) -> (u8, u8, u8) {
+    (
+        (c.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (c.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (c.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// Check if a color is white (or very close to it).
+fn is_white(c: (f64, f64, f64)) -> bool {
+    c.0 > 0.98 && c.1 > 0.98 && c.2 > 0.98
+}
+
+/// Approximate CMYK to RGB conversion.
+fn cmyk_to_rgb(c: f64, m: f64, y: f64, k: f64) -> (f64, f64, f64) {
+    (
+        (1.0 - c) * (1.0 - k),
+        (1.0 - m) * (1.0 - k),
+        (1.0 - y) * (1.0 - k),
+    )
+}
 /// Updates the text matrix to advance past the shown text.
 fn show_text(
     bytes: &[u8],

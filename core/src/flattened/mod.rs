@@ -6768,7 +6768,6 @@ impl Flattened {
         // Colors (RGBA - last value is alpha: 255=opaque, 0=transparent)
         let black = Rgba([0u8, 0u8, 0u8, 255u8]);
         let dark_gray = Rgba([80u8, 80u8, 80u8, 255u8]);
-        let light_blue_fill = Rgba([200u8, 220u8, 255u8, 255u8]); // Light blue for field backgrounds
 
         // ============================================
         // Draw actual content (as in PDF) - no debug overlay
@@ -6811,28 +6810,42 @@ impl Flattened {
                 FlattenedNodeKind::Field {
                     value, is_checked, ..
                 } => {
-                    // Draw light blue fill for field background (no border)
-                    Self::fill_rect(&mut img, x, y, w, h, light_blue_fill);
+                    // Determine widget type from hints
+                    let is_checkbox_or_radio = node
+                        .widget_type()
+                        .map(|wt| {
+                            matches!(wt, WidgetKind::Checkbox | WidgetKind::Radio)
+                        })
+                        .unwrap_or(false);
 
-                    // If this is a radio button or checkbox, draw the checked indicator
-                    if let Some(checked) = is_checked
-                        && *checked
-                    {
-                        // Draw a filled circle (radio button) indicator
-                        // Use black for the check mark
-                        let indicator_color = Rgba([0u8, 0u8, 0u8, 255u8]);
+                    if is_checkbox_or_radio {
+                        // Draw checkbox/radio as a small outlined square
+                        let box_size = (w.min(h) as f32 * 0.8).max(8.0) as i32;
+                        let box_x = x + (w - box_size) / 2;
+                        let box_y = y + (h - box_size) / 2;
+                        let line_color = Rgba([80u8, 80u8, 80u8, 255u8]);
 
-                        // Calculate center and radius based on field size
-                        let min_dim = w.min(h) as f32;
-                        let center_x = x + w / 2;
-                        let center_y = y + h / 2;
-                        let radius = (min_dim * 0.25).max(3.0) as i32; // 25% of smaller dimension, min 3px
+                        Self::draw_rect_outline(&mut img, box_x, box_y, box_size, box_size, line_color);
 
-                        Self::fill_circle(&mut img, center_x, center_y, radius, indicator_color);
-                    }
+                        if let Some(true) = is_checked {
+                            let inset = (box_size as f32 * 0.2) as i32;
+                            Flattened::fill_rect(
+                                &mut img,
+                                box_x + inset,
+                                box_y + inset,
+                                box_size - 2 * inset,
+                                box_size - 2 * inset,
+                                line_color,
+                            );
+                        }
+                    } else {
+                        // Text/choice fields: draw an underline instead of a blue fill
+                        let underline_color = Rgba([0u8, 0u8, 0u8, 180u8]);
+                        let line_y = y + h - 1;
+                        Flattened::fill_rect(&mut img, x, line_y, w, 1, underline_color);
 
-                    // Only draw field VALUE (not name) in black if present
-                    if !value.is_empty() {
+                        // Only draw field VALUE (not name) in black if present
+                        if !value.is_empty() {
                         // Get font style from node, or use XFA defaults
                         let xfa_font = node.style.font.clone().unwrap_or_default();
                         let font_size = xfa_font.size.to_f32().unwrap_or(10.0);
@@ -6918,6 +6931,7 @@ impl Flattened {
                             &render_font,
                             value,
                         );
+                        }
                     }
                 }
                 FlattenedNodeKind::Text {
@@ -7082,6 +7096,37 @@ impl Flattened {
                             letter_spacing,
                         );
                     } else if !content.is_empty() {
+                        // Check if content is a checkbox/ballot box symbol
+                        // These characters are commonly missing from fallback fonts
+                        let checkbox_char = content.trim().chars().next();
+                        if content.trim().len() <= 4
+                            && matches!(
+                                checkbox_char,
+                                Some('☐' | '☑' | '☒' | '□' | '■' | '▢' | '▪')
+                            )
+                        {
+                            // Draw checkbox symbol as a rectangle
+                            let box_size = (scaled_font_size * 0.75) as i32;
+                            let box_x = content_x + 1;
+                            let box_y = content_y + ((scaled_font_size - box_size as f32) * 0.5) as i32;
+                            let line_color = Rgba([100u8, 100u8, 100u8, 255u8]);
+
+                            // Draw outline rectangle
+                            Self::draw_rect_outline(&mut img, box_x, box_y, box_size, box_size, line_color);
+
+                            // Draw check mark if checked
+                            if matches!(checkbox_char, Some('☑' | '☒' | '■' | '▪')) {
+                                let inset = (box_size as f32 * 0.2) as i32;
+                                Flattened::fill_rect(
+                                    &mut img,
+                                    box_x + inset,
+                                    box_y + inset,
+                                    box_size - 2 * inset,
+                                    box_size - 2 * inset,
+                                    line_color,
+                                );
+                            }
+                        } else {
                         // Fallback to simple text rendering for plain text content
                         // Use styled version to account for letter spacing
                         // Skip wrapping when the node's width was computed from PDF
@@ -7136,12 +7181,43 @@ impl Flattened {
                                 );
                             }
                         }
+                        }
                     }
                 }
             }
         }
 
         Ok(img)
+    }
+
+    /// Draw an outlined rectangle (1px stroke).
+    fn draw_rect_outline(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, color: Rgba<u8>) {
+        let iw = img.width() as i32;
+        let ih = img.height() as i32;
+        for dx in 0..w {
+            let px = x + dx;
+            if px >= 0 && px < iw {
+                if y >= 0 && y < ih {
+                    img.put_pixel(px as u32, y as u32, color);
+                }
+                let by = y + h - 1;
+                if by >= 0 && by < ih {
+                    img.put_pixel(px as u32, by as u32, color);
+                }
+            }
+        }
+        for dy in 0..h {
+            let py = y + dy;
+            if py >= 0 && py < ih {
+                if x >= 0 && x < iw {
+                    img.put_pixel(x as u32, py as u32, color);
+                }
+                let rx = x + w - 1;
+                if rx >= 0 && rx < iw {
+                    img.put_pixel(rx as u32, py as u32, color);
+                }
+            }
+        }
     }
 
     /// Draw border with proper edge styling
