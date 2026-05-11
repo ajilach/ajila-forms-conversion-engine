@@ -19,6 +19,8 @@ pub struct FontEntry {
     default_width: f64,
     /// The base font name (e.g. "Helvetica", "ArialMT").
     pub base_font: String,
+    /// Whether this font is a CIDFont (Type0 composite font) which uses 2-byte character codes.
+    is_cid: bool,
 }
 
 /// Strategy for mapping character codes to Unicode.
@@ -588,9 +590,9 @@ impl FontEntry {
 
     /// Whether this font uses 2-byte character codes (CIDFont).
     fn is_two_byte(&self) -> bool {
-        // Heuristic: if all width entries have codes > 255, it's likely CID
-        // Also Identity decoder is always 2-byte
-        matches!(&self.decoder, CharDecoder::Identity) || self.widths.keys().any(|&k| k > 255)
+        self.is_cid
+            || matches!(&self.decoder, CharDecoder::Identity)
+            || self.widths.keys().any(|&k| k > 255)
     }
 }
 
@@ -855,6 +857,14 @@ fn build_font_entry(doc: &Document, font_obj: &Object) -> Option<FontEntry> {
         .map(|n| String::from_utf8_lossy(n).to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
+    // Check if this is a CIDFont (Type0 composite font) from the /Subtype entry.
+    let is_cid = font_dict
+        .get(b"Subtype")
+        .ok()
+        .and_then(|o| o.as_name().ok())
+        .map(|n| n == b"Type0")
+        .unwrap_or(false);
+
     // Determine the decoder
     let decoder = build_decoder(doc, font_dict);
 
@@ -866,6 +876,7 @@ fn build_font_entry(doc: &Document, font_obj: &Object) -> Option<FontEntry> {
         widths,
         default_width,
         base_font,
+        is_cid,
     })
 }
 

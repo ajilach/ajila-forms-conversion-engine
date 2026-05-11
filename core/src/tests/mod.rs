@@ -26757,7 +26757,7 @@ fn test_aacs_de_lists() {
 }
 
 /// AALR: The "Anlageklassen" table has one non-field column (asset class names)
-/// and two field/checkbox columns ("Alt", "Neu"). The detector should turn each
+/// /// and two field/checkbox columns ("Alt", "Neu"). The detector should turn each
 /// row's text cell into a heading and label every checkbox with its column header.
 #[test]
 fn test_aalr_asset_class_table_detected() {
@@ -26835,6 +26835,69 @@ fn test_aalr_asset_class_table_detected() {
     }
 }
 
+// ============================================================================
+// AcroForm diagnostics
+// ============================================================================
+
+#[test]
+fn diag_acroform_text_extraction() {
+    use crate::pdf_parser;
+    use crate::pdf_parser::font_decoder;
+    let path = helpers::input_path("anordnung_psychologische_psychotherapie.pdf");
+    let bytes = std::fs::read(&path).expect("read PDF");
+
+    // Dump font map info
+    let doc = lopdf::Document::load_mem(&bytes).expect("load PDF");
+    let pages = doc.get_pages();
+    for (page_num, page_id) in &pages {
+        let font_map = font_decoder::build_font_map(&doc, *page_id);
+        println!("\n=== FONT MAP for page {} ===", page_num);
+        for (key, entry) in &font_map {
+            println!(
+                "  {} => base_font='{}' two_byte={}",
+                key,
+                entry.base_font,
+                entry.is_two_byte_public()
+            );
+        }
+    }
+
+    let pages = pdf_parser::parse_pdf(&bytes).expect("parse");
+
+    println!("\n=== PAGES: {} ===", pages.len());
+    for (pi, page) in pages.iter().enumerate() {
+        println!("\n--- Page {} ({} children) ---", pi, page.children.len());
+        let leaves = page.collect_nodes();
+        for (i, node) in leaves.iter().take(80).enumerate() {
+            match &node.kind {
+                crate::flattened::FlattenedNodeKind::Text {
+                    content,
+                    font_size,
+                    font_name,
+                    ..
+                } => {
+                    println!(
+                        "  TEXT[{}]: '{}' font={} size={} @ ({}, {})",
+                        i, content, font_name, font_size, node.x, node.y
+                    );
+                }
+                crate::flattened::FlattenedNodeKind::Field {
+                    name,
+                    value,
+                    label,
+                    is_checked,
+                    ..
+                } => {
+                    println!(
+                        "  FIELD[{}]: name='{}' value={:?} label={:?} checked={:?} @ ({}, {})",
+                        i, name, value, label, is_checked, node.x, node.y
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// AALQ: Same "Anlageklassen" field-column table as AALR — bordered text rows
 /// become headings and each checkbox is labeled with its column header.
 #[test]
@@ -26905,4 +26968,51 @@ fn test_aalq_asset_class_table_detected() {
             );
         }
     }
+}
+
+#[test]
+fn diag_acroform_second_pdf() {
+    use crate::pdf_parser::acroform::{AcroFieldType, extract_acroform_fields};
+    use crate::pdf_parser::content_stream::extract_text_runs;
+    let path = helpers::input_path("antrag_wirtschaftliche_sozialhilfe.pdf");
+    let bytes = std::fs::read(&path).expect("read PDF");
+    let doc = lopdf::Document::load_mem(&bytes).expect("load PDF");
+    let pages = doc.get_pages();
+    let mut page_ids: Vec<(u32, lopdf::ObjectId)> = pages.into_iter().collect();
+    page_ids.sort_by_key(|(n, _)| *n);
+
+    let mut page_heights: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+    let mut page_id_to_index: std::collections::HashMap<lopdf::ObjectId, usize> =
+        std::collections::HashMap::new();
+    for (i, (_num, pid)) in page_ids.iter().enumerate() {
+        page_id_to_index.insert(*pid, i);
+        page_heights.insert(i, 842.0);
+    }
+
+    let fields = extract_acroform_fields(&doc, &page_heights, &page_id_to_index);
+    println!("\n=== ACROFORM FIELDS ({}) ===", fields.len());
+    for f in &fields {
+        if f.field_type == AcroFieldType::Button {
+            println!(
+                "  BUTTON: name='{}' value='{}' checked={:?} rect={:?} page={}",
+                f.name,
+                f.value,
+                f.is_checked,
+                f.rect,
+                f.page_index.unwrap_or(999)
+            );
+        }
+    }
+
+    // Show text runs for page 0 that might be near checkbox area
+    let (_num, pid) = page_ids[0];
+    let runs = extract_text_runs(&doc, pid, 842.0);
+    println!("\n=== TEXT RUNS page 0 ({}) ===", runs.len());
+    for (i, r) in runs.iter().enumerate() {
+        println!(
+            "  RUN[{}]: '{}' font={} size={:.1} @ ({:.1}, {:.1}) w={:.1} h={:.1}",
+            i, r.text, r.font_name, r.font_size, r.x, r.y, r.width, r.height
+        );
+    }
+    copilot / acroform - flattening - improvements
 }
