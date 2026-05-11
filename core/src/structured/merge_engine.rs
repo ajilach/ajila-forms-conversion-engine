@@ -799,8 +799,9 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 
     match (a, b) {
         (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
-            ha.level.as_u8() == hb.level.as_u8()
-                && inline_text_shape_compatible(&ha.content, &hb.content)
+            // Some language variants differ in heading level assignment while
+            // still representing the same logical item.
+            inline_text_shape_compatible(&ha.content, &hb.content)
         }
         (StructuredNode::Paragraph(pa), StructuredNode::Paragraph(pb)) => {
             inline_text_shape_compatible(&pa.content, &pb.content)
@@ -818,7 +819,15 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
             false
         }
         (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
-        (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
+        (StructuredNode::Group(_), StructuredNode::Group(_)) => {
+            // Prefer anchor-key equality when available. This prevents unrelated
+            // section groups from being treated as interchangeable and drifting
+            // alignment inside glossary-like content.
+            match (a.anchor_key(), b.anchor_key()) {
+                (Some(ka), Some(kb)) => ka == kb,
+                _ => true,
+            }
+        }
         (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
             a.condition == b.condition
         }
@@ -1036,7 +1045,12 @@ struct TextShape {
 
 fn text_shape(input: &str) -> TextShape {
     let chars = input.chars().filter(|c| !c.is_whitespace()).count();
-    let words = input.split_whitespace().count();
+    // Count lexical tokens (not just whitespace-separated chunks) so
+    // slash-delimited compounds like "A/B" are treated as two words.
+    let words = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .count();
     let digits = input.chars().filter(|c| c.is_ascii_digit()).count();
     let punct = input.chars().filter(|c| c.is_ascii_punctuation()).count();
 
@@ -1940,6 +1954,13 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
 
             // Must be same top-level variant
             if std::mem::discriminant(left_node) != std::mem::discriminant(right_node) {
+                continue;
+            }
+
+            // Guard against over-eager neighborhood merges: same variant alone
+            // is insufficient for multilingual glossary headings where nearby
+            // entries can be reordered or have very different text shapes.
+            if !node_matches_for_similarity(left_node, right_node) {
                 continue;
             }
 

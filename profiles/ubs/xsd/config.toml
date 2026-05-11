@@ -31,6 +31,8 @@ rootElementName = "UBSAF_{{ form_code }}"
 # use the same root element name as the form.
 fragmentBindRefPrefix = "UBSAF"
 
+masterLanguage = "en"
+
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---

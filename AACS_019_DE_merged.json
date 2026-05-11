@@ -1,0 +1,2267 @@
+{
+  "context": {
+    "language": "de",
+    "variables": {
+      "formrange_formsetready": "false",
+      "Footer_Line_txtvversion": "V0",
+      "formrange_cdokinfo": "65432",
+      "Footer_Line_APPCode": "",
+      "formrange_version": "V0",
+      "Footer_Line_MANCode": "019",
+      "formrange_entity": "019",
+      "Footer_Line_txtlanguage": "DE",
+      "formrange_releasedate": "31.10.2019",
+      "formrange_code": "AACS",
+      "formrange_htmlready": "false",
+      "Footer_Line_txtformid": "65432",
+      "formrange_partnerlevel": "No",
+      "Footer_Line_txtversiondate": "31.10.2019",
+      "formrange_language": "DE",
+      "Footer_Line_txtjversion": "N1"
+    }
+  },
+  "content": [
+    {
+      "type": "heading",
+      "level": "h1",
+      "content": [
+        {
+          "type": "text",
+          "content": "Automatischer Informationsaustausch (AEI Automatic Exchange of Information) Foreign Account Tax Compliance Act (FATCA)"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Anhang zu den UBS-Selbstauskunfts-Formularen mit zusätzlichen Erklärungen zu den AEI-/FATCA-Begriffen"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Bitte beachten Sie: Diese Definitionen beziehen sich auf die am meisten verbreiteten Normen und Definitionen für die allgemeine Anwendung von FATCA und AEI. In einzelnen Ländern können andere Vorschriften gelten. Bitte lesen Sie die vor Ort geltenden Gesetze und die zugehörigen Richtlinien, um sicherzustellen, dass Sie allen bestehenden Anforderungen nachkommen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Active NFE – Other/Active NFFE – Other"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Die Begriffe Active NFE – Sonstige (im Rahmen von AEI) und Active NFFE – Sonstige (im Rahmen von FATCA) bezeichnen ein NFE/NFFE, das den nachstehenden Kriterien entspricht:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Weniger als 50% des Bruttoertrags des NFE/NFFE des vorher-gehenden Kalenderjahres oder eines entsprechenden Berichtszeitraums sind passive Erträge und weniger als 50% des im vorhergehenden Kalenderjahr oder im entsprechenden Berichtszeitraum vom NFE gehaltenen Vermögens sind Anlagen, die passive Erträge generieren oder zu diesem Zweck gehalten werden;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Die Geschäftstätigkeit des NFE/NFFE besteht praktisch aus-schließlich darin, alle oder einen Teil der im Umlauf befindlichen Aktien einer oder mehrerer Tochtergesellschaften zu halten, die Transaktionen bzw. Geschäfte außerhalb des Aktivitätsbereichs von Finanzinstituten tätigen, bzw. diese Tochtergesellschaften zu finanzieren oder Dienstleistungen für sie zu erbringen. Nicht als NFE/NFFE gelten Unternehmen, die als Anlagefonds fungieren (oder nach außen als solche auftreten), beispielsweise als Private-Equity-Fonds, Risikokapitalfonds, Leveraged-Buyout-Fonds oder anderes Anlagevehikel, dessen Zweck es ist, Unternehmen zu erwerben oder zu finanzieren und dann Anteile an diesen Unternehmen als Kapitalvermögen zu Anlagezwecken zu halten;"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Das NFE/NFFE geht noch keinen Geschäften nach und ist noch nie Geschäften nachgegangen, investiert jedoch in Anlagen mit dem Ziel, anderen Geschäften als denen eines Finanzinstituts nachzugehen, sofern das NFE/NFFE die Voraussetzungen für diese Ausnahme nach dem Ablauf einer 24-Monats-Frist ab seiner Gründung nicht erfüllt;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Das NFE/NFFE war in den letzten fünf Jahren kein Finanzinstitut und ist dabei, sein Vermögen zu liquidieren oder neu zu organisieren, um Aktivitäten fortzusetzen oder wieder aufzunehmen, die nicht der Tätigkeit eines Finanzinstituts entsprechen;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Das NFE/NFFE tätigt hauptsächlich Finanzierungs- und Hedging-Transaktionen mit oder für verbundene Gesellschaften, bei denen es sich nicht um Finanzinstitute handelt, und stellt keine Finanzierungs- oder Hedging-Dienstleistungen für Gesellschaften bereit, bei denen es sich nicht um verbundene Gesellschaften handelt, sofern die Gruppe dieser verbundenen Gesellschaften hauptsächlich Geschäfte außerhalb des Aktivitätsbereichs von Finanzinstituten tätigt;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Das NFE/NFFE ist eine nicht auf Gewinnerzielung gerichtete Einrichtung; oder"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "dessen Aktien regelmäßig an einer etablierten Wertpapierbörse gehandelt werden; oder"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "das eine verbundene Gesellschaft eines Unternehmens ist, dessen Aktien regelmäßig an einer etablierten Wertpapierbörse gehandelt werden (im Rahmen von AEI muss die verbundene Gesellschaft auch eine Kapitalgesellschaft sein)."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "die in einem IGA-Land etabliert ist;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "die als Kollektivanlagevehikel reguliert ist; und"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Das NFFE ist ein sogenanntes Excepted NFFE gemäß den Vorschriften des US-Finanzministeriums (nur im Rahmen von FATCA)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Börsenkotiertes Nicht-Finanzinstitut und verbundenes Unternehmen/Börsenkotiertes NFFE oder NFFE-Tochtergesellschaft eines börsenkotierten Unternehmens"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "(oder an deren Vorgängerin) in den drei Kalenderjahren vor dem Kalenderjahr, in dem die Bestimmung erfolgt, jährlich Aktien im Wert von mehr als USD 1 000 000 000 gehandelt wurden."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Regierungsinstanz/Ausländische Regierung"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Regierungsinstanz (AEI) und ausländische Regierung (FATCA) bezeichnen die Regierung eines Landes (FATCA: Nicht-US-Land), alle politischen Unterteilungen eines Landes (das heißt, um Zweifel auszuschließen, Bundesstaaten, Provinzen, Bezirke oder Kommunen) oder alle zu 100% kontrollierten Instanzen oder Einrichtungen eines Landes oder einer oder mehrerer der zuvor genannten Unterteilungen. Diese Kategorie umfasst die integralen Bestandteile, kontrollierten Rechtsgebilde und politischen Unterteilungen eines Landes."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Aktives Nicht-Finanzinstitut (aktives NFE)/ Aktives ausländisches Nicht-Finanzinstitut (aktives NFFE)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Die Begriffe aktives NFE (AEI) oder aktives NFFE (FATCA) bezeichnen ein NFE/NFFE, das den Kriterien für die nachstehenden Klassifizierungen entspricht:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "börsenkotiertes Nicht-Finanzinstitut und verbundenes Unternehmen (AEI)/börsenkotiertes NFFE oder NFFE-Tochtergesellschaft eines börsenkotierten Unternehmens (FATCA);"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Regierungsinstanz (AEI)/ausländische Regierung (FATCA);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Zentralbank (AEI)/ausländische Zentralbank (FATCA);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "aktives NFE – Sonstige (AEI)/aktives NFFE – Sonstige (FATCA)."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "internationale Organisation (AEI und FATCA); oder"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Klassifizierung gemäß AEI"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Klassifizierung gemäß AEI bedeutet die Einstufung einer juristischen Person im Rahmen von AEI (zum Beispiel als Finanzinstitut oder aktives NFE oder passives NFE)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Automatischer Informationsaustausch (AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "AEI beruht auf dem gemeinsamen Meldestandard der OECD und verlangt von berichtenden Finanzinstituten (RFI), den Steuerbehörden in ihrem Land jedes Jahr bestimmte Informationen zu allen von ihnen geführten Konten zu melden, die im Rahmen der entsprechenden Due-Diligence-Verfahren als meldepflichtige Konten identifiziert wurden. Die einheimischen Steuerbehörden leiten daraufhin diese Informationen den Steuerbehörden des Landes weiter, in dem das Steuerdomizil der meldepflichtigen Person liegt."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Wirtschaftlich Berechtigter (nach vor Ort geltenden KYC-/AML-Vorschriften)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Der wirtschaftlich Berechtigte ist normalerweise die natürliche Person/operative Gesellschaft, der das bei dem Finanzinstitut hinterlegte Vermögen aus wirtschaftlicher Sicht letztlich gehört. Die genaue Definition des Begriffs hängt allerdings von den Bestimmungen der in den einzelnen Ländern geltenden KYC-/AML-Vorschriften ab."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Geschäftsstelle"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Geschäftsstelle (AEI und FATCA) bezeichnet eine Einheit, ein Geschäft oder ein Büro eines Unternehmens, die/das in einem Land rechtlich als Geschäftsstelle gilt oder in einem Land rechtlich getrennt von anderen Büros, Einheiten oder Geschäftsstellen des Unternehmens behandelt wird."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Börsenkotiertes Nicht-Finanzinstitut und verbundenes Unternehmen (AEI) und börsenkotiertes NFFE oder NFFE-Tochtergesellschaft eines börsenkotierten Unternehmens (FATCA) bezeichnen ein NFE/NFFE:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "des US-Finanzministeriums oder eines geltenden IGA nach Modell 2 als solches gilt oder aufgrund eines IGA nach Modell 1 ein nicht berichtendes FFI ist."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Kollektivanlagevehikel (nur IGA nach Modell 1) (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Eine «etablierte Wertpapierbörse» bezeichnet eine Börse, die von einer staatlichen Aufsichtsbehörde in dem Land offiziell anerkannt und beaufsichtigt ist, in dem die Börse sich befindet, und an der"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Kollektivanlagevehikel (FATCA) bezeichnet eine Anlagegesellschaft:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "deren Anteile (einschließlich Fremdkapital von mehr als USD 50 000) allesamt von oder durch einen oder mehrere befreite wirtschaftlich Berechtigte, aktive NFFEs, US-Personen, die keine spezifizierten US-Personen sind, oder Finanzinstitute, die nicht teilnehmende Finanzinstitute sind, gehalten werden."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Befreite Vorsorgeeinrichtung (FATCA) bezeichnet eine juristische Person, die den Anforderungen einer der nachstehenden Unterkategorien entspricht, die in einem geltenden IGA oder den Vorschriften des US-Finanzministeriums festgelegt sind:"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Treaty-Qualified Retirement Fund;"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Beherrschende Person"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Der Begriff \"beherrschende Person\" gemäß AEI und FATCA bezeichnet die natürlichen Personen, welche die Kontrolle über eine juristische Person ausüben. Eine juristische Person wird üblicherweise von einer/den natürlichen Person(en) beherrscht, die letztendlich einen beherrschenden Anteil am Kapital des Unternehmens hält/halten. Ein beherrschender Anteil hängt von der Kapitalstruktur der juristischen Person ab und kann auf der Basis eines Schwellenwerts identifiziert werden, d. h., nur jene Personen sind beherrschende Personen, die mehr als einen bestimmten Prozentsatz am Kapital des Unternehmens halten. Sofern keine natürliche(n) Person(en) das Unternehmen durch eine Kapitalbeteiligung beherrscht/beherrschen, ist/sind die beherrschende(n) Person(en) des Unternehmens die natürliche(n) Person(en), die das Unternehmen mit anderen Mitteln beherrscht/beherrschen. Sollte keine natürliche Person zu identifizieren sein, die das Unternehmen beherrscht, ist/sind die beherrschende(n) Person(en) des Unternehmens die natürliche(n) Person(en), die an der Spitze der Geschäftsführung steht/stehen. Bei einem Trust bezeichnet der Begriff beherrschende Person den/die Settlor(s), den/die Treuhänder, den/die Protector(s) (falls vorhanden), den/die Begünstigten oder die Klasse(n) der Begünstigten sowie alle natürlichen Personen, die letztendlich die effektive Kontrolle über den Trust ausüben. Der/Die Settlor(s), der/die Treuhänder, der/die Protector(s) (falls vorhanden), der/die Begünstigte(n) oder die Klasse(n) der Begünstigten ist/sind immer als beherrschende Personen eines Trusts zu behandeln, ob sie nun den Trust beherrschen oder nicht. Bei einem Rechtsgebilde, das kein Trust ist, bezeichnet der Begriff beherrschende Person(en) Personen in der gleichen oder einer ähnlichen Position."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Beherrschende US-Personen (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "In Bezug auf ein Konto, das in einem IGA-Land geführt wird, bezeichnet beherrschende US-Person (der «Substantial US Owner» in den Vorschriften des US-Finanzministeriums) eine beherrschende Person, die eine spezifizierte US-Person ist."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Juristische Person"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Juristische Person (AEI und FATCA) bezeichnet eine juristische Person oder einen Rechtsträger wie Kapitalgesellschaften, Organisationen, Personengesellschaften, Trusts und Stiftungen. Der Begriff umfasst jedoch weder natürliche Personen noch Einzelunternehmen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Befreite Vorsorgeeinrichtung (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Broad Participation Retirement Fund; – Narrow Participation Retirement Fund;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Pension Fund of an Exempt Beneficial Owner; oder – Investment Entity Wholly Owned by Exempt Beneficial Owners."
+            },
+            {
+              "type": "strong",
+              "content": {
+                "type": "text",
+                "content": " "
+              }
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Wirtschaftlich Berechtigte gemäß FATCA"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Ein wirtschaftlich Berechtigter gemäß FATCA hält:"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Zentralbank/Ausländische Zentralbank"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Zentralbank (AEI) und ausländische Zentralbank (FATCA) bezeichnen eine Institution, die nicht die Regierung des Landes ist (FATCA: nur Nicht-US-Land) und von Rechts wegen oder von der Regierung als Hauptinstanz eingesetzt wurde, die als Währung dienende Instrumente in Umlauf setzen darf. Eine solche Institution kann eine Einrichtung umfassen, die von der Regierung des Landes unabhängig ist, ob sie nun zum Teil oder vollständig dem Land gehört."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "wirtschaftlichen, rechtlichen, tatsächlichen und sonstigen relevanten Umstände berücksichtigt werden, unter denen diese Erträge erhalten wurden; sie bezieht sich nicht auf Personen, die Erträge als Vertreter, Bevollmächtigte oder Vermittler für eine andere Person erhalten. "
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Zertifiziertes, als FATCA-konform erachtetes FFI (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Zertifiziertes, als FATCA-konform erachtetes FFI (nur FATCA) bezeichnet ein FFI, das aufgrund der entsprechenden Vorschriften"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Klassifizierung gemäß FATCA"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Klassifizierung gemäß FATCA bezeichnet die Einstufung einer juristischen Person in FATCA-Kategorien (zum Beispiel als teilnehmendes FFI, berichtendes IGA FFI, als FATCA-konform erachtetes FFI, nicht berichtendes IGA FFI, befreiter wirtschaftlich Berechtigter, aktives NFFE oder passives NFFE)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "FATCA-Sponsor"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FATCA-Sponsor (FATCA) bezeichnet eine juristische Person, die:"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "zugestimmt hat, alle FATCA-Pflichten betreffend Due Diligence, Quellensteuer, Meldung und weitere Pflichten im Zusammenhang mit dem Finanzkonto, das von der gesponserten Anlagegesellschaft oder dem Sponsored, Closely Held Investment Vehicle gehalten wird, zu erfüllen."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Depotinstitut;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Anlagegesellschaft;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Nähere Definitionen der Klassifizierungen für Finanzinstitute sind den entsprechenden Landesrichtlinien und dem CRS zu entnehmen. Typische Beispiele für ausländische Finanzinstitute sind Banken, Fonds, Wertschriftenmakler beziehungsweise Händler, Depotstellen, Treuhandgesellschaften und Lebensversicherungsgesellschaften."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "im Namen einer gesponserten Anlagegesellschaft oder eines Sponsored, Closely Held Investment Vehicle (zum Beispiel Fondsmanager, Treuhänder, Unternehmensleiter oder Geschäftsführer) handeln darf; und"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "In Bezug auf ein Sponsored, Closely Held Investment Vehicle muss ein FATCA-Sponsor eine FATCA-Klassifizierung als berichtendes US-Finanzinstitut, teilnehmendes FFI, berichtendes FFI nach Modell 1 oder berichtendes FFI nach Modell 2 haben."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Foreign Account Tax Compliance Act (FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "FATCA ist das Akronym für Foreign Account Tax Compliance Act. Die Bestimmungen von FATCA wurden am 18. März 2010 im Rahmen des US-amerikanischen Hiring Incentives to Restore Employment (HIRE) Act gesetzlich verankert. gemäß FATCA müssen ausländische Finanzinstitute (FFIs) US-Konten identifizieren und sie direkt oder indirekt über ihre einheimischen Steuerbehörden dem US Internal Revenue Service (IRS) melden. FFIs und ihre Kunden, die sich nicht an die FATCA-Anforderungen halten, zahlen eine Quellensteuer von 30% auf Erträge aus US-Wertschriften."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Finanzinstitut/Ausländisches Finanzinstitut"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Finanzinstitut (AEI) beziehungsweise ausländisches Finanzinstitut (FATCA) bezeichnet eine juristische Person (FATCA: juristische Nicht-US-Person), die einer der nachstehenden Formen entspricht:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "teilnehmendes FFI;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "berichtendes FFI nach Modell 2;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "gesponserte Anlagegesellschaft und beherrschte ausländische Kapitalgesellschaft (ab 1. Januar 2017, die Anforderungen hängen vom jeweiligen Land des Unternehmens ab);"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "FATCA-Sponsor; und"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Zwischenstaatliches Abkommen (IGA) (nur FATCA)"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "die geltenden Gesetz im Sitzland des NFE/NFFE oder die Gründungsurkunden des NFE/NFFE erlauben es nicht, dass natürlichen Personen oder nicht gemeinnützigen Einrichtungen Er-träge oder Vermögen des NFE/NFFE ausgezahlt werden, sofern die Auszahlung nicht im Rahmen der wohltätigen Aktivitäten des NFE/NFFE oder als angemessene Vergütung für erbrachte Leistungen oder als Bezahlung des fairen Marktpreises von Immobilien, die das NFE/NFFE erworben hat, erfolgt; und"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "die geltenden Gesetze des Sitzlandes des NFE/NFFE oder die Gründungsurkunden des NFE/NFFE sehen vor, dass infolge der Abwicklung oder Auflösung des NFE/NFFE dessen gesamtes Vermögen einer Regierungsinstanz oder einer nicht auf Gewinnerzielung gerichteten Einrichtung zukommt oder der Regierung des Sitzlandes des NFE/NFFE oder einer Unterteilung dieses Landes anheimfällt."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Verwahrstelle;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Holdinggesellschaft oder Treasury Center (nur für juristische Personen außerhalb eines IGA-Landes zutreffend); oder"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "spezifizierte Versicherungsgesellschaft."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Global Intermediary Identification Number (GIIN) (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "GIIN bezeichnet die Identifikationsnummer, die der US-IRS unter anderem juristischen Personen mit dem nachstehenden FATCA-Status im Anschluss an die FATCA-Registrierung beim IRS zuteilt:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "berichtendes FFI nach Modell 1;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "registriertes, als FATCA-konform erachtetes FFI;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Treuhänder eines Trusts mit Treuhänderdokumentation."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "listStyle": "lower-alpha",
+      "items": [
+        {
+          "content": [
+            {
+              "type": "text",
+              "content": "Aktien einer Kapitalgesellschaft oder Gewinn-/Kapitalbeteili-gungen an einer Personengesellschaft und/oder"
+            }
+          ]
+        },
+        {
+          "content": [
+            {
+              "type": "text",
+              "content": "Fremdkapitalbeteiligungen (zum Beispiel Anleihen oder Kredite) von Kapital- oder Personengesellschaften (ausgenommen Fremdkapitalbeteiligungen, die von FATCA-konformen Finanzinstituten gehalten werden)."
+            }
+          ],
+          "sublist": {
+            "listStyle": "dash",
+            "items": [
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Zwischenstaatliches Abkommen (IGA) (nur FATCA)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "die geltenden Gesetz im Sitzland des NFE/NFFE oder die Gründungsurkunden des NFE/NFFE erlauben es nicht, dass natürlichen Personen oder nicht gemeinnützigen Einrichtungen Er-träge oder Vermögen des NFE/NFFE ausgezahlt werden, sofern die Auszahlung nicht im Rahmen der wohltätigen Aktivitäten des NFE/NFFE oder als angemessene Vergütung für erbrachte Leistungen oder als Bezahlung des fairen Marktpreises von Immobilien, die das NFE/NFFE erworben hat, erfolgt; und"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "die geltenden Gesetze des Sitzlandes des NFE/NFFE oder die Gründungsurkunden des NFE/NFFE sehen vor, dass infolge der Abwicklung oder Auflösung des NFE/NFFE dessen gesamtes Vermögen einer Regierungsinstanz oder einer nicht auf Gewinnerzielung gerichteten Einrichtung zukommt oder der Regierung des Sitzlandes des NFE/NFFE oder einer Unterteilung dieses Landes anheimfällt."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Anlageberater und Anlageverwalter (FATCA) bezeichnen ein FFI, das:"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "im Rahmen der entsprechenden Vorschriften des US-Finanzministeriums als FATCA-konform erachtetes FFI oder befreiter wirtschaftlich Berechtigter eingestuft wird."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "nicht einer Expanded Affiliated Group gehört oder angehört mit einem FFI, das ein Depotinstitut, eine Verwahrstelle oder eine spezifizierte Versicherungsgesellschaft ist;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "der designierten Einbehaltungsstelle (zum Beispiel UBS) Dokumente, die es als OdFFI ausweisen, ein Owner Reporting State-ment und gültige Dokumente für jede im Owner Reporting Statement aufgeführte Person zukommen lässt;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Nicht teilnehmendes ausländisches Finanzinstitut (nur FATCA)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Nicht teilnehmendes ausländisches Finanzinstitut (FATCA) bezeichnet ausländische Finanzinstitute mit Ausnahme von:"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "teilnehmenden FFIs;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "berichtenden FFIs nach Modell 2;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "nicht berichtenden IGA FFIs; oder"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Nicht teilnehmendes Land (nur AEI)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Rentenzahlungen;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "den positiven Saldo aus Transaktionen (einschließlich Transaktionen mit Futures, Forwards und Optionen sowie ähnlicher Transaktionen) in Finanzanlagen;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "den positiven Saldo aus Fremdwährungsgewinn und Fremd-währungsverlust;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Nettoerträge aus Swaps oder Notional Principal Contracts; oder"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "es hat keine Aktionäre oder Mitglieder, die an seinen Erträgen oder an seinem Vermögen als Eigentümer oder wirtschaftlich Berechtigte beteiligt sind;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "angemessener Weise anfordert, um seine Pflichten nach AEI und FATCA zu erfüllen, zum Beispiel ob das Steuerdomizil des Kontoinhabers in einem meldepflichtigen Land (AEI) oder den USA (FATCA) liegt und, bei juristischen Personen, wie sie gemäß AEI und FATCA klassifiziert sind."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Passives Nicht-Finanzinstitut (passives NFE)/"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Spezifizierte US-Personen (nur FATCA)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "ein US-Bürger ist (auch bei Doppel- und Mehrfachstaats-bürgerschaften);"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "eine US Green Card besitzt (unabhängig von der Gültig-keitsdauer);"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Professionell verwaltete Anlagegesellschaft (AEI und FATCA) bezeichnet eine juristische Person (FATCA: juristische Nicht-US-Person):"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "die professionell verwaltet wird; und"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Meldepflichtiges Konto (nur AEI)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "einer oder mehreren meldepflichtigen Personen; oder"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "das einen FATCA-Sponsor hat, der im Namen der Anlagegesellschaft handeln darf (zum Beispiel Fondsmanager, Treuhänder, Unternehmensleiter oder Geschäftsführer) und zugestimmt hat, alle FATCA-Pflichten betreffend Due Diligence, Quellensteuer, Meldung sowie weitere Pflichten im Zusammenhang mit dem Finanzkonto, das von der Anlagegesellschaft gehalten wird, zu erfüllen."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Regierungsinstanz;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Zentralbank;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Finanzinstitut."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Berichtendes Finanzinstitut (nur AEI)"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": ""
+                  },
+                  {
+                    "type": "strong",
+                    "content": {
+                      "type": "text",
+                      "content": "Eigenerklärung"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "ein ausländisches Finanzinstitut ist;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "in einem IGA-Land etabliert ist (sofern dieser Status im An-hang II des IGA des betreffenden Landes vorgesehen ist); und"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "einen Treuhänder mit der Klassifizierung als berichtendes US-Finanzinstitut, teilnehmendes FFI, berichtendes FFI nach Modell 1 oder berichtendes FFI nach Modell 2 hat und alle gemäß IGA meldepflichtigen Informationen betreffend alle meldepflichtigen US-Konten des Trusts meldet."
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Im Rahmen von AEI gelten Sonderregeln für:"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Trusts, die Finanzinstitute sind und im Rahmen von AEI am Wohnsitz ihres/ihrer Treuhänder(s) ansässig sind, sofern sie kein Steuersubjekt sind in einem Land, das AEI umgesetzt hat, und den Steuerbehörden dieses Landes alle gemäß CRS erforderlichen Informationen über das von ihnen geführte meldepflichtige Konto melden;"
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Trusts, die NFEs sind und im Rahmen von AEI kein Steuerdomizil haben, sofern sie nicht gemäß dem nationalen Recht eines Landes dessen Steuersubjekt (Steuerpflichtiger) sind; und "
+                  }
+                ]
+              },
+              {
+                "content": [
+                  {
+                    "type": "text",
+                    "content": "Geschäftsstellen, die ihr Steuerdomizil im Rahmen von AEI in dem Land haben, in dem der Hauptsitz des Unternehmens, dessen Geschäftsstelle sie sind, sein Steuerdomizil hat."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "ähnlichen Rolle im Namen oder für Rechnung einer anderen Person handelt."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Bei indirekten Beteiligungen gelten die Personen, denen die juristische Person letztlich gehört (zum Beispiel über eine Beteiligungskette), als wirtschaftlich Berechtigte. In der Regel bezieht sich diese Bezeichnung auf Personen, die zu Steuerzwecken Anspruch auf die Erträge haben und den wirtschaftlichen Nutzen daraus ziehen wobei die"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Internationale Organisation"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Internationale Organisation (AEI und FATCA) bezeichnet eine internationale Organisation oder deren zu 100% gehaltene Vertretung oder Einrichtung. Zu dieser Kategorie zählen zwischenstaatliche Organisationen (einschließlich supranationaler Organisationen), (1) denen hauptsächlich Regierungen angehören (FATCA: Nicht-US-Regierungen); (2) die in dem Land einen Sitz oder eine ähnliche Einrichtung unterhalten; und (3) deren Erträge nicht natürlichen Personen zugutekommen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Anlageberater und Anlageverwalter"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "nur als FFI gilt, weil es als Unternehmen für einen Kunden oder im Namen eines Kunden eine oder mehrere der nachstehenden Aktivitäten oder Transaktionen ausübt: (i) Handel mit Finanzinstrumenten; (ii) individuelle oder kollektive Portfolioverwaltung; oder (iii) anderweitige Investition in, Administration oder Verwaltung von Fonds, Geld oder Finanzanlagen im Namen anderer Personen; und"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Nicht teilnehmendes ausländisches Finanzinstitut (nur FATCA)"
+                  }
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Nicht teilnehmendes ausländisches Finanzinstitut (FATCA) bezeichnet ausländische Finanzinstitute mit Ausnahme von:"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "teilnehmenden FFIs;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "berichtenden FFIs nach Modell 2;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "nicht berichtenden IGA FFIs; oder"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Nicht teilnehmendes Land (nur AEI)"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "keine Führung von Finanzkonten."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Postadresse"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Postadresse bezeichnet die Anschrift, an die dem Kunden die Korrespondenz, zum Beispiel Briefe oder Kontoauszüge, zugestellt wird."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nicht-Finanzinstitut (NFE)/ Ausländisches Nicht-Finanzinstitut (NFFE)"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nonfinancial Group Entity"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nonfinancial Group Entity bezeichnet alle NFEs (AEI) oder NFFEs (FATCA), deren Geschäftstätigkeit praktisch ausschließlich darin besteht, alle oder einen Teil der im Umlauf befindlichen Aktien einer oder mehrerer Tochtergesellschaften zu halten, die Transaktionen beziehungsweise Geschäfte außerhalb des Aktivitätsbereichs von Finanzinstituten tätigen, beziehungsweise diese  Tochtergesellschaften zu finanzieren oder Dienstleistungen für sie zu erbringen, sofern diese NFEs/NFFEs nicht als Anlagefonds fungieren (oder als solche auftreten), beispielsweise als Private-Equity-Fonds, Risikokapitalfonds, Leveraged-Buyout-Fonds oder anderes Anlagevehikel, dessen Zweck es ist, Unternehmen zu erwerben oder zu finanzieren und dann Anteile an diesen Unternehmen als Kapitalvermögen zu Anlagezwecken zu halten."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "berichtenden FFIs nach Modell 1;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "als FATCA-konform erachteten FFIs;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "befreiten wirtschaftlich Berechtigten."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Aus der Sicht eines Landes, das AEI umgesetzt hat, ist ein nicht teilnehmendes Land (gemäß AEI) ein anderes Land, das kein teilnehmendes Land ist."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nicht auf Gewinnerzielung gerichtete Einrichtung"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nicht auf Gewinnerzielung gerichtete Einrichtung (AEI und FATCA) bezeichnet ein NFE/NFFE, das alle nachstehenden Anforderungen erfüllt:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "IGA bezeichnet ein Abkommen oder eine Vereinbarung zwischen den USA und einem Nicht-US-Land über die Umsetzung von FATCA in dem Nicht-US-Land. Ein IGA ändert die FATCA-Bestimmungen ab, um eventuelle rechtlichen Konflikte zu vermeiden und Verwaltungshindernisse abzubauen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Intermediär"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Ein Intermediär ist eine Person, die als Vertreter, Depotstelle, Makler, Bevollmächtigter, Zeichnungsberechtigter, Anlageberater oder in einer"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Nicht berichtendes IGA FFI (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Ein nicht berichtendes IGA FFI (FATCA) bezeichnet eine juristische Person in einem IGA-Land, die:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "im Anhang II des IGA zwischen dem Land und der USA als nicht berichtendes IGA FFI beschrieben ist; oder"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "nicht einer Expanded Affiliated Group gehört oder angehört mit einem FFI, das ein Depotinstitut, eine Verwahrstelle oder eine spezifizierte Versicherungsgesellschaft ist;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "der designierten Einbehaltungsstelle (zum Beispiel UBS) Dokumente, die es als OdFFI ausweisen, ein Owner Reporting State-ment und gültige Dokumente für jede im Owner Reporting Statement aufgeführte Person zukommen lässt;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Rentenzahlungen;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "den positiven Saldo aus Transaktionen (einschließlich Transaktionen mit Futures, Forwards und Optionen sowie ähnlicher Transaktionen) in Finanzanlagen;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "den positiven Saldo aus Fremdwährungsgewinn und Fremd-währungsverlust;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Nettoerträge aus Swaps oder Notional Principal Contracts; oder"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "angemessener Weise anfordert, um seine Pflichten nach AEI und FATCA zu erfüllen, zum Beispiel ob das Steuerdomizil des Kontoinhabers in einem meldepflichtigen Land (AEI) oder den USA (FATCA) liegt und, bei juristischen Personen, wie sie gemäß AEI und FATCA klassifiziert sind."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Spezifizierte US-Personen (nur FATCA)"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Gemeinsamer Meldestandard der OECD (CRS)"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Ausländisches Finanzinstitut mit Eigentümerdokumentation (OdFFI) (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "OdFFI (FATCA) bezeichnet ein ausländisches Finanzinstitut, das:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "nur deshalb ein ausländisches Finanzinstitut ist, weil es eine Anlagegesellschaft ist;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "kein Finanzkonto für nicht teilnehmende ausländische Finanzinstitute führt;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "eine designierte Quellensteuer-Einbehaltungsstelle (zum Beispiel UBS) hat, die zugestimmt hat, dem US-IRS direkt oder indirekt über ihre einheimischen Steuerbehörden alle relevanten Informationen betreffend alle spezifizierten US-Personen auf dem Owner Reporting Statement (vorbehaltlich einiger Ausnahmen für indirekte Berechtigte) zukommen zu lassen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Teilnehmender Staat (nur für AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Der Begriff teilnehmender Staat bezeichnet ein Land, mit dem das Land des UBS-Finanzinstituts ein AEI-Abkommen geschlossen hat (oder von dem angenommen wird, dass es ein solches Abkommen geschlossen hat)."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Passive Erträge"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Vorbehaltlich bestimmter Beschränkungen für gewerbliche Transaktionen (zum Beispiel für bestimmte Händler) wird generell davon ausgegangen, dass passive Erträge den Anteil des Bruttovermögens darstellen, der folgende Posten umfasst:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Dividenden (einschließlich Ersatzdividenden); Zinsen (einschließlich zinsähnlicher Erträge); Mieten und Lizenzeinnahmen;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "content": "Der CRS beschreibt die Anforderungen an die Melde- und Due-Diligence-Verfahren, die dem OECD-Standard für den Automatischen Informationsaustausch (AEI) zugrunde liegen. Damit überall dieselben Standards herrschen, müssen alle am AEI teilnehmenden Länder die CRS-Anforderungen in nationales Recht übertragen. NFE (AEI) oder NFFE (FATCA) bezeichnet eine juristische Person (FATCA: juristische Nicht-US-Person), die kein Finanzinstitut/ausländisches Finanzinstitut ist."
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Es wurde in seinem Sitzland ausschließlich für religiöse, gemeinnützige, wissenschaftliche, künstlerische, kulturelle, sportliche oder Bildungszwecke gegründet und wird für diese Zwecke betrieben; oder es wurde in seinem Sitzland als Fachorganisation, Unternehmensverband, Handelskammer, Arbeitnehmerorganisation, Landwirtschafts- oder Gartenbauorganisation, zivilgesellschaftliche Einrichtung oder Organisation, die ausschließlich der Förderung der sozialen Wohlfahrt dient, gegründet und wird für diese Zwecke betrieben;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "es ist in seinem Sitzland einkommenssteuerbefreit;"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Passives ausländisches Nicht-Finanzinstitut (passives NFFE)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Passives NFE (AEI) oder passives NFFE (FATCA) bezeichnet ein NFE/NFFE, das kein aktives NFE/aktives NFFE ist."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Professionell verwaltet"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Eine juristische Person gilt als professionell verwaltet, wenn ein anderes Finanzinstitut direkt oder über einen weiteren Dienstleister eine der nachstehenden Aktivitäten oder Transaktionen im Namen der verwalteten juristischen Person übernimmt: (i) Handel mit Finanzinstrumenten; (ii) individuelle oder kollektive Portfolioverwaltung; oder (iii) anderweitige Investition in, Administration oder Verwaltung von Fonds, Geld oder Finanzanlagen. Eine juristische Person ist nicht professionell verwaltet, wenn das verwaltende Finanzinstitut nicht ermächtigt ist, das ganze Vermögen der juristischen Person oder einen Teil davon nach eigenem Ermessen zu verwalten. Sofern eine juristische Person von Finanzinstituten und weiteren Personen gleichzeitig verwaltet wird, gilt die juristische Person als professionell verwaltet."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Professionell verwaltete Anlagegesellschaft"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "deren Bruttoertrag aus der Anlage und Wiederanlage in beziehungsweise dem Handel mit Finanzanlagen mindestens 50% des Bruttoertrags entspricht, (i) der in der Dreijahresperiode per 31. Dezember des Jahres vor dem Jahr, in dem die Bestimmung erfolgt, erzielt wurde; oder (ii) der seit der Gründung der juristischen Person erzielt wurde, sollte dieser Zeitraum kürzer sein. Auch wenn juristische Personen diesen Anforderungen entsprechen, können sie in ihrem Sitzland aufgrund landesspezifischer Ausnahmen nicht als professionell verwaltete Anlagegesellschaften gelten."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Meldepflichtiges Konto (AEI) bezeichnet ein Konto, das gehalten wird von:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "einem passiven NFE oder einer professionell verwalteten Anlagegesellschaft mit einer oder mehreren beherrschenden Personen, die meldepflichtige Personen sind."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Meldepflichtiges Land (nur AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Meldepflichtiges Land bezeichnet ein Land, mit dem das Land des UBS-Finanzinstituts ein AEI-Abkommen geschlossen hat, das den automatischen Informationsaustausch vorschreibt."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Meldepflichtige Person (nur AEI)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Meldepflichtige Person (AEI) bezeichnet eine natürliche oder juristische Person, die in Bezug auf AEI in einem meldepflichtigen Land ansässig ist, sofern es sich nicht um eine juristische Person mit einem der nachstehenden AEI-Status handelt:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Regierungsinstanz;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Zentralbank;"
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Finanzinstitut."
+                }
+              ]
+            },
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": ""
+                },
+                {
+                  "type": "strong",
+                  "content": {
+                    "type": "text",
+                    "content": "Berichtendes Finanzinstitut (nur AEI)"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "börsenkotiertes Nicht-Finanzinstitut und verbundenes Unter-nehmen;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "internationale Organisation; oder"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "den positiven Saldo aus dem Verkauf oder dem Tausch von Finanzanlagen, welche die vorstehend beschriebenen passiven Erträge generieren;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Beträge aus Barwertversicherungsverträgen."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Spezifizierte US-Person (FATCA) bezeichnet eine US-Person (juristische und natürliche Personen), mit Ausnahme einiger juristischer Personen, die gemäß einem geltenden IGA oder den entsprechenden Vorschriften des US-Finanzministeriums von der Definition ausgenommen sind. Eine natürliche Person gilt als US-Person, sofern sie:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "den Anforderungen des Substantial Presence Tests entspricht (das heißt physische Präsenz in den USA an mindestens 31 Tagen des laufenden Kalenderjahrs und 183 Tagen in der Dreijahresperiode, die das laufende Kalenderjahr und die beiden vorhergehenden Kalenderjahre umfasst; für die 183 Tage Präsenz zählen (i) alle Anwesenheitstage im laufenden Jahr, (ii) ein Drittel der Anwesenheitstage im ersten Jahr vor dem laufenden Jahr, und (iii) ein Sechstel der Anwesenheitstage im zweiten Jahr vor dem laufenden Jahr ); oder aus anderen Gründen in den USA ansässig ist (zum Beispiel Nicht-US-Ehegatte, der gemeinsam mit dem US-Ehegatten eine US-Steuererklärung ausfüllt, oder US-Bürger, der seine Staatsbürgerschaft aufgegeben hat, oder langfristiger Aufenthalt in den USA)."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "listStyle": "dash",
+          "items": [
+            {
+              "content": [
+                {
+                  "type": "text",
+                  "content": "das einen FATCA-Sponsor hat, der im Namen der Anlagegesellschaft handeln darf (zum Beispiel Fondsmanager, Treuhänder, Unternehmensleiter oder Geschäftsführer) und zugestimmt hat, alle FATCA-Pflichten betreffend Due Diligence, Quellensteuer, Meldung sowie weitere Pflichten im Zusammenhang mit dem Finanzkonto, das von der Anlagegesellschaft gehalten wird, zu erfüllen."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Gesponserte Anlagegesellschaft (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Gesponserte Anlagegesellschaft (FATCA) bezeichnet ein ausländisches Finanzinstitut:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "das eine Anlagegesellschaft ist;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "das gemäß den entsprechenden Vorschriften des US-Finanz-ministeriums nicht als Qualified Intermediary, Withholding Foreign Partnership oder Withholding Foreign Trust gilt; und"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Sponsored, Closely Held Investment Vehicle (nur FATCA)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Sponsored, Closely Held Investment Vehicle (FATCA) bezeichnet ein ausländisches Finanzinstitut, das:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "nur deshalb ein ausländisches Finanzinstitut ist, weil es eine Anlagegesellschaft ist; gemäß den entsprechenden Vorschriften des US-Finanzministeriums nicht als Qualified Intermediary, Withholding Foreign Partnership oder Withholding Foreign Trust gilt; das maximal zwanzig natürliche Personen hat, die das gesamte Eigen- und Fremdkapital der Anlagegesellschaft halten (mit Ausnahme des Fremdkapitals, das von bestimmten FFIs gehalten wird, und des Eigenkapitals, das von einem anderen Sponsored, Closely Held Investment Vehicle gehalten wird, dem 100% des Eigenkapitals der Anlagegesellschaft gehören);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "children": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Berichtendes Finanzinstitut (AEI) bezeichnet ein Finanzinstitut, dessen Sitzland AEI in nationales Recht umgesetzt hat und das Due-Diligence- sowie Meldepflichten erfüllen muss."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Wohnadresse"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Die Wohnadresse bezeichnet die Anschrift des ständigen Wohnsitzes oder Domizils einer Person. Generell ist eine c/o-Adresse oder ein Postfach keine Wohnadresse, außer:"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "es handelt sich um ein Postfach, das zum Beispiel zusammen mit einer Straße, einer Wohnungs- oder einer Suite-Nummer oder einer Landstraße eine Anschrift bildet und daher den effektiven Wohnsitz einer Person eindeutig identifiziert; oder"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "es liegen andere Sonderbedingungen vor wie zum Beispiel im Militär."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Eigenerklärung bezeichnet eine Erklärung des Kontoinhabers oder der beherrschenden Person, die den jeweiligen Status gemäß AEI und FATCA sowie andere Informationen enthält, die das Finanzinstitut  "
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Steuerdomizil"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Die Bestimmung des Steuerdomizils einer Person hängt von den Steuergesetzen des jeweiligen Landes ab. Die Steuergesetze eines Landes definieren die Bedingungen, die eine juristische Person erfüllen muss, um in diesem Land als Steuersubjekt zu gelten, womit sie unbeschränkt steuerpflichtig ist. Generell ist eine juristische Person in jenen Ländern ein Steuersubjekt  (Steuerpflichtiger), in denen sie aufgrund ihres Domizils, ihres Wohnsitzes, des Orts der Geschäftsführung bzw. ihres Geschäftssitzes oder eines ähnlichen Kriteriums und nicht nur aufgrund der Einkünfte in diesem Land steuerpflichtig ist. Unternehmen, die in zwei Staaten ansässig sind, können sich bei Problemen der Doppelansässigkeit bei der Bestimmung ihres Steuerdomizils auf die sogenannten Tie-Breaker-Regeln von Steuerabkommen (falls vorhanden) berufen."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Steuertransparente Unternehmen (d. h. Personengesellschaften, Limited Liability Partnerships oder ähnliche Rechtsgebilde ohne Steuerdomizil), die im Rahmen von AEI in dem Land ansässig sind, in dem sich ihre effektive Geschäftsführung befindet und in dem sie beherrscht werden;"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Sollten Sie nicht sicher sein, wie Sie dieses Formular ausfüllen oder wie Sie Ihr(e) Steuerdomizil(e) bestimmen, wenden Sie sich bitte an Ihren"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "nach außen hin nicht als Anlagegesellschaft auftritt (diese Voraussetzung gilt nicht in allen Ländern);"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "einen FATCA-Sponsor mit der FATCA-Klassifizierung als berichtendes US-Finanzinstitut, teilnehmendes FFI, berichtendes FFI nach Modell 1 oder berichtendes FFI nach Modell 2 hat, der im Namen der Anlagegesellschaft handeln darf (zum Beispiel Fondsmanager, Treuhänder, Unternehmensleiter oder Geschäftsführer) und zugestimmt hat, alle FATCA-Pflichten betreffend Due Diligence, Quellensteuer, Meldung sowie weitere Pflichten im Zusammenhang mit dem Finanzkonto, das von der Anlagegesellschaft gehalten wird, zu erfüllen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Steueridentifikationsnummer (TIN)"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Eine Steueridentifikationsnummer (oder TIN) ist eine einmalige Kombination aus Buchstaben und Zahlen, die ein Land einer natürlichen oder einer juristischen Person zuteilt, um diese Person im Rahmen der Steuergesetzgebung eindeutig zu kennzeichnen (oder das funktionale Äquivalent einer solchen Nummer). Steuerberater oder die zuständigen Steuerbehörden. Weitere Informationen können Sie dem OECD-Portal für den automatischen Informationsaustausch sowie der Webseite \"FATCA und AEI – Einhaltung von Steuervorschriften\" von UBS (www.ubs.com/aei) entnehmen."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Trust mit Treuhänderdokumentation"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Trust mit Treuhänderdokumentation (FATCA) bezeichnet einen Trust, der:"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "Juristische US-Personen"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Juristische US-Personen (FATCA) bezeichnen US-Kapitalgesellschaften, US-Personengesellschaften und US-Trusts. Eine Kapital- oder Personengesellschaft gilt generell als US-Kapitalgesellschaft oder US-Personengesellschaft, wenn sie in den USA oder nach US-Bundesrecht oder nach dem Recht eines US-Bundestaats gegründet oder organisiert wurde. Ein Trust gilt als US-Trust, sofern (i) ein Gericht in den Vereinigten Staaten in der Lage ist, die primäre Aufsicht über dessen Verwaltung auszuüben, und (ii) eine oder mehrere US-Personen die Befugnis haben, alle wesentlichen Entscheidungen des Trusts zu kontrollieren."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "level": "h2",
+          "content": [
+            {
+              "type": "text",
+              "content": "US-Wertschriften"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "content": "Generell bezeichnen US-Wertschriften (FATCA) Aktien von US-Gesellschaften sowie Anleihen und Anlagefonds von US-Emittenten. Anteile an Nicht-US-Anlagefonds (etwa an einer luxemburgischen SICAV) gelten unter FATCA in der Regel nicht als US-Wertschriften."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "stateCount": 1
+}

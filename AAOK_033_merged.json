@@ -1,0 +1,397 @@
+{
+  "context": {
+    "language": "it",
+    "variables": {
+      "Footer_Line_txtvversion": "V0",
+      "formrange_entity": "033",
+      "Footer_Line_APPCode": "",
+      "formrange_partnerlevel": "No",
+      "formrange_releasedate": "05.07.2024",
+      "Footer_Line_txtlanguage": "EN",
+      "formrange_cdokinfo": "61394",
+      "Footer_Line_txtversiondate": "05.07.2024",
+      "formrange_formsetready": "false",
+      "Footer_Line_txtformid": "61394",
+      "formrange_version": "V0",
+      "formrange_htmlready": "false",
+      "formrange_language": "EN",
+      "Footer_Line_MANCode": "033",
+      "formrange_code": "AAOK",
+      "Footer_Line_txtjversion": "N1"
+    }
+  },
+  "content": [
+    {
+      "type": "field",
+      "name": "dd6fff7e-f833-5f86-967d-9e1c21228f1c",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "b2945f7f-43c2-538e-b7fd-b46ab9941b2c",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "gridLayout",
+      "columns": 5,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "6b9a76ce-e529-5d85-889d-a5e299d6dc5e",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "5715e6ca-3770-56ba-803d-aedd0707d0ef",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "4a027f81-eb08-5389-89c9-1d204c924267",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "7e99c80a-5cde-52f9-bedc-622dcda90338",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "9e734faf-ba3d-5cba-a26a-87dd7552063d",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": {
+              "type": "bool",
+              "value": false
+            },
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 2,
+          "node": {
+            "type": "field",
+            "name": "acaee535-1e44-5b38-b31c-3f956267c49d",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 5,
+          "node": {
+            "type": "field",
+            "name": "9c77ed2a-836b-5109-8ef9-4667ed3caaff",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 5,
+          "node": {
+            "type": "field",
+            "name": "eea64963-b261-52fe-9ffe-2227d069fe70",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 1,
+          "node": {
+            "type": "field",
+            "name": "ee80e634-e3db-5a06-8513-e07f5014ca30",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 9,
+          "node": {
+            "type": "field",
+            "name": "d09cc3e6-c932-50b5-99f3-ea89a7f873b3",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 2,
+          "node": {
+            "type": "field",
+            "name": "e609285c-6e8e-54cd-be6a-3371a641725e",
+            "label": null,
+            "inputType": {
+              "type": "bool"
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "3b775437-3751-5161-a5a8-159ad997dc33",
+      "label": null,
+      "inputType": {
+        "type": "bool"
+      },
+      "value": {
+        "type": "bool",
+        "value": false
+      },
+      "placeholder": null
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 8,
+          "node": {
+            "type": "field",
+            "name": "0d3f896c-70f2-5792-baf2-08b9b075446a",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 4,
+          "node": {
+            "type": "field",
+            "name": "bda71ca1-9a24-5a53-9279-f15926b268b9",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "500727b8-2310-5996-bc65-0ce96f2191e6",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "field",
+      "name": "9c1b34d5-aae4-5b73-b572-ec57785a0cc7",
+      "label": null,
+      "inputType": {
+        "type": "text",
+        "regex": null,
+        "max_length": null,
+        "min_length": null
+      },
+      "value": null,
+      "placeholder": null
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 4,
+          "node": {
+            "type": "field",
+            "name": "020aa0e5-03cd-5592-9ff3-ef4469813f1b",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 3,
+          "node": {
+            "type": "field",
+            "name": "3980839b-613f-5338-bc0e-022579873fc4",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 5,
+          "node": {
+            "type": "field",
+            "name": "7094cbdb-99d6-57f3-a0f9-2fb7eff10a9a",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    },
+    {
+      "type": "gridLayout",
+      "columns": 12,
+      "elements": [
+        {
+          "span": 3,
+          "node": {
+            "type": "field",
+            "name": "40bbc4a4-1f9d-5324-948b-01c04dd331c3",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        },
+        {
+          "span": 9,
+          "node": {
+            "type": "field",
+            "name": "bda27766-a73d-5760-b2c4-2d1bb45a72fd",
+            "label": null,
+            "inputType": {
+              "type": "text",
+              "regex": null,
+              "max_length": null,
+              "min_length": null
+            },
+            "value": null,
+            "placeholder": null
+          }
+        }
+      ]
+    }
+  ],
+  "stateCount": 1
+}

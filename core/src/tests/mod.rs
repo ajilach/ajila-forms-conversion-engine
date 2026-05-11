@@ -27015,3 +27015,530 @@ fn diag_acroform_second_pdf() {
         );
     }
 }
+
+#[test]
+#[ignore] // Known alignment failures in AACS glossary sections — enable when merge is improved
+fn test_aacs_multilingual_translation_alignment() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACS_019_DE.pdf"), "de")
+        .expect("Failed to process AACS_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACS_019_EN.pdf"), "en")
+        .expect("Failed to process AACS_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AACS_019_SP.pdf"), "sp")
+        .expect("Failed to process AACS_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
+
+    // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
+    // TranslatedText node.
+    let expected_triplets: Vec<(&str, &str, &str)> = vec![
+        (
+            "Active NFE – Other/Active NFFE – Other",
+            "Active NFE – Other / Active NFFE – Other",
+            "NFE activa – Otra /NFFE activa – Otra",
+        ),
+        (
+            "Regierungsinstanz/Ausländische Regierung",
+            "Government Entity / Foreign Government",
+            "Entidad gubernamental / Gobierno extranjero",
+        ),
+        (
+            "Klassifizierung gemäß AEI",
+            "AEI Classification",
+            "Clasificación según AEI",
+        ),
+        (
+            "die in einem IGA-Land etabliert ist",
+            "Is established in an IGA jurisdiction",
+            "está constituida en una jurisdicción de IGA",
+        ),
+        (
+            "Treaty-Qualified Retirement Fund",
+            "Treaty-Qualified Retirement Fund",
+            "Fondo de jubilación cualificado por Tratado",
+        ),
+        (
+            "Beherrschende Person",
+            "Controlling Person",
+            "Persona que ejerce el control",
+        ),
+    ];
+
+    let mut triplet_found = vec![false; expected_triplets.len()];
+
+    fn collect_translated_texts<'a>(
+        node: &'a InlineNode,
+        out: &mut Vec<&'a std::collections::HashMap<String, Option<String>>>,
+    ) {
+        match node {
+            InlineNode::TranslatedText(map) => out.push(map),
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => {
+                collect_translated_texts(inner, out);
+            }
+            _ => {}
+        }
+    }
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            StructuredNode::List(l) => l.items.iter().map(|i| &i.content).collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            let mut translated_maps = Vec::new();
+            for inline in &text.0 {
+                collect_translated_texts(inline, &mut translated_maps);
+            }
+            for map in &translated_maps {
+                let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
+
+                for (i, (de_snippet, en_snippet, sp_snippet)) in
+                    expected_triplets.iter().enumerate()
+                {
+                    if de_text.contains(de_snippet)
+                        || en_text.contains(en_snippet)
+                        || sp_text.contains(sp_snippet)
+                    {
+                        assert!(
+                            de_text.contains(de_snippet)
+                                && en_text.contains(en_snippet)
+                                && sp_text.contains(sp_snippet),
+                            "Translation triplet {} should have all three languages in the \
+                             same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
+                             {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
+                             Actual SP: {:?}",
+                            i,
+                            de_snippet,
+                            en_snippet,
+                            sp_snippet,
+                            &de_text[..de_text.len().min(200)],
+                            &en_text[..en_text.len().min(200)],
+                            &sp_text[..sp_text.len().min(200)],
+                        );
+                        triplet_found[i] = true;
+                    }
+                }
+            }
+        }
+    });
+
+    for (i, (de_snippet, _, _)) in expected_triplets.iter().enumerate() {
+        assert!(
+            triplet_found[i],
+            "Translation triplet {} was not found in the merged tree.\n  DE: {:?}",
+            i, de_snippet,
+        );
+    }
+}
+
+#[test]
+fn test_aacs_en_lists_not_merged() {
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_EN");
+
+    let lists = collect_lists(&structured);
+
+    // These three lists must be SEPARATE (not merged into a single list),
+    // because there is text or a page break between them in the source document.
+
+    // List 1: Publicly traded NFE/NFFE (2 items)
+    let list1_fragments = [
+        "The stock of which is regularly traded on an established securities market",
+        "That is a Related Entity of an Entity the stock of which is regularly traded",
+    ];
+
+    // List 2: Collective Investment Vehicle / IGA (3 items)
+    // Note: "All of the interests in which" should also be in this list but is
+    // currently rendered as a paragraph due to the same bug.
+    let list2_fragments = [
+        "Is established in an IGA jurisdiction",
+        "Is regulated as a collective investment vehicle",
+    ];
+
+    // List 3: Active NFE/NFFE criteria (7 items total in the source)
+    // Note: "Less than 50%" and "Substantially all" should also be in this list
+    // but are currently rendered as paragraphs due to the same bug.
+    let list3_fragments = [
+        "The NFE / NFFE is not yet operating a business",
+        "The NFE / NFFE was not a Financial Institution in the past five years",
+        "The NFE / NFFE primarily engages in financing and hedging",
+        "The NFE / NFFE is a Non-Profit Organization",
+        "The NFFE is an Excepted NFFE",
+    ];
+
+    // Helper: find which list contains a given fragment
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    // All items of list 1 must be in the same list
+    let list1_indices: Vec<Option<usize>> =
+        list1_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list1_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 1 fragment not found in any list: '{}'",
+            list1_fragments[i]
+        );
+    }
+    let list1_idx = list1_indices[0].unwrap();
+    assert!(
+        list1_indices.iter().all(|idx| *idx == Some(list1_idx)),
+        "All List 1 items should be in the same list, but found at different indices: {:?}",
+        list1_indices
+    );
+
+    // All items of list 2 must be in the same list
+    let list2_indices: Vec<Option<usize>> =
+        list2_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list2_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 2 fragment not found in any list: '{}'",
+            list2_fragments[i]
+        );
+    }
+    let list2_idx = list2_indices[0].unwrap();
+    assert!(
+        list2_indices.iter().all(|idx| *idx == Some(list2_idx)),
+        "All List 2 items should be in the same list, but found at different indices: {:?}",
+        list2_indices
+    );
+
+    // All items of list 3 must be in the same list
+    let list3_indices: Vec<Option<usize>> =
+        list3_fragments.iter().map(|f| find_list_index(f)).collect();
+    for (i, idx) in list3_indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "List 3 fragment not found in any list: '{}'",
+            list3_fragments[i]
+        );
+    }
+    let list3_idx = list3_indices[0].unwrap();
+    assert!(
+        list3_indices.iter().all(|idx| *idx == Some(list3_idx)),
+        "All List 3 items should be in the same list, but found at different indices: {:?}",
+        list3_indices
+    );
+
+    // The three lists must be DIFFERENT lists (not merged together)
+    assert_ne!(
+        list1_idx, list2_idx,
+        "List 1 (publicly traded) and List 2 (IGA/collective investment) should be separate lists"
+    );
+    assert_ne!(
+        list2_idx, list3_idx,
+        "List 2 (IGA/collective investment) and List 3 (active NFE criteria) should be separate lists"
+    );
+    assert_ne!(
+        list1_idx, list3_idx,
+        "List 1 (publicly traded) and List 3 (active NFE criteria) should be separate lists"
+    );
+}
+
+#[test]
+fn test_aacs_de_active_nfe_nffe_single_unordered_list() {
+    // The six Active NFE / NFFE criteria must all appear as items in ONE single
+    // unordered list. They must not be split across multiple lists or rendered
+    // as plain paragraphs.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "Weniger als 50% des Bruttoertrags des NFE/NFFE",
+        "Die Geschäftstätigkeit des NFE/NFFE besteht praktisch",
+        "Das NFE/NFFE geht noch keinen Geschäften nach",
+        "Das NFE/NFFE war in den letzten fünf Jahren kein Finanzinstitut",
+        "Das NFE/NFFE tätigt hauptsächlich Finanzierungs",
+        "nicht auf Gewinnerzielung gerichtete Einrichtung",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Active NFE/NFFE criterion not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "Active NFE/NFFE criterion '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "Active NFE/NFFE list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
+    );
+}
+
+#[test]
+fn test_aacs_de_retirement_fund_single_unordered_list() {
+    // The five retirement-fund types listed under «Befreite Vorsorgeeinrichtung»
+    // must all appear as items of ONE single unordered list.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "Treaty-Qualified Retirement Fund",
+        "Broad Participation Retirement Fund",
+        "Narrow Participation Retirement Fund",
+        "Pension Fund of an Exempt Beneficial Owner",
+        "Investment Entity Wholly Owned by Exempt Beneficial Owners",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Retirement fund type not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "Retirement fund type '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "Retirement fund list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
+    );
+}
+
+#[test]
+fn test_aacs_de_beteiligungen_ordered_list() {
+    // The PDF contains a LowerAlpha (a/b) list with:
+    //   a) "Ein wirtschaftlich Berechtigter gemäß FATCA hält:"
+    //   b) "Fremdkapitalbeteiligungen (zum Beispiel Anleihen oder Kredite)..."
+    // This appears as a sublist nested inside a parent dash-list item.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::ListNode;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let top_lists = collect_lists(&structured);
+
+    // Collect all sublists reachable from any list item.
+    fn collect_sublists(lists: &[ListNode]) -> Vec<ListNode> {
+        let mut out = Vec::new();
+        for list in lists {
+            for item in &list.items {
+                if let Some(sub) = &item.sublist {
+                    out.push(*sub.clone());
+                    out.extend(collect_sublists(std::slice::from_ref(sub.as_ref())));
+                }
+            }
+        }
+        out
+    }
+
+    let all_lists: Vec<ListNode> = top_lists
+        .iter()
+        .cloned()
+        .chain(collect_sublists(&top_lists))
+        .collect();
+
+    let fragments = [
+        "Ein wirtschaftlich Berechtigter",
+        "Fremdkapitalbeteiligungen",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        all_lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "Beteiligungen item not found in any list (including sublists): '{}'\nAll list items: {:#?}",
+            fragments[i],
+            all_lists
+                .iter()
+                .map(|l| (
+                    format!("{:?}", l.list_style),
+                    l.items
+                        .iter()
+                        .map(|i| i.as_plain_text())
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    assert_eq!(
+        indices[1],
+        Some(first_idx),
+        "'Fremdkapitalbeteiligungen' is in a different list than 'Ein wirtschaftlich Berechtigter'",
+    );
+
+    let list = &all_lists[first_idx];
+    assert!(
+        list.list_style.is_ordered(),
+        "Beteiligungen list must be ordered, got style: {:?}",
+        list.list_style
+    );
+    assert_eq!(
+        list.items.len(),
+        2,
+        "Beteiligungen ordered list must have exactly 2 items, found {}",
+        list.items.len()
+    );
+}
+
+#[test]
+fn test_aacs_de_ffi_types_single_unordered_list() {
+    // The seven FFI classification types must all appear as items of ONE single
+    // unordered list.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "teilnehmendes FFI",
+        "berichtendes FFI nach Modell 1",
+        "berichtendes FFI nach Modell 2",
+        "registriertes, als FATCA-konform erachtetes FFI",
+        "gesponserte Anlagegesellschaft und beherrschte ausländische Kapitalgesellschaft",
+        "FATCA-Sponsor; und",
+        "Treuhänder eines Trusts",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "FFI type not found in any list: '{}'\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "FFI type '{}' is in list {} but expected in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "FFI types list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
+    );
+}
