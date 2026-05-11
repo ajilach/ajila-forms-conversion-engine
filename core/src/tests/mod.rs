@@ -27014,5 +27014,4 @@ fn diag_acroform_second_pdf() {
             i, r.text, r.font_name, r.font_size, r.x, r.y, r.width, r.height
         );
     }
-    copilot / acroform - flattening - improvements
 }
