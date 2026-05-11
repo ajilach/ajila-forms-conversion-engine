@@ -125,6 +125,120 @@ pub fn show_html_preview(html: String, filename: &str) {
     }
 }
 
+// ── Smart edit (gh copilot) ───────────────────────────────────────────
+
+/// Run `gh copilot` with a prompt and optional image attachments.
+///
+/// `prompt` is the user instruction.
+/// `json_context` is the serialised structured nodes to include in the prompt.
+/// `images` is a list of `(label, base64_png)` pairs from the plain render stage.
+///
+/// Returns `Ok(response_text)` on success.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_copilot_smart_edit(
+    prompt: &str,
+    json_context: &str,
+    images: &[(String, String)],
+) -> Result<String, String> {
+    use base64::Engine;
+    use std::io::Write;
+
+    let tmp_dir = std::env::temp_dir().join("blueprint-smart-edit");
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    // Write images to temp PNG files
+    let mut image_paths: Vec<std::path::PathBuf> = Vec::new();
+    for (label, b64) in images {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("Failed to decode image {label}: {e}"))?;
+        let path = tmp_dir.join(format!("{label}.png"));
+        let mut f = std::fs::File::create(&path)
+            .map_err(|e| format!("Failed to create temp image: {e}"))?;
+        f.write_all(&bytes)
+            .map_err(|e| format!("Failed to write temp image: {e}"))?;
+        image_paths.push(path);
+    }
+
+    // Build the full prompt
+    let full_prompt = format!(
+        "{prompt}\n\n\
+         The structured JSON representation of the selected form nodes is included below. \
+         The attached PNG images show the rendered form pages for visual reference.\n\n\
+         BEGIN STRUCTURED NODES JSON\n\
+         {json_context}\n\
+         END STRUCTURED NODES JSON\n\n\
+         Return ONLY a valid JSON array of the corrected/improved structured nodes. \
+         The output must be directly parseable by serde_json and match the same schema \
+         as the input nodes."
+    );
+
+    // Build command
+    let mut cmd = tokio::process::Command::new("gh");
+    cmd.arg("copilot")
+        .arg("--")
+        .arg("-p")
+        .arg(&full_prompt)
+        .arg("--output-format")
+        .arg("text")
+        .arg("--allow-all-tools");
+
+    for img_path in &image_paths {
+        cmd.arg("--attachment").arg(img_path);
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run gh copilot: {e}"))?;
+
+    // Clean up temp files (best effort)
+    if let Err(e) = std::fs::remove_dir_all(&tmp_dir) {
+        eprintln!("Warning: failed to clean up smart-edit temp dir: {e}");
+    }
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("gh copilot failed: {stderr}"));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let trimmed = stdout.trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    if trimmed.is_empty() {
+        return Err(format!(
+            "gh copilot returned no content. stderr: {}",
+            stderr.trim()
+        ));
+    }
+
+    let looks_like_cli_help = (lower.contains("usage:") && lower.contains("gh copilot"))
+        || lower.contains("github cli")
+        || lower.contains("unknown command")
+        || lower.contains("authentication required");
+
+    if looks_like_cli_help {
+        return Err(format!(
+            "gh copilot returned CLI/help output instead of model content. stdout: {}",
+            trimmed
+        ));
+    }
+
+    Ok(stdout)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn run_copilot_smart_edit(
+    _prompt: &str,
+    _json_context: &str,
+    _images: &[(String, String)],
+) -> Result<String, String> {
+    Err("Smart Edit is only supported in the desktop app. The web version cannot invoke local CLI tools.".to_string())
+}
+
 // ── File explorer reveal ─────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]

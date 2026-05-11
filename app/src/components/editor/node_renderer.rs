@@ -5,6 +5,8 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
+use std::collections::HashSet;
+
 use blueprint::document::ListStyleType;
 use blueprint::{FieldId, ListNode, StructuredNode};
 
@@ -73,6 +75,9 @@ pub struct NodeRendererProps {
     /// Nesting depth for indentation.
     #[props(default)]
     pub depth: usize,
+    /// Paths of nodes to highlight (e.g. changed nodes in a diff preview).
+    #[props(default)]
+    pub highlight: HashSet<NodePath>,
     /// Callback for editor actions.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -98,6 +103,7 @@ pub fn NodeRenderer(props: NodeRendererProps) -> Element {
                             languages: props.languages.clone(),
                             field_labels: props.field_labels.clone(),
                             depth: props.depth,
+                            highlight: props.highlight.clone(),
                             on_action: props.on_action,
                         }
                     }
@@ -123,6 +129,9 @@ pub struct NodeItemProps {
     pub field_labels: FieldLabelsWrapper,
     /// Nesting depth.
     pub depth: usize,
+    /// Paths of nodes to highlight.
+    #[props(default)]
+    pub highlight: HashSet<NodePath>,
     /// Callback for editor actions.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -331,13 +340,15 @@ mod tests {
 pub fn NodeItem(props: NodeItemProps) -> Element {
     let is_selected = props.selection.is_selected(&props.path);
     let is_editing = props.selection.is_editing(&props.path);
+    let is_highlighted = props.highlight.contains(&props.path);
     let has_children = node_has_children(&props.node.0);
     let mut expanded = use_signal(|| true);
 
     let node_class = format!(
-        "node-item {} {}",
+        "node-item {} {} {}",
         if is_selected { "selected" } else { "" },
-        if is_editing { "editing" } else { "" }
+        if is_editing { "editing" } else { "" },
+        if is_highlighted { "node-changed" } else { "" },
     );
 
     let type_name = node_type_name(&props.node.0);
@@ -509,6 +520,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                     field_labels: props.field_labels.clone(),
                                     base_path: props.path.clone(),
                                     depth: props.depth + 1,
+                                    highlight: props.highlight.clone(),
                                     on_action: props.on_action,
                                 }
                             }
@@ -539,6 +551,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
+                                        highlight: props.highlight.clone(),
                                         on_action: props.on_action,
                                     }
                                 }
@@ -562,6 +575,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
+                                        highlight: props.highlight.clone(),
                                         on_action: props.on_action,
                                     }
                                 }
@@ -578,6 +592,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                         field_labels: props.field_labels.clone(),
                                         base_path: props.path.clone(),
                                         depth: props.depth + 1,
+                                        highlight: props.highlight.clone(),
                                         on_action: props.on_action,
                                     }
                                 }
@@ -589,6 +604,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                             let on_action = props.on_action;
                             let languages = props.languages.clone();
                             let field_labels = props.field_labels.clone();
+                            let highlight = props.highlight.clone();
                             let depth = props.depth;
                             rsx! {
                                 div { class: "table-content",
@@ -655,6 +671,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                                             field_labels: field_labels.clone(),
                                                                             base_path: cell_path,
                                                                             depth: depth + 2,
+                                                                            highlight: highlight.clone(),
                                                                             on_action,
                                                                         }
                                                                     }
@@ -731,6 +748,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                                                                             field_labels: field_labels.clone(),
                                                                             base_path: cell_path,
                                                                             depth: depth + 2,
+                                                                            highlight: highlight.clone(),
                                                                             on_action,
                                                                         }
                                                                     }
