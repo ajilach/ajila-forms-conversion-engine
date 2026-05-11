@@ -15,17 +15,35 @@ use blueprint::{
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
+use super::smart_edit;
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
-    SelectionState, available_conversions, can_merge_selected, compute_add_options, delete_nodes,
-    get_container_child_info, get_container_children_count, get_list_at_path, get_list_at_path_mut,
-    get_list_item_text_mut, get_node_at_path, get_node_at_path_mut, get_shared_parent_path,
-    get_table_column_count, is_container_child_path, is_list_item_path, is_table_row_path,
-    move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
-    move_table_row_down, move_table_row_up,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, NodePath, PathSegment,
+    SelectionState, available_conversions, can_merge_selected, collect_selectable_paths,
+    compute_add_options, delete_nodes, get_container_child_info, get_container_children_count,
+    get_list_at_path, get_list_at_path_mut, get_list_item_text_mut, get_node_at_path,
+    get_node_at_path_mut, get_shared_parent_path, get_table_column_count, is_container_child_path,
+    is_list_item_path, is_table_row_path, move_container_child_down, move_container_child_up,
+    move_list_item_down, move_list_item_up, move_table_row_down, move_table_row_up,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
+use crate::platform::show_html_preview;
+
+#[derive(Clone, Debug)]
+enum SmartEditState {
+    Idle,
+    Loading,
+    Preview {
+        selected_indices: Vec<usize>,
+        elapsed_ms: u128,
+        result: smart_edit::SmartEditResult,
+    },
+    Error {
+        selected_indices: Vec<usize>,
+        elapsed_ms: u128,
+        message: String,
+    },
+}
 
 /// Wrapper for DocumentEnvelope that implements PartialEq (always eq for memoization skip).
 #[derive(Clone)]
@@ -43,6 +61,8 @@ impl PartialEq for EnvelopeWrapper {
 pub struct StructuredEditorProps {
     /// The document envelope to edit.
     pub envelope: EnvelopeWrapper,
+    /// Plain rendered page images (label → base64 PNG) for Smart Edit.
+    pub plain_images: HashMap<String, String>,
     /// Callback when editing is complete (with the modified envelope).
     pub on_apply: EventHandler<DocumentEnvelope>,
     /// Callback when editing is cancelled.
@@ -57,6 +77,17 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
     // Selection state
     let mut selection = use_signal(SelectionState::new);
+
+    // Smart edit inline state
+    let mut smart_edit_state = use_signal(|| SmartEditState::Idle);
+    let mut smart_edit_session_name = use_signal(|| None::<String>);
+    let smart_edit_images = props.plain_images.clone();
+    let smart_edit_images_for_action = smart_edit_images.clone();
+    let has_images = !smart_edit_images.is_empty();
+
+    // Which change IDs the user has rejected in the current Preview round.
+    // Reset to empty whenever a new smart-edit run starts.
+    let mut rejected_ids = use_signal(|| std::collections::HashSet::<usize>::new());
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -957,6 +988,54 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
                 selection.write().clear();
             }
+            EditorAction::SmartEdit => {
+                let selected_indices: Vec<usize> = Vec::new();
+                let session_name = format!("smart-edit-{}", Uuid::new_v4());
+                smart_edit_session_name.set(Some(session_name.clone()));
+                let content = envelope.read().content.clone();
+                let plain_images = smart_edit_images_for_action.clone();
+                let started_at = std::time::Instant::now();
+
+                smart_edit_state.set(SmartEditState::Loading);
+                rejected_ids.write().clear();
+
+                spawn(async move {
+                    match smart_edit::run_smart_edit(
+                        &content,
+                        &selected_indices,
+                        &plain_images,
+                        &session_name,
+                        false,
+                    )
+                    .await
+                    {
+                        Ok(result) => {
+                            let elapsed_ms = started_at.elapsed().as_millis();
+                            smart_edit_state.set(SmartEditState::Preview {
+                                selected_indices,
+                                elapsed_ms,
+                                result,
+                            });
+                        }
+                        Err(message) => {
+                            let elapsed_ms = started_at.elapsed().as_millis();
+                            smart_edit_state.set(SmartEditState::Error {
+                                selected_indices,
+                                elapsed_ms,
+                                message,
+                            });
+                        }
+                    }
+                });
+            }
+            EditorAction::SelectAll => {
+                let all_paths = {
+                    let env = envelope.read();
+                    collect_selectable_paths(&env.content)
+                };
+                let mut sel = selection.write();
+                sel.selected = all_paths;
+            }
         }
     };
 
@@ -993,7 +1072,279 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 can_move_down,
                 available_conversions: conversions.clone(),
                 add_options: add_options.clone(),
-                on_action: handle_action,
+                has_images,
+                is_smart_edit_loading: matches!(*smart_edit_state.read(), SmartEditState::Loading),
+                node_count: envelope.read().content.len(),
+                on_action: handle_action.clone(),
+            }
+
+            // Smart Edit inline review panel
+            {
+                match smart_edit_state.read().clone() {
+                    SmartEditState::Idle => rsx! {},
+                    SmartEditState::Loading => rsx! {},
+                    SmartEditState::Preview { selected_indices, elapsed_ms, result } => {
+                        let session_name_for_retry = smart_edit_session_name.read().clone();
+                        let selected_indices_for_apply = selected_indices.clone();
+                        let selected_indices_for_retry = selected_indices.clone();
+                        let content_for_retry = envelope.read().content.clone();
+                        let plain_images_for_retry = smart_edit_images.clone();
+                        let nodes_for_apply = result.nodes.clone();
+                        let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
+                            .is_empty()
+                        {
+                            envelope.read().content.clone()
+                        } else {
+                            selected_indices
+                                .iter()
+                                .filter_map(|&i| envelope.read().content.get(i).cloned())
+                                .collect()
+                        };
+                        let modified_nodes_for_preview = result.nodes.clone();
+                        rsx! {
+                            div { class: "smart-edit-inline-panel",
+                                h3 { "Smart Edit Review" }
+                                p { class: "smart-edit-hint", "Completed in {elapsed_ms}ms · {result.nodes.len()} node(s)" }
+
+                                if result.changes.is_empty() {
+                                    p { class: "smart-edit-hint smart-edit-warning",
+                                        "Copilot did not provide a change list. Accept or dismiss the suggestion."
+                                    }
+                                } else {
+                                    p { class: "smart-edit-hint smart-edit-success",
+                                        "Review the proposed changes below. Uncheck any changes you want to reject."
+                                    }
+                                    div { class: "smart-edit-change-list",
+                                        for change in result.changes.clone() {
+                                            {
+                                                let id = change.id;
+                                                let is_rejected = rejected_ids.read().contains(&id);
+                                                rsx! {
+                                                    label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
+                                                        input {
+                                                            r#type: "checkbox",
+                                                            checked: !is_rejected,
+                                                            onchange: move |evt| {
+                                                                if evt.checked() {
+                                                                    rejected_ids.write().remove(&id);
+                                                                } else {
+                                                                    rejected_ids.write().insert(id);
+                                                                }
+                                                            },
+                                                        }
+                                                        span { "{change.description}" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                div { class: "smart-edit-actions",
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: {
+                                            let original_nodes = original_nodes_for_preview.clone();
+                                            move |_| {
+                                                let html = blueprint::to_html(
+                                                    &original_nodes,
+                                                    &blueprint::HtmlConfig::default(),
+                                                );
+                                                show_html_preview(html, "smart-edit-original-preview.html");
+                                            }
+                                        },
+                                        "Preview Original"
+                                    }
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: {
+                                            let modified_nodes = modified_nodes_for_preview.clone();
+                                            move |_| {
+                                                let html = blueprint::to_html(
+                                                    &modified_nodes,
+                                                    &blueprint::HtmlConfig::default(),
+                                                );
+                                                show_html_preview(html, "smart-edit-modified-preview.html");
+                                            }
+                                        },
+                                        "Preview Modified"
+                                    }
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: move |_| {
+                                            smart_edit_state.set(SmartEditState::Idle);
+                                            smart_edit_session_name.set(None);
+                                        },
+                                        "Dismiss"
+                                    }
+
+                                    // Show "Retry with Feedback" when some changes are rejected.
+                                    if !rejected_ids.read().is_empty() {
+                                        {
+                                            let rejected: Vec<smart_edit::ChangeItem> = result
+                                                .changes
+                                                .iter()
+                                                .filter(|c| rejected_ids.read().contains(&c.id))
+                                                .cloned()
+                                                .collect();
+                                            let content = content_for_retry.clone();
+                                            let plain_images = plain_images_for_retry.clone();
+                                            let selected_indices = selected_indices_for_retry.clone();
+                                            let session_name = session_name_for_retry
+                                                .clone()
+                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+
+                                            rsx! {
+                                                button {
+                                                    class: "editor-btn editor-btn-secondary",
+                                                    onclick: move |_| {
+                                                        let content = content.clone();
+                                                        let plain_images = plain_images.clone();
+                                                        let selected_indices = selected_indices.clone();
+                                                        let rejected = rejected.clone();
+                                                        let session_name = session_name.clone();
+                                                        let started_at = std::time::Instant::now();
+                                                        smart_edit_state.set(SmartEditState::Loading);
+                                                        rejected_ids.write().clear();
+                                                        spawn(async move {
+                                                            match smart_edit::run_smart_edit_with_feedback(
+                                                                    &content,
+                                                                    &selected_indices,
+                                                                    &plain_images,
+                                                                    &rejected,
+                                                                    &session_name,
+                                                                )
+                                                                .await
+                                                            {
+                                                                Ok(result) => {
+                                                                    let elapsed_ms = started_at.elapsed().as_millis();
+                                                                    smart_edit_state
+                                                                        .set(SmartEditState::Preview {
+                                                                            selected_indices,
+                                                                            elapsed_ms,
+                                                                            result,
+                                                                        });
+                                                                }
+                                                                Err(message) => {
+                                                                    let elapsed_ms = started_at.elapsed().as_millis();
+                                                                    smart_edit_state
+                                                                        .set(SmartEditState::Error {
+                                                                            selected_indices,
+                                                                            elapsed_ms,
+                                                                            message,
+                                                                        });
+                                                                }
+                                                            }
+                                                        });
+                                                    },
+                                                    "Retry with Feedback"
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // "Apply Changes" is only shown when all changes are accepted
+                                    // (nothing in rejected_ids), or when there are no changes listed.
+                                    if rejected_ids.read().is_empty() {
+                                        button {
+                                            class: "editor-btn editor-btn-primary",
+                                            onclick: move |_| {
+                                                let mut indices = selected_indices_for_apply.clone();
+                                                indices.sort();
+
+                                                let mut env = envelope.write();
+                                                for &idx in indices.iter().rev() {
+                                                    if idx < env.content.len() {
+                                                        env.content.remove(idx);
+                                                    }
+                                                }
+                                                let insert_at =
+                                                    indices.first().copied().unwrap_or(0).min(env.content.len());
+                                                for (i, node) in nodes_for_apply.clone().into_iter().enumerate() {
+                                                    env.content.insert(insert_at + i, node);
+                                                }
+                                                drop(env);
+
+                                                selection.write().clear();
+                                                smart_edit_state.set(SmartEditState::Idle);
+                                                smart_edit_session_name.set(None);
+                                            },
+                                            "Apply Changes"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SmartEditState::Error { selected_indices, elapsed_ms, message } => {
+                        let session_name_for_retry = smart_edit_session_name.read().clone();
+                        let selected_indices_for_retry = selected_indices.clone();
+                        let content_for_retry = envelope.read().content.clone();
+                        let plain_images_for_retry = smart_edit_images.clone();
+                        rsx! {
+                            div { class: "smart-edit-inline-panel",
+                                p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
+                                p { class: "smart-edit-hint", "Failed after {elapsed_ms}ms" }
+                                div { class: "smart-edit-actions",
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: move |_| {
+                                            smart_edit_state.set(SmartEditState::Idle);
+                                            smart_edit_session_name.set(None);
+                                        },
+                                        "Dismiss"
+                                    }
+                                    button {
+                                        class: "editor-btn editor-btn-secondary",
+                                        onclick: move |_| {
+                                            let content = content_for_retry.clone();
+                                            let plain_images = plain_images_for_retry.clone();
+                                            let selected_indices = selected_indices_for_retry.clone();
+                                            let session_name = session_name_for_retry
+                                                .clone()
+                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+                                            let session_name = session_name.clone();
+                                            let started_at = std::time::Instant::now();
+                                            smart_edit_state.set(SmartEditState::Loading);
+                                            rejected_ids.write().clear();
+                                            spawn(async move {
+                                                match smart_edit::run_smart_edit(
+                                                        &content,
+                                                        &selected_indices,
+                                                        &plain_images,
+                                                        &session_name,
+                                                        true,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(result) => {
+                                                        let elapsed_ms = started_at.elapsed().as_millis();
+                                                        smart_edit_state
+                                                            .set(SmartEditState::Preview {
+                                                                selected_indices,
+                                                                elapsed_ms,
+                                                                result,
+                                                            });
+                                                    }
+                                                    Err(message) => {
+                                                        let elapsed_ms = started_at.elapsed().as_millis();
+                                                        smart_edit_state
+                                                            .set(SmartEditState::Error {
+                                                                selected_indices,
+                                                                elapsed_ms,
+                                                                message,
+                                                            });
+                                                    }
+                                                }
+                                            });
+                                        },
+                                        "Try Again"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Document tree
@@ -1003,7 +1354,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     selection: selection.read().clone(),
                     languages: languages.clone(),
                     field_labels: field_labels.clone(),
-                    on_action: handle_action,
+                    on_action: handle_action.clone(),
                 }
             }
 
@@ -1016,7 +1367,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 }
             }
         }
+
     }
+}
+
+fn selected_root_indices(paths: &std::collections::HashSet<NodePath>) -> Vec<usize> {
+    let mut indices = BTreeSet::new();
+    for path in paths {
+        if let Some(PathSegment::Child(idx)) = path.first() {
+            indices.insert(*idx);
+        }
+    }
+    indices.into_iter().collect()
 }
 
 /// Update inline text content, optionally for a specific language.

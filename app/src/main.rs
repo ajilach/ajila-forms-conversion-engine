@@ -113,6 +113,7 @@ fn App() -> Element {
             div { class: "editor-page",
                 StructuredEditor {
                     envelope: EnvelopeWrapper(envelope),
+                    plain_images: processing_state.read().plain_images.clone(),
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }

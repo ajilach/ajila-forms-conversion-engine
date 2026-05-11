@@ -455,6 +455,40 @@ body > div, #main {
     color: var(--color-text-warning);
 }
 
+/* ---- Spinner (reusable) ---- */
+
+@keyframes spinner-spin {
+    to { transform: rotate(360deg); }
+}
+
+.spinner {
+    display: inline-block;
+    border-style: solid;
+    border-color: var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spinner-spin 0.8s linear infinite;
+    vertical-align: middle;
+}
+
+.spinner-sm {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+}
+
+.spinner-md {
+    width: 24px;
+    height: 24px;
+    border-width: 3px;
+}
+
+.spinner-lg {
+    width: 32px;
+    height: 32px;
+    border-width: 3px;
+}
+
 /* ---- Step Indicator ---- */
 
 .step {
@@ -1294,4 +1328,204 @@ body > div, #main {
 .option-add-btn:hover {
     border-color: var(--color-primary);
     background: rgba(var(--primary500-rgb), 0.05);
+}
+
+/* ──── Smart Edit Modal ──────────────────────────────────────── */
+
+.smart-edit-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+}
+
+.smart-edit-modal {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-modal);
+    width: min(640px, 90vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.smart-edit-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.smart-edit-header h3 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+}
+
+.smart-edit-body {
+    padding: var(--space-lg);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.smart-edit-hint {
+    margin: 0 0 var(--space-md) 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.smart-edit-success {
+    color: var(--color-primary);
+}
+
+.smart-edit-warning {
+    color: #d97706;
+}
+
+.smart-edit-error {
+    color: var(--danger500);
+}
+
+.smart-edit-textarea {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    background: var(--color-bg);
+    color: var(--color-text);
+    resize: vertical;
+    min-height: 80px;
+    box-sizing: border-box;
+}
+
+.smart-edit-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.smart-edit-actions {
+    display: flex;
+    gap: var(--space-sm);
+    justify-content: flex-end;
+    margin-top: var(--space-md);
+}
+
+.smart-edit-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-xl) 0;
+}
+
+.smart-edit-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spinner-spin 0.8s linear infinite;
+}
+
+.smart-edit-response {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    margin: var(--space-sm) 0;
+}
+
+.toolbar-btn-smart {
+    color: var(--color-primary);
+}
+
+.toolbar-btn-smart:hover:not(:disabled) {
+    background: rgba(var(--primary500-rgb), 0.1);
+}
+
+.node-changed {
+    background: rgba(46, 160, 67, 0.12);
+    border-left: 3px solid #2ea043;
+    border-radius: var(--radius-sm);
+}
+
+.smart-edit-tree-preview {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    max-height: 400px;
+    overflow-y: auto;
+    margin: var(--space-sm) 0;
+    padding: var(--space-xs);
+    background: var(--color-bg);
+}
+
+/* Change list in the Smart Edit review panel */
+.smart-edit-inline-panel {
+    margin: var(--space-md);
+    padding: var(--space-md);
+    background: var(--color-bg-results, var(--color-bg));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.smart-edit-inline-panel h3 {
+    margin: 0 0 var(--space-sm) 0;
+    font-size: var(--font-size-md, 1rem);
+}
+
+.smart-edit-change-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin: var(--space-sm) 0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.smart-edit-change-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+}
+
+.smart-edit-change-item:hover {
+    background: var(--color-bg-hover, rgba(0,0,0,0.04));
+}
+
+.smart-edit-change-item input[type="checkbox"] {
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+}
+
+.smart-edit-change-item span {
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+    color: var(--color-text);
+}
+
+.smart-edit-change-rejected {
+    opacity: 0.5;
+    text-decoration: line-through;
+    background: rgba(255, 80, 80, 0.06);
+    border-color: rgba(255, 80, 80, 0.25);
 }
