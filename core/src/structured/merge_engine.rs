@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::structured::{
-    ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
-    InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode, RepeatableNode,
-    StructuredNode, TableHeader, TableNode, TableRow, TranslatableString, TranslationMap,
+    ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode,
+    HeadingNode, InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
+    TranslationMap,
 };
 
 /// Compute the LCS (longest common subsequence) table for two node slices,
@@ -169,11 +170,19 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
             let t = p.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         StructuredNode::Heading(h) => {
             let t = h.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         _ => None,
     }
@@ -483,7 +492,9 @@ fn fill_inline_node(node: &mut InlineNode, all_languages: &[String], primary_lan
         InlineNode::Link(link) => {
             fill_inline_text(&mut link.content, all_languages, primary_language)
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             fill_inline_node(inner, all_languages, primary_language)
         }
     }
@@ -939,7 +950,9 @@ fn collect_projection_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_projection_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_projection_languages(inner, langs);
         }
         InlineNode::Text(_) => {}
@@ -967,7 +980,9 @@ fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &m
                 append_inline_node_projection_for_lang(child, lang, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             append_inline_node_projection_for_lang(inner, lang, out)
         }
     }
@@ -990,9 +1005,9 @@ fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
                 append_stable_inline_node_projection(child, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
-            append_stable_inline_node_projection(inner, out)
-        }
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => append_stable_inline_node_projection(inner, out),
     }
 }
 
@@ -1263,7 +1278,9 @@ fn prepend_space_to_first_inline_node(text: &mut InlineText) {
                     s.insert(0, ' ');
                 }
             }
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => {
                 prepend(inner);
             }
             InlineNode::Link(link) => {
@@ -1292,7 +1309,9 @@ fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_inline_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_inline_languages(inner, langs);
         }
         InlineNode::Text(_) => {}
@@ -1954,13 +1973,6 @@ fn consolidate_by_neighborhood(entries: &mut Vec<AlignedNode>, base_lang: &str, 
 
             // Must be same top-level variant
             if std::mem::discriminant(left_node) != std::mem::discriminant(right_node) {
-                continue;
-            }
-
-            // Guard against over-eager neighborhood merges: same variant alone
-            // is insufficient for multilingual glossary headings where nearby
-            // entries can be reordered or have very different text shapes.
-            if !node_matches_for_similarity(left_node, right_node) {
                 continue;
             }
 
