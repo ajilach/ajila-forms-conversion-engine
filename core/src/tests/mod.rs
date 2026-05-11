@@ -26585,3 +26585,173 @@ fn test_aaam_contains_footnotes() {
         "Footnote 1 should mention US Territorien.\nActual: {content}"
     );
 }
+
+#[test]
+fn test_aacs_de_structured_document_order() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::StructuredNode;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    // Collect all heading and paragraph texts in document order.
+    let mut texts: Vec<String> = Vec::new();
+    walk_structured_nodes(&structured, &mut |node| match node {
+        StructuredNode::Heading(h) => texts.push(h.content.as_plain_text()),
+        StructuredNode::Paragraph(p) => texts.push(p.content.as_plain_text()),
+        _ => {}
+    });
+
+    let expected_order = [
+        "Automatischer Informationsaustausch (AEI Automatic Exchange of Information) Foreign Account Tax Compliance Act (FATCA)",
+        "Anhang zu den UBS-Selbstauskunfts-Formularen mit zusätzlichen Erklärungen zu den AEI-/FATCA-Begriffen",
+        "Bitte beachten Sie: Diese Definitionen beziehen sich auf die am meisten",
+        "Active NFE – Other/Active NFFE – Other",
+        "Die Begriffe Active NFE – Sonstige (im Rahmen von AEI) und Active",
+        "Börsenkotiertes Nicht-Finanzinstitut und verbundenes Unternehmen/",
+        "Eine «etablierte Wertpapierbörse» bezeichnet eine Börse, die von",
+        "Regierungsinstanz/Ausländische Regierung",
+        "Regierungsinstanz (AEI) und ausländische Regierung (FATCA) bezeichnen",
+        "Zertifiziertes, als FATCA-konform erachtetes FFI (nur FATCA)",
+        "Kollektivanlagevehikel (nur IGA nach Modell 1) (nur FATCA)",
+        "Beherrschende Person",
+    ];
+
+    // Find the position of each expected fragment in the collected texts.
+    let mut last_pos: Option<usize> = None;
+    for (i, expected) in expected_order.iter().enumerate() {
+        let pos = texts.iter().position(|t| t.contains(expected));
+        assert!(
+            pos.is_some(),
+            "Expected text fragment [{}] '{}' not found in structured output.\nAll texts: {:#?}",
+            i,
+            expected,
+            texts
+        );
+        let pos = pos.unwrap();
+        if let Some(prev) = last_pos {
+            assert!(
+                pos > prev,
+                "Expected '{}' (at position {}) to appear after '{}' (at position {})",
+                expected,
+                pos,
+                expected_order[i - 1],
+                prev
+            );
+        }
+        last_pos = Some(pos);
+    }
+}
+
+#[test]
+fn test_aacs_de_lists() {
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_DE");
+
+    let lists = collect_lists(&structured);
+    let all_items: Vec<String> = lists
+        .iter()
+        .flat_map(|l| l.items.iter().map(|i| i.as_plain_text()))
+        .collect();
+
+    // --- Unordered list items: Active NFE/NFFE criteria ---
+    let unordered1_fragments = [
+        "Weniger als 50% des Bruttoertrags des NFE/NFFE",
+        "Die Geschäftstätigkeit des NFE/NFFE besteht praktisch aus",
+        "Das NFE/NFFE geht noch keinen Geschäften nach",
+        "Das NFE/NFFE war in den letzten fünf Jahren kein Finanzinstitut",
+        "Das NFE/NFFE tätigt hauptsächlich Finanzierungs- und Hedging-",
+        "Das NFE/NFFE ist eine nicht auf Gewinnerzielung gerichtete",
+    ];
+    for frag in &unordered1_fragments {
+        assert!(
+            all_items.iter().any(|item| item.contains(frag)),
+            "Expected a list item containing '{}'. Found items: {:?}",
+            frag,
+            all_items
+        );
+    }
+
+    // --- Unordered list: IGA-Land / Kollektivanlagevehikel ---
+    let unordered2_fragments = [
+        "die in einem IGA-Land etabliert ist",
+        "die als Kollektivanlagevehikel reguliert ist",
+        "deren Anteile (einschließlich Fremdkapital von mehr als USD 50",
+    ];
+    let found_unordered2 = lists.iter().any(|l| {
+        !l.list_style.is_ordered()
+            && unordered2_fragments.iter().all(|frag| {
+                l.items
+                    .iter()
+                    .any(|item| item.as_plain_text().contains(frag))
+            })
+    });
+    assert!(
+        found_unordered2,
+        "Expected an unordered list with IGA-Land / Kollektivanlagevehikel items.\nLists: {:#?}",
+        lists
+            .iter()
+            .map(|l| (
+                l.list_style,
+                l.items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>()
+    );
+
+    // --- Retirement fund types ---
+    // Currently rendered as a single paragraph with dashes; verify the content
+    // exists somewhere in the structured output (heading, paragraph, or list).
+    let retirement_fragments = [
+        "Treaty-Qualified Retirement Fund",
+        "Broad Participation Retirement Fund",
+        "Narrow Participation Retirement Fund",
+        "Pension Fund of an Exempt Beneficial Owner",
+        "Investment Entity Wholly Owned by Exempt Beneficial Owners",
+    ];
+    let mut all_texts: Vec<String> = Vec::new();
+    walk_structured_nodes(&structured, &mut |node| match node {
+        crate::structured::StructuredNode::Heading(h) => {
+            all_texts.push(h.content.as_plain_text());
+        }
+        crate::structured::StructuredNode::Paragraph(p) => {
+            all_texts.push(p.content.as_plain_text());
+        }
+        crate::structured::StructuredNode::List(l) => {
+            for item in &l.items {
+                all_texts.push(item.as_plain_text());
+            }
+        }
+        _ => {}
+    });
+    for frag in &retirement_fragments {
+        assert!(
+            all_texts.iter().any(|t| t.contains(frag)),
+            "Expected text containing '{}' in structured output.",
+            frag
+        );
+    }
+
+    // --- Ordered list: Aktien / Fremdkapitalbeteiligungen ---
+    // Currently rendered as paragraphs; verify the content exists.
+    let ordered_fragments = ["Aktien einer Kapitalgesellschaft"];
+    for frag in &ordered_fragments {
+        assert!(
+            all_texts.iter().any(|t| t.contains(frag)),
+            "Expected text containing '{}' in structured output.\nAll texts: {:#?}",
+            frag,
+            all_texts
+        );
+    }
+    // Check that Fremdkapital content exists (may be hyphenated as "Fremdkapital-beteiligungen")
+    assert!(
+        all_texts.iter().any(|t| t.contains("Fremdkapital")),
+        "Expected text containing 'Fremdkapital' in structured output.\nAll texts: {:#?}",
+        all_texts
+    );
+}
