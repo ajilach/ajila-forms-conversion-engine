@@ -206,6 +206,7 @@ pub enum NodeMetadata {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldInputKind {
     Text,
+    Textarea,
     Number,
     Date,
     Email,
@@ -925,7 +926,11 @@ fn collect_selectable_paths_from_node(
     }
 }
 
-fn collect_selectable_paths_from_list(list: &ListNode, path: &mut NodePath, out: &mut HashSet<NodePath>) {
+fn collect_selectable_paths_from_list(
+    list: &ListNode,
+    path: &mut NodePath,
+    out: &mut HashSet<NodePath>,
+) {
     for (i, item) in list.items.iter().enumerate() {
         path.push(PathSegment::ListItem(i));
         out.insert(path.clone());

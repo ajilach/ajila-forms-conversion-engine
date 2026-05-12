@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use blueprint::document::ListStyleType;
-use blueprint::structured::GridLayoutElement;
+use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::structured::TableRow as StructTableRow;
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
@@ -665,28 +665,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     | FieldType::Select { options } => options.clone(),
                                     _ => vec![],
                                 };
-                                f.input_type = match kind {
-                                    FieldInputKind::Text => FieldType::Text {
-                                        regex: None,
-                                        max_length: None,
-                                        min_length: None,
-                                    },
-                                    FieldInputKind::Number => FieldType::Number {
-                                        min: None,
-                                        max: None,
-                                        step: None,
-                                    },
-                                    FieldInputKind::Date => FieldType::Date,
-                                    FieldInputKind::Email => FieldType::Email,
-                                    FieldInputKind::Tel => FieldType::Tel,
-                                    FieldInputKind::Checkbox => FieldType::Bool,
-                                    FieldInputKind::Dropdown => FieldType::Select {
-                                        options: existing_options,
-                                    },
-                                    FieldInputKind::Radio => FieldType::Radio {
-                                        options: existing_options,
-                                    },
-                                };
+                                f.input_type =
+                                    field_type_from_input_kind(kind, existing_options);
                             }
                         }
                         NodeMetadata::FieldOptions(options) => {
@@ -1546,5 +1526,66 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                 })
                 .collect()
         }
+    }
+}
+
+fn field_type_from_input_kind(kind: FieldInputKind, existing_options: Vec<NameValue>) -> FieldType {
+    match kind {
+        FieldInputKind::Text => FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        FieldInputKind::Textarea => FieldType::Textarea { max_length: None },
+        FieldInputKind::Number => FieldType::Number {
+            min: None,
+            max: None,
+            step: None,
+        },
+        FieldInputKind::Date => FieldType::Date,
+        FieldInputKind::Email => FieldType::Email,
+        FieldInputKind::Tel => FieldType::Tel,
+        FieldInputKind::Checkbox => FieldType::Bool,
+        FieldInputKind::Dropdown => FieldType::Select {
+            options: existing_options,
+        },
+        FieldInputKind::Radio => FieldType::Radio {
+            options: existing_options,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueprint::structured::{InputValue, TranslatableString};
+
+    #[test]
+    fn textarea_kind_converts_to_textarea_field_type() {
+        let converted = field_type_from_input_kind(FieldInputKind::Textarea, vec![]);
+        assert!(matches!(converted, FieldType::Textarea { max_length: None }));
+    }
+
+    #[test]
+    fn dropdown_and_radio_keep_existing_options() {
+        let existing_options = vec![NameValue {
+            name: TranslatableString::Plain("Option".to_string()),
+            value: InputValue::Text("value".to_string()),
+        }];
+
+        let dropdown = field_type_from_input_kind(
+            FieldInputKind::Dropdown,
+            existing_options.clone(),
+        );
+        let radio = field_type_from_input_kind(FieldInputKind::Radio, existing_options.clone());
+
+        assert!(matches!(
+            dropdown,
+            FieldType::Select { options } if options == existing_options
+        ));
+        assert!(matches!(
+            radio,
+            FieldType::Radio { options } if options == existing_options
+        ));
     }
 }
