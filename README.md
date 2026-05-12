@@ -116,7 +116,7 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --dump-xfa
 
 ## App
 
-The app is built with [Dioxus](https://dioxuslabs.com/) and supports web and desktop targets.
+The app is built with [Dioxus](https://dioxuslabs.com/) and supports web and desktop targets. This is the recommended way of running the migration engine, especially the desktop build.
 
 ### Web (Development)
 

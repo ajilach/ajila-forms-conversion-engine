@@ -8951,29 +8951,40 @@ fn test_aagi_debug_paragraph_structure() {
     ] {
         let env = run_exhaustive_to_envelope(input_path(file), lang)
             .expect(&format!("Failed to process {file}"));
-        println!("\n=== {lang} ({file}) — {} top-level nodes ===", env.content.len());
+        println!(
+            "\n=== {lang} ({file}) — {} top-level nodes ===",
+            env.content.len()
+        );
         let mut idx = 0usize;
-        walk_structured_nodes(&env.content, &mut |node| {
-            match node {
-                StructuredNode::Paragraph(p) => {
-                    let text = p.content.as_plain_text();
-                    let src = p.source_name.as_deref().unwrap_or("-");
-                    println!("  [{lang}] P#{idx} src={src}: {}", &text[..text.len().min(200)]);
-                    idx += 1;
-                }
-                StructuredNode::Heading(h) => {
-                    let text = h.content.as_plain_text();
-                    println!("  [{lang}] H#{idx}: {}", &text[..text.len().min(120)]);
-                    idx += 1;
-                }
-                StructuredNode::Field(f) => {
-                    let label = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
-                    let som = f.som_path.as_deref().unwrap_or("-");
-                    println!("  [{lang}] F#{idx} som={som}: {}", &label[..label.len().min(200)]);
-                    idx += 1;
-                }
-                _ => {}
+        walk_structured_nodes(&env.content, &mut |node| match node {
+            StructuredNode::Paragraph(p) => {
+                let text = p.content.as_plain_text();
+                let src = p.source_name.as_deref().unwrap_or("-");
+                println!(
+                    "  [{lang}] P#{idx} src={src}: {}",
+                    &text[..text.len().min(200)]
+                );
+                idx += 1;
             }
+            StructuredNode::Heading(h) => {
+                let text = h.content.as_plain_text();
+                println!("  [{lang}] H#{idx}: {}", &text[..text.len().min(120)]);
+                idx += 1;
+            }
+            StructuredNode::Field(f) => {
+                let label = f
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text())
+                    .unwrap_or_default();
+                let som = f.som_path.as_deref().unwrap_or("-");
+                println!(
+                    "  [{lang}] F#{idx} som={som}: {}",
+                    &label[..label.len().min(200)]
+                );
+                idx += 1;
+            }
+            _ => {}
         });
     }
 }
@@ -9291,7 +9302,9 @@ fn test_aagi_sp_mail_to_third_party_structure() {
         list_debug,
     );
     assert!(
-        all_paragraphs.iter().any(|text| text == expected_continuation),
+        all_paragraphs
+            .iter()
+            .any(|text| text == expected_continuation),
         "AAGI SP should contain the continuation clause as a standalone paragraph.\nFound root paragraphs: {:?}\nFound lists: {:?}",
         all_paragraphs,
         list_debug,
@@ -27502,7 +27515,6 @@ fn assert_aacs_triplet_aligned(de_snippet: &str, en_snippet: &str, sp_snippet: &
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_active_nfe_nffe() {
     assert_aacs_triplet_aligned(
         "Active NFE – Other/Active NFFE – Other",
@@ -27512,7 +27524,6 @@ fn test_aacs_multilingual_active_nfe_nffe() {
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_government_entity() {
     assert_aacs_triplet_aligned(
         "Regierungsinstanz/Ausländische Regierung",
@@ -27522,7 +27533,6 @@ fn test_aacs_multilingual_government_entity() {
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_aei_classification() {
     assert_aacs_triplet_aligned(
         "Klassifizierung gemäß AEI",
