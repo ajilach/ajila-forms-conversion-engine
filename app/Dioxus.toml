@@ -8,13 +8,6 @@ title = "Ajila Forms Conversion Engine"
 [desktop]
 title = "Ajila Forms Conversion Engine"
 
-[bundle]
-identifier = "com.ajila.blueprint-app"
-icon = [
-    "/assets/icon_256.png",
-    "/assets/icon_128.png"
-]
-
 [web.watcher]
 reload_html = true
 watch_path = ["src"]
