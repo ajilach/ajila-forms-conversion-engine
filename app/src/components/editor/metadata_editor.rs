@@ -241,26 +241,8 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
         }
         StructuredNode::Field(f) => {
             // Determine current field type
-            let current_kind = match &f.input_type {
-                FieldType::Text { .. } => FieldInputKind::Text,
-                FieldType::Number { .. } => FieldInputKind::Number,
-                FieldType::Date => FieldInputKind::Date,
-                FieldType::Email => FieldInputKind::Email,
-                FieldType::Tel => FieldInputKind::Tel,
-                FieldType::Bool => FieldInputKind::Checkbox,
-                FieldType::Select { .. } => FieldInputKind::Dropdown,
-                FieldType::Radio { .. } => FieldInputKind::Radio,
-            };
-            let current_value = match current_kind {
-                FieldInputKind::Text => "text",
-                FieldInputKind::Number => "number",
-                FieldInputKind::Date => "date",
-                FieldInputKind::Email => "email",
-                FieldInputKind::Tel => "tel",
-                FieldInputKind::Checkbox => "checkbox",
-                FieldInputKind::Dropdown => "dropdown",
-                FieldInputKind::Radio => "radio",
-            };
+            let current_kind = field_input_kind_from_field_type(&f.input_type);
+            let current_value = field_input_kind_value(&current_kind);
 
             let has_options = matches!(
                 &f.input_type,
@@ -295,16 +277,8 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                     let path = props.path.clone();
                                     let on_action = props.on_action;
                                     move |evt: Event<FormData>| {
-                                        let kind = match evt.value().as_str() {
-                                            "text" => FieldInputKind::Text,
-                                            "number" => FieldInputKind::Number,
-                                            "date" => FieldInputKind::Date,
-                                            "email" => FieldInputKind::Email,
-                                            "tel" => FieldInputKind::Tel,
-                                            "checkbox" => FieldInputKind::Checkbox,
-                                            "dropdown" => FieldInputKind::Dropdown,
-                                            "radio" => FieldInputKind::Radio,
-                                            _ => return,
+                                        let Some(kind) = parse_field_input_kind(evt.value().as_str()) else {
+                                            return;
                                         };
                                         let new_has_options = matches!(
                                             kind,
@@ -321,6 +295,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                     }
                                 },
                                 option { value: "text", "Text" }
+                                option { value: "textarea", "Textarea" }
                                 option { value: "number", "Number" }
                                 option { value: "date", "Date" }
                                 option { value: "email", "Email" }
@@ -334,7 +309,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                             div { class: "metadata-field",
                                 label { class: "metadata-label", "Options" }
                                 div { class: "options-list",
-                                    for (idx, option) in options_signal.read().iter().enumerate() {
+                                    for (idx , option) in options_signal.read().iter().enumerate() {
                                         {
                                             let name_str = option.name.as_str().to_string();
                                             let value_str = match &option.value {
@@ -423,7 +398,11 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                     on_action.call(EditorAction::StopEditing);
                                 }
                             },
-                            if has_options { "Save" } else { "Done" }
+                            if has_options {
+                                "Save"
+                            } else {
+                                "Done"
+                            }
                         }
                     }
                 }
@@ -463,6 +442,49 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
     }
 }
 
+fn field_input_kind_from_field_type(input_type: &FieldType) -> FieldInputKind {
+    match input_type {
+        FieldType::Text { .. } => FieldInputKind::Text,
+        FieldType::Textarea { .. } => FieldInputKind::Textarea,
+        FieldType::Number { .. } => FieldInputKind::Number,
+        FieldType::Date => FieldInputKind::Date,
+        FieldType::Email => FieldInputKind::Email,
+        FieldType::Tel => FieldInputKind::Tel,
+        FieldType::Bool => FieldInputKind::Checkbox,
+        FieldType::Select { .. } => FieldInputKind::Dropdown,
+        FieldType::Radio { .. } => FieldInputKind::Radio,
+    }
+}
+
+fn field_input_kind_value(kind: &FieldInputKind) -> &'static str {
+    match kind {
+        FieldInputKind::Text => "text",
+        FieldInputKind::Textarea => "textarea",
+        FieldInputKind::Number => "number",
+        FieldInputKind::Date => "date",
+        FieldInputKind::Email => "email",
+        FieldInputKind::Tel => "tel",
+        FieldInputKind::Checkbox => "checkbox",
+        FieldInputKind::Dropdown => "dropdown",
+        FieldInputKind::Radio => "radio",
+    }
+}
+
+fn parse_field_input_kind(value: &str) -> Option<FieldInputKind> {
+    match value {
+        "text" => Some(FieldInputKind::Text),
+        "textarea" => Some(FieldInputKind::Textarea),
+        "number" => Some(FieldInputKind::Number),
+        "date" => Some(FieldInputKind::Date),
+        "email" => Some(FieldInputKind::Email),
+        "tel" => Some(FieldInputKind::Tel),
+        "checkbox" => Some(FieldInputKind::Checkbox),
+        "dropdown" => Some(FieldInputKind::Dropdown),
+        "radio" => Some(FieldInputKind::Radio),
+        _ => None,
+    }
+}
+
 /// Check if a node has editable metadata.
 pub fn has_editable_metadata(node: &StructuredNode) -> bool {
     matches!(
@@ -472,4 +494,27 @@ pub fn has_editable_metadata(node: &StructuredNode) -> bool {
             | StructuredNode::GridLayout(_)
             | StructuredNode::Field(_)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn textarea_field_type_maps_to_textarea_input_kind() {
+        assert_eq!(
+            field_input_kind_from_field_type(&FieldType::Textarea { max_length: None }),
+            FieldInputKind::Textarea
+        );
+    }
+
+    #[test]
+    fn textarea_input_kind_roundtrips_through_value_parser() {
+        let parsed = parse_field_input_kind("textarea");
+        assert_eq!(parsed, Some(FieldInputKind::Textarea));
+        assert_eq!(
+            field_input_kind_value(&FieldInputKind::Textarea),
+            "textarea"
+        );
+    }
 }

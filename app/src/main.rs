@@ -95,8 +95,11 @@ fn App() -> Element {
         // Regenerate XSD if profile supports it
         if let Some(ref profile_name) = profile
             && blueprint::has_xsd_config(profile_name)
-            && let Ok(xsd_config) = blueprint::load_xsd_config(profile_name)
+            && let Ok(mut xsd_config) = blueprint::load_xsd_config(profile_name)
         {
+            if let Some(ref fc) = state.form_code {
+                xsd_config.form_code = Some(fc.clone());
+            }
             state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
         }
 
@@ -148,6 +151,7 @@ fn App() -> Element {
             div { class: "editor-page",
                 StructuredEditor {
                     envelope: EnvelopeWrapper(envelope),
+                    plain_images: processing_state.read().plain_images.clone(),
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }

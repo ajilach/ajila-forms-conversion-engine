@@ -21,6 +21,18 @@
 
 schemaLocationPrefix = "../"
 
+# rootElementName — template for the XSD root element name.
+# May contain {{ form_code }} which is replaced with the actual form code.
+rootElementName = "UBSAF_{{ form_code }}"
+
+# fragmentBindRefPrefix — prefix used for fragment bindRef paths.
+# Fragments use a generic prefix so they can be reused across forms.
+# May contain {{ form_code }} for expansion.  When omitted, fragments
+# use the same root element name as the form.
+fragmentBindRefPrefix = "UBSAF"
+
+masterLanguage = "en"
+
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---
@@ -142,4 +154,203 @@ type = "xs:string"
 [elements.CorrespondenceLanguage]
 synonyms = ["Correspondence Language", "Korrespondenzsprache"]
 type = "xs:string"
- 
+
+# ─── Sections ──────────────────────────────────────────────────────────────────
+#
+# [sections.<name>]       — section name overrides based on content matching
+#   patterns              — list of regex patterns (case-insensitive) matched
+#                           against the full section text (heading + body).
+#                           Longest match wins when multiple patterns match.
+
+# --- Data sections (role/person types) ---
+# These patterns are matched against the heading first (priority), then body
+# text (only if the heading is generic like "Step 1"). The code handles this
+# priority so no anchoring is needed here.
+
+[sections.AccountHolder]
+patterns = [
+    "account holder|kontoinhaber|titulaire du compte|titolare del conto|titular de la cuenta",
+]
+
+[sections.Lessee]
+patterns = [
+    "lessee|mieter|locataire|locatario|arrendatario",
+]
+
+[sections.ContractingPartner]
+patterns = [
+    "contracting partner|vertragspartner|cocontractant|partner contrattuale|parte contratante|socio contractual",
+]
+
+[sections.BeneficialOwner]
+patterns = [
+    "beneficial owner|wirtschaftlich berechtig|ayant droit économique|avente diritto economico|beneficiario económico|beneficiario efectivo",
+]
+
+[sections.Trustee]
+patterns = [
+    "trustee|treuhänder|fiduciaire|fiduciario",
+]
+
+[sections.AuthorizedSigner]
+patterns = [
+    "authorized signatory|zeichnungsberechtig|signataire autorisé|firmatario autorizzato|firmante autorizado",
+]
+
+[sections.GeneralPOA]
+patterns = [
+    "general power of attorney|generalvollmacht|unbeschränkte vollmacht|procuration générale|procura generale|poder general|unlimited power of attorney",
+]
+
+[sections.LimitedPOA]
+patterns = [
+    "limited power of attorney|spezialvollmacht|beschränkte vollmacht|procuration limitée|procura limitata|poder limitado",
+]
+
+[sections.EBankingUser]
+patterns = [
+    "e-banking user|e-banking.benutzer|utilisateur e-banking|utente e-banking",
+]
+
+[sections.FIM]
+patterns = [
+    "\\bFIM\\b|financial intermediary|finanzintermediär|intermédiaire financier|intermediario finanziario",
+]
+
+[sections.ControllingPerson]
+patterns = [
+    "controlling person|kontrollierende person|personne de contrôle|persona di controllo|persona controladora",
+]
+
+[sections.ConnectedParty]
+patterns = [
+    "connected party|verbundene partei|partie connectée|parte connessa|parte conectada",
+]
+
+[sections.AuthRep]
+patterns = [
+    "authorized representative|bevollmächtigter|représentant autorisé|rappresentante autorizzato|representante autorizado|angaben zum bevollmächtigten|details of attorney|attorney",
+]
+
+[sections.FIMAuthRep]
+patterns = [
+    "FIM.*authorized representative|FIM.*bevollmächtigter",
+]
+
+# --- Signature sections ---
+
+[sections.AccountHolderSignature]
+patterns = [
+    "signature of account holder|unterschrift des kontoinhaber|signature du titulaire|firma del titolare del conto|firma del titular",
+    "signature of client|unterschrift des kunden|signature du client|firma del cliente",
+]
+
+[sections.AuthRepSignature]
+patterns = [
+    "signature of authorized representative|unterschrift des bevollmächtigten|signature du représentant autorisé|firma del rappresentante autorizzato|firma del representante autorizado|firma del apoderado|firma del procuratore",
+]
+
+[sections.LegalRepSignature]
+patterns = [
+    "signature of legal representative|unterschrift des gesetzlichen vertreter|signature du représentant légal|firma del legale rappresentante|firma del representante legal",
+]
+
+[sections.AuthAgentSignature]
+patterns = [
+    "signature of authorized person|unterschrift der berechtigten person",
+]
+
+[sections.CoOwnerSignature]
+patterns = [
+    "signature of co-owner|unterschrift des miteigentümer",
+]
+
+[sections.AttorneySignature]
+patterns = [
+    "signature of the attorney|unterschrift des treuhänder|signature du mandataire",
+]
+
+[sections.CASignature]
+patterns = [
+    "signature of client advisor|unterschrift des kundenberater|signature du conseiller",
+]
+
+[sections.DeskHeadSignature]
+patterns = [
+    "signature of desk head|unterschrift des abteilungsleiter",
+]
+
+[sections.SupervisorSignature]
+patterns = [
+    "signature of supervisor",
+]
+
+[sections.FIMSignature]
+patterns = [
+    "signature of FIM|unterschrift des FIM|signature du FIM|firma del FIM",
+]
+
+[sections.SalesMgrSignature]
+patterns = [
+    "signature of sales manager|unterschrift des verkaufsleiter",
+]
+
+[sections.RelevantPersonSignature]
+patterns = [
+    "signature of relevant person|unterschrift der relevanten person|signature de la personne concernée|firma della persona rilevante|firma de la persona relevante",
+]
+
+[sections.ResponsiblePersonSignature]
+patterns = [
+    "signature of responsible person|unterschrift der verantwortlichen person",
+]
+
+[sections.BorrowerSignature]
+patterns = [
+    "signature of borrower|unterschrift des kreditnehmer|unterschrift des darlehensnehmer",
+]
+
+[sections.BeneficialOwnerSignature]
+patterns = [
+    "signature of beneficial owner|unterschrift des wirtschaftlich berechtig|signature de l'ayant droit|firma dell'avente diritto",
+]
+
+[sections.ContractingPartnerSignature]
+patterns = [
+    "signature of contracting partner|unterschrift des vertragspartner|signature du cocontractant|firma del contraente|firma del parte contratante",
+]
+
+[sections.Signature]
+patterns = [
+    "^.{0,30}(?:signature\\(s\\)|unterschrift\\(en\\)|firma\\(e\\)|firma\\(s\\))",
+]
+
+[sections.CardholderSignature]
+patterns = [
+    "signature of.*cardholder|unterschrift des karteninhaber|signature du titulaire de la carte|firma del titolare della carta",
+]
+
+[sections.BahrainBROSignature]
+patterns = [
+    "signature.*bahrain.*BRO|BRO.*signature.*bahrain",
+]
+
+[sections.BahrainCEOSignature]
+patterns = [
+    "signature.*bahrain.*CEO|CEO.*signature.*bahrain",
+]
+
+[sections.CompanySignature]
+patterns = [
+    "signature of company|unterschrift der firma|signature de la société|firma della società",
+]
+
+[sections.PledgorSignature]
+patterns = [
+    "signature of.*pledgor|unterschrift des pfandgeber|unterschrift des verpfänder|signature du.*gagiste|firma del.*garante",
+]
+
+[sections.CAHSignature1]
+patterns = [
+    "signature.*client.*poa holder|signature.*client.*PoA|unterschrift.*kunde.*vollmacht",
+]

@@ -215,12 +215,20 @@ pub enum GroupKind {
     /// These are decorations, watermarks, or footnotes placed on the master page.
     Background,
 
+    /// Footnote content detected from master page footer region.
+    /// These are small-font text elements positioned at the bottom of the page
+    /// that contain footnote text (e.g., legal disclaimers, definitions).
+    Footnote,
+
     /// A repeatable section (dynamic array/table) per XFA occur element
     RepeatableSection {
         /// Minimum occurrences required
         min_occurrences: u32,
         /// Maximum occurrences allowed (None = unlimited)
         max_occurrences: Option<u32>,
+        /// Whether this section is user-repeatable (has add/remove buttons).
+        /// Script-managed sections (e.g., signatures) have this set to false.
+        is_user_repeatable: bool,
     },
 
     /// An inline field - a field with text directly before/after but no label above/below
@@ -319,6 +327,14 @@ pub enum GroupKind {
         /// Whether the first row is a header row (typically bold text).
         has_header: bool,
     },
+
+    /// A multi-column text section detected by `ColumnLayoutDetector`.
+    ///
+    /// Children are individual items in reading order: all left-column items
+    /// (sorted by y) first, then all right-column items (sorted by y).
+    /// The structured converter must preserve this order without re-sorting,
+    /// since the right column may start at a lower y than the left column.
+    ColumnSection,
 }
 
 impl<'a> Document<'a> {
@@ -1051,9 +1067,19 @@ impl<'a> Document<'a> {
             GroupKind::RepeatableSection {
                 min_occurrences,
                 max_occurrences,
+                is_user_repeatable,
             } => match max_occurrences {
-                Some(max) => format!("RepeatableSection[{}-{}]", min_occurrences, max),
-                None => format!("RepeatableSection[{}+]", min_occurrences),
+                Some(max) => format!(
+                    "RepeatableSection[{}-{}{}]",
+                    min_occurrences,
+                    max,
+                    if *is_user_repeatable { "" } else { ",script" }
+                ),
+                None => format!(
+                    "RepeatableSection[{}+{}]",
+                    min_occurrences,
+                    if *is_user_repeatable { "" } else { ",script" }
+                ),
             },
             GroupKind::InlineField { .. } => "InlineField".to_string(),
             GroupKind::InlineDateField { generated_name, .. } => {
@@ -1089,6 +1115,8 @@ impl<'a> Document<'a> {
                     format!("Table[{}cols]", columns)
                 }
             }
+            GroupKind::ColumnSection => "ColumnSection".to_string(),
+            GroupKind::Footnote => "Footnote".to_string(),
         }
     }
 
@@ -1176,10 +1204,7 @@ mod tests {
 
     fn create_test_flattened() -> Flattened {
         Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "First".to_string(),

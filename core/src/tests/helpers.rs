@@ -5,7 +5,8 @@ use std::io::{Cursor, Read};
 use std::sync::Once;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode, StructuredNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, InlineNode, ListNode,
+    StructuredNode,
 };
 
 /// Ensure UBS profile fonts are loaded into the global font manager.
@@ -115,6 +116,19 @@ pub fn collect_radio_fields(nodes: &[StructuredNode]) -> Vec<FieldNode> {
     out
 }
 
+/// Collect all `FieldNode`s whose `input_type` is `Textarea`.
+pub fn collect_textarea_fields(nodes: &[StructuredNode]) -> Vec<FieldNode> {
+    let mut out = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Field(f) = node {
+            if matches!(f.input_type, FieldType::Textarea { .. }) {
+                out.push(f.clone());
+            }
+        }
+    });
+    out
+}
+
 /// Collect field labels (as plain text) from all `FieldNode`s in the tree.
 pub fn collect_field_labels(nodes: &[StructuredNode]) -> Vec<String> {
     let mut out = Vec::new();
@@ -162,6 +176,17 @@ pub fn collect_headings(nodes: &[StructuredNode]) -> Vec<(u8, String)> {
     walk_structured_nodes(nodes, &mut |node| {
         if let StructuredNode::Heading(h) = node {
             out.push((h.level.as_u8(), h.content.as_plain_text()));
+        }
+    });
+    out
+}
+
+/// Collect all `FootnoteNode`s as `(marker, text)` pairs from the tree.
+pub fn collect_footnotes(nodes: &[StructuredNode]) -> Vec<(Option<String>, String)> {
+    let mut out = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Footnote(f) = node {
+            out.push((f.marker.clone(), f.content.as_plain_text()));
         }
     });
     out

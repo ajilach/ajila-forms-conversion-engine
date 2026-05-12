@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use super::spinner::Spinner;
 use crate::models::{ProcessingState, ProcessingStep};
 
 #[component]
@@ -106,7 +107,12 @@ pub fn ProgressDisplay(
 }
 
 #[component]
-pub fn StepIndicator(name: String, is_current: bool, is_complete: bool, progress: Option<f32>) -> Element {
+pub fn StepIndicator(
+    name: String,
+    is_current: bool,
+    is_complete: bool,
+    progress: Option<f32>,
+) -> Element {
     let class = if is_complete {
         "step step-complete"
     } else if is_current {
@@ -115,23 +121,16 @@ pub fn StepIndicator(name: String, is_current: bool, is_complete: bool, progress
         "step step-pending"
     };
 
-    let progress_text = if is_current {
-        progress.map(|p| format!(" ({}%)", (p * 100.0).round() as u32))
-    } else {
-        None
-    };
-
     rsx! {
         div { class: "{class}",
             "{name}"
-            if let Some(pct) = &progress_text {
-                span { class: "step-progress", "{pct}" }
-            }
             if is_complete {
                 span { class: "step-icon", "✓" }
             }
-            if is_current && progress_text.is_none() {
-                span { class: "step-icon", "●" }
+            if is_current {
+                span { class: "step-icon",
+                    Spinner { size: "sm" }
+                }
             }
         }
     }

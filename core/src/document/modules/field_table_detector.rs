@@ -85,9 +85,7 @@ impl FieldTableDetector {
         let roots = doc.roots();
         roots
             .into_iter()
-            .filter(|&idx| {
-                doc.is_text_block(idx) && !doc.is_heading(idx) && doc.is_bold_group(idx)
-            })
+            .filter(|&idx| doc.is_text_block(idx) && !doc.is_heading(idx) && doc.is_bold_group(idx))
             .collect()
     }
 

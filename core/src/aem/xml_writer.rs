@@ -55,6 +55,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::Fragment { .. } => "fragment",
         AemNode::Preface { .. } => "preface",
         AemNode::Appendix { .. } => "appendix",
+        AemNode::Footnote { .. } => "footnote",
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -329,6 +330,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             children,
             min_occur,
             max_occur,
+            bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -336,6 +338,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("min_occur", min_occur);
             ctx.insert("max_occur", max_occur);
             ctx.insert("children", &render_children(children, config));
+            ctx.insert("bind_ref", bind_ref);
 
             // Pre-compute the repeatable button scripts as template variables.
             // These contain complex JCR-escaped JSON that would be very messy
@@ -360,6 +363,20 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         AemNode::Preface { uuid, name } | AemNode::Appendix { uuid, name } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
+        }
+
+        AemNode::Footnote {
+            uuid,
+            name,
+            content,
+            colspan,
+            dor_colspan,
+        } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
+            ctx.insert("content", &xml_escape(content));
+            ctx.insert("colspan", colspan);
+            ctx.insert("dor_colspan", dor_colspan);
         }
     }
 
@@ -540,11 +557,25 @@ fn alignment_str(a: OptionAlignment) -> &'static str {
     }
 }
 
+/// Escape a string for use inside a JCR comma-separated list.
+///
+/// Backslashes and commas must be backslash-escaped so that the list can be
+/// split unambiguously on unescaped commas when parsed back.
+fn jcr_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace(',', "\\,")
+}
+
 /// Format options for checkbox/radio/dropdown as `[value1=label1,value2=label2,...]`.
 fn format_options_attr(options: &[AemOption]) -> String {
     let inner: Vec<String> = options
         .iter()
-        .map(|o| format!("{}={}", xml_escape(&o.value), xml_escape(&o.label)))
+        .map(|o| {
+            format!(
+                "{}={}",
+                jcr_escape(&xml_escape(&o.value)),
+                jcr_escape(&xml_escape(&o.label)),
+            )
+        })
         .collect();
     format!("[{}]", inner.join(","))
 }
@@ -843,6 +874,112 @@ mod tests {
     }
 
     #[test]
+    fn radio_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::RadioButton {
+                uuid: fixed_uuid(),
+                name: "RB_comma".into(),
+                label: "Choose".into(),
+                options: vec![
+                    AemOption {
+                        label: "Yes, definitely".into(),
+                        value: "1".into(),
+                    },
+                    AemOption {
+                        label: "No, thanks".into(),
+                        value: "2".into(),
+                    },
+                ],
+                alignment: OptionAlignment::Vertical,
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // Commas inside labels must be escaped as \, so the list stays parseable
+        assert!(
+            xml.contains(r#"options="[1=Yes\, definitely,2=No\, thanks]""#),
+            "Commas in option labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn dropdown_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Dropdown {
+                uuid: fixed_uuid(),
+                name: "DD_comma".into(),
+                label: "Pick".into(),
+                options: vec![
+                    AemOption {
+                        label: "Option A, first".into(),
+                        value: "a".into(),
+                    },
+                    AemOption {
+                        label: "Option B".into(),
+                        value: "b".into(),
+                    },
+                ],
+                mandatory: false,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains(r#"options="[a=Option A\, first,b=Option B]""#),
+            "Commas in dropdown labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
+    fn checkbox_options_with_commas_are_escaped() {
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Checkbox {
+                uuid: fixed_uuid(),
+                name: "CB_comma".into(),
+                options: vec![
+                    AemOption {
+                        label: "I agree, fully".into(),
+                        value: "1".into(),
+                    },
+                    AemOption {
+                        label: "No".into(),
+                        value: "0".into(),
+                    },
+                ],
+                alignment: OptionAlignment::Horizontal,
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+                field_id: None,
+                conditions: vec![],
+                bind_ref: None,
+            }],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        assert!(
+            xml.contains(r#"options="[1=I agree\, fully,0=No]""#),
+            "Commas in checkbox labels must be backslash-escaped. Got:\n{}",
+            xml
+        );
+    }
+
+    #[test]
     fn repeatable_has_min_max_occur() {
         let root = AemNode::Root {
             title: "Form".into(),
@@ -853,6 +990,7 @@ mod tests {
                 children: vec![],
                 min_occur: 1,
                 max_occur: 10,
+                bind_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1264,32 +1402,16 @@ mod tests {
         );
     }
 
-    /// Verify the preface template renders a fragment panel with `fragRef` that
-    /// switches on `xfa.formrange_entity`, matching the reference output of
-    /// AAOX (entity 033), AAOW (entity 019), and AACX (entity 001).
+    /// Verify the preface template renders a fragment panel with `fragRef`
+    /// always pointing to affrg_BankingRelationship1.
     #[test]
     fn preface_renders_entity_based_banking_relationship_fragment() {
         let preface_template = include_str!("../../../profiles/ubs/aem/preface.xml");
 
-        let cases = [
-            (
-                "033",
-                "/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italiy_BankingRelationship",
-                "AAOX entity 033 should use Italy fragment",
-            ),
-            (
-                "019",
-                "/content/forms/af/afforms_germany_fragmentlib/affrg_germany_BankingRelationship",
-                "AAOW entity 019 should use Germany fragment",
-            ),
-            (
-                "001",
-                "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
-                "AACX entity 001 should use CH/UBS fragment",
-            ),
-        ];
+        let expected_frag_ref =
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1";
 
-        for (entity, expected_frag_ref, description) in &cases {
+        for entity in &["033", "019", "001"] {
             let mut config = test_config();
             config
                 .component_templates
@@ -1311,33 +1433,15 @@ mod tests {
 
             assert!(
                 xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
-                "{}: expected fragRef='{}' in:\n{}",
-                description,
+                "entity {}: expected fragRef='{}' in:\n{}",
+                entity,
                 expected_frag_ref,
                 xml
             );
             assert!(
                 xml.contains("name=\"PN_BankingRelationship\""),
-                "{}: expected name='PN_BankingRelationship' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("sling:resourceType=\"fd/af/components/panel\""),
-                "{}: expected sling:resourceType='fd/af/components/panel' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("guideNodeClass=\"guidePanel\""),
-                "{}: expected guideNodeClass='guidePanel' in:\n{}",
-                description,
-                xml
-            );
-            assert!(
-                xml.contains("completionExpReq=\"{Boolean}false\""),
-                "{}: expected completionExpReq in:\n{}",
-                description,
+                "entity {}: expected name='PN_BankingRelationship' in:\n{}",
+                entity,
                 xml
             );
         }

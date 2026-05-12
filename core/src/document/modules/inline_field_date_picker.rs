@@ -298,10 +298,7 @@ mod tests {
     fn test_detector_with_text_block() {
         // Create a text node with inline date pattern
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![FlattenedNode::new_text(
                 "Löschung ab: 01..1".to_string(),
                 num(10.0),
@@ -352,10 +349,7 @@ mod tests {
     fn test_detector_multiple_patterns() {
         // Create multiple text nodes with date patterns
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Löschung ab: 01..1".to_string(),

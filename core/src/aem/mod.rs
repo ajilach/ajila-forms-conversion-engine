@@ -242,7 +242,7 @@ impl AemConfig {
             fragment_ref_prefix: profile
                 .fragment_ref_prefix
                 .clone()
-                .unwrap_or_else(|| "/content/forms/af/".into()),
+                .unwrap_or_else(|| "/content/dam/formsanddocuments/".into()),
             fragment_paths: match &profile.fragment_paths {
                 Some(tmpl) => {
                     let rendered = template::render_string(tmpl, &tera_ctx)?;
@@ -346,7 +346,7 @@ impl AemConfig {
             xsd_config: None,
 
             use_fragments: false,
-            fragment_ref_prefix: "/content/forms/af/".into(),
+            fragment_ref_prefix: "/content/dam/formsanddocuments/".into(),
             fragment_paths: Vec::new(),
             fragments: Vec::new(),
 
@@ -559,6 +559,8 @@ pub enum AemNode {
         children: Vec<AemNode>,
         min_occur: u32,
         max_occur: u32,
+        /// XSD path for `bindRef` attribute on the repeatable inner panel.
+        bind_ref: Option<String>,
     },
 
     /// Fragment reference — replaces a panel whose XSD type matches a
@@ -568,7 +570,7 @@ pub enum AemNode {
         uuid: Uuid,
         name: String,
         /// JCR path to the fragment (e.g.
-        /// `"/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1"`).
+        /// `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
         frag_ref: String,
         /// XSD path for `bindRef` attribute.
         bind_ref: Option<String>,
@@ -581,6 +583,15 @@ pub enum AemNode {
     /// Optional profile-driven snippet inserted as the last item in the
     /// last page panel when the `appendix` template exists.
     Appendix { uuid: Uuid, name: String },
+
+    /// Footnote text, placed at the bottom of the page where it is referenced.
+    Footnote {
+        uuid: Uuid,
+        name: String,
+        content: String,
+        colspan: u32,
+        dor_colspan: Option<u32>,
+    },
 }
 
 // ============================================================================
@@ -605,6 +616,7 @@ impl AemNode {
             AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
             AemNode::Preface { uuid, .. } => format!("preface_{}", uuid.as_simple()),
             AemNode::Appendix { uuid, .. } => format!("appendix_{}", uuid.as_simple()),
+            AemNode::Footnote { uuid, .. } => format!("footnote_{}", uuid.as_simple()),
         }
     }
 }

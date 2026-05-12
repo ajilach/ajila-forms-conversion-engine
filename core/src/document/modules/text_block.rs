@@ -62,11 +62,7 @@ impl AnalysisModule for TextBlockGrouper {
                 continue;
             }
 
-            doc.merge_inferred(
-                vec![leaf_idx],
-                GroupKind::TextBlock,
-                self.name(),
-            );
+            doc.merge_inferred(vec![leaf_idx], GroupKind::TextBlock, self.name());
         }
     }
 }
@@ -82,10 +78,7 @@ mod tests {
     fn test_each_text_gets_own_block() {
         // Each text node should be wrapped in its own TextBlock group
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "First".to_string(),

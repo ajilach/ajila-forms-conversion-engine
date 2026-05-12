@@ -164,11 +164,12 @@ pub use html::{
 
 // XSD generation
 pub use xsd::{
-    BindRefMaps, ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdNode,
-    XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
+    BindRefMaps, ElementMapping, RegisteredComplexType, SectionMapping, TypeChildElement,
+    XsdConfig, XsdNode, XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
     extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema,
-    load_xsd_config_from_dir, parse_schema,
+    load_xsd_config_from_dir, parse_schema, resolve_section_name,
+    resolve_section_name_with_heading,
 };
 
 // XFA layer
@@ -181,6 +182,7 @@ pub use image::RgbaImage;
 // Pipeline
 pub use pipeline::{
     PipelineConfig, PipelineEvent, PipelineOutput, PipelineStep, StateMap, run_pipeline,
+    run_pipeline_async,
 };
 
 use std::path::Path;
@@ -765,9 +767,7 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         AemNode::TitleDraw { name, .. } => {
             names.push((name.clone(), true));
         }
-        AemNode::Repeatable {
-            name, children, ..
-        } => {
+        AemNode::Repeatable { name, children, .. } => {
             names.push((name.clone(), true));
             for child in children {
                 collect_aem_field_names_recursive(child, names);
@@ -776,7 +776,7 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         AemNode::Fragment { name, .. } => {
             names.push((name.clone(), true));
         }
-        AemNode::Preface { .. } | AemNode::Appendix { .. } => {}
+        AemNode::Preface { .. } | AemNode::Appendix { .. } | AemNode::Footnote { .. } => {}
     }
 }
 

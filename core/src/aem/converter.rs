@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, GridLayout, GroupNode, HeadingLevel,
-    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode, TranslatableString,
+    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
+    HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString,
 };
 
 use super::fragment_parser::ParsedFragment;
@@ -245,11 +245,16 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         })
         .unwrap_or_else(|| config.form_title.clone());
 
-    // First pass: split StructuredNodes into sections by H2.
+    // First pass: separate footnotes from normal nodes, then split by H2.
     // Each section is (Option<heading_text>, nodes_in_section).
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
+    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
+    collect_all_footnotes(nodes, &mut footnotes);
 
     for node in nodes {
+        if matches!(node, StructuredNode::Footnote(_)) {
+            continue;
+        }
         if let StructuredNode::Heading(h) = node {
             if matches!(h.level, HeadingLevel::H2) {
                 let title = h.content.plain_text_in(&ctx.language).trim().to_string();
@@ -338,6 +343,14 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         });
     }
 
+    // Place footnotes on the page panels where they are referenced.
+    // For each footnote with a marker, scan each page's structured nodes for
+    // superscript text matching that marker. Place on the matching page,
+    // or fall back to the last page.
+    if !footnotes.is_empty() {
+        place_footnotes_on_pages(&mut children, &footnotes, &sections, config, &mut ctx);
+    }
+
     inject_page_edge_templates(&mut children, config, &mut ctx);
 
     // --- Second pass: wire conditions onto trigger fields ---
@@ -351,6 +364,12 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         let xsd_config = config.xsd_config.as_ref();
         replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
+
+    // --- Fourth pass: propagate bind_ref from section panels to repeatables ---
+    // In reference forms, the repeatable inner panel (with maxOccur) carries the
+    // bindRef, not the wrapping section panel.  Move the section panel's bind_ref
+    // to its child Repeatable when applicable.
+    propagate_bind_ref_to_repeatables(&mut children);
 
     // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
     // (bind_refs were only needed internally for fragment matching).
@@ -417,6 +436,190 @@ fn inject_page_edge_templates(
 }
 
 // ============================================================================
+// Footnote placement
+// ============================================================================
+
+/// Recursively collect all footnote nodes from the structured tree.
+fn collect_all_footnotes<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
+    for node in nodes {
+        match node {
+            StructuredNode::Footnote(f) => out.push(f),
+            StructuredNode::Group(g) => collect_all_footnotes(&g.children, out),
+            StructuredNode::Conditional(c) => {
+                collect_all_footnotes(std::slice::from_ref(c.content.as_ref()), out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Place footnotes on the AEM page panels where they are referenced.
+///
+/// For each footnote with a marker (e.g. "1"), searches the structured nodes
+/// in each H2-page section for a `Superscript` inline node containing that
+/// marker text. The footnote is placed at the end of the matching page panel.
+/// Footnotes without a match are placed on the last page.
+fn place_footnotes_on_pages(
+    children: &mut [AemNode],
+    footnotes: &[&FootnoteNode],
+    sections: &[(Option<String>, Vec<&StructuredNode>)],
+    config: &AemConfig,
+    ctx: &mut ConversionContext,
+) {
+    if footnotes.is_empty() {
+        return;
+    }
+
+    // Build page indices (panels with is_page: true)
+    let page_indices: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| match node {
+            AemNode::Panel { is_page: true, .. } => Some(idx),
+            _ => None,
+        })
+        .collect();
+
+    if page_indices.is_empty() {
+        return;
+    }
+
+    let last_page_idx = *page_indices.last().unwrap();
+
+    // Map sections to page indices. Sections with a title (H2) map 1:1 to pages.
+    // The preamble (no title) is merged into the first page.
+    let mut section_to_page: Vec<usize> = Vec::new();
+    let mut page_counter = 0usize;
+    for (title, _) in sections {
+        if title.is_some() {
+            if page_counter < page_indices.len() {
+                section_to_page.push(page_indices[page_counter]);
+                page_counter += 1;
+            }
+        } else {
+            // Preamble → first page
+            section_to_page.push(page_indices[0]);
+        }
+    }
+
+    for footnote in footnotes {
+        let target_page = if let Some(marker) = &footnote.marker {
+            // Search each section's nodes for a superscript reference with this marker
+            let mut found_page = None;
+            for (section_idx, (_, section_nodes)) in sections.iter().enumerate() {
+                if section_nodes
+                    .iter()
+                    .any(|n| node_contains_superscript_marker(n, marker))
+                {
+                    if let Some(&page_idx) = section_to_page.get(section_idx) {
+                        found_page = Some(page_idx);
+                        break;
+                    }
+                }
+            }
+            found_page.unwrap_or(last_page_idx)
+        } else {
+            last_page_idx
+        };
+
+        // Convert the footnote to an AemNode
+        let plain = inline_text_to_html(&footnote.content, &ctx.language);
+        let content = format!("<p>{plain}</p>");
+        let source_text = footnote.content.plain_text_in(&ctx.language);
+        let name = ctx.make_name("FN", &source_text);
+        let uuid = ctx.uuid(&name);
+        let aem_footnote = AemNode::Footnote {
+            uuid,
+            name,
+            content,
+            colspan: config.grid_columns,
+            dor_colspan: None,
+        };
+
+        // Place on the target page panel
+        if let AemNode::Panel {
+            children: page_children,
+            ..
+        } = &mut children[target_page]
+        {
+            page_children.push(aem_footnote);
+        }
+    }
+}
+
+/// Check if a `StructuredNode` (or its descendants) contains a `Superscript`
+/// inline node whose text matches the given marker.
+fn node_contains_superscript_marker(node: &StructuredNode, marker: &str) -> bool {
+    match node {
+        StructuredNode::Heading(h) => inline_text_has_superscript_marker(&h.content, marker),
+        StructuredNode::Paragraph(p) => inline_text_has_superscript_marker(&p.content, marker),
+        StructuredNode::Group(g) => g
+            .children
+            .iter()
+            .any(|c| node_contains_superscript_marker(c, marker)),
+        StructuredNode::Conditional(c) => node_contains_superscript_marker(&c.content, marker),
+        StructuredNode::GridLayout(gl) => gl
+            .elements
+            .iter()
+            .any(|e| node_contains_superscript_marker(&e.node, marker)),
+        StructuredNode::Repeatable(r) => node_contains_superscript_marker(&r.item, marker),
+        StructuredNode::Table(t) => {
+            let header_match = t
+                .header
+                .as_ref()
+                .map(|h| {
+                    h.cells
+                        .iter()
+                        .any(|c| node_contains_superscript_marker(c, marker))
+                })
+                .unwrap_or(false);
+            header_match
+                || t.rows.iter().any(|r| {
+                    r.cells
+                        .iter()
+                        .any(|c| node_contains_superscript_marker(c, marker))
+                })
+        }
+        StructuredNode::List(l) => l
+            .items
+            .iter()
+            .any(|item| inline_text_has_superscript_marker(&item.content, marker)),
+        StructuredNode::Field(f) => f
+            .label
+            .as_ref()
+            .map(|l| inline_text_has_superscript_marker(l, marker))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Check if an `InlineText` contains a `Superscript` node whose plain text matches `marker`.
+fn inline_text_has_superscript_marker(text: &InlineText, marker: &str) -> bool {
+    text.0
+        .iter()
+        .any(|node| inline_node_has_superscript_marker(node, marker))
+}
+
+/// Recursively check if an `InlineNode` is or contains a `Superscript` whose text matches `marker`.
+fn inline_node_has_superscript_marker(node: &InlineNode, marker: &str) -> bool {
+    match node {
+        InlineNode::Superscript(inner) => {
+            // Check if the inner text matches the marker
+            if let Some(text) = inner.leading_text() {
+                text.trim() == marker
+            } else {
+                false
+            }
+        }
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            inline_node_has_superscript_marker(inner, marker)
+        }
+        InlineNode::Link(link) => inline_text_has_superscript_marker(&link.content, marker),
+        _ => false,
+    }
+}
+
+// ============================================================================
 // Node dispatch
 // ============================================================================
 
@@ -454,6 +657,7 @@ fn convert_node(
         }
         StructuredNode::List(l) => Some(convert_list(l, config, ctx, colspan, dor_colspan)),
         StructuredNode::Empty => None,
+        StructuredNode::Footnote(_) => None,
     }
 }
 
@@ -698,6 +902,22 @@ fn convert_field(
             }
         }
 
+        FieldType::Textarea { max_length } => {
+            let name = ctx.make_name("TXT", &source_text);
+            let uuid = ctx.uuid(&name);
+            AemNode::TextField {
+                uuid,
+                name,
+                label,
+                mandatory: false,
+                visible: true,
+                max_chars: *max_length,
+                colspan,
+                dor_colspan,
+                bind_ref,
+            }
+        }
+
         FieldType::Number { .. } => {
             let name = ctx.make_name("NB", &source_text);
             let uuid = ctx.uuid(&name);
@@ -840,6 +1060,7 @@ fn convert_repeatable(
         children,
         min_occur: r.min_occurrences,
         max_occur: r.max_occurrences.unwrap_or(config.repeatable_max_occur),
+        bind_ref: None,
     }
 }
 
@@ -1207,6 +1428,30 @@ fn collect_child_bind_ref_full_paths(children: &[AemNode]) -> Vec<String> {
 ///    for a matched type is individually replaced.
 ///
 /// Recurses depth-first so inner nodes are processed before parents.
+/// Rewrite a bind_ref path from the form-specific root to the fragment
+/// prefix when the XSD config provides a distinct `fragmentBindRefPrefix`.
+///
+/// For example, if the form root is `UBSAF_BBRR` and the fragment prefix is
+/// `UBSAF`, then `/UBSAF_BBRR/AccountHolder` becomes `/UBSAF/AccountHolder`.
+fn to_fragment_bind_ref(bind_ref: &str, xsd_config: Option<&crate::xsd::XsdConfig>) -> String {
+    let Some(cfg) = xsd_config else {
+        return bind_ref.to_string();
+    };
+    let form_root = cfg.root_element_name();
+    let frag_prefix = cfg.fragment_bind_ref_prefix();
+    if form_root == frag_prefix {
+        return bind_ref.to_string();
+    }
+    let form_root_prefix = format!("/{}/", form_root);
+    if let Some(rest) = bind_ref.strip_prefix(&form_root_prefix) {
+        format!("/{}/{}", frag_prefix, rest)
+    } else if bind_ref == format!("/{}", form_root) {
+        format!("/{}", frag_prefix)
+    } else {
+        bind_ref.to_string()
+    }
+}
+
 fn replace_with_fragments(
     nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
@@ -1252,7 +1497,7 @@ fn replace_with_fragments(
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
                         let fragment = fragment.clone();
-                        let bind_ref = Some(br.clone());
+                        let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
                         let name = ctx.make_name("PN_affrg", &fragment.dir_name);
                         let uuid = ctx.uuid(&name);
                         nodes[i] = AemNode::Fragment {
@@ -1313,11 +1558,12 @@ fn replace_with_fragments(
                         for (int_path, fragment) in &matched {
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
                             let uuid = ctx.uuid(&name);
+                            let full_path = format!("{}/{}", br, int_path);
                             frag_nodes.push(AemNode::Fragment {
                                 uuid,
                                 name,
                                 frag_ref: fragment.frag_ref.clone(),
-                                bind_ref: Some(format!("{}/{}", br, int_path)),
+                                bind_ref: Some(to_fragment_bind_ref(&full_path, xsd_config)),
                             });
                         }
 
@@ -1376,6 +1622,51 @@ fn compute_intermediate_matches(
     matched
 }
 
+/// Move `bind_ref` from section Panels to their child Repeatable nodes.
+///
+/// In reference AEM forms, the repeatable inner panel (with `maxOccur`)
+/// carries the `bindRef` — not the wrapping section panel.  This function
+/// walks the tree and, for any Panel that has a `bind_ref` and contains a
+/// `Repeatable` child, moves the bind_ref to the Repeatable.
+fn propagate_bind_ref_to_repeatables(nodes: &mut [AemNode]) {
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Panel {
+                children, bind_ref, ..
+            } => {
+                // First recurse into children
+                propagate_bind_ref_to_repeatables(children);
+
+                // If this panel has a bind_ref and contains a Repeatable child,
+                // move the bind_ref to the Repeatable (the section panel itself
+                // should not emit bindRef — the repeatable inner panel owns it).
+                if bind_ref.is_some() {
+                    let has_repeatable = children
+                        .iter()
+                        .any(|c| matches!(c, AemNode::Repeatable { .. }));
+                    if has_repeatable {
+                        let br = bind_ref.take().unwrap();
+                        for child in children.iter_mut() {
+                            if let AemNode::Repeatable {
+                                bind_ref: rep_br, ..
+                            } = child
+                            {
+                                if rep_br.is_none() {
+                                    *rep_br = Some(br.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+                propagate_bind_ref_to_repeatables(children);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Recursively clear `bind_ref` on all nodes except `Fragment` nodes.
 ///
 /// Used when `use_fragments` is enabled but `bind_to_xsd` is disabled:
@@ -1387,7 +1678,13 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             AemNode::Fragment { .. } => {
                 // Keep bind_ref on fragments — it is the data bind path.
             }
-            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+            AemNode::Root { children, .. } => {
+                strip_bind_refs(children);
+            }
+            AemNode::Repeatable {
+                children, bind_ref, ..
+            } => {
+                *bind_ref = None;
                 strip_bind_refs(children);
             }
             AemNode::Panel {
@@ -1407,7 +1704,8 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             AemNode::TextDraw { .. }
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
-            | AemNode::Appendix { .. } => {}
+            | AemNode::Appendix { .. }
+            | AemNode::Footnote { .. } => {}
         }
     }
 }
@@ -1456,6 +1754,11 @@ fn inline_node_to_html(node: &InlineNode, language: &str, out: &mut String) {
             out.push_str("<i>");
             inline_node_to_html(inner, language, out);
             out.push_str("</i>");
+        }
+        InlineNode::Superscript(inner) => {
+            out.push_str("<sup>");
+            inline_node_to_html(inner, language, out);
+            out.push_str("</sup>");
         }
     }
 }
@@ -2721,7 +3024,7 @@ mod tests {
     fn panel_leaves_subset_of_fragment_requires_all_leaves() {
         let fragment = ParsedFragment {
             dir_name: "frag1".to_string(),
-            frag_ref: "/content/forms/af/frag1".to_string(),
+            frag_ref: "/content/dam/formsanddocuments/frag1".to_string(),
             name: "Frag1".to_string(),
             xsd_type_name: "SomeType".to_string(),
             bound_elements: vec!["IBAN".to_string(), "Name".to_string(), "Date".to_string()],

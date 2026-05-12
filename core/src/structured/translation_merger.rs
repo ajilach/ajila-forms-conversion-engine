@@ -13,12 +13,12 @@
 //! 4. Unmatched nodes are kept with only their source language populated.
 
 use crate::context::Context;
-use crate::structured::merge_engine::{
-    fill_missing_translation_placeholders, lcs_table_with,
-    merge_node_lists, node_matches_for_similarity,
-};
 #[cfg(feature = "semantic-matching")]
 use crate::structured::merge_engine::merge_node_lists_semantic;
+use crate::structured::merge_engine::{
+    fill_missing_translation_placeholders, lcs_table_with, merge_node_lists,
+    node_matches_for_similarity,
+};
 use crate::structured::{DocumentEnvelope, SemanticCtx, StructuredNode};
 
 /// Threshold for minimum structural similarity (0.0 to 1.0).
@@ -168,11 +168,7 @@ pub fn merge_translations(
     }
 
     // Best-effort optimistic normalization: mark missing language entries explicitly.
-    fill_missing_translation_placeholders(
-        &mut merged_content,
-        &languages,
-        &base_lang,
-    );
+    fill_missing_translation_placeholders(&mut merged_content, &languages, &base_lang);
 
     // Create merged context — start from the base context to preserve variables
     // and modules, then update the language to the combined list.
@@ -219,8 +215,8 @@ mod tests {
     };
     use crate::structured::{
         ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode,
-        InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode, TableHeader,
-        TableNode, TableRow, TranslatableString,
+        InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode,
+        TableHeader, TableNode, TableRow, TranslatableString,
     };
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
@@ -1296,7 +1292,10 @@ mod tests {
             "en",
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
-                items: vec![ListItem::simple(InlineText::plain("One")), ListItem::simple(InlineText::plain("Two"))],
+                items: vec![
+                    ListItem::simple(InlineText::plain("One")),
+                    ListItem::simple(InlineText::plain("Two")),
+                ],
             })],
         );
 
@@ -1355,11 +1354,11 @@ mod tests {
             _ => panic!("Expected translated list item text"),
         };
 
-        assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Prefix Suffix"));
         assert_eq!(
-            map.get("en").and_then(|o| o.as_deref()),
-            None
+            map.get("de").and_then(|o| o.as_deref()),
+            Some("Prefix Suffix")
         );
+        assert_eq!(map.get("en").and_then(|o| o.as_deref()), None);
     }
 
     #[test]
@@ -1426,10 +1425,7 @@ mod tests {
                 // The third option should carry DE text and explicit EN placeholder.
                 if let TranslatableString::Translated(map) = &options[2].name {
                     assert_eq!(map.get("de").unwrap().as_deref(), Some("Enthaltung"));
-                    assert_eq!(
-                        map.get("en").and_then(|o| o.as_deref()),
-                        None
-                    );
+                    assert_eq!(map.get("en").and_then(|o| o.as_deref()), None);
                 } else {
                     panic!("Expected translated option name for third entry");
                 }
@@ -1602,10 +1598,7 @@ mod tests {
         );
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(
-                paragraph.content.plain_text_in("de"),
-                " Basis"
-            );
+            assert_eq!(paragraph.content.plain_text_in("de"), " Basis");
             assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
             assert!(matches!(
                 paragraph.content.0[0],
@@ -1652,10 +1645,7 @@ mod tests {
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(
-                paragraph.content.plain_text_in("de"),
-                " Basis Ende"
-            );
+            assert_eq!(paragraph.content.plain_text_in("de"), " Basis Ende");
             assert_eq!(
                 paragraph.content.plain_text_in("en"),
                 "Intro Other tail",
@@ -1807,10 +1797,7 @@ mod tests {
         match &unmatched.name {
             TranslatableString::Translated(map) => {
                 assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Vielleicht"));
-                assert_eq!(
-                    map.get("en").and_then(|o| o.as_deref()),
-                    None
-                );
+                assert_eq!(map.get("en").and_then(|o| o.as_deref()), None);
             }
             _ => panic!("Expected translated name map"),
         }
@@ -2128,14 +2115,8 @@ mod tests {
         // The third option from FR must carry placeholder for DE + EN.
         if let TranslatableString::Translated(map) = &options[2].name {
             assert_eq!(map.get("fr").and_then(|o| o.as_deref()), Some("Abstention"));
-            assert_eq!(
-                map.get("de").and_then(|o| o.as_deref()),
-                None
-            );
-            assert_eq!(
-                map.get("en").and_then(|o| o.as_deref()),
-                None
-            );
+            assert_eq!(map.get("de").and_then(|o| o.as_deref()), None);
+            assert_eq!(map.get("en").and_then(|o| o.as_deref()), None);
         } else {
             panic!("Expected Translated name for third option");
         }
@@ -2222,11 +2203,14 @@ mod tests {
             )
         };
 
-        let result = merge_translations(vec![
-            mk_table("de", "Spalte", "Wert"),
-            mk_table("en", "Column", "Value"),
-            mk_table("fr", "Colonne", "Valeur"),
-        ], None)
+        let result = merge_translations(
+            vec![
+                mk_table("de", "Spalte", "Wert"),
+                mk_table("en", "Column", "Value"),
+                mk_table("fr", "Colonne", "Valeur"),
+            ],
+            None,
+        )
         .unwrap();
 
         assert_eq!(result.content.len(), 1);
@@ -2354,8 +2338,14 @@ mod tests {
         if let StructuredNode::Heading(h) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
                 assert_eq!(map.get("de").unwrap().as_deref(), Some("Kundenerklärungen"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Client representations"));
-                assert_eq!(map.get("es").unwrap().as_deref(), Some("Declaraciones del Cliente"));
+                assert_eq!(
+                    map.get("en").unwrap().as_deref(),
+                    Some("Client representations")
+                );
+                assert_eq!(
+                    map.get("es").unwrap().as_deref(),
+                    Some("Declaraciones del Cliente")
+                );
             } else {
                 panic!("Expected TranslatedText in heading");
             }
@@ -2482,16 +2472,19 @@ mod tests {
                 matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8())
             })
             .count();
-        assert_eq!(
-            h2_count, 1,
-            "Expected exactly 1 H2 heading, got {h2_count}",
-        );
+        assert_eq!(h2_count, 1, "Expected exactly 1 H2 heading, got {h2_count}",);
 
         // The single H2 must carry both translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
             if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Kundenkontoverwaltung"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Customer account management"));
+                assert_eq!(
+                    map.get("de").unwrap().as_deref(),
+                    Some("Kundenkontoverwaltung")
+                );
+                assert_eq!(
+                    map.get("en").unwrap().as_deref(),
+                    Some("Customer account management")
+                );
             } else {
                 panic!("Expected TranslatedText in heading");
             }

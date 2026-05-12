@@ -19,6 +19,8 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::HashSet;
 
+// Field-column table detection has been moved to `field_column_table_detector` module.
+
 type Num = Decimal;
 
 /// Tolerance for row clustering based on Y-position (in points).

@@ -22,9 +22,9 @@
 use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
 use crate::structured::{
-    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TranslatableString,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
+    HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -43,6 +43,7 @@ fn contains_fields(node: &StructuredNode) -> bool {
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Footnote(_)
         | StructuredNode::Empty => false,
     }
 }
@@ -487,17 +488,15 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
         (None, Some(_)) => Ordering::Greater, // Items without bounds go to the end
         (Some(_), None) => Ordering::Less,
         (Some(a), Some(b)) => {
-            // Use a small threshold for "same line" comparison (about 2 points)
-            let line_threshold = rust_decimal::Decimal::new(20, 1); // 2.0
-
-            let y_diff = a.y - b.y;
-            if y_diff.abs() <= line_threshold {
-                // Same line - sort by x (left to right)
-                a.x.cmp(&b.x)
-            } else {
-                // Different lines - sort by y (top to bottom)
-                a.y.cmp(&b.y)
-            }
+            // Quantize y into bands so that items on roughly the same line
+            // compare equal on the primary axis.  Rounding to a fixed grid
+            // (instead of a pairwise threshold) guarantees transitivity.
+            let band = rust_decimal::Decimal::new(40, 1); // 4.0pt bands
+            let quantize =
+                |y: rust_decimal::Decimal| -> rust_decimal::Decimal { (y / band).round() * band };
+            let ya = quantize(a.y);
+            let yb = quantize(b.y);
+            ya.cmp(&yb).then_with(|| a.x.cmp(&b.x))
         }
     }
 }
@@ -514,6 +513,33 @@ impl<'a, 'b> Converter<'a, 'b> {
         match &group.kind {
             // Skip header/footer/background (master page content)
             GroupKind::Header | GroupKind::Footer | GroupKind::Background => None,
+
+            // Footnote → FootnoteNode
+            GroupKind::Footnote => {
+                let text = self.extract_inline_text(group_idx);
+                let som_path = self.extract_group_som_path(group_idx);
+                let source_name = self.extract_group_source_name(group_idx);
+                // Parse marker from leading digits in the plain text
+                let plain = text.as_plain_text();
+                let marker = {
+                    let digits: String = plain
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    if digits.is_empty() {
+                        None
+                    } else {
+                        Some(digits)
+                    }
+                };
+                Some(StructuredNode::Footnote(FootnoteNode {
+                    content: text,
+                    marker,
+                    som_path,
+                    source_name,
+                }))
+            }
 
             // InlineField → Paragraph(before) + Field("UNKNOWN") + Paragraph(after)
             GroupKind::InlineField {
@@ -645,6 +671,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             GroupKind::RepeatableSection {
                 min_occurrences,
                 max_occurrences,
+                is_user_repeatable,
             } => {
                 let children = self.convert_children(group_idx);
                 if children.is_empty() {
@@ -655,6 +682,12 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     StructuredNode::Group(GroupNode { children })
                 };
+
+                // Script-managed sections (no buttons) → plain Group, not Repeatable
+                if !is_user_repeatable {
+                    return Some(item);
+                }
+
                 // Only create a RepeatableNode if it contains at least one field
                 if contains_fields(&item) {
                     Some(StructuredNode::Repeatable(RepeatableNode {
@@ -696,6 +729,20 @@ impl<'a, 'b> Converter<'a, 'b> {
             // Section / Unknown → GroupNode
             GroupKind::Section | GroupKind::Unknown => {
                 let children = self.convert_children(group_idx);
+                if children.is_empty() {
+                    None
+                } else if children.len() == 1 {
+                    children.into_iter().next()
+                } else {
+                    Some(StructuredNode::Group(GroupNode { children }))
+                }
+            }
+
+            // ColumnSection → GroupNode with children in preserved order (left then right).
+            // Children must NOT be re-sorted by position because the right column may start
+            // at a lower y-coordinate than the left column.
+            GroupKind::ColumnSection => {
+                let children = self.convert_children_ordered(group_idx);
                 if children.is_empty() {
                     None
                 } else if children.len() == 1 {
@@ -903,6 +950,22 @@ impl<'a, 'b> Converter<'a, 'b> {
             .collect();
 
         inherit_heading_labels_for_radios(&mut result);
+
+        result
+    }
+
+    /// Convert all children of a group in their stored order (no re-sorting).
+    /// Used for ColumnSection groups where left-column always precedes right-column.
+    fn convert_children_ordered(&self, group_idx: usize) -> Vec<StructuredNode> {
+        let Some(group) = self.doc.get_group(group_idx) else {
+            return vec![];
+        };
+
+        let result: Vec<StructuredNode> = group
+            .children
+            .iter()
+            .filter_map(|&child_idx| self.convert_group(child_idx))
+            .collect();
 
         result
     }
@@ -1492,10 +1555,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         if let Some(widget) = node.widget_type() {
             return match widget {
                 WidgetKind::Text => self.text_field_type(node),
-                WidgetKind::TextArea => FieldType::Text {
-                    regex: self.get_format_pattern(node),
+                WidgetKind::TextArea => FieldType::Textarea {
                     max_length: self.get_max_length(node),
-                    min_length: None,
                 },
                 WidgetKind::Checkbox => FieldType::Bool,
                 WidgetKind::Radio => FieldType::Radio { options: vec![] },
@@ -1561,6 +1622,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             FieldType::Email => InputValue::Text(value.to_string()),
             FieldType::Tel => InputValue::Text(value.to_string()),
             FieldType::Text { .. } => InputValue::Text(value.to_string()),
+            FieldType::Textarea { .. } => InputValue::Text(value.to_string()),
         })
     }
 
@@ -1937,6 +1999,11 @@ impl<'a, 'b> Converter<'a, 'b> {
         // Wrap with strong if bold
         if run.bold {
             node = InlineNode::Strong(Box::new(node));
+        }
+
+        // Wrap with superscript if detected from vertical-align
+        if run.superscript {
+            node = InlineNode::Superscript(Box::new(node));
         }
 
         node

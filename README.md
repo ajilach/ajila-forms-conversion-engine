@@ -25,6 +25,22 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 
 - [Rust](https://rustup.rs/) (edition 2024)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the web app
+- [GitHub CLI](https://cli.github.com/) with [GitHub Copilot in the CLI](https://docs.github.com/copilot/github-copilot-in-the-cli)
+
+Install GitHub CLI and Copilot extension:
+
+```sh
+# macOS (Homebrew)
+brew install gh
+gh extension install github/gh-copilot
+```
+
+Login and enable Copilot access for the CLI:
+
+```sh
+gh auth login
+gh auth refresh -h github.com -s copilot
+```
 
 Dioxus can easily be installed using cargo-binstall:
 
@@ -70,17 +86,26 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --structured
 # Export standalone HTML
 cargo run --release -p blueprint-cli -- path/to/form.pdf --html
 
-# Export AEM Adaptive Forms package (XFA PDFs only)
+# Export AEM Adaptive Forms JCR content XML (XFA PDFs only)
 cargo run --release -p blueprint-cli -- path/to/form.pdf --aem
 
+# Export XSD (XML Schema Definition)
+cargo run --release -p blueprint-cli -- path/to/form.pdf --xsd
+
 # Use a profile for output-specific configuration
-cargo run --release -p blueprint-cli -- path/to/form.pdf --aem --profile path/to/profiles/ubs
+cargo run --release -p blueprint-cli -- path/to/form.pdf --aem --profile ubs
+
+# Export GraphViz DOT decision flow
+cargo run --release -p blueprint-cli -- path/to/form.pdf --graphviz
 
 # Render images (modes: plain, labelled, annotated; repeatable)
 cargo run --release -p blueprint-cli -- path/to/form.pdf --render plain --render labelled
 
 # Custom render scale (default 1.5)
 cargo run --release -p blueprint-cli -- path/to/form.pdf --render plain --scale 2.0
+
+# Enable analysis modules
+cargo run --release -p blueprint-cli -- path/to/form.pdf --module ubs
 
 # Multilingual merge (pass multiple language variants)
 cargo run --release -p blueprint-cli -- form_DE.pdf form_EN.pdf --structured --html
@@ -91,27 +116,27 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --dump-xfa
 
 ## App
 
-The app is built with [Dioxus](https://dioxuslabs.com/) and supports web (WASM + server) and desktop targets.
+The app is built with [Dioxus](https://dioxuslabs.com/) and supports web and desktop targets.
 
-### Development
+### Web (Development)
 
 ```sh
 cd app
-dx serve --platform web --fullstack
+dx serve --platform web
 ```
 
-### Production build
+### Web (Production Build)
 
 ```sh
 cd app
-dx build --release --platform web --fullstack
+dx build --release --platform web
 ```
 
-### Desktop App
+### Desktop
 
 ```sh
 cd app
-dx serve --release --platform macos
+dx serve --platform desktop
 ```
 
 ### Docker

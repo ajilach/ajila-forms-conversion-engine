@@ -49,11 +49,7 @@ impl AnalysisModule for FieldGrouper {
                 continue;
             }
 
-            doc.merge_inferred(
-                vec![leaf_idx],
-                GroupKind::Field,
-                self.name(),
-            );
+            doc.merge_inferred(vec![leaf_idx], GroupKind::Field, self.name());
         }
     }
 }

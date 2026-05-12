@@ -246,8 +246,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // XSD schema
     if args.xsd {
         let profile_name = require_profile_name(args.profile.as_deref())?;
-        let xsd_config = blueprint::load_xsd_config(profile_name)
+        let mut xsd_config = blueprint::load_xsd_config(profile_name)
             .map_err(|e| format!("Failed to load XSD profile: {e}"))?;
+        // Extract form code from merged name (e.g. "AAAI_019" → "AAAI")
+        let form_code = merged_name.split('_').next().unwrap_or(&merged_name);
+        xsd_config.form_code = Some(form_code.to_string());
         let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;

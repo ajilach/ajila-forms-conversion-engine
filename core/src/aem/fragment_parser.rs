@@ -14,7 +14,7 @@ pub struct ParsedFragment {
     pub dir_name: String,
 
     /// JCR path used as `fragRef` attribute in the generated XML
-    /// (e.g. `"/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1"`).
+    /// (e.g. `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
     pub frag_ref: String,
 
     /// The AEM `name` attribute for the fragment node
@@ -34,7 +34,7 @@ pub struct ParsedFragment {
 /// into a [`ParsedFragment`].
 ///
 /// `fragment_ref_prefix` is the JCR path prefix for building `fragRef` values
-/// (e.g. `"/content/forms/af/"`).
+/// (e.g. `"/content/dam/formsanddocuments/"`).
 pub fn scan_fragments(fragments_dir: &Path, fragment_ref_prefix: &str) -> Vec<ParsedFragment> {
     let mut fragments = Vec::new();
     walk_fragments(
@@ -243,7 +243,7 @@ mod tests {
         if !fragments_dir.is_dir() {
             return; // Skip if not running from expected working directory
         }
-        let fragments = scan_fragments(fragments_dir, "/content/forms/af/");
+        let fragments = scan_fragments(fragments_dir, "/content/dam/formsanddocuments/");
         // We should find at least the Address, BankingRelationship, Individual fragments
         assert!(
             !fragments.is_empty(),
@@ -272,7 +272,9 @@ mod tests {
             address.bound_elements
         );
         assert!(
-            address.frag_ref.starts_with("/content/forms/af/"),
+            address
+                .frag_ref
+                .starts_with("/content/dam/formsanddocuments/"),
             "fragRef should start with prefix: {}",
             address.frag_ref
         );

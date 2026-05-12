@@ -163,6 +163,10 @@ pub enum EditorAction {
     },
     /// Convert selected node(s) to a different type.
     ConvertSelected(ConvertTarget),
+    /// Open the smart edit modal (AI-assisted editing via gh copilot).
+    SmartEdit,
+    /// Select all root-level nodes.
+    SelectAll,
 }
 
 /// Target type for conversion operations.
@@ -202,6 +206,7 @@ pub enum NodeMetadata {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldInputKind {
     Text,
+    Textarea,
     Number,
     Date,
     Email,
@@ -617,20 +622,16 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                     // Deletion of a child node
                     if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
                         match parent {
-                            StructuredNode::Group(g)
-                                if *child_idx < g.children.len() => {
+                            StructuredNode::Group(g) if *child_idx < g.children.len() => {
                                 g.children.remove(*child_idx);
                             }
-                            StructuredNode::GridLayout(g)
-                                if *child_idx < g.elements.len() => {
+                            StructuredNode::GridLayout(g) if *child_idx < g.elements.len() => {
                                 g.elements.remove(*child_idx);
                             }
-                            StructuredNode::Repeatable(r)
-                                if *child_idx == 0 => {
+                            StructuredNode::Repeatable(r) if *child_idx == 0 => {
                                 *r.item = StructuredNode::Empty;
                             }
-                            StructuredNode::Conditional(c)
-                                if *child_idx == 0 => {
+                            StructuredNode::Conditional(c) if *child_idx == 0 => {
                                 *c.content = StructuredNode::Empty;
                             }
                             _ => {}
@@ -647,7 +648,8 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::TableRow(row_idx) => {
                     // Deletion of a table row
-                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path)
+                    if let Some(StructuredNode::Table(t)) =
+                        get_node_at_path_mut(content, &parent_path)
                         && *row_idx < t.rows.len()
                     {
                         t.rows.remove(*row_idx);
@@ -655,7 +657,9 @@ pub fn delete_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>
                 }
                 PathSegment::TableHeader => {
                     // Deletion of table header
-                    if let Some(StructuredNode::Table(t)) = get_node_at_path_mut(content, &parent_path) {
+                    if let Some(StructuredNode::Table(t)) =
+                        get_node_at_path_mut(content, &parent_path)
+                    {
                         t.header = None;
                     }
                 }
@@ -793,6 +797,10 @@ pub fn node_summary(node: &StructuredNode) -> String {
             format!("Grid ({} cols, {} elements)", g.columns, g.elements.len())
         }
         StructuredNode::Empty => "Empty".to_string(),
+        StructuredNode::Footnote(n) => {
+            let preview: String = n.content.as_plain_text().chars().take(50).collect();
+            format!("Footnote: {}", preview)
+        }
     }
 }
 
@@ -810,6 +818,7 @@ pub fn node_type_name(node: &StructuredNode) -> &'static str {
         StructuredNode::Image(_) => "Image",
         StructuredNode::GridLayout(_) => "GridLayout",
         StructuredNode::Empty => "Empty",
+        StructuredNode::Footnote(_) => "Footnote",
     }
 }
 
@@ -832,6 +841,105 @@ pub fn node_children(node: &StructuredNode) -> Option<&[StructuredNode]> {
     match node {
         StructuredNode::Group(g) => Some(&g.children),
         _ => None,
+    }
+}
+
+/// Collect all selectable paths for the given content.
+///
+/// This includes each root node path and may include descendants depending on node type.
+pub fn collect_selectable_paths(content: &[StructuredNode]) -> HashSet<NodePath> {
+    let mut paths = HashSet::new();
+    for (i, node) in content.iter().enumerate() {
+        let mut path = vec![PathSegment::Child(i)];
+        collect_selectable_paths_from_node(node, &mut path, &mut paths);
+    }
+    paths
+}
+
+fn collect_selectable_paths_from_node(
+    node: &StructuredNode,
+    path: &mut NodePath,
+    out: &mut HashSet<NodePath>,
+) {
+    out.insert(path.clone());
+
+    match node {
+        StructuredNode::Group(g) => {
+            for (i, child) in g.children.iter().enumerate() {
+                path.push(PathSegment::Child(i));
+                collect_selectable_paths_from_node(child, path, out);
+                path.pop();
+            }
+        }
+        StructuredNode::GridLayout(g) => {
+            for (i, element) in g.elements.iter().enumerate() {
+                path.push(PathSegment::Child(i));
+                collect_selectable_paths_from_node(&element.node, path, out);
+                path.pop();
+            }
+        }
+        StructuredNode::Repeatable(r) => {
+            path.push(PathSegment::Child(0));
+            collect_selectable_paths_from_node(&r.item, path, out);
+            path.pop();
+        }
+        StructuredNode::Conditional(c) => {
+            path.push(PathSegment::Child(0));
+            collect_selectable_paths_from_node(&c.content, path, out);
+            path.pop();
+        }
+        StructuredNode::List(l) => {
+            collect_selectable_paths_from_list(l, path, out);
+        }
+        StructuredNode::Table(t) => {
+            if let Some(header) = &t.header {
+                path.push(PathSegment::TableHeader);
+                out.insert(path.clone());
+
+                for (ci, cell) in header.cells.iter().enumerate() {
+                    path.push(PathSegment::TableCell(ci));
+                    path.push(PathSegment::Child(0));
+                    collect_selectable_paths_from_node(cell, path, out);
+                    path.pop();
+                    path.pop();
+                }
+
+                path.pop();
+            }
+
+            for (ri, row) in t.rows.iter().enumerate() {
+                path.push(PathSegment::TableRow(ri));
+                out.insert(path.clone());
+
+                for (ci, cell) in row.cells.iter().enumerate() {
+                    path.push(PathSegment::TableCell(ci));
+                    path.push(PathSegment::Child(0));
+                    collect_selectable_paths_from_node(cell, path, out);
+                    path.pop();
+                    path.pop();
+                }
+
+                path.pop();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_selectable_paths_from_list(
+    list: &ListNode,
+    path: &mut NodePath,
+    out: &mut HashSet<NodePath>,
+) {
+    for (i, item) in list.items.iter().enumerate() {
+        path.push(PathSegment::ListItem(i));
+        out.insert(path.clone());
+
+        if let Some(sublist) = &item.sublist {
+            collect_selectable_paths_from_list(sublist, path, out);
+        }
+
+        path.pop();
     }
 }
 
@@ -1101,15 +1209,13 @@ pub fn move_container_child_up(
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g)
-            if child_idx < g.children.len() => {
+        StructuredNode::Group(g) if child_idx < g.children.len() => {
             g.children.swap(child_idx, child_idx - 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
             return Some(new_path);
         }
-        StructuredNode::GridLayout(g)
-            if child_idx < g.elements.len() => {
+        StructuredNode::GridLayout(g) if child_idx < g.elements.len() => {
             g.elements.swap(child_idx, child_idx - 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
@@ -1130,15 +1236,13 @@ pub fn move_container_child_down(
 
     let parent = get_node_at_path_mut(content, &parent_path)?;
     match parent {
-        StructuredNode::Group(g)
-            if child_idx + 1 < g.children.len() => {
+        StructuredNode::Group(g) if child_idx + 1 < g.children.len() => {
             g.children.swap(child_idx, child_idx + 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx + 1));
             return Some(new_path);
         }
-        StructuredNode::GridLayout(g)
-            if child_idx + 1 < g.elements.len() => {
+        StructuredNode::GridLayout(g) if child_idx + 1 < g.elements.len() => {
             g.elements.swap(child_idx, child_idx + 1);
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx + 1));
@@ -1442,5 +1546,25 @@ mod tests {
         let node = get_node_at_path(&content, &path).expect("regular child path should resolve");
 
         assert!(matches!(node, StructuredNode::Paragraph(_)));
+    }
+
+    #[test]
+    fn collect_selectable_paths_includes_descendants() {
+        let content = vec![StructuredNode::Group(blueprint::GroupNode {
+            children: vec![StructuredNode::List(ListNode {
+                list_style: blueprint::document::ListStyleType::Disc,
+                items: vec![ListItem::simple(InlineText::plain("Nested item"))],
+            })],
+        })];
+
+        let paths = collect_selectable_paths(&content);
+
+        assert!(paths.contains(&vec![PathSegment::Child(0)]));
+        assert!(paths.contains(&vec![PathSegment::Child(0), PathSegment::Child(0)]));
+        assert!(paths.contains(&vec![
+            PathSegment::Child(0),
+            PathSegment::Child(0),
+            PathSegment::ListItem(0)
+        ]));
     }
 }

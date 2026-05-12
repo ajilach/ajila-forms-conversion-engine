@@ -41,8 +41,7 @@ fn main() -> Result<()> {
     let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Semantic matcher loaded.");
 
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     let input_dir = Path::new(&manifest_dir).join("../core/input");
     let mut forms = discover_forms(&input_dir)?;
 
@@ -445,7 +444,7 @@ fn count_inline_node_slots(node: &InlineNode, total: &mut usize, missing: &mut u
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             count_inline_node_slots(inner, total, missing);
         }
         InlineNode::Link(link) => {
@@ -620,7 +619,7 @@ fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
                 out.push(texts);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             collect_from_inline_node(inner, out);
         }
         InlineNode::Link(link) => {

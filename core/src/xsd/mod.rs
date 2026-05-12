@@ -68,6 +68,12 @@ pub enum XsdNode {
         max_occurs: Option<Option<u32>>,
         content: Option<Box<XsdNode>>,
     },
+    /// `<xs:element ref="..."/>` — reference to a global element declaration.
+    Ref {
+        ref_name: String,
+        min_occurs: Option<u32>,
+        max_occurs: Option<Option<u32>>,
+    },
     /// `<xs:complexType>` (inline when `name` is `None`, named when `Some`)
     ComplexType {
         name: Option<String>,
@@ -145,6 +151,18 @@ impl XsdNode {
                         out.push('\n');
                     }
                 }
+            }
+            XsdNode::Ref {
+                ref_name,
+                min_occurs,
+                max_occurs,
+            } => {
+                let occur = build_occurrence_attrs(*min_occurs, *max_occurs);
+                out.push_str(&format!(
+                    "{}<xs:element ref=\"{}\"{}/>",
+                    pad, ref_name, occur
+                ));
+                out.push('\n');
             }
             XsdNode::ComplexType { name, sequence } => {
                 match name {
@@ -247,14 +265,26 @@ fn default_schema_location_prefix() -> String {
     "../".to_string()
 }
 
+fn default_root_element_name() -> String {
+    "form".to_string()
+}
+
 /// TOML-deserializable XSD profile loaded from
 /// `profiles/{name}/xsd/config.toml`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct XsdProfile {
     /// Mapping from canonical element names to their config.
     #[serde(default)]
     pub elements: HashMap<String, ElementMapping>,
+
+    /// Mapping from canonical section names to their regex-based config.
+    ///
+    /// When a section's full text (heading + body until next heading) matches
+    /// one of the configured patterns, the section's XSD element name is
+    /// overridden with the TOML key.
+    #[serde(default)]
+    pub sections: HashMap<String, SectionMapping>,
 
     /// Prefix prepended to every auto-discovered include path.
     ///
@@ -273,6 +303,39 @@ pub struct XsdProfile {
     /// prefer that language.
     #[serde(default)]
     pub master_language: Option<String>,
+
+    /// Template for the root element name in generated XSD schemas.
+    ///
+    /// May contain `{{ form_code }}` which is replaced at generation time
+    /// with the actual form code.  Defaults to `"form"`.
+    ///
+    /// Example: `rootElementName = "UBSAF_{{ form_code }}"`
+    #[serde(default = "default_root_element_name")]
+    pub root_element_name: String,
+
+    /// Prefix used for fragment `bindRef` paths.
+    ///
+    /// In reference forms, fragments use a generic prefix (e.g. `/UBSAF/`)
+    /// instead of the form-specific root so the same fragment can be reused
+    /// across forms.  May contain `{{ form_code }}`.
+    ///
+    /// Defaults to the same value as `root_element_name` (i.e. fragments
+    /// use the form-specific root unless overridden).
+    #[serde(default)]
+    pub fragment_bind_ref_prefix: Option<String>,
+}
+
+impl Default for XsdProfile {
+    fn default() -> Self {
+        Self {
+            elements: HashMap::new(),
+            sections: HashMap::new(),
+            schema_location_prefix: default_schema_location_prefix(),
+            master_language: None,
+            root_element_name: default_root_element_name(),
+            fragment_bind_ref_prefix: None,
+        }
+    }
 }
 
 /// Configuration for an element synonym mapping.
@@ -288,6 +351,18 @@ pub struct ElementMapping {
     /// predefined type name like `"CurrencyType"`).
     #[serde(rename = "type")]
     pub type_ref: String,
+}
+
+/// Configuration for a section name override.
+///
+/// When a section's full text content (heading + body) matches one of the
+/// `patterns` (regex, case-insensitive), the resulting XSD element uses
+/// the canonical name (the TOML key) instead of the heading-derived name.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SectionMapping {
+    /// Regex patterns to match against the full section text.
+    /// Matched case-insensitively.
+    pub patterns: Vec<String>,
 }
 
 // ============================================================================
@@ -357,6 +432,12 @@ pub struct XsdConfig {
     /// prefer the translation in this language instead of picking an
     /// arbitrary first entry from the translation map.
     pub master_language: Option<String>,
+
+    /// Optional form code (e.g. `"ABFA"`).
+    ///
+    /// Used to expand `{{ form_code }}` in the profile's `root_element_name`
+    /// template.
+    pub form_code: Option<String>,
 }
 
 impl XsdConfig {
@@ -374,6 +455,7 @@ impl XsdConfig {
             registered_types,
             type_to_element_name,
             master_language,
+            form_code: None,
         }
     }
 
@@ -386,6 +468,7 @@ impl XsdConfig {
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
             master_language,
+            form_code: None,
         }
     }
 
@@ -393,6 +476,37 @@ impl XsdConfig {
     pub fn with_master_language(mut self, lang: impl Into<String>) -> Self {
         self.master_language = Some(lang.into());
         self
+    }
+
+    /// Set the form code for root element name expansion.
+    pub fn with_form_code(mut self, code: impl Into<String>) -> Self {
+        self.form_code = Some(code.into());
+        self
+    }
+
+    /// Compute the root element name by expanding `{{ form_code }}` in the
+    /// profile's `root_element_name` template.
+    pub fn root_element_name(&self) -> String {
+        let template = &self.profile.root_element_name;
+        match &self.form_code {
+            Some(code) => template.replace("{{ form_code }}", code),
+            None => template.replace("{{ form_code }}", ""),
+        }
+    }
+
+    /// Compute the fragment bind-ref prefix.
+    ///
+    /// If the profile specifies `fragmentBindRefPrefix`, expand
+    /// `{{ form_code }}` in it.  Otherwise fall back to the root element
+    /// name (so fragments use the same root as the form by default).
+    pub fn fragment_bind_ref_prefix(&self) -> String {
+        match &self.profile.fragment_bind_ref_prefix {
+            Some(template) => match &self.form_code {
+                Some(code) => template.replace("{{ form_code }}", code),
+                None => template.clone(),
+            },
+            None => self.root_element_name(),
+        }
     }
 
     /// Get the plain text from an `InlineText`, preferring the master
@@ -1062,6 +1176,110 @@ pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElem
     best.map(|(_, resolved)| resolved)
 }
 
+/// Attempt to resolve a section name by matching the full section text against
+/// the `[sections]` config patterns.
+///
+/// Finds the best match by picking the pattern whose regex match is longest
+/// (most specific). Patterns are matched case-insensitively.
+///
+/// Returns `Some(configured_name)` if a pattern matches, `None` otherwise.
+pub fn resolve_section_name(section_text: &str, profile: &XsdProfile) -> Option<String> {
+    resolve_section_name_with_heading(section_text, None, profile)
+}
+
+/// Resolve a section name by matching patterns against heading and body text.
+///
+/// If `heading_text` is provided, patterns are first tried against only the
+/// heading. Any heading match wins over a body-text-only match regardless of
+/// match length. Among heading-only matches (or body-only matches), the longest
+/// match wins.
+///
+/// When no heading pattern matches but the heading appears "meaningful" (not
+/// just a step number or generic prefix), body-text matches are suppressed
+/// to let the PascalCase fallback take over.
+pub fn resolve_section_name_with_heading(
+    section_text: &str,
+    heading_text: Option<&str>,
+    profile: &XsdProfile,
+) -> Option<String> {
+    let mut best_heading: Option<(usize, String)> = None;
+    let mut best_body: Option<(usize, String)> = None;
+
+    for (name, mapping) in &profile.sections {
+        for pattern in &mapping.patterns {
+            let case_insensitive_pattern = format!("(?i){}", pattern);
+            if let Ok(re) = regex_lite::Regex::new(&case_insensitive_pattern) {
+                // Try heading first (higher priority)
+                if let Some(ht) = heading_text {
+                    if let Some(m) = re.find(ht) {
+                        let len = m.len();
+                        if best_heading
+                            .as_ref()
+                            .is_none_or(|(best_len, _)| len > *best_len)
+                        {
+                            best_heading = Some((len, name.clone()));
+                        }
+                    }
+                }
+                // Try full text (lower priority)
+                if let Some(m) = re.find(section_text) {
+                    let len = m.len();
+                    if best_body
+                        .as_ref()
+                        .is_none_or(|(best_len, _)| len > *best_len)
+                    {
+                        best_body = Some((len, name.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Heading matches always take priority
+    if best_heading.is_some() {
+        return best_heading.map(|(_, name)| name);
+    }
+
+    // Body-text matches only apply when the heading is generic (a step number,
+    // a bare digit, etc.) — otherwise let the caller fall back to PascalCase.
+    if let Some(ht) = heading_text {
+        if !is_generic_heading(ht) {
+            return None;
+        }
+    }
+
+    best_body.map(|(_, name)| name)
+}
+
+/// Returns true if a heading is "generic" (not descriptive enough to use as a
+/// section name). Generic headings are e.g. "Step 4", "1", "Schritt 2", etc.
+fn is_generic_heading(heading: &str) -> bool {
+    let trimmed = heading.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    // Pure digits or digits with a trailing dot/paren
+    if trimmed
+        .trim_end_matches(|c: char| c == '.' || c == ')' || c == ' ')
+        .chars()
+        .all(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    // "Step N", "Schritt N", "Étape N", "Fase N", "Paso N"
+    let lower = trimmed.to_lowercase();
+    let prefixes = ["step", "schritt", "étape", "fase", "paso"];
+    for prefix in &prefixes {
+        if lower.starts_with(prefix) {
+            let rest = lower[prefix.len()..].trim_start();
+            if rest.is_empty() || rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Convert a label string to a snake_case identifier suitable for XSD names.
 ///
 /// - Strips non-alphanumeric characters
@@ -1084,4 +1302,45 @@ pub fn to_snake_case(label: &str) -> String {
         .map(|w| w.to_lowercase())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+/// Convert a label string to a PascalCase identifier suitable for XSD names.
+///
+/// - Strips non-alphanumeric characters
+/// - Splits on whitespace / punctuation boundaries
+/// - Each word is title-cased (first letter uppercase, rest lowercase)
+///   unless the word is fully uppercase (treated as an acronym and kept as-is)
+///
+/// Example: `"Date of Birth"` → `"DateOfBirth"`
+/// Example: `"IBAN"` → `"IBAN"`
+pub fn to_pascal_case(label: &str) -> String {
+    let words: Vec<&str> = label
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    if words.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    words
+        .iter()
+        .map(|w| {
+            if w.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
+                // Acronym or number — keep as-is
+                w.to_string()
+            } else {
+                // Title-case
+                let mut chars = w.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => {
+                        let upper: String = first.to_uppercase().collect();
+                        upper + &chars.as_str().to_lowercase()
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }

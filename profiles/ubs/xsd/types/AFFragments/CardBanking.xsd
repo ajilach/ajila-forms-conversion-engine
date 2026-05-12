@@ -18,6 +18,7 @@
 	<xs:element name="CardTraining" type="CardTrainingType"/>
 	<xs:element name="CardEmployment" type="CardEmploymentType"/>
 	<xs:element name="CardLegalRep" type="CardLegalRepType"/>
+	<xs:element name="EmbossingLine" type="EmbossingLineType"/>
 	<xs:complexType name="CardType">
 		<xs:sequence>
 			<xs:element name="FirstSixDigits" type="xs:string"/>
@@ -100,6 +101,11 @@
 			<xs:element name="BusinessPhone" type="xs:string" minOccurs="0"/>
 			<xs:element name="Fortune" type="xs:string" minOccurs="0"/>
 			<xs:element ref="GPN" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EmbossingLineType">
+		<xs:sequence>
+			<xs:element name="EmbossingLineNames" type="xs:string" minOccurs="0"/>
 		</xs:sequence>
 	</xs:complexType>
 </xs:schema>

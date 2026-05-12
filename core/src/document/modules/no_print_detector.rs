@@ -59,11 +59,7 @@ impl AnalysisModule for NoPrintDetector {
         // Create individual NoPrint wrapper groups for each element
         // This claims them so other modules won't process them
         for group_idx in no_print_groups {
-            doc.merge_inferred(
-                vec![group_idx],
-                GroupKind::NoPrint,
-                self.name(),
-            );
+            doc.merge_inferred(vec![group_idx], GroupKind::NoPrint, self.name());
         }
     }
 

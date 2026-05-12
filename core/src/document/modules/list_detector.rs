@@ -453,6 +453,15 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
+            // Content must not be too far to the right of the marker either
+            // (different column). The content should start near the marker's
+            // right edge, not hundreds of points away.
+            let marker_right = marker_bounds.x + marker_bounds.width;
+            let max_right_gap = Decimal::from(50);
+            if content_bounds.x > marker_right + max_right_gap {
+                continue;
+            }
+
             // Skip other standalone markers.
             let content_text = doc.get_text_content(content_idx);
             if is_standalone_marker(&content_text).is_some() {
@@ -555,6 +564,30 @@ fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
         false
     }
 
+    /// Check if two groups have overlapping container bounds (using node.bounds(),
+    /// not text_bounds). This prevents merging elements that are in different
+    /// columns — their containers won't overlap horizontally even if their
+    /// text content has a small gap.
+    fn containers_overlap_horizontally(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
+        let nodes_a: Vec<_> = doc.collect_nodes(idx_a);
+        let nodes_b: Vec<_> = doc.collect_nodes(idx_b);
+        if nodes_a.is_empty() || nodes_b.is_empty() {
+            return false;
+        }
+        // Use the container bounds of the first node as representative
+        let a_bounds = nodes_a[0].bounds();
+        let b_bounds = nodes_b[0].bounds();
+        let a_right = a_bounds.x + a_bounds.width;
+        let b_left = b_bounds.x;
+        let b_right = b_bounds.x + b_bounds.width;
+        let a_left = a_bounds.x;
+        // Check if containers overlap or are adjacent (within 5pt)
+        let tolerance = Decimal::from(5);
+        let overlap_left = a_left.max(b_left);
+        let overlap_right = a_right.min(b_right);
+        overlap_right + tolerance >= overlap_left
+    }
+
     let roots = doc.roots();
     let y_tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
     // Maximum horizontal gap (in points) to consider two blocks as adjacent.
@@ -608,6 +641,24 @@ fn merge_adjacent_same_line_text_blocks(doc: &mut Document, module_name: &str) {
             // borders indicates they are separate table cells, not fragments of
             // the same text span.
             if has_horizontal_border(doc, left_idx) && has_horizontal_border(doc, right_idx) {
+                continue;
+            }
+
+            // Don't merge blocks with very different heights.
+            // Fragments of the same text span have similar heights (both are
+            // single-line or both are multi-line). A tall multi-line paragraph
+            // next to a short single-line element indicates they are separate
+            // content (e.g., different columns at the same y-position).
+            let short_h = left_bounds.height.min(right_bounds.height);
+            let tall_h = left_bounds.height.max(right_bounds.height);
+            if tall_h > Decimal::ZERO && short_h * Decimal::from(3) < tall_h {
+                continue;
+            }
+
+            // Don't merge blocks whose containers are in different columns.
+            // Text fragments of the same line have adjacent/overlapping containers,
+            // while elements in different columns have clearly separated containers.
+            if !containers_overlap_horizontally(doc, left_idx, right_idx) {
                 continue;
             }
 
@@ -672,15 +723,13 @@ impl AnalysisModule for ListDetector {
             .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
             .collect();
 
-        // Also collect bounds of root TextBlocks that are bold, have
-        // non-empty text, and do NOT start with a list marker.  Bold
-        // non-marker TextBlocks are headings or labels that naturally
-        // separate lists.  Bold non-marker TextBlocks may appear
-        // earlier in index order than the merged list items and
-        // therefore won't be encountered between them during the
-        // sequential Phase 1 walk.  Only bold TextBlocks are considered
-        // to avoid breaking lists where a non-bold continuation paragraph
-        // (e.g. multi-line item text) appears between marker items.
+        // Collect bounds of root TextBlocks that have non-empty text and
+        // do NOT start with a list marker.  Non-marker TextBlocks are
+        // paragraphs/headings that naturally separate lists.  They may
+        // appear earlier in index order than the merged list items
+        // (because StandaloneMarkerMerger creates merged groups at higher
+        // indices) and therefore won't be encountered between them during
+        // the sequential Phase 1 walk.
         let non_marker_tb_bounds: Vec<Bounds> = roots
             .iter()
             .filter(|&&idx| {
@@ -697,8 +746,23 @@ impl AnalysisModule for ListDetector {
             .filter_map(|&idx| doc.get_bounds(idx))
             .collect();
 
+        // Collect (bounds, marker_kind) of ALL marker TextBlocks so that
+        // can_extend_run can detect when a different-kind marker from
+        // another column lies in the y-gap between two same-kind items.
+        let all_marker_tb_info: Vec<(Bounds, ListStyleType)> = roots
+            .iter()
+            .filter_map(|&idx| {
+                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                    return None;
+                }
+                let text = doc.get_text_content(idx);
+                let marker = detect_marker(&text)?;
+                let bounds = doc.get_bounds(idx)?;
+                Some((bounds, marker.kind))
+            })
+            .collect();
+
         // Each entry: (group_idx, text, bounds, marker)
-        let mut current_run: Vec<(usize, String, Bounds, DetectedMarker)> = Vec::new();
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_styles: Vec<ListStyleType> = Vec::new();
 
@@ -728,11 +792,134 @@ impl AnalysisModule for ListDetector {
             run.clear();
         };
 
+        // Minimum x-distance to consider items to be in different columns.
+        // This must be substantially larger than X_TOLERANCE (which allows
+        // for minor alignment differences within the same column).
+        let column_gap = Decimal::from(100);
+
+        // Multi-column aware Phase 1 walk.
+        //
+        // In two-column PDF layouts, root TextBlocks from the left and right
+        // columns are interleaved by index.  A naïve sequential walk would
+        // flush the left-column run every time it encounters a right-column
+        // item, splitting lists that span multiple index-interleaved rows.
+        //
+        // To handle this, we maintain per-column runs.  When we encounter
+        // a marker item whose x position is far from the current run (i.e.
+        // in a different column), we park the current run and switch to (or
+        // start) the run for that column.  Non-marker TextBlocks and
+        // non-TextBlock roots only flush the runs for columns whose x range
+        // they overlap.
+        type Run = Vec<(usize, String, Bounds, DetectedMarker)>;
+        let mut column_runs: Vec<(Decimal, Decimal, Run)> = Vec::new(); // (representative x, max right edge, run)
+
+        /// Find the column run whose representative x is within `tol` of `x`.
+        fn find_column(column_runs: &[(Decimal, Decimal, Run)], x: Decimal, tol: Decimal) -> Option<usize> {
+            column_runs
+                .iter()
+                .position(|(col_x, _, _)| (x - *col_x).abs() <= tol)
+        }
+
+        /// Check whether a candidate item can extend a run (same marker kind,
+        /// no intervening content in the same column).
+        fn can_extend_run(
+            run: &Run,
+            idx: usize,
+            bounds: &Bounds,
+            marker: &DetectedMarker,
+            doc: &Document,
+            non_tb_root_ys: &[Decimal],
+            ws_leaf_ys: &HashSet<Decimal>,
+            non_marker_tb_bounds: &[Bounds],
+            all_marker_tb_info: &[(Bounds, ListStyleType)],
+            x_tol: Decimal,
+        ) -> bool {
+            let last = match run.last() {
+                Some(l) => l,
+                None => return true,
+            };
+
+            if marker.kind != last.3.kind {
+                return false;
+            }
+
+            let last_bottom = last.2.y + last.2.height;
+            let curr_top = bounds.y;
+            let (range_lo, range_hi) = if last_bottom <= curr_top {
+                (last_bottom, curr_top)
+            } else {
+                (curr_top, last_bottom)
+            };
+
+            let both_non_bold = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
+            let has_intervening = non_tb_root_ys.iter().any(|&y| {
+                if y > range_lo && y < range_hi {
+                    if both_non_bold && ws_leaf_ys.contains(&y) {
+                        return false;
+                    }
+                    true
+                } else {
+                    false
+                }
+            }) || non_marker_tb_bounds.iter().any(|sep| {
+                let sep_bottom = sep.y + sep.height;
+                let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
+                let item_x_lo = last.2.x.min(bounds.x);
+                let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
+                let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
+                let not_continuation = sep.x <= item_x_lo + x_tol;
+                y_overlap && x_overlap && not_continuation
+            });
+
+            if has_intervening {
+                return false;
+            }
+
+            // In multi-column layouts, a marker TextBlock of a DIFFERENT kind
+            // from another column may lie in the y-gap.  This typically means a
+            // section boundary (e.g. a numbered heading like "2. Konto-..."
+            // between dash items).  Treat it as intervening.
+            let has_cross_column_different_marker =
+                all_marker_tb_info.iter().any(|(mb, mk)| {
+                    if *mk == marker.kind {
+                        return false; // same kind — not a boundary
+                    }
+                    let mb_bottom = mb.y + mb.height;
+                    let y_overlap = mb_bottom > range_lo && mb.y < range_hi;
+                    if !y_overlap {
+                        return false;
+                    }
+                    // Only count markers that are NOT in the same column as our
+                    // run (items in the same column with different kinds are
+                    // already handled by the marker.kind != last.kind check).
+                    let item_x = last.2.x;
+                    (mb.x - item_x).abs() > x_tol
+                });
+
+            !has_cross_column_different_marker
+        }
+
         for &idx in &roots {
-            // Only TextBlock groups can be list items
             if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
-                // Non-TextBlock root breaks any ongoing list run
-                flush(&mut current_run, &mut groups, &mut group_styles);
+                // Non-TextBlock root: flush runs for columns whose x range
+                // overlaps with this element.  Runs in other columns are
+                // unaffected.
+                if let Some(non_tb_bounds) = doc.get_bounds(idx) {
+                    let ntb_left = non_tb_bounds.x;
+                    let ntb_right = non_tb_bounds.x + non_tb_bounds.width;
+                    for (col_x, col_right_edge, run) in &mut column_runs {
+                        let col_left = *col_x - x_tol;
+                        let col_right = *col_right_edge + x_tol;
+                        if ntb_right > col_left && ntb_left < col_right {
+                            flush(run, &mut groups, &mut group_styles);
+                        }
+                    }
+                } else {
+                    // No bounds: flush all runs
+                    for (_, _, run) in &mut column_runs {
+                        flush(run, &mut groups, &mut group_styles);
+                    }
+                }
                 continue;
             }
 
@@ -740,83 +927,64 @@ impl AnalysisModule for ListDetector {
             let bounds = match doc.get_bounds(idx) {
                 Some(b) => b,
                 None => {
-                    flush(&mut current_run, &mut groups, &mut group_styles);
+                    for (_, _, run) in &mut column_runs {
+                        flush(run, &mut groups, &mut group_styles);
+                    }
                     continue;
                 }
             };
 
             if let Some(marker) = detect_marker(&text) {
-                if let Some(last) = current_run.last() {
-                    let same_kind = marker.kind == last.3.kind;
-                    let similar_x = (bounds.x - last.2.x).abs() <= x_tol;
+                // Find which column this item belongs to.
+                let col_idx = find_column(&column_runs, bounds.x, column_gap);
 
-                    // Check whether any non-TextBlock root group or
-                    // non-marker TextBlock root sits between the previous
-                    // item and this candidate (by y-position).  If so,
-                    // there is other content between them and they belong
-                    // to separate lists.
-                    let last_bottom = last.2.y + last.2.height;
-                    let curr_top = bounds.y;
-                    let (range_lo, range_hi) = if last_bottom <= curr_top {
-                        (last_bottom, curr_top)
+                if let Some(ci) = col_idx {
+                    let (_, ref mut col_right_edge, ref mut run) = column_runs[ci];
+                    if can_extend_run(
+                        run,
+                        idx,
+                        &bounds,
+                        &marker,
+                        doc,
+                        &non_tb_root_ys,
+                        &ws_leaf_ys,
+                        &non_marker_tb_bounds,
+                        &all_marker_tb_info,
+                        x_tol,
+                    ) {
+                        *col_right_edge = (*col_right_edge).max(bounds.x + bounds.width);
+                        run.push((idx, text, bounds, marker));
                     } else {
-                        (curr_top, last_bottom)
-                    };
-                    // For non-bold list candidates, whitespace-only Leaf
-                    // nodes are not considered meaningful separators.
-                    let both_non_bold = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
-                    let has_intervening = non_tb_root_ys.iter().any(|&y| {
-                        if y > range_lo && y < range_hi {
-                            // Skip whitespace-only leaf positions for
-                            // non-bold candidates.
-                            if both_non_bold && ws_leaf_ys.contains(&y) {
-                                return false;
-                            }
-                            true
-                        } else {
-                            false
-                        }
-                    }) || non_marker_tb_bounds.iter().any(|sep| {
-                        // Check vertical overlap: separator spans
-                        // [y, y+h], gap spans (range_lo, range_hi).
-                        let sep_bottom = sep.y + sep.height;
-                        let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
-                        // Check horizontal overlap: separator must
-                        // share x-range with the list items to avoid
-                        // false positives from unrelated columns.
-                        let item_x_lo = last.2.x.min(bounds.x);
-                        let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
-                        let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
-                        // The separator must bridge to the next item:
-                        // the gap between separator bottom and the
-                        // next item's top must be less than the
-                        // same-line tolerance.  This prevents body
-                        // paragraphs (under numbered headings) from
-                        // breaking the list — they typically end well
-                        // above the next heading item.
-                        let gap_after_sep = range_hi - sep_bottom;
-                        let tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
-                        let bridges = gap_after_sep < tol;
-                        y_overlap && x_overlap && bridges
-                    });
-
-                    if same_kind && similar_x && !has_intervening {
-                        current_run.push((idx, text, bounds, marker));
-                    } else {
-                        flush(&mut current_run, &mut groups, &mut group_styles);
-                        current_run.push((idx, text, bounds, marker));
+                        flush(run, &mut groups, &mut group_styles);
+                        *col_right_edge = bounds.x + bounds.width;
+                        run.push((idx, text, bounds, marker));
                     }
                 } else {
-                    current_run.push((idx, text, bounds, marker));
+                    // New column — start a fresh run.
+                    let right_edge = bounds.x + bounds.width;
+                    let mut run = Vec::new();
+                    run.push((idx, text, bounds, marker));
+                    column_runs.push((bounds.x, right_edge, run));
                 }
             } else {
-                // TextBlock without a marker also breaks the run
-                flush(&mut current_run, &mut groups, &mut group_styles);
+                // TextBlock without a marker: flush runs in the same column.
+                // If the TB doesn't match any known column, flush ALL runs
+                // to preserve the original single-column break behavior.
+                let col_idx = find_column(&column_runs, bounds.x, column_gap);
+                if let Some(ci) = col_idx {
+                    flush(&mut column_runs[ci].2, &mut groups, &mut group_styles);
+                } else if !column_runs.is_empty() {
+                    for (_, _, run) in &mut column_runs {
+                        flush(run, &mut groups, &mut group_styles);
+                    }
+                }
             }
         }
 
-        // Flush the final run
-        flush(&mut current_run, &mut groups, &mut group_styles);
+        // Flush all remaining column runs.
+        for (_, _, mut run) in column_runs {
+            flush(&mut run, &mut groups, &mut group_styles);
+        }
 
         // Phase 1b: Sublist merging.
         //
@@ -1203,6 +1371,15 @@ impl AnalysisModule for ListDetector {
                 Some(ListStyleType::Dash) | Some(ListStyleType::Disc)
             );
 
+            // Compute maximum text length of marked items in the group.
+            // Used to guard against absorbing introductory paragraphs that
+            // are longer than all actual list items.
+            let max_item_text_len: usize = group
+                .iter()
+                .map(|&idx| doc.get_text_content(idx).trim().len())
+                .max()
+                .unwrap_or(0);
+
             // Helper to check if a candidate meets single-item criteria
             let check_single_item = |cand_idx: usize| -> bool {
                 let cand_bounds = match doc.get_bounds(cand_idx) {
@@ -1226,7 +1403,14 @@ impl AnalysisModule for ListDetector {
                 let is_adjacent =
                     gap >= Decimal::ZERO && gap <= max_item_height * Decimal::new(3, 1);
 
-                not_heading_like && is_single_line && is_adjacent
+                // Must not be longer than all marked items — a candidate that
+                // is longer than every item in the group is likely an
+                // introductory paragraph (e.g. "Dies umfasst ... insbesondere")
+                // rather than a list item that lost its marker.
+                let cand_len = cand_trimmed.len();
+                let not_too_long = cand_len <= max_item_text_len || cand_len <= 40;
+
+                not_heading_like && is_single_line && is_adjacent && not_too_long
             };
 
             let should_extend = if prepend.len() >= 5 && group.len() >= 2 {
@@ -1549,10 +1733,7 @@ mod tests {
     #[test]
     fn test_groups_unordered_list() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- First item".to_string(),
@@ -1605,10 +1786,7 @@ mod tests {
     #[test]
     fn test_groups_ordered_list() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "1. First".to_string(),
@@ -1650,10 +1828,7 @@ mod tests {
     #[test]
     fn test_does_not_group_mixed_markers() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- Unordered item".to_string(),
@@ -1691,10 +1866,7 @@ mod tests {
     #[test]
     fn test_does_not_group_single_item() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![FlattenedNode::new_text(
                 "- Only one item".to_string(),
                 num(10.0),
@@ -1717,10 +1889,7 @@ mod tests {
     #[test]
     fn test_non_list_text_blocks_untouched() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Normal text".to_string(),
@@ -1786,10 +1955,7 @@ mod tests {
     fn test_different_x_positions_not_grouped() {
         // Text blocks at very different x positions should not be grouped
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "- Left item".to_string(),

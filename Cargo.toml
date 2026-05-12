@@ -3,7 +3,8 @@ members = [
     "core",
     "cli",
     "app",
-    "judge"
+    "judge",
+    "teacher"
 ]
 resolver = "3"
 

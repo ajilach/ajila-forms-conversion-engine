@@ -159,7 +159,12 @@ impl RadioButtonGrouper {
                     // (which would have its own inset content below it)
                     let is_radio_related = doc
                         .get_group(root_idx)
-                        .map(|g| matches!(g.kind, GroupKind::RadioButton { .. } | GroupKind::RadioButtonGroup))
+                        .map(|g| {
+                            matches!(
+                                g.kind,
+                                GroupKind::RadioButton { .. } | GroupKind::RadioButtonGroup
+                            )
+                        })
                         .unwrap_or(false);
 
                     if !is_radio_related {
@@ -209,8 +214,7 @@ impl RadioButtonGrouper {
                         continue;
                     }
 
-                    let Some(candidate_field_bounds) =
-                        self.get_field_bounds(doc, candidate_idx)
+                    let Some(candidate_field_bounds) = self.get_field_bounds(doc, candidate_idx)
                     else {
                         continue;
                     };
@@ -220,8 +224,9 @@ impl RadioButtonGrouper {
                         .is_horizontally_aligned(&candidate_field_bounds, self.alignment_tolerance)
                     {
                         // Measure gap using full group bounds (labels fill horizontal space)
-                        let candidate_group_bounds =
-                            doc.get_bounds(candidate_idx).unwrap_or(candidate_field_bounds);
+                        let candidate_group_bounds = doc
+                            .get_bounds(candidate_idx)
+                            .unwrap_or(candidate_field_bounds);
                         let distance = last_group_bounds
                             .horizontal_gap_to(&candidate_group_bounds)
                             .unwrap_or(Decimal::MAX);
@@ -258,8 +263,7 @@ impl RadioButtonGrouper {
                         continue;
                     }
 
-                    let Some(candidate_field_bounds) =
-                        self.get_field_bounds(doc, candidate_idx)
+                    let Some(candidate_field_bounds) = self.get_field_bounds(doc, candidate_idx)
                     else {
                         continue;
                     };
@@ -493,10 +497,7 @@ mod tests {
     fn test_horizontal_radio_button_grouping() {
         // Create a flattened document with 3 horizontally aligned radio buttons
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Radio button 1
                 FlattenedNode::new_field(

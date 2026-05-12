@@ -124,7 +124,11 @@ impl TextBlockMerger {
         };
 
         // Determine which is above and which is below
-        let top_idx = if bounds_a.y <= bounds_b.y { idx_a } else { idx_b };
+        let top_idx = if bounds_a.y <= bounds_b.y {
+            idx_a
+        } else {
+            idx_b
+        };
         let (top, bottom) = if bounds_a.y <= bounds_b.y {
             (&bounds_a, &bounds_b)
         } else {
@@ -172,13 +176,13 @@ impl TextBlockMerger {
         let overlap_left = bounds_a.x.max(bounds_b.x);
         let overlap_right = bounds_a.right().min(bounds_b.right());
 
-        // Require at least some horizontal overlap or very close horizontal proximity
+        // Require horizontal overlap or very small gap. Same-column blocks share
+        // a left margin and always overlap. A large gap (> 15pt) indicates different
+        // columns that shouldn't be merged.
         if overlap_right < overlap_left {
-            // No horizontal overlap — check if they're close enough
             let horiz_gap = overlap_left - overlap_right;
-            let max_width = bounds_a.width.max(bounds_b.width);
-            // Allow small horizontal gap (< 20% of the wider block)
-            if horiz_gap > max_width / Decimal::from(5) {
+            let small_gap_tolerance = Decimal::from(15);
+            if horiz_gap > small_gap_tolerance {
                 return false;
             }
         }
@@ -240,8 +244,7 @@ impl TextBlockMerger {
             true
         } else {
             let horiz_gap = overlap_left - overlap_right;
-            let min_width = bounds_a.width.min(bounds_b.width);
-            horiz_gap <= min_width / Decimal::from(5)
+            horiz_gap <= Decimal::from(15)
         };
 
         if !horizontal_aligned {
@@ -391,10 +394,7 @@ mod tests {
     fn test_merges_adjacent_blocks_same_font() {
         // Two text blocks with same font, close vertically → should merge
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Line one".to_string(),
@@ -452,10 +452,7 @@ mod tests {
     fn test_does_not_merge_different_font_size() {
         // Two text blocks with different font sizes → should NOT merge
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Large text".to_string(),
@@ -494,10 +491,7 @@ mod tests {
     fn test_does_not_merge_far_apart() {
         // Two text blocks with same font but far apart → should NOT merge
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Top text".to_string(),
@@ -536,10 +530,7 @@ mod tests {
     fn test_merges_three_adjacent_blocks() {
         // Three text blocks with same font, all close → should merge into one
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Line one".to_string(),
@@ -593,10 +584,7 @@ mod tests {
         // "Line A" and "Line C" have matching style and could merge by distance,
         // but "Middle heading" is between them and should block cross-merge.
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Line A".to_string(),
@@ -645,10 +633,7 @@ mod tests {
         // Left-column lines should still merge even if a right-column text block
         // appears between them in global y/x sort order.
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Left line 1".to_string(),

@@ -783,7 +783,7 @@ fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut I18n
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
             extract_from_inline_node(inner, master_lang, map);
         }
         InlineNode::Link(link) => {

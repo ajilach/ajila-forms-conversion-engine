@@ -339,10 +339,7 @@ mod tests {
     fn test_inline_field_with_text_left() {
         // Field with text to the left, no text above/below
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_text(
                     "Please enter your full legal name in the following field".to_string(),
@@ -379,10 +376,7 @@ mod tests {
     fn test_inline_field_with_text_right() {
         // Field with text to the right, no text above/below
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "TF_Name".to_string(),
@@ -419,10 +413,7 @@ mod tests {
     fn test_not_inline_when_label_above() {
         // Field with text to the left AND text above (should NOT be inline)
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Label above
                 FlattenedNode::new_text(
@@ -470,10 +461,7 @@ mod tests {
     fn test_not_inline_without_adjacent_text() {
         // Field alone, no text nearby
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 FlattenedNode::new_field(
                     "TF_Name".to_string(),
@@ -512,10 +500,7 @@ mod tests {
         // Field that overlaps horizontally with text on the same line
         // This simulates a field embedded within flowing text
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Text that spans a wide area
                 FlattenedNode::new_text(
@@ -555,10 +540,7 @@ mod tests {
         // Field with label above AND text overlapping on the same line
         // This should NOT be inline because it has a label above
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Label ABOVE the field (vertically aligned)
                 FlattenedNode::new_text(

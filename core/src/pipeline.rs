@@ -235,25 +235,10 @@ pub struct PipelineOutput {
 // run_pipeline
 // ============================================================================
 
-/// Run the full conversion pipeline on one or more PDF files.
+/// Run the full conversion pipeline on one or more PDF files (synchronous).
 ///
-/// # Arguments
-///
-/// * `files` – Input files as `(filename, pdf_bytes)` pairs.  Multiple files
-///   are treated as different language versions of the same form and merged
-///   into a single multilingual envelope.
-/// * `config` – Pipeline configuration (render options, scale factor).
-/// * `on_event` – Progress callback invoked synchronously during processing.
-///   Called whenever the pipeline advances to a new step, finishes exhaustive
-///   exploration, or produces an individual render.  Suitable for feeding into
-///   a channel or updating shared state.  The callback is `FnMut` so it can
-///   mutate captured state (e.g. a progress struct or a channel sender).
-///
-/// # Errors
-///
-/// Returns an [`Error`] if parsing, exhaustive exploration, rendering, or
-/// merging fails fatally.  Non-fatal render errors are emitted as
-/// [`PipelineEvent::Warning`] instead.
+/// This is a convenience wrapper around [`run_pipeline_async`] that uses a
+/// no-op yield function.  See [`run_pipeline_async`] for full documentation.
 ///
 /// # Example
 ///
@@ -268,10 +253,51 @@ pub struct PipelineOutput {
 pub fn run_pipeline(
     files: &[(String, Vec<u8>)],
     config: &PipelineConfig,
-    mut on_event: impl FnMut(PipelineEvent),
+    on_event: impl FnMut(PipelineEvent),
 ) -> Result<PipelineOutput, Error> {
+    // The no-op yield future is always immediately ready, so the async
+    // function never actually suspends.  We can drive it to completion
+    // with a trivial single-poll.
+    let fut = run_pipeline_async(files, config, on_event, || std::future::ready(()));
+    block_on_ready(fut)
+}
+
+/// Run the full conversion pipeline on one or more PDF files (async).
+///
+/// # Arguments
+///
+/// * `files` – Input files as `(filename, pdf_bytes)` pairs.  Multiple files
+///   are treated as different language versions of the same form and merged
+///   into a single multilingual envelope.
+/// * `config` – Pipeline configuration (render options, scale factor).
+/// * `on_event` – Progress callback invoked during processing.
+///   Called whenever the pipeline advances to a new step, finishes exhaustive
+///   exploration, or produces an individual render.  The callback is `FnMut`
+///   so it can mutate captured state (e.g. a progress struct or a channel
+///   sender).
+/// * `yield_fn` – An async yield function called between pipeline phases and
+///   between individual state iterations.  Pass `|| async {}` for a no-op
+///   (equivalent to sync execution) or `|| async_sleep_ms(0)` to yield to a
+///   UI runtime.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if parsing, exhaustive exploration, rendering, or
+/// merging fails fatally.  Non-fatal render errors are emitted as
+/// [`PipelineEvent::Warning`] instead.
+pub async fn run_pipeline_async<F, Fut>(
+    files: &[(String, Vec<u8>)],
+    config: &PipelineConfig,
+    mut on_event: impl FnMut(PipelineEvent),
+    yield_fn: F,
+) -> Result<PipelineOutput, Error>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
     // ── Phase 1: Parsing ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Parsing));
+    yield_fn().await;
 
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (filename, bytes) in files {
@@ -283,12 +309,14 @@ pub fn run_pipeline(
         };
         let language = bp.language().to_string();
         blueprints.push((filename.clone(), language, bp));
+        yield_fn().await;
     }
 
     // ── Phase 2: Exhaustive exploration ──────────────────────────────────────
     on_event(PipelineEvent::StepChanged(
         PipelineStep::ExhaustiveSearching,
     ));
+    yield_fn().await;
 
     // (filename, language, form_states, context)
     // For AEM inputs, form_states is None and we store the envelope directly.
@@ -298,9 +326,9 @@ pub fn run_pipeline(
     for (filename, language, mut bp) in blueprints {
         if bp.is_aem() {
             // AEM path: skip FormStates, get structured output directly
-            let envelope = bp.aem_structured().ok_or_else(|| {
-                Error::Conversion("AEM structured conversion failed".into())
-            })?;
+            let envelope = bp
+                .aem_structured()
+                .ok_or_else(|| Error::Conversion("AEM structured conversion failed".into()))?;
             on_event(PipelineEvent::StatesFound {
                 file: filename.clone(),
                 count: 1,
@@ -315,10 +343,12 @@ pub fn run_pipeline(
             let context = bp.context();
             explored.push((filename, language, form_states, context));
         }
+        yield_fn().await;
     }
 
     // ── Phase 3: Flattening — plain and annotated renders ─────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Flattening));
+    yield_fn().await;
 
     let mut plain_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut annotated_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
@@ -336,7 +366,6 @@ pub fn run_pipeline(
                                 label: label.clone(),
                                 image: Arc::clone(&image),
                             });
-                            // Clone label here so the annotated block below can still use it.
                             plain_renders.push((label.clone(), image));
                         }
                         Err(e) => on_event(PipelineEvent::Warning(format!(
@@ -353,7 +382,6 @@ pub fn run_pipeline(
                                 label: label.clone(),
                                 image: Arc::clone(&image),
                             });
-                            // Move label into the push — it is no longer needed after this.
                             annotated_renders.push((label, image));
                         }
                         Err(e) => on_event(PipelineEvent::Warning(format!(
@@ -361,12 +389,15 @@ pub fn run_pipeline(
                         ))),
                     }
                 }
+
+                yield_fn().await;
             }
         }
     }
 
     // ── Phase 4: Structuring — labelled renders + structured output ───────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
+    yield_fn().await;
 
     let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
@@ -410,6 +441,8 @@ pub fn run_pipeline(
                     "Duplicate state signature '{signature}' found in language '{language}'"
                 )));
             }
+
+            yield_fn().await;
         }
 
         per_language_state_maps.push((language.clone(), state_map));
@@ -417,6 +450,7 @@ pub fn run_pipeline(
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
     on_event(PipelineEvent::StepChanged(PipelineStep::Merging));
+    yield_fn().await;
 
     // If we only have AEM envelopes (no PDF states), merge them directly.
     if per_language_state_maps.is_empty() && !aem_envelopes.is_empty() {
@@ -427,12 +461,7 @@ pub fn run_pipeline(
                 aem_envelopes.into_iter().map(|(_, _, e)| e).collect();
 
             #[cfg(feature = "semantic-matching")]
-            let semantic_matcher = {
-                match crate::semantic::SemanticMatcher::new() {
-                    Ok(m) => Some(m),
-                    Err(_) => None,
-                }
-            };
+            let semantic_matcher = crate::semantic::SemanticMatcher::new().ok();
             #[cfg(feature = "semantic-matching")]
             let semantic_ref = semantic_matcher.as_ref();
             #[cfg(not(feature = "semantic-matching"))]
@@ -537,6 +566,7 @@ pub fn run_pipeline(
         };
 
         translated_states.push((canonical_selections.unwrap_or_default(), merged_state));
+        yield_fn().await;
     }
 
     if translated_states.is_empty() {
@@ -568,6 +598,32 @@ pub fn run_pipeline(
     })
 }
 
+// ============================================================================
+// block_on_ready — trivial executor for futures that never suspend
+// ============================================================================
+
+/// Drive a future to completion assuming it never actually suspends.
+///
+/// This is used by [`run_pipeline`] which passes `|| std::future::ready(())`
+/// as the yield function, guaranteeing the future is always immediately ready.
+///
+/// # Panics
+///
+/// Panics if the future returns `Poll::Pending`.
+fn block_on_ready<T>(fut: impl std::future::Future<Output = T>) -> T {
+    use std::pin::pin;
+    use std::task::{Context as TaskContext, Poll, Waker};
+
+    let waker = Waker::noop();
+    let mut cx = TaskContext::from_waker(waker);
+
+    let mut fut = pin!(fut);
+    match fut.as_mut().poll(&mut cx) {
+        Poll::Ready(val) => val,
+        Poll::Pending => panic!("block_on_ready: future returned Pending unexpectedly"),
+    }
+}
+
 fn selection_signature(selections: &[Selection]) -> String {
     selections
         .iter()
@@ -592,7 +648,7 @@ fn selection_kind_name(selection: &Selection) -> &'static str {
 
 fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(left, right)| {
-            left.kind == right.kind && left.option_index == right.option_index
-        })
+        && a.iter()
+            .zip(b.iter())
+            .all(|(left, right)| left.kind == right.kind && left.option_index == right.option_index)
 }

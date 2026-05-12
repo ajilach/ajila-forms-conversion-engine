@@ -87,7 +87,9 @@ pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
 
     if config.bind_to_xsd || config.use_fragments {
         if has_xsd_config(name) {
-            config.xsd_config = Some(load_xsd_config(name)?);
+            let mut xsd_config = load_xsd_config(name)?;
+            xsd_config.form_code = Some(config.form_code.clone());
+            config.xsd_config = Some(xsd_config);
         } else if config.bind_to_xsd {
             return Err(format!(
                 "bind_to_xsd=true requires profile '{name}' to provide xsd/config.toml"
@@ -248,18 +250,11 @@ pub fn load_aem_fragments(
             let path = path.trim_matches('/');
             let full_path = format!("{name}/aem/fragments/{path}");
 
-            // Check if this path points directly to a fragment (has .content.xml)
-            if let Some(content_file) = PROFILES_DIR.get_file(format!("{full_path}/.content.xml")) {
-                // Single fragment - parse it directly
-                if let Some(content) = content_file.contents_utf8()
-                    && let Some(fragment_dir) = PROFILES_DIR.get_dir(&full_path)
-                    && let Some(fragment) =
-                        parse_embedded_fragment(fragment_dir.path(), base, prefix, content)
-                {
-                    fragments.push(fragment);
-                }
-            } else if let Some(subdir) = PROFILES_DIR.get_dir(&full_path) {
-                // Directory - scan recursively for fragments
+            // If this resolves to a directory, always scan it recursively.
+            // Some fragment libraries have a root `.content.xml` that is NOT
+            // a fragment (no fragmentModelRoot). In that case we still must
+            // descend into child fragment directories.
+            if let Some(subdir) = PROFILES_DIR.get_dir(&full_path) {
                 walk_embedded_dirs(subdir, &mut |embedded_dir| {
                     if let Some(content_file) = embedded_dir.files().find(|f| {
                         f.path().file_name().and_then(|n| n.to_str()) == Some(".content.xml")
@@ -481,6 +476,48 @@ mod tests {
             "Expected AddressType fragment in embedded profile"
         );
     }
+
+    #[test]
+    fn embedded_fragment_loader_scans_fragment_library_path_recursively() {
+        // Regression: when fragment_paths points to a fragment library directory
+        // that also contains its own `.content.xml`, we must still recurse into
+        // child fragment directories.
+        let fragments = load_aem_fragments(
+            "ubs",
+            "/content/dam/formsanddocuments/",
+            &["afforms_ubs_fragmentlib".to_string()],
+        )
+        .expect("load embedded fragments from explicit library path");
+
+        assert!(
+            !fragments.is_empty(),
+            "Expected at least one fragment from afforms_ubs_fragmentlib"
+        );
+        assert!(
+            fragments.iter().any(|f| f.xsd_type_name == "AddressType"),
+            "Expected AddressType fragment when scanning afforms_ubs_fragmentlib recursively"
+        );
+    }
+
+    #[test]
+    fn embedded_fragment_loader_supports_explicit_fragment_directory_path() {
+        let fragments = load_aem_fragments(
+            "ubs",
+            "/content/dam/formsanddocuments/",
+            &["afforms_ubs_fragmentlib/affrg_AddressGeneric1".to_string()],
+        )
+        .expect("load embedded explicit fragment directory");
+
+        assert_eq!(
+            fragments.len(),
+            1,
+            "Expected exactly one fragment for explicit directory path"
+        );
+        assert_eq!(
+            fragments[0].xsd_type_name, "AddressType",
+            "Explicit fragment directory should resolve to AddressType"
+        );
+    }
 }
 
 /// Resolve a `fragRef` path to the fragment's `.content.xml` content from
@@ -506,9 +543,8 @@ pub fn resolve_embedded_fragment_dictionaries(frag_ref: &str) -> Vec<(String, St
         return Vec::new();
     };
 
-    let dict_dir_path = format!(
-        "{profile_and_relative}/_jcr_content/guideContainer/assets/dictionary"
-    );
+    let dict_dir_path =
+        format!("{profile_and_relative}/_jcr_content/guideContainer/assets/dictionary");
 
     let Some(dict_dir) = PROFILES_DIR.get_dir(&dict_dir_path) else {
         return Vec::new();

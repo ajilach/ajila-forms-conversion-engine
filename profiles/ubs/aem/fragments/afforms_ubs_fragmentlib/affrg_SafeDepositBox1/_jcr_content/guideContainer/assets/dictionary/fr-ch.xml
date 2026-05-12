@@ -9,6 +9,11 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_logoImage"
         sling:message="logoImage"/>
+    <_x0031_ac2a27e-18a5-4346-a44b-4e264d5aafc7
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Safe Depoist Box Number"
+        sling:message="Safe Depoist Box Number"/>
     <_x0031_d3d3042-315b-42a7-abdc-c6d8e42694ce
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

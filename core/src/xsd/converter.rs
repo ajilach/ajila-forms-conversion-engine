@@ -10,7 +10,7 @@ use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, S
 
 use super::{
     XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
-    to_snake_case,
+    resolve_section_name_with_heading, to_pascal_case,
 };
 
 // ============================================================================
@@ -43,7 +43,7 @@ pub fn generate_xsd_schema(nodes: &[StructuredNode], config: &XsdConfig) -> XsdS
         .collect();
 
     let root = XsdNode::Element {
-        name: "form".to_string(),
+        name: config.root_element_name(),
         type_ref: None,
         min_occurs: None,
         max_occurs: None,
@@ -78,6 +78,11 @@ fn collect_type_refs<'a>(node: &'a XsdNode, refs: &mut std::collections::HashSet
             if let Some(child) = content {
                 collect_type_refs(child, refs);
             }
+        }
+        XsdNode::Ref { ref_name, .. } => {
+            // A ref= references a global element; look up its type in the
+            // include index so the corresponding file is included.
+            refs.insert(ref_name.as_str());
         }
         XsdNode::ComplexType { sequence, .. } => {
             for child in sequence {
@@ -254,6 +259,87 @@ fn flatten_group_for_hierarchy(group: &GroupNode) -> Vec<FlatItem> {
 }
 
 // ============================================================================
+// Section text extraction (for keyword/regex matching)
+// ============================================================================
+
+/// Collect all plain text from a section (heading + all children) into a
+/// single string suitable for keyword/regex matching.
+fn section_full_text(section: &Section, config: &XsdConfig) -> String {
+    let mut parts = Vec::new();
+    if let Some(heading) = &section.heading {
+        parts.push(config.label_text(&heading.content));
+    }
+    for item in &section.children {
+        collect_item_text(item, config, &mut parts);
+    }
+    parts.join(" ")
+}
+
+/// Recursively collect text from a SectionItem.
+fn collect_item_text(item: &SectionItem, config: &XsdConfig, parts: &mut Vec<String>) {
+    match item {
+        SectionItem::SubSection(sub) => {
+            if let Some(heading) = &sub.heading {
+                parts.push(config.label_text(&heading.content));
+            }
+            for child in &sub.children {
+                collect_item_text(child, config, parts);
+            }
+        }
+        SectionItem::Node(node) => {
+            collect_node_text(node, config, parts);
+        }
+    }
+}
+
+/// Recursively collect text from a StructuredNode.
+fn collect_node_text(node: &StructuredNode, config: &XsdConfig, parts: &mut Vec<String>) {
+    match node {
+        StructuredNode::Heading(h) => {
+            parts.push(config.label_text(&h.content));
+        }
+        StructuredNode::Paragraph(p) => {
+            parts.push(config.label_text(&p.content));
+        }
+        StructuredNode::Field(f) => {
+            if let Some(label) = &f.label {
+                parts.push(config.label_text(label));
+            }
+        }
+        StructuredNode::Group(g) => {
+            for child in &g.children {
+                collect_node_text(child, config, parts);
+            }
+        }
+        StructuredNode::Repeatable(r) => {
+            collect_node_text(&r.item, config, parts);
+        }
+        StructuredNode::Conditional(c) => {
+            collect_node_text(&c.content, config, parts);
+        }
+        StructuredNode::GridLayout(grid) => {
+            for elem in &grid.elements {
+                collect_node_text(&elem.node, config, parts);
+            }
+        }
+        StructuredNode::List(list) => {
+            for item in &list.items {
+                parts.push(config.label_text(&item.content));
+            }
+        }
+        StructuredNode::Table(table) => {
+            if let Some(caption) = &table.caption {
+                parts.push(config.label_text(caption));
+            }
+        }
+        StructuredNode::Footnote(n) => {
+            parts.push(config.label_text(&n.content));
+        }
+        StructuredNode::Image(_) | StructuredNode::Empty => {}
+    }
+}
+
+// ============================================================================
 // Section → XsdNode building
 // ============================================================================
 
@@ -262,14 +348,20 @@ fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) 
     match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_snake_case(&label);
+            let heading_text = config.label_text(&heading.content);
+            let name = resolve_section_name_with_heading(
+                &section_full_text(section, config),
+                Some(&heading_text),
+                &config.profile,
+            )
+            .unwrap_or_else(|| to_pascal_case(&label));
 
             // Collect child (name, type) pairs and try auto-matching
             let child_pairs = collect_child_name_type_pairs(section, config);
             let matched = find_matching_types(&child_pairs, &config.registered_types);
 
             if matched.len() == 1 {
-                // Single type covers all children
+                // Single type covers all children.
                 out.push(XsdNode::Element {
                     name,
                     type_ref: Some(matched[0].name.clone()),
@@ -366,7 +458,7 @@ fn collect_node_name_type_pairs(
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),
-                None => (to_snake_case(&label), "xs:string".to_string()),
+                None => (to_pascal_case(&label), "xs:string".to_string()),
             };
             pairs.push((name, type_ref));
         }
@@ -469,6 +561,7 @@ fn build_node(
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Footnote(_)
         | StructuredNode::Empty => {}
     }
 }
@@ -488,7 +581,7 @@ fn build_field(
 
     let (name, type_ref) = match resolve_element(&label, &config.profile) {
         Some(res) => (res.name, res.type_ref),
-        None => (to_snake_case(&label), "xs:string".to_string()),
+        None => (to_pascal_case(&label), "xs:string".to_string()),
     };
 
     let restrictions = collect_restrictions(field);
@@ -531,6 +624,11 @@ fn collect_restrictions(field: &FieldNode) -> Vec<XsdRestriction> {
             if let Some(min) = min_length {
                 restrictions.push(XsdRestriction::MinLength(*min));
             }
+            if let Some(max) = max_length {
+                restrictions.push(XsdRestriction::MaxLength(*max));
+            }
+        }
+        FieldType::Textarea { max_length } => {
             if let Some(max) = max_length {
                 restrictions.push(XsdRestriction::MaxLength(*max));
             }
@@ -645,9 +743,10 @@ pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) ->
         fields: std::collections::HashMap::new(),
         sections: std::collections::HashMap::new(),
     };
+    let root_path = format!("/{}", config.root_element_name());
     let sections = build_heading_hierarchy(nodes);
     for section in &sections {
-        collect_section_bind_refs(section, "/form", config, &mut maps);
+        collect_section_bind_refs(section, &root_path, config, &mut maps);
     }
     maps
 }
@@ -662,7 +761,13 @@ fn collect_section_bind_refs(
     let current_path = match &section.heading {
         Some(heading) => {
             let label = config.label_text(&heading.content);
-            let name = to_snake_case(&label);
+            let heading_text = config.label_text(&heading.content);
+            let name = resolve_section_name_with_heading(
+                &section_full_text(section, config),
+                Some(&heading_text),
+                &config.profile,
+            )
+            .unwrap_or_else(|| to_pascal_case(&label));
             let path = format!("{}/{}", parent_path, name);
             // Use or_insert so that the first (shallowest) heading with a
             // given label wins.  The AEM converter only creates panels for
@@ -771,9 +876,9 @@ fn collect_node_bind_refs(
                 .unwrap_or_default();
             let (name, type_ref) = match resolve_element(&label, &config.profile) {
                 Some(res) => (res.name, res.type_ref),
-                None => (to_snake_case(&label), "xs:string".to_string()),
+                None => (to_pascal_case(&label), "xs:string".to_string()),
             };
-            if !name.is_empty() && name != "unknown" {
+            if !name.is_empty() && name != "Unknown" {
                 let base_path = wrappers
                     .and_then(|wp| wp.get(&(name.clone(), type_ref)))
                     .map(|s| s.as_str())
@@ -803,6 +908,7 @@ fn collect_node_bind_refs(
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
         | StructuredNode::List(_)
+        | StructuredNode::Footnote(_)
         | StructuredNode::Empty => {}
     }
 }

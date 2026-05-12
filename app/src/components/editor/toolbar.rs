@@ -5,6 +5,7 @@
 use dioxus::prelude::*;
 
 use super::state::{AddOption, ConvertTarget, EditorAction, SelectionState};
+use crate::components::spinner::Spinner;
 
 /// Properties for the editor toolbar.
 #[derive(Clone, PartialEq, Props)]
@@ -21,6 +22,13 @@ pub struct ToolbarProps {
     pub available_conversions: Vec<ConvertTarget>,
     /// Available add options for current selection.
     pub add_options: Vec<AddOption>,
+    /// Whether plain images are available (needed for Smart Edit).
+    pub has_images: bool,
+    /// Whether a Smart Edit call is currently in progress.
+    #[props(default = false)]
+    pub is_smart_edit_loading: bool,
+    /// Total number of root-level nodes (for Select All).
+    pub node_count: usize,
     /// Callback when an action is triggered.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -147,6 +155,23 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 }
             }
 
+            // Separator
+            div { class: "toolbar-separator" }
+
+            // Smart Edit button
+            button {
+                class: "toolbar-btn toolbar-btn-smart",
+                disabled: props.is_smart_edit_loading,
+                title: "AI-assisted editing via GitHub Copilot",
+                onclick: move |_| props.on_action.call(EditorAction::SmartEdit),
+                if props.is_smart_edit_loading {
+                    Spinner { size: "sm" }
+                } else {
+                    span { class: "toolbar-icon", "✨" }
+                }
+                span { class: "toolbar-label", "Smart Edit" }
+            }
+
             // Spacer
             div { class: "toolbar-spacer" }
 
@@ -155,12 +180,19 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 span { class: "toolbar-info", "{selection_count} selected" }
             }
 
-            // Clear selection button
+            // Select All / Clear toggle
             if has_selection {
                 button {
                     class: "toolbar-btn toolbar-btn-text",
                     onclick: move |_| props.on_action.call(EditorAction::ClearSelection),
                     "Clear"
+                }
+            } else {
+                button {
+                    class: "toolbar-btn toolbar-btn-text",
+                    disabled: props.node_count == 0,
+                    onclick: move |_| props.on_action.call(EditorAction::SelectAll),
+                    "Select All"
                 }
             }
         }

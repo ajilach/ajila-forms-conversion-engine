@@ -3,8 +3,7 @@ use std::time::Duration;
 
 /// Build a path to a file in the `input/` test data directory.
 fn input_dir() -> String {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     format!("{}/input", manifest_dir)
 }
 

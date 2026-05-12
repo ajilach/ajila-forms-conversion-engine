@@ -34,6 +34,10 @@ pub struct RepeatableSection {
     /// Used to determine which Document groups should be included based on structural
     /// containment rather than spatial containment.
     pub node_indices: Vec<usize>,
+    /// Whether this section is user-repeatable (has add/remove buttons).
+    /// Sections without buttons are script-managed (e.g., signature blocks)
+    /// and should be preserved as separate groups but not as repeatables.
+    pub is_user_repeatable: bool,
 }
 
 /// Detects repeatable sections by examining Hint::Occurrence on flattened nodes.
@@ -88,12 +92,18 @@ impl RepeatableDetector {
     fn find_repeatable_from_flattened(&self, doc: &Document) -> Vec<RepeatableSection> {
         let mut sections = Vec::new();
 
+        // Collect all button y-ranges from the entire flattened tree.
+        // XFA add/remove buttons (PlusMinus) may be at any nesting level;
+        // we match them to repeatable groups by vertical overlap.
+        let button_y_ranges = collect_button_y_ranges(&doc.source.children);
+
         /// Search for groups with Occurrence hints and track node indices.
         /// `current_index` tracks the current position in the flattened node iteration order.
         fn search_groups(
             children: &[crate::flattened::FlattenedKind],
             sections: &mut Vec<RepeatableSection>,
             current_index: &mut usize,
+            button_y_ranges: &[(Num, Num)],
         ) {
             for child in children {
                 match child {
@@ -115,18 +125,32 @@ impl RepeatableDetector {
                             let is_repeatable = max.map(|m| m > 1).unwrap_or(true);
                             let has_nested_repeatable =
                                 contains_nested_repeatable_group(group_children);
+                            let has_button = group_contains_button(group_children);
+                            let is_xfa = group_has_som_paths(group_children);
+                            // For XFA forms: require a spatially nearby button.
+                            // Buttons must overlap the group's y-range to count.
+                            let nearby_button = if !has_button && is_xfa {
+                                if let Some(bounds) = calculate_group_bounds(group_children) {
+                                    button_y_ranges.iter().any(|(btn_y_min, btn_y_max)| {
+                                        *btn_y_min < bounds.y + bounds.height
+                                            && *btn_y_max > bounds.y
+                                    })
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+                            let passes_button_check = !is_xfa || has_button || nearby_button;
                             if is_repeatable
                                 && group_contains_interactive_field(group_children)
-                                && !is_signature_only_repeatable(group_children)
                                 && !has_nested_repeatable
                             {
-                                // Collect node indices for this group
                                 let start_index = *current_index;
                                 let node_count = count_nodes(group_children);
                                 let node_indices: Vec<usize> =
                                     (start_index..start_index + node_count).collect();
 
-                                // Calculate bounds from all nodes in this group
                                 let bounds = calculate_group_bounds(group_children);
 
                                 sections.push(RepeatableSection {
@@ -135,14 +159,14 @@ impl RepeatableDetector {
                                     max_occurrences: max,
                                     bounds,
                                     node_indices,
+                                    is_user_repeatable: passes_button_check,
                                 });
                             }
                         }
                         // Recurse into children (this also advances current_index)
-                        search_groups(group_children, sections, current_index);
+                        search_groups(group_children, sections, current_index, button_y_ranges);
                     }
                     crate::flattened::FlattenedKind::Node(_) => {
-                        // Leaf node - increment the index
                         *current_index += 1;
                     }
                 }
@@ -207,55 +231,74 @@ impl RepeatableDetector {
             false
         }
 
-        /// Signature container subforms often carry occurrence hints for layout/pagination,
-        /// but are not user-repeatable sections. Ignore groups where all interactive fields
-        /// are signature globals.
-        fn is_signature_only_repeatable(children: &[crate::flattened::FlattenedKind]) -> bool {
-            fn collect_interactive_field_markers(
-                children: &[crate::flattened::FlattenedKind],
-                out: &mut Vec<String>,
-            ) {
-                for child in children {
-                    match child {
-                        crate::flattened::FlattenedKind::Node(node) => {
-                            if node.is_interactive() {
-                                if let crate::flattened::FlattenedNodeKind::Field { name, .. } =
-                                    &node.kind
-                                {
-                                    // Prefer SOM path when present; otherwise fall back to
-                                    // field name so detection remains stable across runs.
-                                    if let Some(path) = node.som_path() {
-                                        out.push(path.as_str().to_string());
-                                    } else {
-                                        out.push(name.clone());
-                                    }
-                                }
-                            }
+        /// Check if a group contains a button widget (indicating user-repeatable).
+        /// Forms with add/remove buttons are user-controllable repeatables;
+        /// those without are script-managed (e.g., signature sections).
+        fn group_contains_button(children: &[crate::flattened::FlattenedKind]) -> bool {
+            for child in children {
+                match child {
+                    crate::flattened::FlattenedKind::Node(node) => {
+                        if node.widget_type() == Some(&crate::flattened::WidgetKind::Button) {
+                            return true;
                         }
-                        crate::flattened::FlattenedKind::Group {
-                            children: group_children,
-                            ..
-                        } => collect_interactive_field_markers(group_children, out),
+                    }
+                    crate::flattened::FlattenedKind::Group {
+                        children: group_children,
+                        ..
+                    } => {
+                        if group_contains_button(group_children) {
+                            return true;
+                        }
                     }
                 }
             }
+            false
+        }
 
-            let mut markers = Vec::new();
-            collect_interactive_field_markers(children, &mut markers);
-
-            if markers.is_empty() {
-                return false;
+        /// Collect (y_min, y_max) ranges of all button widgets in the tree.
+        fn collect_button_y_ranges(
+            children: &[crate::flattened::FlattenedKind],
+        ) -> Vec<(Num, Num)> {
+            let mut ranges = Vec::new();
+            fn walk(children: &[crate::flattened::FlattenedKind], out: &mut Vec<(Num, Num)>) {
+                for child in children {
+                    match child {
+                        crate::flattened::FlattenedKind::Node(node) => {
+                            if node.widget_type() == Some(&crate::flattened::WidgetKind::Button) {
+                                out.push((node.y, node.y + node.height));
+                            }
+                        }
+                        crate::flattened::FlattenedKind::Group { children: gc, .. } => {
+                            walk(gc, out)
+                        }
+                    }
+                }
             }
+            walk(children, &mut ranges);
+            ranges
+        }
 
-            markers.iter().all(|p| {
-                p.contains(".Signature.")
-                    && (p.ends_with("Global_SignaturePlace")
-                        || p.ends_with("Global_SignatureDate")
-                        || p.ends_with("FullName"))
-                    || p == "Global_SignaturePlace"
-                    || p == "Global_SignatureDate"
-                    || p == "FullName"
-            })
+        /// Check if a group contains any field with a SOM path hint.
+        /// Presence of SOM paths indicates an XFA form. AcroForms don't have them.
+        fn group_has_som_paths(children: &[crate::flattened::FlattenedKind]) -> bool {
+            for child in children {
+                match child {
+                    crate::flattened::FlattenedKind::Node(node) => {
+                        if node.som_path().is_some() {
+                            return true;
+                        }
+                    }
+                    crate::flattened::FlattenedKind::Group {
+                        children: group_children,
+                        ..
+                    } => {
+                        if group_has_som_paths(group_children) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
         }
 
         /// Count leaf nodes in a FlattenedKind tree.
@@ -322,7 +365,12 @@ impl RepeatableDetector {
         }
 
         let mut current_index = 0;
-        search_groups(&doc.source.children, &mut sections, &mut current_index);
+        search_groups(
+            &doc.source.children,
+            &mut sections,
+            &mut current_index,
+            &button_y_ranges,
+        );
         sections
     }
 
@@ -365,6 +413,7 @@ impl RepeatableDetector {
                     max_occurrences: max,
                     bounds: doc.get_bounds(idx),
                     node_indices: vec![], // Not used for leaf node-based detection
+                    is_user_repeatable: true,
                 })
                 .collect();
         }
@@ -393,6 +442,7 @@ impl RepeatableDetector {
                 max_occurrences: *max,
                 bounds: Some(*bounds),
                 node_indices: vec![], // Not used for leaf node-based detection
+                is_user_repeatable: true,
             };
             used.insert(*idx);
 
@@ -457,32 +507,23 @@ impl AnalysisModule for RepeatableDetector {
         let sections = self.detect_sections(doc);
 
         for section in sections {
+            let kind = GroupKind::RepeatableSection {
+                min_occurrences: section.min_occurrences,
+                max_occurrences: section.max_occurrences,
+                is_user_repeatable: section.is_user_repeatable,
+            };
+
             if section.member_groups.len() > 1 {
-                // Only create a repeatable section if it contains at least one field
                 let has_fields = section.member_groups.iter().any(|&g| doc.contains_field(g));
                 if has_fields {
-                    // Multiple member groups - merge them into a RepeatableSection
-                    doc.merge_inferred(
-                        section.member_groups,
-                        GroupKind::RepeatableSection {
-                            min_occurrences: section.min_occurrences,
-                            max_occurrences: section.max_occurrences,
-                        },
-                        self.name(),
-                    );
+                    doc.merge_inferred(section.member_groups, kind, self.name());
                 }
             } else if section.member_groups.is_empty() && !section.node_indices.is_empty() {
-                // Sections from find_repeatable_from_flattened have node_indices but no member_groups.
-                // Find all ROOT groups (not referenced by other groups) that contain at least one
-                // node from the section's node_indices. This ensures we only include groups that
-                // are structurally within the repeatable section, not sibling elements that happen
-                // to fall within the spatial bounds.
                 let node_index_set: HashSet<usize> = section.node_indices.iter().copied().collect();
                 let roots = doc.roots();
                 let mut contained_groups = Vec::new();
 
                 for &group_idx in &roots {
-                    // Check if this group contains any of the section's nodes
                     let group_node_indices = doc.collect_node_indices(group_idx);
                     let has_section_node = group_node_indices
                         .iter()
@@ -493,20 +534,11 @@ impl AnalysisModule for RepeatableDetector {
                     }
                 }
 
-                // Only create a repeatable section if it contains at least one field
                 let has_fields = contained_groups.iter().any(|&g| doc.contains_field(g));
                 if !contained_groups.is_empty() && has_fields {
-                    doc.merge_inferred(
-                        contained_groups,
-                        GroupKind::RepeatableSection {
-                            min_occurrences: section.min_occurrences,
-                            max_occurrences: section.max_occurrences,
-                        },
-                        self.name(),
-                    );
+                    doc.merge_inferred(contained_groups, kind, self.name());
                 }
             }
-            // Single-member sections (member_groups.len() == 1) don't need a wrapper group
         }
     }
 }
@@ -545,10 +577,7 @@ mod tests {
         )];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -574,10 +603,7 @@ mod tests {
         )];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -597,10 +623,7 @@ mod tests {
         ];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -624,10 +647,7 @@ mod tests {
         ];
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             nodes,
         );
 
@@ -655,10 +675,7 @@ mod tests {
         );
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 children: vec![FlattenedKind::Node(text_node)],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
@@ -681,7 +698,7 @@ mod tests {
     #[test]
     fn test_repeatable_group_with_interactive_field_is_detected() {
         // A FlattenedKind::Group with Occurrence hint AND an interactive field
-        // should be detected as repeatable
+        // should be detected as repeatable (requires button for user-repeatable)
         let field_node = FlattenedNode::new_field(
             "field".to_string(),
             "".to_string(),
@@ -692,13 +709,24 @@ mod tests {
             num(20.0),
         );
 
+        let mut button_node = FlattenedNode::new_field(
+            "Button_Add".to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(170.0),
+            num(10.0),
+            num(5.0),
+            num(5.0),
+        );
+        button_node.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
+
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
-                children: vec![FlattenedKind::Node(field_node)],
+                children: vec![
+                    FlattenedKind::Node(field_node),
+                    FlattenedKind::Node(button_node),
+                ],
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
             }],
             language: String::new(),
@@ -741,14 +769,23 @@ mod tests {
             num(20.0),
         );
 
+        let mut button_node = FlattenedNode::new_field(
+            "Button_Add".to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(170.0),
+            num(10.0),
+            num(5.0),
+            num(5.0),
+        );
+        button_node.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
+
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 children: vec![
                     FlattenedKind::Node(text_node),
+                    FlattenedKind::Node(button_node),
                     // Field inside a nested group should still make parent repeatable
                     FlattenedKind::Group {
                         children: vec![FlattenedKind::Node(nested_field_node)],
@@ -784,6 +821,17 @@ mod tests {
             num(20.0),
         );
 
+        let mut nested_button = FlattenedNode::new_field(
+            "Button_Add".to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(170.0),
+            num(20.0),
+            num(5.0),
+            num(5.0),
+        );
+        nested_button.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
+
         let outer_field_node = FlattenedNode::new_field(
             "outer_field".to_string(),
             "".to_string(),
@@ -794,23 +842,35 @@ mod tests {
             num(20.0),
         );
 
+        let mut outer_button = FlattenedNode::new_field(
+            "Button_Add_Outer".to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(170.0),
+            num(10.0),
+            num(5.0),
+            num(5.0),
+        );
+        outer_button.add_hint(Hint::WidgetType(crate::flattened::WidgetKind::Button));
+
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 // Outer wrapper is repeatable too, but should be ignored in favor
                 // of the nested repeatable subgroup.
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
                 children: vec![
                     FlattenedKind::Node(outer_field_node),
+                    FlattenedKind::Node(outer_button),
                     FlattenedKind::Group {
                         hints: vec![Hint::Occurrence {
                             min: 0,
                             max: Some(3),
                         }],
-                        children: vec![FlattenedKind::Node(nested_field_node)],
+                        children: vec![
+                            FlattenedKind::Node(nested_field_node),
+                            FlattenedKind::Node(nested_button),
+                        ],
                     },
                 ],
             }],
@@ -875,10 +935,7 @@ mod tests {
         )));
 
         let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            page: Page::new(num(595.0), num(842.0)),
             children: vec![FlattenedKind::Group {
                 hints: vec![Hint::Occurrence { min: 1, max: None }],
                 children: vec![
@@ -895,70 +952,15 @@ mod tests {
         let detector = RepeatableDetector::new();
         let sections = detector.detect_sections(&doc);
 
+        // The group is detected but NOT user-repeatable (no buttons)
         assert_eq!(
             sections.len(),
-            0,
-            "Signature-only occurrence groups should not be treated as repeatable"
+            1,
+            "Signature occurrence group should be detected"
         );
-    }
-
-    #[test]
-    fn test_signature_only_repeatable_group_without_som_paths_is_ignored() {
-        let place_node = FlattenedNode::new_field(
-            "Global_SignaturePlace".to_string(),
-            "".to_string(),
-            "Place".to_string(),
-            num(10.0),
-            num(10.0),
-            num(100.0),
-            num(20.0),
-        );
-
-        let date_node = FlattenedNode::new_field(
-            "Global_SignatureDate".to_string(),
-            "".to_string(),
-            "Date".to_string(),
-            num(10.0),
-            num(35.0),
-            num(100.0),
-            num(20.0),
-        );
-
-        let full_name_node = FlattenedNode::new_field(
-            "FullName".to_string(),
-            "".to_string(),
-            "FullName".to_string(),
-            num(10.0),
-            num(60.0),
-            num(100.0),
-            num(20.0),
-        );
-
-        let flattened = Flattened {
-            page: Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
-            children: vec![FlattenedKind::Group {
-                hints: vec![Hint::Occurrence { min: 1, max: None }],
-                children: vec![
-                    FlattenedKind::Node(place_node),
-                    FlattenedKind::Node(date_node),
-                    FlattenedKind::Node(full_name_node),
-                ],
-            }],
-            language: String::new(),
-            cached_key: None,
-        };
-
-        let doc = Document::from_flattened(&flattened);
-        let detector = RepeatableDetector::new();
-        let sections = detector.detect_sections(&doc);
-
-        assert_eq!(
-            sections.len(),
-            0,
-            "Signature-only groups should be ignored even without SOM path hints"
+        assert!(
+            !sections[0].is_user_repeatable,
+            "Signature-only occurrence groups should not be user-repeatable"
         );
     }
 }

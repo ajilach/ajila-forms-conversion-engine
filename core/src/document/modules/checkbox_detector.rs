@@ -262,10 +262,7 @@ mod tests {
         checkbox_node.add_hint(Hint::WidgetType(WidgetKind::Checkbox));
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Small square field at (100, 100) with Checkbox widget hint
                 checkbox_node,

@@ -4,9 +4,9 @@
 //! with embedded JavaScript for dynamic repeatables and conditionals.
 
 use crate::structured::{
-    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel,
-    HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, ParagraphNode,
-    RepeatableNode, StructuredNode, TableNode,
+    ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
+    HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode,
+    ParagraphNode, RepeatableNode, StructuredNode, TableNode,
 };
 use crate::xfa::scripting::SomPath;
 use serde::Deserialize;
@@ -200,10 +200,20 @@ pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
         escape_attr(&config.form_id)
     ));
 
-    // Generate form content
+    // Generate form content (footnotes are rendered at the end)
     let mut ctx = GeneratorContext::new();
     for node in nodes {
         html.push_str(&generate_node(node, &mut ctx, 3));
+    }
+
+    // Render footnotes as the last elements
+    let footnotes = collect_all_footnotes(nodes);
+    if !footnotes.is_empty() {
+        html.push_str("      <div class=\"footnotes\">\n");
+        for f in &footnotes {
+            html.push_str(&generate_footnote(f, "        "));
+        }
+        html.push_str("      </div>\n");
     }
 
     html.push_str("    </form>\n");
@@ -225,6 +235,17 @@ pub fn generate_form_body(nodes: &[StructuredNode]) -> String {
     for node in nodes {
         html.push_str(&generate_node(node, &mut ctx, 0));
     }
+
+    // Render footnotes as the last elements
+    let footnotes = collect_all_footnotes(nodes);
+    if !footnotes.is_empty() {
+        html.push_str("<div class=\"footnotes\">\n");
+        for f in &footnotes {
+            html.push_str(&generate_footnote(f, "  "));
+        }
+        html.push_str("</div>\n");
+    }
+
     html
 }
 
@@ -250,6 +271,25 @@ impl GeneratorContext {
     }
 }
 
+/// Recursively collect all footnote nodes from the structured tree.
+fn collect_all_footnotes(nodes: &[StructuredNode]) -> Vec<&FootnoteNode> {
+    let mut out = Vec::new();
+    fn walk<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Footnote(f) => out.push(f),
+                StructuredNode::Group(g) => walk(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    walk(std::slice::from_ref(c.content.as_ref()), out);
+                }
+                _ => {}
+            }
+        }
+    }
+    walk(nodes, &mut out);
+    out
+}
+
 /// Generate HTML for a single node
 fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usize) -> String {
     let ind = "  ".repeat(indent);
@@ -266,6 +306,7 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::GridLayout(g) => generate_grid_layout(g, ctx, indent),
         StructuredNode::List(l) => generate_list(l, &ind),
         StructuredNode::Empty => String::new(),
+        StructuredNode::Footnote(_) => String::new(),
     }
 }
 
@@ -326,6 +367,14 @@ fn generate_heading(h: &HeadingNode, ind: &str) -> String {
 
 fn generate_paragraph(p: &ParagraphNode, ind: &str) -> String {
     format!("{}<p>{}</p>\n", ind, generate_inline_text(&p.content))
+}
+
+fn generate_footnote(f: &FootnoteNode, ind: &str) -> String {
+    format!(
+        "{}<div class=\"footnote\"><p>{}</p></div>\n",
+        ind,
+        generate_inline_text(&f.content)
+    )
 }
 
 fn generate_image(img: &ImageNode, ctx: &mut GeneratorContext, ind: &str) -> String {
@@ -514,6 +563,19 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
             attrs.push_str(" class=\"form-input\">");
+            attrs
+        }
+
+        FieldType::Textarea { max_length } => {
+            let mut attrs = format!("<textarea id=\"{}\" name=\"{}\"{}", id, name, placeholder);
+            if let Some(max) = max_length {
+                attrs.push_str(&format!(" maxlength=\"{}\"", max));
+            }
+            attrs.push_str(" class=\"form-input\">");
+            if let Some(InputValue::Text(v)) = &f.value {
+                attrs.push_str(&escape_html(v));
+            }
+            attrs.push_str("</textarea>");
             attrs
         }
 
@@ -876,6 +938,9 @@ fn generate_inline_node(node: &InlineNode) -> String {
         }
         InlineNode::Emphasis(inner) => {
             format!("<em>{}</em>", generate_inline_node(inner))
+        }
+        InlineNode::Superscript(inner) => {
+            format!("<sup>{}</sup>", generate_inline_node(inner))
         }
     }
 }

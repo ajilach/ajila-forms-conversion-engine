@@ -45,6 +45,12 @@
 //! SelectionInlineFieldDetector ── detects inline fields next to checkboxes/radio buttons
 //!     │
 //!     ▼
+//! FieldColumnTableDetector    ─── detects field-column tables (bordered text + field columns)
+//!     │
+//!     ▼
+//! TableDetector               ─── detects text-only tables from bordered blocks
+//!     │
+//!     ▼
 //! TextBlockMerger             ─── merges nearby unclaimed TextBlocks with same font
 //!     │
 //!     ▼
@@ -87,9 +93,12 @@
 
 mod checkbox_content;
 mod checkbox_detector;
+mod column_layout;
 mod date_field_detector;
+mod field_column_table_detector;
 mod field_grouper;
 mod field_table_detector;
+mod footnote_detector;
 mod grid_template;
 mod heading_detector;
 mod inline_field_date_picker;
@@ -110,9 +119,12 @@ mod text_block_merger;
 
 pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
+pub use column_layout::ColumnLayoutDetector;
 pub use date_field_detector::DateFieldDetector;
+pub use field_column_table_detector::FieldColumnTableDetector;
 pub use field_grouper::FieldGrouper;
 pub use field_table_detector::FieldTableDetector;
+pub use footnote_detector::FootnoteDetector;
 pub use grid_template::GridTemplateDetector;
 pub use heading_detector::{GlobalFontStats, HeadingDetector};
 pub use inline_field_date_picker::InlineFieldDatePicker;
@@ -189,6 +201,7 @@ pub fn run_analysis_pipeline_with_context(
 ) {
     NoPrintDetector::new().process_with_context(doc, ctx);
     MasterPageDetector::new().process_with_context(doc, ctx);
+    FootnoteDetector::new().process_with_context(doc, ctx);
     TextBlockGrouper::new().process_with_context(doc, ctx);
     PlaceholderFilter::new().process_with_context(doc, ctx);
     FieldGrouper::new().process_with_context(doc, ctx);
@@ -203,6 +216,10 @@ pub fn run_analysis_pipeline_with_context(
     SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);
+
+    // FieldColumnTableDetector: Detect bordered single-column text rows with
+    // field columns and bold column headers above them.
+    FieldColumnTableDetector::new().process_with_context(doc, ctx);
 
     // TableDetector: Detect text-only tables by analyzing horizontal borders.
     // Tables are identified by text blocks with visible horizontal borders
@@ -221,4 +238,11 @@ pub fn run_analysis_pipeline_with_context(
     //FieldTableDetectorVertical::new().process_with_context(doc, ctx);
 
     RepeatableDetector::new().process_with_context(doc, ctx);
+
+    // ColumnLayoutDetector: Detect multi-column layouts and group elements
+    // by column so that left-column content precedes right-column content.
+    // Runs after all other analysis modules since text block merging,
+    // heading detection, and grid detection work correctly regardless of
+    // column ordering (they use spatial proximity, not document order).
+    ColumnLayoutDetector::new().process_with_context(doc, ctx);
 }

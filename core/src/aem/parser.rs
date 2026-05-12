@@ -779,6 +779,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
                     children,
                     min_occur: min_occur.max(1),
                     max_occur,
+                    bind_ref: node.attr("bindRef").map(|s| s.to_string()),
                 }));
             }
         }
@@ -804,6 +805,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
             children,
             min_occur: min_occur.max(1),
             max_occur,
+            bind_ref: node.attr("bindRef").map(|s| s.to_string()),
         }))
     } else {
         Ok(Some(AemNode::Panel {
@@ -1251,12 +1253,12 @@ fn parse_options(node: &JcrNode) -> Vec<AemOption> {
         let trimmed = opts_str.trim();
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             let inner = &trimmed[1..trimmed.len() - 1];
-            for entry in inner.split(',') {
+            for entry in split_jcr_list(inner) {
                 let entry = entry.trim();
                 if let Some((value, label)) = entry.split_once('=') {
                     options.push(AemOption {
-                        label: label.to_string(),
-                        value: value.to_string(),
+                        label: jcr_unescape(label),
+                        value: jcr_unescape(value),
                     });
                 }
             }
@@ -1284,13 +1286,64 @@ fn parse_options(node: &JcrNode) -> Vec<AemOption> {
     options
 }
 
+/// Split a JCR comma-separated string on unescaped commas.
+///
+/// Backslash-escaped commas (`\,`) are treated as literal commas and do not
+/// act as separators.
+fn split_jcr_list(s: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(&next) = chars.peek() {
+                if next == ',' || next == '\\' {
+                    current.push(next);
+                    chars.next();
+                    continue;
+                }
+            }
+            current.push(ch);
+        } else if ch == ',' {
+            items.push(current);
+            current = String::new();
+        } else {
+            current.push(ch);
+        }
+    }
+    items.push(current);
+    // Filter out empty entries (matches old behaviour for empty brackets)
+    items.into_iter().filter(|s| !s.trim().is_empty()).collect()
+}
+
+/// Unescape JCR backslash sequences (`\,` → `,`, `\\` → `\`).
+fn jcr_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(&next) = chars.peek() {
+                if next == ',' || next == '\\' {
+                    out.push(next);
+                    chars.next();
+                    continue;
+                }
+            }
+            out.push(ch);
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// Parse a JCR multi-value array like `"[val1,val2,val3]"` into a Vec<String>.
 fn parse_jcr_array(value: &str) -> Vec<String> {
     let trimmed = value.trim();
     if trimmed.starts_with('[') && trimmed.ends_with(']') {
-        trimmed[1..trimmed.len() - 1]
-            .split(',')
-            .map(|s| s.trim().to_string())
+        split_jcr_list(&trimmed[1..trimmed.len() - 1])
+            .into_iter()
+            .map(|s| jcr_unescape(s.trim()))
             .filter(|s| !s.is_empty())
             .collect()
     } else {
@@ -1322,5 +1375,40 @@ mod tests {
     #[test]
     fn test_detect_aem_zip_false_for_non_zip() {
         assert!(!detect_aem_zip(b"not a zip file"));
+    }
+
+    #[test]
+    fn test_parse_jcr_array_with_escaped_commas() {
+        // A label containing a comma should be kept intact
+        assert_eq!(
+            parse_jcr_array(r"[Yes\, definitely,No]"),
+            vec!["Yes, definitely", "No"]
+        );
+    }
+
+    #[test]
+    fn test_split_jcr_list_basic() {
+        assert_eq!(split_jcr_list("a,b,c"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_split_jcr_list_escaped_comma() {
+        assert_eq!(
+            split_jcr_list(r"1=Yes\, definitely,2=No\, thanks"),
+            vec!["1=Yes, definitely", "2=No, thanks"]
+        );
+    }
+
+    #[test]
+    fn test_split_jcr_list_escaped_backslash() {
+        // A literal backslash followed by a comma that is NOT an escape
+        assert_eq!(split_jcr_list(r"a\\,b"), vec![r"a\", "b"]);
+    }
+
+    #[test]
+    fn test_jcr_unescape() {
+        assert_eq!(jcr_unescape(r"Yes\, definitely"), "Yes, definitely");
+        assert_eq!(jcr_unescape(r"back\\slash"), "back\\slash");
+        assert_eq!(jcr_unescape("plain"), "plain");
     }
 }

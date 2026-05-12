@@ -511,7 +511,7 @@ dependencies = [
 
 [[package]]
 name = "blueprint-app"
-version = "0.1.23"
+version = "0.1.25"
 dependencies = [
  "base64 0.22.1",
  "blueprint",
@@ -7175,6 +7175,21 @@ name = "target-lexicon"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+
+[[package]]
+name = "teacher"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blueprint",
+ "clap",
+ "env_logger",
+ "image",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "tempfile"

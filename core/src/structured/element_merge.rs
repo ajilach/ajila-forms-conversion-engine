@@ -56,6 +56,7 @@ fn node_type_name(node: &StructuredNode) -> &'static str {
         StructuredNode::Empty => "Empty",
         StructuredNode::GridLayout(_) => "GridLayout",
         StructuredNode::List(_) => "List",
+        StructuredNode::Footnote(_) => "Footnote",
     }
 }
 

@@ -207,10 +207,14 @@ impl GlobalFontStats {
     ///
     /// Returns a `GlobalXAlignment` that can be passed to `HeadingDetector::process_with_stats`
     /// to ensure consistent x-alignment filtering across all form states.
+    ///
+    /// Supports multi-column layouts by finding all significant x-clusters
+    /// (with at least `min_cluster_count` candidates) per bucket.
     fn compute_global_x_alignment(&self) -> GlobalXAlignment {
         let x_tolerance = 3.0f32;
+        let min_cluster_count = 2usize;
 
-        let mut bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
+        let mut bucket_valid_x: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
         for ((size_bits, is_bold, has_line), xs) in &self.heading_bucket_x_positions {
             let bucket = HeadingStyleBucket {
                 size: OrderedFloat(f32::from_bits(*size_bits)),
@@ -220,51 +224,23 @@ impl GlobalFontStats {
             if xs.is_empty() {
                 continue;
             }
-            let mut best_x = xs[0];
-            let mut best_count = 0usize;
-            for &x in xs {
-                let count = xs
-                    .iter()
-                    .filter(|&&other| (other - x).abs() <= x_tolerance)
-                    .count();
-                // Break ties deterministically: prefer smaller x
-                if count > best_count || (count == best_count && x < best_x) {
-                    best_count = count;
-                    best_x = x;
-                }
-            }
-            bucket_dominant_x.insert(bucket, best_x);
+            let valid_xs =
+                find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
+            bucket_valid_x.insert(bucket, valid_xs);
         }
 
-        let global_dominant_x = {
+        let global_valid_x = {
             let all_xs: Vec<f32> = self
                 .heading_bucket_x_positions
                 .values()
                 .flat_map(|v| v.iter().copied())
                 .collect();
-            if all_xs.is_empty() {
-                None
-            } else {
-                let mut best_x = all_xs[0];
-                let mut best_count = 0usize;
-                for &x in &all_xs {
-                    let count = all_xs
-                        .iter()
-                        .filter(|&&other| (other - x).abs() <= x_tolerance)
-                        .count();
-                    // Break ties deterministically: prefer smaller x
-                    if count > best_count || (count == best_count && x < best_x) {
-                        best_count = count;
-                        best_x = x;
-                    }
-                }
-                Some(best_x)
-            }
+            find_significant_x_clusters(&all_xs, x_tolerance, min_cluster_count)
         };
 
         GlobalXAlignment {
-            bucket_dominant_x,
-            global_dominant_x,
+            bucket_valid_x,
+            global_valid_x,
         }
     }
 
@@ -546,6 +522,13 @@ impl HeadingDetector {
             return None;
         }
 
+        // Bold section headers (bold at body size) ending with sentence-ending
+        // punctuation are body text, not headings. Real headings are noun phrases
+        // or short titles that don't end with '.', '!', or '?'.
+        if is_bold_section_header && text_content.ends_with(['.', '!', '?']) {
+            return None;
+        }
+
         // Light frequency guard for size-based headings only: if this exact
         // style accounts for too much of the document's text, it's body text.
         // Bold section headers (bold at body size) are exempt — the x-alignment
@@ -810,15 +793,59 @@ struct HeadingStyleBucket {
 /// Precomputed global x-alignment data for heading detection.
 ///
 /// Ensures consistent heading detection across all form states by using
-/// the same dominant x-positions (computed from ALL states) for filtering.
+/// the same valid x-positions (computed from ALL states) for filtering.
 /// Without this, each state computes its own dominant x from only its
 /// visible candidates, which can vary with dropdown/radio selections.
+///
+/// Supports multi-column layouts by tracking multiple significant x-clusters
+/// per bucket, not just the single dominant one.
 #[derive(Debug, Clone)]
 struct GlobalXAlignment {
-    /// Dominant x-position per heading style bucket, computed from all states
-    bucket_dominant_x: HashMap<HeadingStyleBucket, f32>,
-    /// Overall dominant x-position across all buckets, computed from all states
-    global_dominant_x: Option<f32>,
+    /// Valid x-positions per heading style bucket, computed from all states.
+    /// Each entry contains all x-positions that have sufficient cluster support.
+    bucket_valid_x: HashMap<HeadingStyleBucket, Vec<f32>>,
+    /// Valid x-positions across all buckets, computed from all states.
+    global_valid_x: Vec<f32>,
+}
+
+/// Find all x-positions that form significant clusters.
+///
+/// A cluster is "significant" if at least `min_count` entries fall within
+/// `tolerance` of each other. Returns the representative x (the one with
+/// the most neighbours, smallest value to break ties) for each cluster.
+///
+/// This supports multi-column layouts where headings appear at two or more
+/// distinct x-positions.
+fn find_significant_x_clusters(xs: &[f32], tolerance: f32, min_count: usize) -> Vec<f32> {
+    if xs.is_empty() {
+        return Vec::new();
+    }
+
+    // For each x, count how many points lie within tolerance.
+    // Then collect all x values whose cluster size ≥ min_count.
+    let mut representatives: Vec<(f32, usize)> = Vec::new();
+    for &x in xs {
+        let count = xs
+            .iter()
+            .filter(|&&other| (other - x).abs() <= tolerance)
+            .count();
+        if count >= min_count {
+            // Check if an existing representative already covers this x
+            if let Some(existing) = representatives
+                .iter_mut()
+                .find(|(rep, _)| (x - *rep).abs() <= tolerance)
+            {
+                // Keep the representative with more support (smaller x to break ties)
+                if count > existing.1 || (count == existing.1 && x < existing.0) {
+                    *existing = (x, count);
+                }
+            } else {
+                representatives.push((x, count));
+            }
+        }
+    }
+
+    representatives.into_iter().map(|(x, _)| x).collect()
 }
 
 /// Wrapper for f32 that implements Hash and Eq.
@@ -943,18 +970,23 @@ impl HeadingDetector {
         }
 
         // ── 3. Per-level x-alignment filter ────────────────────────────────
-        // Group candidates by their style bucket and find the dominant x for each bucket.
-        // Candidates whose x doesn't match the bucket's dominant x (±tolerance) are removed.
+        // Group candidates by their style bucket and find valid x-positions for
+        // each bucket. Candidates whose x doesn't match any significant cluster
+        // (±tolerance) are removed.
         //
-        // When global_x_alignment is available (exhaustive/multi-state mode), we use
-        // precomputed dominant x-positions from ALL states. This ensures the same
+        // Supports multi-column layouts: instead of a single dominant x per
+        // bucket, all x-positions with sufficient cluster support are kept.
+        //
+        // When global_x_alignment is available (exhaustive/multi-state mode), we
+        // use precomputed x-positions from ALL states. This ensures the same
         // heading candidate is kept/removed consistently across states, preventing
         // flaky merges caused by state-dependent dominant x values.
         let x_tolerance = 3.0f32; // points
+        let min_cluster_count = 2usize;
 
-        let (bucket_dominant_x, global_dominant_x) = if let Some(gxa) = global_x_alignment {
+        let (bucket_valid_x, global_valid_x) = if let Some(gxa) = global_x_alignment {
             // Use globally precomputed x-alignment
-            (gxa.bucket_dominant_x.clone(), gxa.global_dominant_x)
+            (gxa.bucket_valid_x.clone(), gxa.global_valid_x.clone())
         } else {
             // Compute from this state's candidates only (single-state mode)
             let mut bucket_x_votes: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
@@ -965,68 +997,52 @@ impl HeadingDetector {
                     .push(c.x_coord);
             }
 
-            let mut local_bucket_dominant_x: HashMap<HeadingStyleBucket, f32> = HashMap::new();
+            let mut local_bucket_valid_x: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
             for (bucket, xs) in &bucket_x_votes {
-                let mut best_x = xs[0];
-                let mut best_count = 0usize;
-                for &x in xs {
-                    let count = xs
-                        .iter()
-                        .filter(|&&other| (other - x).abs() <= x_tolerance)
-                        .count();
-                    // Break ties deterministically: prefer smaller x
-                    if count > best_count || (count == best_count && x < best_x) {
-                        best_count = count;
-                        best_x = x;
-                    }
-                }
-                local_bucket_dominant_x.insert(bucket.clone(), best_x);
+                let valid =
+                    find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
+                local_bucket_valid_x.insert(bucket.clone(), valid);
             }
 
-            let local_global_dominant_x: Option<f32> = {
+            let local_global_valid_x = {
                 let all_xs: Vec<f32> = candidates.iter().map(|c| c.x_coord).collect();
-                if all_xs.is_empty() {
-                    None
-                } else {
-                    let mut best_x = all_xs[0];
-                    let mut best_count = 0usize;
-                    for &x in &all_xs {
-                        let count = all_xs
-                            .iter()
-                            .filter(|&&other| (other - x).abs() <= x_tolerance)
-                            .count();
-                        // Break ties deterministically: prefer smaller x
-                        if count > best_count || (count == best_count && x < best_x) {
-                            best_count = count;
-                            best_x = x;
-                        }
-                    }
-                    Some(best_x)
-                }
+                find_significant_x_clusters(&all_xs, x_tolerance, min_cluster_count)
             };
 
-            (local_bucket_dominant_x, local_global_dominant_x)
+            (local_bucket_valid_x, local_global_valid_x)
         };
 
-        // Filter candidates that don't match their bucket's dominant x.
-        // A candidate is kept if its x matches its own bucket's dominant x,
-        // OR if it matches the global dominant heading x. This prevents a
-        // candidate from being rejected when its small bucket is dominated by
-        // outlier positions, while the candidate itself aligns with the main
-        // heading column used by other heading styles.
+        // Filter candidates that don't match any valid x-position.
+        // A candidate is kept if its x matches any significant cluster in its
+        // own bucket, OR any significant cluster globally. This supports
+        // multi-column layouts where headings appear at multiple x-positions.
+        //
+        // When no significant clusters exist (too few candidates to establish a
+        // pattern), the x-filter is skipped entirely for that bucket.
         candidates.retain(|c| {
-            // Check alignment with own bucket
-            if let Some(&dom_x) = bucket_dominant_x.get(&c.bucket) {
-                if (c.x_coord - dom_x).abs() <= x_tolerance {
+            // Check alignment with own bucket's valid x-positions
+            if let Some(valid_xs) = bucket_valid_x.get(&c.bucket) {
+                if valid_xs.is_empty() {
+                    // No significant clusters found → skip x-filtering
                     return true;
                 }
-            }
-            // Fall back: check alignment with the global dominant heading x
-            if let Some(global_x) = global_dominant_x {
-                (c.x_coord - global_x).abs() <= x_tolerance
+                if valid_xs
+                    .iter()
+                    .any(|&vx| (c.x_coord - vx).abs() <= x_tolerance)
+                {
+                    return true;
+                }
             } else {
-                false
+                // Bucket not in the map → no x-filter data → keep
+                return true;
             }
+            // Fall back: check alignment with global valid x-positions
+            if global_valid_x.is_empty() {
+                return true;
+            }
+            global_valid_x
+                .iter()
+                .any(|&gx| (c.x_coord - gx).abs() <= x_tolerance)
         });
 
         // ── 4. Bucket → level assignment ───────────────────────────────────
@@ -1233,10 +1249,7 @@ mod tests {
     #[test]
     fn test_detect_headings_by_size() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large heading (should be h1 or h2)
                 make_text_node("Main Title", 24.0, 10.0, 10.0),
@@ -1296,10 +1309,7 @@ mod tests {
     fn test_bold_larger_text_detected_as_heading() {
         // Bold text that is LARGER than body size should still be detected as heading
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Bold text at larger size (should be detected as heading)
                 make_bold_text_node("Bold Subheading", 14.0, 10.0, 10.0),
@@ -1328,10 +1338,7 @@ mod tests {
         let long_text = "This is a very long paragraph that should not be detected as a heading even though it might have a larger font size because headings are typically short and concise not rambling on like this text which goes on and on.";
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large font but too long to be heading (>200 chars)
                 make_text_node(long_text, 18.0, 10.0, 10.0),
@@ -1362,10 +1369,7 @@ mod tests {
     #[test]
     fn test_insufficient_samples() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Only Title", 24.0, 10.0, 10.0),
                 make_text_node("Single paragraph.", 10.0, 10.0, 50.0),
@@ -1389,10 +1393,7 @@ mod tests {
     #[test]
     fn test_heading_level_ordering() {
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Huge Title", 32.0, 10.0, 10.0),
                 make_text_node("Large Title", 24.0, 10.0, 50.0),
@@ -1452,10 +1453,7 @@ mod tests {
         let multi_sentence = "First sentence here. Second sentence follows.";
 
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large font but multiple sentences
                 make_text_node(multi_sentence, 20.0, 10.0, 10.0),
@@ -1487,10 +1485,7 @@ mod tests {
     fn test_single_sentence_heading() {
         // Single sentence with ending punctuation is valid
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 make_text_node("Introduction.", 20.0, 10.0, 10.0),
                 make_text_node("Body paragraph one.", 10.0, 10.0, 50.0),
@@ -1611,10 +1606,7 @@ mod tests {
     fn test_headings_ordered_top_to_bottom() {
         // Headings placed out of order in y-coordinate should be sorted
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Headings in wrong vertical order in the vector
                 make_text_node("Section B", 18.0, 10.0, 100.0), // y=100
@@ -1667,10 +1659,7 @@ mod tests {
         // When multiple bold section headers exist, those with underlines should be h2,
         // those without should be h3
         let flattened = Flattened::from_nodes(
-            Page {
-                width: num(595.0),
-                height: num(842.0),
-            },
+            Page::new(num(595.0), num(842.0)),
             vec![
                 // Large title (h1)
                 make_text_node("Main Title", 18.0, 10.0, 10.0),

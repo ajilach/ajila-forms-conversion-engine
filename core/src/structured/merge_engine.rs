@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::structured::{
-    ConditionalNode, FieldNode, FieldType, GridLayout, GridLayoutElement, GroupNode, HeadingNode,
-    InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode, RepeatableNode,
-    StructuredNode, TableHeader, TableNode, TableRow, TranslatableString, TranslationMap,
+    ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode,
+    HeadingNode, InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
+    TranslationMap,
 };
 
 /// Compute the LCS (longest common subsequence) table for two node slices,
@@ -169,11 +170,19 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
             let t = p.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         StructuredNode::Heading(h) => {
             let t = h.content.as_plain_text();
-            if t.trim().is_empty() { None } else { Some(t) }
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }
         _ => None,
     }
@@ -447,6 +456,9 @@ fn fill_node(node: &mut StructuredNode, all_languages: &[String], primary_langua
                 }
             }
         }
+        StructuredNode::Footnote(n) => {
+            fill_inline_text(&mut n.content, all_languages, primary_language)
+        }
         StructuredNode::Image(_) | StructuredNode::Empty => {}
     }
 }
@@ -480,7 +492,9 @@ fn fill_inline_node(node: &mut InlineNode, all_languages: &[String], primary_lan
         InlineNode::Link(link) => {
             fill_inline_text(&mut link.content, all_languages, primary_language)
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             fill_inline_node(inner, all_languages, primary_language)
         }
     }
@@ -796,8 +810,9 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 
     match (a, b) {
         (StructuredNode::Heading(ha), StructuredNode::Heading(hb)) => {
-            ha.level.as_u8() == hb.level.as_u8()
-                && inline_text_shape_compatible(&ha.content, &hb.content)
+            // Some language variants differ in heading level assignment while
+            // still representing the same logical item.
+            inline_text_shape_compatible(&ha.content, &hb.content)
         }
         (StructuredNode::Paragraph(pa), StructuredNode::Paragraph(pb)) => {
             inline_text_shape_compatible(&pa.content, &pb.content)
@@ -815,7 +830,15 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
             false
         }
         (StructuredNode::Repeatable(_), StructuredNode::Repeatable(_)) => true,
-        (StructuredNode::Group(_), StructuredNode::Group(_)) => true,
+        (StructuredNode::Group(_), StructuredNode::Group(_)) => {
+            // Prefer anchor-key equality when available. This prevents unrelated
+            // section groups from being treated as interchangeable and drifting
+            // alignment inside glossary-like content.
+            match (a.anchor_key(), b.anchor_key()) {
+                (Some(ka), Some(kb)) => ka == kb,
+                _ => true,
+            }
+        }
         (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
             a.condition == b.condition
         }
@@ -927,7 +950,9 @@ fn collect_projection_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_projection_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_projection_languages(inner, langs);
         }
         InlineNode::Text(_) => {}
@@ -955,7 +980,9 @@ fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &m
                 append_inline_node_projection_for_lang(child, lang, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             append_inline_node_projection_for_lang(inner, lang, out)
         }
     }
@@ -978,9 +1005,9 @@ fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
                 append_stable_inline_node_projection(child, out);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-            append_stable_inline_node_projection(inner, out)
-        }
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => append_stable_inline_node_projection(inner, out),
     }
 }
 
@@ -1033,7 +1060,12 @@ struct TextShape {
 
 fn text_shape(input: &str) -> TextShape {
     let chars = input.chars().filter(|c| !c.is_whitespace()).count();
-    let words = input.split_whitespace().count();
+    // Count lexical tokens (not just whitespace-separated chunks) so
+    // slash-delimited compounds like "A/B" are treated as two words.
+    let words = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .count();
     let digits = input.chars().filter(|c| c.is_ascii_digit()).count();
     let punct = input.chars().filter(|c| c.is_ascii_punctuation()).count();
 
@@ -1064,6 +1096,9 @@ fn localize_inline_node(node: &InlineNode, lang: &str) -> InlineNode {
         }
         InlineNode::Emphasis(inner) => {
             InlineNode::Emphasis(Box::new(localize_inline_node(inner, lang)))
+        }
+        InlineNode::Superscript(inner) => {
+            InlineNode::Superscript(Box::new(localize_inline_node(inner, lang)))
         }
     }
 }
@@ -1190,6 +1225,12 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 })
                 .collect(),
         }),
+        StructuredNode::Footnote(n) => StructuredNode::Footnote(FootnoteNode {
+            content: localize_inline_text(&n.content, lang),
+            marker: n.marker.clone(),
+            som_path: n.som_path.clone(),
+            source_name: n.source_name.clone(),
+        }),
         StructuredNode::List(list) => StructuredNode::List(ListNode {
             list_style: list.list_style,
             items: list
@@ -1237,7 +1278,9 @@ fn prepend_space_to_first_inline_node(text: &mut InlineText) {
                     s.insert(0, ' ');
                 }
             }
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => {
                 prepend(inner);
             }
             InlineNode::Link(link) => {
@@ -1266,7 +1309,9 @@ fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
                 collect_inline_languages(child, langs);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_inline_languages(inner, langs);
         }
         InlineNode::Text(_) => {}
@@ -1355,6 +1400,50 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
     false
 }
 
+/// Flatten groups whose anchor keys are non-unique within the same list.
+///
+/// When multiple groups share the same anchor key (e.g. all derive from the
+/// same XFA draw node name like `T_Left`), they provide zero anchoring value
+/// and cause misalignment. Dissolving them exposes their children to direct
+/// alignment by content shape/semantics.
+fn flatten_non_unique_groups(nodes: &[StructuredNode]) -> Vec<StructuredNode> {
+    // Count how often each group anchor key appears.
+    let mut key_counts: HashMap<String, usize> = HashMap::new();
+    for node in nodes {
+        if let StructuredNode::Group(_) = node {
+            if let Some(key) = node.anchor_key() {
+                *key_counts.entry(key).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // If no group key appears more than once, return as-is (no allocation).
+    let has_duplicates = key_counts.values().any(|&c| c > 1);
+    if !has_duplicates {
+        return nodes.to_vec();
+    }
+
+    let mut result = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        match node {
+            StructuredNode::Group(g) => {
+                let dominated = node
+                    .anchor_key()
+                    .map(|k| key_counts.get(&k).copied().unwrap_or(0) > 1)
+                    .unwrap_or(true);
+                if dominated {
+                    // Dissolve: promote children to parent level.
+                    result.extend(g.children.iter().cloned());
+                } else {
+                    result.push(node.clone());
+                }
+            }
+            _ => result.push(node.clone()),
+        }
+    }
+    result
+}
+
 /// Merge two node lists from different languages using LCS alignment.
 ///
 /// Uses the [`TranslationPolicy`] for alignment and merging, then runs
@@ -1366,11 +1455,14 @@ pub(crate) fn merge_node_lists(
     other: &[StructuredNode],
     other_lang: &str,
 ) -> Vec<StructuredNode> {
+    let base_flat = flatten_non_unique_groups(base);
+    let other_flat = flatten_non_unique_groups(other);
+
     let ctx = PairwiseMergeCtx {
         base_lang,
         other_lang,
     };
-    let entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
+    let entries = align_and_tag::<TranslationPolicy>(&ctx, &base_flat, &other_flat);
 
     finalize_aligned_entries(entries, base_lang, other_lang)
 }
@@ -1386,11 +1478,14 @@ pub(crate) fn merge_node_lists_semantic(
     other_lang: &str,
     semantic: &crate::semantic::SemanticMatcher,
 ) -> Vec<StructuredNode> {
+    let base_flat = flatten_non_unique_groups(base);
+    let other_flat = flatten_non_unique_groups(other);
+
     let ctx = PairwiseMergeCtx {
         base_lang,
         other_lang,
     };
-    let entries = align_and_tag_semantic(&ctx, base, other, semantic);
+    let entries = align_and_tag_semantic(&ctx, &base_flat, &other_flat, semantic);
 
     finalize_aligned_entries(entries, base_lang, other_lang)
 }

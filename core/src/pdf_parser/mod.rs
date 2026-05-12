@@ -26,12 +26,12 @@ use crate::flattened::{
     Flattened, FlattenedKind, FlattenedNode, FlattenedNodeBuilder, FlattenedNodeKind, Hint,
     MasterPageRegion, Page, RenderStyle, WidgetKind,
 };
-use crate::xfa::{Font, FontPosture, FontWeight, GenericFamily, Num};
+use crate::xfa::{Border, Fill, Font, FontPosture, FontWeight, GenericFamily, Num};
 use acroform::{
     AcroFieldType, AcroFormField, FF_EDIT, FF_MULTI_SELECT, FF_MULTILINE, FF_PASSWORD,
     FF_PUSH_BUTTON, FF_RADIO, FF_READ_ONLY, FF_REQUIRED, extract_acroform_fields,
 };
-use content_stream::{TextRun, extract_text_runs};
+use content_stream::{TextRun, extract_page_graphics, extract_text_runs};
 use lopdf::{Document, Object, ObjectId};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
@@ -92,31 +92,92 @@ pub fn parse_pdf(pdf_bytes: &[u8]) -> Result<Vec<Flattened>, String> {
         // Extract text runs from content stream
         let text_runs = extract_text_runs(&doc, *page_id, page_h);
 
+        // Extract graphic elements (filled rects, lines)
+        let graphics = extract_page_graphics(&doc, *page_id, page_h);
+
+        // Collect bounding boxes of checkbox/radio fields on this page
+        // so we can suppress text runs from their appearance streams.
+        let button_rects: Vec<[f64; 4]> = fields_by_page
+            .get(&i)
+            .map(|fields| {
+                fields
+                    .iter()
+                    .filter(|f| f.field_type == acroform::AcroFieldType::Button)
+                    .filter_map(|f| f.rect)
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Convert text runs to FlattenedNodes
         let mut children: Vec<FlattenedKind> = Vec::new();
+
+        // Add filled rectangles as background nodes (before text so they render behind)
+        for rect in &graphics.filled_rects {
+            let node = filled_rect_to_node(rect);
+            children.push(FlattenedKind::Node(node));
+        }
+
+        // Track which text runs survive the button-overlap filter so we can
+        // deduplicate AcroForm-generated labels against them later.
+        let mut surviving_runs: Vec<&content_stream::TextRun> = Vec::new();
 
         for run in &text_runs {
             if run.text.trim().is_empty() {
                 continue;
             }
+            // Skip text runs that overlap with checkbox/radio field rectangles.
+            // These are appearance stream artifacts (e.g. "On", "Off", symbol glyphs).
+            let overlaps_button = button_rects.iter().any(|[fx, fy, fw, fh]| {
+                let margin = 2.0;
+                run.x + run.width > fx - margin
+                    && run.x < fx + fw + margin
+                    && run.y + run.height > fy - margin
+                    && run.y < fy + fh + margin
+            });
+            if overlaps_button {
+                continue;
+            }
+            surviving_runs.push(run);
             let node = text_run_to_node(run);
             children.push(FlattenedKind::Node(node));
         }
 
-        // Convert AcroForm fields to FlattenedNodes
+        // Convert AcroForm fields to FlattenedNodes.
+        // For checkbox/radio fields, decide whether to generate a label from the
+        // field name by checking if the content stream already provides label text
+        // to the right of the checkbox on the same line.
         if let Some(page_fields) = fields_by_page.get(&i) {
             for field in page_fields {
+                let is_button = field.field_type == acroform::AcroFieldType::Button;
+                let skip_label = if is_button {
+                    let [fx, fy, fw, _fh] = field.rect.unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                    surviving_runs.iter().any(|r| {
+                        // A label text run to the right of the checkbox, on the same line
+                        r.x > fx + fw - 2.0
+                            && r.x < fx + fw + 30.0
+                            && (r.y - fy).abs() < 10.0
+                            && !r.text.trim().is_empty()
+                    })
+                } else {
+                    false
+                };
+
                 let nodes = acroform_field_to_nodes(field);
                 for node in nodes {
+                    // Skip generated label text nodes when content stream already has one
+                    if skip_label {
+                        if let FlattenedNodeKind::Text { ref content, .. } = node.kind {
+                            if !content.is_empty() {
+                                continue;
+                            }
+                        }
+                    }
                     children.push(FlattenedKind::Node(node));
                 }
             }
         }
 
-        let page = Page {
-            width: to_num(page_w),
-            height: to_num(page_h),
-        };
+        let page = Page::new(to_num(page_w), to_num(page_h));
 
         result.push(Flattened::new(page, children));
     }
@@ -129,12 +190,23 @@ pub fn parse_pdf(pdf_bytes: &[u8]) -> Result<Vec<Flattened>, String> {
 /// Extract embedded TrueType fonts from the PDF and register them with the
 /// global [`FontManager`] so they are available for text measurement during
 /// the flattening phase.
+///
+/// Fonts with a subset prefix (e.g. "BCDFEE+Calibri-Bold") are skipped because
+/// they only contain a small subset of glyphs and would produce tofu (□)
+/// characters when used for rendering. Full (non-subset) embedded fonts are
+/// registered normally.
 fn register_embedded_pdf_fonts(doc: &Document) {
     use crate::xfa::font_manager::{EmbeddedFont, register_embedded_font_global};
     use font_decoder::extract_embedded_fonts;
 
     let raw_fonts = extract_embedded_fonts(doc);
     for raw in raw_fonts {
+        // Skip subset fonts — they contain only a few glyphs and corrupt rendering.
+        // Subset fonts are identified by a 6-letter uppercase prefix followed by '+'.
+        if is_subset_font(&raw.base_font) {
+            continue;
+        }
+
         let (clean_name, weight, posture) = parse_font_style(&raw.base_font);
         let generic_family = Some(infer_generic_family(&clean_name));
 
@@ -149,6 +221,13 @@ fn register_embedded_pdf_fonts(doc: &Document) {
         // Best-effort: ignore registration errors (e.g. unparseable font data)
         let _ = register_embedded_font_global(embedded);
     }
+}
+
+/// Check if a font name has a subset prefix (e.g. "BCDFEE+Calibri-Bold").
+fn is_subset_font(name: &str) -> bool {
+    name.len() > 7
+        && name.as_bytes()[6] == b'+'
+        && name[..6].chars().all(|c| c.is_ascii_uppercase())
 }
 
 /// Convert a PDF point value to our Num (Decimal) type.
@@ -185,6 +264,38 @@ fn text_run_to_node(run: &TextRun) -> FlattenedNode {
         .text(run.text.clone(), to_num(run.font_size), clean_name)
         .style(style)
         .no_wrap(true)
+        .build()
+}
+
+/// Convert a filled rectangle from the PDF content stream into a FlattenedNode
+/// with a background fill. This is used for section header backgrounds, etc.
+fn filled_rect_to_node(rect: &content_stream::FilledRect) -> FlattenedNode {
+    let (r, g, b) = rect.color;
+    let border = Border {
+        fill: Some(Fill {
+            color: Some((r, g, b)),
+            presence: "visible".to_string(),
+        }),
+        presence: "visible".to_string(),
+        ..Border::default()
+    };
+
+    let style = RenderStyle {
+        border: Some(border),
+        ..RenderStyle::default()
+    };
+
+    // Use an empty text node as the carrier for the fill
+    FlattenedNodeBuilder::new()
+        .bounds(
+            to_num(rect.x),
+            to_num(rect.y),
+            to_num(rect.width),
+            to_num(rect.height),
+        )
+        .text(String::new(), Decimal::ZERO, String::new())
+        .style(style)
+        .hint(Hint::NoPrint)
         .build()
 }
 
@@ -251,7 +362,32 @@ fn acroform_field_to_nodes(field: &AcroFormField) -> Vec<FlattenedNode> {
         });
     }
 
-    vec![builder.build()]
+    let mut nodes = vec![builder.build()];
+
+    // For checkbox/radio buttons, emit a label text node next to the checkbox
+    // using the field name as label text (common in AcroForm PDFs where the
+    // label is only stored as the field name, not as a separate text run).
+    if matches!(widget_kind, WidgetKind::Checkbox | WidgetKind::Radio) {
+        let label_text = &field.name;
+        // Strip trailing numeric suffixes like "_2", "_13" from duplicate field names
+        let label = label_text
+            .trim_end_matches(|c: char| c.is_ascii_digit())
+            .trim_end_matches('_');
+        if !label.is_empty() {
+            let label_font_size = 9.0;
+            let gap = 2.0; // small gap after checkbox
+            let label_x = x + w + gap;
+            let label_w = label.len() as f64 * label_font_size * 0.5; // rough estimate
+            let label_node = FlattenedNodeBuilder::new()
+                .bounds(to_num(label_x), to_num(y), to_num(label_w), to_num(h))
+                .text(label.to_string(), to_num(label_font_size), String::new())
+                .no_wrap(true)
+                .build();
+            nodes.push(label_node);
+        }
+    }
+
+    nodes
 }
 
 /// Classify an AcroForm field into a WidgetKind.
@@ -533,10 +669,7 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
     if pages.len() <= 1 {
         return pages.into_iter().next().unwrap_or_else(|| {
             Flattened::new(
-                Page {
-                    width: Decimal::ZERO,
-                    height: Decimal::ZERO,
-                },
+                Page::new(Decimal::ZERO, Decimal::ZERO),
                 Vec::new(),
             )
         });
@@ -640,10 +773,7 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
 
     let total_height: Num = pages.iter().map(|p| p.page.height).sum();
 
-    let merged_page = Page {
-        width: max_width,
-        height: total_height,
-    };
+    let mut merged_page = Page::new(max_width, total_height);
 
     let mut merged_children: Vec<FlattenedKind> = Vec::new();
     let mut y_offset = Decimal::ZERO;
@@ -664,6 +794,8 @@ pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
         }
 
         y_offset += to_num(page_h);
+        // Record page boundary for column layout detection
+        merged_page.page_breaks.push(y_offset);
     }
 
     Flattened::new(merged_page, merged_children)
