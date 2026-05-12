@@ -27016,9 +27016,7 @@ fn diag_acroform_second_pdf() {
     }
 }
 
-#[test]
-#[ignore] // Known alignment failures in AACS glossary sections — enable when merge is improved
-fn test_aacs_multilingual_translation_alignment() {
+fn assert_aacs_triplet_aligned(de_snippet: &str, en_snippet: &str, sp_snippet: &str) {
     use crate::run_exhaustive_to_envelope;
     use crate::structured::{self, InlineNode, InlineText, StructuredNode};
 
@@ -27029,45 +27027,17 @@ fn test_aacs_multilingual_translation_alignment() {
     let sp_envelope = run_exhaustive_to_envelope(input_path("AACS_019_SP.pdf"), "sp")
         .expect("Failed to process AACS_019_SP");
 
+    #[cfg(feature = "semantic-matching")]
+    let semantic =
+        crate::semantic::SemanticMatcher::new().expect("Failed to load semantic matcher");
+    #[cfg(feature = "semantic-matching")]
+    let semantic_ref = Some(&semantic as &crate::structured::SemanticCtx);
+    #[cfg(not(feature = "semantic-matching"))]
+    let semantic_ref: Option<&crate::structured::SemanticCtx> = None;
+
     let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
-
-    // (DE snippet, EN snippet, SP snippet) – must co-occur in the same
-    // TranslatedText node.
-    let expected_triplets: Vec<(&str, &str, &str)> = vec![
-        (
-            "Active NFE – Other/Active NFFE – Other",
-            "Active NFE – Other / Active NFFE – Other",
-            "NFE activa – Otra /NFFE activa – Otra",
-        ),
-        (
-            "Regierungsinstanz/Ausländische Regierung",
-            "Government Entity / Foreign Government",
-            "Entidad gubernamental / Gobierno extranjero",
-        ),
-        (
-            "Klassifizierung gemäß AEI",
-            "AEI Classification",
-            "Clasificación según AEI",
-        ),
-        (
-            "die in einem IGA-Land etabliert ist",
-            "Is established in an IGA jurisdiction",
-            "está constituida en una jurisdicción de IGA",
-        ),
-        (
-            "Treaty-Qualified Retirement Fund",
-            "Treaty-Qualified Retirement Fund",
-            "Fondo de jubilación cualificado por Tratado",
-        ),
-        (
-            "Beherrschende Person",
-            "Controlling Person",
-            "Persona que ejerce el control",
-        ),
-    ];
-
-    let mut triplet_found = vec![false; expected_triplets.len()];
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], semantic_ref)
+            .unwrap();
 
     fn collect_translated_texts<'a>(
         node: &'a InlineNode,
@@ -27083,6 +27053,8 @@ fn test_aacs_multilingual_translation_alignment() {
             _ => {}
         }
     }
+
+    let mut found = false;
 
     walk_structured_nodes(&merged.content, &mut |node| {
         let inline_texts: Vec<&InlineText> = match node {
@@ -27103,43 +27075,96 @@ fn test_aacs_multilingual_translation_alignment() {
                 let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
                 let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
 
-                for (i, (de_snippet, en_snippet, sp_snippet)) in
-                    expected_triplets.iter().enumerate()
+                if de_text.contains(de_snippet)
+                    || en_text.contains(en_snippet)
+                    || sp_text.contains(sp_snippet)
                 {
-                    if de_text.contains(de_snippet)
-                        || en_text.contains(en_snippet)
-                        || sp_text.contains(sp_snippet)
-                    {
-                        assert!(
-                            de_text.contains(de_snippet)
-                                && en_text.contains(en_snippet)
-                                && sp_text.contains(sp_snippet),
-                            "Translation triplet {} should have all three languages in the \
-                             same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
-                             {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
-                             Actual SP: {:?}",
-                            i,
-                            de_snippet,
-                            en_snippet,
-                            sp_snippet,
-                            &de_text[..de_text.len().min(200)],
-                            &en_text[..en_text.len().min(200)],
-                            &sp_text[..sp_text.len().min(200)],
-                        );
-                        triplet_found[i] = true;
-                    }
+                    assert!(
+                        de_text.contains(de_snippet)
+                            && en_text.contains(en_snippet)
+                            && sp_text.contains(sp_snippet),
+                        "Translation triplet should have all three languages in the \
+                         same TranslatedText node.\n  DE snippet: {:?}\n  EN snippet: \
+                         {:?}\n  SP snippet: {:?}\n  Actual DE: {:?}\n  Actual EN: {:?}\n  \
+                         Actual SP: {:?}",
+                        de_snippet,
+                        en_snippet,
+                        sp_snippet,
+                        &de_text[..de_text.len().min(200)],
+                        &en_text[..en_text.len().min(200)],
+                        &sp_text[..sp_text.len().min(200)],
+                    );
+                    found = true;
                 }
             }
         }
     });
 
-    for (i, (de_snippet, _, _)) in expected_triplets.iter().enumerate() {
-        assert!(
-            triplet_found[i],
-            "Translation triplet {} was not found in the merged tree.\n  DE: {:?}",
-            i, de_snippet,
-        );
-    }
+    assert!(
+        found,
+        "Translation triplet was not found in the merged tree.\n  DE: {:?}\n  EN: {:?}\n  SP: {:?}",
+        de_snippet, en_snippet, sp_snippet,
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_active_nfe_nffe() {
+    assert_aacs_triplet_aligned(
+        "Active NFE – Other/Active NFFE – Other",
+        "Active NFE – Other / Active NFFE – Other",
+        "NFE activa – Otra /NFFE activa – Otra",
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_government_entity() {
+    assert_aacs_triplet_aligned(
+        "Regierungsinstanz/Ausländische Regierung",
+        "Government Entity / Foreign Government",
+        "Entidad gubernamental / Gobierno extranjero",
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_aei_classification() {
+    assert_aacs_triplet_aligned(
+        "Klassifizierung gemäß AEI",
+        "AEI Classification",
+        "Clasificación según AEI",
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_iga_jurisdiction() {
+    assert_aacs_triplet_aligned(
+        "die in einem IGA-Land etabliert ist",
+        "Is established in an IGA jurisdiction",
+        "está constituida en una jurisdicción de IGA",
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_retirement_fund() {
+    assert_aacs_triplet_aligned(
+        "Treaty-Qualified Retirement Fund",
+        "Treaty-Qualified Retirement Fund",
+        "Fondo de jubilación cualificado por Tratado",
+    );
+}
+
+#[test]
+#[ignore]
+fn test_aacs_multilingual_controlling_person() {
+    assert_aacs_triplet_aligned(
+        "Beherrschende Person",
+        "Controlling Person",
+        "Persona que ejerce el control",
+    );
 }
 
 #[test]
