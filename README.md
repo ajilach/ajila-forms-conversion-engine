@@ -25,6 +25,22 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 
 - [Rust](https://rustup.rs/) (edition 2024)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the web app
+- [GitHub CLI](https://cli.github.com/) with [GitHub Copilot in the CLI](https://docs.github.com/copilot/github-copilot-in-the-cli)
+
+Install GitHub CLI and Copilot extension:
+
+```sh
+# macOS (Homebrew)
+brew install gh
+gh extension install github/gh-copilot
+```
+
+Login and enable Copilot access for the CLI:
+
+```sh
+gh auth login
+gh auth refresh -h github.com -s copilot
+```
 
 Dioxus can easily be installed using cargo-binstall:
 
