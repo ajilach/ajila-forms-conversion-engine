@@ -27603,3 +27603,40 @@ fn test_aanb_de_has_textarea_with_label() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn test_aacc_de_has_textarea_with_label() {
+    let structured = crate::run_exhaustive_to_merged(input_path("AACC_019_DE.pdf"))
+        .expect("Failed to process AACC_019_DE.pdf");
+
+    let textareas = collect_textarea_fields(&structured);
+    assert!(
+        !textareas.is_empty(),
+        "AACC DE should contain at least one textarea field"
+    );
+
+    let target_label = "Sonstige wichtige Informationen über den Kunden";
+    let target_label_nfd = "Sonstige wichtige Informationen u\u{308}ber den Kunden";
+    let found = textareas.iter().any(|f| {
+        f.label
+            .as_ref()
+            .map(|l| {
+                let text = l.as_plain_text();
+                text.contains(target_label) || text.contains(target_label_nfd)
+            })
+            .unwrap_or(false)
+    });
+    assert!(
+        found,
+        "Expected textarea with label containing '{}', found labels: {:?}",
+        target_label,
+        textareas
+            .iter()
+            .map(|f| format!(
+                "{}: {:?}",
+                f.som_path_str(),
+                f.label.as_ref().map(|l| l.as_plain_text())
+            ))
+            .collect::<Vec<_>>()
+    );
+}
