@@ -116,6 +116,19 @@ pub fn collect_radio_fields(nodes: &[StructuredNode]) -> Vec<FieldNode> {
     out
 }
 
+/// Collect all `FieldNode`s whose `input_type` is `Textarea`.
+pub fn collect_textarea_fields(nodes: &[StructuredNode]) -> Vec<FieldNode> {
+    let mut out = Vec::new();
+    walk_structured_nodes(nodes, &mut |node| {
+        if let StructuredNode::Field(f) = node {
+            if matches!(f.input_type, FieldType::Textarea { .. }) {
+                out.push(f.clone());
+            }
+        }
+    });
+    out
+}
+
 /// Collect field labels (as plain text) from all `FieldNode`s in the tree.
 pub fn collect_field_labels(nodes: &[StructuredNode]) -> Vec<String> {
     let mut out = Vec::new();

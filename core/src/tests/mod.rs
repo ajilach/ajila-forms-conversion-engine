@@ -3,11 +3,14 @@ pub mod helpers;
 use helpers::{
     assert_aem_package_valid_for, assert_aem_xml_valid_for, collect_conditionals,
     collect_field_labels, collect_field_labels_trimmed, collect_field_names, collect_fields,
-    collect_headings, collect_radio_fields, count_conditionals, find_field_by_name,
-    find_field_id_by_suffix, input_path, load_ubs_profile, walk_structured_nodes,
+    collect_headings, collect_radio_fields, collect_textarea_fields, count_conditionals,
+    find_field_by_name, find_field_id_by_suffix, input_path, load_ubs_profile,
+    walk_structured_nodes,
 };
 
-use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
+use crate::{
+    Blueprint, FieldType, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa,
+};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
@@ -27565,5 +27568,38 @@ fn test_aacs_de_ffi_types_single_unordered_list() {
         !lists[first_idx].list_style.is_ordered(),
         "FFI types list must be unordered, got style: {:?}",
         lists[first_idx].list_style
+    );
+}
+
+#[test]
+fn test_aanb_de_has_textarea_with_label() {
+    let structured = crate::run_exhaustive_to_merged(input_path("AANB_019_DE.pdf"))
+        .expect("Failed to process AANB_019_DE.pdf");
+
+    let textareas = collect_textarea_fields(&structured);
+    assert!(
+        !textareas.is_empty(),
+        "AANB DE should contain at least one textarea field"
+    );
+
+    let target_label = "Zusätzliche Änderungsinformationen";
+    let found = textareas.iter().any(|f| {
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains(target_label))
+            .unwrap_or(false)
+    });
+    assert!(
+        found,
+        "Expected textarea with label containing '{}', found labels: {:?}",
+        target_label,
+        textareas
+            .iter()
+            .map(|f| format!(
+                "{}: {:?}",
+                f.som_path_str(),
+                f.label.as_ref().map(|l| l.as_plain_text())
+            ))
+            .collect::<Vec<_>>()
     );
 }

@@ -492,9 +492,8 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
             // compare equal on the primary axis.  Rounding to a fixed grid
             // (instead of a pairwise threshold) guarantees transitivity.
             let band = rust_decimal::Decimal::new(40, 1); // 4.0pt bands
-            let quantize = |y: rust_decimal::Decimal| -> rust_decimal::Decimal {
-                (y / band).round() * band
-            };
+            let quantize =
+                |y: rust_decimal::Decimal| -> rust_decimal::Decimal { (y / band).round() * band };
             let ya = quantize(a.y);
             let yb = quantize(b.y);
             ya.cmp(&yb).then_with(|| a.x.cmp(&b.x))
@@ -1556,10 +1555,8 @@ impl<'a, 'b> Converter<'a, 'b> {
         if let Some(widget) = node.widget_type() {
             return match widget {
                 WidgetKind::Text => self.text_field_type(node),
-                WidgetKind::TextArea => FieldType::Text {
-                    regex: self.get_format_pattern(node),
+                WidgetKind::TextArea => FieldType::Textarea {
                     max_length: self.get_max_length(node),
-                    min_length: None,
                 },
                 WidgetKind::Checkbox => FieldType::Bool,
                 WidgetKind::Radio => FieldType::Radio { options: vec![] },
@@ -1625,6 +1622,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             FieldType::Email => InputValue::Text(value.to_string()),
             FieldType::Tel => InputValue::Text(value.to_string()),
             FieldType::Text { .. } => InputValue::Text(value.to_string()),
+            FieldType::Textarea { .. } => InputValue::Text(value.to_string()),
         })
     }
 

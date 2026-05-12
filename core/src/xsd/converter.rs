@@ -628,6 +628,11 @@ fn collect_restrictions(field: &FieldNode) -> Vec<XsdRestriction> {
                 restrictions.push(XsdRestriction::MaxLength(*max));
             }
         }
+        FieldType::Textarea { max_length } => {
+            if let Some(max) = max_length {
+                restrictions.push(XsdRestriction::MaxLength(*max));
+            }
+        }
         FieldType::Number { min, max, .. } => {
             if let Some(min_val) = min {
                 restrictions.push(XsdRestriction::MinInclusive(min_val.to_string()));

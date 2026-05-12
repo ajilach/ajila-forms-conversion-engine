@@ -8,7 +8,7 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
-use crate::flattened::Bounds;
+use crate::flattened::{Bounds, WidgetKind};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
@@ -225,12 +225,44 @@ impl AnalysisModule for LabelAttacher {
             .copied()
             .collect();
 
+        // Separate textarea fields from regular fields so they get independent
+        // label-position statistics (textarea labels are usually above).
+        let (textarea_fields, regular_fields): (Vec<usize>, Vec<usize>) = field_groups
+            .into_iter()
+            .partition(|&idx| doc.widget_kind(idx) == Some(WidgetKind::TextArea));
+
         // Steps 1-3: attach labels to regular fields
-        if !field_groups.is_empty() {
+        if !regular_fields.is_empty() {
             if let Some(dominant_position) =
-                self.analyze_label_positions(doc, &text_groups, &field_groups)
+                self.analyze_label_positions(doc, &text_groups, &regular_fields)
             {
-                self.attach_labels_to_fields(doc, &text_groups, &field_groups, dominant_position);
+                self.attach_labels_to_fields(doc, &text_groups, &regular_fields, dominant_position);
+            }
+        }
+
+        // Attach labels to textarea fields with their own statistics.
+        // Re-query roots since regular field attachment may have consumed text blocks.
+        // For textareas, also consider headings as label candidates since textarea
+        // labels are often section headings placed above the field.
+        if !textarea_fields.is_empty() {
+            let roots_after_regular = doc.roots();
+            let textarea_label_candidates: Vec<usize> = roots_after_regular
+                .iter()
+                .filter(|&&idx| {
+                    (doc.is_text_block(idx) || doc.is_heading(idx))
+                        && !doc.get_text_content(idx).trim().is_empty()
+                })
+                .copied()
+                .collect();
+            if let Some(textarea_position) =
+                self.analyze_label_positions(doc, &textarea_label_candidates, &textarea_fields)
+            {
+                self.attach_labels_to_fields(
+                    doc,
+                    &textarea_label_candidates,
+                    &textarea_fields,
+                    textarea_position,
+                );
             }
         }
 

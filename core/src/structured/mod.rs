@@ -271,6 +271,9 @@ pub enum FieldType {
         max_length: Option<usize>,
         min_length: Option<usize>,
     },
+    Textarea {
+        max_length: Option<usize>,
+    },
     Number {
         min: Option<Decimal>,
         max: Option<Decimal>,

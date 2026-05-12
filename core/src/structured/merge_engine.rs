@@ -1400,6 +1400,50 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
     false
 }
 
+/// Flatten groups whose anchor keys are non-unique within the same list.
+///
+/// When multiple groups share the same anchor key (e.g. all derive from the
+/// same XFA draw node name like `T_Left`), they provide zero anchoring value
+/// and cause misalignment. Dissolving them exposes their children to direct
+/// alignment by content shape/semantics.
+fn flatten_non_unique_groups(nodes: &[StructuredNode]) -> Vec<StructuredNode> {
+    // Count how often each group anchor key appears.
+    let mut key_counts: HashMap<String, usize> = HashMap::new();
+    for node in nodes {
+        if let StructuredNode::Group(_) = node {
+            if let Some(key) = node.anchor_key() {
+                *key_counts.entry(key).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // If no group key appears more than once, return as-is (no allocation).
+    let has_duplicates = key_counts.values().any(|&c| c > 1);
+    if !has_duplicates {
+        return nodes.to_vec();
+    }
+
+    let mut result = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        match node {
+            StructuredNode::Group(g) => {
+                let dominated = node
+                    .anchor_key()
+                    .map(|k| key_counts.get(&k).copied().unwrap_or(0) > 1)
+                    .unwrap_or(true);
+                if dominated {
+                    // Dissolve: promote children to parent level.
+                    result.extend(g.children.iter().cloned());
+                } else {
+                    result.push(node.clone());
+                }
+            }
+            _ => result.push(node.clone()),
+        }
+    }
+    result
+}
+
 /// Merge two node lists from different languages using LCS alignment.
 ///
 /// Uses the [`TranslationPolicy`] for alignment and merging, then runs
@@ -1411,11 +1455,14 @@ pub(crate) fn merge_node_lists(
     other: &[StructuredNode],
     other_lang: &str,
 ) -> Vec<StructuredNode> {
+    let base_flat = flatten_non_unique_groups(base);
+    let other_flat = flatten_non_unique_groups(other);
+
     let ctx = PairwiseMergeCtx {
         base_lang,
         other_lang,
     };
-    let entries = align_and_tag::<TranslationPolicy>(&ctx, base, other);
+    let entries = align_and_tag::<TranslationPolicy>(&ctx, &base_flat, &other_flat);
 
     finalize_aligned_entries(entries, base_lang, other_lang)
 }
@@ -1431,11 +1478,14 @@ pub(crate) fn merge_node_lists_semantic(
     other_lang: &str,
     semantic: &crate::semantic::SemanticMatcher,
 ) -> Vec<StructuredNode> {
+    let base_flat = flatten_non_unique_groups(base);
+    let other_flat = flatten_non_unique_groups(other);
+
     let ctx = PairwiseMergeCtx {
         base_lang,
         other_lang,
     };
-    let entries = align_and_tag_semantic(&ctx, base, other, semantic);
+    let entries = align_and_tag_semantic(&ctx, &base_flat, &other_flat, semantic);
 
     finalize_aligned_entries(entries, base_lang, other_lang)
 }

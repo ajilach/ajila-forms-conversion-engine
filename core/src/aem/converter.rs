@@ -902,6 +902,22 @@ fn convert_field(
             }
         }
 
+        FieldType::Textarea { max_length } => {
+            let name = ctx.make_name("TXT", &source_text);
+            let uuid = ctx.uuid(&name);
+            AemNode::TextField {
+                uuid,
+                name,
+                label,
+                mandatory: false,
+                visible: true,
+                max_chars: *max_length,
+                colspan,
+                dor_colspan,
+                bind_ref,
+            }
+        }
+
         FieldType::Number { .. } => {
             let name = ctx.make_name("NB", &source_text);
             let uuid = ctx.uuid(&name);

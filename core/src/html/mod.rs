@@ -566,6 +566,19 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             attrs
         }
 
+        FieldType::Textarea { max_length } => {
+            let mut attrs = format!("<textarea id=\"{}\" name=\"{}\"{}", id, name, placeholder);
+            if let Some(max) = max_length {
+                attrs.push_str(&format!(" maxlength=\"{}\"", max));
+            }
+            attrs.push_str(" class=\"form-input\">");
+            if let Some(InputValue::Text(v)) = &f.value {
+                attrs.push_str(&escape_html(v));
+            }
+            attrs.push_str("</textarea>");
+            attrs
+        }
+
         FieldType::Number { min, max, step } => {
             let mut attrs = format!(
                 "<input type=\"number\" id=\"{}\" name=\"{}\"{}",
