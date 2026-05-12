@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="forms-package-AAHO">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/specs/forms-package-AAHO.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
