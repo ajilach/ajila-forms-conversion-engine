@@ -27551,7 +27551,6 @@ fn test_aacs_multilingual_iga_jurisdiction() {
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_retirement_fund() {
     assert_aacs_triplet_aligned(
         "Treaty-Qualified Retirement Fund",
@@ -27561,7 +27560,6 @@ fn test_aacs_multilingual_retirement_fund() {
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_controlling_person() {
     assert_aacs_triplet_aligned(
         "Beherrschende Person",
