@@ -708,17 +708,22 @@ impl AnalysisModule for ListDetector {
             .collect();
 
         // Collect y-positions of whitespace-only Leaf roots separately.
-        // These are typically empty placeholder draw elements.  For non-bold
-        // list candidates they are ignored as intervening content because they
-        // do not represent meaningful separators between list items.
+        // These are typically empty placeholder draw elements or page-layout
+        // groups (Header/Footer).  For non-bold list candidates they are
+        // ignored as intervening content because they do not represent
+        // meaningful content separators between list items.
+        //
+        // Footer and Header groups are added unconditionally: they are
+        // page-layout elements that appear at fixed vertical positions on
+        // each page and should never be treated as separators within a
+        // logical list that happens to span a page boundary or to be
+        // positioned near the footer region.
         let ws_leaf_ys: HashSet<Decimal> = roots
             .iter()
-            .filter(|&&idx| {
-                if let GroupKind::Leaf { .. } = doc.groups[idx].kind {
-                    doc.get_text_content(idx).trim().is_empty()
-                } else {
-                    false
-                }
+            .filter(|&&idx| match &doc.groups[idx].kind {
+                GroupKind::Leaf { .. } => doc.get_text_content(idx).trim().is_empty(),
+                GroupKind::Footer | GroupKind::Header => true,
+                _ => false,
             })
             .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
             .collect();

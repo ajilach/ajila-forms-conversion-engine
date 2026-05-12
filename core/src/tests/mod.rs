@@ -27542,7 +27542,6 @@ fn test_aacs_multilingual_aei_classification() {
 }
 
 #[test]
-#[ignore]
 fn test_aacs_multilingual_iga_jurisdiction() {
     assert_aacs_triplet_aligned(
         "die in einem IGA-Land etabliert ist",
@@ -27681,6 +27680,90 @@ fn test_aacs_en_lists_not_merged() {
     assert_ne!(
         list1_idx, list3_idx,
         "List 1 (publicly traded) and List 3 (active NFE criteria) should be separate lists"
+    );
+}
+
+#[test]
+fn test_aacs_en_collective_investment_vehicle_three_item_list() {
+    // Under «Collective Investment Vehicle», the EN version must produce ONE
+    // unordered list with exactly 3 dash items:
+    //   1. Is established in an IGA jurisdiction;
+    //   2. Is regulated as a collective investment vehicle; and
+    //   3. All of the interests in which (including debt interests in excess of
+    //      $50,000) are held by or through one or more Exempt Beneficial
+    //      Owners, Active NFFEs, US Persons that are not Specified US Persons,
+    //      or Financial Institutions that are not Non-Participating Financial
+    //      Institutions.
+    // Historically only 2 items were detected because item 3 spans multiple
+    // PDF lines and the continuation was not merged into the list item.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_lists;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_EN");
+
+    let lists = collect_lists(&structured);
+
+    let fragments = [
+        "Is established in an IGA jurisdiction",
+        "Is regulated as a collective investment vehicle",
+        "All of the interests in which",
+    ];
+
+    let find_list_index = |fragment: &str| -> Option<usize> {
+        lists.iter().position(|l| {
+            l.items
+                .iter()
+                .any(|item| item.as_plain_text().contains(fragment))
+        })
+    };
+
+    let indices: Vec<Option<usize>> = fragments.iter().map(|f| find_list_index(f)).collect();
+
+    for (i, idx) in indices.iter().enumerate() {
+        assert!(
+            idx.is_some(),
+            "CIV criterion '{}' not found in any list.\nAll list items: {:#?}",
+            fragments[i],
+            lists
+                .iter()
+                .map(|l| l
+                    .items
+                    .iter()
+                    .map(|i| i.as_plain_text())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let first_idx = indices[0].unwrap();
+    for (i, idx) in indices.iter().enumerate() {
+        assert_eq!(
+            *idx,
+            Some(first_idx),
+            "CIV criterion '{}' is in list {} but expected all in list {}",
+            fragments[i],
+            idx.unwrap_or(usize::MAX),
+            first_idx,
+        );
+    }
+
+    assert_eq!(
+        lists[first_idx].items.len(),
+        3,
+        "Expected 3 items in CIV list, got {}. Items: {:#?}",
+        lists[first_idx].items.len(),
+        lists[first_idx]
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
+    );
+
+    assert!(
+        !lists[first_idx].list_style.is_ordered(),
+        "CIV list must be unordered, got style: {:?}",
+        lists[first_idx].list_style
     );
 }
 
@@ -28003,6 +28086,277 @@ fn test_aanb_de_has_textarea_with_label() {
             ))
             .collect::<Vec<_>>()
     );
+}
+
+/// Diagnostic: compare per-language structured output around the three failing
+/// multilingual areas (Controlling Person, IGA jurisdiction, Retirement Fund).
+#[test]
+fn diag_aacs_per_language_structure_comparison() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+
+    let search_terms: &[&str] = &[
+        // Area 1: Controlling Person
+        "Beherrschende Person",
+        "Controlling Person",
+        "Persona con Control",
+        "Persona que ejerce el control",
+        // Area 2: IGA / Collective Investment Vehicle
+        "IGA-Land",
+        "IGA jurisdiction",
+        "jurisdicción de IGA",
+        "Kollektivanlage",
+        "Collective Investment",
+        "Vehículo de inversión",
+        "reguliert",
+        "regulated",
+        // Area 3: Retirement Fund
+        "Treaty-Qualified",
+        "Vorsorgeeinrichtung",
+        "jubilación",
+        "Retirement Fund",
+        "Retirement Plan",
+        "Broad Participation",
+        "Narrow Participation",
+    ];
+
+    for (file, lang) in [
+        ("AACS_019_DE.pdf", "de"),
+        ("AACS_019_EN.pdf", "en"),
+        ("AACS_019_SP.pdf", "sp"),
+    ] {
+        let envelope = run_exhaustive_to_envelope(input_path(file), lang)
+            .unwrap_or_else(|e| panic!("Failed to process {}: {}", file, e));
+
+        eprintln!(
+            "\n=== {} ({}) - {} top-level nodes ===",
+            file,
+            lang,
+            envelope.content.len()
+        );
+
+        let mut idx = 0usize;
+        walk_structured_nodes(&envelope.content, &mut |node| {
+            let (kind, text) = match node {
+                StructuredNode::Heading(h) => {
+                    (format!("H{}", h.level.as_u8()), h.content.as_plain_text())
+                }
+                StructuredNode::Paragraph(p) => ("P".to_string(), p.content.as_plain_text()),
+                StructuredNode::List(l) => {
+                    let items: Vec<String> = l
+                        .items
+                        .iter()
+                        .map(|i| {
+                            let t = i.content.as_plain_text();
+                            t.chars().take(100).collect()
+                        })
+                        .collect();
+                    (
+                        format!("LIST({} items, {:?})", l.items.len(), l.list_style),
+                        items.join(" | "),
+                    )
+                }
+                _ => {
+                    idx += 1;
+                    return;
+                }
+            };
+
+            let matches_any = search_terms.iter().any(|term| text.contains(term));
+            if matches_any {
+                let trunc: String = text.chars().take(200).collect();
+                eprintln!("  [{}] {}: {}", idx, kind, trunc);
+            }
+            idx += 1;
+        });
+    }
+}
+
+/// Diagnostic: inspect raw document groups around the CIV list in EN to
+/// find why only 2 of 3 list items are detected.
+#[test]
+fn diag_aacs_en_civ_list_raw_pipeline() {
+    use crate::document::Document;
+    use crate::document::modules::AnalysisModule;
+    use crate::document::modules::{
+        CheckboxContentDetector, CheckboxDetector, DateFieldDetector, FieldGrouper,
+        InlineFieldDatePicker, ListDetector, MasterPageDetector, NoPrintDetector,
+        PlaceholderFilter, RadioButtonContentDetector, RadioButtonDetector, RadioButtonGrouper,
+        SelectionInlineFieldDetector, StandaloneMarkerMerger, TextBlockGrouper, TextBlockMerger,
+    };
+
+    let search_terms = [
+        "IGA jurisdiction",
+        "established in an IGA",
+        "regulated as a collective",
+        "interests in which",
+        "All of the interests",
+        "Exempt Beneficial Owner",
+        "Non-Participating",
+        "Financial Institution",
+        "Is established",
+        "Is regulated",
+    ];
+
+    let mut bp = crate::Blueprint::from_pdf(input_path("AACS_019_EN.pdf"))
+        .expect("Failed to parse AACS_019_EN.pdf");
+    let states = bp.states().expect("states()");
+    let first_state = states.iter().next().expect("no states");
+    let flattened = &first_state.flattened;
+
+    let mut doc = Document::from_flattened(flattened);
+    NoPrintDetector::new().process(&mut doc);
+    MasterPageDetector::new().process(&mut doc);
+    TextBlockGrouper::new().process(&mut doc);
+    PlaceholderFilter::new().process(&mut doc);
+    FieldGrouper::new().process(&mut doc);
+    DateFieldDetector::new().process(&mut doc);
+    InlineFieldDatePicker::new().process(&mut doc);
+    StandaloneMarkerMerger::new().process(&mut doc);
+
+    eprintln!("\n=== AFTER StandaloneMarkerMerger (before ListDetector) ===");
+    for idx in doc.root_text_blocks() {
+        let text = doc.get_text_content(idx);
+        if search_terms.iter().any(|t| text.contains(t)) {
+            let bounds = doc.get_bounds(idx);
+            let truncated: String = text.chars().take(120).collect();
+            eprintln!("  TB[{idx}] bounds={bounds:?}  text={truncated:?}");
+        }
+    }
+
+    // Actual pipeline order: RadioButton/Checkbox THEN ListDetector THEN TextBlockMerger
+    RadioButtonDetector::new().process(&mut doc);
+    CheckboxDetector::new().process(&mut doc);
+
+    // Before running ListDetector, manually check the conditions for TB[1178]
+    {
+        use crate::document::GroupKind;
+        let item2_idx = 1177usize;
+        let item3_idx = 1178usize;
+        let roots_now = doc.roots();
+        let item2_bounds = doc.get_bounds(item2_idx);
+        let item3_bounds = doc.get_bounds(item3_idx);
+        eprintln!("\n=== MANUAL can_extend_run trace for TB[1178] ===");
+        eprintln!("  item2 (TB[1177]) bounds = {item2_bounds:?}");
+        eprintln!("  item3 (TB[1178]) bounds = {item3_bounds:?}");
+        if let (Some(b2), Some(b3)) = (item2_bounds, item3_bounds) {
+            use rust_decimal::Decimal;
+            use rust_decimal::prelude::*;
+            let range_lo = b2.y + b2.height;
+            let range_hi = b3.y;
+            eprintln!("  range_lo={range_lo}, range_hi={range_hi}");
+            // Check non-TextBlock roots in the y range
+            let non_tb_ys: Vec<_> = roots_now
+                .iter()
+                .filter(|&&idx| !matches!(doc.groups[idx].kind, GroupKind::TextBlock))
+                .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b.y, b.y + b.height)))
+                .filter(|(_, y, _)| *y > range_lo && *y < range_hi)
+                .collect();
+            eprintln!("  intervening non-TB roots in range: {:?}", non_tb_ys);
+            // Print what kind each intervening root is
+            for (idx, y, _) in &non_tb_ys {
+                let kind = format!("{:?}", doc.groups[*idx].kind);
+                let text = doc.get_text_content(*idx);
+                eprintln!(
+                    "    root[{idx}] y={y} kind={} text={:?}",
+                    &kind[..kind.len().min(40)],
+                    &text[..text.len().min(60)]
+                );
+            }
+            // Check bold non-marker TextBlocks in the y range
+            let non_marker_tbs: Vec<_> = roots_now
+                .iter()
+                .filter(|&&idx| {
+                    if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                        return false;
+                    }
+                    if !doc.is_bold_group(idx) {
+                        return false;
+                    }
+                    let text = doc.get_text_content(idx);
+                    let t = text.trim();
+                    !t.is_empty()
+                })
+                .filter_map(|&idx| doc.get_bounds(idx).map(|b| (idx, b)))
+                .filter(|(_, sep)| {
+                    let sep_bottom = sep.y + sep.height;
+                    sep_bottom > range_lo && sep.y < range_hi
+                })
+                .collect();
+            eprintln!(
+                "  intervening bold non-marker TBs in range: {}",
+                non_marker_tbs.len()
+            );
+            // Check text content of item3
+            let text3 = doc.get_text_content(item3_idx);
+            eprintln!("  TB[1178] text: {:?}", &text3[..text3.len().min(60)]);
+            eprintln!(
+                "  TB[1178] starts_with dash: {}",
+                text3.trim_start().starts_with('\u{2013}')
+                    || text3.trim_start().starts_with('\u{2014}')
+                    || text3.trim_start().starts_with('-')
+            );
+            // Also check if TB[1177] and TB[1178] are still roots
+            eprintln!("  TB[1177] is root: {}", roots_now.contains(&item2_idx));
+            eprintln!("  TB[1178] is root: {}", roots_now.contains(&item3_idx));
+        }
+    }
+
+    ListDetector::new().process(&mut doc);
+
+    eprintln!("\n=== AFTER ListDetector (before TextBlockMerger) ===");
+    use crate::document::GroupKind;
+    for &idx in &doc.roots() {
+        let kind = &doc.groups[idx].kind;
+        match kind {
+            GroupKind::List { list_style } => {
+                let children = &doc.groups[idx].children;
+                let items_text: String = children
+                    .iter()
+                    .map(|&c| doc.get_text_content(c))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                if search_terms.iter().any(|t| items_text.contains(t)) {
+                    eprintln!(
+                        "  LIST[{idx}] style={list_style:?} items={}",
+                        children.len()
+                    );
+                    for &child in children {
+                        let text = doc.get_text_content(child);
+                        let truncated: String = text.chars().take(100).collect();
+                        let bounds = doc.get_bounds(child);
+                        eprintln!("    item[{child}] bounds={bounds:?}: {truncated:?}");
+                    }
+                }
+            }
+            GroupKind::TextBlock => {
+                let text = doc.get_text_content(idx);
+                if search_terms.iter().any(|t| text.contains(t)) {
+                    let truncated: String = text.chars().take(120).collect();
+                    let bounds = doc.get_bounds(idx);
+                    eprintln!("  TB[{idx}] bounds={bounds:?}  text={truncated:?}");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    RadioButtonGrouper::new().process(&mut doc);
+    SelectionInlineFieldDetector::new().process(&mut doc);
+    RadioButtonContentDetector::new().process(&mut doc);
+    CheckboxContentDetector::new().process(&mut doc);
+
+    TextBlockMerger::new().process(&mut doc);
+
+    eprintln!("\n=== AFTER TextBlockMerger ===");
+    for idx in doc.root_text_blocks() {
+        let text = doc.get_text_content(idx);
+        if search_terms.iter().any(|t| text.contains(t)) {
+            let bounds = doc.get_bounds(idx);
+            let truncated: String = text.chars().take(200).collect();
+            eprintln!("  TB[{idx}] bounds={bounds:?}  text={truncated:?}");
+        }
+    }
 }
 
 #[test]
