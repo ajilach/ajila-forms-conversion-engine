@@ -819,7 +819,11 @@ impl AnalysisModule for ListDetector {
         let mut column_runs: Vec<(Decimal, Decimal, Run)> = Vec::new(); // (representative x, max right edge, run)
 
         /// Find the column run whose representative x is within `tol` of `x`.
-        fn find_column(column_runs: &[(Decimal, Decimal, Run)], x: Decimal, tol: Decimal) -> Option<usize> {
+        fn find_column(
+            column_runs: &[(Decimal, Decimal, Run)],
+            x: Decimal,
+            tol: Decimal,
+        ) -> Option<usize> {
             column_runs
                 .iter()
                 .position(|(col_x, _, _)| (x - *col_x).abs() <= tol)
@@ -884,22 +888,21 @@ impl AnalysisModule for ListDetector {
             // from another column may lie in the y-gap.  This typically means a
             // section boundary (e.g. a numbered heading like "2. Konto-..."
             // between dash items).  Treat it as intervening.
-            let has_cross_column_different_marker =
-                all_marker_tb_info.iter().any(|(mb, mk)| {
-                    if *mk == marker.kind {
-                        return false; // same kind — not a boundary
-                    }
-                    let mb_bottom = mb.y + mb.height;
-                    let y_overlap = mb_bottom > range_lo && mb.y < range_hi;
-                    if !y_overlap {
-                        return false;
-                    }
-                    // Only count markers that are NOT in the same column as our
-                    // run (items in the same column with different kinds are
-                    // already handled by the marker.kind != last.kind check).
-                    let item_x = last.2.x;
-                    (mb.x - item_x).abs() > x_tol
-                });
+            let has_cross_column_different_marker = all_marker_tb_info.iter().any(|(mb, mk)| {
+                if *mk == marker.kind {
+                    return false; // same kind — not a boundary
+                }
+                let mb_bottom = mb.y + mb.height;
+                let y_overlap = mb_bottom > range_lo && mb.y < range_hi;
+                if !y_overlap {
+                    return false;
+                }
+                // Only count markers that are NOT in the same column as our
+                // run (items in the same column with different kinds are
+                // already handled by the marker.kind != last.kind check).
+                let item_x = last.2.x;
+                (mb.x - item_x).abs() > x_tol
+            });
 
             !has_cross_column_different_marker
         }
