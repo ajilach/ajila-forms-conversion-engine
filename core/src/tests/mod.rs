@@ -8937,6 +8937,397 @@ fn test_aags_multilingual_merge_de_en() {
 }
 
 #[test]
+fn test_aagi_debug_paragraph_structure() {
+    // Temporary debug test — dump paragraph structure for each language to
+    // understand why SP fails to align.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::StructuredNode;
+    use helpers::walk_structured_nodes;
+
+    for (file, lang) in [
+        ("AAGI_019_DE.pdf", "de"),
+        ("AAGI_019_EN.pdf", "en"),
+        ("AAGI_019_SP.pdf", "sp"),
+    ] {
+        let env = run_exhaustive_to_envelope(input_path(file), lang)
+            .expect(&format!("Failed to process {file}"));
+        println!("\n=== {lang} ({file}) — {} top-level nodes ===", env.content.len());
+        let mut idx = 0usize;
+        walk_structured_nodes(&env.content, &mut |node| {
+            match node {
+                StructuredNode::Paragraph(p) => {
+                    let text = p.content.as_plain_text();
+                    let src = p.source_name.as_deref().unwrap_or("-");
+                    println!("  [{lang}] P#{idx} src={src}: {}", &text[..text.len().min(200)]);
+                    idx += 1;
+                }
+                StructuredNode::Heading(h) => {
+                    let text = h.content.as_plain_text();
+                    println!("  [{lang}] H#{idx}: {}", &text[..text.len().min(120)]);
+                    idx += 1;
+                }
+                StructuredNode::Field(f) => {
+                    let label = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
+                    let som = f.som_path.as_deref().unwrap_or("-");
+                    println!("  [{lang}] F#{idx} som={som}: {}", &label[..label.len().min(200)]);
+                    idx += 1;
+                }
+                _ => {}
+            }
+        });
+    }
+}
+
+#[test]
+fn test_aagi_debug_flattened_instruction_richtext_shapes() {
+    use crate::flattened::FlattenedNodeKind;
+
+    for (file, lang) in [
+        ("AAGI_019_DE.pdf", "de"),
+        ("AAGI_019_EN.pdf", "en"),
+        ("AAGI_019_SP.pdf", "sp"),
+    ] {
+        let mut bp = Blueprint::from_pdf(input_path(file)).unwrap();
+        let states = bp.states().unwrap();
+        let default_state = states.iter().next().expect("state");
+        let flattened = &default_state.flattened;
+
+        println!("\n=== {lang} ({file}) flattened instruction draws ===");
+        for node in flattened.iter_nodes() {
+            if let FlattenedNodeKind::Text {
+                source_name,
+                content,
+                font_name,
+                font_size,
+                ..
+            } = &node.kind
+            {
+                let src = source_name.as_deref().unwrap_or("");
+                if src == "T_Indent" || src == "T_Instructions" {
+                    println!(
+                        "  src={src} y={} h={} font='{}' size={} text='{}'",
+                        node.y,
+                        node.height,
+                        font_name,
+                        font_size,
+                        content.chars().take(120).collect::<String>()
+                    );
+                    if let Some(rt) = node.rich_text() {
+                        println!("    paragraphs={}", rt.paragraphs.len());
+                        for (i, p) in rt.paragraphs.iter().enumerate() {
+                            let txt = p
+                                .runs
+                                .iter()
+                                .map(|r| r.text.as_str())
+                                .collect::<Vec<_>>()
+                                .join("");
+                            println!(
+                                "      p#{i}: empty={} has_br={} text='{}'",
+                                p.is_empty,
+                                p.has_br,
+                                txt.chars().take(120).collect::<String>()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_aagi_debug_xfa_instruction_draws() {
+    fn dump_draws(nodes: &[XfaNode], target: &str, lang: &str) {
+        fn walk(nodes: &[XfaNode], target: &str, lang: &str) {
+            for node in nodes {
+                if let xfa::XfaNodeKind::Draw = node.kind
+                    && node.name.as_deref() == Some(target)
+                {
+                    println!(
+                        "[{lang}] draw={} x={:?} y={:?} w={:?} h={:?}",
+                        target, node.x, node.y, node.w, node.h
+                    );
+                    for child in &node.children {
+                        match &child.kind {
+                            xfa::XfaNodeKind::Value => {
+                                println!("[{lang}]   value attrs={:?}", child.attributes);
+                                for vc in &child.children {
+                                    if let xfa::XfaNodeKind::Element {
+                                        tag_name,
+                                        text_content,
+                                    } = &vc.kind
+                                    {
+                                        println!(
+                                            "[{lang}]     value element={} text={:?}",
+                                            tag_name,
+                                            text_content
+                                                .as_deref()
+                                                .map(|s| s.chars().take(220).collect::<String>())
+                                        );
+                                    }
+                                }
+                            }
+                            xfa::XfaNodeKind::Element {
+                                tag_name,
+                                text_content,
+                            } => {
+                                if tag_name == "exData" || tag_name == "text" {
+                                    println!(
+                                        "[{lang}]   element={} attrs={:?} text={:?}",
+                                        tag_name,
+                                        child.attributes,
+                                        text_content
+                                            .as_deref()
+                                            .map(|s| s.chars().take(220).collect::<String>())
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                walk(&node.children, target, lang);
+            }
+        }
+        walk(nodes, target, lang);
+    }
+
+    for (file, lang) in [
+        ("AAGI_019_DE.pdf", "de"),
+        ("AAGI_019_EN.pdf", "en"),
+        ("AAGI_019_SP.pdf", "sp"),
+    ] {
+        let bp = Blueprint::from_pdf(input_path(file)).unwrap();
+        let form = bp.form().expect("should be XFA PDF");
+        let nodes = form.xfa_nodes();
+        println!("\n=== {lang} ({file}) XFA instruction draws ===");
+        dump_draws(nodes, "T_Instructions", lang);
+        dump_draws(nodes, "T_Indent", lang);
+    }
+}
+
+#[test]
+fn test_aagi_multilingual_bank_communications_paragraph_alignment_part1() {
+    // Regression test: this multilingual paragraph must align DE/EN/SP in the
+    // same TranslatedText node for the first segment.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_DE.pdf"), "de")
+        .expect("Failed to process AAGI_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_EN.pdf"), "en")
+        .expect("Failed to process AAGI_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_SP.pdf"), "sp")
+        .expect("Failed to process AAGI_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
+
+    let expected_triplet = (
+        "Hiermit bitte(n) ich/wir die Bank",
+        "I/We hereby request the Bank",
+        "Por la presente, ruego / rogamos al Banco",
+    );
+
+    let mut found = false;
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                    let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
+
+                    let matches_de = de_text.contains(expected_triplet.0);
+                    let matches_en = en_text.contains(expected_triplet.1);
+                    let matches_sp = sp_text.contains(expected_triplet.2);
+
+                    if matches_de || matches_en || matches_sp {
+                        assert!(
+                            matches_de && matches_en && matches_sp,
+                            "AAGI paragraph part 1 must be merged in one TranslatedText with DE/EN/SP.\n  \
+                             Expected DE: {:?}\n  Expected EN: {:?}\n  Expected SP: {:?}\n  \
+                             Actual DE: {:?}\n  Actual EN: {:?}\n  Actual SP: {:?}",
+                            expected_triplet.0,
+                            expected_triplet.1,
+                            expected_triplet.2,
+                            &de_text[..de_text.len().min(220)],
+                            &en_text[..en_text.len().min(220)],
+                            &sp_text[..sp_text.len().min(220)],
+                        );
+                        found = true;
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        found,
+        "Expected AAGI paragraph part 1 translation triplet was not found in merged tree"
+    );
+}
+
+#[test]
+fn test_aagi_multilingual_bank_communications_paragraph_alignment_part2() {
+    // Regression test: continuation of the same multilingual paragraph must
+    // also align DE/EN/SP in one TranslatedText node.
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, InlineNode, InlineText, StructuredNode};
+    use helpers::walk_structured_nodes;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_DE.pdf"), "de")
+        .expect("Failed to process AAGI_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_EN.pdf"), "en")
+        .expect("Failed to process AAGI_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_SP.pdf"), "sp")
+        .expect("Failed to process AAGI_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None).unwrap();
+
+    let expected_triplet = (
+        "künftig nicht mir/uns zuzusenden, sondern diese durch die Post an",
+        "but to send them by mail to:",
+        "de ahora en adelante, no se envíen a mí / nosotros, sino que se remitan por correo a:",
+    );
+
+    let mut found = false;
+
+    walk_structured_nodes(&merged.content, &mut |node| {
+        let inline_texts: Vec<&InlineText> = match node {
+            StructuredNode::Heading(h) => vec![&h.content],
+            StructuredNode::Paragraph(p) => vec![&p.content],
+            StructuredNode::Field(f) => f.label.as_ref().into_iter().collect(),
+            _ => vec![],
+        };
+
+        for text in inline_texts {
+            for inline in &text.0 {
+                if let InlineNode::TranslatedText(map) = inline {
+                    let de_text = map.get("de").and_then(|o| o.as_deref()).unwrap_or("");
+                    let en_text = map.get("en").and_then(|o| o.as_deref()).unwrap_or("");
+                    let sp_text = map.get("sp").and_then(|o| o.as_deref()).unwrap_or("");
+
+                    let matches_de = de_text.contains(expected_triplet.0);
+                    let matches_en = en_text.contains(expected_triplet.1);
+                    let matches_sp = sp_text.contains(expected_triplet.2);
+
+                    if matches_de || matches_en || matches_sp {
+                        assert!(
+                            matches_de && matches_en && matches_sp,
+                            "AAGI paragraph part 2 must be merged in one TranslatedText with DE/EN/SP.\n  \
+                             Expected DE: {:?}\n  Expected EN: {:?}\n  Expected SP: {:?}\n  \
+                             Actual DE: {:?}\n  Actual EN: {:?}\n  Actual SP: {:?}",
+                            expected_triplet.0,
+                            expected_triplet.1,
+                            expected_triplet.2,
+                            &de_text[..de_text.len().min(220)],
+                            &en_text[..en_text.len().min(220)],
+                            &sp_text[..sp_text.len().min(220)],
+                        );
+                        found = true;
+                    }
+                }
+            }
+        }
+    });
+
+    assert!(
+        found,
+        "Expected AAGI paragraph part 2 translation triplet was not found in merged tree"
+    );
+}
+
+#[test]
+fn test_aagi_sp_mail_to_third_party_structure() {
+    use crate::structured::StructuredNode;
+    use helpers::{collect_field_labels_trimmed, collect_lists};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAGI_019_SP.pdf"))
+        .expect("Failed to run exhaustive merge on AAGI_019_SP.pdf");
+
+    let all_paragraphs: Vec<String> = structured_nodes
+        .iter()
+        .filter_map(|node| match node {
+            StructuredNode::Paragraph(p) => {
+                let text = p.content.as_plain_text().trim().to_string();
+                (!text.is_empty()).then_some(text)
+            }
+            _ => None,
+        })
+        .collect();
+
+    let expected_intro = "Por la presente, ruego / rogamos al Banco que todas las comunicaciones y demás envíos de cualquier tipo, dirigidos a mí / nosotros, especialmente";
+    let expected_continuation =
+        "de ahora en adelante, no se envíen a mí / nosotros, sino que se remitan por correo a:";
+    let lists = collect_lists(&structured_nodes);
+    let list_debug: Vec<_> = lists
+        .iter()
+        .map(|list| {
+            (
+                list.list_style,
+                list.items
+                    .iter()
+                    .map(|item| item.as_plain_text())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+
+    assert!(
+        all_paragraphs.iter().any(|text| text == expected_intro),
+        "AAGI SP should contain the introductory paragraph as a standalone paragraph.\nFound root paragraphs: {:?}\nFound lists: {:?}",
+        all_paragraphs,
+        list_debug,
+    );
+    assert!(
+        all_paragraphs.iter().any(|text| text == expected_continuation),
+        "AAGI SP should contain the continuation clause as a standalone paragraph.\nFound root paragraphs: {:?}\nFound lists: {:?}",
+        all_paragraphs,
+        list_debug,
+    );
+    let expected_items = [
+        "informes de depósitos,",
+        "estados de cuentas,",
+        "comunicaciones según el punto nº 16 de las \"Condiciones especiales para operaciones con valores\",",
+        "otras comunicaciones que deban darse a conocer inmediatamente,",
+    ];
+
+    let matching_list = lists.iter().find(|list| {
+        !list.list_style.is_ordered()
+            && list.items.len() == expected_items.len()
+            && list
+                .items
+                .iter()
+                .zip(expected_items.iter())
+                .all(|(item, expected)| item.as_plain_text().trim() == *expected)
+    });
+
+    assert!(
+        matching_list.is_some(),
+        "AAGI SP should have one unordered list with the four expected items.\nFound lists: {:?}",
+        list_debug,
+    );
+
+    let field_labels = collect_field_labels_trimmed(&structured_nodes);
+    assert!(
+        field_labels.iter().any(|label| label == "Razón social"),
+        "AAGI SP should contain a field with label 'Razón social'. Found labels: {:?}",
+        field_labels,
+    );
+}
+
+#[test]
 fn test_aacj_dropdown_conditional_field_visibility() {
     // When the CL_ClientType dropdown in AACJ is set to a particular value,
     // certain fields should become visible (wrapped in a Conditional for
