@@ -1515,7 +1515,9 @@ fn replace_with_fragments(
 
             if !has_intermediates && !is_conditional && !contains_conditional(children) {
                 // Direct match: all paths are single-segment → try to replace
-                // the whole panel with a fragment.
+                // the whole panel.  Never replace conditional panels (or panels
+                // containing conditionals) because their names are referenced
+                // by visibility scripts.
                 let leaves = collect_child_bind_ref_leaves(children);
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
@@ -1531,49 +1533,7 @@ fn replace_with_fragments(
                         };
                     }
                 }
-            } else if !has_intermediates && !is_conditional && contains_conditional(children) {
-                // Direct match but the panel contains conditional children.
-                // Replace only the non-conditional children with a fragment,
-                // keeping conditional panels in place.
-                let leaves = collect_child_bind_ref_leaves(children);
-                if !leaves.is_empty() {
-                    if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
-                        let fragment = fragment.clone();
-                        if let AemNode::Panel {
-                            children,
-                            bind_ref: Some(br),
-                            ..
-                        } = &mut nodes[i]
-                        {
-                            let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
-                            let frag_name = ctx.make_name("PN_affrg", &fragment.dir_name);
-                            let uuid = ctx.uuid(&frag_name);
 
-                            // Keep only conditional panels; replace the rest
-                            // with a single fragment node.
-                            let conditionals: Vec<AemNode> = children
-                                .drain(..)
-                                .filter(|c| {
-                                    matches!(
-                                        c,
-                                        AemNode::Panel {
-                                            is_conditional: true,
-                                            ..
-                                        }
-                                    ) || contains_conditional(std::slice::from_ref(c))
-                                })
-                                .collect();
-
-                            children.push(AemNode::Fragment {
-                                uuid,
-                                name: frag_name,
-                                frag_ref: fragment.frag_ref,
-                                bind_ref,
-                            });
-                            children.extend(conditionals);
-                        }
-                    }
-                }
             } else {
                 // Multi-instance: group children's bind_ref paths by the
                 // intermediate parent path (everything between the panel's
@@ -1604,19 +1564,14 @@ fn replace_with_fragments(
                         // Identify children to remove: a child is removed when
                         // every one of its bind_ref paths falls under a matched
                         // intermediate prefix (exact match or starts_with prefix + "/").
-                        // Never remove conditional panels or panels containing
-                        // conditionals — their names are referenced by
-                        // visibility scripts.
+                        // Never remove conditional panels — their names are
+                        // referenced by visibility scripts.
                         let mut keep = Vec::new();
                         for child in children.drain(..) {
                             let is_cond = matches!(
                                 &child,
-                                AemNode::Panel {
-                                    is_conditional: true,
-                                    ..
-                                }
-                            ) || contains_conditional(std::slice::from_ref(&child));
-
+                                AemNode::Panel { is_conditional: true, .. }
+                            );
                             let child_paths =
                                 collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
                             let all_covered = !is_cond
