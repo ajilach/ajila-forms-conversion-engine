@@ -1569,7 +1569,10 @@ fn replace_with_fragments(
                         for child in children.drain(..) {
                             let is_cond = matches!(
                                 &child,
-                                AemNode::Panel { is_conditional: true, .. }
+                                AemNode::Panel {
+                                    is_conditional: true,
+                                    ..
+                                }
                             );
                             let child_paths =
                                 collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
