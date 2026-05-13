@@ -1452,6 +1452,27 @@ fn to_fragment_bind_ref(bind_ref: &str, xsd_config: Option<&crate::xsd::XsdConfi
     }
 }
 
+/// Returns true if any node in the slice (or its descendants) is a conditional panel.
+fn contains_conditional(nodes: &[AemNode]) -> bool {
+    for node in nodes {
+        match node {
+            AemNode::Panel {
+                is_conditional: true,
+                ..
+            } => return true,
+            AemNode::Panel { children, .. }
+            | AemNode::Root { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                if contains_conditional(children) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn replace_with_fragments(
     nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
@@ -1474,9 +1495,11 @@ fn replace_with_fragments(
         if let AemNode::Panel {
             children,
             bind_ref: Some(br),
+            is_conditional,
             ..
         } = &nodes[i]
         {
+            let is_conditional = *is_conditional;
             let full_paths = collect_child_bind_ref_full_paths(children);
             let br_prefix = format!("{}/", br);
 
@@ -1490,9 +1513,11 @@ fn replace_with_fragments(
             // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
             let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
 
-            if !has_intermediates {
+            if !has_intermediates && !is_conditional && !contains_conditional(children) {
                 // Direct match: all paths are single-segment → try to replace
-                // the whole panel.
+                // the whole panel.  Never replace conditional panels (or panels
+                // containing conditionals) because their names are referenced
+                // by visibility scripts.
                 let leaves = collect_child_bind_ref_leaves(children);
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
@@ -1538,11 +1563,18 @@ fn replace_with_fragments(
                         // Identify children to remove: a child is removed when
                         // every one of its bind_ref paths falls under a matched
                         // intermediate prefix (exact match or starts_with prefix + "/").
+                        // Never remove conditional panels — their names are
+                        // referenced by visibility scripts.
                         let mut keep = Vec::new();
                         for child in children.drain(..) {
+                            let is_cond = matches!(
+                                &child,
+                                AemNode::Panel { is_conditional: true, .. }
+                            );
                             let child_paths =
                                 collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
-                            let all_covered = !child_paths.is_empty()
+                            let all_covered = !is_cond
+                                && !child_paths.is_empty()
                                 && child_paths.iter().all(|cp| {
                                     matched_prefixes
                                         .iter()
