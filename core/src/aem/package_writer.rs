@@ -613,9 +613,14 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
                         format!("<p>{html}</p>")
                     });
                 }
-                // H2 becomes panel jcr:title (plain text), so use plain text keys
+                // H2 becomes panel jcr:title (plain text) AND page-panel titledraw
+                // _value (HTML-wrapped <p>…</p>). We need both keys so that
+                // jcr:title and the titledraw _value are both translatable.
                 HeadingLevel::H2 => {
                     extract_from_inline_text(&h.content, master_lang, map);
+                    extract_rich_text_translations(&h.content, master_lang, map, |html| {
+                        format!("<p>{html}</p>")
+                    });
                 }
                 // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys
                 _ => {
