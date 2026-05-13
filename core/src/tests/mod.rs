@@ -27564,7 +27564,7 @@ fn test_aacs_multilingual_controlling_person() {
     assert_aacs_triplet_aligned(
         "Beherrschende Person",
         "Controlling Person",
-        "Persona que ejerce el control",
+        "Persona con Control",
     );
 }
 
