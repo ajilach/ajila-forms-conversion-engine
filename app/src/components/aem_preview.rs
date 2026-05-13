@@ -173,5 +173,13 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
         }
         AemNode::Preface { .. } => ("aem-field aem-preface", "Preface".into(), vec![]),
         AemNode::Appendix { .. } => ("aem-field aem-appendix", "Appendix".into(), vec![]),
+        AemNode::Footnote { name, content, .. } => {
+            let display = if content.is_empty() {
+                name.clone()
+            } else {
+                content.clone()
+            };
+            ("aem-field aem-footnote", display, vec![])
+        }
     }
 }
