@@ -143,7 +143,6 @@ impl TextBlockMerger {
         if trimmed.ends_with(':') || trimmed.ends_with("：") {
             return false;
         }
-
         // Calculate vertical gap (bottom of top block to top of bottom block)
         let gap = bottom.y - top.bottom();
 

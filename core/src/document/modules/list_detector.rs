@@ -708,17 +708,22 @@ impl AnalysisModule for ListDetector {
             .collect();
 
         // Collect y-positions of whitespace-only Leaf roots separately.
-        // These are typically empty placeholder draw elements.  For non-bold
-        // list candidates they are ignored as intervening content because they
-        // do not represent meaningful separators between list items.
+        // These are typically empty placeholder draw elements or page-layout
+        // groups (Header/Footer).  For non-bold list candidates they are
+        // ignored as intervening content because they do not represent
+        // meaningful content separators between list items.
+        //
+        // Footer and Header groups are added unconditionally: they are
+        // page-layout elements that appear at fixed vertical positions on
+        // each page and should never be treated as separators within a
+        // logical list that happens to span a page boundary or to be
+        // positioned near the footer region.
         let ws_leaf_ys: HashSet<Decimal> = roots
             .iter()
-            .filter(|&&idx| {
-                if let GroupKind::Leaf { .. } = doc.groups[idx].kind {
-                    doc.get_text_content(idx).trim().is_empty()
-                } else {
-                    false
-                }
+            .filter(|&&idx| match &doc.groups[idx].kind {
+                GroupKind::Leaf { .. } => doc.get_text_content(idx).trim().is_empty(),
+                GroupKind::Footer | GroupKind::Header => true,
+                _ => false,
             })
             .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.y))
             .collect();
@@ -814,7 +819,11 @@ impl AnalysisModule for ListDetector {
         let mut column_runs: Vec<(Decimal, Decimal, Run)> = Vec::new(); // (representative x, max right edge, run)
 
         /// Find the column run whose representative x is within `tol` of `x`.
-        fn find_column(column_runs: &[(Decimal, Decimal, Run)], x: Decimal, tol: Decimal) -> Option<usize> {
+        fn find_column(
+            column_runs: &[(Decimal, Decimal, Run)],
+            x: Decimal,
+            tol: Decimal,
+        ) -> Option<usize> {
             column_runs
                 .iter()
                 .position(|(col_x, _, _)| (x - *col_x).abs() <= tol)
@@ -879,22 +888,21 @@ impl AnalysisModule for ListDetector {
             // from another column may lie in the y-gap.  This typically means a
             // section boundary (e.g. a numbered heading like "2. Konto-..."
             // between dash items).  Treat it as intervening.
-            let has_cross_column_different_marker =
-                all_marker_tb_info.iter().any(|(mb, mk)| {
-                    if *mk == marker.kind {
-                        return false; // same kind — not a boundary
-                    }
-                    let mb_bottom = mb.y + mb.height;
-                    let y_overlap = mb_bottom > range_lo && mb.y < range_hi;
-                    if !y_overlap {
-                        return false;
-                    }
-                    // Only count markers that are NOT in the same column as our
-                    // run (items in the same column with different kinds are
-                    // already handled by the marker.kind != last.kind check).
-                    let item_x = last.2.x;
-                    (mb.x - item_x).abs() > x_tol
-                });
+            let has_cross_column_different_marker = all_marker_tb_info.iter().any(|(mb, mk)| {
+                if *mk == marker.kind {
+                    return false; // same kind — not a boundary
+                }
+                let mb_bottom = mb.y + mb.height;
+                let y_overlap = mb_bottom > range_lo && mb.y < range_hi;
+                if !y_overlap {
+                    return false;
+                }
+                // Only count markers that are NOT in the same column as our
+                // run (items in the same column with different kinds are
+                // already handled by the marker.kind != last.kind check).
+                let item_x = last.2.x;
+                (mb.x - item_x).abs() > x_tol
+            });
 
             !has_cross_column_different_marker
         }

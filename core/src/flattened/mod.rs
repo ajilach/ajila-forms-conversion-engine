@@ -8804,16 +8804,10 @@ impl Flattened {
                 .letter_spacing
                 .map(|ls| ls * scale)
                 .unwrap_or(letter_spacing);
-            // Per XFA 3.3 spec (§27.x "Letter Spacing"):
-            //   "letterSpacing ... specifies an adjustment to the spacing that
-            //   would otherwise be used between successive grapheme clusters.
-            //   Interword as well as interletter spacings are affected."
-            // The inter-token space character is its own grapheme cluster, so
-            // a letter-spacing adjustment applies on BOTH sides of the space
-            // (last-char-of-A → space, and space → first-char-of-B). The
-            // letter-spacing inside each token is already accounted for in the
-            // token width, so the per-space contribution is 2 × letter-spacing.
-            let space_width = base_space_width + 2.0 * para_letter_spacing;
+            // Interword spacing uses base space advance plus paragraph/run
+            // letter spacing (consistent with existing AXTE-compatible behavior
+            // in this pipeline).
+            let space_width = base_space_width + para_letter_spacing;
 
             // Handle empty paragraphs as blank lines
             if para.is_empty {
