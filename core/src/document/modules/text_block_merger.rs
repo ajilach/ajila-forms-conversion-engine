@@ -176,9 +176,10 @@ impl TextBlockMerger {
         // text without hyphenation, making the gap appear zero even though
         // the layout placed the nodes further apart.  If the allocated bounds
         // gap exceeds the threshold, don't merge.
-        if let (Some(alloc_a), Some(alloc_b)) =
-            (doc.get_allocated_bounds(idx_a), doc.get_allocated_bounds(idx_b))
-        {
+        if let (Some(alloc_a), Some(alloc_b)) = (
+            doc.get_allocated_bounds(idx_a),
+            doc.get_allocated_bounds(idx_b),
+        ) {
             let (alloc_top, alloc_bottom) = if alloc_a.y <= alloc_b.y {
                 (&alloc_a, &alloc_b)
             } else {
