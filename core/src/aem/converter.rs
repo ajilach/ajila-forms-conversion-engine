@@ -1554,8 +1554,13 @@ fn replace_with_fragments(
                             let conditionals: Vec<AemNode> = children
                                 .drain(..)
                                 .filter(|c| {
-                                    matches!(c, AemNode::Panel { is_conditional: true, .. })
-                                        || contains_conditional(std::slice::from_ref(c))
+                                    matches!(
+                                        c,
+                                        AemNode::Panel {
+                                            is_conditional: true,
+                                            ..
+                                        }
+                                    ) || contains_conditional(std::slice::from_ref(c))
                                 })
                                 .collect();
 
@@ -1611,6 +1616,7 @@ fn replace_with_fragments(
                                     ..
                                 }
                             ) || contains_conditional(std::slice::from_ref(&child));
+
                             let child_paths =
                                 collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
                             let all_covered = !is_cond
