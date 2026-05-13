@@ -8,8 +8,8 @@ mod processing;
 use dioxus::prelude::*;
 
 use components::{
-    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection,
-    StructuredEditor,
+    AemPreview, AemPreviewEnvelope, EnvelopeWrapper, FileUploadSection, ImageModal,
+    ProgressDisplay, ResultsSection, StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
@@ -25,6 +25,7 @@ fn App() -> Element {
     let mut enlarged_image = use_signal(|| None::<(String, String)>);
     let selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
+    let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
 
     let profiles = blueprint::list_profiles();
 
@@ -107,7 +108,7 @@ fn App() -> Element {
             span { class: "app-header-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
         }
 
-        // Show either the editor (full page) or the main app content
+        // Show either the editor, AEM preview, or the main app content
         if let Some(envelope) = editor_envelope.read().clone() {
             // Structured Editor (full page view)
             div { class: "editor-page",
@@ -116,6 +117,13 @@ fn App() -> Element {
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }
+            }
+        } else if let Some(envelope) = aem_preview_envelope.read().clone() {
+            // AEM Structure Preview (full page view)
+            AemPreview {
+                envelope: AemPreviewEnvelope(envelope),
+                profile: selected_profile.read().clone(),
+                on_close: move |_| aem_preview_envelope.set(None),
             }
         } else {
             // Main app content (scrollable area)
@@ -146,6 +154,9 @@ fn App() -> Element {
                             state: processing_state.read().clone(),
                             on_edit: move |envelope| {
                                 editor_envelope.set(Some(envelope));
+                            },
+                            on_aem_preview: move |envelope| {
+                                aem_preview_envelope.set(Some(envelope));
                             },
                         }
                     }

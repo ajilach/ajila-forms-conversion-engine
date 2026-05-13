@@ -16148,6 +16148,262 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     );
 }
 
+#[test]
+fn test_bage_has_exactly_five_signature_fragments() {
+    // BAGE_019 DE+EN has a Signature(s) panel with 4 conditional sub-panels:
+    //   - Firma (1 signature)
+    //   - GbR (1 signature)
+    //   - Minderjährige (2 signatures: Guardian 1 + Guardian 2)
+    //   - Private Person (1 signature)
+    // Each signature block should be replaced by a SignatureType fragment node,
+    // giving us 5 total.
+    use crate::aem::{AemConfig, convert_to_aem};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE EN");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Failed to merge BAGE DE+EN");
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&merged.content, &config);
+    let root = convert_to_aem(&merged.content, &config);
+
+    let fragment_refs = helpers::collect_aem_fragment_refs(&root);
+
+    let sig_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("Signature"))
+        .collect();
+    assert_eq!(
+        sig_frags.len(),
+        5,
+        "Expected exactly 5 Signature fragment nodes (Firma + GbR + 2×Minderjährige + Private Person), found {}.\nAll fragments: {:?}",
+        sig_frags.len(),
+        fragment_refs
+    );
+}
+
+#[test]
+fn test_bage_aem_has_expected_fields() {
+    // BAGE_019 DE+EN AEM output should contain these fields (by label):
+    // Nachname, Vorname(n) / Firma, Straße, Nr., PLZ, Stadt, Land
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE EN");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Failed to merge BAGE DE+EN");
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config();
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&merged.content, &config);
+    let root = convert_to_aem(&merged.content, &config);
+
+    // Collect all field labels from the AEM tree
+    let mut labels = Vec::new();
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        let label = match node {
+            AemNode::TextField { label, .. }
+            | AemNode::NumberField { label, .. }
+            | AemNode::DatePicker { label, .. }
+            | AemNode::Dropdown { label, .. }
+            | AemNode::RadioButton { label, .. } => Some(label.as_str()),
+            _ => None,
+        };
+        if let Some(l) = label {
+            labels.push(l.to_string());
+        }
+    });
+
+    let expected = [
+        "Nachname, Vorname(n) / Firma",
+        "Straße",
+        "Nr.",
+        "PLZ",
+        "Stadt",
+        "Land",
+    ];
+
+    for expected_label in &expected {
+        assert!(
+            labels.iter().any(|l| l.contains(expected_label)),
+            "Expected to find a field with label containing '{}' in AEM output.\nAll labels: {:?}",
+            expected_label,
+            labels
+        );
+    }
+}
+
+#[test]
+fn test_bage_aem_fragments_in_correct_position() {
+    // The AddressGeneric1 and DOBandNationality fragments should appear
+    // after "Vermögensverwalter" and before the long paragraph starting with
+    // "über die jeweiligen Guthaben, Wertpapiere und sonstigen Vermögenswerte..."
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE EN");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Failed to merge BAGE DE+EN");
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config();
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&merged.content, &config);
+    let root = convert_to_aem(&merged.content, &config);
+
+    // Walk the AEM tree in DFS order and collect a linear sequence of landmarks:
+    // text content (TextDraw/TitleDraw), fragment refs, and field labels.
+    #[derive(Debug)]
+    enum Landmark {
+        Text(String),
+        Fragment(String),
+        Field(String),
+    }
+
+    fn collect_landmarks(node: &AemNode, out: &mut Vec<Landmark>) {
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                for child in children {
+                    collect_landmarks(child, out);
+                }
+            }
+            AemNode::TextDraw { content, .. } => {
+                out.push(Landmark::Text(content.clone()));
+            }
+            AemNode::TitleDraw { content, .. } => {
+                out.push(Landmark::Text(content.clone()));
+            }
+            AemNode::Fragment { frag_ref, .. } => {
+                out.push(Landmark::Fragment(frag_ref.clone()));
+            }
+            AemNode::TextField { label, .. }
+            | AemNode::NumberField { label, .. }
+            | AemNode::DatePicker { label, .. }
+            | AemNode::Dropdown { label, .. }
+            | AemNode::RadioButton { label, .. } => {
+                out.push(Landmark::Field(label.clone()));
+            }
+            _ => {}
+        }
+    }
+
+    let mut landmarks = Vec::new();
+    collect_landmarks(&root, &mut landmarks);
+
+    // Find positions
+    let vermoegensverwalter_pos = landmarks.iter().position(|l| match l {
+        Landmark::Text(t) => t.contains("Vermögensverwalter"),
+        _ => false,
+    });
+
+    let ueber_pos = landmarks.iter().position(|l| match l {
+        Landmark::Text(t) => t.contains("über die jeweiligen Guthaben, Wertpapiere und sonstigen Vermögenswerte"),
+        _ => false,
+    });
+
+    let address_frag_pos = landmarks.iter().position(|l| match l {
+        Landmark::Fragment(f) => f.contains("Address"),
+        _ => false,
+    });
+
+    let dob_frag_pos = landmarks.iter().position(|l| match l {
+        Landmark::Fragment(f) => f.contains("DOBandNationality"),
+        _ => false,
+    });
+
+    assert!(
+        vermoegensverwalter_pos.is_some(),
+        "Expected to find 'Vermögensverwalter' in AEM output.\nLandmarks: {:?}",
+        landmarks
+    );
+    assert!(
+        ueber_pos.is_some(),
+        "Expected to find 'über die jeweiligen Guthaben...' in AEM output.\nLandmarks: {:?}",
+        landmarks
+    );
+    assert!(
+        address_frag_pos.is_some(),
+        "Expected to find Address fragment in AEM output.\nLandmarks: {:?}",
+        landmarks
+    );
+    assert!(
+        dob_frag_pos.is_some(),
+        "Expected to find DOBandNationality fragment in AEM output.\nLandmarks: {:?}",
+        landmarks
+    );
+
+    let vw = vermoegensverwalter_pos.unwrap();
+    let ueber = ueber_pos.unwrap();
+    let addr = address_frag_pos.unwrap();
+    let dob = dob_frag_pos.unwrap();
+
+    assert!(
+        addr > vw,
+        "Address fragment (pos {}) should appear after 'Vermögensverwalter' (pos {})",
+        addr, vw
+    );
+    assert!(
+        addr < ueber,
+        "Address fragment (pos {}) should appear before 'über die jeweiligen Guthaben...' (pos {})",
+        addr, ueber
+    );
+    assert!(
+        dob > vw,
+        "DOBandNationality fragment (pos {}) should appear after 'Vermögensverwalter' (pos {})",
+        dob, vw
+    );
+    assert!(
+        dob < ueber,
+        "DOBandNationality fragment (pos {}) should appear before 'über die jeweiligen Guthaben...' (pos {})",
+        dob, ueber
+    );
+}
+
 // ============================================================================
 // XSD generation tests
 // ============================================================================

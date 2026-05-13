@@ -1,9 +1,11 @@
+mod aem_preview;
 pub mod editor;
 mod file_upload;
 mod image_grid;
 mod progress;
 mod results;
 
+pub use aem_preview::{AemPreview, AemPreviewEnvelope};
 pub use editor::{EnvelopeWrapper, StructuredEditor};
 pub use file_upload::FileUploadSection;
 pub use image_grid::ImageModal;

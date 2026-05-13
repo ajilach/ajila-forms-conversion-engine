@@ -17,6 +17,8 @@ pub struct ResultsSectionProps {
     /// Callback when the Edit Structure button is clicked.
     /// Passes the envelope to edit.
     pub on_edit: EventHandler<DocumentEnvelope>,
+    /// Callback when the Preview AEM Structure button is clicked.
+    pub on_aem_preview: EventHandler<DocumentEnvelope>,
 }
 
 #[component]
@@ -36,11 +38,25 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                         class: "btn btn-secondary btn-lg",
                         onclick: {
                             let on_edit = props.on_edit;
+                            let envelope_clone = envelope.clone();
                             move |_| {
-                                on_edit.call(envelope.clone());
+                                on_edit.call(envelope_clone.clone());
                             }
                         },
                         "✎ Edit Structure"
+                    }
+
+                    // Preview AEM Structure button
+                    button {
+                        class: "btn btn-secondary btn-lg",
+                        onclick: {
+                            let on_aem_preview = props.on_aem_preview;
+                            let envelope_clone = envelope.clone();
+                            move |_| {
+                                on_aem_preview.call(envelope_clone.clone());
+                            }
+                        },
+                        "⊞ Preview AEM Structure"
                     }
                 }
 
