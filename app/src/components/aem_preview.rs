@@ -56,11 +56,11 @@ pub fn AemPreview(props: AemPreviewProps) -> Element {
             }
             div { class: "aem-preview-content",
                 match aem_tree {
-                    Some(root) => rsx! { AemNodeBox { node: AemNodeWrapper(root) } },
+                    Some(root) => rsx! {
+                        AemNodeBox { node: AemNodeWrapper(root) }
+                    },
                     None => rsx! {
-                        p { class: "aem-preview-error",
-                            "No AEM configuration available for this profile."
-                        }
+                        p { class: "aem-preview-error", "No AEM configuration available for this profile." }
                     },
                 }
             }
@@ -104,6 +104,14 @@ fn AemNodeBox(props: AemNodeBoxProps) -> Element {
     }
 }
 
+fn label_or_name(label: &str, name: &str) -> String {
+    if label.is_empty() {
+        name.to_owned()
+    } else {
+        label.to_owned()
+    }
+}
+
 fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
     match node {
         AemNode::Root { title, children } => ("aem-root", title.clone(), children.clone()),
@@ -112,14 +120,7 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
             title,
             children,
             ..
-        } => {
-            let label = if title.is_empty() {
-                name.clone()
-            } else {
-                title.clone()
-            };
-            ("aem-panel", label, children.clone())
-        }
+        } => ("aem-panel", label_or_name(title, name), children.clone()),
         AemNode::Repeatable {
             name,
             title,
@@ -139,26 +140,27 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
             let label = format!("{name} → {short_ref}");
             ("aem-fragment", label, vec![])
         }
-        AemNode::TextField { name, label, .. } => {
-            let display = if label.is_empty() { name.clone() } else { label.clone() };
-            ("aem-field aem-textfield", display, vec![])
-        }
-        AemNode::NumberField { name, label, .. } => {
-            let display = if label.is_empty() { name.clone() } else { label.clone() };
-            ("aem-field aem-numberfield", display, vec![])
-        }
-        AemNode::DatePicker { name, label, .. } => {
-            let display = if label.is_empty() { name.clone() } else { label.clone() };
-            ("aem-field aem-datepicker", display, vec![])
-        }
+        AemNode::TextField { name, label, .. } => (
+            "aem-field aem-textfield",
+            label_or_name(label, name),
+            vec![],
+        ),
+        AemNode::NumberField { name, label, .. } => (
+            "aem-field aem-numberfield",
+            label_or_name(label, name),
+            vec![],
+        ),
+        AemNode::DatePicker { name, label, .. } => (
+            "aem-field aem-datepicker",
+            label_or_name(label, name),
+            vec![],
+        ),
         AemNode::Dropdown { name, label, .. } => {
-            let display = if label.is_empty() { name.clone() } else { label.clone() };
-            ("aem-field aem-dropdown", display, vec![])
+            ("aem-field aem-dropdown", label_or_name(label, name), vec![])
         }
         AemNode::Checkbox { name, .. } => ("aem-field aem-checkbox", name.clone(), vec![]),
         AemNode::RadioButton { name, label, .. } => {
-            let display = if label.is_empty() { name.clone() } else { label.clone() };
-            ("aem-field aem-radio", display, vec![])
+            ("aem-field aem-radio", label_or_name(label, name), vec![])
         }
         AemNode::TextDraw { name, .. } => ("aem-field aem-textdraw", name.clone(), vec![]),
         AemNode::TitleDraw { name, content, .. } => {

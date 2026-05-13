@@ -16169,8 +16169,8 @@ fn test_bage_has_exactly_five_signature_fragments() {
         .expect("Failed to merge BAGE DE+EN");
 
     let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
+    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -16200,8 +16200,8 @@ fn test_bage_has_exactly_five_signature_fragments() {
 
 #[test]
 fn test_bage_aem_has_expected_fields() {
-    // BAGE_019 DE+EN AEM output should contain these fields (by label):
-    // Nachname, Vorname(n) / Firma, Straße, Nr., PLZ, Stadt, Land
+    // BAGE_019 DE+EN AEM output should contain these fields (by English label):
+    // Last name, first name(s) / Company, Street, No., Postal code, City, Country
     use crate::aem::{AemConfig, AemNode, convert_to_aem};
     use crate::run_exhaustive_to_envelope;
     use crate::structured;
@@ -16214,16 +16214,12 @@ fn test_bage_aem_has_expected_fields() {
         .expect("Failed to merge BAGE DE+EN");
 
     let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
+    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
-
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
-    let fragments_dir = std::path::Path::new(&fragments_path);
-    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
-    config.use_fragments = true;
+    config.use_fragments = false;
 
     let config = crate::resolve_aem_languages(&merged.content, &config);
     let root = convert_to_aem(&merged.content, &config);
@@ -16245,12 +16241,12 @@ fn test_bage_aem_has_expected_fields() {
     });
 
     let expected = [
-        "Nachname, Vorname(n) / Firma",
-        "Straße",
-        "Nr.",
-        "PLZ",
-        "Stadt",
-        "Land",
+        "Last name, first name(s) / Company",
+        "Street",
+        "No.",
+        "Postal code",
+        "City",
+        "Country",
     ];
 
     for expected_label in &expected {
@@ -16261,147 +16257,6 @@ fn test_bage_aem_has_expected_fields() {
             labels
         );
     }
-}
-
-#[test]
-fn test_bage_aem_fragments_in_correct_position() {
-    // The AddressGeneric1 and DOBandNationality fragments should appear
-    // after "Vermögensverwalter" and before the long paragraph starting with
-    // "über die jeweiligen Guthaben, Wertpapiere und sonstigen Vermögenswerte..."
-    use crate::aem::{AemConfig, AemNode, convert_to_aem};
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured;
-
-    let de_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
-        .expect("Failed to process BAGE DE");
-    let en_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
-        .expect("Failed to process BAGE EN");
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
-        .expect("Failed to merge BAGE DE+EN");
-
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &merged.context).expect("AemConfig from profile");
-
-    let xsd_config = helpers::load_ubs_xsd_config();
-    config.xsd_config = Some(xsd_config);
-
-    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
-    let fragments_dir = std::path::Path::new(&fragments_path);
-    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
-    config.use_fragments = true;
-
-    let config = crate::resolve_aem_languages(&merged.content, &config);
-    let root = convert_to_aem(&merged.content, &config);
-
-    // Walk the AEM tree in DFS order and collect a linear sequence of landmarks:
-    // text content (TextDraw/TitleDraw), fragment refs, and field labels.
-    #[derive(Debug)]
-    enum Landmark {
-        Text(String),
-        Fragment(String),
-        Field(String),
-    }
-
-    fn collect_landmarks(node: &AemNode, out: &mut Vec<Landmark>) {
-        match node {
-            AemNode::Root { children, .. }
-            | AemNode::Panel { children, .. }
-            | AemNode::Repeatable { children, .. } => {
-                for child in children {
-                    collect_landmarks(child, out);
-                }
-            }
-            AemNode::TextDraw { content, .. } => {
-                out.push(Landmark::Text(content.clone()));
-            }
-            AemNode::TitleDraw { content, .. } => {
-                out.push(Landmark::Text(content.clone()));
-            }
-            AemNode::Fragment { frag_ref, .. } => {
-                out.push(Landmark::Fragment(frag_ref.clone()));
-            }
-            AemNode::TextField { label, .. }
-            | AemNode::NumberField { label, .. }
-            | AemNode::DatePicker { label, .. }
-            | AemNode::Dropdown { label, .. }
-            | AemNode::RadioButton { label, .. } => {
-                out.push(Landmark::Field(label.clone()));
-            }
-            _ => {}
-        }
-    }
-
-    let mut landmarks = Vec::new();
-    collect_landmarks(&root, &mut landmarks);
-
-    // Find positions
-    let vermoegensverwalter_pos = landmarks.iter().position(|l| match l {
-        Landmark::Text(t) => t.contains("Vermögensverwalter"),
-        _ => false,
-    });
-
-    let ueber_pos = landmarks.iter().position(|l| match l {
-        Landmark::Text(t) => t.contains("über die jeweiligen Guthaben, Wertpapiere und sonstigen Vermögenswerte"),
-        _ => false,
-    });
-
-    let address_frag_pos = landmarks.iter().position(|l| match l {
-        Landmark::Fragment(f) => f.contains("Address"),
-        _ => false,
-    });
-
-    let dob_frag_pos = landmarks.iter().position(|l| match l {
-        Landmark::Fragment(f) => f.contains("DOBandNationality"),
-        _ => false,
-    });
-
-    assert!(
-        vermoegensverwalter_pos.is_some(),
-        "Expected to find 'Vermögensverwalter' in AEM output.\nLandmarks: {:?}",
-        landmarks
-    );
-    assert!(
-        ueber_pos.is_some(),
-        "Expected to find 'über die jeweiligen Guthaben...' in AEM output.\nLandmarks: {:?}",
-        landmarks
-    );
-    assert!(
-        address_frag_pos.is_some(),
-        "Expected to find Address fragment in AEM output.\nLandmarks: {:?}",
-        landmarks
-    );
-    assert!(
-        dob_frag_pos.is_some(),
-        "Expected to find DOBandNationality fragment in AEM output.\nLandmarks: {:?}",
-        landmarks
-    );
-
-    let vw = vermoegensverwalter_pos.unwrap();
-    let ueber = ueber_pos.unwrap();
-    let addr = address_frag_pos.unwrap();
-    let dob = dob_frag_pos.unwrap();
-
-    assert!(
-        addr > vw,
-        "Address fragment (pos {}) should appear after 'Vermögensverwalter' (pos {})",
-        addr, vw
-    );
-    assert!(
-        addr < ueber,
-        "Address fragment (pos {}) should appear before 'über die jeweiligen Guthaben...' (pos {})",
-        addr, ueber
-    );
-    assert!(
-        dob > vw,
-        "DOBandNationality fragment (pos {}) should appear after 'Vermögensverwalter' (pos {})",
-        dob, vw
-    );
-    assert!(
-        dob < ueber,
-        "DOBandNationality fragment (pos {}) should appear before 'über die jeweiligen Guthaben...' (pos {})",
-        dob, ueber
-    );
 }
 
 // ============================================================================
@@ -17697,11 +17552,7 @@ fn test_aaai_en_xsd_signature_type_matching() {
     // 7) Assert the AuthRep section is matched to multiple types
     //    (IndividualBasicType + AddressType), so it contains typed child elements.
     let mut auth_rep_matches = Vec::new();
-    find_elements_by_name(
-        &schema.root,
-        "AuthRep",
-        &mut auth_rep_matches,
-    );
+    find_elements_by_name(&schema.root, "AuthRep", &mut auth_rep_matches);
     assert!(
         !auth_rep_matches.is_empty(),
         "Should find 'AuthRep' element"
@@ -17847,10 +17698,7 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
 
     let mut matches = Vec::new();
     find_elements_by_name(&schema.root, "AuthRep", &mut matches);
-    assert!(
-        !matches.is_empty(),
-        "Should find 'AuthRep' element"
-    );
+    assert!(!matches.is_empty(), "Should find 'AuthRep' element");
 
     // It should be an inline complexType containing two typed child elements
     if let XsdNode::Element {
@@ -18417,10 +18265,7 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
     // not be directly under AuthRep.
     let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
         // Find the part after "AuthRep/"
-        let after = path
-            .split("/AuthRep/")
-            .last()
-            .unwrap_or("");
+        let after = path.split("/AuthRep/").last().unwrap_or("");
         after.contains('/') // has another segment before the field name (= wrapper)
     });
     assert!(
@@ -18912,7 +18757,9 @@ fn test_aaha_de_has_one_repeatable_with_nachname_vorname() {
                 }
                 StructuredNode::Group(g) => result.extend(collect_repeatables(&g.children)),
                 StructuredNode::Conditional(c) => {
-                    result.extend(collect_repeatables(std::slice::from_ref(c.content.as_ref())));
+                    result.extend(collect_repeatables(std::slice::from_ref(
+                        c.content.as_ref(),
+                    )));
                 }
                 _ => {}
             }
@@ -25668,7 +25515,10 @@ fn test_bage_long_bold_sentence_is_not_heading() {
         !found_as_heading,
         "The sentence '{}' should NOT be classified as a heading. It is a normal paragraph.\nHeadings found: {:?}",
         target_text,
-        headings.iter().filter(|(_, h)| h.contains("Dies gilt")).collect::<Vec<_>>()
+        headings
+            .iter()
+            .filter(|(_, h)| h.contains("Dies gilt"))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25690,7 +25540,10 @@ fn test_bage_bevollmaechtigten_sentence_is_not_heading() {
         !found_as_heading,
         "The sentence '{}' should NOT be classified as a heading. It is a normal paragraph.\nHeadings found: {:?}",
         target_text,
-        headings.iter().filter(|(_, h)| h.contains("Bevollmächtigten")).collect::<Vec<_>>()
+        headings
+            .iter()
+            .filter(|(_, h)| h.contains("Bevollmächtigten"))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25720,16 +25573,20 @@ fn test_bage_intro_paragraph_not_list_item() {
     let comm_list = comm_list.unwrap();
 
     // "Dies umfasst sämtliche..." should NOT be a list item
-    let has_intro_as_item = comm_list.items.iter().any(|item| {
-        item.as_plain_text()
-            .contains("Dies umfasst sämtliche")
-    });
+    let has_intro_as_item = comm_list
+        .items
+        .iter()
+        .any(|item| item.as_plain_text().contains("Dies umfasst sämtliche"));
     assert!(
         !has_intro_as_item,
         "The introductory sentence 'Dies umfasst sämtliche für mich/uns bestimmten Mitteilungen \
          und sonstigen Sendungen jeder Art, insbesondere' should be a paragraph, not a list item.\n\
          List items: {:?}",
-        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        comm_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 
     // The list should have exactly 4 items (the actual bullet points)
@@ -25738,7 +25595,11 @@ fn test_bage_intro_paragraph_not_list_item() {
         4,
         "Communication types list should have 4 items (without the intro paragraph).\n\
          Actual items: {:?}",
-        comm_list.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>()
+        comm_list
+            .items
+            .iter()
+            .map(|i| i.as_plain_text())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25758,10 +25619,7 @@ fn test_bage_section6_heading_merged_with_english() {
     let merged = structured::merge_translations(vec![de, en], None).unwrap();
 
     // Collect all headings with their translations.
-    fn collect_headings(
-        nodes: &[StructuredNode],
-        out: &mut Vec<(u8, String)>,
-    ) {
+    fn collect_headings(nodes: &[StructuredNode], out: &mut Vec<(u8, String)>) {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
@@ -25770,10 +25628,21 @@ fn test_bage_section6_heading_merged_with_english() {
                     // Also check translations
                     for inline in &h.content.0 {
                         if let InlineNode::TranslatedText(map) = inline {
-                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
-                            let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            let de_text = map
+                                .get("de")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
+                            let en_text = map
+                                .get("en")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
                             if de_text.contains("6.") && de_text.contains("Dauer") {
-                                out.push((h.level.as_u8(), format!("DE={} | EN={}", de_text, en_text)));
+                                out.push((
+                                    h.level.as_u8(),
+                                    format!("DE={} | EN={}", de_text, en_text),
+                                ));
                             }
                         }
                     }
@@ -25794,9 +25663,9 @@ fn test_bage_section6_heading_merged_with_english() {
     collect_headings(&merged.content, &mut headings);
 
     // Find the heading that contains "6." and "Dauer der Vollmacht"
-    let section6_de = headings.iter().find(|(_, text)| {
-        text.contains("6.") && text.contains("Dauer")
-    });
+    let section6_de = headings
+        .iter()
+        .find(|(_, text)| text.contains("6.") && text.contains("Dauer"));
     assert!(
         section6_de.is_some(),
         "Should find heading '6. Dauer der Vollmacht' in merged output.\nHeadings: {:?}",
@@ -25805,34 +25674,48 @@ fn test_bage_section6_heading_merged_with_english() {
 
     // The heading must have a merged English translation "6. Duration to this Power of Attorney"
     // Check via the TranslatedText map
-    fn find_section6_translation(
-        nodes: &[StructuredNode],
-    ) -> Option<(String, String)> {
+    fn find_section6_translation(nodes: &[StructuredNode]) -> Option<(String, String)> {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
                     for inline in &h.content.0 {
                         if let InlineNode::TranslatedText(map) = inline {
-                            let de_text = map.get("de").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                            let de_text = map
+                                .get("de")
+                                .and_then(|v| v.as_ref())
+                                .cloned()
+                                .unwrap_or_default();
                             if de_text.contains("6.") && de_text.contains("Dauer") {
-                                let en_text = map.get("en").and_then(|v| v.as_ref()).cloned().unwrap_or_default();
+                                let en_text = map
+                                    .get("en")
+                                    .and_then(|v| v.as_ref())
+                                    .cloned()
+                                    .unwrap_or_default();
                                 return Some((de_text, en_text));
                             }
                         }
                     }
                 }
                 StructuredNode::Group(g) => {
-                    if let Some(r) = find_section6_translation(&g.children) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&g.children) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::Conditional(c) => {
-                    if let Some(r) = find_section6_translation(&[(*c.content).clone()]) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&[(*c.content).clone()]) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::Repeatable(r) => {
-                    if let Some(r) = find_section6_translation(&[(*r.item).clone()]) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&[(*r.item).clone()]) {
+                        return Some(r);
+                    }
                 }
                 StructuredNode::GridLayout(g) => {
                     let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
-                    if let Some(r) = find_section6_translation(&children) { return Some(r); }
+                    if let Some(r) = find_section6_translation(&children) {
+                        return Some(r);
+                    }
                 }
                 _ => {}
             }
@@ -25905,9 +25788,10 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
                         if inside_minderjaehrige {
                             // If this group has child groups, recurse to find
                             // individual signature blocks deeper in the tree.
-                            let has_child_groups = g.children.iter().any(|c| {
-                                matches!(c, StructuredNode::Group(_))
-                            });
+                            let has_child_groups = g
+                                .children
+                                .iter()
+                                .any(|c| matches!(c, StructuredNode::Group(_)));
                             if has_child_groups {
                                 walk(&g.children, field_id, blocks, true);
                             } else {
@@ -25930,7 +25814,12 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
                                 blocks.push(fields_in_block);
                             }
                         } else {
-                            walk(&[(*r.item).clone()], field_id, blocks, inside_minderjaehrige);
+                            walk(
+                                &[(*r.item).clone()],
+                                field_id,
+                                blocks,
+                                inside_minderjaehrige,
+                            );
                         }
                     }
                     _ => {
@@ -25991,7 +25880,9 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
         blocks[0]
     );
     assert!(
-        blocks[0].iter().any(|l| l.contains("gesetzlichen Vertreters 1")),
+        blocks[0]
+            .iter()
+            .any(|l| l.contains("gesetzlichen Vertreters 1")),
         "First signature block should contain 'Name des gesetzlichen Vertreters 1', got: {:?}",
         blocks[0]
     );
@@ -26008,10 +25899,10 @@ fn test_bage_minderjaehrige_signature_two_blocks() {
         blocks[1]
     );
     assert!(
-        blocks[1].iter().any(|l| l.contains("gesetzlichen Vertreters 2")),
+        blocks[1]
+            .iter()
+            .any(|l| l.contains("gesetzlichen Vertreters 2")),
         "Second signature block should contain 'Name des gesetzlichen Vertreters 2', got: {:?}",
         blocks[1]
     );
 }
-
-

@@ -222,6 +222,15 @@ body > div, #main {
     font-weight: 700;
 }
 
+.btn-secondary {
+    background-color: var(--secondary300);
+    color: var(--light);
+}
+
+.btn-secondary:hover {
+    background-color: var(--secondary400);
+}
+
 .btn-primary:hover {
     background-color: var(--primary400);
 }
@@ -1315,7 +1324,7 @@ body > div, #main {
     justify-content: space-between;
     padding: var(--space-sm) var(--space-md);
     border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
+    background: var(--color-bg-light);
 }
 
 .aem-preview-header h2 {
@@ -1328,7 +1337,7 @@ body > div, #main {
     gap: var(--space-md);
     padding: var(--space-xs) var(--space-md);
     border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
+    background: var(--color-bg-light);
     font-size: var(--font-size-sm);
 }
 
