@@ -6769,6 +6769,11 @@ impl Flattened {
         let black = Rgba([0u8, 0u8, 0u8, 255u8]);
         let dark_gray = Rgba([80u8, 80u8, 80u8, 255u8]);
 
+        // Resolve hyphenation dictionary for the document language so that
+        // text wrapping during rendering matches the height calculation in
+        // split_draw_into_paragraph_nodes (which already uses the dict).
+        let hyph_dict = super::xfa::hyphenation::dict_for_language(&self.language);
+
         // ============================================
         // Draw actual content (as in PDF) - no debug overlay
         // ============================================
@@ -7075,7 +7080,7 @@ impl Flattened {
                                 .para
                                 .as_ref()
                                 .and_then(|p| p.hyphenation.as_ref()),
-                            None, // dict resolved at call site if needed
+                            hyph_dict,
                         );
 
                         Self::render_text_glyph_by_glyph(
