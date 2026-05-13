@@ -455,6 +455,40 @@ body > div, #main {
     color: var(--color-text-warning);
 }
 
+/* ---- Spinner (reusable) ---- */
+
+@keyframes spinner-spin {
+    to { transform: rotate(360deg); }
+}
+
+.spinner {
+    display: inline-block;
+    border-style: solid;
+    border-color: var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spinner-spin 0.8s linear infinite;
+    vertical-align: middle;
+}
+
+.spinner-sm {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+}
+
+.spinner-md {
+    width: 24px;
+    height: 24px;
+    border-width: 3px;
+}
+
+.spinner-lg {
+    width: 32px;
+    height: 32px;
+    border-width: 3px;
+}
+
 /* ---- Step Indicator ---- */
 
 .step {
