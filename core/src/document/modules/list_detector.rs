@@ -1183,9 +1183,9 @@ impl AnalysisModule for ListDetector {
                                 } else {
                                     false
                                 }
-                            }) || non_tb_root_ys.iter().any(|&y| {
-                                y > lo && y < hi && !ws_leaf_ys.contains(&y)
-                            })
+                            }) || non_tb_root_ys
+                                .iter()
+                                .any(|&y| y > lo && y < hi && !ws_leaf_ys.contains(&y))
                         } else {
                             false
                         };
