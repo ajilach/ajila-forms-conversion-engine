@@ -28742,3 +28742,44 @@ fn test_aacc_de_has_textarea_with_label() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn test_aahh_pipeline_multilingual_merge_no_duplicate_language() {
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+
+    let files = vec![
+        (
+            "AAHH_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AAHH_019_DE.pdf")).expect("Failed to read AAHH DE PDF"),
+        ),
+        (
+            "AAHH_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AAHH_019_EN.pdf")).expect("Failed to read AAHH EN PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let output = run_pipeline(&files, &config, |_| {})
+        .expect("AAHH DE/EN pipeline should merge without duplicate language error");
+
+    // Verify that both languages are present in the merged output
+    let mut langs = std::collections::BTreeSet::new();
+    for node in &output.merged.content {
+        node.collect_languages(&mut langs);
+    }
+
+    assert!(
+        langs.contains("de"),
+        "Merged output should contain German text"
+    );
+    assert!(
+        langs.contains("en"),
+        "Merged output should contain English text"
+    );
+}
