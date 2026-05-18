@@ -788,7 +788,9 @@ fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut I18n
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             extract_from_inline_node(inner, master_lang, map);
         }
         InlineNode::Link(link) => {
@@ -1389,10 +1391,10 @@ mod tests {
 
         assert_eq!(translations[expected_key]["de"], "Kunde");
 
-        // Must NOT have HTML-wrapped key
+        // H2 also produces an HTML-wrapped key for the page-panel titledraw
         assert!(
-            !translations.contains_key("<p>Client</p>"),
-            "H2 panel title key must NOT have HTML wrapping"
+            translations.contains_key("<p>Client</p>"),
+            "H2 panel title must also have HTML-wrapped key for titledraw _value"
         );
     }
 
