@@ -28783,3 +28783,44 @@ fn test_aahh_pipeline_multilingual_merge_no_duplicate_language() {
         "Merged output should contain English text"
     );
 }
+
+#[test]
+fn test_aafd_pipeline_multilingual_merge_languages_detected_correctly() {
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+
+    let files = vec![
+        (
+            "AAFD_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AAFD_019_DE.pdf")).expect("Failed to read AAFD DE PDF"),
+        ),
+        (
+            "AAFD_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AAFD_019_EN.pdf")).expect("Failed to read AAFD EN PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let output = run_pipeline(&files, &config, |_| {})
+        .expect("AAFD DE/EN pipeline should merge without duplicate language error");
+
+    // Verify that both languages are present in the merged output
+    let mut langs = std::collections::BTreeSet::new();
+    for node in &output.merged.content {
+        node.collect_languages(&mut langs);
+    }
+
+    assert!(
+        langs.contains("de"),
+        "Merged output should contain German text"
+    );
+    assert!(
+        langs.contains("en"),
+        "Merged output should contain English text"
+    );
+}

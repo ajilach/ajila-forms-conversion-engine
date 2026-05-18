@@ -1802,7 +1802,7 @@ fn collect_visible_text(nodes: &[XfaNode]) -> String {
 }
 
 fn collect_visible_text_recursive(nodes: &[XfaNode], buf: &mut String, inside_draw: bool) {
-    const MAX_LEN: usize = 500;
+    const MAX_LEN: usize = 5000;
 
     for node in nodes {
         if buf.len() >= MAX_LEN {
