@@ -1687,23 +1687,6 @@ fn replace_with_fragments(
                         *children = keep;
                         children.extend(frag_nodes);
                     }
-                } else if !has_intermediates {
-                    // Fallback for conditional panels with depth-1 leaves:
-                    // no intermediate segments, but the panel was skipped by
-                    // direct-match due to containing conditionals. Count
-                    // repeated leaf occurrences and insert N fragments.
-                    let leaves = collect_child_bind_ref_leaves(children);
-                    if !leaves.is_empty() {
-                        if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
-                            let fragment = fragment.clone();
-                            let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
-                            let n = count_fragment_instances(&fragment, &leaves);
-                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
-                            if let AemNode::Panel { children, .. } = &mut nodes[i] {
-                                *children = frag_nodes;
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -1737,15 +1720,10 @@ fn replace_with_fragments(
                         let full_paths = collect_child_bind_ref_full_paths(children);
                         let bind_ref = compute_common_bind_ref_prefix(&full_paths)
                             .map(|p| to_fragment_bind_ref(&p, xsd_config));
-                        let name = ctx.make_name("PN_affrg", &fragment.dir_name);
-                        let uuid = ctx.uuid(&name);
+                        let n = count_fragment_instances(&fragment, &leaves);
+                        let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
                         if let AemNode::Panel { children, .. } = &mut nodes[i] {
-                            *children = vec![AemNode::Fragment {
-                                uuid,
-                                name,
-                                frag_ref: fragment.frag_ref,
-                                bind_ref,
-                            }];
+                            *children = frag_nodes;
                         }
                     }
                 }
