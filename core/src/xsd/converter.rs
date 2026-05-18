@@ -878,9 +878,6 @@ fn collect_node_bind_refs(
                 Some(res) => (res.name, res.type_ref),
                 None => (to_pascal_case(&label), "xs:string".to_string()),
             };
-            if current_path.contains("Signature") {
-                eprintln!("[DEBUG bind_ref SIG] field label={:?} name={:?} path={}", label, name, current_path);
-            }
             if !name.is_empty() && name != "Unknown" {
                 let base_path = wrappers
                     .and_then(|wp| wp.get(&(name.clone(), type_ref)))
@@ -888,8 +885,6 @@ fn collect_node_bind_refs(
                     .unwrap_or(current_path);
                 let path = format!("{}/{}", base_path, name);
                 maps.fields.insert(field.name.clone(), path);
-            } else {
-                eprintln!("[DEBUG bind_ref SKIP] field label={:?} name={:?} current_path={}", label, name, current_path);
             }
         }
         StructuredNode::Repeatable(rep) => {

@@ -1512,6 +1512,43 @@ fn contains_conditional(nodes: &[AemNode]) -> bool {
     false
 }
 
+/// Count how many complete instances of a fragment's bound_elements appear
+/// in the given leaves. E.g. if bound_elements = [Place, Date, Name] and
+/// leaves contains each 5 times, returns 5.
+fn count_fragment_instances(fragment: &ParsedFragment, leaves: &[String]) -> usize {
+    if fragment.bound_elements.is_empty() {
+        return 1;
+    }
+    fragment
+        .bound_elements
+        .iter()
+        .map(|elem| leaves.iter().filter(|l| *l == elem).count())
+        .min()
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// Create `n` Fragment nodes for the given fragment and bind_ref.
+fn make_fragment_nodes(
+    n: usize,
+    fragment: &ParsedFragment,
+    bind_ref: Option<String>,
+    ctx: &mut ConversionContext,
+) -> Vec<AemNode> {
+    (0..n)
+        .map(|_| {
+            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+            let uuid = ctx.uuid(&name);
+            AemNode::Fragment {
+                uuid,
+                name,
+                frag_ref: fragment.frag_ref.clone(),
+                bind_ref: bind_ref.clone(),
+            }
+        })
+        .collect()
+}
+
 fn replace_with_fragments(
     nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
@@ -1556,22 +1593,7 @@ fn replace_with_fragments(
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
                         let fragment = fragment.clone();
                         let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
-
-                        // Count how many complete instances of the fragment's
-                        // bound_elements appear in the leaves. E.g. if
-                        // bound_elements = [Place, Date, Name] and leaves
-                        // contains each 5 times, we insert 5 fragments.
-                        let n = if fragment.bound_elements.is_empty() {
-                            1
-                        } else {
-                            let min_count = fragment
-                                .bound_elements
-                                .iter()
-                                .map(|elem| leaves.iter().filter(|l| l == &elem).count())
-                                .min()
-                                .unwrap_or(1);
-                            min_count.max(1)
-                        };
+                        let n = count_fragment_instances(&fragment, &leaves);
 
                         if n == 1 {
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
@@ -1585,17 +1607,7 @@ fn replace_with_fragments(
                         } else {
                             // Multiple instances: replace children with N
                             // Fragment nodes inside the panel.
-                            let mut frag_nodes = Vec::with_capacity(n);
-                            for _ in 0..n {
-                                let name = ctx.make_name("PN_affrg", &fragment.dir_name);
-                                let uuid = ctx.uuid(&name);
-                                frag_nodes.push(AemNode::Fragment {
-                                    uuid,
-                                    name,
-                                    frag_ref: fragment.frag_ref.clone(),
-                                    bind_ref: bind_ref.clone(),
-                                });
-                            }
+                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
                             if let AemNode::Panel { children, .. } = &mut nodes[i] {
                                 *children = frag_nodes;
                             }
@@ -1608,98 +1620,6 @@ fn replace_with_fragments(
                 // bind_ref and the leaf element name).  For each group that
                 // matches a fragment, remove the children whose fields all
                 // belong to that group and insert a Fragment node instead.
-                if br.contains("Signature") {
-                    eprintln!(
-                        "[DEBUG multi-instance SIG] bind_ref={:?} full_paths={:?}",
-                        br, full_paths
-                    );
-                    fn debug_children(children: &[AemNode], indent: usize) {
-                        for (ci, child) in children.iter().enumerate() {
-                            let pad = "  ".repeat(indent);
-                            match child {
-                                AemNode::TextField { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] TextField({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::DatePicker { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] DatePicker({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::NumberField { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] NumberField({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::Panel {
-                                    name,
-                                    bind_ref,
-                                    children: sub,
-                                    ..
-                                } => {
-                                    eprintln!(
-                                        "{}[{}] Panel({}) bind_ref={:?} children={}",
-                                        pad,
-                                        ci,
-                                        name,
-                                        bind_ref,
-                                        sub.len()
-                                    );
-                                    debug_children(sub, indent + 1);
-                                }
-                                AemNode::TitleDraw { name, .. } => {
-                                    eprintln!("{}[{}] TitleDraw({})", pad, ci, name)
-                                }
-                                AemNode::TextDraw { name, .. } => {
-                                    eprintln!("{}[{}] TextDraw({})", pad, ci, name)
-                                }
-                                AemNode::Repeatable {
-                                    name,
-                                    children: sub,
-                                    ..
-                                } => {
-                                    eprintln!(
-                                        "{}[{}] Repeatable({}) children={}",
-                                        pad,
-                                        ci,
-                                        name,
-                                        sub.len()
-                                    );
-                                    debug_children(sub, indent + 1);
-                                }
-                                AemNode::Dropdown { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] Dropdown({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::Checkbox { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] Checkbox({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::RadioButton { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] RadioButton({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::Fragment { name, bind_ref, .. } => eprintln!(
-                                    "{}[{}] Fragment({}) bind_ref={:?}",
-                                    pad, ci, name, bind_ref
-                                ),
-                                AemNode::Root { .. } => eprintln!("{}[{}] Root", pad, ci),
-                                AemNode::Preface { name, .. } => {
-                                    eprintln!("{}[{}] Preface({})", pad, ci, name)
-                                }
-                                AemNode::Appendix { name, .. } => {
-                                    eprintln!("{}[{}] Appendix({})", pad, ci, name)
-                                }
-                                AemNode::Footnote { name, .. } => {
-                                    eprintln!("{}[{}] Footnote({})", pad, ci, name)
-                                }
-                            }
-                        }
-                    }
-                    debug_children(children, 1);
-                }
-                eprintln!(
-                    "[DEBUG multi-instance] bind_ref={:?} full_paths={:?}",
-                    br, full_paths
-                );
                 let mut matched =
                     compute_intermediate_matches(&full_paths, &br_prefix, fragments, xsd_config);
 
@@ -1777,29 +1697,9 @@ fn replace_with_fragments(
                         if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
                             let fragment = fragment.clone();
                             let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
-                            let n = if fragment.bound_elements.is_empty() {
-                                1
-                            } else {
-                                let min_count = fragment
-                                    .bound_elements
-                                    .iter()
-                                    .map(|elem| leaves.iter().filter(|l| l == &elem).count())
-                                    .min()
-                                    .unwrap_or(1);
-                                min_count.max(1)
-                            };
+                            let n = count_fragment_instances(&fragment, &leaves);
+                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
                             if let AemNode::Panel { children, .. } = &mut nodes[i] {
-                                let mut frag_nodes = Vec::with_capacity(n);
-                                for _ in 0..n {
-                                    let name = ctx.make_name("PN_affrg", &fragment.dir_name);
-                                    let uuid = ctx.uuid(&name);
-                                    frag_nodes.push(AemNode::Fragment {
-                                        uuid,
-                                        name,
-                                        frag_ref: fragment.frag_ref.clone(),
-                                        bind_ref: bind_ref.clone(),
-                                    });
-                                }
                                 *children = frag_nodes;
                             }
                         }
