@@ -1814,8 +1814,15 @@ fn collect_visible_text_recursive(nodes: &[XfaNode], buf: &mut String, inside_dr
             XfaNodeKind::Element { tag_name, .. } => {
                 if matches!(
                     tag_name.as_str(),
-                    "variables" | "script" | "proto" | "pageSet" | "event"
-                        | "calculate" | "items" | "validate" | "bind"
+                    "variables"
+                        | "script"
+                        | "proto"
+                        | "pageSet"
+                        | "event"
+                        | "calculate"
+                        | "items"
+                        | "validate"
+                        | "bind"
                 ) {
                     continue;
                 }
