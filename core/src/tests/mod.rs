@@ -28998,3 +28998,138 @@ fn test_aatz_de_lists_not_merged_across_paragraphs() {
         post_purchase_list.items.len()
     );
 }
+
+#[test]
+fn test_bage_aem_fragment_position_within_panel() {
+    // Fragments should appear at the position of the fields they replace,
+    // NOT appended at the end of the panel. For the "Asset Manager" section
+    // the expected order is:
+    //   1. Heading "Asset Manager" (panel title or TitleDraw)
+    //   2. Fragment "IndividualBasic1"
+    //   3. Fragment "AddressGeneric1"
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
+        .expect("Failed to process BAGE DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("BAGE_019_EN.pdf"), "en")
+        .expect("Failed to process BAGE EN");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Failed to merge BAGE DE+EN");
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+        .expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&merged.content, &config);
+    let root = convert_to_aem(&merged.content, &config);
+
+    // Find the panel whose children include a TitleDraw containing "Asset manager".
+    // Collect its direct children as items to verify ordering.
+    #[derive(Debug, Clone)]
+    enum Item {
+        Heading(String),
+        Fragment(String),
+        Other(String),
+    }
+
+    fn find_panel_with_asset_manager(node: &AemNode) -> Option<Vec<Item>> {
+        match node {
+            AemNode::Panel { children, .. } => {
+                let has_asset_manager = children.iter().any(|c| {
+                    matches!(c, AemNode::TitleDraw { content, .. }
+                        if content.to_lowercase().contains("asset manager"))
+                });
+                if has_asset_manager {
+                    let items: Vec<Item> = children
+                        .iter()
+                        .map(|c| match c {
+                            AemNode::TitleDraw { content, .. } => {
+                                Item::Heading(content.clone())
+                            }
+                            AemNode::Fragment { frag_ref, .. } => {
+                                let name =
+                                    frag_ref.rsplit('/').next().unwrap_or(frag_ref);
+                                Item::Fragment(name.to_string())
+                            }
+                            AemNode::Panel { name, .. } => {
+                                Item::Other(format!("Panel({})", name))
+                            }
+                            AemNode::TextField { name, .. } => {
+                                Item::Other(format!("TextField({})", name))
+                            }
+                            _ => Item::Other(c.element_name()),
+                        })
+                        .collect();
+                    return Some(items);
+                }
+                for child in children {
+                    if let Some(items) = find_panel_with_asset_manager(child) {
+                        return Some(items);
+                    }
+                }
+                None
+            }
+            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
+                for child in children {
+                    if let Some(items) = find_panel_with_asset_manager(child) {
+                        return Some(items);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    let items = find_panel_with_asset_manager(&root)
+        .expect("Should find a panel containing a TitleDraw with 'Asset manager'");
+
+    // Verify that fragments are positioned right after the "Asset manager" heading,
+    // NOT appended at the end of the panel.
+    let heading_pos = items
+        .iter()
+        .position(|i| matches!(i, Item::Heading(h) if h.to_lowercase().contains("asset manager")))
+        .expect("Should find 'Asset manager' heading in items");
+
+    let individual_pos = items
+        .iter()
+        .position(|i| matches!(i, Item::Fragment(f) if f.contains("IndividualBasic1")))
+        .unwrap_or_else(|| panic!(
+            "Should find IndividualBasic1 fragment in panel with 'Asset manager'. Items: {:?}",
+            items
+        ));
+
+    let address_pos = items
+        .iter()
+        .position(|i| matches!(i, Item::Fragment(f) if f.contains("AddressGeneric1")))
+        .unwrap_or_else(|| panic!(
+            "Should find AddressGeneric1 fragment in panel with 'Asset manager'. Items: {:?}",
+            items
+        ));
+
+    // IndividualBasic1 should come right after the "Asset manager" heading
+    assert!(
+        individual_pos == heading_pos + 1,
+        "IndividualBasic1 fragment (pos {}) should appear right after 'Asset manager' heading (pos {}). \
+         Fragments must be placed at the position of the fields they replace, not appended at the end. Items: {:?}",
+        individual_pos, heading_pos, items
+    );
+
+    // AddressGeneric1 should come right after IndividualBasic1
+    assert!(
+        address_pos == individual_pos + 1,
+        "AddressGeneric1 fragment (pos {}) should appear right after IndividualBasic1 fragment (pos {}). \
+         Fragments must be placed at the position of the fields they replace, not appended at the end. Items: {:?}",
+        address_pos, individual_pos, items
+    );
+}
