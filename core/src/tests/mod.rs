@@ -28842,7 +28842,9 @@ fn test_aaih_vereinbarung_section_discovered() {
 
     for state in states.iter() {
         state_labels.push(state.label.clone());
-        let all_text: String = state.flattened.iter_nodes()
+        let all_text: String = state
+            .flattened
+            .iter_nodes()
             .filter_map(|node| {
                 if let FlattenedNodeKind::Text { content, .. } = &node.kind {
                     Some(content.as_str())
@@ -28890,3 +28892,109 @@ fn test_aaih_vereinbarung_section_discovered() {
     );
 }
 
+#[test]
+fn test_aatz_de_lists_not_merged_across_paragraphs() {
+    // AATZ DE contains multiple unordered lists separated by paragraphs.
+    // The lists should NOT be merged into a single list because there are
+    // paragraphs in between.
+    //
+    // Expected structure:
+    // 1. Unordered list (3 items): Liquiditätsrisiko, Operationelle Risiken, Regulatorische Risiken
+    // 2. Paragraphs: "Ich verstehe...", "Des Weiteren...", "Als Vertreter/Nominee..."
+    // 3. Unordered list (3 items): "in ihrem Namen...", "die Fondsanteile...", "bestimmte Handlungen..."
+    //    - last item has nested ordered sublist (3 items)
+    // 4. Paragraph: "Nach dem Kauf..."
+    // 5. Unordered list (2 items): "UBS (oder eine...)", "die Übertragung..."
+    //    - first item has nested ordered sublist (2 items)
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AATZ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AATZ_019_DE.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // There should be at least 3 separate lists (not all merged into one)
+    assert!(
+        lists.len() >= 3,
+        "AATZ DE should have at least 3 separate lists (separated by paragraphs), found {}. \
+         Lists were incorrectly merged across paragraph boundaries.",
+        lists.len()
+    );
+
+    // First list should have 3 items about risks
+    let risk_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("Liquiditätsrisiko"))
+    });
+    assert!(
+        risk_list.is_some(),
+        "Should find a list containing 'Liquiditätsrisiko'"
+    );
+    let risk_list = risk_list.unwrap();
+    assert_eq!(
+        risk_list.items.len(),
+        3,
+        "Risk list should have 3 items (Liquiditätsrisiko, Operationelle Risiken, Regulatorische Risiken), found {}",
+        risk_list.items.len()
+    );
+
+    // Second list should have items about nominee actions
+    let nominee_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("in ihrem Namen"))
+    });
+    assert!(
+        nominee_list.is_some(),
+        "Should find a list containing 'in ihrem Namen'"
+    );
+    let nominee_list = nominee_list.unwrap();
+    assert_eq!(
+        nominee_list.items.len(),
+        3,
+        "Nominee list should have 3 items, found {}",
+        nominee_list.items.len()
+    );
+
+    // Third list (after "Nach dem Kauf..." paragraph)
+    let post_purchase_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text()
+                .contains("die Übertragung der Fondsanteile")
+        })
+    });
+    assert!(
+        post_purchase_list.is_some(),
+        "Should find a list containing 'die Übertragung der Fondsanteile'"
+    );
+    let post_purchase_list = post_purchase_list.unwrap();
+    assert_eq!(
+        post_purchase_list.items.len(),
+        2,
+        "Post-purchase list should have 2 items, found {}",
+        post_purchase_list.items.len()
+    );
+}
