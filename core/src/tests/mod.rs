@@ -28824,3 +28824,69 @@ fn test_aafd_pipeline_multilingual_merge_languages_detected_correctly() {
         "Merged output should contain English text"
     );
 }
+
+#[test]
+fn test_aaih_vereinbarung_section_discovered() {
+    // AAIH DE has a "Vereinbarung" section that should appear when
+    // radio buttons "Einzelabrechnung" or "Transaktionsliste" are selected.
+    // The exhaustive exploration should discover this text.
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAIH_019_DE.pdf")).unwrap();
+    let states = bp.states().unwrap();
+
+    // Collect all text for each state
+    let mut found_rb1_text = false;
+    let mut found_rb2_text = false;
+    let mut state_labels: Vec<String> = Vec::new();
+
+    for state in states.iter() {
+        state_labels.push(state.label.clone());
+        let all_text: String = state.flattened.iter_nodes()
+            .filter_map(|node| {
+                if let FlattenedNodeKind::Text { content, .. } = &node.kind {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // RB_1 = "Einzelabrechnung" option (rawValue 1)
+        // Should show text about "Einzelabrechnungen" being created
+        if state.label.contains("RB_1") && all_text.contains("Vereinbarung") {
+            found_rb1_text = true;
+            // Verify the Einzelabrechnung-specific text is present
+            assert!(
+                all_text.contains("Einzelabrechnung"),
+                "RB_1 state should contain 'Einzelabrechnung' text. State: {}",
+                state.label
+            );
+        }
+
+        // RB_2 = "Transaktionsliste" option (rawValue 2)
+        // Should show text about "Transaktionsliste"
+        if state.label.contains("RB_2") && all_text.contains("Vereinbarung") {
+            found_rb2_text = true;
+            // Verify the Transaktionsliste-specific text is present
+            assert!(
+                all_text.contains("Transaktionsliste"),
+                "RB_2 state should contain 'Transaktionsliste' text. State: {}",
+                state.label
+            );
+        }
+    }
+
+    assert!(
+        found_rb1_text,
+        "Should find Vereinbarung in RB_1 (Einzelabrechnung) state. States: {:?}",
+        state_labels
+    );
+    assert!(
+        found_rb2_text,
+        "Should find Vereinbarung in RB_2 (Transaktionsliste) state. States: {:?}",
+        state_labels
+    );
+}
+

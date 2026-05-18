@@ -1499,12 +1499,38 @@ fn can_select_field(
 /// Fields are included if they (or their parent exclGroup for radios, or any ancestor subform)
 /// have change, click, or calculate scripts. This establishes the static ordering used throughout
 /// the exploration.
+///
+/// Additionally, fields are included if any Calculate script elsewhere in the form
+/// references the field's name or its parent exclGroup's name (reading `.rawValue`/`.value`
+/// or `.presence`). This handles the case where a radio button has no own scripts but
+/// its value is read by a Calculate script on another node to toggle visibility.
 fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
     let mut results = Vec::new();
     search_selectable_fields(form.xfa_nodes(), "", &mut results);
 
     // Filter to only include fields with interactive scripts
     let registry = form.script_registry();
+
+    // Pre-collect all Calculate/Change/Click script sources for reverse-dependency check.
+    // We look at Calculate scripts because they re-run when dependent values change,
+    // and any field whose value they read should be explored.
+    let all_interactive_sources: Vec<String> = {
+        use crate::xfa::scripting::registry::ScriptType;
+        let calc_scripts = registry.get_scripts_of_type(ScriptType::Calculate);
+        let event_scripts = registry.get_scripts_of_type(ScriptType::Event);
+        calc_scripts
+            .iter()
+            .chain(event_scripts.iter())
+            .filter(|s| {
+                matches!(
+                    s.script.activity,
+                    EventActivity::Calculate | EventActivity::Change | EventActivity::Click
+                )
+            })
+            .map(|s| s.script.source.clone())
+            .collect()
+    };
+
     results.retain(|field| {
         // Per XFA 3.3 §17: skip fields whose access (or parent exclGroup's access)
         // prevents user interaction.
@@ -1564,6 +1590,38 @@ fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
                     return true;
                 }
                 pos = dot;
+            }
+        }
+
+        // Reverse-dependency check: if any Calculate/Change/Click script in
+        // the form references this field's name or its exclGroup's name
+        // (e.g. `RB_Group_NeW.rawValue`), the field should be explored because
+        // changing it will trigger those scripts to recalculate.
+        {
+            let field_name = field.path.name();
+            // For radio buttons, also check the parent exclGroup name
+            let excl_group_name = if field.is_radio() {
+                form.find_excl_group_for_field(field.path.as_str())
+                    .map(|p| p.name().to_string())
+            } else {
+                None
+            };
+
+            for source in &all_interactive_sources {
+                // Check if script references the field name with .rawValue or .value
+                if source.contains(&format!("{}.rawValue", field_name))
+                    || source.contains(&format!("{}.value", field_name))
+                {
+                    return true;
+                }
+                // For radio buttons, check excl group name
+                if let Some(ref eg_name) = excl_group_name {
+                    if source.contains(&format!("{}.rawValue", eg_name))
+                        || source.contains(&format!("{}.value", eg_name))
+                    {
+                        return true;
+                    }
+                }
             }
         }
 
