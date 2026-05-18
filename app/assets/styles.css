@@ -1610,6 +1610,11 @@ body > div, #main {
     background: rgba(39, 174, 96, 0.1);
 }
 
+.legend-static::before {
+    border-color: #7f8c8d;
+    background: rgba(127, 140, 141, 0.1);
+}
+
 .aem-preview-content {
     flex: 1;
     overflow: auto;
@@ -1639,15 +1644,11 @@ body > div, #main {
     padding: 2px 6px;
     margin-bottom: 6px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 300px;
 }
 
 .aem-box-children {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-direction: column;
     gap: 4px;
 }
 
@@ -1658,8 +1659,9 @@ body > div, #main {
     display: block;
 }
 
-/* Fields are inline to flow horizontally within a panel */
+/* Fields and static text are inline to flow horizontally within a panel */
 .aem-field,
+.aem-static,
 .aem-fragment {
     display: inline-block;
     vertical-align: top;
@@ -1707,7 +1709,7 @@ body > div, #main {
     color: #7d3c98;
 }
 
-/* Fields (all types) */
+/* Fields (input types) */
 .aem-field {
     border-color: #27ae60;
     background: rgba(39, 174, 96, 0.06);
@@ -1719,4 +1721,20 @@ body > div, #main {
     margin-bottom: 0;
     font-weight: 500;
     font-size: 10px;
+}
+
+/* Static text elements */
+.aem-static {
+    border-color: #7f8c8d;
+    background: rgba(127, 140, 141, 0.06);
+    padding: 3px 6px;
+    border-style: dotted;
+}
+
+.aem-static > .aem-box-label {
+    color: #566573;
+    margin-bottom: 0;
+    font-weight: 400;
+    font-size: 10px;
+    font-style: italic;
 }

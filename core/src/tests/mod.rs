@@ -16442,8 +16442,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
         .collect();
     assert_eq!(
         sig_frags.len(),
-        2,
-        "Expected exactly 2 Signature fragment nodes, found {}.\nAll fragments: {:?}",
+        3,
+        "Expected exactly 3 Signature fragment nodes, found {}.\nAll fragments: {:?}",
         sig_frags.len(),
         fragment_refs
     );
@@ -16462,8 +16462,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 
     assert_eq!(
         fragment_refs.len(),
-        3,
-        "Expected exactly 3 fragment nodes (2 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        4,
+        "Expected exactly 4 fragment nodes (3 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -16547,8 +16547,20 @@ fn test_aaai_has_exactly_two_signature_fragments() {
             crate::aem::AemNode::TextDraw { name, .. } => {
                 eprintln!("{}TextDraw({})", indent, name);
             }
+            crate::aem::AemNode::NumberField { name, bind_ref, .. } => {
+                eprintln!("{}NumberField({}) bind_ref={:?}", indent, name, bind_ref);
+            }
+            crate::aem::AemNode::Dropdown { name, bind_ref, .. } => {
+                eprintln!("{}Dropdown({}) bind_ref={:?}", indent, name, bind_ref);
+            }
+            crate::aem::AemNode::Checkbox { name, bind_ref, .. } => {
+                eprintln!("{}Checkbox({}) bind_ref={:?}", indent, name, bind_ref);
+            }
+            crate::aem::AemNode::RadioButton { name, bind_ref, .. } => {
+                eprintln!("{}RadioButton({}) bind_ref={:?}", indent, name, bind_ref);
+            }
             _ => {
-                eprintln!("{}Other", indent);
+                eprintln!("{}Other({:?})", indent, std::mem::discriminant(node));
             }
         }
     }
@@ -16556,7 +16568,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
+    // Should have 4 fragments: 2 Signature + 1 Address + 1 IndividualBasic
     let sig_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Signature"))
@@ -16575,28 +16587,28 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         .collect();
     assert_eq!(
         addr_frags.len(),
-        2,
-        "Expected exactly 2 Address fragment nodes, found {}.\nAll fragments: {:?}",
+        1,
+        "Expected exactly 1 Address fragment node, found {}.\nAll fragments: {:?}",
         addr_frags.len(),
         fragment_refs
     );
 
-    let dob_frags: Vec<_> = fragment_refs
+    let individual_frags: Vec<_> = fragment_refs
         .iter()
-        .filter(|(fr, _)| fr.contains("DOBandNationality"))
+        .filter(|(fr, _)| fr.contains("IndividualBasic"))
         .collect();
     assert_eq!(
-        dob_frags.len(),
+        individual_frags.len(),
         1,
-        "Expected exactly 1 DOBandNationality fragment node, found {}.\nAll fragments: {:?}",
-        dob_frags.len(),
+        "Expected exactly 1 IndividualBasic fragment node, found {}.\nAll fragments: {:?}",
+        individual_frags.len(),
         fragment_refs
     );
 
     assert_eq!(
         fragment_refs.len(),
-        5,
-        "Expected exactly 5 fragment nodes (2 Signature + 2 Address + 1 DOBandNationality), found {}.\nFragments: {:?}",
+        4,
+        "Expected exactly 4 fragment nodes (2 Signature + 1 Address + 1 IndividualBasic), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -19030,14 +19042,14 @@ fn test_aaai_has_address_and_individual_fragments() {
 
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
 
-    // Should have at least 5 fragments: 2 Signature + 2 Address + 1 DOBandNationality
+    // Should have at least 6 fragments: 2 Signature + 3 Address + 1 IndividualBasic
     let address_frags: Vec<_> = fragment_refs
         .iter()
         .filter(|(fr, _)| fr.contains("Address"))
         .collect();
-    let dob_frags: Vec<_> = fragment_refs
+    let individual_frags: Vec<_> = fragment_refs
         .iter()
-        .filter(|(fr, _)| fr.contains("DOBandNationality"))
+        .filter(|(fr, _)| fr.contains("IndividualBasic"))
         .collect();
 
     assert!(
@@ -19046,17 +19058,17 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
     assert!(
-        !dob_frags.is_empty(),
-        "Should have at least one DOBandNationality fragment. All fragments: {:?}",
+        !individual_frags.is_empty(),
+        "Should have at least one IndividualBasic fragment. All fragments: {:?}",
         fragment_refs
     );
 
-    // The DOBandNationality fragment bind_ref should contain "AuthRep/IndividualBasic"
-    for (_, bind_ref) in &dob_frags {
+    // The IndividualBasic fragment bind_ref should contain "AuthRep/IndividualBasic"
+    for (_, bind_ref) in &individual_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
             br.contains("/AuthRep/IndividualBasic"),
-            "DOBandNationality fragment bind_ref should include AuthRep/IndividualBasic. Got: {}",
+            "IndividualBasic fragment bind_ref should include AuthRep/IndividualBasic. Got: {}",
             br
         );
     }

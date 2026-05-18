@@ -53,6 +53,7 @@ pub fn AemPreview(props: AemPreviewProps) -> Element {
                 span { class: "legend-item legend-repeatable", "Repeatable" }
                 span { class: "legend-item legend-fragment", "Fragment" }
                 span { class: "legend-item legend-field", "Field" }
+                span { class: "legend-item legend-static", "Static Text" }
             }
             div { class: "aem-preview-content",
                 match aem_tree {
@@ -162,24 +163,24 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
         AemNode::RadioButton { name, label, .. } => {
             ("aem-field aem-radio", label_or_name(label, name), vec![])
         }
-        AemNode::TextDraw { name, .. } => ("aem-field aem-textdraw", name.clone(), vec![]),
+        AemNode::TextDraw { name, .. } => ("aem-static aem-textdraw", name.clone(), vec![]),
         AemNode::TitleDraw { name, content, .. } => {
             let display = if content.is_empty() {
                 name.clone()
             } else {
                 content.clone()
             };
-            ("aem-field aem-titledraw", display, vec![])
+            ("aem-static aem-titledraw", display, vec![])
         }
-        AemNode::Preface { .. } => ("aem-field aem-preface", "Preface".into(), vec![]),
-        AemNode::Appendix { .. } => ("aem-field aem-appendix", "Appendix".into(), vec![]),
+        AemNode::Preface { .. } => ("aem-static aem-preface", "Preface".into(), vec![]),
+        AemNode::Appendix { .. } => ("aem-static aem-appendix", "Appendix".into(), vec![]),
         AemNode::Footnote { name, content, .. } => {
             let display = if content.is_empty() {
                 name.clone()
             } else {
                 content.clone()
             };
-            ("aem-field aem-footnote", display, vec![])
+            ("aem-static aem-footnote", display, vec![])
         }
     }
 }
