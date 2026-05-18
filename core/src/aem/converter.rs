@@ -1641,35 +1641,7 @@ fn replace_with_fragments(
                             .map(|(int_path, _)| format!("{}{}", br_prefix, int_path))
                             .collect();
 
-                        // Identify children to remove: a child is removed when
-                        // every one of its bind_ref paths falls under a matched
-                        // intermediate prefix (exact match or starts_with prefix + "/").
-                        // Never remove conditional panels — their names are
-                        // referenced by visibility scripts.
-                        let mut keep = Vec::new();
-                        for child in children.drain(..) {
-                            let is_cond = matches!(
-                                &child,
-                                AemNode::Panel {
-                                    is_conditional: true,
-                                    ..
-                                }
-                            );
-                            let child_paths =
-                                collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
-                            let all_covered = !is_cond
-                                && !child_paths.is_empty()
-                                && child_paths.iter().all(|cp| {
-                                    matched_prefixes
-                                        .iter()
-                                        .any(|mp| cp == mp || cp.starts_with(&format!("{}/", mp)))
-                                });
-                            if !all_covered {
-                                keep.push(child);
-                            }
-                        }
-
-                        // Insert Fragment nodes for each matched group
+                        // Build Fragment nodes for each matched group
                         let mut frag_nodes: Vec<AemNode> = Vec::new();
                         for (int_path, fragment) in &matched {
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
@@ -1683,9 +1655,88 @@ fn replace_with_fragments(
                             });
                         }
 
-                        // Rebuild children: kept nodes + new fragment nodes
-                        *children = keep;
-                        children.extend(frag_nodes);
+                        // For each child, determine which matched prefix (if
+                        // any) covers it. A child is covered when all its
+                        // bind_ref paths fall under a single matched prefix.
+                        // Never remove conditional panels.
+                        // We replace each covered child with a sentinel (None)
+                        // and record the first occurrence index per prefix so
+                        // we can insert the fragment at that position.
+                        let mut first_position_for_prefix: Vec<Option<usize>> =
+                            vec![None; matched_prefixes.len()];
+
+                        let mut new_children: Vec<Option<AemNode>> =
+                            children.drain(..).map(Some).collect();
+
+                        for (idx, slot) in new_children.iter_mut().enumerate() {
+                            let child = slot.as_ref().unwrap();
+                            let is_cond = matches!(
+                                child,
+                                AemNode::Panel {
+                                    is_conditional: true,
+                                    ..
+                                }
+                            );
+                            if is_cond {
+                                continue;
+                            }
+                            let child_paths =
+                                collect_child_bind_ref_full_paths(std::slice::from_ref(child));
+                            if child_paths.is_empty() {
+                                continue;
+                            }
+                            // Find which prefix covers all of this child's paths
+                            let covering_prefix_idx = matched_prefixes.iter().position(|mp| {
+                                child_paths
+                                    .iter()
+                                    .all(|cp| cp == mp || cp.starts_with(&format!("{}/", mp)))
+                            });
+                            if let Some(prefix_idx) = covering_prefix_idx {
+                                // Record the first position where this prefix's
+                                // fields appeared
+                                if first_position_for_prefix[prefix_idx].is_none() {
+                                    first_position_for_prefix[prefix_idx] = Some(idx);
+                                }
+                                // Mark for removal
+                                *slot = None;
+                            }
+                        }
+
+                        // Insert fragment nodes at the position of the first
+                        // removed child for each group, sorted by position.
+                        let mut insertions: Vec<(usize, AemNode)> = frag_nodes
+                            .into_iter()
+                            .enumerate()
+                            .map(|(frag_idx, frag_node)| {
+                                let pos = first_position_for_prefix[frag_idx]
+                                    .unwrap_or(new_children.len());
+                                (pos, frag_node)
+                            })
+                            .collect();
+                        insertions.sort_by_key(|(pos, _)| *pos);
+
+                        // Rebuild: walk through slots, inserting fragments at
+                        // the recorded positions
+                        let mut result = Vec::new();
+                        let mut next_insertion = 0;
+                        for (idx, slot) in new_children.into_iter().enumerate() {
+                            // Insert any fragments whose position matches this index
+                            while next_insertion < insertions.len()
+                                && insertions[next_insertion].0 == idx
+                            {
+                                result.push(insertions[next_insertion].1.clone());
+                                next_insertion += 1;
+                            }
+                            if let Some(child) = slot {
+                                result.push(child);
+                            }
+                        }
+                        // Append any remaining fragments (fallback)
+                        for (_, frag) in insertions.into_iter().skip(next_insertion) {
+                            result.push(frag);
+                        }
+
+                        *children = result;
                     }
                 }
             }
