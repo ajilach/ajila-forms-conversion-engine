@@ -680,10 +680,6 @@ impl AnalysisModule for ListDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        // Phase 0 (standalone marker merge) now runs earlier in the pipeline
-        // via StandaloneMarkerMerger. Re-run here as a no-op safety net.
-        merge_standalone_markers(doc, self.name());
-
         // Phase 1: Walk root groups in document order.  For each TextBlock
         // that starts with a list marker we record it as a candidate.  Any
         // non-TextBlock root (field, checkbox, heading, …) or a TextBlock
@@ -887,24 +883,21 @@ impl AnalysisModule for ListDetector {
                 (curr_top, last_bottom)
             };
 
-            let both_non_bold = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
+            // Whitespace-only leaves/headers don't break non-bold list runs
+            // (they're just empty placeholders), but they DO break bold runs
+            // (bold numbered items like "1. Title" are headings, not lists).
+            let ignore_ws_leaves = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
             let has_intervening = non_tb_root_ys.iter().any(|&y| {
-                if y > range_lo && y < range_hi {
-                    if both_non_bold && ws_leaf_ys.contains(&y) {
-                        return false;
-                    }
-                    true
-                } else {
-                    false
-                }
+                y > range_lo
+                    && y < range_hi
+                    && !(ignore_ws_leaves && ws_leaf_ys.contains(&y))
             }) || non_marker_tb_bounds.iter().any(|sep| {
                 let sep_bottom = sep.y + sep.height;
                 let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
                 let item_x_lo = last.2.x.min(bounds.x);
                 let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
                 let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
-                let not_continuation = sep.x <= item_x_lo + x_tol;
-                y_overlap && x_overlap && not_continuation
+                y_overlap && x_overlap
             });
 
             if has_intervening {
