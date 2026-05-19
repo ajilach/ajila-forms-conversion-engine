@@ -1052,6 +1052,71 @@ fn test_aaab_des_label_alignment() {
 }
 
 #[test]
+fn test_bbdo_spanish_address_labels_are_on_same_line() {
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut bp = Blueprint::from_pdf(input_path("BBDO_019_SP.pdf")).unwrap();
+    let states = bp.states().unwrap();
+    let default_state = states
+        .iter()
+        .next()
+        .expect("should have at least one state");
+    let flattened = &default_state.flattened;
+
+    fn find_text_by_content<'a>(
+        flattened: &'a flattened::Flattened,
+        expected: &str,
+    ) -> &'a flattened::FlattenedNode {
+        let mut matches = flattened.iter_nodes().filter(|n| {
+            if let FlattenedNodeKind::Text { content, .. } = &n.kind {
+                content.trim() == expected
+            } else {
+                false
+            }
+        });
+
+        let first = matches.next().unwrap_or_else(|| {
+            panic!("Text node with content '{expected}' not found in BBDO_019_SP")
+        });
+
+        assert!(
+            matches.next().is_none(),
+            "Expected exactly one text node with content '{expected}', found multiple"
+        );
+
+        first
+    }
+
+    let postal = find_text_by_content(flattened, "Código postal");
+    let city = find_text_by_content(flattened, "Ciudad");
+    let country = find_text_by_content(flattened, "País");
+
+    let tolerance = rust_decimal::Decimal::from_str("0.01").unwrap();
+
+    assert!(
+        (postal.y - city.y).abs() < tolerance,
+        "'Código postal' (y={}) and 'Ciudad' (y={}) should be on the same line",
+        postal.y,
+        city.y
+    );
+
+    assert!(
+        (postal.y - country.y).abs() < tolerance,
+        "'Código postal' (y={}) and 'País' (y={}) should be on the same line",
+        postal.y,
+        country.y
+    );
+
+    assert!(
+        postal.x < city.x && city.x < country.x,
+        "Expected left-to-right order 'Código postal' -> 'Ciudad' -> 'País', got x={}, {}, {}",
+        postal.x,
+        city.x,
+        country.x
+    );
+}
+
+#[test]
 fn test_debug_des_postalcode_structure() {
     // Debug the XFA structure for DES_PostalCode
     let bp = Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).unwrap();
@@ -16442,8 +16507,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
         .collect();
     assert_eq!(
         sig_frags.len(),
-        3,
-        "Expected exactly 3 Signature fragment nodes, found {}.\nAll fragments: {:?}",
+        4,
+        "Expected exactly 4 Signature fragment nodes, found {}.\nAll fragments: {:?}",
         sig_frags.len(),
         fragment_refs
     );
@@ -16462,8 +16527,8 @@ fn test_aaki_has_exactly_two_signature_fragments() {
 
     assert_eq!(
         fragment_refs.len(),
-        4,
-        "Expected exactly 4 fragment nodes (3 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        5,
+        "Expected exactly 5 fragment nodes (4 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -29053,17 +29118,12 @@ fn test_bage_aem_fragment_position_within_panel() {
                     let items: Vec<Item> = children
                         .iter()
                         .map(|c| match c {
-                            AemNode::TitleDraw { content, .. } => {
-                                Item::Heading(content.clone())
-                            }
+                            AemNode::TitleDraw { content, .. } => Item::Heading(content.clone()),
                             AemNode::Fragment { frag_ref, .. } => {
-                                let name =
-                                    frag_ref.rsplit('/').next().unwrap_or(frag_ref);
+                                let name = frag_ref.rsplit('/').next().unwrap_or(frag_ref);
                                 Item::Fragment(name.to_string())
                             }
-                            AemNode::Panel { name, .. } => {
-                                Item::Other(format!("Panel({})", name))
-                            }
+                            AemNode::Panel { name, .. } => Item::Other(format!("Panel({})", name)),
                             AemNode::TextField { name, .. } => {
                                 Item::Other(format!("TextField({})", name))
                             }
@@ -29104,25 +29164,31 @@ fn test_bage_aem_fragment_position_within_panel() {
     let individual_pos = items
         .iter()
         .position(|i| matches!(i, Item::Fragment(f) if f.contains("IndividualBasic1")))
-        .unwrap_or_else(|| panic!(
-            "Should find IndividualBasic1 fragment in panel with 'Asset manager'. Items: {:?}",
-            items
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "Should find IndividualBasic1 fragment in panel with 'Asset manager'. Items: {:?}",
+                items
+            )
+        });
 
     let address_pos = items
         .iter()
         .position(|i| matches!(i, Item::Fragment(f) if f.contains("AddressGeneric1")))
-        .unwrap_or_else(|| panic!(
-            "Should find AddressGeneric1 fragment in panel with 'Asset manager'. Items: {:?}",
-            items
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "Should find AddressGeneric1 fragment in panel with 'Asset manager'. Items: {:?}",
+                items
+            )
+        });
 
     // IndividualBasic1 should come right after the "Asset manager" heading
     assert!(
         individual_pos == heading_pos + 1,
         "IndividualBasic1 fragment (pos {}) should appear right after 'Asset manager' heading (pos {}). \
          Fragments must be placed at the position of the fields they replace, not appended at the end. Items: {:?}",
-        individual_pos, heading_pos, items
+        individual_pos,
+        heading_pos,
+        items
     );
 
     // AddressGeneric1 should come right after IndividualBasic1
@@ -29130,6 +29196,90 @@ fn test_bage_aem_fragment_position_within_panel() {
         address_pos == individual_pos + 1,
         "AddressGeneric1 fragment (pos {}) should appear right after IndividualBasic1 fragment (pos {}). \
          Fragments must be placed at the position of the fields they replace, not appended at the end. Items: {:?}",
-        address_pos, individual_pos, items
+        address_pos,
+        individual_pos,
+        items
+    );
+}
+
+#[test]
+fn test_bbdo_019_merge_contains_tax_compliance_text_in_all_languages() {
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured;
+
+    fn normalize_ws(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    fn collect_text_for_language(
+        nodes: &[crate::structured::StructuredNode],
+        lang: &str,
+    ) -> String {
+        let mut out = String::new();
+        helpers::walk_structured_nodes(nodes, &mut |node| match node {
+            crate::structured::StructuredNode::Paragraph(p) => {
+                out.push_str(&p.content.plain_text_in(lang));
+                out.push('\n');
+            }
+            crate::structured::StructuredNode::Heading(h) => {
+                out.push_str(&h.content.plain_text_in(lang));
+                out.push('\n');
+            }
+            crate::structured::StructuredNode::Footnote(f) => {
+                out.push_str(&f.content.plain_text_in(lang));
+                out.push('\n');
+            }
+            crate::structured::StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    out.push_str(&label.plain_text_in(lang));
+                    out.push('\n');
+                }
+            }
+            crate::structured::StructuredNode::List(l) => {
+                for item in &l.items {
+                    out.push_str(&item.plain_text_in(lang));
+                    out.push('\n');
+                }
+            }
+            _ => {}
+        });
+        out
+    }
+
+    let de = run_exhaustive_to_envelope(input_path("BBDO_019_DE.pdf"), "de")
+        .expect("Failed to process BBDO_019_DE");
+    let en = run_exhaustive_to_envelope(input_path("BBDO_019_EN.pdf"), "en")
+        .expect("Failed to process BBDO_019_EN");
+    let es = run_exhaustive_to_envelope(input_path("BBDO_019_SP.pdf"), "es")
+        .expect("Failed to process BBDO_019_SP");
+
+    let merged = structured::merge_translations(vec![de, en, es], None)
+        .expect("BBDO_019 DE/EN/SP merge should succeed");
+
+    let de_text = normalize_ws(&collect_text_for_language(&merged.content, "de"));
+    let en_text = normalize_ws(&collect_text_for_language(&merged.content, "en"));
+    let es_text = normalize_ws(&collect_text_for_language(&merged.content, "es"));
+
+    let expected_de = normalize_ws(
+        "ch bestätige hiermit, dass ich allen Gesetzen und Vorschriften in meinem Wohnsitzland in Bezug auf die unter der oben genannten Bankbeziehung zu UBS Europe SE gehaltenen Vermögenswerte nachgekommen bin und auch in Zukunft nachkommen werde. Darunter fallen unter anderem die Zahlung jeglicher Steuern, Abgaben und sonstige Gebühren sowie, sofern anwendbar, die Befolgung der geltenden Melde- und Offenlegungspflichten, Devisenbestimmungen oder sonstige Genehmigungsvorschriften.",
+    );
+    let expected_en = normalize_ws(
+        "hereby confirm that I comply with all laws and regulations in my country of residence with respect to the assets that are held in the above mentioned account relationship with UBS Europe SE, including without limitation, the payment of taxes, duties and charges of any kind and, if applicable, reporting and disclosure and foreign exchange or other approval requirements, and that I will continue to do so in the future.",
+    );
+    let expected_es = normalize_ws(
+        "Confirmo mediante la presente que he cumplido, y continuaré cumpliendo en el futuro, todas las leyes y normativas de mi país de residencia con respecto a los activos mantenidos en la cuenta bancaria con UBS Europe SE arriba mencionada, lo que incluye, sin limitación alguna, el pago de impuestos, obligaciones y gravámenes de cualquier tipo cuando sea aplicable y los requisitos aplicables de presentación de informes, divulgación de información y tipos de cambio, u otros requisitos de autorización.",
+    );
+
+    assert!(
+        de_text.contains(&expected_de),
+        "Merged DE text should contain expected tax-compliance paragraph"
+    );
+    assert!(
+        en_text.contains(&expected_en),
+        "Merged EN text should contain expected tax-compliance paragraph"
+    );
+    assert!(
+        es_text.contains(&expected_es),
+        "Merged ES text should contain expected tax-compliance paragraph"
     );
 }

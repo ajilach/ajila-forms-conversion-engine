@@ -4222,6 +4222,7 @@ impl Flattened {
         };
         let mut current_y = parent_position.y;
         let mut max_height_in_row = Decimal::ZERO;
+        let mut row_growable_slack = Decimal::ZERO;
         let start_y = parent_position.y;
 
         // For positioned layout, track the maximum extent (bottom-most point of all children)
@@ -4288,6 +4289,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     let layout_ctx = if layout == Layout::Table {
@@ -4494,6 +4496,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4572,6 +4575,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4695,6 +4699,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4785,6 +4790,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -4896,6 +4902,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -4979,6 +4986,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -5299,6 +5307,7 @@ impl Flattened {
         max_height_in_row: &mut Num,
         _flattened_children: &mut Vec<FlattenedKind>,
         ctx: &FlattenContext,
+        row_growable_slack: &mut Num,
     ) -> Result<(Position, Position, Layout, Num), String> {
         // Check if explicit coordinates are provided
         let has_explicit_x = node.x.is_some();
@@ -5597,14 +5606,57 @@ impl Flattened {
                 // Elements flow horizontally from left to right. When an element doesn't fit
                 // in the remaining width, it wraps to the next line.
 
-                // Check if we need to wrap to next line
-                if *current_x + width > parent_position.x + parent_position.width
-                    && *current_x > parent_position.x
-                {
+                // Check if we need to wrap to next line.
+                let mut should_wrap = *current_x + width > parent_position.x + parent_position.width
+                    && *current_x > parent_position.x;
+
+                // Suppress false wrapping caused by heuristic width overestimation of
+                // preceding growable elements. The `row_growable_slack` accumulates how
+                // much wider those elements were estimated vs their actual font-measured
+                // width. If the overflow is within that slack AND the current element
+                // has an explicit width, the row would fit with accurate measurements.
+                // Only explicitly-sized elements qualify because growable elements that
+                // overflow should wrap normally (their overflow is content-driven).
+                if should_wrap && node.w.is_some() {
+                    let overflow = (*current_x + width)
+                        - (parent_position.x + parent_position.width);
+                    if overflow <= *row_growable_slack {
+                        should_wrap = false;
+                    }
+                }
+
+                if should_wrap {
                     // Wrap to next line
                     *current_x = parent_position.x;
                     *current_y += *max_height_in_row;
                     *max_height_in_row = Decimal::ZERO;
+                    *row_growable_slack = Decimal::ZERO;
+                }
+
+                // Track heuristic slack for growable Draw elements (w not specified).
+                // The heuristic `calculate_natural_text_width` uses 60%-of-em which
+                // overestimates for most proportional fonts. Font-based measurement
+                // gives the accurate width; the difference is "slack" that can absorb
+                // overflow of later explicitly-sized siblings.
+                if node.w.is_none() {
+                    let is_draw = matches!(&node.kind, XfaNodeKind::Draw)
+                        || matches!(
+                            &node.kind,
+                            XfaNodeKind::Element { tag_name, .. } if tag_name == "draw"
+                        );
+                    if is_draw {
+                        let text = ctx.extract_text(&node.children).unwrap_or_default();
+                        if !text.is_empty() {
+                            let font_based =
+                                Self::calculate_natural_text_width_font_based(&text, &node.font);
+                            // Only count slack if font measurement is plausible (≥60% of heuristic).
+                            // This guards against incorrect font resolution producing
+                            // unrealistically small widths that inflate slack.
+                            if width > font_based && font_based >= width * num(0.6) {
+                                *row_growable_slack += width - font_based;
+                            }
+                        }
+                    }
                 }
 
                 // Position at current flow position (x and y properties are ignored)
@@ -5810,6 +5862,28 @@ impl Flattened {
         let padded_width = text_width + font_size_f32 * 0.5;
 
         Decimal::from_f32(padded_width).unwrap_or_else(|| num(100.0))
+    }
+
+    /// Calculate the natural width using font-based measurement for accurate results.
+    /// Returns the actual text width based on real font metrics (used for determining
+    /// how much the heuristic overestimates in lr-tb slack tracking).
+    fn calculate_natural_text_width_font_based(text: &str, font: &Option<Font>) -> Num {
+        let font_size = font.as_ref().map(|f| f.size).unwrap_or_else(|| num(10.0));
+
+        let xfa_font = font.clone().unwrap_or_default();
+        let mut measurer = TextMeasurer::new();
+        let large_width = num(10000.0);
+        if let Ok(block_metrics) =
+            measurer.measure_text_block(text, &Some(xfa_font), &None, large_width)
+        {
+            if block_metrics.total_width > Decimal::ZERO {
+                // Match the heuristic's padding style for consistent comparison
+                return block_metrics.total_width + font_size * num(0.5);
+            }
+        }
+
+        // If font-based measurement fails, return the heuristic (no slack)
+        Self::calculate_natural_text_width(text, font)
     }
 
     /// Estimate the number of text lines for word-wrapped content.
