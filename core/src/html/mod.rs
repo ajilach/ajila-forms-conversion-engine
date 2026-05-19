@@ -512,6 +512,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
 fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &str) -> String {
     let id = escape_attr(field_id);
     let name = escape_attr(&f.name.to_string());
+    let required_attr = if f.required { " required" } else { "" };
     let placeholder = f
         .placeholder
         .as_ref()
@@ -562,7 +563,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             attrs
         }
 
@@ -571,7 +572,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(max) = max_length {
                 attrs.push_str(&format!(" maxlength=\"{}\"", max));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&escape_html(v));
             }
@@ -596,7 +597,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(InputValue::Number(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", v));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             attrs
         }
 
@@ -608,7 +609,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             attrs
         }
 
@@ -620,7 +621,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             attrs
         }
 
@@ -632,7 +633,7 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             if let Some(InputValue::Text(v)) = &f.value {
                 attrs.push_str(&format!(" value=\"{}\"", escape_attr(v)));
             }
-            attrs.push_str(" class=\"form-input\">");
+            attrs.push_str(&format!(" class=\"form-input\"{}>", required_attr));
             attrs
         }
 
@@ -640,8 +641,8 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             let checked = matches!(&f.value, Some(InputValue::Bool(true)));
             let checked_attr = if checked { " checked" } else { "" };
             format!(
-                "<input type=\"checkbox\" id=\"{}\" name=\"{}\" class=\"form-checkbox\"{}>",
-                id, name, checked_attr
+                "<input type=\"checkbox\" id=\"{}\" name=\"{}\" class=\"form-checkbox\"{}{}>",
+                id, name, checked_attr, required_attr
             )
         }
 
@@ -688,11 +689,12 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
                 };
 
                 html.push_str(&format!(
-                    "  <label class=\"radio-option\">\n    <input type=\"radio\" id=\"{}\" name=\"{}\" value=\"{}\" class=\"form-radio\"{}>\n    <span>{}</span>\n  </label>\n",
+                    "  <label class=\"radio-option\">\n    <input type=\"radio\" id=\"{}\" name=\"{}\" value=\"{}\" class=\"form-radio\"{}{}>\n    <span>{}</span>\n  </label>\n",
                     escape_attr(&option_id),
                     name,
                     escape_attr(opt_value),
                     checked_attr,
+                    required_attr,
                     label_html
                 ));
             }
@@ -702,8 +704,8 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
 
         FieldType::Select { options } => {
             let mut html = format!(
-                "<select id=\"{}\" name=\"{}\" class=\"form-select\">\n",
-                id, name
+                "<select id=\"{}\" name=\"{}\" class=\"form-select\"{}>\n",
+                id, name, required_attr
             );
 
             let selected = f.value.as_ref().and_then(|v| {
@@ -1606,6 +1608,7 @@ mod tests {
             placeholder: Some(crate::structured::TranslatableString::Plain(
                 "Enter text".to_string(),
             )),
+            required: false,
         };
 
         let node = StructuredNode::Field(field);
@@ -1638,6 +1641,7 @@ mod tests {
             },
             value: Some(InputValue::Text("Option A".to_string())),
             placeholder: None,
+            required: false,
         };
 
         let node = StructuredNode::Field(field);
@@ -1663,6 +1667,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         });
 
         let repeatable = RepeatableNode {
@@ -1728,6 +1733,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         };
 
         let nodes = vec![

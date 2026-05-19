@@ -613,9 +613,14 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
                         format!("<p>{html}</p>")
                     });
                 }
-                // H2 becomes panel jcr:title (plain text), so use plain text keys
+                // H2 becomes panel jcr:title (plain text) AND page-panel titledraw
+                // _value (HTML-wrapped <p>…</p>). We need both keys so that
+                // jcr:title and the titledraw _value are both translatable.
                 HeadingLevel::H2 => {
                     extract_from_inline_text(&h.content, master_lang, map);
+                    extract_rich_text_translations(&h.content, master_lang, map, |html| {
+                        format!("<p>{html}</p>")
+                    });
                 }
                 // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys
                 _ => {
@@ -783,7 +788,9 @@ fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut I18n
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             extract_from_inline_node(inner, master_lang, map);
         }
         InlineNode::Link(link) => {
@@ -1384,10 +1391,10 @@ mod tests {
 
         assert_eq!(translations[expected_key]["de"], "Kunde");
 
-        // Must NOT have HTML-wrapped key
+        // H2 also produces an HTML-wrapped key for the page-panel titledraw
         assert!(
-            !translations.contains_key("<p>Client</p>"),
-            "H2 panel title key must NOT have HTML wrapping"
+            translations.contains_key("<p>Client</p>"),
+            "H2 panel title must also have HTML-wrapped key for titledraw _value"
         );
     }
 
@@ -1486,6 +1493,7 @@ mod tests {
             som_path: None,
             value: None,
             placeholder: None,
+            required: false,
         });
 
         let translations = extract_translations(&[node], "en");
@@ -1720,6 +1728,7 @@ mod tests {
             som_path: None,
             value: None,
             placeholder: None,
+            required: false,
         })];
 
         let mut translations = extract_translations(&content, "en");

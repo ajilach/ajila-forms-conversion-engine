@@ -2763,8 +2763,7 @@ impl Flattened {
                 {
                     let mut break_y = current_content_y + content_height;
                     let content_end = current_content_y + consumed_height;
-                    let midpoint_x =
-                        content_offset_x + content_width / Decimal::TWO;
+                    let midpoint_x = content_offset_x + content_width / Decimal::TWO;
                     let wide_threshold = content_width * num(0.3);
 
                     // Detect positioned-subform boundaries from the flattened
@@ -2774,25 +2773,19 @@ impl Flattened {
                     // the same Y (since they have y=0 within the positioned
                     // parent). We identify these Y values by checking for wide
                     // elements on both sides of the midpoint.
-                    let mut y_info: std::collections::HashMap<
-                        rust_decimal::Decimal,
-                        (bool, bool),
-                    > = std::collections::HashMap::new();
+                    let mut y_info: std::collections::HashMap<rust_decimal::Decimal, (bool, bool)> =
+                        std::collections::HashMap::new();
                     fn collect_wide_columns(
                         nodes: &[FlattenedKind],
                         midpoint_x: Num,
                         wide_threshold: Num,
-                        info: &mut std::collections::HashMap<
-                            rust_decimal::Decimal,
-                            (bool, bool),
-                        >,
+                        info: &mut std::collections::HashMap<rust_decimal::Decimal, (bool, bool)>,
                     ) {
                         for kind in nodes {
                             match kind {
                                 FlattenedKind::Node(node) => {
                                     if node.width >= wide_threshold {
-                                        let entry =
-                                            info.entry(node.y).or_insert((false, false));
+                                        let entry = info.entry(node.y).or_insert((false, false));
                                         let center = node.x + node.width / Decimal::TWO;
                                         if center < midpoint_x {
                                             entry.0 = true;
@@ -4222,6 +4215,7 @@ impl Flattened {
         };
         let mut current_y = parent_position.y;
         let mut max_height_in_row = Decimal::ZERO;
+        let mut row_growable_slack = Decimal::ZERO;
         let start_y = parent_position.y;
 
         // For positioned layout, track the maximum extent (bottom-most point of all children)
@@ -4288,6 +4282,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     let layout_ctx = if layout == Layout::Table {
@@ -4494,6 +4489,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4572,6 +4568,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4695,6 +4692,7 @@ impl Flattened {
                             &mut max_height_in_row,
                             flattened_children,
                             &child_ctx,
+                            &mut row_growable_slack,
                         )?;
 
                     // For positioned layout, track the max extent (relative to parent_position)
@@ -4785,6 +4783,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -4896,6 +4895,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -4979,6 +4979,7 @@ impl Flattened {
                                     &mut max_height_in_row,
                                     flattened_children,
                                     &child_ctx,
+                                    &mut row_growable_slack,
                                 )?;
 
                             // For positioned layout, track the max extent (relative to parent_position)
@@ -5299,6 +5300,7 @@ impl Flattened {
         max_height_in_row: &mut Num,
         _flattened_children: &mut Vec<FlattenedKind>,
         ctx: &FlattenContext,
+        row_growable_slack: &mut Num,
     ) -> Result<(Position, Position, Layout, Num), String> {
         // Check if explicit coordinates are provided
         let has_explicit_x = node.x.is_some();
@@ -5597,14 +5599,58 @@ impl Flattened {
                 // Elements flow horizontally from left to right. When an element doesn't fit
                 // in the remaining width, it wraps to the next line.
 
-                // Check if we need to wrap to next line
-                if *current_x + width > parent_position.x + parent_position.width
-                    && *current_x > parent_position.x
-                {
+                // Check if we need to wrap to next line.
+                let mut should_wrap = *current_x + width
+                    > parent_position.x + parent_position.width
+                    && *current_x > parent_position.x;
+
+                // Suppress false wrapping caused by heuristic width overestimation of
+                // preceding growable elements. The `row_growable_slack` accumulates how
+                // much wider those elements were estimated vs their actual font-measured
+                // width. If the overflow is within that slack AND the current element
+                // has an explicit width, the row would fit with accurate measurements.
+                // Only explicitly-sized elements qualify because growable elements that
+                // overflow should wrap normally (their overflow is content-driven).
+                if should_wrap && node.w.is_some() {
+                    let overflow =
+                        (*current_x + width) - (parent_position.x + parent_position.width);
+                    if overflow <= *row_growable_slack {
+                        should_wrap = false;
+                    }
+                }
+
+                if should_wrap {
                     // Wrap to next line
                     *current_x = parent_position.x;
                     *current_y += *max_height_in_row;
                     *max_height_in_row = Decimal::ZERO;
+                    *row_growable_slack = Decimal::ZERO;
+                }
+
+                // Track heuristic slack for growable Draw elements (w not specified).
+                // The heuristic `calculate_natural_text_width` uses 60%-of-em which
+                // overestimates for most proportional fonts. Font-based measurement
+                // gives the accurate width; the difference is "slack" that can absorb
+                // overflow of later explicitly-sized siblings.
+                if node.w.is_none() {
+                    let is_draw = matches!(&node.kind, XfaNodeKind::Draw)
+                        || matches!(
+                            &node.kind,
+                            XfaNodeKind::Element { tag_name, .. } if tag_name == "draw"
+                        );
+                    if is_draw {
+                        let text = ctx.extract_text(&node.children).unwrap_or_default();
+                        if !text.is_empty() {
+                            let font_based =
+                                Self::calculate_natural_text_width_font_based(&text, &node.font);
+                            // Only count slack if font measurement is plausible (≥60% of heuristic).
+                            // This guards against incorrect font resolution producing
+                            // unrealistically small widths that inflate slack.
+                            if width > font_based && font_based >= width * num(0.6) {
+                                *row_growable_slack += width - font_based;
+                            }
+                        }
+                    }
                 }
 
                 // Position at current flow position (x and y properties are ignored)
@@ -5810,6 +5856,28 @@ impl Flattened {
         let padded_width = text_width + font_size_f32 * 0.5;
 
         Decimal::from_f32(padded_width).unwrap_or_else(|| num(100.0))
+    }
+
+    /// Calculate the natural width using font-based measurement for accurate results.
+    /// Returns the actual text width based on real font metrics (used for determining
+    /// how much the heuristic overestimates in lr-tb slack tracking).
+    fn calculate_natural_text_width_font_based(text: &str, font: &Option<Font>) -> Num {
+        let font_size = font.as_ref().map(|f| f.size).unwrap_or_else(|| num(10.0));
+
+        let xfa_font = font.clone().unwrap_or_default();
+        let mut measurer = TextMeasurer::new();
+        let large_width = num(10000.0);
+        if let Ok(block_metrics) =
+            measurer.measure_text_block(text, &Some(xfa_font), &None, large_width)
+        {
+            if block_metrics.total_width > Decimal::ZERO {
+                // Match the heuristic's padding style for consistent comparison
+                return block_metrics.total_width + font_size * num(0.5);
+            }
+        }
+
+        // If font-based measurement fails, return the heuristic (no slack)
+        Self::calculate_natural_text_width(text, font)
     }
 
     /// Estimate the number of text lines for word-wrapped content.
@@ -6769,6 +6837,11 @@ impl Flattened {
         let black = Rgba([0u8, 0u8, 0u8, 255u8]);
         let dark_gray = Rgba([80u8, 80u8, 80u8, 255u8]);
 
+        // Resolve hyphenation dictionary for the document language so that
+        // text wrapping during rendering matches the height calculation in
+        // split_draw_into_paragraph_nodes (which already uses the dict).
+        let hyph_dict = super::xfa::hyphenation::dict_for_language(&self.language);
+
         // ============================================
         // Draw actual content (as in PDF) - no debug overlay
         // ============================================
@@ -6813,9 +6886,7 @@ impl Flattened {
                     // Determine widget type from hints
                     let is_checkbox_or_radio = node
                         .widget_type()
-                        .map(|wt| {
-                            matches!(wt, WidgetKind::Checkbox | WidgetKind::Radio)
-                        })
+                        .map(|wt| matches!(wt, WidgetKind::Checkbox | WidgetKind::Radio))
                         .unwrap_or(false);
 
                     if is_checkbox_or_radio {
@@ -6825,7 +6896,9 @@ impl Flattened {
                         let box_y = y + (h - box_size) / 2;
                         let line_color = Rgba([80u8, 80u8, 80u8, 255u8]);
 
-                        Self::draw_rect_outline(&mut img, box_x, box_y, box_size, box_size, line_color);
+                        Self::draw_rect_outline(
+                            &mut img, box_x, box_y, box_size, box_size, line_color,
+                        );
 
                         if let Some(true) = is_checked {
                             let inset = (box_size as f32 * 0.2) as i32;
@@ -6846,33 +6919,34 @@ impl Flattened {
 
                         // Only draw field VALUE (not name) in black if present
                         if !value.is_empty() {
-                        // Get font style from node, or use XFA defaults
-                        let xfa_font = node.style.font.clone().unwrap_or_default();
-                        let font_size = xfa_font.size.to_f32().unwrap_or(10.0);
-                        let scaled_font_size = (font_size * scale).max(8.0);
-                        let text_scale = PxScale::from(scaled_font_size);
+                            // Get font style from node, or use XFA defaults
+                            let xfa_font = node.style.font.clone().unwrap_or_default();
+                            let font_size = xfa_font.size.to_f32().unwrap_or(10.0);
+                            let scaled_font_size = (font_size * scale).max(8.0);
+                            let text_scale = PxScale::from(scaled_font_size);
 
-                        // Get the appropriate font for this style (with fallback)
-                        let render_font = {
-                            let mut mgr = font_manager
-                                .lock()
-                                .map_err(|e| format!("Lock error: {}", e))?;
-                            mgr.get_font(&xfa_font)
-                                .unwrap_or_else(|_| fallback_font.clone())
-                        };
+                            // Get the appropriate font for this style (with fallback)
+                            let render_font = {
+                                let mut mgr = font_manager
+                                    .lock()
+                                    .map_err(|e| format!("Lock error: {}", e))?;
+                                mgr.get_font(&xfa_font)
+                                    .unwrap_or_else(|_| fallback_font.clone())
+                            };
 
-                        // Get text color from style or use black
-                        let text_color = node
-                            .style
-                            .font
-                            .as_ref()
-                            .and_then(|f| f.color)
-                            .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
-                            .unwrap_or(black);
+                            // Get text color from style or use black
+                            let text_color = node
+                                .style
+                                .font
+                                .as_ref()
+                                .and_then(|f| f.color)
+                                .map(|(r, g, b)| Rgba([r, g, b, 255u8]))
+                                .unwrap_or(black);
 
-                        // Calculate content area inside border margins
-                        let (content_x, content_y, content_w, content_h) =
-                            if let Some(border) = &node.style.border {
+                            // Calculate content area inside border margins
+                            let (content_x, content_y, content_w, content_h) = if let Some(border) =
+                                &node.style.border
+                            {
                                 let ml = (border
                                     .margin_left
                                     .unwrap_or(Decimal::ZERO)
@@ -6902,35 +6976,35 @@ impl Flattened {
                                 (x, y, w, h)
                             };
 
-                        // Apply text alignment from para using font metrics (within content area)
-                        let text_x = Self::calculate_text_x(
-                            content_x,
-                            content_w,
-                            value,
-                            scaled_font_size,
-                            &node.style.para,
-                            &render_font,
-                        );
-                        let text_y = Self::calculate_text_y(
-                            content_y,
-                            content_h,
-                            scaled_font_size,
-                            &node.style.para,
-                            &render_font,
-                            0,
-                            1,
-                            scale,
-                        );
+                            // Apply text alignment from para using font metrics (within content area)
+                            let text_x = Self::calculate_text_x(
+                                content_x,
+                                content_w,
+                                value,
+                                scaled_font_size,
+                                &node.style.para,
+                                &render_font,
+                            );
+                            let text_y = Self::calculate_text_y(
+                                content_y,
+                                content_h,
+                                scaled_font_size,
+                                &node.style.para,
+                                &render_font,
+                                0,
+                                1,
+                                scale,
+                            );
 
-                        draw_text_mut(
-                            &mut img,
-                            text_color,
-                            text_x,
-                            text_y,
-                            text_scale,
-                            &render_font,
-                            value,
-                        );
+                            draw_text_mut(
+                                &mut img,
+                                text_color,
+                                text_x,
+                                text_y,
+                                text_scale,
+                                &render_font,
+                                value,
+                            );
                         }
                     }
                 }
@@ -7075,7 +7149,7 @@ impl Flattened {
                                 .para
                                 .as_ref()
                                 .and_then(|p| p.hyphenation.as_ref()),
-                            None, // dict resolved at call site if needed
+                            hyph_dict,
                         );
 
                         Self::render_text_glyph_by_glyph(
@@ -7108,11 +7182,14 @@ impl Flattened {
                             // Draw checkbox symbol as a rectangle
                             let box_size = (scaled_font_size * 0.75) as i32;
                             let box_x = content_x + 1;
-                            let box_y = content_y + ((scaled_font_size - box_size as f32) * 0.5) as i32;
+                            let box_y =
+                                content_y + ((scaled_font_size - box_size as f32) * 0.5) as i32;
                             let line_color = Rgba([100u8, 100u8, 100u8, 255u8]);
 
                             // Draw outline rectangle
-                            Self::draw_rect_outline(&mut img, box_x, box_y, box_size, box_size, line_color);
+                            Self::draw_rect_outline(
+                                &mut img, box_x, box_y, box_size, box_size, line_color,
+                            );
 
                             // Draw check mark if checked
                             if matches!(checkbox_char, Some('☑' | '☒' | '■' | '▪')) {
@@ -7127,60 +7204,62 @@ impl Flattened {
                                 );
                             }
                         } else {
-                        // Fallback to simple text rendering for plain text content
-                        // Use styled version to account for letter spacing
-                        // Skip wrapping when the node's width was computed from PDF
-                        // content stream glyph widths (NoWrap hint) since re-measuring
-                        // with the resolved font may yield different widths.
-                        let no_wrap = node.no_wrap;
-                        let lines = if no_wrap {
-                            vec![content.to_string()]
-                        } else {
-                            Self::wrap_text_with_font_styled(
-                                content,
-                                content_w as f32,
-                                scaled_font_size,
-                                &render_font,
-                                letter_spacing,
-                            )
-                        };
-                        let total_lines = lines.len();
-
-                        for (i, line) in lines.iter().enumerate() {
-                            // Calculate x position based on alignment (within content area)
-                            let line_x = Self::calculate_text_x(
-                                content_x,
-                                content_w,
-                                line,
-                                scaled_font_size,
-                                &node.style.para,
-                                &render_font,
-                            );
-
-                            // Calculate y position using AXTE-compliant method (within content area)
-                            let line_y = Self::calculate_text_y(
-                                content_y,
-                                content_h,
-                                scaled_font_size,
-                                &node.style.para,
-                                &render_font,
-                                i,
-                                total_lines,
-                                scale,
-                            );
-
-                            if line_y >= 0 && line_y < img_height as i32 - scaled_font_size as i32 {
-                                draw_text_mut(
-                                    &mut img,
-                                    text_color,
-                                    line_x,
-                                    line_y,
-                                    text_scale,
+                            // Fallback to simple text rendering for plain text content
+                            // Use styled version to account for letter spacing
+                            // Skip wrapping when the node's width was computed from PDF
+                            // content stream glyph widths (NoWrap hint) since re-measuring
+                            // with the resolved font may yield different widths.
+                            let no_wrap = node.no_wrap;
+                            let lines = if no_wrap {
+                                vec![content.to_string()]
+                            } else {
+                                Self::wrap_text_with_font_styled(
+                                    content,
+                                    content_w as f32,
+                                    scaled_font_size,
                                     &render_font,
+                                    letter_spacing,
+                                )
+                            };
+                            let total_lines = lines.len();
+
+                            for (i, line) in lines.iter().enumerate() {
+                                // Calculate x position based on alignment (within content area)
+                                let line_x = Self::calculate_text_x(
+                                    content_x,
+                                    content_w,
                                     line,
+                                    scaled_font_size,
+                                    &node.style.para,
+                                    &render_font,
                                 );
+
+                                // Calculate y position using AXTE-compliant method (within content area)
+                                let line_y = Self::calculate_text_y(
+                                    content_y,
+                                    content_h,
+                                    scaled_font_size,
+                                    &node.style.para,
+                                    &render_font,
+                                    i,
+                                    total_lines,
+                                    scale,
+                                );
+
+                                if line_y >= 0
+                                    && line_y < img_height as i32 - scaled_font_size as i32
+                                {
+                                    draw_text_mut(
+                                        &mut img,
+                                        text_color,
+                                        line_x,
+                                        line_y,
+                                        text_scale,
+                                        &render_font,
+                                        line,
+                                    );
+                                }
                             }
-                        }
                         }
                     }
                 }
@@ -8261,7 +8340,7 @@ impl Flattened {
                                 .get("style")
                                 .map(|style| {
                                     Self::parse_css_dimension(style, "vertical-align")
-                                        .map_or(false, |va| va > 0.0)
+                                        .is_some_and(|va| va > 0.0)
                                 })
                                 .unwrap_or(false);
 
@@ -8269,13 +8348,19 @@ impl Flattened {
                             let runs_before: usize = paragraphs.iter().map(|p| p.runs.len()).sum();
 
                             // Parse CSS letter-spacing from span style
-                            let span_letter_spacing = if let Some(style) = child.attributes.get("style") {
-                                let span_font = paragraphs.last().and_then(|p| p.font_size).unwrap_or(8.0);
-                                Self::parse_css_dimension_with_em(style, "letter-spacing", Some(span_font))
+                            let span_letter_spacing =
+                                if let Some(style) = child.attributes.get("style") {
+                                    let span_font =
+                                        paragraphs.last().and_then(|p| p.font_size).unwrap_or(8.0);
+                                    Self::parse_css_dimension_with_em(
+                                        style,
+                                        "letter-spacing",
+                                        Some(span_font),
+                                    )
                                     .or(run_letter_spacing)
-                            } else {
-                                run_letter_spacing
-                            };
+                                } else {
+                                    run_letter_spacing
+                                };
 
                             // Handle text_content if present
                             // Handle text_content with U+2029 support
@@ -8314,7 +8399,8 @@ impl Flattened {
 
                             // Mark newly added runs as superscript if vertical-align was positive
                             if span_superscript {
-                                let runs_after: usize = paragraphs.iter().map(|p| p.runs.len()).sum();
+                                let runs_after: usize =
+                                    paragraphs.iter().map(|p| p.runs.len()).sum();
                                 if runs_after > runs_before {
                                     let mut to_mark = runs_after - runs_before;
                                     for para in paragraphs.iter_mut().rev() {
@@ -9030,12 +9116,8 @@ impl Flattened {
                             effective_ls,
                         );
                     } else {
-                        let width = Self::measure_text_width(
-                            &current_word,
-                            font_size,
-                            font,
-                            effective_ls,
-                        );
+                        let width =
+                            Self::measure_text_width(&current_word, font_size, font, effective_ls);
                         tokens.push(LayoutToken {
                             text: current_word,
                             width,
@@ -9299,6 +9381,7 @@ impl Flattened {
     /// Per XFA spec (section on "Line Height" and "Paragraph Spacing"):
     /// - Each paragraph's height is computed from text wrapping within the draw width,
     ///   using AXTE line metrics (ascent, descent, line gap = 20% of font size).
+    ///
     /// Determine the font weight override from a rich text paragraph's runs.
     /// Returns `Some(Bold)` if all content runs are bold, `Some(Normal)` if all
     /// are normal, or `None` for mixed/empty paragraphs.

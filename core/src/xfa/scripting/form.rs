@@ -846,6 +846,13 @@ impl XfaForm {
 
     /// Re-flatten the form to reflect any changes
     pub fn refresh(&mut self) -> Result<(), String> {
+        // Run all Calculate scripts in the form to ensure cross-branch
+        // dependencies are resolved. Per XFA 3.3, Calculate scripts should
+        // re-run whenever dependent values change. This catches cases where
+        // a Calculate script on one branch reads a field value from another
+        // branch (e.g., Agreement.SectionTitle reading RB_Group_NeW.rawValue).
+        self.run_all_calculate_scripts();
+
         // Duplicate XFA nodes for dynamic subform instances (setInstances(N))
         // before reflattening so each instance produces its own flattened output.
         self.apply_dynamic_instances();
@@ -1545,6 +1552,28 @@ impl XfaForm {
         }
 
         Ok(())
+    }
+
+    /// Run all Calculate scripts registered in the form.
+    ///
+    /// Per XFA 3.3, Calculate scripts should re-run whenever any dependent value
+    /// changes. This method runs every Calculate script in the form, which handles
+    /// cross-branch dependencies (e.g., a Calculate script on `Agreement.SectionTitle`
+    /// that reads `RB_Group_NeW.rawValue` from a different branch of the XFA tree).
+    ///
+    /// Called by `refresh()` to ensure all Calculate-driven visibility changes
+    /// are resolved before re-flattening.
+    fn run_all_calculate_scripts(&mut self) {
+        let owners: Vec<SomPath> = self
+            .script_registry
+            .get_owners_with_activity(&EventActivity::Calculate)
+            .into_iter()
+            .cloned()
+            .collect();
+
+        for owner_path in owners {
+            let _ = self.execute_event(owner_path.as_str(), EventActivity::Calculate, None);
+        }
     }
 
     /// Find the parent exclGroup for a given field (public API)

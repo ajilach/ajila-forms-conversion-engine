@@ -1747,20 +1747,146 @@ fn collect_variable_scripts_recursive(nodes: &[XfaNode], scripts: &mut Vec<(Stri
     }
 }
 
-/// Extract the document language from the root subform's `locale` attribute.
+/// Extract the document language from the root subform's `locale` attribute,
+/// cross-checked against actual text content using `whatlang`.
 ///
 /// Per XFA 3.3 §17: the `locale` attribute on a `<subform>` specifies the
 /// prevailing locale using `language[_country]` format (e.g. `"de_DE"`, `"en_US"`).
 /// If no locale is found, falls back to `"en"` (ambient default per spec is `en_US`).
+///
+/// After extracting the locale-based language, we verify it against the actual
+/// text content. If `whatlang` detects a different language with high confidence,
+/// the detected language is used instead. This fixes cases where the locale
+/// attribute is incorrect (e.g. an English document with `locale="de_DE"`).
 pub fn extract_language_from_nodes(nodes: &[XfaNode]) -> String {
-    if let Some(root) = find_root_subform(nodes) {
+    let locale_lang = if let Some(root) = find_root_subform(nodes) {
         if let Some(locale) = root.attributes.get("locale") {
-            // locale is e.g. "de_DE", "en_US", "fr_FR" — take the language part before '_'
             let lang = locale.split('_').next().unwrap_or("en");
-            return lang.to_lowercase();
+            lang.to_lowercase()
+        } else {
+            "en".to_string()
+        }
+    } else {
+        return "en".to_string();
+    };
+
+    // Cross-check locale with actual text content
+    let text = collect_visible_text(nodes);
+    if text.len() >= 50 {
+        if let Some(info) = whatlang::detect(&text) {
+            let detected = whatlang_to_iso(info.lang());
+            if detected != locale_lang && info.confidence() > 0.8 {
+                log::info!(
+                    "Language override: locale says '{}' but text detection says '{}' (confidence: {:.0}%)",
+                    locale_lang,
+                    detected,
+                    info.confidence() * 100.0
+                );
+                return detected;
+            }
         }
     }
-    "en".to_string()
+
+    locale_lang
+}
+
+/// Collect visible text content from XFA nodes for language detection.
+///
+/// Walks the tree collecting text from `Draw` and `Field` caption nodes,
+/// skipping metadata subtrees (`variables`, `script`, `proto`, `pageSet`).
+/// Stops after collecting ~500 characters (enough for reliable detection).
+fn collect_visible_text(nodes: &[XfaNode]) -> String {
+    let mut buf = String::with_capacity(512);
+    collect_visible_text_recursive(nodes, &mut buf, false);
+    buf
+}
+
+fn collect_visible_text_recursive(nodes: &[XfaNode], buf: &mut String, inside_draw: bool) {
+    const MAX_LEN: usize = 5000;
+
+    for node in nodes {
+        if buf.len() >= MAX_LEN {
+            return;
+        }
+
+        // Skip metadata and non-content subtrees
+        match &node.kind {
+            XfaNodeKind::Element { tag_name, .. } => {
+                if matches!(
+                    tag_name.as_str(),
+                    "variables"
+                        | "script"
+                        | "proto"
+                        | "pageSet"
+                        | "event"
+                        | "calculate"
+                        | "items"
+                        | "validate"
+                        | "bind"
+                ) {
+                    continue;
+                }
+                // Enter caption subtrees (field labels contain prose)
+                if tag_name == "caption" {
+                    collect_visible_text_recursive(&node.children, buf, true);
+                    continue;
+                }
+            }
+            XfaNodeKind::PageSet => continue,
+            _ => {}
+        }
+
+        // Only collect text if we're inside a Draw node or caption
+        let in_content = inside_draw || matches!(node.kind, XfaNodeKind::Draw);
+
+        if in_content {
+            match &node.kind {
+                XfaNodeKind::Text { content } => {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() && trimmed.len() > 3 {
+                        buf.push_str(trimmed);
+                        buf.push(' ');
+                    }
+                }
+                XfaNodeKind::Element {
+                    text_content: Some(text),
+                    ..
+                } => {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() && trimmed.len() > 3 {
+                        buf.push_str(trimmed);
+                        buf.push(' ');
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Recurse into children, marking that we're inside a Draw subtree
+        collect_visible_text_recursive(&node.children, buf, in_content);
+    }
+}
+
+/// Map `whatlang::Lang` to ISO 639-1 two-letter code.
+fn whatlang_to_iso(lang: whatlang::Lang) -> String {
+    use whatlang::Lang;
+    match lang {
+        Lang::Deu => "de".to_string(),
+        Lang::Eng => "en".to_string(),
+        Lang::Fra => "fr".to_string(),
+        Lang::Ita => "it".to_string(),
+        Lang::Spa => "es".to_string(),
+        Lang::Por => "pt".to_string(),
+        Lang::Nld => "nl".to_string(),
+        Lang::Pol => "pl".to_string(),
+        Lang::Tur => "tr".to_string(),
+        Lang::Rus => "ru".to_string(),
+        Lang::Jpn => "ja".to_string(),
+        Lang::Cmn => "zh".to_string(),
+        Lang::Kor => "ko".to_string(),
+        Lang::Ara => "ar".to_string(),
+        other => format!("{:?}", other).to_lowercase(),
+    }
 }
 
 /// Extract both the document language and all `<variables><text>` values from

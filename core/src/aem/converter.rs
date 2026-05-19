@@ -893,7 +893,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: *max_length,
                 colspan,
@@ -909,7 +909,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: *max_length,
                 colspan,
@@ -925,7 +925,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -940,7 +940,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -955,7 +955,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: None,
                 colspan,
@@ -971,7 +971,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: None,
                 colspan,
@@ -1011,7 +1011,7 @@ fn convert_field(
                 label,
                 options: aem_options,
                 alignment: OptionAlignment::Vertical,
-                mandatory: true,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -1030,7 +1030,7 @@ fn convert_field(
                 name,
                 label,
                 options: aem_options,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -1353,8 +1353,16 @@ fn find_best_fragment_inner<'a>(
     }
 
     // Find fragments whose xsd_type_name is in the matching types.
-    // In strict mode, also require all panel leaves ⊆ fragment bound_elements.
+    // In strict mode, require all panel leaves ⊆ fragment bound_elements.
+    // In both modes, require that panel leaves cover at least half of the
+    // fragment's bound_elements. This prevents false matches where a single
+    // generic element name (e.g. "Name") matches a fragment with 3 bound
+    // elements.
+    // Prefer fragments with: 1) more overlap with bound elements,
+    // 2) more specific XSD type (fewest elements), 3) more bound elements.
     let mut best: Option<&ParsedFragment> = None;
+    let mut best_type_size: usize = usize::MAX;
+    let mut best_overlap: usize = 0;
     for fragment in fragments {
         if !matching_types.contains(&fragment.xsd_type_name.as_str()) {
             continue;
@@ -1362,13 +1370,44 @@ fn find_best_fragment_inner<'a>(
         if strict && !panel_leaves_subset_of_fragment(fragment, panel_leaves) {
             continue;
         }
-        // Prefer the fragment with the most bound elements (most specific).
+
+        // Compute overlap: how many of the fragment's bound elements are
+        // covered by the panel leaves.
+        let overlap = panel_leaves
+            .iter()
+            .filter(|l| fragment.bound_elements.iter().any(|be| be == l.as_str()))
+            .count();
+
+        // Require at least half (ceiling) of bound elements to be present.
+        let required = fragment.bound_elements.len().div_ceil(2);
+        if overlap < required {
+            continue;
+        }
+
+        let type_size = xsd_config
+            .registered_types
+            .get(&fragment.xsd_type_name)
+            .map(|rt| rt.elements.len())
+            .unwrap_or(usize::MAX);
+
         if let Some(prev) = best {
-            if fragment.bound_elements.len() > prev.bound_elements.len() {
+            if overlap > best_overlap {
+                best = Some(fragment);
+                best_type_size = type_size;
+                best_overlap = overlap;
+            } else if overlap == best_overlap && type_size < best_type_size {
+                best = Some(fragment);
+                best_type_size = type_size;
+            } else if overlap == best_overlap
+                && type_size == best_type_size
+                && fragment.bound_elements.len() > prev.bound_elements.len()
+            {
                 best = Some(fragment);
             }
         } else {
             best = Some(fragment);
+            best_type_size = type_size;
+            best_overlap = overlap;
         }
     }
 
@@ -1452,6 +1491,64 @@ fn to_fragment_bind_ref(bind_ref: &str, xsd_config: Option<&crate::xsd::XsdConfi
     }
 }
 
+/// Returns true if any node in the slice (or its descendants) is a conditional panel.
+fn contains_conditional(nodes: &[AemNode]) -> bool {
+    for node in nodes {
+        match node {
+            AemNode::Panel {
+                is_conditional: true,
+                ..
+            } => return true,
+            AemNode::Panel { children, .. }
+            | AemNode::Root { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                if contains_conditional(children) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Count how many complete instances of a fragment's bound_elements appear
+/// in the given leaves. E.g. if bound_elements = [Place, Date, Name] and
+/// leaves contains each 5 times, returns 5.
+fn count_fragment_instances(fragment: &ParsedFragment, leaves: &[String]) -> usize {
+    if fragment.bound_elements.is_empty() {
+        return 1;
+    }
+    fragment
+        .bound_elements
+        .iter()
+        .map(|elem| leaves.iter().filter(|l| *l == elem).count())
+        .min()
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// Create `n` Fragment nodes for the given fragment and bind_ref.
+fn make_fragment_nodes(
+    n: usize,
+    fragment: &ParsedFragment,
+    bind_ref: Option<String>,
+    ctx: &mut ConversionContext,
+) -> Vec<AemNode> {
+    (0..n)
+        .map(|_| {
+            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+            let uuid = ctx.uuid(&name);
+            AemNode::Fragment {
+                uuid,
+                name,
+                frag_ref: fragment.frag_ref.clone(),
+                bind_ref: bind_ref.clone(),
+            }
+        })
+        .collect()
+}
+
 fn replace_with_fragments(
     nodes: &mut [AemNode],
     fragments: &[ParsedFragment],
@@ -1460,23 +1557,19 @@ fn replace_with_fragments(
 ) {
     let mut i = 0;
     while i < nodes.len() {
-        // First, recurse into children of container nodes
-        match &mut nodes[i] {
-            AemNode::Root { children, .. }
-            | AemNode::Panel { children, .. }
-            | AemNode::Repeatable { children, .. } => {
-                replace_with_fragments(children, fragments, xsd_config, ctx);
-            }
-            _ => {}
-        }
+        // Try to match the CURRENT panel first (outer-first), then recurse
+        // into remaining children. This ensures that parent panels see all
+        // descendant fields before inner panels consume them.
 
         // Only check panels with bind_ref
         if let AemNode::Panel {
             children,
             bind_ref: Some(br),
+            is_conditional,
             ..
         } = &nodes[i]
         {
+            let is_conditional = *is_conditional;
             let full_paths = collect_child_bind_ref_full_paths(children);
             let br_prefix = format!("{}/", br);
 
@@ -1490,22 +1583,35 @@ fn replace_with_fragments(
             // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
             let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
 
-            if !has_intermediates {
+            if !has_intermediates && !is_conditional && !contains_conditional(children) {
                 // Direct match: all paths are single-segment → try to replace
-                // the whole panel.
+                // the whole panel.  Never replace conditional panels (or panels
+                // containing conditionals) because their names are referenced
+                // by visibility scripts.
                 let leaves = collect_child_bind_ref_leaves(children);
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
                         let fragment = fragment.clone();
                         let bind_ref = Some(to_fragment_bind_ref(br, xsd_config));
-                        let name = ctx.make_name("PN_affrg", &fragment.dir_name);
-                        let uuid = ctx.uuid(&name);
-                        nodes[i] = AemNode::Fragment {
-                            uuid,
-                            name,
-                            frag_ref: fragment.frag_ref,
-                            bind_ref,
-                        };
+                        let n = count_fragment_instances(&fragment, &leaves);
+
+                        if n == 1 {
+                            let name = ctx.make_name("PN_affrg", &fragment.dir_name);
+                            let uuid = ctx.uuid(&name);
+                            nodes[i] = AemNode::Fragment {
+                                uuid,
+                                name,
+                                frag_ref: fragment.frag_ref,
+                                bind_ref,
+                            };
+                        } else {
+                            // Multiple instances: replace children with N
+                            // Fragment nodes inside the panel.
+                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                            if let AemNode::Panel { children, .. } = &mut nodes[i] {
+                                *children = frag_nodes;
+                            }
+                        }
                     }
                 }
             } else {
@@ -1535,25 +1641,7 @@ fn replace_with_fragments(
                             .map(|(int_path, _)| format!("{}{}", br_prefix, int_path))
                             .collect();
 
-                        // Identify children to remove: a child is removed when
-                        // every one of its bind_ref paths falls under a matched
-                        // intermediate prefix (exact match or starts_with prefix + "/").
-                        let mut keep = Vec::new();
-                        for child in children.drain(..) {
-                            let child_paths =
-                                collect_child_bind_ref_full_paths(std::slice::from_ref(&child));
-                            let all_covered = !child_paths.is_empty()
-                                && child_paths.iter().all(|cp| {
-                                    matched_prefixes
-                                        .iter()
-                                        .any(|mp| cp == mp || cp.starts_with(&format!("{}/", mp)))
-                                });
-                            if !all_covered {
-                                keep.push(child);
-                            }
-                        }
-
-                        // Insert Fragment nodes for each matched group
+                        // Build Fragment nodes for each matched group
                         let mut frag_nodes: Vec<AemNode> = Vec::new();
                         for (int_path, fragment) in &matched {
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
@@ -1567,15 +1655,177 @@ fn replace_with_fragments(
                             });
                         }
 
-                        // Rebuild children: kept nodes + new fragment nodes
-                        *children = keep;
-                        children.extend(frag_nodes);
+                        // For each child, determine which matched prefix (if
+                        // any) covers it. A child is covered when all its
+                        // bind_ref paths fall under a single matched prefix.
+                        // Never remove conditional panels.
+                        // We replace each covered child with a sentinel (None)
+                        // and record the first occurrence index per prefix so
+                        // we can insert the fragment at that position.
+                        let mut first_position_for_prefix: Vec<Option<usize>> =
+                            vec![None; matched_prefixes.len()];
+
+                        let mut new_children: Vec<Option<AemNode>> =
+                            children.drain(..).map(Some).collect();
+
+                        for (idx, slot) in new_children.iter_mut().enumerate() {
+                            let child = slot.as_ref().unwrap();
+                            let is_cond = matches!(
+                                child,
+                                AemNode::Panel {
+                                    is_conditional: true,
+                                    ..
+                                }
+                            );
+                            if is_cond {
+                                continue;
+                            }
+                            let child_paths =
+                                collect_child_bind_ref_full_paths(std::slice::from_ref(child));
+                            if child_paths.is_empty() {
+                                continue;
+                            }
+                            // Find which prefix covers all of this child's paths
+                            let covering_prefix_idx = matched_prefixes.iter().position(|mp| {
+                                child_paths
+                                    .iter()
+                                    .all(|cp| cp == mp || cp.starts_with(&format!("{}/", mp)))
+                            });
+                            if let Some(prefix_idx) = covering_prefix_idx {
+                                // Record the first position where this prefix's
+                                // fields appeared
+                                if first_position_for_prefix[prefix_idx].is_none() {
+                                    first_position_for_prefix[prefix_idx] = Some(idx);
+                                }
+                                // Mark for removal
+                                *slot = None;
+                            }
+                        }
+
+                        // Insert fragment nodes at the position of the first
+                        // removed child for each group, sorted by position.
+                        let mut insertions: Vec<(usize, AemNode)> = frag_nodes
+                            .into_iter()
+                            .enumerate()
+                            .map(|(frag_idx, frag_node)| {
+                                let pos = first_position_for_prefix[frag_idx]
+                                    .unwrap_or(new_children.len());
+                                (pos, frag_node)
+                            })
+                            .collect();
+                        insertions.sort_by_key(|(pos, _)| *pos);
+
+                        // Rebuild: walk through slots, inserting fragments at
+                        // the recorded positions
+                        let mut result = Vec::new();
+                        let mut next_insertion = 0;
+                        for (idx, slot) in new_children.into_iter().enumerate() {
+                            // Insert any fragments whose position matches this index
+                            while next_insertion < insertions.len()
+                                && insertions[next_insertion].0 == idx
+                            {
+                                result.push(insertions[next_insertion].1.clone());
+                                next_insertion += 1;
+                            }
+                            if let Some(child) = slot {
+                                result.push(child);
+                            }
+                        }
+                        // Append any remaining fragments (fallback)
+                        for (_, frag) in insertions.into_iter().skip(next_insertion) {
+                            result.push(frag);
+                        }
+
+                        *children = result;
                     }
                 }
             }
         }
 
+        // Handle panels with bind_ref: None (conditional panels, group panels
+        // that are "leaf" panels containing only fields): check if their
+        // children collectively match a fragment type and, if so, replace the
+        // children with a single Fragment node inside the panel.
+        if let AemNode::Panel {
+            children,
+            bind_ref: None,
+            is_conditional,
+            ..
+        } = &nodes[i]
+        {
+            // For conditional panels: always try to match (they wrap visibility logic).
+            // For non-conditional panels: only try if they have no sub-panel children
+            // (to avoid over-matching higher-level structural panels).
+            let should_try = *is_conditional
+                || !children
+                    .iter()
+                    .any(|c| matches!(c, AemNode::Panel { .. } | AemNode::Repeatable { .. }));
+
+            if should_try {
+                let leaves = collect_child_bind_ref_leaves(children);
+                if !leaves.is_empty() {
+                    if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
+                        let fragment = fragment.clone();
+                        // Derive the fragment bind_ref from the common parent path
+                        // of the children's bind_refs.
+                        let full_paths = collect_child_bind_ref_full_paths(children);
+                        let bind_ref = compute_common_bind_ref_prefix(&full_paths)
+                            .map(|p| to_fragment_bind_ref(&p, xsd_config));
+                        let n = count_fragment_instances(&fragment, &leaves);
+                        let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                        if let AemNode::Panel { children, .. } = &mut nodes[i] {
+                            *children = frag_nodes;
+                        }
+                    }
+                }
+            }
+        }
+
+        // After attempting to match the current node, recurse into its
+        // remaining children (if it's still a container node and wasn't
+        // fully replaced).
+        match &mut nodes[i] {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                replace_with_fragments(children, fragments, xsd_config, ctx);
+            }
+            _ => {}
+        }
+
         i += 1;
+    }
+}
+
+/// Compute the longest common parent path from a set of bind_ref paths.
+///
+/// E.g. given `["/BAGE/Sig/Place", "/BAGE/Sig/Date"]`, returns `Some("/BAGE/Sig")`.
+fn compute_common_bind_ref_prefix(paths: &[String]) -> Option<String> {
+    if paths.is_empty() {
+        return None;
+    }
+    let parent_paths: Vec<&str> = paths
+        .iter()
+        .filter_map(|p| p.rsplit_once('/').map(|(parent, _)| parent))
+        .collect();
+    if parent_paths.is_empty() {
+        return None;
+    }
+    // Find the longest common prefix among parent paths
+    let mut common = parent_paths[0].to_string();
+    for p in &parent_paths[1..] {
+        while !p.starts_with(&common) {
+            if let Some(pos) = common.rfind('/') {
+                common.truncate(pos);
+            } else {
+                return None;
+            }
+        }
+    }
+    if common.is_empty() {
+        None
+    } else {
+        Some(common)
     }
 }
 
@@ -2006,6 +2256,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
@@ -2024,6 +2275,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Footer text"),
@@ -2179,6 +2431,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2218,6 +2471,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2253,6 +2507,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2275,6 +2530,7 @@ mod tests {
             input_type: FieldType::Bool,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2298,6 +2554,7 @@ mod tests {
             input_type: FieldType::Date,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2325,6 +2582,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })),
             min_occurrences: 1,
             max_occurrences: Some(5),
@@ -2367,6 +2625,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         })];
@@ -2437,6 +2696,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
+                        required: false,
                     }),
                 },
                 GridLayoutElement {
@@ -2452,6 +2712,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
+                        required: false,
                     }),
                 },
             ],
@@ -2623,6 +2884,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2648,6 +2910,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2669,6 +2932,7 @@ mod tests {
             input_type: FieldType::Email,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2689,6 +2953,7 @@ mod tests {
             input_type: FieldType::Tel,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2713,6 +2978,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2820,6 +3086,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {
@@ -2914,6 +3181,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {

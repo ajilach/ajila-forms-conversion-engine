@@ -416,110 +416,6 @@ fn mime_from_extension(path: &std::path::Path) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ubs_profile_has_configs() {
-        assert!(has_aem_config("ubs"));
-        assert!(has_html_config("ubs"));
-        assert!(has_xsd_config("ubs"));
-        assert!(!has_aem_config("missing-profile"));
-        assert!(!has_html_config("missing-profile"));
-        assert!(!has_xsd_config("missing-profile"));
-    }
-
-    #[test]
-    fn embedded_xsd_loader_fails_without_profile_config() {
-        let err = load_xsd_config("akb").expect_err("akb has no xsd config");
-        assert!(
-            err.contains("has no xsd/ subdirectory") || err.contains("has no config.toml"),
-            "unexpected error message: {err}"
-        );
-    }
-
-    #[test]
-    fn embedded_html_loader_fails_without_profile_config() {
-        let err = load_html_custom_styles("missing-profile").expect_err("missing profile");
-        assert!(
-            err.contains("has no html/ subdirectory") || err.contains("has no config.toml"),
-            "unexpected error message: {err}"
-        );
-    }
-
-    #[test]
-    fn embedded_xsd_loader_discovers_nested_type_files() {
-        let cfg = load_xsd_config("ubs").expect("load ubs xsd config");
-
-        assert!(
-            cfg.type_to_file.contains_key("AddressType"),
-            "Expected AddressType from nested xsd/types/** files"
-        );
-        assert!(
-            cfg.registered_types.contains_key("AddressType"),
-            "Expected parsed registered type AddressType"
-        );
-    }
-
-    #[test]
-    fn embedded_fragment_loader_parses_known_fragments() {
-        let fragments =
-            load_aem_fragments("ubs", "/content/forms/af/", &[]).expect("load embedded fragments");
-
-        assert!(
-            !fragments.is_empty(),
-            "Expected at least one embedded AEM fragment"
-        );
-        assert!(
-            fragments.iter().any(|f| f.xsd_type_name == "AddressType"),
-            "Expected AddressType fragment in embedded profile"
-        );
-    }
-
-    #[test]
-    fn embedded_fragment_loader_scans_fragment_library_path_recursively() {
-        // Regression: when fragment_paths points to a fragment library directory
-        // that also contains its own `.content.xml`, we must still recurse into
-        // child fragment directories.
-        let fragments = load_aem_fragments(
-            "ubs",
-            "/content/dam/formsanddocuments/",
-            &["afforms_ubs_fragmentlib".to_string()],
-        )
-        .expect("load embedded fragments from explicit library path");
-
-        assert!(
-            !fragments.is_empty(),
-            "Expected at least one fragment from afforms_ubs_fragmentlib"
-        );
-        assert!(
-            fragments.iter().any(|f| f.xsd_type_name == "AddressType"),
-            "Expected AddressType fragment when scanning afforms_ubs_fragmentlib recursively"
-        );
-    }
-
-    #[test]
-    fn embedded_fragment_loader_supports_explicit_fragment_directory_path() {
-        let fragments = load_aem_fragments(
-            "ubs",
-            "/content/dam/formsanddocuments/",
-            &["afforms_ubs_fragmentlib/affrg_AddressGeneric1".to_string()],
-        )
-        .expect("load embedded explicit fragment directory");
-
-        assert_eq!(
-            fragments.len(),
-            1,
-            "Expected exactly one fragment for explicit directory path"
-        );
-        assert_eq!(
-            fragments[0].xsd_type_name, "AddressType",
-            "Explicit fragment directory should resolve to AddressType"
-        );
-    }
-}
-
 /// Resolve a `fragRef` path to the fragment's `.content.xml` content from
 /// the embedded profiles.
 ///
@@ -643,4 +539,108 @@ fn resolve_embedded_fragment_paths(frag_ref: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ubs_profile_has_configs() {
+        assert!(has_aem_config("ubs"));
+        assert!(has_html_config("ubs"));
+        assert!(has_xsd_config("ubs"));
+        assert!(!has_aem_config("missing-profile"));
+        assert!(!has_html_config("missing-profile"));
+        assert!(!has_xsd_config("missing-profile"));
+    }
+
+    #[test]
+    fn embedded_xsd_loader_fails_without_profile_config() {
+        let err = load_xsd_config("akb").expect_err("akb has no xsd config");
+        assert!(
+            err.contains("has no xsd/ subdirectory") || err.contains("has no config.toml"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn embedded_html_loader_fails_without_profile_config() {
+        let err = load_html_custom_styles("missing-profile").expect_err("missing profile");
+        assert!(
+            err.contains("has no html/ subdirectory") || err.contains("has no config.toml"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn embedded_xsd_loader_discovers_nested_type_files() {
+        let cfg = load_xsd_config("ubs").expect("load ubs xsd config");
+
+        assert!(
+            cfg.type_to_file.contains_key("AddressType"),
+            "Expected AddressType from nested xsd/types/** files"
+        );
+        assert!(
+            cfg.registered_types.contains_key("AddressType"),
+            "Expected parsed registered type AddressType"
+        );
+    }
+
+    #[test]
+    fn embedded_fragment_loader_parses_known_fragments() {
+        let fragments =
+            load_aem_fragments("ubs", "/content/forms/af/", &[]).expect("load embedded fragments");
+
+        assert!(
+            !fragments.is_empty(),
+            "Expected at least one embedded AEM fragment"
+        );
+        assert!(
+            fragments.iter().any(|f| f.xsd_type_name == "AddressType"),
+            "Expected AddressType fragment in embedded profile"
+        );
+    }
+
+    #[test]
+    fn embedded_fragment_loader_scans_fragment_library_path_recursively() {
+        // Regression: when fragment_paths points to a fragment library directory
+        // that also contains its own `.content.xml`, we must still recurse into
+        // child fragment directories.
+        let fragments = load_aem_fragments(
+            "ubs",
+            "/content/dam/formsanddocuments/",
+            &["afforms_ubs_fragmentlib".to_string()],
+        )
+        .expect("load embedded fragments from explicit library path");
+
+        assert!(
+            !fragments.is_empty(),
+            "Expected at least one fragment from afforms_ubs_fragmentlib"
+        );
+        assert!(
+            fragments.iter().any(|f| f.xsd_type_name == "AddressType"),
+            "Expected AddressType fragment when scanning afforms_ubs_fragmentlib recursively"
+        );
+    }
+
+    #[test]
+    fn embedded_fragment_loader_supports_explicit_fragment_directory_path() {
+        let fragments = load_aem_fragments(
+            "ubs",
+            "/content/dam/formsanddocuments/",
+            &["afforms_ubs_fragmentlib/affrg_AddressGeneric1".to_string()],
+        )
+        .expect("load embedded explicit fragment directory");
+
+        assert_eq!(
+            fragments.len(),
+            1,
+            "Expected exactly one fragment for explicit directory path"
+        );
+        assert_eq!(
+            fragments[0].xsd_type_name, "AddressType",
+            "Explicit fragment directory should resolve to AddressType"
+        );
+    }
 }

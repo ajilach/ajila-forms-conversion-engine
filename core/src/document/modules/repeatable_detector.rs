@@ -576,10 +576,7 @@ mod tests {
             10.0, 10.0, 100.0, 20.0, 1, None,
         )];
 
-        let flattened = Flattened::from_nodes(
-            Page::new(num(595.0), num(842.0)),
-            nodes,
-        );
+        let flattened = Flattened::from_nodes(Page::new(num(595.0), num(842.0)), nodes);
 
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
@@ -602,10 +599,7 @@ mod tests {
             Some(1),
         )];
 
-        let flattened = Flattened::from_nodes(
-            Page::new(num(595.0), num(842.0)),
-            nodes,
-        );
+        let flattened = Flattened::from_nodes(Page::new(num(595.0), num(842.0)), nodes);
 
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
@@ -622,10 +616,7 @@ mod tests {
             create_test_node_with_occurrence(10.0, 100.0, 100.0, 20.0, 0, Some(5)), // 45px gap - too far
         ];
 
-        let flattened = Flattened::from_nodes(
-            Page::new(num(595.0), num(842.0)),
-            nodes,
-        );
+        let flattened = Flattened::from_nodes(Page::new(num(595.0), num(842.0)), nodes);
 
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();
@@ -646,10 +637,7 @@ mod tests {
             create_test_node_with_occurrence(10.0, 35.0, 100.0, 20.0, 1, Some(10)), // Different constraints
         ];
 
-        let flattened = Flattened::from_nodes(
-            Page::new(num(595.0), num(842.0)),
-            nodes,
-        );
+        let flattened = Flattened::from_nodes(Page::new(num(595.0), num(842.0)), nodes);
 
         let doc = Document::from_flattened(&flattened);
         let detector = RepeatableDetector::new();

@@ -1260,7 +1260,7 @@ fn is_generic_heading(heading: &str) -> bool {
     }
     // Pure digits or digits with a trailing dot/paren
     if trimmed
-        .trim_end_matches(|c: char| c == '.' || c == ')' || c == ' ')
+        .trim_end_matches(['.', ')', ' '])
         .chars()
         .all(|c| c.is_ascii_digit())
     {
@@ -1270,8 +1270,8 @@ fn is_generic_heading(heading: &str) -> bool {
     let lower = trimmed.to_lowercase();
     let prefixes = ["step", "schritt", "étape", "fase", "paso"];
     for prefix in &prefixes {
-        if lower.starts_with(prefix) {
-            let rest = lower[prefix.len()..].trim_start();
+        if let Some(stripped) = lower.strip_prefix(prefix) {
+            let rest = stripped.trim_start();
             if rest.is_empty() || rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 return true;
             }

@@ -7,8 +7,8 @@ use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use blueprint::document::ListStyleType;
-use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::structured::TableRow as StructTableRow;
+use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
     InlineText, ListItem, ListNode, ParagraphNode, StructuredNode,
@@ -17,7 +17,7 @@ use blueprint::{
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::smart_edit;
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, NodePath, PathSegment,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_merge_selected, collect_selectable_paths,
     compute_add_options, delete_nodes, get_container_child_info, get_container_children_count,
     get_list_at_path, get_list_at_path_mut, get_list_item_text_mut, get_node_at_path,
@@ -87,7 +87,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
     // Which change IDs the user has rejected in the current Preview round.
     // Reset to empty whenever a new smart-edit run starts.
-    let mut rejected_ids = use_signal(|| std::collections::HashSet::<usize>::new());
+    let mut rejected_ids = use_signal(std::collections::HashSet::<usize>::new);
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -665,8 +665,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     | FieldType::Select { options } => options.clone(),
                                     _ => vec![],
                                 };
-                                f.input_type =
-                                    field_type_from_input_kind(kind, existing_options);
+                                f.input_type = field_type_from_input_kind(kind, existing_options);
                             }
                         }
                         NodeMetadata::FieldOptions(options) => {
@@ -678,6 +677,11 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     }
                                     _ => {}
                                 }
+                            }
+                        }
+                        NodeMetadata::FieldRequired(required) => {
+                            if let StructuredNode::Field(f) = node {
+                                f.required = required;
                             }
                         }
                     }
@@ -1351,16 +1355,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     }
 }
 
-fn selected_root_indices(paths: &std::collections::HashSet<NodePath>) -> Vec<usize> {
-    let mut indices = BTreeSet::new();
-    for path in paths {
-        if let Some(PathSegment::Child(idx)) = path.first() {
-            indices.insert(*idx);
-        }
-    }
-    indices.into_iter().collect()
-}
-
 /// Update inline text content, optionally for a specific language.
 /// Content is parsed as markdown to preserve bold/italic formatting.
 fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&str>) {
@@ -1501,6 +1495,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             },
                             value: None,
                             placeholder: None,
+                            required: false,
                         })
                     }
                     StructuredNode::Heading(h) => {
@@ -1520,6 +1515,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             },
                             value: None,
                             placeholder: None,
+                            required: false,
                         })
                     }
                     _ => (*n).clone(), // Keep unchanged
@@ -1563,7 +1559,10 @@ mod tests {
     #[test]
     fn textarea_kind_converts_to_textarea_field_type() {
         let converted = field_type_from_input_kind(FieldInputKind::Textarea, vec![]);
-        assert!(matches!(converted, FieldType::Textarea { max_length: None }));
+        assert!(matches!(
+            converted,
+            FieldType::Textarea { max_length: None }
+        ));
     }
 
     #[test]
@@ -1573,10 +1572,8 @@ mod tests {
             value: InputValue::Text("value".to_string()),
         }];
 
-        let dropdown = field_type_from_input_kind(
-            FieldInputKind::Dropdown,
-            existing_options.clone(),
-        );
+        let dropdown =
+            field_type_from_input_kind(FieldInputKind::Dropdown, existing_options.clone());
         let radio = field_type_from_input_kind(FieldInputKind::Radio, existing_options.clone());
 
         assert!(matches!(

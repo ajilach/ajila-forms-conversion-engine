@@ -42,6 +42,14 @@ gh auth login
 gh auth refresh -h github.com -s copilot
 ```
 
+Then, you can check if the copilot CLI works by typing:
+
+```sh
+gh copilot -p "hello there!"
+```
+
+If copilot answers, you're set.
+
 Dioxus can easily be installed using cargo-binstall:
 
 ```sh

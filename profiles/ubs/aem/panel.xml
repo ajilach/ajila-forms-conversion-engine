@@ -25,7 +25,7 @@
             jcr:lastModifiedBy="{{ author }}"
             jcr:primaryType="nt:unstructured"
             jcr:title="{{ title }}"
-            sling:resourceType="fd/af/components/panel"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             dorExcludeDescription="true"
             dorFieldStyling="{{ variables.dor_field_styling }}"
             guideNodeClass="guidePanel"

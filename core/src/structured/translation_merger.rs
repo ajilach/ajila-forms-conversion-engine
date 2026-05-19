@@ -378,6 +378,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -400,6 +401,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -482,6 +484,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: Some(TranslatableString::Plain("Bitte wählen".to_string())),
+                required: false,
             })],
         );
         let en = make_envelope(
@@ -504,6 +507,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: Some(TranslatableString::Plain("Please select".to_string())),
+                required: false,
             })],
         );
 
@@ -573,6 +577,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -596,6 +601,7 @@ mod tests {
                     input_type: FieldType::Bool,
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -669,6 +675,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field2".into(),
@@ -681,6 +688,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field3".into(),
@@ -693,6 +701,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field4".into(),
@@ -705,6 +714,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -742,6 +752,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "email".into(),
@@ -754,6 +765,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -782,6 +794,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "email".into(),
@@ -794,6 +807,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -930,6 +944,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         };
 
         let dummy_condition = FieldCondition {
@@ -1388,6 +1403,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
         let en = make_envelope(
@@ -1410,6 +1426,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
 
@@ -1755,6 +1772,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
 
@@ -1778,6 +1796,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
 
@@ -1896,6 +1915,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         };
 
         let de = make_envelope(
@@ -2067,6 +2087,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
         let en = make_envelope(
@@ -2080,6 +2101,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
         let fr = make_envelope(
@@ -2093,6 +2115,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })],
         );
 
@@ -2270,6 +2293,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2293,6 +2317,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2316,6 +2341,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2411,6 +2437,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "f2".into(),
@@ -2423,6 +2450,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2446,6 +2474,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "f2".into(),
@@ -2458,6 +2487,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2530,6 +2560,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
             ],
         );
@@ -2548,6 +2579,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,

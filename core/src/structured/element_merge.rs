@@ -346,6 +346,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         });
         let p = StructuredNode::Paragraph(ParagraphNode {
             content: InlineText::plain("Text"),

@@ -305,6 +305,27 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 option { value: "radio", "Radio" }
                             }
                         }
+                        div { class: "metadata-field",
+                            label { class: "metadata-checkbox-label",
+                                input {
+                                    r#type: "checkbox",
+                                    checked: f.required,
+                                    onchange: {
+                                        let path = props.path.clone();
+                                        let on_action = props.on_action;
+                                        move |evt: Event<FormData>| {
+                                            let checked = evt.value() == "true";
+                                            on_action
+                                                .call(EditorAction::UpdateMetadata {
+                                                    path: path.clone(),
+                                                    metadata: NodeMetadata::FieldRequired(checked),
+                                                });
+                                        }
+                                    },
+                                }
+                                "Required"
+                            }
+                        }
                         if has_options {
                             div { class: "metadata-field",
                                 label { class: "metadata-label", "Options" }

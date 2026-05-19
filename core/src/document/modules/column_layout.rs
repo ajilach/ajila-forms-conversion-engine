@@ -444,7 +444,7 @@ impl AnalysisModule for ColumnLayoutDetector {
         // with left-column items first (sorted by y), then right-column items (sorted by y).
         // The ColumnSection tells the structured converter to preserve this order
         // without re-sorting by position.
-        for (_sec_idx, section) in sections.iter().enumerate() {
+        for section in sections.iter() {
             let mut left_sorted: Vec<(usize, Decimal)> = section
                 .left
                 .iter()

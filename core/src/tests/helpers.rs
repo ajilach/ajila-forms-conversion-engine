@@ -5,8 +5,7 @@ use std::io::{Cursor, Read};
 use std::sync::Once;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, InlineNode, ListNode,
-    StructuredNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode, StructuredNode,
 };
 
 /// Ensure UBS profile fonts are loaded into the global font manager.

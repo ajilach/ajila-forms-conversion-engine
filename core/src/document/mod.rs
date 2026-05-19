@@ -988,6 +988,40 @@ impl<'a> Document<'a> {
         Some(Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y))
     }
 
+    /// Get bounding box using the node's allocated dimensions (not re-measured text).
+    ///
+    /// Unlike `get_bounds()` which uses `text_bounds()` (re-measuring text content),
+    /// this uses the node's allocated `bounds()` which reflects the layout engine's
+    /// assigned dimensions.  Useful when the text measurement may differ from the
+    /// actual layout (e.g. hyphenation reduces line count).
+    pub fn get_allocated_bounds(&self, group_idx: usize) -> Option<Bounds> {
+        let node_indices = self.collect_node_indices(group_idx);
+        if node_indices.is_empty() {
+            return None;
+        }
+
+        let mut min_x = rust_decimal::Decimal::MAX;
+        let mut min_y = rust_decimal::Decimal::MAX;
+        let mut max_x = rust_decimal::Decimal::MIN;
+        let mut max_y = rust_decimal::Decimal::MIN;
+
+        for node_idx in node_indices {
+            if let Some(node) = self.source.iter_nodes().nth(node_idx) {
+                let b = node.bounds();
+                min_x = min_x.min(b.x);
+                min_y = min_y.min(b.y);
+                max_x = max_x.max(b.x + b.width);
+                max_y = max_y.max(b.y + b.height);
+            }
+        }
+
+        if min_x == rust_decimal::Decimal::MAX {
+            return None;
+        }
+
+        Some(Bounds::new(min_x, min_y, max_x - min_x, max_y - min_y))
+    }
+
     /// Group fields by a primary axis coordinate, then sort each group by a secondary axis.
     ///
     /// This is a generic spatial grouping utility used by table detectors.

@@ -680,10 +680,6 @@ impl AnalysisModule for ListDetector {
     }
 
     fn process(&self, doc: &mut Document) {
-        // Phase 0 (standalone marker merge) now runs earlier in the pipeline
-        // via StandaloneMarkerMerger. Re-run here as a no-op safety net.
-        merge_standalone_markers(doc, self.name());
-
         // Phase 1: Walk root groups in document order.  For each TextBlock
         // that starts with a list marker we record it as a candidate.  Any
         // non-TextBlock root (field, checkbox, heading, …) or a TextBlock
@@ -735,21 +731,6 @@ impl AnalysisModule for ListDetector {
         // (because StandaloneMarkerMerger creates merged groups at higher
         // indices) and therefore won't be encountered between them during
         // the sequential Phase 1 walk.
-        let non_marker_tb_bounds: Vec<Bounds> = roots
-            .iter()
-            .filter(|&&idx| {
-                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
-                    return false;
-                }
-                if !doc.is_bold_group(idx) {
-                    return false;
-                }
-                let text = doc.get_text_content(idx);
-                let trimmed = text.trim();
-                !trimmed.is_empty() && detect_marker(&text).is_none()
-            })
-            .filter_map(|&idx| doc.get_bounds(idx))
-            .collect();
 
         // Collect (bounds, marker_kind) of ALL marker TextBlocks so that
         // can_extend_run can detect when a different-kind marker from
@@ -765,6 +746,48 @@ impl AnalysisModule for ListDetector {
                 let bounds = doc.get_bounds(idx)?;
                 Some((bounds, marker.kind))
             })
+            .collect();
+
+        let non_marker_tb_bounds: Vec<Bounds> = roots
+            .iter()
+            .filter(|&&idx| {
+                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                    return false;
+                }
+                let text = doc.get_text_content(idx);
+                let trimmed = text.trim();
+                if trimmed.is_empty() || detect_marker(&text).is_some() {
+                    return false;
+                }
+                // Bold TextBlocks (headings) are always reliable separators.
+                if doc.is_bold_group(idx) {
+                    return true;
+                }
+                // Non-bold TextBlocks are separators UNLESS they are
+                // continuations of a marker TextBlock (i.e., immediately
+                // below a marker TB at the same or indented x position).
+                // Multi-line list items are often split into the marker line
+                // plus one or more continuation TextBlocks that may be
+                // indented relative to the marker.
+                let bounds = match doc.get_bounds(idx) {
+                    Some(b) => b,
+                    None => return false,
+                };
+                let continuation_gap = Decimal::from(5);
+                let is_continuation = all_marker_tb_info.iter().any(|(mb, _)| {
+                    let mb_bottom = mb.y + mb.height;
+                    let gap = bounds.y - mb_bottom;
+                    if gap < Decimal::ZERO || gap > continuation_gap {
+                        return false;
+                    }
+                    // Continuation can be at the same x or indented to the
+                    // right (but not far to the left of the marker).
+                    let x_offset = bounds.x - mb.x;
+                    x_offset >= -x_tol && x_offset <= Decimal::from(50)
+                });
+                !is_continuation
+            })
+            .filter_map(|&idx| doc.get_bounds(idx))
             .collect();
 
         // Each entry: (group_idx, text, bounds, marker)
@@ -860,24 +883,19 @@ impl AnalysisModule for ListDetector {
                 (curr_top, last_bottom)
             };
 
-            let both_non_bold = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
+            // Whitespace-only leaves/headers don't break non-bold list runs
+            // (they're just empty placeholders), but they DO break bold runs
+            // (bold numbered items like "1. Title" are headings, not lists).
+            let ignore_ws_leaves = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
             let has_intervening = non_tb_root_ys.iter().any(|&y| {
-                if y > range_lo && y < range_hi {
-                    if both_non_bold && ws_leaf_ys.contains(&y) {
-                        return false;
-                    }
-                    true
-                } else {
-                    false
-                }
+                y > range_lo && y < range_hi && !(ignore_ws_leaves && ws_leaf_ys.contains(&y))
             }) || non_marker_tb_bounds.iter().any(|sep| {
                 let sep_bottom = sep.y + sep.height;
                 let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
                 let item_x_lo = last.2.x.min(bounds.x);
                 let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
                 let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
-                let not_continuation = sep.x <= item_x_lo + x_tol;
-                y_overlap && x_overlap && not_continuation
+                y_overlap && x_overlap
             });
 
             if has_intervening {
@@ -970,8 +988,7 @@ impl AnalysisModule for ListDetector {
                 } else {
                     // New column — start a fresh run.
                     let right_edge = bounds.x + bounds.width;
-                    let mut run = Vec::new();
-                    run.push((idx, text, bounds, marker));
+                    let run = vec![(idx, text, bounds, marker)];
                     column_runs.push((bounds.x, right_edge, run));
                 }
             } else {
@@ -1038,6 +1055,144 @@ impl AnalysisModule for ListDetector {
                         k += 1;
                         continue;
                     }
+
+                    // Check for intervening non-list content between Group B's
+                    // last item and Group A2's first item.  If a paragraph or
+                    // heading sits between the sublist and the supposed
+                    // continuation, these are separate lists and should not be
+                    // merged.
+                    let a1_last_bottom = groups[a1]
+                        .last()
+                        .and_then(|&idx| doc.get_bounds(idx))
+                        .map(|b| b.y + b.height);
+                    let b_first_top = groups[b]
+                        .first()
+                        .and_then(|&idx| doc.get_bounds(idx))
+                        .map(|b| b.y);
+                    let b_last_bottom = groups[b]
+                        .last()
+                        .and_then(|&idx| doc.get_bounds(idx))
+                        .map(|b| b.y + b.height);
+                    let a2_first_top = groups[a2]
+                        .first()
+                        .and_then(|&idx| doc.get_bounds(idx))
+                        .map(|b| b.y);
+
+                    // Helper: check if meaningful content exists in a y-range.
+                    let has_separator_in_range = |lo: Decimal, hi: Decimal| -> bool {
+                        non_marker_tb_bounds.iter().any(|sep| {
+                            let sep_bottom = sep.y + sep.height;
+                            sep_bottom > lo && sep.y < hi
+                        }) || non_tb_root_ys
+                            .iter()
+                            .any(|&y| y > lo && y < hi && !ws_leaf_ys.contains(&y))
+                    };
+
+                    let has_intervening_between_b_and_a2 =
+                        if let (Some(b_bot), Some(a2_top)) = (b_last_bottom, a2_first_top) {
+                            let (lo, hi) = if b_bot <= a2_top {
+                                (b_bot, a2_top)
+                            } else {
+                                (a2_top, b_bot)
+                            };
+                            has_separator_in_range(lo, hi)
+                        } else {
+                            false
+                        };
+
+                    // Also check between A1's last item and B's first item.
+                    // A heading or paragraph between A1 and B means B is not
+                    // really a sublist of A1.
+                    let has_intervening_between_a1_and_b =
+                        if let (Some(a1_bot), Some(b_top)) = (a1_last_bottom, b_first_top) {
+                            let (lo, hi) = if a1_bot <= b_top {
+                                (a1_bot, b_top)
+                            } else {
+                                (b_top, a1_bot)
+                            };
+                            has_separator_in_range(lo, hi)
+                        } else {
+                            false
+                        };
+
+                    // B should be plausibly a sublist of A1's last item:
+                    // either A1's last item introduces B (ends with ':') or
+                    // B is indented to the right of A1.
+                    let a1_last_text = groups[a1]
+                        .last()
+                        .map(|&idx| doc.get_text_content(idx))
+                        .unwrap_or_default();
+                    let a1_last_trimmed = a1_last_text.trim();
+                    let a1_intro =
+                        a1_last_trimmed.ends_with(':') || a1_last_trimmed.ends_with("：");
+
+                    let a1_x = groups[a1]
+                        .iter()
+                        .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.x))
+                        .min();
+                    let b_x = groups[b]
+                        .iter()
+                        .filter_map(|&idx| doc.get_bounds(idx).map(|b| b.x))
+                        .min();
+                    let b_indented = match (a1_x, b_x) {
+                        (Some(ax), Some(bx)) => bx > ax + x_tol,
+                        _ => false,
+                    };
+
+                    // If there is meaningful content between A1's last item
+                    // and B's first item, B cannot be a sublist of A1.
+                    if has_intervening_between_a1_and_b {
+                        k += 1;
+                        continue;
+                    }
+
+                    // Even with an intro signal, a bold heading or
+                    // non-TextBlock element between B and A2 is a definitive
+                    // section break that prevents merging.
+                    let has_definitive_separator =
+                        if let (Some(b_bot), Some(a2_top)) = (b_last_bottom, a2_first_top) {
+                            let (lo, hi) = if b_bot <= a2_top {
+                                (b_bot, a2_top)
+                            } else {
+                                (a2_top, b_bot)
+                            };
+                            roots.iter().any(|&idx| {
+                                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                                    return false;
+                                }
+                                if !doc.is_bold_group(idx) {
+                                    return false;
+                                }
+                                let text = doc.get_text_content(idx);
+                                if text.trim().is_empty() || detect_marker(&text).is_some() {
+                                    return false;
+                                }
+                                if let Some(sep) = doc.get_bounds(idx) {
+                                    let sep_bottom = sep.y + sep.height;
+                                    sep_bottom > lo && sep.y < hi
+                                } else {
+                                    false
+                                }
+                            }) || non_tb_root_ys
+                                .iter()
+                                .any(|&y| y > lo && y < hi && !ws_leaf_ys.contains(&y))
+                        } else {
+                            false
+                        };
+
+                    if has_definitive_separator {
+                        k += 1;
+                        continue;
+                    }
+
+                    // When there is intervening non-list content between B
+                    // and A2, only merge if A1 introduces B (colon) or B is
+                    // indented — otherwise these are separate lists.
+                    if has_intervening_between_b_and_a2 && !a1_intro && !b_indented {
+                        k += 1;
+                        continue;
+                    }
+
                     let after_count = groups[a1].len();
                     // Take B's sublists first to avoid borrow conflicts.
                     let b_children = std::mem::take(&mut sublists[b]);
@@ -1418,7 +1573,36 @@ impl AnalysisModule for ListDetector {
                 let cand_len = cand_trimmed.len();
                 let not_too_long = cand_len <= max_item_text_len || cand_len <= 40;
 
-                not_heading_like && is_single_line && is_adjacent && not_too_long
+                // Must not have a non-marker TextBlock (paragraph) immediately
+                // above it — if there is one, the candidate is part of a
+                // paragraph block rather than a lost first list item.
+                let no_paragraph_above = !all_marker_tb_info.is_empty()
+                    && !root_tb_sorted.iter().any(|(tb_idx, tb_b)| {
+                        // Skip the candidate itself
+                        if *tb_idx == cand_idx {
+                            return false;
+                        }
+                        // Must be a non-marker TextBlock
+                        if !current_roots.contains(tb_idx) {
+                            return false;
+                        }
+                        let tb_text = doc.get_text_content(*tb_idx);
+                        if tb_text.trim().is_empty() || detect_marker(&tb_text).is_some() {
+                            return false;
+                        }
+                        // Must be above the candidate and at the same x
+                        let sep_bottom = tb_b.y + tb_b.height;
+                        let gap_above = cand_bounds.y - sep_bottom;
+                        gap_above >= Decimal::ZERO
+                            && gap_above < max_item_height * Decimal::TWO
+                            && (tb_b.x - cand_bounds.x).abs() <= x_tol
+                    });
+
+                not_heading_like
+                    && is_single_line
+                    && is_adjacent
+                    && not_too_long
+                    && no_paragraph_above
             };
 
             let should_extend = if prepend.len() >= 5 && group.len() >= 2 {

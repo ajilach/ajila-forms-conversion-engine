@@ -14,7 +14,7 @@
 
 ## Project-specific
 
-- When running tests, use `cargo test --release` such that they are faster.
+- When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required.
 - When implementing a new feature that affects the form output, always run the judge module for all formcodes first and save it as the baseline. Then after the implementation run it again and compare the results. If the judge scores are worse over all after the implementation start again. You do not need to run the judge for UI/UX changes.
 - Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.md).
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.

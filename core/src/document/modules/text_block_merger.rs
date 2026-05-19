@@ -171,6 +171,26 @@ impl TextBlockMerger {
             return false;
         }
 
+        // Also check using allocated bounds (node dimensions from the layout
+        // engine).  text_bounds() may over-report height when it remeasures
+        // text without hyphenation, making the gap appear zero even though
+        // the layout placed the nodes further apart.  If the allocated bounds
+        // gap exceeds the threshold, don't merge.
+        if let (Some(alloc_a), Some(alloc_b)) = (
+            doc.get_allocated_bounds(idx_a),
+            doc.get_allocated_bounds(idx_b),
+        ) {
+            let (alloc_top, alloc_bottom) = if alloc_a.y <= alloc_b.y {
+                (&alloc_a, &alloc_b)
+            } else {
+                (&alloc_b, &alloc_a)
+            };
+            let alloc_gap = alloc_bottom.y - alloc_top.bottom();
+            if alloc_gap > threshold {
+                return false;
+            }
+        }
+
         // They must have some horizontal overlap (not completely separate columns)
         let overlap_left = bounds_a.x.max(bounds_b.x);
         let overlap_right = bounds_a.right().min(bounds_b.right());
