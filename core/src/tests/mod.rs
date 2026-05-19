@@ -16468,9 +16468,11 @@ fn test_aaki_has_list_with_expected_items() {
 
 #[test]
 fn test_aaki_has_exactly_two_signature_fragments() {
-    // AAKI_019_SP has two XSD elements of type SignatureType: `ubs_europe_se`
-    // inside `nombres_de_los_apoderados` and `unterschrift_en` inside
-    // `anexomifid_ii_...`. Both should be replaced with fragment nodes.
+    // AAKI_019_SP has multiple XSD elements of type SignatureType across
+    // `nombres_de_los_apoderados`, `anexomifid_ii_...`, and the legitimation
+    // section. The layout fix (lr-tb slack tracking) correctly keeps
+    // DES_Country on the same line, revealing a 4th signature fragment in
+    // `LegitimationVonVertretungsberechtigten/Vertretungsberechtigter`.
     use crate::Blueprint;
     use crate::aem::{AemConfig, convert_to_aem};
 
