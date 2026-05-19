@@ -28,7 +28,9 @@ struct SmartEditResult {
 /// Teacher – run the blueprint pipeline and smart-edit, then output suggested changes.
 #[derive(Parser, Debug)]
 #[command(name = "teacher")]
-#[command(about = "Run the blueprint pipeline and smart-edit on a PDF, then print suggested changes")]
+#[command(
+    about = "Run the blueprint pipeline and smart-edit on a PDF, then print suggested changes"
+)]
 struct Args {
     /// Path(s) to the PDF document(s).
     #[arg(value_name = "DOCUMENT", required = true)]
@@ -181,10 +183,17 @@ async fn run_smart_edit(
         .collect();
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
     let session_name = "teacher";
-    let raw = run_copilot_smart_edit(&prompt, &json_context, &images, Some(session_name), false)
-        .await?;
+    let raw =
+        run_copilot_smart_edit(&prompt, &json_context, &images, Some(session_name), false).await?;
     let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
-    ensure_change_list(content, selected_indices, &images, &mut result, session_name).await;
+    ensure_change_list(
+        content,
+        selected_indices,
+        &images,
+        &mut result,
+        session_name,
+    )
+    .await;
     Ok(result)
 }
 
@@ -256,9 +265,10 @@ async fn ensure_change_list(
     if let Ok(raw) =
         run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
         && let Ok(changes) = parse_change_list(&raw)
-            && !changes.is_empty() {
-                result.changes = changes;
-            }
+        && !changes.is_empty()
+    {
+        result.changes = changes;
+    }
 }
 
 fn build_smart_edit_prompt(

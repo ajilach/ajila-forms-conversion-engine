@@ -170,19 +170,11 @@ fn node_embeddable_text(node: &StructuredNode) -> Option<String> {
     match node {
         StructuredNode::Paragraph(p) => {
             let t = p.content.as_plain_text();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
+            if t.trim().is_empty() { None } else { Some(t) }
         }
         StructuredNode::Heading(h) => {
             let t = h.content.as_plain_text();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
+            if t.trim().is_empty() { None } else { Some(t) }
         }
         _ => None,
     }

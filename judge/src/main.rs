@@ -444,7 +444,9 @@ fn count_inline_node_slots(node: &InlineNode, total: &mut usize, missing: &mut u
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             count_inline_node_slots(inner, total, missing);
         }
         InlineNode::Link(link) => {
@@ -619,7 +621,9 @@ fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
                 out.push(texts);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_from_inline_node(inner, out);
         }
         InlineNode::Link(link) => {

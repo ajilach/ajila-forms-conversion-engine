@@ -888,9 +888,7 @@ impl AnalysisModule for ListDetector {
             // (bold numbered items like "1. Title" are headings, not lists).
             let ignore_ws_leaves = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
             let has_intervening = non_tb_root_ys.iter().any(|&y| {
-                y > range_lo
-                    && y < range_hi
-                    && !(ignore_ws_leaves && ws_leaf_ys.contains(&y))
+                y > range_lo && y < range_hi && !(ignore_ws_leaves && ws_leaf_ys.contains(&y))
             }) || non_marker_tb_bounds.iter().any(|sep| {
                 let sep_bottom = sep.y + sep.height;
                 let y_overlap = sep_bottom > range_lo && sep.y < range_hi;

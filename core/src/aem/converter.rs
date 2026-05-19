@@ -2256,7 +2256,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
-            required: false,
+                required: false,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
@@ -2275,7 +2275,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
-            required: false,
+                required: false,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Footer text"),
@@ -2582,7 +2582,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
-            required: false,
+                required: false,
             })),
             min_occurrences: 1,
             max_occurrences: Some(5),
@@ -2625,7 +2625,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
-            required: false,
+                    required: false,
                 }),
             ],
         })];
@@ -2696,7 +2696,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
-            required: false,
+                        required: false,
                     }),
                 },
                 GridLayoutElement {
@@ -2712,7 +2712,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
-            required: false,
+                        required: false,
                     }),
                 },
             ],
@@ -3086,7 +3086,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
-            required: false,
+                required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {
@@ -3181,7 +3181,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
-            required: false,
+                required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {

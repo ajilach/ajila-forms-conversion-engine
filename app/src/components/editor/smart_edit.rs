@@ -194,9 +194,10 @@ async fn ensure_change_list(
     if let Ok(raw) =
         run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
         && let Ok(changes) = parse_change_list(&raw)
-            && !changes.is_empty() {
-                result.changes = changes;
-            }
+        && !changes.is_empty()
+    {
+        result.changes = changes;
+    }
 }
 
 /// Try to parse a JSON array of ChangeItem from a raw response.

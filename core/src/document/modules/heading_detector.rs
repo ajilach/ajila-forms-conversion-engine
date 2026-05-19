@@ -224,8 +224,7 @@ impl GlobalFontStats {
             if xs.is_empty() {
                 continue;
             }
-            let valid_xs =
-                find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
+            let valid_xs = find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
             bucket_valid_x.insert(bucket, valid_xs);
         }
 
@@ -999,8 +998,7 @@ impl HeadingDetector {
 
             let mut local_bucket_valid_x: HashMap<HeadingStyleBucket, Vec<f32>> = HashMap::new();
             for (bucket, xs) in &bucket_x_votes {
-                let valid =
-                    find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
+                let valid = find_significant_x_clusters(xs, x_tolerance, min_cluster_count);
                 local_bucket_valid_x.insert(bucket.clone(), valid);
             }
 

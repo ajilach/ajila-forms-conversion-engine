@@ -189,8 +189,7 @@ pub async fn run_copilot_smart_edit(
         }
     }
 
-    cmd
-        .arg("-p")
+    cmd.arg("-p")
         .arg(&full_prompt)
         .arg("--output-format")
         .arg("text")

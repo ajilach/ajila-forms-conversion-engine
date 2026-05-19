@@ -157,10 +157,8 @@ impl FieldColumnTableDetector {
         let bordered_rows = self.cluster_rows(&bordered_blocks);
 
         // Only consider single-cell bordered rows (single text column)
-        let single_col_rows: Vec<&Vec<(usize, Bounds)>> = bordered_rows
-            .iter()
-            .filter(|row| row.len() == 1)
-            .collect();
+        let single_col_rows: Vec<&Vec<(usize, Bounds)>> =
+            bordered_rows.iter().filter(|row| row.len() == 1).collect();
 
         if single_col_rows.len() < 2 {
             return;
@@ -196,8 +194,7 @@ impl FieldColumnTableDetector {
         for &(field_idx, field_bounds) in &field_groups {
             let field_center = field_bounds.y + field_bounds.height / Decimal::from(2);
             let best_row = combined.iter_mut().min_by_key(|row| {
-                let row_center =
-                    row.text_bounds.y + row.text_bounds.height / Decimal::from(2);
+                let row_center = row.text_bounds.y + row.text_bounds.height / Decimal::from(2);
                 (field_center - row_center).abs()
             });
             if let Some(row) = best_row {
@@ -278,7 +275,10 @@ impl FieldColumnTableDetector {
             let field_cx = field_bounds.x + field_bounds.width / Decimal::from(2);
             let best = bold_leaves
                 .iter()
-                .filter(|bl| bl.bounds.overlaps_horizontally(field_bounds, self.row_tolerance))
+                .filter(|bl| {
+                    bl.bounds
+                        .overlaps_horizontally(field_bounds, self.row_tolerance)
+                })
                 .min_by_key(|bl| {
                     let leaf_cx = bl.bounds.x + bl.bounds.width / Decimal::from(2);
                     (leaf_cx - field_cx).abs()
@@ -291,8 +291,10 @@ impl FieldColumnTableDetector {
             return;
         }
 
-        let header_node_indices: Vec<Vec<usize>> =
-            header_nodes_per_col.into_iter().map(|h| h.unwrap()).collect();
+        let header_node_indices: Vec<Vec<usize>> = header_nodes_per_col
+            .into_iter()
+            .map(|h| h.unwrap())
+            .collect();
 
         // Collect mutations
         struct RowMutation {
@@ -326,7 +328,9 @@ impl FieldColumnTableDetector {
                 for &node_idx in header_nodes {
                     let leaf_idx = doc.groups.len();
                     doc.groups.push(crate::document::Group {
-                        kind: GroupKind::Leaf { node_index: node_idx },
+                        kind: GroupKind::Leaf {
+                            node_index: node_idx,
+                        },
                         children: vec![],
                         source: GroupSource::Inferred {
                             module: self.name().to_string(),
@@ -359,9 +363,6 @@ mod tests {
     #[test]
     fn test_default_configuration() {
         let detector = FieldColumnTableDetector::new();
-        assert_eq!(
-            detector.row_tolerance,
-            Decimal::from_str("5.0").unwrap()
-        );
+        assert_eq!(detector.row_tolerance, Decimal::from_str("5.0").unwrap());
     }
 }

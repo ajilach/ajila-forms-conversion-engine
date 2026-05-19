@@ -5,13 +5,13 @@ mod structured_converter;
 mod translation_merger;
 
 pub use element_merge::{
-    can_merge, can_merge_all, merge_nodes, merge_two, MergeError as ElementMergeError,
+    MergeError as ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
 };
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
 pub use translation_merger::{
-    calculate_structural_similarity, merge_translations, MergeError,
-    MergeError as TranslationMergeError,
+    MergeError, MergeError as TranslationMergeError, calculate_structural_similarity,
+    merge_translations,
 };
 
 use rust_decimal::Decimal;

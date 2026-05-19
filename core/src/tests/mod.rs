@@ -8,9 +8,7 @@ use helpers::{
     walk_structured_nodes,
 };
 
-use crate::{
-    Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa,
-};
+use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 
@@ -100,12 +98,7 @@ fn test_fully_parse_aaab_structure() {
         }
     }
 
-    check_nodes(
-        nodes,
-        &mut has_template,
-        &mut has_subforms,
-        &mut has_fields,
-    );
+    check_nodes(nodes, &mut has_template, &mut has_subforms, &mut has_fields);
 
     println!("\nParsing results:");
     println!("  Has template: {}", has_template);
@@ -8663,9 +8656,9 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     ) {
         for inline in inlines {
             if let InlineNode::TranslatedText(map) = inline {
-                let has_de = map.get("de").is_some_and(|t| {
-                    t.as_ref().is_some_and(|s| s.contains("Ich bestätige"))
-                });
+                let has_de = map
+                    .get("de")
+                    .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains("Ich bestätige")));
                 let has_en = map.get("en").is_some_and(|t| {
                     t.as_ref()
                         .is_some_and(|s| s.contains("I confirm that I am tax resident"))
@@ -8901,10 +8894,8 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
     let matching = h2_maps
         .iter()
         .filter(|map| {
-            map.get("de").is_some_and(|v| {
-                v.as_ref()
-                    .is_some_and(|s| s.contains("Kundenerklärungen"))
-            })
+            map.get("de")
+                .is_some_and(|v| v.as_ref().is_some_and(|s| s.contains("Kundenerklärungen")))
         })
         .count();
     assert_eq!(
@@ -22570,8 +22561,7 @@ fn test_bago_019_table_detection_diagnostic() {
                 let mut edges = Vec::new();
                 for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
                     if let Some(e) = border.get_edge(*i) {
-                        if e.presence != "hidden"
-                            && e.thickness.is_some_and(|t| t > Decimal::ZERO)
+                        if e.presence != "hidden" && e.thickness.is_some_and(|t| t > Decimal::ZERO)
                         {
                             edges.push(format!("{}:{:?}", name, e.thickness));
                         }
@@ -22749,8 +22739,7 @@ fn test_aais_019_table_detection_diagnostic() {
                 let mut edges = Vec::new();
                 for (i, name) in [(0, "top"), (1, "right"), (2, "bottom"), (3, "left")].iter() {
                     if let Some(e) = border.get_edge(*i) {
-                        if e.presence != "hidden"
-                            && e.thickness.is_some_and(|t| t > Decimal::ZERO)
+                        if e.presence != "hidden" && e.thickness.is_some_and(|t| t > Decimal::ZERO)
                         {
                             edges.push(format!("{}:{:?}", name, e.thickness));
                         }
@@ -25625,12 +25614,12 @@ fn test_bagy_paragraphs_merged_de_en() {
         if let StructuredNode::Paragraph(p) = node {
             for inline in &p.content.0 {
                 if let InlineNode::TranslatedText(map) = inline {
-                    let has_de = map.get("de").is_some_and(|t| {
-                        t.as_ref().is_some_and(|s| s.contains(de_fragment))
-                    });
-                    let has_en = map.get("en").is_some_and(|t| {
-                        t.as_ref().is_some_and(|s| s.contains(en_fragment))
-                    });
+                    let has_de = map
+                        .get("de")
+                        .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains(de_fragment)));
+                    let has_en = map
+                        .get("en")
+                        .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains(en_fragment)));
                     if has_de && has_en {
                         found = true;
                     }
@@ -25690,19 +25679,22 @@ fn test_aaij_multilingual_merge_content() {
         };
         for inline in inlines {
             if let InlineNode::TranslatedText(map) = inline {
-                if map.get("de").is_some_and(|t| {
-                    t.as_ref().is_some_and(|s| s.contains(de_fragment))
-                }) {
+                if map
+                    .get("de")
+                    .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains(de_fragment)))
+                {
                     found_de = true;
                 }
-                if map.get("en").is_some_and(|t| {
-                    t.as_ref().is_some_and(|s| s.contains(en_fragment))
-                }) {
+                if map
+                    .get("en")
+                    .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains(en_fragment)))
+                {
                     found_en = true;
                 }
-                if map.get("it").is_some_and(|t| {
-                    t.as_ref().is_some_and(|s| s.contains(it_fragment))
-                }) {
+                if map
+                    .get("it")
+                    .is_some_and(|t| t.as_ref().is_some_and(|s| s.contains(it_fragment)))
+                {
                     found_it = true;
                 }
             }
@@ -27594,8 +27586,6 @@ fn test_aacs_de_lists() {
 /// row's text cell into a heading and label every checkbox with its column header.
 #[test]
 fn test_aalr_asset_class_table_detected() {
-    
-
     let merged = crate::run_exhaustive_to_merged(input_path("AALR_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AALR_019_DE.pdf");
 
@@ -28665,8 +28655,6 @@ fn diag_aacs_en_civ_list_raw_pipeline() {
         eprintln!("  item2 (TB[1177]) bounds = {item2_bounds:?}");
         eprintln!("  item3 (TB[1178]) bounds = {item3_bounds:?}");
         if let (Some(b2), Some(b3)) = (item2_bounds, item3_bounds) {
-            
-            
             let range_lo = b2.y + b2.height;
             let range_hi = b3.y;
             eprintln!("  range_lo={range_lo}, range_hi={range_hi}");

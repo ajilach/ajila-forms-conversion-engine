@@ -7,8 +7,8 @@ use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use blueprint::document::ListStyleType;
-use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::structured::TableRow as StructTableRow;
+use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
     InlineText, ListItem, ListNode, ParagraphNode, StructuredNode,
@@ -665,8 +665,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     | FieldType::Select { options } => options.clone(),
                                     _ => vec![],
                                 };
-                                f.input_type =
-                                    field_type_from_input_kind(kind, existing_options);
+                                f.input_type = field_type_from_input_kind(kind, existing_options);
                             }
                         }
                         NodeMetadata::FieldOptions(options) => {
@@ -1560,7 +1559,10 @@ mod tests {
     #[test]
     fn textarea_kind_converts_to_textarea_field_type() {
         let converted = field_type_from_input_kind(FieldInputKind::Textarea, vec![]);
-        assert!(matches!(converted, FieldType::Textarea { max_length: None }));
+        assert!(matches!(
+            converted,
+            FieldType::Textarea { max_length: None }
+        ));
     }
 
     #[test]
@@ -1570,10 +1572,8 @@ mod tests {
             value: InputValue::Text("value".to_string()),
         }];
 
-        let dropdown = field_type_from_input_kind(
-            FieldInputKind::Dropdown,
-            existing_options.clone(),
-        );
+        let dropdown =
+            field_type_from_input_kind(FieldInputKind::Dropdown, existing_options.clone());
         let radio = field_type_from_input_kind(FieldInputKind::Radio, existing_options.clone());
 
         assert!(matches!(

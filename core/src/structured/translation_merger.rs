@@ -211,7 +211,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::structured::merge_engine::{
-        merge_table, prepend_orphan_text_to_matched_paragraph, AlignedNode,
+        AlignedNode, merge_table, prepend_orphan_text_to_matched_paragraph,
     };
     use crate::structured::{
         ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode,

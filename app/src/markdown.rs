@@ -259,7 +259,9 @@ fn node_to_plain_text(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(s) => s.clone(),
         InlineNode::TranslatedText(map) => map.values().find_map(|o| o.clone()).unwrap_or_default(),
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => node_to_plain_text(inner),
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => node_to_plain_text(inner),
         InlineNode::Link(link) => link.content.as_plain_text(),
     }
 }
@@ -333,7 +335,9 @@ fn collect_translations_from_node(
                 }
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => {
             collect_translations_from_node(inner, translations);
         }
         InlineNode::Link(link) => {
@@ -379,7 +383,9 @@ fn text_length(node: &InlineNode) -> usize {
             .values()
             .find_map(|o| o.as_ref().map(|s| s.len()))
             .unwrap_or(0),
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => text_length(inner),
+        InlineNode::Strong(inner)
+        | InlineNode::Emphasis(inner)
+        | InlineNode::Superscript(inner) => text_length(inner),
         InlineNode::Link(link) => link.content.0.iter().map(text_length).sum(),
     }
 }
@@ -449,13 +455,15 @@ fn convert_node_to_translated(
             total_len,
             position,
         ))),
-        InlineNode::Superscript(inner) => InlineNode::Superscript(Box::new(convert_node_to_translated(
-            *inner,
-            edited_lang,
-            existing_translations,
-            total_len,
-            position,
-        ))),
+        InlineNode::Superscript(inner) => {
+            InlineNode::Superscript(Box::new(convert_node_to_translated(
+                *inner,
+                edited_lang,
+                existing_translations,
+                total_len,
+                position,
+            )))
+        }
         InlineNode::Link(mut link) => {
             link.content.0 = link
                 .content

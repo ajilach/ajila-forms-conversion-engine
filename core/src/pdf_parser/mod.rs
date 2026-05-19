@@ -668,10 +668,7 @@ impl ElementFingerprint {
 pub fn merge_pages(pages: Vec<Flattened>) -> Flattened {
     if pages.len() <= 1 {
         return pages.into_iter().next().unwrap_or_else(|| {
-            Flattened::new(
-                Page::new(Decimal::ZERO, Decimal::ZERO),
-                Vec::new(),
-            )
+            Flattened::new(Page::new(Decimal::ZERO, Decimal::ZERO), Vec::new())
         });
     }
 

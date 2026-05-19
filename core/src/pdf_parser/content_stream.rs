@@ -555,10 +555,38 @@ pub fn extract_page_graphics(doc: &Document, page_id: ObjectId, page_height: f64
                         // Convert rect to 4 lines
                         let c = color_to_u8(gs.stroke_color);
                         let lw = gs.line_width;
-                        graphics.stroked_lines.push(StrokedLine { x1: rx, y1: ry, x2: rx + rw, y2: ry, line_width: lw, color: c });
-                        graphics.stroked_lines.push(StrokedLine { x1: rx + rw, y1: ry, x2: rx + rw, y2: ry + rh, line_width: lw, color: c });
-                        graphics.stroked_lines.push(StrokedLine { x1: rx + rw, y1: ry + rh, x2: rx, y2: ry + rh, line_width: lw, color: c });
-                        graphics.stroked_lines.push(StrokedLine { x1: rx, y1: ry + rh, x2: rx, y2: ry, line_width: lw, color: c });
+                        graphics.stroked_lines.push(StrokedLine {
+                            x1: rx,
+                            y1: ry,
+                            x2: rx + rw,
+                            y2: ry,
+                            line_width: lw,
+                            color: c,
+                        });
+                        graphics.stroked_lines.push(StrokedLine {
+                            x1: rx + rw,
+                            y1: ry,
+                            x2: rx + rw,
+                            y2: ry + rh,
+                            line_width: lw,
+                            color: c,
+                        });
+                        graphics.stroked_lines.push(StrokedLine {
+                            x1: rx + rw,
+                            y1: ry + rh,
+                            x2: rx,
+                            y2: ry + rh,
+                            line_width: lw,
+                            color: c,
+                        });
+                        graphics.stroked_lines.push(StrokedLine {
+                            x1: rx,
+                            y1: ry + rh,
+                            x2: rx,
+                            y2: ry,
+                            line_width: lw,
+                            color: c,
+                        });
                     }
                 }
                 pending_rect = None;
