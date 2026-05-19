@@ -5,6 +5,7 @@ mod image_grid;
 mod progress;
 mod results;
 pub(crate) mod spinner;
+mod settings;
 
 pub use aem_preview::{AemPreview, AemPreviewEnvelope};
 pub use editor::{EnvelopeWrapper, StructuredEditor};
@@ -12,3 +13,4 @@ pub use file_upload::FileUploadSection;
 pub use image_grid::ImageModal;
 pub use progress::ProgressDisplay;
 pub use results::ResultsSection;
+pub use settings::SettingsPanel;

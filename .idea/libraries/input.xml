@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="input">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/core/input/AACX.zip!/" />
+      <root url="jar://$PROJECT_DIR$/core/input/AAOX.zip!/" />
+      <root url="jar://$PROJECT_DIR$/core/input/AAOW.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
