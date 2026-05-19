@@ -62,12 +62,16 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
             .unwrap_or_else(|| "default".to_string())
     });
 
-    // Get current text for the active language (as markdown to preserve formatting)
-    let current_text = if all_langs.is_empty() || *active_lang.read() == "default" {
+    // Buffer the text locally to avoid controlled-textarea roundtrip issues
+    // (markdown parsing can strip trailing spaces and re-rendering resets cursor position)
+    let initial_text = if all_langs.is_empty() || *active_lang.read() == "default" {
         inline_text_to_markdown(&props.content.0, None)
     } else {
         inline_text_to_markdown(&props.content.0, Some(&active_lang.read()))
     };
+    // local_text stores the current textarea value for retrieval on blur/done.
+    // It is NOT read in the RSX template, so setting it won't trigger re-renders.
+    let mut local_text = use_signal(|| initial_text.clone());
 
     let active_is_missing = missing_langs.contains(&*active_lang.read());
 
@@ -101,20 +105,24 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                 }
             }
 
-            // Text area
+            // Text area - uses initial_text (stable during typing) to avoid cursor resets
             div { class: "text-editor-content",
                 textarea {
                     class: "text-editor-textarea",
-                    value: "{current_text}",
+                    value: "{initial_text}",
                     rows: 4,
-                    oninput: {
+                    oninput: move |evt: Event<FormData>| {
+                        local_text.set(evt.value());
+                    },
+                    onblur: {
                         let path = path.clone();
                         let lang = active_lang.read().clone();
-                        move |evt: Event<FormData>| {
+                        move |_| {
+                            let content = local_text.read().clone();
                             on_action
                                 .call(EditorAction::UpdateText {
                                     path: path.clone(),
-                                    content: evt.value(),
+                                    content,
                                     language: if lang == "default" { None } else { Some(lang.clone()) },
                                 });
                         }
@@ -132,8 +140,20 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
                 button {
                     class: "text-editor-btn text-editor-btn-done",
                     onclick: {
+                        let path = path.clone();
                         let on_action = props.on_action;
-                        move |_| on_action.call(EditorAction::StopEditing)
+                        let lang = active_lang.read().clone();
+                        move |_| {
+                            // Commit any pending text before stopping
+                            let content = local_text.read().clone();
+                            on_action
+                                .call(EditorAction::UpdateText {
+                                    path: path.clone(),
+                                    content,
+                                    language: if lang == "default" { None } else { Some(lang.clone()) },
+                                });
+                            on_action.call(EditorAction::StopEditing);
+                        }
                     },
                     "Done"
                 }
