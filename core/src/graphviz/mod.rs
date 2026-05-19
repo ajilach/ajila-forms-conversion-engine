@@ -575,6 +575,7 @@ mod tests {
             input_type: FieldType::Radio { options: opts },
             value: None,
             placeholder: None,
+            required: false,
         })
     }
 
@@ -587,6 +588,7 @@ mod tests {
             input_type: FieldType::Bool,
             value: None,
             placeholder: None,
+            required: false,
         })
     }
 

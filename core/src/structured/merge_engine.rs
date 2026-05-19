@@ -1196,6 +1196,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .placeholder
                 .as_ref()
                 .map(|placeholder| localize_translatable_string(placeholder, lang)),
+            required: field.required,
         }),
         StructuredNode::Repeatable(repeatable) => StructuredNode::Repeatable(RepeatableNode {
             item: Box::new(localize_structured_node(&repeatable.item, lang)),
@@ -2359,6 +2360,7 @@ fn merge_field(
         input_type,
         value: base.value.clone(),
         placeholder,
+        required: base.required,
     }
 }
 

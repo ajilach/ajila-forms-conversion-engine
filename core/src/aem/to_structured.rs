@@ -161,6 +161,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             label,
             visible,
             max_chars,
+            mandatory,
             ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
@@ -182,6 +183,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 },
                 value: None,
                 placeholder: None,
+                required: *mandatory,
             }))
         }
 
@@ -189,6 +191,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             name,
             label,
             visible,
+            mandatory,
             ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
@@ -210,6 +213,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 },
                 value: None,
                 placeholder: None,
+                required: *mandatory,
             }))
         }
 
@@ -217,6 +221,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             name,
             label,
             visible,
+            mandatory,
             ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
@@ -234,6 +239,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 input_type: FieldType::Date,
                 value: None,
                 placeholder: None,
+                required: *mandatory,
             }))
         }
 
@@ -242,6 +248,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             label,
             options,
             visible,
+            mandatory,
             ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
@@ -262,6 +269,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 },
                 value: None,
                 placeholder: None,
+                required: *mandatory,
             }))
         }
 
@@ -270,6 +278,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             label,
             options,
             visible,
+            mandatory,
             ..
         } => {
             let is_visible = ctx.visibility.get(name).copied().unwrap_or(*visible);
@@ -290,6 +299,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 },
                 value: None,
                 placeholder: None,
+                required: *mandatory,
             }))
         }
 
@@ -318,6 +328,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                     input_type: FieldType::Bool,
                     value: None,
                     placeholder: None,
+                    required: false,
                 }))
             } else {
                 let option_values = convert_options(options, ctx);
@@ -330,6 +341,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                     },
                     value: None,
                     placeholder: None,
+                    required: false,
                 }))
             }
         }

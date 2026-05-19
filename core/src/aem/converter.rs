@@ -893,7 +893,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: *max_length,
                 colspan,
@@ -909,7 +909,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: *max_length,
                 colspan,
@@ -925,7 +925,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -940,7 +940,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -955,7 +955,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: None,
                 colspan,
@@ -971,7 +971,7 @@ fn convert_field(
                 uuid,
                 name,
                 label,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 max_chars: None,
                 colspan,
@@ -1011,7 +1011,7 @@ fn convert_field(
                 label,
                 options: aem_options,
                 alignment: OptionAlignment::Vertical,
-                mandatory: true,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -1030,7 +1030,7 @@ fn convert_field(
                 name,
                 label,
                 options: aem_options,
-                mandatory: false,
+                mandatory: f.required,
                 visible: true,
                 colspan,
                 dor_colspan,
@@ -2256,6 +2256,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+            required: false,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
@@ -2274,6 +2275,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+            required: false,
             }),
             StructuredNode::Paragraph(ParagraphNode {
                 content: InlineText::plain("Footer text"),
@@ -2429,6 +2431,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2468,6 +2471,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2503,6 +2507,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2525,6 +2530,7 @@ mod tests {
             input_type: FieldType::Bool,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2548,6 +2554,7 @@ mod tests {
             input_type: FieldType::Date,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2575,6 +2582,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+            required: false,
             })),
             min_occurrences: 1,
             max_occurrences: Some(5),
@@ -2617,6 +2625,7 @@ mod tests {
                     },
                     value: None,
                     placeholder: None,
+            required: false,
                 }),
             ],
         })];
@@ -2687,6 +2696,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
+            required: false,
                     }),
                 },
                 GridLayoutElement {
@@ -2702,6 +2712,7 @@ mod tests {
                         },
                         value: None,
                         placeholder: None,
+            required: false,
                     }),
                 },
             ],
@@ -2873,6 +2884,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2898,6 +2910,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2919,6 +2932,7 @@ mod tests {
             input_type: FieldType::Email,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2939,6 +2953,7 @@ mod tests {
             input_type: FieldType::Tel,
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -2963,6 +2978,7 @@ mod tests {
             },
             value: None,
             placeholder: None,
+            required: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
@@ -3070,6 +3086,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+            required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {
@@ -3164,6 +3181,7 @@ mod tests {
                 },
                 value: None,
                 placeholder: None,
+            required: false,
             }),
             StructuredNode::Conditional(ConditionalNode {
                 condition: FieldCondition {

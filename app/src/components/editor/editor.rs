@@ -680,6 +680,11 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 }
                             }
                         }
+                        NodeMetadata::FieldRequired(required) => {
+                            if let StructuredNode::Field(f) = node {
+                                f.required = required;
+                            }
+                        }
                     }
                 }
             }
@@ -1501,6 +1506,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             },
                             value: None,
                             placeholder: None,
+                            required: false,
                         })
                     }
                     StructuredNode::Heading(h) => {
@@ -1520,6 +1526,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             },
                             value: None,
                             placeholder: None,
+                            required: false,
                         })
                     }
                     _ => (*n).clone(), // Keep unchanged

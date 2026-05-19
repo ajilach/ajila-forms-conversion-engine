@@ -16814,6 +16814,7 @@ fn test_xsd_basic_field_generation() {
         },
         value: None,
         placeholder: None,
+        required: false,
     })];
 
     // Config with a matching synonym
@@ -16860,6 +16861,7 @@ fn test_xsd_unmatched_field_uses_snake_case() {
         },
         value: None,
         placeholder: None,
+        required: false,
     })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
@@ -16899,6 +16901,7 @@ fn test_xsd_heading_creates_complex_type() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -16977,6 +16980,7 @@ fn test_xsd_heading_with_type_ref() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17060,6 +17064,7 @@ fn test_xsd_child_validation_required_present() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.phone"),
@@ -17072,6 +17077,7 @@ fn test_xsd_child_validation_required_present() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17162,6 +17168,7 @@ fn test_xsd_child_validation_required_missing() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17245,6 +17252,7 @@ fn test_xsd_child_validation_extra_child() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.phone"),
@@ -17257,6 +17265,7 @@ fn test_xsd_child_validation_extra_child() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.email"),
@@ -17265,6 +17274,7 @@ fn test_xsd_child_validation_extra_child() {
             input_type: FieldType::Email,
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17361,6 +17371,7 @@ fn test_xsd_conditional_creates_choice() {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })),
         }),
         StructuredNode::Conditional(ConditionalNode {
@@ -17379,6 +17390,7 @@ fn test_xsd_conditional_creates_choice() {
                 },
                 value: None,
                 placeholder: None,
+                required: false,
             })),
         }),
     ];
@@ -17437,6 +17449,7 @@ fn test_xsd_repeatable_min_max_occurs() {
             },
             value: None,
             placeholder: None,
+            required: false,
         })),
         min_occurrences: 0,
         max_occurrences: None, // unbounded
@@ -17475,6 +17488,7 @@ fn test_xsd_field_with_restrictions() {
         },
         value: None,
         placeholder: None,
+        required: false,
     })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
@@ -17530,6 +17544,7 @@ fn test_xsd_radio_creates_enumeration() {
         },
         value: None,
         placeholder: None,
+        required: false,
     })];
 
     let config = XsdConfig::from_profile(XsdProfile::default());
@@ -17584,6 +17599,7 @@ fn test_xsd_predefined_types_included() {
         },
         value: None,
         placeholder: None,
+        required: false,
     })];
 
     let profile = XsdProfile {
@@ -17635,6 +17651,7 @@ fn test_xsd_nested_heading_levels() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17773,6 +17790,7 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.name"),
@@ -17785,6 +17803,7 @@ fn test_xsd_includes_only_emitted_when_type_is_used() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -17864,6 +17883,7 @@ fn test_xsd_includes_deduplicated_by_path() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
         StructuredNode::Field(FieldNode {
             name: FieldId::from("test.b"),
@@ -17876,6 +17896,7 @@ fn test_xsd_includes_deduplicated_by_path() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -18292,6 +18313,7 @@ fn make_field(id: &str, label: &str) -> crate::structured::FieldNode {
         },
         value: None,
         placeholder: None,
+        required: false,
     }
 }
 
@@ -18945,6 +18967,7 @@ fn test_xsd_section_name_override_via_pattern() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 
@@ -19003,6 +19026,7 @@ fn test_xsd_section_name_override_no_match_falls_back() {
             },
             value: None,
             placeholder: None,
+            required: false,
         }),
     ];
 

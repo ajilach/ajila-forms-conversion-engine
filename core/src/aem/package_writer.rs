@@ -1493,6 +1493,7 @@ mod tests {
             som_path: None,
             value: None,
             placeholder: None,
+            required: false,
         });
 
         let translations = extract_translations(&[node], "en");
@@ -1727,6 +1728,7 @@ mod tests {
             som_path: None,
             value: None,
             placeholder: None,
+            required: false,
         })];
 
         let mut translations = extract_translations(&content, "en");

@@ -1138,6 +1138,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             },
             value: selected_value.map(InputValue::Text),
             placeholder: None,
+            required: false,
         }))
     }
 
@@ -1185,6 +1186,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             },
             value: selected_value.map(InputValue::Text),
             placeholder: None,
+            required: false,
         }))
     }
 
@@ -1221,6 +1223,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             input_type: FieldType::Date,
             value,
             placeholder: None,
+            required: false,
         }))
     }
 
@@ -1240,6 +1243,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             input_type: FieldType::Date,
             value: None,
             placeholder: None,
+            required: false,
         });
 
         // If there's suffix text, emit it as a trailing paragraph
@@ -1546,6 +1550,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             input_type: field_type,
             value: input_value,
             placeholder: self.get_placeholder(node).map(TranslatableString::Plain),
+            required: false,
         }))
     }
 

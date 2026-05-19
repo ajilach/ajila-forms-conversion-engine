@@ -200,6 +200,8 @@ pub enum NodeMetadata {
     FieldInputType(FieldInputKind),
     /// Field options (for Radio/Dropdown fields).
     FieldOptions(Vec<NameValue>),
+    /// Field required flag.
+    FieldRequired(bool),
 }
 
 /// Simplified field input type for the editor UI.

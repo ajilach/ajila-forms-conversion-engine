@@ -5,13 +5,13 @@ mod structured_converter;
 mod translation_merger;
 
 pub use element_merge::{
-    MergeError as ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
+    can_merge, can_merge_all, merge_nodes, merge_two, MergeError as ElementMergeError,
 };
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
 pub use translation_merger::{
-    MergeError, MergeError as TranslationMergeError, calculate_structural_similarity,
-    merge_translations,
+    calculate_structural_similarity, merge_translations, MergeError,
+    MergeError as TranslationMergeError,
 };
 
 use rust_decimal::Decimal;
@@ -440,6 +440,8 @@ pub struct FieldNode {
     pub input_type: FieldType,
     pub value: Option<InputValue>,
     pub placeholder: Option<TranslatableString>,
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -578,7 +580,9 @@ impl InlineText {
                         collect_text(child, out);
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+                InlineNode::Strong(inner)
+                | InlineNode::Emphasis(inner)
+                | InlineNode::Superscript(inner) => {
                     collect_text(inner, out);
                 }
             }
@@ -616,7 +620,9 @@ impl InlineText {
                         collect_text(child, lang, out);
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+                InlineNode::Strong(inner)
+                | InlineNode::Emphasis(inner)
+                | InlineNode::Superscript(inner) => {
                     collect_text(inner, lang, out);
                 }
             }
@@ -634,7 +640,9 @@ impl InlineText {
         fn strip(node: &InlineNode) -> InlineNode {
             match node {
                 InlineNode::Text(_) | InlineNode::TranslatedText(_) => node.clone(),
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => strip(inner),
+                InlineNode::Strong(inner)
+                | InlineNode::Emphasis(inner)
+                | InlineNode::Superscript(inner) => strip(inner),
                 InlineNode::Link(link) => InlineNode::Link(LinkNode {
                     href: link.href.clone(),
                     content: link.content.to_plain(),
@@ -683,7 +691,9 @@ impl InlineText {
                 InlineNode::TranslatedText(map) => {
                     langs.extend(map.keys().cloned());
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+                InlineNode::Strong(inner)
+                | InlineNode::Emphasis(inner)
+                | InlineNode::Superscript(inner) => {
                     walk(inner, langs);
                 }
                 InlineNode::Link(link) => {
@@ -711,7 +721,9 @@ impl InlineText {
                         }
                     }
                 }
-                InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => {
+                InlineNode::Strong(inner)
+                | InlineNode::Emphasis(inner)
+                | InlineNode::Superscript(inner) => {
                     walk(inner, missing);
                 }
                 InlineNode::Link(link) => {
@@ -756,7 +768,9 @@ impl InlineNode {
     pub(crate) fn trailing_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => inner.trailing_text(),
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => inner.trailing_text(),
             InlineNode::TranslatedText(map) => {
                 // Prefer a value that doesn't end with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
@@ -783,7 +797,9 @@ impl InlineNode {
     pub(crate) fn leading_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
-            InlineNode::Strong(inner) | InlineNode::Emphasis(inner) | InlineNode::Superscript(inner) => inner.leading_text(),
+            InlineNode::Strong(inner)
+            | InlineNode::Emphasis(inner)
+            | InlineNode::Superscript(inner) => inner.leading_text(),
             InlineNode::TranslatedText(map) => {
                 // Prefer a value that doesn't start with whitespace (worst case
                 // for separator decisions) to avoid nondeterminism.
