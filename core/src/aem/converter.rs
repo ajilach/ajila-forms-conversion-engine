@@ -1379,7 +1379,7 @@ fn find_best_fragment_inner<'a>(
             .count();
 
         // Require at least half (ceiling) of bound elements to be present.
-        let required = (fragment.bound_elements.len() + 1) / 2;
+        let required = fragment.bound_elements.len().div_ceil(2);
         if overlap < required {
             continue;
         }

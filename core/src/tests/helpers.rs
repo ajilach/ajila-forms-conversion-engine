@@ -5,7 +5,7 @@ use std::io::{Cursor, Read};
 use std::sync::Once;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, InlineNode, ListNode,
+    ConditionalNode, FieldId, FieldNode, FieldType, InlineNode, ListNode,
     StructuredNode,
 };
 

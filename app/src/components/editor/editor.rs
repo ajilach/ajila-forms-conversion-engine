@@ -17,7 +17,7 @@ use blueprint::{
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::smart_edit;
 use super::state::{
-    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, NodePath, PathSegment,
+    ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_merge_selected, collect_selectable_paths,
     compute_add_options, delete_nodes, get_container_child_info, get_container_children_count,
     get_list_at_path, get_list_at_path_mut, get_list_item_text_mut, get_node_at_path,
@@ -87,7 +87,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
     // Which change IDs the user has rejected in the current Preview round.
     // Reset to empty whenever a new smart-edit run starts.
-    let mut rejected_ids = use_signal(|| std::collections::HashSet::<usize>::new());
+    let mut rejected_ids = use_signal(std::collections::HashSet::<usize>::new);
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -1354,16 +1354,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         }
 
     }
-}
-
-fn selected_root_indices(paths: &std::collections::HashSet<NodePath>) -> Vec<usize> {
-    let mut indices = BTreeSet::new();
-    for path in paths {
-        if let Some(PathSegment::Child(idx)) = path.first() {
-            indices.insert(*idx);
-        }
-    }
-    indices.into_iter().collect()
 }
 
 /// Update inline text content, optionally for a specific language.

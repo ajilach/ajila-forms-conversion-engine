@@ -404,8 +404,8 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
         }
 
         AemNode::Repeatable {
-            name,
-            title,
+            name: _,
+            title: _,
             children,
             min_occur,
             max_occur,

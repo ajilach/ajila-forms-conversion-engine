@@ -979,7 +979,7 @@ fn run_exhaustive_to_merged_inner(pdf_path: &Path) -> Result<Vec<StructuredNode>
     #[cfg(test)]
     {
         let envelope = test_cache::cached_envelope(pdf_path, None);
-        return Ok(envelope.content);
+        Ok(envelope.content)
     }
 
     #[cfg(not(test))]
@@ -1011,7 +1011,7 @@ fn run_exhaustive_to_envelope_inner(
 ) -> Result<DocumentEnvelope, Error> {
     #[cfg(test)]
     {
-        return Ok(test_cache::cached_envelope(pdf_path, Some(language)));
+        Ok(test_cache::cached_envelope(pdf_path, Some(language)))
     }
 
     #[cfg(not(test))]

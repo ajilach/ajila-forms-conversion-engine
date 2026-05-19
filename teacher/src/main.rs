@@ -255,13 +255,10 @@ async fn ensure_change_list(
 
     if let Ok(raw) =
         run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
-    {
-        if let Ok(changes) = parse_change_list(&raw) {
-            if !changes.is_empty() {
+        && let Ok(changes) = parse_change_list(&raw)
+            && !changes.is_empty() {
                 result.changes = changes;
             }
-        }
-    }
 }
 
 fn build_smart_edit_prompt(

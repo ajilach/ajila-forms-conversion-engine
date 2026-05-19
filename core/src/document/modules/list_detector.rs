@@ -990,8 +990,7 @@ impl AnalysisModule for ListDetector {
                 } else {
                     // New column — start a fresh run.
                     let right_edge = bounds.x + bounds.width;
-                    let mut run = Vec::new();
-                    run.push((idx, text, bounds, marker));
+                    let run = vec![(idx, text, bounds, marker)];
                     column_runs.push((bounds.x, right_edge, run));
                 }
             } else {

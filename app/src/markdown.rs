@@ -181,7 +181,7 @@ fn escape_block_syntax(input: &str) -> String {
         } else if is_ordered_list_start(trimmed) {
             // Ordered list: "1. ", "2) " etc.
             let prefix = &line[..line.len() - trimmed.len()];
-            let dot_pos = trimmed.find(|c| c == '.' || c == ')').unwrap();
+            let dot_pos = trimmed.find(['.', ')']).unwrap();
             let _ = write!(
                 result,
                 "{prefix}{}\\{}{}",

@@ -8340,7 +8340,7 @@ impl Flattened {
                                 .get("style")
                                 .map(|style| {
                                     Self::parse_css_dimension(style, "vertical-align")
-                                        .map_or(false, |va| va > 0.0)
+                                        .is_some_and(|va| va > 0.0)
                                 })
                                 .unwrap_or(false);
 
@@ -9378,6 +9378,7 @@ impl Flattened {
     /// Per XFA spec (section on "Line Height" and "Paragraph Spacing"):
     /// - Each paragraph's height is computed from text wrapping within the draw width,
     ///   using AXTE line metrics (ascent, descent, line gap = 20% of font size).
+    ///
     /// Determine the font weight override from a rich text paragraph's runs.
     /// Returns `Some(Bold)` if all content runs are bold, `Some(Normal)` if all
     /// are normal, or `None` for mixed/empty paragraphs.
