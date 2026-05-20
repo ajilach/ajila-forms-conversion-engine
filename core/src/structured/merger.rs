@@ -1143,7 +1143,7 @@ fn recurse_into_node(node: StructuredNode) -> StructuredNode {
 mod tests {
     use super::*;
     use crate::structured::{
-        HeadingLevel, HeadingNode, InlineNode, InlineText, ParagraphNode, StructuredNode,
+        HeadingLevel, HeadingNode, InlineText, ParagraphNode, StructuredNode,
         TranslatedText,
     };
 

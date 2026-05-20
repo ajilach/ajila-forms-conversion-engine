@@ -526,11 +526,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         TranslatedText::single(&self.language, text)
     }
 
-    /// Wrap an Option<InlineText> into an Option<TranslatedText>.
-    fn translated_opt(&self, text: Option<InlineText>) -> Option<TranslatedText> {
-        text.map(|t| self.translated(t))
-    }
-
     /// Convert a single group to a StructuredNode.
     fn convert_group(&self, group_idx: usize) -> Option<StructuredNode> {
         let group = self.doc.get_group(group_idx)?;

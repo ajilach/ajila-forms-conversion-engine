@@ -267,7 +267,7 @@ pub fn merge_nodes(nodes: Vec<StructuredNode>) -> Result<StructuredNode, MergeEr
 mod tests {
     use super::*;
     use crate::document::ListStyleType;
-    use crate::structured::{HeadingNode, InlineText, ListNode, TranslatedText};
+    use crate::structured::{HeadingNode, ListNode, TranslatedText};
 
     #[test]
     fn test_merge_paragraphs() {

@@ -554,7 +554,7 @@ impl From<&crate::structured::Selection> for GraphSelection {
 mod tests {
     use super::*;
     use crate::structured::{
-        FieldId, FieldNode, FieldType, GroupNode, InlineText, InputValue, NameValue,
+        FieldId, FieldNode, FieldType, GroupNode, InputValue, NameValue,
         StructuredNode, TranslatableString, TranslatedText,
     };
     use crate::xfa::scripting::SomPath;

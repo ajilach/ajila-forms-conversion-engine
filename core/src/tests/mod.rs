@@ -4131,27 +4131,13 @@ fn test_aaai_structured_output_has_expected_field_labels() {
 fn test_aaai_structured_output_no_invisible_content() {
     // Test that the structured output does not contain invisible/hidden field content
     // like "ffMandatory" which is a non-interactive field without a computed value
-    use crate::structured::{InlineNode, StructuredNode};
+    use crate::structured::StructuredNode;
 
     let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAAI_019_DE.pdf"))
         .expect("Failed to run exhaustive merge on AAAI_019_DE.pdf");
 
     // Collect all text content from structured output
     fn collect_text_content(nodes: &[StructuredNode], texts: &mut Vec<String>) {
-        fn extract_inline_text(nodes: &[InlineNode]) -> String {
-            nodes
-                .iter()
-                .map(|node| match node {
-                    InlineNode::Text(s) => s.clone(),
-                    InlineNode::Strong(inner)
-                    | InlineNode::Emphasis(inner)
-                    | InlineNode::Superscript(inner) => extract_inline_text(&[(**inner).clone()]),
-                    InlineNode::Link(link) => extract_inline_text(&link.content.0),
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        }
-
         for node in nodes {
             match node {
                 StructuredNode::Paragraph(p) => {
@@ -5725,8 +5711,9 @@ fn test_aaai_multilingual_merge_de_en() {
     // Test that merging AAAI_019_DE and AAAI_019_EN produces a StructuredNode tree
     // with TranslatedText nodes containing both "de" and "en" keys.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, FieldNode, HeadingLevel, InlineNode, StructuredNode, TranslatedText};
-    use std::collections::HashMap;
+    use crate::structured::{
+        self, FieldNode, HeadingLevel, InlineNode, StructuredNode, TranslatedText,
+    };
 
     // Build envelopes for both languages
     let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
@@ -5753,8 +5740,16 @@ fn test_aaai_multilingual_merge_de_en() {
     fn collect_inline_nodes(nodes: &[StructuredNode], out: &mut Vec<InlineNode>) {
         for node in nodes {
             match node {
-                StructuredNode::Heading(h) => { for _t in h.content.0.values() { out.extend(_t.0.iter().cloned()); } }
-                StructuredNode::Paragraph(p) => { for _t in p.content.0.values() { out.extend(_t.0.iter().cloned()); } }
+                StructuredNode::Heading(h) => {
+                    for _t in h.content.0.values() {
+                        out.extend(_t.0.iter().cloned());
+                    }
+                }
+                StructuredNode::Paragraph(p) => {
+                    for _t in p.content.0.values() {
+                        out.extend(_t.0.iter().cloned());
+                    }
+                }
                 StructuredNode::Group(g) => collect_inline_nodes(&g.children, out),
                 StructuredNode::Conditional(c) => {
                     collect_inline_nodes(&[(*c.content).clone()], out);
@@ -5791,8 +5786,12 @@ fn test_aaai_multilingual_merge_de_en() {
                 StructuredNode::Heading(h) => out.push(h.content.clone()),
                 StructuredNode::Paragraph(p) => out.push(p.content.clone()),
                 StructuredNode::Group(g) => collect_translated_texts_inner(&g.children, out),
-                StructuredNode::Conditional(c) => collect_translated_texts_inner(&[(*c.content).clone()], out),
-                StructuredNode::Repeatable(r) => collect_translated_texts_inner(&[(*r.item).clone()], out),
+                StructuredNode::Conditional(c) => {
+                    collect_translated_texts_inner(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_translated_texts_inner(&[(*r.item).clone()], out)
+                }
                 _ => {}
             }
         }
@@ -5836,8 +5835,14 @@ fn test_aaai_multilingual_merge_de_en() {
     });
 
     let h1_tt = h1_content.expect("H1 heading should exist");
-    let de_title = h1_tt.get("de").expect("H1 should have 'de' translation").as_plain_text();
-    let en_title = h1_tt.get("en").expect("H1 should have 'en' translation").as_plain_text();
+    let de_title = h1_tt
+        .get("de")
+        .expect("H1 should have 'de' translation")
+        .as_plain_text();
+    let en_title = h1_tt
+        .get("en")
+        .expect("H1 should have 'en' translation")
+        .as_plain_text();
 
     assert!(
         de_title.contains("Vereinbarung"),
@@ -6809,7 +6814,7 @@ fn test_aaoe_h2_sections() {
     // Verify that the AAOE_033_IT merged structured tree contains the expected
     // top-level H2 sections in document order.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{InlineNode, StructuredNode};
+    use crate::structured::StructuredNode;
 
     let merged = run_exhaustive_to_merged(input_path("AAOE_033_IT.pdf"))
         .expect("Failed to run exhaustive merge on AAOE");
@@ -7344,7 +7349,7 @@ fn test_acav_field_labels_are_correct() {
     // Verify that specific fields in ACAV have the correct labels attached.
     // This tests the LabelAttacher's per-field fallback behavior.
     use crate::run_exhaustive_to_merged;
-    use crate::structured::{FieldNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{FieldNode, StructuredNode, TranslatedText};
 
     fn find_all_fields(nodes: &[StructuredNode], fields: &mut Vec<FieldNode>) {
         for node in nodes {
@@ -8531,8 +8536,16 @@ fn test_aacj_multilingual_merge_de_en_sp() {
     fn collect_inline_nodes(nodes: &[StructuredNode], out: &mut Vec<InlineNode>) {
         for node in nodes {
             match node {
-                StructuredNode::Heading(h) => { for _t in h.content.0.values() { out.extend(_t.0.iter().cloned()); } }
-                StructuredNode::Paragraph(p) => { for _t in p.content.0.values() { out.extend(_t.0.iter().cloned()); } }
+                StructuredNode::Heading(h) => {
+                    for _t in h.content.0.values() {
+                        out.extend(_t.0.iter().cloned());
+                    }
+                }
+                StructuredNode::Paragraph(p) => {
+                    for _t in p.content.0.values() {
+                        out.extend(_t.0.iter().cloned());
+                    }
+                }
                 StructuredNode::Group(g) => collect_inline_nodes(&g.children, out),
                 StructuredNode::Conditional(c) => {
                     collect_inline_nodes(&[(*c.content).clone()], out);
@@ -8556,8 +8569,12 @@ fn test_aacj_multilingual_merge_de_en_sp() {
                 StructuredNode::Heading(h) => out.push(h.content.clone()),
                 StructuredNode::Paragraph(p) => out.push(p.content.clone()),
                 StructuredNode::Group(g) => collect_translated_texts_from_tree(&g.children, out),
-                StructuredNode::Conditional(c) => collect_translated_texts_from_tree(&[(*c.content).clone()], out),
-                StructuredNode::Repeatable(r) => collect_translated_texts_from_tree(&[(*r.item).clone()], out),
+                StructuredNode::Conditional(c) => {
+                    collect_translated_texts_from_tree(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_translated_texts_from_tree(&[(*r.item).clone()], out)
+                }
                 _ => {}
             }
         }
@@ -8606,7 +8623,7 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
     // part of an inline field's context — what matters is that all three
     // language translations are merged into the same TranslatedText node.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
@@ -8633,13 +8650,27 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
         found_en: &mut bool,
         found_sp: &mut bool,
     ) {
-        let has_de = tt.get("de").is_some_and(|t| t.as_plain_text().contains("Ich bestätige"));
-        let has_en = tt.get("en").is_some_and(|t| t.as_plain_text().contains("I confirm that I am tax resident"));
-        let has_sp = tt.get("sp").is_some_and(|t| t.as_plain_text().contains("Confirmo que soy residente fiscal"));
+        let has_de = tt
+            .get("de")
+            .is_some_and(|t| t.as_plain_text().contains("Ich bestätige"));
+        let has_en = tt.get("en").is_some_and(|t| {
+            t.as_plain_text()
+                .contains("I confirm that I am tax resident")
+        });
+        let has_sp = tt.get("sp").is_some_and(|t| {
+            t.as_plain_text()
+                .contains("Confirmo que soy residente fiscal")
+        });
 
-        if has_de { *found_de = true; }
-        if has_en { *found_en = true; }
-        if has_sp { *found_sp = true; }
+        if has_de {
+            *found_de = true;
+        }
+        if has_en {
+            *found_en = true;
+        }
+        if has_sp {
+            *found_sp = true;
+        }
 
         // All three translations should be in the same TranslatedText node.
         if has_de || has_en || has_sp {
@@ -8648,7 +8679,9 @@ fn test_aacj_multilingual_merge_paragraph_alignment() {
                 "Tax residency text should have all three languages \
                  in the same TranslatedText, but got: de={}, en={}, sp={}.\n\
                  Map keys: {:?}",
-                has_de, has_en, has_sp,
+                has_de,
+                has_en,
+                has_sp,
                 tt.0.keys().collect::<Vec<_>>()
             );
         }
@@ -8682,7 +8715,7 @@ fn test_aacj_multilingual_translation_snippets() {
     // Verify that specific text snippets are correctly aligned across DE, EN,
     // and SP in the merged AACJ tree.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACJ_019_DE.pdf"), "de")
@@ -8724,13 +8757,20 @@ fn test_aacj_multilingual_translation_snippets() {
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
-            for (i, (de_snippet, en_snippet, sp_snippet)) in
-                expected_triplets.iter().enumerate()
-            {
+            for (i, (de_snippet, en_snippet, sp_snippet)) in expected_triplets.iter().enumerate() {
                 if de_text.contains(de_snippet)
                     || en_text.contains(en_snippet)
                     || sp_text.contains(sp_snippet)
@@ -8775,7 +8815,7 @@ fn test_aacj_multilingual_translation_snippets() {
 #[test]
 fn test_aane_multilingual_merge_no_duplicate_h2() {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, HeadingLevel, InlineNode, StructuredNode, TranslatedText};
+    use crate::structured::{self, HeadingLevel, StructuredNode, TranslatedText};
 
     let de = run_exhaustive_to_envelope(input_path("AANE_019_DE.pdf"), "de")
         .expect("Failed to process AANE_019_DE");
@@ -8788,10 +8828,7 @@ fn test_aane_multilingual_merge_no_duplicate_h2() {
 
     // Collect all H2 headings from the merged tree (including inside
     // conditionals, groups, etc.).
-    fn collect_h2s(
-        nodes: &[StructuredNode],
-        out: &mut Vec<TranslatedText>,
-    ) {
+    fn collect_h2s(nodes: &[StructuredNode], out: &mut Vec<TranslatedText>) {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8() => {
@@ -8845,7 +8882,7 @@ fn test_aags_multilingual_merge_de_en() {
     // Test that merging AAGS DE and EN produces correct bilingual translations
     // for several key text pairs across headings, paragraphs, and field labels.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AAGS_019_DE.pdf"), "de")
@@ -8892,8 +8929,14 @@ fn test_aags_multilingual_merge_de_en() {
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             for (i, (de_snippet, en_snippet)) in expected_pairs.iter().enumerate() {
                 if de_text.contains(de_snippet) || en_text.contains(en_snippet) {
@@ -9109,7 +9152,7 @@ fn test_aagi_multilingual_bank_communications_paragraph_alignment_part1() {
     // Regression test: this multilingual paragraph must align DE/EN/SP in the
     // same TranslatedText node for the first segment.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_DE.pdf"), "de")
@@ -9139,9 +9182,18 @@ fn test_aagi_multilingual_bank_communications_paragraph_alignment_part1() {
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             let matches_de = de_text.contains(expected_triplet.0);
             let matches_en = en_text.contains(expected_triplet.1);
@@ -9176,7 +9228,7 @@ fn test_aagi_multilingual_bank_communications_paragraph_alignment_part2() {
     // Regression test: continuation of the same multilingual paragraph must
     // also align DE/EN/SP in one TranslatedText node.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AAGI_019_DE.pdf"), "de")
@@ -9206,9 +9258,18 @@ fn test_aagi_multilingual_bank_communications_paragraph_alignment_part2() {
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             let matches_de = de_text.contains(expected_triplet.0);
             let matches_en = en_text.contains(expected_triplet.1);
@@ -9698,7 +9759,7 @@ fn test_aaam_multilingual_merge_formular_adressat_visible_only_for_first_radio_o
 
 #[test]
 fn test_aaam_multilingual_translation_triplet_same_node() {
-    use crate::structured::{InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let merged = build_aaam_default_merged();
@@ -9724,9 +9785,18 @@ fn test_aaam_multilingual_translation_triplet_same_node() {
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             if contains_ci(&de_text, de_snippet)
                 && !contains_ci(&en_text, en_snippet)
@@ -9776,7 +9846,7 @@ fn assert_aaam_translation_triplet_on_same_node(
     en_snippet: &str,
     sp_snippet: &str,
 ) {
-    use crate::structured::{InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let merged = build_aaam_default_merged();
@@ -9816,9 +9886,18 @@ fn assert_aaam_translation_triplet_on_same_node(
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             if contains_normalized(&de_text, de_snippet)
                 && !contains_normalized(&en_text, en_snippet)
@@ -10527,7 +10606,7 @@ fn assert_aagg_translation_triplet_on_same_node(
     en_snippet: &str,
     sp_snippet: &str,
 ) {
-    use crate::structured::{InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{StructuredNode, TranslatedText};
     use helpers::walk_structured_nodes;
 
     let merged = build_aagg_default_merged();
@@ -10568,9 +10647,18 @@ fn assert_aagg_translation_triplet_on_same_node(
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             if contains_normalized(&de_text, de_snippet)
                 || contains_normalized(&en_text, en_snippet)
@@ -11809,7 +11897,10 @@ fn test_aaoe_dichiarazione_is_bold() {
             .find(|item| item.as_plain_text().contains("Diritto all"))
             .expect("Should find list item with 'Diritto all'");
         assert!(
-            has_strong_with(&diritto_item.content.0.values().next().unwrap().0, "Diritto all"),
+            has_strong_with(
+                &diritto_item.content.0.values().next().unwrap().0,
+                "Diritto all"
+            ),
             "'Diritto all'applicabilità' list item should be bold (Strong), got: {:?}",
             diritto_item.content.0
         );
@@ -11975,7 +12066,10 @@ fn test_baqm_partial_bold_in_paragraph() {
                     .take(100)
                     .collect::<String>()
             );
-            println!("  InlineNodes: {:?}", p.content.0.values().next().map(|t| &t.0));
+            println!(
+                "  InlineNodes: {:?}",
+                p.content.0.values().next().map(|t| &t.0)
+            );
 
             if has_strong_containing(&p.content.0.values().next().unwrap().0, search_text) {
                 _strong_in_structured = true;
@@ -14026,7 +14120,7 @@ fn test_aacc_multilingual_merge_de_en() {
     // because the strict structural comparison did not match Conditionals and GridLayouts
     // whose internal layout differs slightly between the two language versions.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
+    use crate::structured::{self, StructuredNode};
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACC_019_DE.pdf"), "de")
         .expect("Failed to process AACC_019_DE");
@@ -22328,8 +22422,7 @@ fn test_aais_019_no_missing_translation_list() {
 fn test_table_collection_infrastructure() {
     // Verify that the collect_tables helper works correctly
     use crate::structured::{
-        InlineText, ParagraphNode, StructuredNode, TableHeader, TableNode, TableRow,
-        TranslatedText,
+        ParagraphNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatedText,
     };
     use helpers::collect_tables;
 
@@ -23252,7 +23345,7 @@ fn test_aari_has_list_with_expected_items() {
 #[test]
 fn test_bage_headings_no_missing_translation() {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
 
     let de = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
         .expect("Failed to process BAGE_019_DE");
@@ -25457,7 +25550,7 @@ fn test_bagy_paragraphs_merged_de_en() {
     // the risk information overview. They should be merged into a single
     // TranslatedText node during multilingual merge.
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
+    use crate::structured::{self, StructuredNode};
 
     let de_envelope = run_exhaustive_to_envelope(input_path("BAGY_019_DE.pdf"), "de")
         .expect("Failed to process BAGY_019_DE");
@@ -25482,8 +25575,14 @@ fn test_bagy_paragraphs_merged_de_en() {
     let mut found = false;
     walk_structured_nodes(&merged.content, &mut |node| {
         if let StructuredNode::Paragraph(p) = node {
-            let has_de = p.content.get("de").is_some_and(|t| t.as_plain_text().contains(de_fragment));
-            let has_en = p.content.get("en").is_some_and(|t| t.as_plain_text().contains(en_fragment));
+            let has_de = p
+                .content
+                .get("de")
+                .is_some_and(|t| t.as_plain_text().contains(de_fragment));
+            let has_en = p
+                .content
+                .get("en")
+                .is_some_and(|t| t.as_plain_text().contains(en_fragment));
             if has_de && has_en {
                 found = true;
             }
@@ -25500,7 +25599,7 @@ fn test_bagy_paragraphs_merged_de_en() {
 #[test]
 fn test_aaij_multilingual_merge_content() {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
+    use crate::structured::{self, StructuredNode};
     use helpers::walk_structured_nodes;
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AAIJ_019_DE.pdf"), "de")
@@ -25539,13 +25638,22 @@ fn test_aaij_multilingual_merge_content() {
             StructuredNode::Paragraph(p) => &p.content,
             _ => return,
         };
-        if tt.get("de").is_some_and(|t| t.as_plain_text().contains(de_fragment)) {
+        if tt
+            .get("de")
+            .is_some_and(|t| t.as_plain_text().contains(de_fragment))
+        {
             found_de = true;
         }
-        if tt.get("en").is_some_and(|t| t.as_plain_text().contains(en_fragment)) {
+        if tt
+            .get("en")
+            .is_some_and(|t| t.as_plain_text().contains(en_fragment))
+        {
             found_en = true;
         }
-        if tt.get("it").is_some_and(|t| t.as_plain_text().contains(it_fragment)) {
+        if tt
+            .get("it")
+            .is_some_and(|t| t.as_plain_text().contains(it_fragment))
+        {
             found_it = true;
         }
     });
@@ -26215,7 +26323,7 @@ fn test_bage_intro_paragraph_not_list_item() {
 #[test]
 fn test_bage_section6_heading_merged_with_english() {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, StructuredNode};
+    use crate::structured::{self, StructuredNode};
 
     let de = run_exhaustive_to_envelope(input_path("BAGE_019_DE.pdf"), "de")
         .expect("Failed to process BAGE_019_DE");
@@ -26232,13 +26340,18 @@ fn test_bage_section6_heading_merged_with_english() {
                     let text = h.content.as_plain_text();
                     out.push((h.level.as_u8(), text));
                     // Also check translations
-                    let de_text = h.content.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-                    let en_text = h.content.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
+                    let de_text = h
+                        .content
+                        .get("de")
+                        .map(|t| t.as_plain_text())
+                        .unwrap_or_default();
+                    let en_text = h
+                        .content
+                        .get("en")
+                        .map(|t| t.as_plain_text())
+                        .unwrap_or_default();
                     if de_text.contains("6.") && de_text.contains("Dauer") {
-                        out.push((
-                            h.level.as_u8(),
-                            format!("DE={} | EN={}", de_text, en_text),
-                        ));
+                        out.push((h.level.as_u8(), format!("DE={} | EN={}", de_text, en_text)));
                     }
                 }
                 StructuredNode::Group(g) => collect_headings(&g.children, out),
@@ -26272,9 +26385,17 @@ fn test_bage_section6_heading_merged_with_english() {
         for node in nodes {
             match node {
                 StructuredNode::Heading(h) => {
-                    let de_text = h.content.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
+                    let de_text = h
+                        .content
+                        .get("de")
+                        .map(|t| t.as_plain_text())
+                        .unwrap_or_default();
                     if de_text.contains("6.") && de_text.contains("Dauer") {
-                        let en_text = h.content.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
+                        let en_text = h
+                            .content
+                            .get("en")
+                            .map(|t| t.as_plain_text())
+                            .unwrap_or_default();
                         return Some((de_text, en_text));
                     }
                 }
@@ -27666,7 +27787,7 @@ fn diag_acroform_second_pdf() {
 
 fn assert_aacs_triplet_aligned(de_snippet: &str, en_snippet: &str, sp_snippet: &str) {
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, InlineNode, InlineText, StructuredNode, TranslatedText};
+    use crate::structured::{self, StructuredNode, TranslatedText};
 
     let de_envelope = run_exhaustive_to_envelope(input_path("AACS_019_DE.pdf"), "de")
         .expect("Failed to process AACS_019_DE");
@@ -27687,20 +27808,6 @@ fn assert_aacs_triplet_aligned(de_snippet: &str, en_snippet: &str, sp_snippet: &
         structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], semantic_ref)
             .unwrap();
 
-    fn collect_translated_texts<'a>(
-        node: &'a InlineNode,
-        out: &mut Vec<&'a InlineNode>,
-    ) {
-        match node {
-            InlineNode::Strong(inner)
-            | InlineNode::Emphasis(inner)
-            | InlineNode::Superscript(inner) => {
-                collect_translated_texts(inner, out);
-            }
-            _ => {}
-        }
-    }
-
     let mut found = false;
 
     walk_structured_nodes(&merged.content, &mut |node| {
@@ -27713,9 +27820,18 @@ fn assert_aacs_triplet_aligned(de_snippet: &str, en_snippet: &str, sp_snippet: &
         };
 
         for text in inline_texts {
-            let de_text = text.get("de").map(|t| t.as_plain_text()).unwrap_or_default();
-            let en_text = text.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
-            let sp_text = text.get("sp").map(|t| t.as_plain_text()).unwrap_or_default();
+            let de_text = text
+                .get("de")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let en_text = text
+                .get("en")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
+            let sp_text = text
+                .get("sp")
+                .map(|t| t.as_plain_text())
+                .unwrap_or_default();
 
             if de_text.contains(de_snippet)
                 || en_text.contains(en_snippet)

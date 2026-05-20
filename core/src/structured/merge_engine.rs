@@ -394,12 +394,8 @@ pub(crate) fn fill_missing_translation_placeholders(
 
 fn fill_node(node: &mut StructuredNode, all_languages: &[String], _primary_language: &str) {
     match node {
-        StructuredNode::Heading(h) => {
-            fill_translated_text(&mut h.content, all_languages)
-        }
-        StructuredNode::Paragraph(p) => {
-            fill_translated_text(&mut p.content, all_languages)
-        }
+        StructuredNode::Heading(h) => fill_translated_text(&mut h.content, all_languages),
+        StructuredNode::Paragraph(p) => fill_translated_text(&mut p.content, all_languages),
         StructuredNode::Field(f) => {
             if let Some(label) = &mut f.label {
                 fill_translated_text(label, all_languages);
@@ -448,9 +444,7 @@ fn fill_node(node: &mut StructuredNode, all_languages: &[String], _primary_langu
                 }
             }
         }
-        StructuredNode::Footnote(n) => {
-            fill_translated_text(&mut n.content, all_languages)
-        }
+        StructuredNode::Footnote(n) => fill_translated_text(&mut n.content, all_languages),
         StructuredNode::Image(_) | StructuredNode::Empty => {}
     }
 }
@@ -837,8 +831,14 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 /// were rendered with different styling (e.g. a non-bold introduction and a
 /// bold instruction line).
 fn inline_text_structure_compatible(a: &TranslatedText, b: &TranslatedText) -> bool {
-    let a_bold = a.0.values().next().map_or(false, |t| inline_text_is_bold(t));
-    let b_bold = b.0.values().next().map_or(false, |t| inline_text_is_bold(t));
+    let a_bold =
+        a.0.values()
+            .next()
+            .map_or(false, |t| inline_text_is_bold(t));
+    let b_bold =
+        b.0.values()
+            .next()
+            .map_or(false, |t| inline_text_is_bold(t));
     a_bold == b_bold
 }
 
@@ -862,8 +862,16 @@ fn inline_text_shape_compatible(a: &TranslatedText, b: &TranslatedText) -> bool 
     let b_projections: Vec<String> = b.0.values().map(|t| t.as_plain_text()).collect();
 
     // If either side is empty, use empty string as projection
-    let a_projections = if a_projections.is_empty() { vec![String::new()] } else { a_projections };
-    let b_projections = if b_projections.is_empty() { vec![String::new()] } else { b_projections };
+    let a_projections = if a_projections.is_empty() {
+        vec![String::new()]
+    } else {
+        a_projections
+    };
+    let b_projections = if b_projections.is_empty() {
+        vec![String::new()]
+    } else {
+        b_projections
+    };
 
     for a_proj in &a_projections {
         for b_proj in &b_projections {
@@ -944,11 +952,6 @@ fn text_shape(input: &str) -> TextShape {
 // ============================================================================
 // Localisation — tag a node tree with a single source language
 // ============================================================================
-
-/// Wrap an `InlineText` into a `TranslatedText` with a single language key.
-fn localize_inline_text(text: &InlineText, lang: &str) -> TranslatedText {
-    TranslatedText::single(lang.to_string(), text.clone())
-}
 
 fn localize_translatable_string(value: &TranslatableString, lang: &str) -> TranslatableString {
     match value {
@@ -1121,30 +1124,6 @@ fn localize_translated_text(text: &TranslatedText, lang: &str) -> TranslatedText
 // Translation merge — node list with consolidation
 // ============================================================================
 
-/// Prepend a space to the leading text of the first inline node in the content.
-fn prepend_space_to_first_inline_node(text: &mut InlineText) {
-    fn prepend(node: &mut InlineNode) {
-        match node {
-            InlineNode::Text(s) => {
-                s.insert(0, ' ');
-            }
-            InlineNode::Strong(inner)
-            | InlineNode::Emphasis(inner)
-            | InlineNode::Superscript(inner) => {
-                prepend(inner);
-            }
-            InlineNode::Link(link) => {
-                if let Some(first) = link.content.0.first_mut() {
-                    prepend(first);
-                }
-            }
-        }
-    }
-    if let Some(first) = text.0.first_mut() {
-        prepend(first);
-    }
-}
-
 fn collect_translated_text_languages(text: &TranslatedText) -> Vec<String> {
     text.0.keys().cloned().collect()
 }
@@ -1168,14 +1147,25 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
 ) -> bool {
     if let AlignedNode::Matched(StructuredNode::Paragraph(para)) = entry {
         // Get or create the InlineText for this language
-        let inline = para.content.0.entry(lang.to_string()).or_insert_with(InlineText::empty);
+        let inline = para
+            .content
+            .0
+            .entry(lang.to_string())
+            .or_insert_with(InlineText::empty);
 
         let existing_plain = inline.as_plain_text();
         if existing_plain.is_empty() {
             *inline = InlineText::plain(text);
         } else {
-            let leading = inline.0.first().and_then(|n| n.leading_text()).unwrap_or(" ");
-            let starts_with_space = leading.as_bytes().first().is_none_or(|b| b.is_ascii_whitespace());
+            let leading = inline
+                .0
+                .first()
+                .and_then(|n| n.leading_text())
+                .unwrap_or(" ");
+            let starts_with_space = leading
+                .as_bytes()
+                .first()
+                .is_none_or(|b| b.is_ascii_whitespace());
 
             if starts_with_space || !super::needs_separator(text, &existing_plain) {
                 // Prepend text node directly
@@ -1720,7 +1710,10 @@ fn consolidate_orphan_paragraph_into_field_label(
             // Add the paragraph text as label for the paragraph's language.
             let label = f.label.get_or_insert_with(TranslatedText::empty);
             if let Some(para_text_str) = &para_text {
-                label.insert(para_lang.to_string(), InlineText::plain(para_text_str.as_str()));
+                label.insert(
+                    para_lang.to_string(),
+                    InlineText::plain(para_text_str.as_str()),
+                );
             }
         }
 

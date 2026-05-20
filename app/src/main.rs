@@ -15,7 +15,7 @@ use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
 
 fn main() {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "desktop")]
     {
         // Start with always-on-top enabled (previous behaviour preserved by default).
         let config = dioxus::desktop::Config::new().with_window(
@@ -26,7 +26,7 @@ fn main() {
         dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(feature = "desktop"))]
     dioxus::launch(App);
 }
 
@@ -140,7 +140,7 @@ fn App() -> Element {
             on_toggle_always_on_top: move |value: bool| {
                 always_on_top.set(value);
                 // Window API only exists on native desktop targets.
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(feature = "desktop")]
                 dioxus::desktop::use_window().set_always_on_top(value);
             },
         }
