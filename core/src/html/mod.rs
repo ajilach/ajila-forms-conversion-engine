@@ -6,7 +6,7 @@
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
     HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode,
-    ParagraphNode, RepeatableNode, StructuredNode, TableNode,
+    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatedText,
 };
 use crate::xfa::scripting::SomPath;
 use serde::Deserialize;
@@ -327,7 +327,7 @@ fn generate_list(l: &ListNode, ind: &str) -> String {
         ind, tag, style_attr
     );
     for item in &l.items {
-        let item_html = generate_inline_text(&item.content);
+        let item_html = generate_translated_text(&item.content);
         let sub_html = item
             .sublist
             .as_ref()
@@ -360,20 +360,20 @@ fn generate_heading(h: &HeadingNode, ind: &str) -> String {
         "{}<{}>{}</{}>\n",
         ind,
         tag,
-        generate_inline_text(&h.content),
+        generate_translated_text(&h.content),
         tag
     )
 }
 
 fn generate_paragraph(p: &ParagraphNode, ind: &str) -> String {
-    format!("{}<p>{}</p>\n", ind, generate_inline_text(&p.content))
+    format!("{}<p>{}</p>\n", ind, generate_translated_text(&p.content))
 }
 
 fn generate_footnote(f: &FootnoteNode, ind: &str) -> String {
     format!(
         "{}<div class=\"footnote\"><p>{}</p></div>\n",
         ind,
-        generate_inline_text(&f.content)
+        generate_translated_text(&f.content)
     )
 }
 
@@ -407,7 +407,7 @@ fn generate_table(t: &TableNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
         html.push_str(&format!(
             "{}  <caption>{}</caption>\n",
             ind,
-            generate_inline_text(caption)
+            generate_translated_text(caption)
         ));
     }
 
@@ -440,7 +440,7 @@ fn generate_table(t: &TableNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
 /// Generate node content inline (for table cells)
 fn generate_node_inline(node: &StructuredNode, ctx: &mut GeneratorContext) -> String {
     match node {
-        StructuredNode::Paragraph(p) => generate_inline_text(&p.content),
+        StructuredNode::Paragraph(p) => generate_translated_text(&p.content),
         StructuredNode::Field(f) => {
             let field_id = ctx.next_id(&f.name.to_string());
             generate_field_input(f, ctx, &field_id)
@@ -465,7 +465,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
     // For checkboxes, wrap input and label together (like radio buttons)
     if matches!(f.input_type, FieldType::Bool) {
         if let Some(label) = &f.label {
-            let label_text = generate_inline_text(label);
+            let label_text = generate_translated_text(label);
             if !label_text.is_empty() {
                 html.push_str(&format!("{}  <label class=\"checkbox-option\">\n", ind));
                 html.push_str(&format!("{}    ", ind));
@@ -488,7 +488,7 @@ fn generate_field(f: &FieldNode, ctx: &mut GeneratorContext, ind: &str) -> Strin
         // For non-checkbox fields, use the original approach
         // Generate label if present
         if let Some(label) = &f.label {
-            let label_text = generate_inline_text(label);
+            let label_text = generate_translated_text(label);
             if !label_text.is_empty() {
                 html.push_str(&format!(
                     "{}  <label for=\"{}\">{}</label>\n",
@@ -911,23 +911,32 @@ fn generate_inline_text(text: &InlineText) -> String {
     html
 }
 
+fn generate_translated_text(text: &TranslatedText) -> String {
+    // Emit all languages with lang-tagged spans
+    let mut html = String::new();
+    for (lang, inline) in text.iter() {
+        let inner = generate_inline_text(inline);
+        if inner.is_empty() {
+            html.push_str(&format!(
+                "<span class=\"lang-{}\" lang=\"{}\">MISSING TRANSLATION</span>",
+                escape_attr(lang),
+                escape_attr(lang),
+            ));
+        } else {
+            html.push_str(&format!(
+                "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
+                escape_attr(lang),
+                escape_attr(lang),
+                inner,
+            ));
+        }
+    }
+    html
+}
+
 fn generate_inline_node(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(s) => escape_html(s),
-        InlineNode::TranslatedText(translations) => {
-            // Emit all languages with lang-tagged spans
-            let mut html = String::new();
-            for (lang, text) in translations {
-                let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
-                html.push_str(&format!(
-                    "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
-                    escape_attr(lang),
-                    escape_attr(lang),
-                    escape_html(display_text)
-                ));
-            }
-            html
-        }
         InlineNode::Link(link) => {
             format!(
                 "<a href=\"{}\">{}</a>",
@@ -1598,7 +1607,7 @@ mod tests {
         let field = FieldNode {
             name: field_id.clone(),
             som_path: None,
-            label: Some(InlineText::plain("Test Label")),
+            label: Some(TranslatedText::plain("Test Label")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1626,7 +1635,7 @@ mod tests {
         let field = FieldNode {
             name: "choice".into(),
             som_path: None,
-            label: Some(InlineText::plain("Choose one")),
+            label: Some(TranslatedText::plain("Choose one")),
             input_type: FieldType::Radio {
                 options: vec![
                     NameValue {
@@ -1659,7 +1668,7 @@ mod tests {
         let inner = StructuredNode::Field(FieldNode {
             name: "item".into(),
             som_path: None,
-            label: Some(InlineText::plain("Item")),
+            label: Some(TranslatedText::plain("Item")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1692,7 +1701,7 @@ mod tests {
         use crate::structured::FieldId;
 
         let content = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Conditional content"),
+            content: TranslatedText::plain("Conditional content"),
             som_path: None,
             source_name: None,
         });
@@ -1725,7 +1734,7 @@ mod tests {
         let make_field = || FieldNode {
             name: "FullName".into(),
             som_path: None,
-            label: Some(InlineText::plain("Full Name")),
+            label: Some(TranslatedText::plain("Full Name")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1824,7 +1833,7 @@ mod tests {
             ..HtmlConfig::default()
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         })];
@@ -1864,7 +1873,7 @@ mod tests {
             ..HtmlConfig::default()
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         })];
@@ -1901,7 +1910,7 @@ mod tests {
             ..HtmlConfig::default()
         };
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         })];
@@ -1926,7 +1935,7 @@ mod tests {
     fn test_header_main_structure_without_custom() {
         let config = HtmlConfig::default();
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         })];

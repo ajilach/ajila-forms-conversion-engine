@@ -511,7 +511,7 @@ impl XsdConfig {
 
     /// Get the plain text from an `InlineText`, preferring the master
     /// language when available.
-    pub fn label_text(&self, text: &crate::structured::InlineText) -> String {
+    pub fn label_text(&self, text: &crate::structured::TranslatedText) -> String {
         match &self.master_language {
             Some(lang) => text.plain_text_in(lang),
             None => text.as_plain_text(),

@@ -483,11 +483,11 @@ pub fn compute_changed_indices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blueprint::{InlineText, ParagraphNode};
+    use blueprint::{ParagraphNode, TranslatedText};
 
     fn make_paragraph(text: &str) -> StructuredNode {
         StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain(text),
+            content: TranslatedText::plain(text),
             som_path: None,
             source_name: None,
         })

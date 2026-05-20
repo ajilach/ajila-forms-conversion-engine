@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::structured::{
     ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
-    HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString,
+    HeadingLevel, HeadingNode, ImageNode, InlineNode, InputValue, ListNode, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
 };
 
 use super::fragment_parser::ParsedFragment;
@@ -593,11 +593,14 @@ fn node_contains_superscript_marker(node: &StructuredNode, marker: &str) -> bool
     }
 }
 
-/// Check if an `InlineText` contains a `Superscript` node whose plain text matches `marker`.
-fn inline_text_has_superscript_marker(text: &InlineText, marker: &str) -> bool {
-    text.0
-        .iter()
-        .any(|node| inline_node_has_superscript_marker(node, marker))
+/// Check if a `TranslatedText` contains a `Superscript` node whose plain text matches `marker`.
+fn inline_text_has_superscript_marker(text: &TranslatedText, marker: &str) -> bool {
+    text.0.values().any(|inline| {
+        inline
+            .0
+            .iter()
+            .any(|node| inline_node_has_superscript_marker(node, marker))
+    })
 }
 
 /// Recursively check if an `InlineNode` is or contains a `Superscript` whose text matches `marker`.
@@ -614,7 +617,11 @@ fn inline_node_has_superscript_marker(node: &InlineNode, marker: &str) -> bool {
         InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
             inline_node_has_superscript_marker(inner, marker)
         }
-        InlineNode::Link(link) => inline_text_has_superscript_marker(&link.content, marker),
+        InlineNode::Link(link) => link
+            .content
+            .0
+            .iter()
+            .any(|node| inline_node_has_superscript_marker(node, marker)),
         _ => false,
     }
 }
@@ -1965,49 +1972,47 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
 // ============================================================================
 
 /// Convert `InlineText` to a simple HTML string.
-pub(crate) fn inline_text_to_html(text: &InlineText, language: &str) -> String {
-    let mut out = String::new();
-    for node in &text.0 {
-        inline_node_to_html(node, language, &mut out);
+pub(crate) fn inline_text_to_html(text: &TranslatedText, language: &str) -> String {
+    let inline = text.get(language).or_else(|| text.0.values().next());
+    match inline {
+        Some(t) => {
+            let mut out = String::new();
+            for node in &t.0 {
+                inline_node_to_html(node, &mut out);
+            }
+            out
+        }
+        None => String::new(),
     }
-    out
 }
 
-fn inline_node_to_html(node: &InlineNode, language: &str, out: &mut String) {
+fn inline_node_to_html(node: &InlineNode, out: &mut String) {
     match node {
         InlineNode::Text(s) => {
             out.push_str(&escape_html(s));
-        }
-        InlineNode::TranslatedText(map) => {
-            let text = map
-                .get(language)
-                .and_then(|o| o.as_deref())
-                .or_else(|| map.values().find_map(|o| o.as_deref()))
-                .unwrap_or("");
-            out.push_str(&escape_html(text));
         }
         InlineNode::Link(link) => {
             out.push_str("<a href=\"");
             out.push_str(&escape_html(&link.href));
             out.push_str("\">");
             for child in &link.content.0 {
-                inline_node_to_html(child, language, out);
+                inline_node_to_html(child, out);
             }
             out.push_str("</a>");
         }
         InlineNode::Strong(inner) => {
             out.push_str("<b>");
-            inline_node_to_html(inner, language, out);
+            inline_node_to_html(inner, out);
             out.push_str("</b>");
         }
         InlineNode::Emphasis(inner) => {
             out.push_str("<i>");
-            inline_node_to_html(inner, language, out);
+            inline_node_to_html(inner, out);
             out.push_str("</i>");
         }
         InlineNode::Superscript(inner) => {
             out.push_str("<sup>");
-            inline_node_to_html(inner, language, out);
+            inline_node_to_html(inner, out);
             out.push_str("</sup>");
         }
     }
@@ -2157,7 +2162,7 @@ mod tests {
         // H3 headings are NOT used for sectioning — they become titledraws
         let nodes = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
-            content: InlineText::plain("Sub Title"),
+            content: TranslatedText::plain("Sub Title"),
             som_path: None,
             source_name: None,
         })];
@@ -2186,8 +2191,8 @@ mod tests {
         let nodes = vec![StructuredNode::List(ListNode {
             list_style: crate::document::ListStyleType::Disc,
             items: vec![
-                ListItem::simple(InlineText::plain("First item")),
-                ListItem::simple(InlineText::plain("Second item")),
+                ListItem::simple(TranslatedText::plain("First item")),
+                ListItem::simple(TranslatedText::plain("Second item")),
             ],
         })];
         let root = convert_to_aem(&nodes, &default_config());
@@ -2210,8 +2215,8 @@ mod tests {
         let nodes = vec![StructuredNode::List(ListNode {
             list_style: crate::document::ListStyleType::Decimal,
             items: vec![
-                ListItem::simple(InlineText::plain("Step one")),
-                ListItem::simple(InlineText::plain("Step two")),
+                ListItem::simple(TranslatedText::plain("Step one")),
+                ListItem::simple(TranslatedText::plain("Step two")),
             ],
         })];
         let root = convert_to_aem(&nodes, &default_config());
@@ -2235,20 +2240,20 @@ mod tests {
         // Content before the first H2 is also wrapped in a panel.
         let nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Preamble"),
+                content: TranslatedText::plain("Preamble"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
-                content: InlineText::plain("Section A"),
+                content: TranslatedText::plain("Section A"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldA".into(),
                 som_path: None,
-                label: Some(InlineText::plain("Field A")),
+                label: Some(TranslatedText::plain("Field A")),
                 input_type: FieldType::Text {
                     regex: None,
                     max_length: None,
@@ -2260,14 +2265,14 @@ mod tests {
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
-                content: InlineText::plain("Section B"),
+                content: TranslatedText::plain("Section B"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Field(FieldNode {
                 name: "fieldB".into(),
                 som_path: None,
-                label: Some(InlineText::plain("Field B")),
+                label: Some(TranslatedText::plain("Field B")),
                 input_type: FieldType::Text {
                     regex: None,
                     max_length: None,
@@ -2278,7 +2283,7 @@ mod tests {
                 required: false,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Footer text"),
+                content: TranslatedText::plain("Footer text"),
                 som_path: None,
                 source_name: None,
             }),
@@ -2332,7 +2337,7 @@ mod tests {
     #[test]
     fn convert_paragraph_produces_textdraw() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello world"),
+            content: TranslatedText::plain("Hello world"),
             som_path: None,
             source_name: None,
         })];
@@ -2361,23 +2366,23 @@ mod tests {
         let nodes = vec![
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
-                content: InlineText::plain("Page One"),
+                content: TranslatedText::plain("Page One"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("First page content"),
+                content: TranslatedText::plain("First page content"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
-                content: InlineText::plain("Page Two"),
+                content: TranslatedText::plain("Page Two"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Second page content"),
+                content: TranslatedText::plain("Second page content"),
                 som_path: None,
                 source_name: None,
             }),
@@ -2423,7 +2428,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "firstName".into(),
             som_path: None,
-            label: Some(InlineText::plain("First Name")),
+            label: Some(TranslatedText::plain("First Name")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: Some(50),
@@ -2456,7 +2461,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "gender".into(),
             som_path: None,
-            label: Some(InlineText::plain("Gender")),
+            label: Some(TranslatedText::plain("Gender")),
             input_type: FieldType::Radio {
                 options: vec![
                     NameValue {
@@ -2492,7 +2497,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "country".into(),
             som_path: None,
-            label: Some(InlineText::plain("Country")),
+            label: Some(TranslatedText::plain("Country")),
             input_type: FieldType::Select {
                 options: vec![
                     NameValue {
@@ -2526,7 +2531,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "agreeTerms".into(),
             som_path: None,
-            label: Some(InlineText::plain("I agree to the terms")),
+            label: Some(TranslatedText::plain("I agree to the terms")),
             input_type: FieldType::Bool,
             value: None,
             placeholder: None,
@@ -2550,7 +2555,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "birthDate".into(),
             som_path: None,
-            label: Some(InlineText::plain("Date of Birth")),
+            label: Some(TranslatedText::plain("Date of Birth")),
             input_type: FieldType::Date,
             value: None,
             placeholder: None,
@@ -2574,7 +2579,7 @@ mod tests {
             item: Box::new(StructuredNode::Field(FieldNode {
                 name: "phone".into(),
                 som_path: None,
-                label: Some(InlineText::plain("Phone")),
+                label: Some(TranslatedText::plain("Phone")),
                 input_type: FieldType::Text {
                     regex: None,
                     max_length: None,
@@ -2610,7 +2615,7 @@ mod tests {
         let nodes = vec![StructuredNode::Group(GroupNode {
             children: vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Info"),
+                    content: TranslatedText::plain("Info"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2645,7 +2650,7 @@ mod tests {
         let nodes = vec![
             StructuredNode::Empty,
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("visible"),
+                content: TranslatedText::plain("visible"),
                 som_path: None,
                 source_name: None,
             }),
@@ -2659,7 +2664,7 @@ mod tests {
     #[test]
     fn deterministic_uuids_are_reproducible() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("test"),
+            content: TranslatedText::plain("test"),
             som_path: None,
             source_name: None,
         })];
@@ -2876,7 +2881,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "some_uuid_path".into(),
             som_path: None,
-            label: Some(InlineText::plain("Account Number")),
+            label: Some(TranslatedText::plain("Account Number")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -2928,7 +2933,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "email".into(),
             som_path: None,
-            label: Some(InlineText::plain("Email Address")),
+            label: Some(TranslatedText::plain("Email Address")),
             input_type: FieldType::Email,
             value: None,
             placeholder: None,
@@ -2949,7 +2954,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "phone".into(),
             som_path: None,
-            label: Some(InlineText::plain("Mobile Phone")),
+            label: Some(TranslatedText::plain("Mobile Phone")),
             input_type: FieldType::Tel,
             value: None,
             placeholder: None,
@@ -2970,7 +2975,7 @@ mod tests {
         let nodes = vec![StructuredNode::Field(FieldNode {
             name: "amount".into(),
             som_path: None,
-            label: Some(InlineText::plain("Amount")),
+            label: Some(TranslatedText::plain("Amount")),
             input_type: FieldType::Number {
                 min: None,
                 max: None,
@@ -2994,7 +2999,7 @@ mod tests {
     fn heading_name_uses_text_content() {
         let nodes = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
-            content: InlineText::plain("Client Details"),
+            content: TranslatedText::plain("Client Details"),
             som_path: None,
             source_name: None,
         })];
@@ -3011,7 +3016,7 @@ mod tests {
     #[test]
     fn paragraph_name_uses_text_content() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Please fill in the form below."),
+            content: TranslatedText::plain("Please fill in the form below."),
             som_path: None,
             source_name: None,
         })];
@@ -3030,12 +3035,12 @@ mod tests {
         let nodes = vec![
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H2,
-                content: InlineText::plain("Personal Information"),
+                content: TranslatedText::plain("Personal Information"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("details"),
+                content: TranslatedText::plain("details"),
                 som_path: None,
                 source_name: None,
             }),
@@ -3071,7 +3076,7 @@ mod tests {
             StructuredNode::Field(FieldNode {
                 name: field_id.clone(),
                 som_path: None,
-                label: Some(InlineText::plain("Pick")),
+                label: Some(TranslatedText::plain("Pick")),
                 input_type: FieldType::Radio {
                     options: vec![
                         NameValue {
@@ -3094,7 +3099,7 @@ mod tests {
                     value: InputValue::Text("yes".into()),
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Shown when yes"),
+                    content: TranslatedText::plain("Shown when yes"),
                     som_path: None,
                     source_name: None,
                 })),
@@ -3166,7 +3171,7 @@ mod tests {
             StructuredNode::Field(FieldNode {
                 name: field_id.clone(),
                 som_path: None,
-                label: Some(InlineText::plain("Type")),
+                label: Some(TranslatedText::plain("Type")),
                 input_type: FieldType::Select {
                     options: vec![
                         NameValue {
@@ -3189,7 +3194,7 @@ mod tests {
                     value: InputValue::Text("a".into()),
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Content A"),
+                    content: TranslatedText::plain("Content A"),
                     som_path: None,
                     source_name: None,
                 })),
@@ -3200,7 +3205,7 @@ mod tests {
                     value: InputValue::Text("b".into()),
                 },
                 content: Box::new(StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Content B"),
+                    content: TranslatedText::plain("Content B"),
                     som_path: None,
                     source_name: None,
                 })),
@@ -3245,12 +3250,12 @@ mod tests {
         let nodes = vec![
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
-                content: InlineText::plain("My Form Display Title"),
+                content: TranslatedText::plain("My Form Display Title"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Some text"),
+                content: TranslatedText::plain("Some text"),
                 som_path: None,
                 source_name: None,
             }),
@@ -3271,7 +3276,7 @@ mod tests {
     #[test]
     fn root_title_falls_back_to_form_code_without_h1() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("No heading here"),
+            content: TranslatedText::plain("No heading here"),
             som_path: None,
             source_name: None,
         })];

@@ -3,39 +3,41 @@
 //! Provides bidirectional conversion between InlineText and markdown format,
 //! preserving bold (**text**) and italic (*text*) formatting.
 
-use blueprint::structured::{InlineNode, InlineText};
+use blueprint::structured::{InlineNode, InlineText, TranslatedText};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
-/// Convert InlineText to a markdown-formatted string.
+/// Convert TranslatedText to a markdown-formatted string for a specific language.
 ///
 /// Preserves bold (Strong) and italic (Emphasis) formatting using markdown syntax.
-/// For multilingual content, only the specified language is extracted.
-pub fn inline_text_to_markdown(text: &InlineText, language: Option<&str>) -> String {
+/// Extracts the InlineText for the specified language and renders it as markdown.
+pub fn inline_text_to_markdown(text: &TranslatedText, language: Option<&str>) -> String {
+    let inline = language
+        .and_then(|lang| text.get(lang))
+        .or_else(|| text.0.values().next());
+    match inline {
+        Some(t) => inline_text_to_markdown_inner(t),
+        None => String::new(),
+    }
+}
+
+/// Convert a single InlineText to markdown.
+fn inline_text_to_markdown_inner(text: &InlineText) -> String {
     let mut result = String::new();
     for node in &text.0 {
-        inline_node_to_markdown(node, language, &mut result);
+        inline_node_to_markdown(node, &mut result);
     }
     result
 }
 
-fn inline_node_to_markdown(node: &InlineNode, language: Option<&str>, out: &mut String) {
+fn inline_node_to_markdown(node: &InlineNode, out: &mut String) {
     match node {
         InlineNode::Text(s) => {
             out.push_str(s);
         }
-        InlineNode::TranslatedText(map) => {
-            // Get text for the specified language, or fallback to first available
-            let text = language
-                .and_then(|lang| map.get(lang))
-                .and_then(|o| o.as_deref())
-                .or_else(|| map.values().find_map(|o| o.as_deref()))
-                .unwrap_or("");
-            out.push_str(text);
-        }
         InlineNode::Link(link) => {
             out.push('[');
             for child in &link.content.0 {
-                inline_node_to_markdown(child, language, out);
+                inline_node_to_markdown(child, out);
             }
             out.push_str("](");
             out.push_str(&link.href);
@@ -43,17 +45,17 @@ fn inline_node_to_markdown(node: &InlineNode, language: Option<&str>, out: &mut 
         }
         InlineNode::Strong(inner) => {
             out.push_str("**");
-            inline_node_to_markdown(inner, language, out);
+            inline_node_to_markdown(inner, out);
             out.push_str("**");
         }
         InlineNode::Emphasis(inner) => {
             out.push('*');
-            inline_node_to_markdown(inner, language, out);
+            inline_node_to_markdown(inner, out);
             out.push('*');
         }
         InlineNode::Superscript(inner) => {
             out.push_str("<sup>");
-            inline_node_to_markdown(inner, language, out);
+            inline_node_to_markdown(inner, out);
             out.push_str("</sup>");
         }
     }
@@ -258,7 +260,6 @@ fn push_to_context_or_nodes(
 fn node_to_plain_text(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(s) => s.clone(),
-        InlineNode::TranslatedText(map) => map.values().find_map(|o| o.clone()).unwrap_or_default(),
         InlineNode::Strong(inner)
         | InlineNode::Emphasis(inner)
         | InlineNode::Superscript(inner) => node_to_plain_text(inner),
@@ -282,221 +283,19 @@ fn merge_adjacent_text_nodes(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     result
 }
 
-/// Parse markdown and merge with existing translations.
+/// Parse markdown and update a specific language's InlineText in a TranslatedText.
 ///
-/// This preserves formatting (bold/italic) from the markdown while keeping
-/// translations for other languages. The formatting structure from the edited
-/// language becomes the canonical structure for all languages.
+/// With the new TranslatedText model, each language has its own independent
+/// InlineText tree. Editing one language simply replaces that language's tree.
 pub fn markdown_to_inline_text_multilingual(
     markdown: &str,
     language: &str,
-    existing: &InlineText,
-) -> InlineText {
-    // Collect existing translations from the old structure
-    let mut existing_translations = std::collections::HashMap::<String, String>::new();
-    collect_translations(existing, &mut existing_translations);
-
-    // Parse the new markdown to get the structure
+    existing: &TranslatedText,
+) -> TranslatedText {
     let parsed = markdown_to_inline_text(markdown);
-
-    // Convert Text nodes to TranslatedText, preserving other languages
-    let nodes = convert_to_translated(parsed.0, language, &existing_translations);
-
-    InlineText(nodes)
-}
-
-/// Collect all translations from an InlineText, flattening to plain text per language.
-fn collect_translations(
-    text: &InlineText,
-    translations: &mut std::collections::HashMap<String, String>,
-) {
-    for node in &text.0 {
-        collect_translations_from_node(node, translations);
-    }
-}
-
-fn collect_translations_from_node(
-    node: &InlineNode,
-    translations: &mut std::collections::HashMap<String, String>,
-) {
-    match node {
-        InlineNode::Text(s) => {
-            // Plain text has no language — collect under "default" sentinel key.
-            // Filtered out during distribution in `convert_node_to_translated`.
-            translations
-                .entry("default".to_string())
-                .or_default()
-                .push_str(s);
-        }
-        InlineNode::TranslatedText(map) => {
-            for (lang, text) in map {
-                if let Some(text) = text {
-                    translations.entry(lang.clone()).or_default().push_str(text);
-                }
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            collect_translations_from_node(inner, translations);
-        }
-        InlineNode::Link(link) => {
-            collect_translations(&link.content, translations);
-        }
-    }
-}
-
-/// Convert Text nodes to TranslatedText nodes, distributing translations across nodes.
-fn convert_to_translated(
-    nodes: Vec<InlineNode>,
-    edited_lang: &str,
-    existing_translations: &std::collections::HashMap<String, String>,
-) -> Vec<InlineNode> {
-    // Count total text length in the new structure to distribute translations proportionally
-    let total_len: usize = nodes.iter().map(text_length).sum();
-
-    if total_len == 0 {
-        return nodes;
-    }
-
-    // Track position for proportional distribution
-    let mut position = 0usize;
-
-    nodes
-        .into_iter()
-        .map(|node| {
-            convert_node_to_translated(
-                node,
-                edited_lang,
-                existing_translations,
-                total_len,
-                &mut position,
-            )
-        })
-        .collect()
-}
-
-fn text_length(node: &InlineNode) -> usize {
-    match node {
-        InlineNode::Text(s) => s.len(),
-        InlineNode::TranslatedText(map) => map
-            .values()
-            .find_map(|o| o.as_ref().map(|s| s.len()))
-            .unwrap_or(0),
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => text_length(inner),
-        InlineNode::Link(link) => link.content.0.iter().map(text_length).sum(),
-    }
-}
-
-fn convert_node_to_translated(
-    node: InlineNode,
-    edited_lang: &str,
-    existing_translations: &std::collections::HashMap<String, String>,
-    total_len: usize,
-    position: &mut usize,
-) -> InlineNode {
-    match node {
-        InlineNode::Text(s) => {
-            let node_len = s.len();
-            let start_ratio = *position as f64 / total_len as f64;
-            let end_ratio = (*position + node_len) as f64 / total_len as f64;
-            *position += node_len;
-
-            // Build TranslatedText with the edited language's content
-            let mut map = blueprint::structured::TranslationMap::new();
-            map.insert(edited_lang.to_string(), Some(s));
-
-            // Distribute other languages' content proportionally
-            for (lang, full_text) in existing_translations {
-                if lang != edited_lang && lang != "default" {
-                    let start_idx = (start_ratio * full_text.len() as f64).round() as usize;
-                    let end_idx = (end_ratio * full_text.len() as f64).round() as usize;
-                    let start_idx = start_idx.min(full_text.len());
-                    let end_idx = end_idx.min(full_text.len());
-
-                    // Extract substring, being careful with UTF-8 boundaries
-                    let extracted = extract_substring_safe(full_text, start_idx, end_idx);
-                    if !extracted.is_empty() {
-                        map.insert(lang.clone(), Some(extracted));
-                    }
-                }
-            }
-
-            InlineNode::TranslatedText(map)
-        }
-        InlineNode::TranslatedText(mut map) => {
-            // Already translated, just update position tracking
-            let node_len = map
-                .values()
-                .find_map(|o| o.as_ref().map(|s| s.len()))
-                .unwrap_or(0);
-            *position += node_len;
-
-            // Ensure edited language is present
-            if !map.contains_key(edited_lang) {
-                map.insert(edited_lang.to_string(), Some(String::new()));
-            }
-
-            InlineNode::TranslatedText(map)
-        }
-        InlineNode::Strong(inner) => InlineNode::Strong(Box::new(convert_node_to_translated(
-            *inner,
-            edited_lang,
-            existing_translations,
-            total_len,
-            position,
-        ))),
-        InlineNode::Emphasis(inner) => InlineNode::Emphasis(Box::new(convert_node_to_translated(
-            *inner,
-            edited_lang,
-            existing_translations,
-            total_len,
-            position,
-        ))),
-        InlineNode::Superscript(inner) => {
-            InlineNode::Superscript(Box::new(convert_node_to_translated(
-                *inner,
-                edited_lang,
-                existing_translations,
-                total_len,
-                position,
-            )))
-        }
-        InlineNode::Link(mut link) => {
-            link.content.0 = link
-                .content
-                .0
-                .into_iter()
-                .map(|n| {
-                    convert_node_to_translated(
-                        n,
-                        edited_lang,
-                        existing_translations,
-                        total_len,
-                        position,
-                    )
-                })
-                .collect();
-            InlineNode::Link(link)
-        }
-    }
-}
-
-/// Extract a substring safely respecting UTF-8 char boundaries.
-fn extract_substring_safe(s: &str, start: usize, end: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    let char_count = chars.len();
-
-    // Convert byte indices to approximate char indices
-    let start_char = (start as f64 / s.len() as f64 * char_count as f64).round() as usize;
-    let end_char = (end as f64 / s.len() as f64 * char_count as f64).round() as usize;
-
-    let start_char = start_char.min(char_count);
-    let end_char = end_char.min(char_count);
-
-    chars[start_char..end_char].iter().collect()
+    let mut result = existing.clone();
+    result.insert(language.to_string(), parsed);
+    result
 }
 
 #[cfg(test)]
@@ -505,8 +304,8 @@ mod tests {
 
     #[test]
     fn test_plain_text_roundtrip() {
-        let text = InlineText(vec![InlineNode::Text("Hello world".to_string())]);
-        let md = inline_text_to_markdown(&text, None);
+        let text = TranslatedText::single("en", InlineText(vec![InlineNode::Text("Hello world".to_string())]));
+        let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "Hello world");
 
         let parsed = markdown_to_inline_text(&md);
@@ -515,13 +314,13 @@ mod tests {
 
     #[test]
     fn test_bold_roundtrip() {
-        let text = InlineText(vec![
+        let text = TranslatedText::single("it", InlineText(vec![
             InlineNode::Text("A tal fine, il Cliente ".to_string()),
             InlineNode::Strong(Box::new(InlineNode::Text("dichiara".to_string()))),
             InlineNode::Text(" di avere".to_string()),
-        ]);
+        ]));
 
-        let md = inline_text_to_markdown(&text, None);
+        let md = inline_text_to_markdown(&text, Some("it"));
         assert_eq!(md, "A tal fine, il Cliente **dichiara** di avere");
 
         let parsed = markdown_to_inline_text(&md);
@@ -531,13 +330,13 @@ mod tests {
 
     #[test]
     fn test_italic_roundtrip() {
-        let text = InlineText(vec![
+        let text = TranslatedText::single("en", InlineText(vec![
             InlineNode::Text("Some ".to_string()),
             InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
             InlineNode::Text(" text".to_string()),
-        ]);
+        ]));
 
-        let md = inline_text_to_markdown(&text, None);
+        let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "Some *italic* text");
 
         let parsed = markdown_to_inline_text(&md);
@@ -547,67 +346,48 @@ mod tests {
 
     #[test]
     fn test_mixed_formatting() {
-        let text = InlineText(vec![
+        let text = TranslatedText::single("en", InlineText(vec![
             InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
             InlineNode::Text(" and ".to_string()),
             InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
-        ]);
+        ]));
 
-        let md = inline_text_to_markdown(&text, None);
+        let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "**bold** and *italic*");
     }
 
     #[test]
     fn test_multilingual_preserves_formatting() {
-        // Start with translated text
-        let mut translations = std::collections::HashMap::new();
-        translations.insert("de".to_string(), Some("Hallo Welt".to_string()));
-        translations.insert("en".to_string(), Some("Hello World".to_string()));
-
-        let existing = InlineText(vec![InlineNode::TranslatedText(translations)]);
+        // Start with translated text: each language has its own InlineText
+        let mut existing = TranslatedText::empty();
+        existing.insert("de", InlineText::plain("Hallo Welt"));
+        existing.insert("en", InlineText::plain("Hello World"));
 
         // Edit German with bold
         let result = markdown_to_inline_text_multilingual("**Hallo** Welt", "de", &existing);
 
-        // Should have 2 nodes: Strong and Text, both as TranslatedText
-        assert_eq!(result.0.len(), 2);
+        // German should now have bold formatting
+        let de_text = result.get("de").unwrap();
+        assert_eq!(de_text.0.len(), 2);
+        assert!(matches!(&de_text.0[0], InlineNode::Strong(_)));
 
-        // First node should be Strong containing TranslatedText with "Hallo" for German
-        if let InlineNode::Strong(inner) = &result.0[0] {
-            if let InlineNode::TranslatedText(map) = inner.as_ref() {
-                assert_eq!(map.get("de"), Some(&Some("Hallo".to_string())));
-                // English should have proportional content
-                assert!(map.contains_key("en"));
-            } else {
-                panic!("Expected TranslatedText inside Strong");
-            }
-        } else {
-            panic!("Expected Strong node");
-        }
-
-        // Second node should be TranslatedText with " Welt" for German
-        if let InlineNode::TranslatedText(map) = &result.0[1] {
-            assert_eq!(map.get("de"), Some(&Some(" Welt".to_string())));
-        } else {
-            panic!("Expected TranslatedText node");
-        }
+        // English should be unchanged (plain text)
+        let en_text = result.get("en").unwrap();
+        assert_eq!(en_text.as_plain_text(), "Hello World");
     }
 
     #[test]
     fn test_multilingual_display_per_language() {
-        // Create multilingual formatted text
-        let mut map1 = std::collections::HashMap::new();
-        map1.insert("de".to_string(), Some("fett".to_string()));
-        map1.insert("en".to_string(), Some("bold".to_string()));
-
-        let mut map2 = std::collections::HashMap::new();
-        map2.insert("de".to_string(), Some(" Text".to_string()));
-        map2.insert("en".to_string(), Some(" text".to_string()));
-
-        let text = InlineText(vec![
-            InlineNode::Strong(Box::new(InlineNode::TranslatedText(map1))),
-            InlineNode::TranslatedText(map2),
-        ]);
+        // Create multilingual text with different formatting per language
+        let mut text = TranslatedText::empty();
+        text.insert("de", InlineText(vec![
+            InlineNode::Strong(Box::new(InlineNode::Text("fett".to_string()))),
+            InlineNode::Text(" Text".to_string()),
+        ]));
+        text.insert("en", InlineText(vec![
+            InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
+            InlineNode::Text(" text".to_string()),
+        ]));
 
         // Display for German
         let md_de = inline_text_to_markdown(&text, Some("de"));

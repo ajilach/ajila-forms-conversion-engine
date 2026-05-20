@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use blueprint::semantic::SemanticMatcher;
 use blueprint::{
-    DocumentEnvelope, InlineNode, InlineText, StructuredNode, TranslatableString,
+    DocumentEnvelope, StructuredNode, TranslatableString, TranslatedText,
     structured::{calculate_structural_similarity, merge_translations},
 };
 use clap::Parser;
@@ -428,31 +428,12 @@ fn count_translation_slots(nodes: &[StructuredNode]) -> (usize, usize) {
     (total, missing)
 }
 
-fn count_inline_text_slots(text: &InlineText, total: &mut usize, missing: &mut usize) {
-    for node in &text.0 {
-        count_inline_node_slots(node, total, missing);
-    }
-}
-
-fn count_inline_node_slots(node: &InlineNode, total: &mut usize, missing: &mut usize) {
-    match node {
-        InlineNode::TranslatedText(map) => {
-            for value in map.values() {
-                *total += 1;
-                if value.is_none() {
-                    *missing += 1;
-                }
-            }
+fn count_inline_text_slots(text: &TranslatedText, total: &mut usize, missing: &mut usize) {
+    for (_lang, inline) in text.iter() {
+        *total += 1;
+        if inline.is_empty() {
+            *missing += 1;
         }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            count_inline_node_slots(inner, total, missing);
-        }
-        InlineNode::Link(link) => {
-            count_inline_text_slots(&link.content, total, missing);
-        }
-        InlineNode::Text(_) => {}
     }
 }
 
@@ -602,34 +583,14 @@ fn collect_translated_text_groups(nodes: &[StructuredNode], out: &mut Vec<Vec<St
     }
 }
 
-fn collect_from_inline_text(text: &InlineText, out: &mut Vec<Vec<String>>) {
-    for node in &text.0 {
-        collect_from_inline_node(node, out);
-    }
-}
-
-fn collect_from_inline_node(node: &InlineNode, out: &mut Vec<Vec<String>>) {
-    match node {
-        InlineNode::TranslatedText(map) => {
-            let texts: Vec<String> = map
-                .values()
-                .filter_map(|v| v.as_ref())
-                .filter(|v| !v.trim().is_empty())
-                .cloned()
-                .collect();
-            if texts.len() >= 2 {
-                out.push(texts);
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            collect_from_inline_node(inner, out);
-        }
-        InlineNode::Link(link) => {
-            collect_from_inline_text(&link.content, out);
-        }
-        InlineNode::Text(_) => {}
+fn collect_from_inline_text(text: &TranslatedText, out: &mut Vec<Vec<String>>) {
+    let texts: Vec<String> = text
+        .iter()
+        .map(|(_, inline)| inline.as_plain_text())
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    if texts.len() >= 2 {
+        out.push(texts);
     }
 }
 

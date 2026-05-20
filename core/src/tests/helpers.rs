@@ -296,7 +296,9 @@ pub fn collect_inline_nodes(nodes: &[StructuredNode]) -> Vec<InlineNode> {
     let mut out = Vec::new();
     walk_structured_nodes(nodes, &mut |node| {
         if let StructuredNode::Paragraph(p) = node {
-            out.extend(p.content.0.clone());
+            if let Some(inline_text) = p.content.0.values().next() {
+                out.extend(inline_text.0.clone());
+            }
         }
     });
     out

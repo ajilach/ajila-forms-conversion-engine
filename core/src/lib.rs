@@ -137,6 +137,7 @@ pub use structured::{
     StructuredNode,
     TableNode,
     TranslatableString,
+    TranslatedText,
     can_merge,
     can_merge_all,
     merge_nodes,

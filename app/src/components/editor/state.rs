@@ -4,7 +4,7 @@
 //! document editor.
 
 use blueprint::structured::NameValue;
-use blueprint::{InlineText, ListNode, StructuredNode, TableNode};
+use blueprint::{ListNode, StructuredNode, TableNode, TranslatedText};
 use std::collections::HashSet;
 
 /// A segment of a path to a node in the document tree.
@@ -1147,7 +1147,7 @@ pub fn move_table_row_down(content: &mut [StructuredNode], path: &NodePath) -> O
 pub fn get_list_item_text<'a>(
     content: &'a [StructuredNode],
     path: &NodePath,
-) -> Option<&'a InlineText> {
+) -> Option<&'a TranslatedText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let list = get_list_at_path(content, &parent_path)?;
     list.items.get(item_idx).map(|item| &item.content)
@@ -1157,7 +1157,7 @@ pub fn get_list_item_text<'a>(
 pub fn get_list_item_text_mut<'a>(
     content: &'a mut [StructuredNode],
     path: &NodePath,
-) -> Option<&'a mut InlineText> {
+) -> Option<&'a mut TranslatedText> {
     let (parent_path, item_idx) = get_list_item_info(path)?;
     let list = get_list_at_path_mut(content, &parent_path)?;
     list.items.get_mut(item_idx).map(|item| &mut item.content)
@@ -1425,16 +1425,16 @@ mod tests {
             list_style: blueprint::document::ListStyleType::Disc,
             items: vec![
                 ListItem {
-                    content: InlineText::plain("Top 1"),
+                    content: TranslatedText::plain("Top 1"),
                     sublist: Some(Box::new(ListNode {
                         list_style: blueprint::document::ListStyleType::Disc,
                         items: vec![
-                            ListItem::simple(InlineText::plain("Sub 1")),
-                            ListItem::simple(InlineText::plain("Sub 2")),
+                            ListItem::simple(TranslatedText::plain("Sub 1")),
+                            ListItem::simple(TranslatedText::plain("Sub 2")),
                         ],
                     })),
                 },
-                ListItem::simple(InlineText::plain("Top 2")),
+                ListItem::simple(TranslatedText::plain("Top 2")),
             ],
         })]
     }
@@ -1460,7 +1460,7 @@ mod tests {
 
         let nested_text = get_list_item_text_mut(&mut content, &nested_item_path)
             .expect("nested list item text should be mutable");
-        *nested_text = InlineText::plain("Sub 2 updated");
+        *nested_text = TranslatedText::plain("Sub 2 updated");
 
         let updated = get_list_item_text(&content, &nested_item_path)
             .expect("nested list item text should resolve");
@@ -1538,7 +1538,7 @@ mod tests {
     fn get_node_at_path_still_resolves_regular_nodes() {
         let content = vec![StructuredNode::Group(blueprint::GroupNode {
             children: vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hello"),
+                content: TranslatedText::plain("Hello"),
                 som_path: None,
                 source_name: None,
             })],
@@ -1555,7 +1555,7 @@ mod tests {
         let content = vec![StructuredNode::Group(blueprint::GroupNode {
             children: vec![StructuredNode::List(ListNode {
                 list_style: blueprint::document::ListStyleType::Disc,
-                items: vec![ListItem::simple(InlineText::plain("Nested item"))],
+                items: vec![ListItem::simple(TranslatedText::plain("Nested item"))],
             })],
         })];
 

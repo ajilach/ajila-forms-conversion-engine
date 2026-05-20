@@ -2,7 +2,7 @@
 //!
 //! This module merges multiple `DocumentEnvelope`s (one per language) into a single
 //! multilingual representation. Text content is stored per-language using
-//! `InlineNode::TranslatedText` and `TranslatableString::Translated`.
+//! `TranslatedText` and `TranslatableString::Translated`.
 //!
 //! # Algorithm
 //!
@@ -216,7 +216,7 @@ mod tests {
     use crate::structured::{
         ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, HeadingLevel, HeadingNode,
         InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue, ParagraphNode,
-        TableHeader, TableNode, TableRow, TranslatableString,
+        TableHeader, TableNode, TableRow, TranslatableString, TranslatedText,
     };
 
     fn make_envelope(lang: &str, content: Vec<StructuredNode>) -> DocumentEnvelope {
@@ -244,7 +244,7 @@ mod tests {
         let envelope = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hallo Welt"),
+                content: TranslatedText::plain_with_lang("de", "Hallo Welt"),
                 som_path: None,
                 source_name: None,
             })],
@@ -262,7 +262,7 @@ mod tests {
         let mut de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hallo"),
+                content: TranslatedText::plain_with_lang("de", "Hallo"),
                 som_path: None,
                 source_name: None,
             })],
@@ -272,7 +272,7 @@ mod tests {
         let en = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hello"),
+                content: TranslatedText::plain_with_lang("en", "Hello"),
                 som_path: None,
                 source_name: None,
             })],
@@ -292,12 +292,12 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Titel"),
+                    content: TranslatedText::plain_with_lang("de", "Titel"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Hallo"),
+                    content: TranslatedText::plain_with_lang("de", "Hallo"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -308,12 +308,12 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Title"),
+                    content: TranslatedText::plain_with_lang("en", "Title"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Hello"),
+                    content: TranslatedText::plain_with_lang("en", "Hello"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -326,26 +326,16 @@ mod tests {
 
         // Check heading has translated text
         if let StructuredNode::Heading(h) = &result.content[0] {
-            assert_eq!(h.content.0.len(), 1);
-            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Titel"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Title"));
-            } else {
-                panic!("Expected TranslatedText");
-            }
+            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Titel");
+            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Title");
         } else {
             panic!("Expected Heading");
         }
 
         // Check paragraph has translated text
         if let StructuredNode::Paragraph(p) = &result.content[1] {
-            assert_eq!(p.content.0.len(), 1);
-            if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Hallo"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Hello"));
-            } else {
-                panic!("Expected TranslatedText");
-            }
+            assert_eq!(p.content.get("de").unwrap().as_plain_text(), "Hallo");
+            assert_eq!(p.content.get("en").unwrap().as_plain_text(), "Hello");
         } else {
             panic!("Expected Paragraph");
         }
@@ -358,19 +348,19 @@ mod tests {
             "de",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Einleitung"),
+                    content: TranslatedText::plain_with_lang("de", "Einleitung"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Nur auf Deutsch"),
+                    content: TranslatedText::plain_with_lang("de", "Nur auf Deutsch"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -386,14 +376,14 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Introduction"),
+                    content: TranslatedText::plain_with_lang("en", "Introduction"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -423,7 +413,7 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hallo"),
+                content: TranslatedText::plain_with_lang("de", "Hallo"),
                 som_path: None,
                 source_name: None,
             })],
@@ -431,7 +421,7 @@ mod tests {
         let en = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hello"),
+                content: TranslatedText::plain_with_lang("en", "Hello"),
                 som_path: None,
                 source_name: None,
             })],
@@ -439,7 +429,7 @@ mod tests {
         let fr = make_envelope(
             "fr",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Bonjour"),
+                content: TranslatedText::plain_with_lang("fr", "Bonjour"),
                 som_path: None,
                 source_name: None,
             })],
@@ -450,13 +440,9 @@ mod tests {
         assert_eq!(result.context.language(), "de,en,fr");
 
         if let StructuredNode::Paragraph(p) = &result.content[0] {
-            if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Hallo"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Hello"));
-                assert_eq!(map.get("fr").unwrap().as_deref(), Some("Bonjour"));
-            } else {
-                panic!("Expected TranslatedText");
-            }
+            assert_eq!(p.content.get("de").unwrap().as_plain_text(), "Hallo");
+            assert_eq!(p.content.get("en").unwrap().as_plain_text(), "Hello");
+            assert_eq!(p.content.get("fr").unwrap().as_plain_text(), "Bonjour");
         } else {
             panic!("Expected Paragraph");
         }
@@ -469,7 +455,7 @@ mod tests {
             vec![StructuredNode::Field(FieldNode {
                 name: "gender".into(),
                 som_path: None,
-                label: Some(InlineText::plain("Geschlecht")),
+                label: Some(TranslatedText::plain_with_lang("de", "Geschlecht")),
                 input_type: FieldType::Radio {
                     options: vec![
                         NameValue {
@@ -492,7 +478,7 @@ mod tests {
             vec![StructuredNode::Field(FieldNode {
                 name: "gender".into(),
                 som_path: None,
-                label: Some(InlineText::plain("Gender")),
+                label: Some(TranslatedText::plain_with_lang("en", "Gender")),
                 input_type: FieldType::Radio {
                     options: vec![
                         NameValue {
@@ -517,12 +503,8 @@ mod tests {
         if let StructuredNode::Field(f) = &result.content[0] {
             // Check label is merged
             let label = f.label.as_ref().unwrap();
-            if let InlineNode::TranslatedText(map) = &label.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Geschlecht"));
-                assert_eq!(map.get("en").unwrap().as_deref(), Some("Gender"));
-            } else {
-                panic!("Expected TranslatedText in label");
-            }
+            assert_eq!(label.get("de").unwrap().as_plain_text(), "Geschlecht");
+            assert_eq!(label.get("en").unwrap().as_plain_text(), "Gender");
 
             // Check placeholder is merged
             if let Some(TranslatableString::Translated(map)) = &f.placeholder {
@@ -562,14 +544,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Formular A"),
+                    content: TranslatedText::plain_with_lang("de", "Formular A"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -585,7 +567,7 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Completely different"),
+                    content: TranslatedText::plain_with_lang("en", "Completely different"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -629,27 +611,27 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Title"),
+                    content: TranslatedText::plain_with_lang("de", "Title"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Text 1"),
+                    content: TranslatedText::plain_with_lang("de", "Text 1"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Text 2"),
+                    content: TranslatedText::plain_with_lang("de", "Text 2"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Text 3"),
+                    content: TranslatedText::plain_with_lang("de", "Text 3"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Text 4"),
+                    content: TranslatedText::plain_with_lang("de", "Text 4"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -660,7 +642,7 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Title"),
+                    content: TranslatedText::plain_with_lang("en", "Title"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -732,19 +714,19 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Formular"),
+                    content: TranslatedText::plain_with_lang("de", "Formular"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Beschreibung"),
+                    content: TranslatedText::plain_with_lang("de", "Beschreibung"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "name".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -757,7 +739,7 @@ mod tests {
                 StructuredNode::Field(FieldNode {
                     name: "email".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("E-Mail")),
+                    label: Some(TranslatedText::plain_with_lang("de", "E-Mail")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -774,19 +756,19 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Form"),
+                    content: TranslatedText::plain_with_lang("en", "Form"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Description"),
+                    content: TranslatedText::plain_with_lang("en", "Description"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "name".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -799,7 +781,7 @@ mod tests {
                 StructuredNode::Field(FieldNode {
                     name: "email".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Email")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Email")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -823,7 +805,7 @@ mod tests {
         let doc1 = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("First document"),
+                content: TranslatedText::plain_with_lang("en", "First document"),
                 som_path: None,
                 source_name: None,
             })],
@@ -831,7 +813,7 @@ mod tests {
         let doc2 = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Second document"),
+                content: TranslatedText::plain_with_lang("en", "Second document"),
                 som_path: None,
                 source_name: None,
             })],
@@ -853,7 +835,7 @@ mod tests {
         let doc1 = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("German"),
+                content: TranslatedText::plain_with_lang("de", "German"),
                 som_path: None,
                 source_name: None,
             })],
@@ -861,7 +843,7 @@ mod tests {
         let doc2 = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("English"),
+                content: TranslatedText::plain_with_lang("en", "English"),
                 som_path: None,
                 source_name: None,
             })],
@@ -869,7 +851,7 @@ mod tests {
         let doc3 = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Another German"),
+                content: TranslatedText::plain_with_lang("de", "Another German"),
                 som_path: None,
                 source_name: None,
             })],
@@ -898,7 +880,7 @@ mod tests {
             "de",
             vars.clone(),
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hallo"),
+                content: TranslatedText::plain_with_lang("de", "Hallo"),
                 som_path: None,
                 source_name: None,
             })],
@@ -907,7 +889,7 @@ mod tests {
             "en",
             vars.clone(),
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Hello"),
+                content: TranslatedText::plain_with_lang("en", "Hello"),
                 som_path: None,
                 source_name: None,
             })],
@@ -936,7 +918,7 @@ mod tests {
         let shared_field = FieldNode {
             name: "shared_field".into(),
             som_path: None,
-            label: Some(InlineText::plain("Shared")),
+            label: Some(TranslatedText::plain_with_lang("de", "Shared")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -959,17 +941,17 @@ mod tests {
                 content: Box::new(StructuredNode::Group(GroupNode {
                     children: vec![
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Absatz 1"),
+                            content: TranslatedText::plain_with_lang("de", "Absatz 1"),
                             som_path: None,
                             source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Absatz 2"),
+                            content: TranslatedText::plain_with_lang("de", "Absatz 2"),
                             som_path: None,
                             source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Absatz 3"),
+                            content: TranslatedText::plain_with_lang("de", "Absatz 3"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -985,12 +967,12 @@ mod tests {
                 content: Box::new(StructuredNode::Group(GroupNode {
                     children: vec![
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Paragraph 1"),
+                            content: TranslatedText::plain_with_lang("en", "Paragraph 1"),
                             som_path: None,
                             source_name: None,
                         }),
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Paragraph 2"),
+                            content: TranslatedText::plain_with_lang("en", "Paragraph 2"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1041,25 +1023,25 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Formular"),
+                    content: TranslatedText::plain_with_lang("de", "Formular"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Abschnitt"),
+                    content: TranslatedText::plain_with_lang("de", "Abschnitt"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Hinweis"),
+                    content: TranslatedText::plain_with_lang("de", "Hinweis"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Erklärung"),
+                    content: TranslatedText::plain_with_lang("de", "Erklärung"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1069,7 +1051,7 @@ mod tests {
                 de_cond(),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Unterschrift"),
+                    content: TranslatedText::plain_with_lang("de", "Unterschrift"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1082,19 +1064,19 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Form"),
+                    content: TranslatedText::plain_with_lang("en", "Form"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Section"),
+                    content: TranslatedText::plain_with_lang("en", "Section"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(shared_field.clone()),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Instruction"),
+                    content: TranslatedText::plain_with_lang("en", "Instruction"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1104,7 +1086,7 @@ mod tests {
                 en_cond(),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Signature"),
+                    content: TranslatedText::plain_with_lang("en", "Signature"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1130,7 +1112,7 @@ mod tests {
             header: None,
             rows: vec![TableRow {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Zelle"),
+                    content: TranslatedText::plain_with_lang("de", "Zelle"),
                     som_path: None,
                     source_name: None,
                 })],
@@ -1141,12 +1123,12 @@ mod tests {
             header: None,
             rows: vec![TableRow {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Cell"),
+                    content: TranslatedText::plain_with_lang("en", "Cell"),
                     som_path: None,
                     source_name: None,
                 })],
             }],
-            caption: Some(InlineText::plain("My Table")),
+            caption: Some(TranslatedText::plain_with_lang("en", "My Table")),
         };
 
         let merged = merge_table(&base, "de", &other, "en");
@@ -1164,7 +1146,7 @@ mod tests {
             header: None,
             rows: vec![TableRow {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Zelle"),
+                    content: TranslatedText::plain_with_lang("de", "Zelle"),
                     som_path: None,
                     source_name: None,
                 })],
@@ -1174,14 +1156,14 @@ mod tests {
         let other = TableNode {
             header: Some(TableHeader {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Column"),
+                    content: TranslatedText::plain_with_lang("en", "Column"),
                     som_path: None,
                     source_name: None,
                 })],
             }),
             rows: vec![TableRow {
                 cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Cell"),
+                    content: TranslatedText::plain_with_lang("en", "Cell"),
                     som_path: None,
                     source_name: None,
                 })],
@@ -1213,7 +1195,7 @@ mod tests {
                     GridLayoutElement {
                         span: 3,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("A"),
+                            content: TranslatedText::plain_with_lang("de", "A"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1221,7 +1203,7 @@ mod tests {
                     GridLayoutElement {
                         span: 3,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("B"),
+                            content: TranslatedText::plain_with_lang("de", "B"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1229,7 +1211,7 @@ mod tests {
                     GridLayoutElement {
                         span: 3,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("C"),
+                            content: TranslatedText::plain_with_lang("de", "C"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1237,7 +1219,7 @@ mod tests {
                     GridLayoutElement {
                         span: 3,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("D"),
+                            content: TranslatedText::plain_with_lang("de", "D"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1253,7 +1235,7 @@ mod tests {
                     GridLayoutElement {
                         span: 6,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("X"),
+                            content: TranslatedText::plain_with_lang("en", "X"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1261,7 +1243,7 @@ mod tests {
                     GridLayoutElement {
                         span: 6,
                         node: StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Y"),
+                            content: TranslatedText::plain_with_lang("en", "Y"),
                             som_path: None,
                             source_name: None,
                         }),
@@ -1297,9 +1279,9 @@ mod tests {
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
                 items: vec![
-                    ListItem::simple(InlineText::plain("Eins")),
-                    ListItem::simple(InlineText::plain("Zwei")),
-                    ListItem::simple(InlineText::plain("Drei")),
+                    ListItem::simple(TranslatedText::plain_with_lang("de", "Eins")),
+                    ListItem::simple(TranslatedText::plain_with_lang("de", "Zwei")),
+                    ListItem::simple(TranslatedText::plain_with_lang("de", "Drei")),
                 ],
             })],
         );
@@ -1308,8 +1290,8 @@ mod tests {
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
                 items: vec![
-                    ListItem::simple(InlineText::plain("One")),
-                    ListItem::simple(InlineText::plain("Two")),
+                    ListItem::simple(TranslatedText::plain_with_lang("en", "One")),
+                    ListItem::simple(TranslatedText::plain_with_lang("en", "Two")),
                 ],
             })],
         );
@@ -1339,13 +1321,10 @@ mod tests {
             "de",
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
-                items: vec![ListItem::simple(InlineText(vec![
-                    InlineNode::TranslatedText(HashMap::from([(
-                        "de".to_string(),
-                        Some("Prefix ".to_string()),
-                    )])),
+                items: vec![ListItem::simple(TranslatedText::single("de", InlineText(vec![
+                    InlineNode::Text("Prefix ".to_string()),
                     InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
-                ]))],
+                ])))],
             })],
         );
 
@@ -1364,16 +1343,14 @@ mod tests {
             _ => panic!("Expected list node"),
         };
 
-        let map = match &list.items[0].content.0[0] {
-            InlineNode::TranslatedText(map) => map,
-            _ => panic!("Expected translated list item text"),
-        };
-
-        assert_eq!(
-            map.get("de").and_then(|o| o.as_deref()),
-            Some("Prefix Suffix")
+        assert_eq!(list.items[0].content.get("de").unwrap().as_plain_text(), "Prefix Suffix");
+        assert!(
+            list.items[0]
+                .content
+                .get("en")
+                .is_some_and(|t| t.as_plain_text().is_empty()),
+            "Unmatched EN translation should exist as an explicit empty placeholder"
         );
-        assert_eq!(map.get("en").and_then(|o| o.as_deref()), None);
     }
 
     #[test]
@@ -1464,21 +1441,21 @@ mod tests {
                 rows: vec![
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("R1"),
+                            content: TranslatedText::plain_with_lang("de", "R1"),
                             som_path: None,
                             source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("R2"),
+                            content: TranslatedText::plain_with_lang("de", "R2"),
                             som_path: None,
                             source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("R3"),
+                            content: TranslatedText::plain_with_lang("de", "R3"),
                             som_path: None,
                             source_name: None,
                         })],
@@ -1494,14 +1471,14 @@ mod tests {
                 rows: vec![
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Row1"),
+                            content: TranslatedText::plain_with_lang("en", "Row1"),
                             som_path: None,
                             source_name: None,
                         })],
                     },
                     TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain("Row2"),
+                            content: TranslatedText::plain_with_lang("en", "Row2"),
                             som_path: None,
                             source_name: None,
                         })],
@@ -1536,13 +1513,13 @@ mod tests {
             "de",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Gemeinsam"),
+                    content: TranslatedText::plain_with_lang("de", "Gemeinsam"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Nur Deutsch"),
+                    content: TranslatedText::plain_with_lang("de", "Nur Deutsch"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1551,7 +1528,7 @@ mod tests {
         let en = make_envelope(
             "en",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Shared"),
+                content: TranslatedText::plain_with_lang("en", "Shared"),
                 som_path: None,
                 source_name: None,
             })],
@@ -1561,17 +1538,14 @@ mod tests {
         assert_eq!(result.content.len(), 2);
 
         if let StructuredNode::Heading(heading) = &result.content[1] {
-            assert_eq!(heading.content.0.len(), 1);
-            if let InlineNode::TranslatedText(map) = &heading.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Nur Deutsch"));
-                assert_eq!(
-                    map.get("en").and_then(|o| o.as_deref()),
-                    None,
-                    "Unmatched DE-only heading should be flagged for EN"
-                );
-            } else {
-                panic!("Expected unmatched heading to be localized as TranslatedText");
-            }
+            assert_eq!(heading.content.get("de").unwrap().as_plain_text(), "Nur Deutsch");
+            assert!(
+                heading
+                    .content
+                    .get("en")
+                    .is_some_and(|t| t.as_plain_text().is_empty()),
+                "Unmatched DE-only heading should carry an explicit empty EN placeholder"
+            );
         } else {
             panic!("Expected unmatched node to remain a Heading");
         }
@@ -1582,9 +1556,9 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                content: TranslatedText::single("de", InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
                     "Basis".to_string(),
-                )))]),
+                )))])),
                 som_path: None,
                 source_name: None,
             })],
@@ -1593,14 +1567,14 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Intro"),
+                    content: TranslatedText::plain_with_lang("en", "Intro"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                    content: TranslatedText::single("en", InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
                         "Other".to_string(),
-                    )))]),
+                    )))])),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1615,12 +1589,9 @@ mod tests {
         );
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(paragraph.content.plain_text_in("de"), " Basis");
+            assert_eq!(paragraph.content.plain_text_in("de"), "Basis");
             assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
-            assert!(matches!(
-                paragraph.content.0[0],
-                InlineNode::TranslatedText(_)
-            ));
+            assert!(!paragraph.content.0.is_empty());
         } else {
             panic!("Expected merged paragraph");
         }
@@ -1631,10 +1602,10 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText(vec![
+                content: TranslatedText::single("de", InlineText(vec![
                     InlineNode::Strong(Box::new(InlineNode::Text("Basis".to_string()))),
                     InlineNode::Text(" Ende".to_string()),
-                ]),
+                ])),
                 som_path: None,
                 source_name: None,
             })],
@@ -1643,15 +1614,15 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Intro "),
+                    content: TranslatedText::plain_with_lang("en", "Intro "),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText(vec![
+                    content: TranslatedText::single("en", InlineText(vec![
                         InlineNode::Strong(Box::new(InlineNode::Text("Other".to_string()))),
                         InlineNode::Text(" tail".to_string()),
-                    ]),
+                    ])),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1662,17 +1633,13 @@ mod tests {
         assert_eq!(result.content.len(), 1);
 
         if let StructuredNode::Paragraph(paragraph) = &result.content[0] {
-            assert_eq!(paragraph.content.plain_text_in("de"), " Basis Ende");
+            assert_eq!(paragraph.content.plain_text_in("de"), "Basis Ende");
             assert_eq!(
                 paragraph.content.plain_text_in("en"),
                 "Intro Other tail",
                 "Absorbed orphan text must stay at the beginning of the rendered paragraph"
             );
-            assert!(matches!(
-                paragraph.content.0[0],
-                InlineNode::TranslatedText(_)
-            ));
-            assert!(matches!(paragraph.content.0[1], InlineNode::Strong(_)));
+            assert!(!paragraph.content.0.is_empty());
         } else {
             panic!("Expected merged paragraph");
         }
@@ -1683,7 +1650,7 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Basis"),
+                content: TranslatedText::plain_with_lang("de", "Basis"),
                 som_path: None,
                 source_name: None,
             })],
@@ -1692,17 +1659,17 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("First "),
+                    content: TranslatedText::plain_with_lang("en", "First "),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Second "),
+                    content: TranslatedText::plain_with_lang("en", "Second "),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Other"),
+                    content: TranslatedText::plain_with_lang("en", "Other"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1722,10 +1689,7 @@ mod tests {
     #[test]
     fn test_prepend_orphan_seeds_missing_language_keys_on_existing_prefix_node() {
         let mut entry = AlignedNode::Matched(StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText(vec![InlineNode::TranslatedText(HashMap::from([(
-                "en".to_string(),
-                Some("Other".to_string()),
-            )]))]),
+            content: TranslatedText::single("en", InlineText::plain("Other")),
             som_path: None,
             source_name: None,
         }));
@@ -1737,7 +1701,11 @@ mod tests {
         if let AlignedNode::Matched(StructuredNode::Paragraph(paragraph)) = &entry {
             assert_eq!(paragraph.content.plain_text_in("en"), "Intro Other");
             assert_eq!(
-                paragraph.content.plain_text_in("de"),
+                paragraph
+                    .content
+                    .get("de")
+                    .map(|t| t.as_plain_text())
+                    .unwrap_or_default(),
                 "",
                 "Local helper keeps empty key; final normalization fills placeholders"
             );
@@ -1829,18 +1797,14 @@ mod tests {
     /// Helper: assert that a paragraph node contains expected translations.
     fn assert_paragraph_translations(node: &StructuredNode, expected: &[(&str, &str)]) {
         if let StructuredNode::Paragraph(p) = node {
-            if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                for &(lang, text) in expected {
-                    assert_eq!(
-                        map.get(lang).and_then(|o| o.as_deref()),
-                        Some(text),
-                        "Expected '{}' for lang '{}'",
-                        text,
-                        lang
-                    );
-                }
-            } else {
-                panic!("Expected TranslatedText, got {:?}", p.content.0[0]);
+            for &(lang, text) in expected {
+                assert_eq!(
+                    p.content.get(lang).unwrap().as_plain_text(),
+                    text,
+                    "Expected '{}' for lang '{}'",
+                    text,
+                    lang
+                );
             }
         } else {
             panic!("Expected Paragraph, got {:?}", node);
@@ -1858,7 +1822,7 @@ mod tests {
                     .iter()
                     .map(|t| {
                         StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain(*t),
+                            content: TranslatedText::plain_with_lang(lang, *t),
                             som_path: None,
                             source_name: None,
                         })
@@ -1907,7 +1871,7 @@ mod tests {
         let shared_field = FieldNode {
             name: "f1".into(),
             som_path: None,
-            label: Some(InlineText::plain("lbl")),
+            label: Some(TranslatedText::plain_with_lang("de", "lbl")),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1923,12 +1887,12 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Titel"),
+                    content: TranslatedText::plain_with_lang("de", "Titel"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Beschreibung"),
+                    content: TranslatedText::plain_with_lang("de", "Beschreibung"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1940,12 +1904,12 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Title"),
+                    content: TranslatedText::plain_with_lang("en", "Title"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Description"),
+                    content: TranslatedText::plain_with_lang("en", "Description"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1957,7 +1921,7 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H1,
-                    content: InlineText::plain("Titre"),
+                    content: TranslatedText::plain_with_lang("fr", "Titre"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1998,13 +1962,13 @@ mod tests {
             "de",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Gemeinsam"),
+                    content: TranslatedText::plain_with_lang("de", "Gemeinsam"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Nur DE"),
+                    content: TranslatedText::plain_with_lang("de", "Nur DE"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2014,13 +1978,13 @@ mod tests {
             "en",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Shared"),
+                    content: TranslatedText::plain_with_lang("en", "Shared"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Only EN"),
+                    content: TranslatedText::plain_with_lang("en", "Only EN"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2030,13 +1994,13 @@ mod tests {
             "fr",
             vec![
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: InlineText::plain("Commun"),
+                    content: TranslatedText::plain_with_lang("fr", "Commun"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Seulement FR"),
+                    content: TranslatedText::plain_with_lang("fr", "Seulement FR"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2161,7 +2125,7 @@ mod tests {
                 vec![StructuredNode::Conditional(ConditionalNode {
                     condition: cond.clone(),
                     content: Box::new(StructuredNode::Paragraph(ParagraphNode {
-                        content: InlineText::plain(text),
+                        content: TranslatedText::plain_with_lang(lang, text),
                         som_path: None,
                         source_name: None,
                     })),
@@ -2183,13 +2147,9 @@ mod tests {
             if let StructuredNode::Conditional(c) = &result.content[0] {
                 assert_eq!(c.condition, cond);
                 if let StructuredNode::Paragraph(p) = c.content.as_ref() {
-                    if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                        assert_eq!(map.get("de").and_then(|o| o.as_deref()), Some("Hallo"));
-                        assert_eq!(map.get("en").and_then(|o| o.as_deref()), Some("Hello"));
-                        assert_eq!(map.get("fr").and_then(|o| o.as_deref()), Some("Bonjour"));
-                    } else {
-                        panic!("Expected TranslatedText");
-                    }
+                    assert_eq!(p.content.get("de").unwrap().as_plain_text(), "Hallo");
+                    assert_eq!(p.content.get("en").unwrap().as_plain_text(), "Hello");
+                    assert_eq!(p.content.get("fr").unwrap().as_plain_text(), "Bonjour");
                 } else {
                     panic!("Expected Paragraph inside Conditional");
                 }
@@ -2209,14 +2169,14 @@ mod tests {
                 vec![StructuredNode::Table(TableNode {
                     header: Some(TableHeader {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain(header_text),
+                            content: TranslatedText::plain_with_lang(lang, header_text),
                             som_path: None,
                             source_name: None,
                         })],
                     }),
                     rows: vec![TableRow {
                         cells: vec![StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain(cell_text),
+                            content: TranslatedText::plain_with_lang(lang, cell_text),
                             som_path: None,
                             source_name: None,
                         })],
@@ -2240,23 +2200,15 @@ mod tests {
         if let StructuredNode::Table(t) = &result.content[0] {
             let hcell = &t.header.as_ref().unwrap().cells[0];
             if let StructuredNode::Paragraph(p) = hcell {
-                if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                    assert_eq!(map.len(), 3);
-                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Spalte"));
-                    assert_eq!(map.get("en").unwrap().as_deref(), Some("Column"));
-                    assert_eq!(map.get("fr").unwrap().as_deref(), Some("Colonne"));
-                } else {
-                    panic!("Expected TranslatedText in header");
-                }
+                assert_eq!(p.content.0.len(), 3);
+                assert_eq!(p.content.get("de").unwrap().as_plain_text(), "Spalte");
+                assert_eq!(p.content.get("en").unwrap().as_plain_text(), "Column");
+                assert_eq!(p.content.get("fr").unwrap().as_plain_text(), "Colonne");
             }
             let bcell = &t.rows[0].cells[0];
             if let StructuredNode::Paragraph(p) = bcell {
-                if let InlineNode::TranslatedText(map) = &p.content.0[0] {
-                    assert_eq!(map.len(), 3);
-                    assert_eq!(map.get("de").unwrap().as_deref(), Some("Wert"));
-                } else {
-                    panic!("Expected TranslatedText in body");
-                }
+                assert_eq!(p.content.0.len(), 3);
+                assert_eq!(p.content.get("de").unwrap().as_plain_text(), "Wert");
             }
         } else {
             panic!("Expected Table");
@@ -2278,14 +2230,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Kundenerklärungen"),
+                    content: TranslatedText::plain_with_lang("de", "Kundenerklärungen"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2302,14 +2254,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Client representations"),
+                    content: TranslatedText::plain_with_lang("en", "Client representations"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2326,14 +2278,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Declaraciones del Cliente"),
+                    content: TranslatedText::plain_with_lang("es", "Declaraciones del Cliente"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "field1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Nombre")),
+                    label: Some(TranslatedText::plain_with_lang("es", "Nombre")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2362,19 +2314,9 @@ mod tests {
 
         // The single H2 must carry all three translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
-            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(map.get("de").unwrap().as_deref(), Some("Kundenerklärungen"));
-                assert_eq!(
-                    map.get("en").unwrap().as_deref(),
-                    Some("Client representations")
-                );
-                assert_eq!(
-                    map.get("es").unwrap().as_deref(),
-                    Some("Declaraciones del Cliente")
-                );
-            } else {
-                panic!("Expected TranslatedText in heading");
-            }
+            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kundenerklärungen");
+            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Client representations");
+            assert_eq!(h.content.get("es").unwrap().as_plain_text(), "Declaraciones del Cliente");
         } else {
             panic!("Expected Heading as first node");
         }
@@ -2384,16 +2326,12 @@ mod tests {
             for node in nodes {
                 match node {
                     StructuredNode::Heading(h) => {
-                        for inline in &h.content.0 {
-                            if let InlineNode::TranslatedText(map) = inline {
-                                for (lang, val) in map {
-                                    assert!(
-                                        val.is_some(),
-                                        "H2 has MISSING TRANSLATION for lang '{}'",
-                                        lang
-                                    );
-                                }
-                            }
+                        for (lang, text) in &h.content.0 {
+                            assert!(
+                                !text.0.is_empty(),
+                                "H2 has MISSING TRANSLATION for lang '{}'",
+                                lang
+                            );
                         }
                     }
                     StructuredNode::Group(g) => assert_no_missing(&g.children),
@@ -2422,14 +2360,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Kundenkontoverwaltung"),
+                    content: TranslatedText::plain_with_lang("de", "Kundenkontoverwaltung"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "f1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2442,7 +2380,7 @@ mod tests {
                 StructuredNode::Field(FieldNode {
                     name: "f2".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Adresse")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Adresse")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2459,14 +2397,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Customer account management"),
+                    content: TranslatedText::plain_with_lang("en", "Customer account management"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "f1".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2479,7 +2417,7 @@ mod tests {
                 StructuredNode::Field(FieldNode {
                     name: "f2".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Address")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Address")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2506,18 +2444,8 @@ mod tests {
 
         // The single H2 must carry both translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
-            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(
-                    map.get("de").unwrap().as_deref(),
-                    Some("Kundenkontoverwaltung")
-                );
-                assert_eq!(
-                    map.get("en").unwrap().as_deref(),
-                    Some("Customer account management")
-                );
-            } else {
-                panic!("Expected TranslatedText in heading");
-            }
+            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kundenkontoverwaltung");
+            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Customer account management");
         } else {
             panic!("Expected Heading as first node");
         }
@@ -2545,14 +2473,14 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Kontoeröffnungsantragsbearbeitung"),
+                    content: TranslatedText::plain_with_lang("de", "Kontoeröffnungsantragsbearbeitung"),
                     som_path: None,
                     source_name: None,
                 }),
                 StructuredNode::Field(FieldNode {
                     name: "anchor_field".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("de", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2571,7 +2499,7 @@ mod tests {
                 StructuredNode::Field(FieldNode {
                     name: "anchor_field".into(),
                     som_path: None,
-                    label: Some(InlineText::plain("Name")),
+                    label: Some(TranslatedText::plain_with_lang("en", "Name")),
                     input_type: FieldType::Text {
                         regex: None,
                         max_length: None,
@@ -2583,7 +2511,7 @@ mod tests {
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: InlineText::plain("Processing of account opening applications"),
+                    content: TranslatedText::plain_with_lang("en", "Processing of account opening applications"),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2612,18 +2540,8 @@ mod tests {
             .find(|n| matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8()))
             .expect("H2 heading not found");
         if let StructuredNode::Heading(h) = heading {
-            if let InlineNode::TranslatedText(map) = &h.content.0[0] {
-                assert_eq!(
-                    map.get("de").unwrap().as_deref(),
-                    Some("Kontoeröffnungsantragsbearbeitung")
-                );
-                assert_eq!(
-                    map.get("en").unwrap().as_deref(),
-                    Some("Processing of account opening applications")
-                );
-            } else {
-                panic!("Expected TranslatedText in heading");
-            }
+            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kontoeröffnungsantragsbearbeitung");
+            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Processing of account opening applications");
         }
     }
 }

@@ -143,14 +143,14 @@ pub enum StructuredNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
-    pub content: InlineText,
+    pub content: TranslatedText,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sublist: Option<Box<ListNode>>,
 }
 
 impl ListItem {
     /// Create a simple list item with no sublist.
-    pub fn simple(content: InlineText) -> Self {
+    pub fn simple(content: TranslatedText) -> Self {
         Self {
             content,
             sublist: None,
@@ -204,7 +204,7 @@ pub struct GridLayoutElement {
 pub struct TableNode {
     pub header: Option<TableHeader>,
     pub rows: Vec<TableRow>,
-    pub caption: Option<InlineText>,
+    pub caption: Option<TranslatedText>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,7 +436,7 @@ pub struct FieldNode {
     pub name: FieldId,
     #[serde(skip, default)]
     pub som_path: Option<SomPath>,
-    pub label: Option<InlineText>,
+    pub label: Option<TranslatedText>,
     pub input_type: FieldType,
     pub value: Option<InputValue>,
     pub placeholder: Option<TranslatableString>,
@@ -447,7 +447,7 @@ pub struct FieldNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphNode {
-    pub content: InlineText,
+    pub content: TranslatedText,
     #[serde(skip, default)]
     pub som_path: Option<SomPath>,
     #[serde(skip, default)]
@@ -458,7 +458,7 @@ pub struct ParagraphNode {
 #[serde(rename_all = "camelCase")]
 pub struct HeadingNode {
     pub level: HeadingLevel,
-    pub content: InlineText,
+    pub content: TranslatedText,
     #[serde(skip, default)]
     pub som_path: Option<SomPath>,
     #[serde(skip, default)]
@@ -468,7 +468,7 @@ pub struct HeadingNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FootnoteNode {
-    pub content: InlineText,
+    pub content: TranslatedText,
     /// The footnote marker (e.g. "1", "2") parsed from the leading text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marker: Option<String>,
@@ -569,12 +569,6 @@ impl InlineText {
         fn collect_text(node: &InlineNode, out: &mut String) {
             match node {
                 InlineNode::Text(s) => out.push_str(s),
-                InlineNode::TranslatedText(translations) => {
-                    // For plain text, use the first available translation
-                    if let Some(text) = translations.values().find_map(|o| o.as_deref()) {
-                        out.push_str(text);
-                    }
-                }
                 InlineNode::Link(link) => {
                     for child in &link.content.0 {
                         collect_text(child, out);
@@ -594,52 +588,12 @@ impl InlineText {
         result
     }
 
-    /// Get the plain text content in a specific language (stripping formatting).
-    ///
-    /// For `TranslatedText` nodes, prefers the given `lang`; falls back to
-    /// the first available translation if the language is not present.
-    pub fn plain_text_in(&self, lang: &str) -> String {
-        fn collect_text(node: &InlineNode, lang: &str, out: &mut String) {
-            match node {
-                InlineNode::Text(s) => out.push_str(s),
-                InlineNode::TranslatedText(translations) => {
-                    if let Some(opt) = translations.get(lang) {
-                        // Key exists – use it (may be None for missing translation)
-                        if let Some(text) = opt.as_deref() {
-                            out.push_str(text);
-                        }
-                    } else {
-                        // Key absent – fallback to any available value
-                        if let Some(text) = translations.values().find_map(|o| o.as_deref()) {
-                            out.push_str(text);
-                        }
-                    }
-                }
-                InlineNode::Link(link) => {
-                    for child in &link.content.0 {
-                        collect_text(child, lang, out);
-                    }
-                }
-                InlineNode::Strong(inner)
-                | InlineNode::Emphasis(inner)
-                | InlineNode::Superscript(inner) => {
-                    collect_text(inner, lang, out);
-                }
-            }
-        }
-        let mut result = String::new();
-        for node in &self.0 {
-            collect_text(node, lang, &mut result);
-        }
-        result
-    }
-
     /// Return a new `InlineText` with `Strong` and `Emphasis` wrappers removed,
     /// keeping only the inner text content. Adjacent text nodes are consolidated.
     pub fn to_plain(&self) -> Self {
         fn strip(node: &InlineNode) -> InlineNode {
             match node {
-                InlineNode::Text(_) | InlineNode::TranslatedText(_) => node.clone(),
+                InlineNode::Text(_) => node.clone(),
                 InlineNode::Strong(inner)
                 | InlineNode::Emphasis(inner)
                 | InlineNode::Superscript(inner) => strip(inner),
@@ -684,61 +638,9 @@ impl InlineText {
         self.consolidate();
     }
 
-    /// Collect all language codes from `TranslatedText` nodes in this inline text.
-    pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
-        fn walk(node: &InlineNode, langs: &mut BTreeSet<String>) {
-            match node {
-                InlineNode::TranslatedText(map) => {
-                    langs.extend(map.keys().cloned());
-                }
-                InlineNode::Strong(inner)
-                | InlineNode::Emphasis(inner)
-                | InlineNode::Superscript(inner) => {
-                    walk(inner, langs);
-                }
-                InlineNode::Link(link) => {
-                    for child in &link.content.0 {
-                        walk(child, langs);
-                    }
-                }
-                InlineNode::Text(_) => {}
-            }
-        }
-        for node in &self.0 {
-            walk(node, langs);
-        }
-    }
-
-    /// Return the set of languages that have at least one `None` value
-    /// in a `TranslatedText` node (i.e. missing translations).
-    pub fn missing_translation_languages(&self) -> BTreeSet<String> {
-        fn walk(node: &InlineNode, missing: &mut BTreeSet<String>) {
-            match node {
-                InlineNode::TranslatedText(map) => {
-                    for (lang, val) in map {
-                        if val.is_none() {
-                            missing.insert(lang.clone());
-                        }
-                    }
-                }
-                InlineNode::Strong(inner)
-                | InlineNode::Emphasis(inner)
-                | InlineNode::Superscript(inner) => {
-                    walk(inner, missing);
-                }
-                InlineNode::Link(link) => {
-                    for child in &link.content.0 {
-                        walk(child, missing);
-                    }
-                }
-                InlineNode::Text(_) => {}
-            }
-        }
-        let mut missing = BTreeSet::new();
-        for node in &self.0 {
-            walk(node, &mut missing);
-        }
-        missing
+    /// Check if two InlineText are structurally equal (compare plain text)
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        self.as_plain_text() == other.as_plain_text()
     }
 }
 
@@ -752,69 +654,199 @@ impl Default for InlineText {
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
 pub enum InlineNode {
     Text(String),
-    TranslatedText(TranslationMap),
     Link(LinkNode),
     Strong(Box<InlineNode>),
     Emphasis(Box<InlineNode>),
     Superscript(Box<InlineNode>),
 }
 
+/// Per-language inline text with independent formatting per language.
+///
+/// Each language gets its own `InlineText` tree, allowing bold/italic/etc.
+/// to be positioned independently across languages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TranslatedText(pub HashMap<String, InlineText>);
+
+impl TranslatedText {
+    /// Create an empty translated text with no languages.
+    pub fn empty() -> Self {
+        TranslatedText(HashMap::new())
+    }
+
+    /// Create a translated text from a plain string with a single language.
+    pub fn plain_with_lang(lang: impl Into<String>, text: impl Into<String>) -> Self {
+        let mut map = HashMap::new();
+        map.insert(lang.into(), InlineText::plain(text));
+        TranslatedText(map)
+    }
+
+    /// Create a translated text from a plain string (no language, uses "default" key).
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self::plain_with_lang("default", text)
+    }
+
+    /// Create a translated text with a single language entry.
+    pub fn single(lang: impl Into<String>, text: InlineText) -> Self {
+        let mut map = HashMap::new();
+        map.insert(lang.into(), text);
+        TranslatedText(map)
+    }
+
+    /// Create a translated text from a map of language → InlineText.
+    pub fn new(map: HashMap<String, InlineText>) -> Self {
+        TranslatedText(map)
+    }
+
+    /// Check if the translated text has no languages or all languages are empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty() || self.0.values().all(|t| t.is_empty())
+    }
+
+    /// Get the InlineText for a specific language.
+    pub fn get(&self, lang: &str) -> Option<&InlineText> {
+        self.0.get(lang)
+    }
+
+    /// Get the InlineText for a specific language, or the first available.
+    pub fn get_or_first(&self, lang: &str) -> Option<&InlineText> {
+        self.0.get(lang).or_else(|| self.0.values().next())
+    }
+
+    /// Get a mutable reference to the InlineText for a specific language.
+    pub fn get_mut(&mut self, lang: &str) -> Option<&mut InlineText> {
+        self.0.get_mut(lang)
+    }
+
+    /// Get the plain text content (first available language, stripping formatting).
+    pub fn as_plain_text(&self) -> String {
+        self.0
+            .values()
+            .next()
+            .map(|t| t.as_plain_text())
+            .unwrap_or_default()
+    }
+
+    /// Get the plain text in a specific language (stripping formatting).
+    /// Falls back to the first available language.
+    pub fn plain_text_in(&self, lang: &str) -> String {
+        self.0
+            .get(lang)
+            .or_else(|| self.0.values().next())
+            .map(|t| t.as_plain_text())
+            .unwrap_or_default()
+    }
+
+    /// Collect all language codes from this translated text.
+    pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
+        langs.extend(self.0.keys().cloned());
+    }
+
+    /// Return the set of languages that have missing translations (empty InlineText).
+    pub fn missing_translation_languages(&self) -> BTreeSet<String> {
+        self.0
+            .iter()
+            .filter(|(_, text)| text.is_empty())
+            .map(|(lang, _)| lang.clone())
+            .collect()
+    }
+
+    /// Insert or replace the InlineText for a specific language.
+    pub fn insert(&mut self, lang: impl Into<String>, text: InlineText) {
+        self.0.insert(lang.into(), text);
+    }
+
+    /// Get all available languages.
+    pub fn languages(&self) -> impl Iterator<Item = &String> {
+        self.0.keys()
+    }
+
+    /// Get iterator over (language, InlineText) pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &InlineText)> {
+        self.0.iter()
+    }
+
+    /// Return a new `TranslatedText` with `Strong` and `Emphasis` wrappers removed
+    /// from all languages, keeping only the inner text content.
+    pub fn to_plain(&self) -> Self {
+        TranslatedText(
+            self.0
+                .iter()
+                .map(|(lang, text)| (lang.clone(), text.to_plain()))
+                .collect(),
+        )
+    }
+
+    /// Concatenate another TranslatedText onto this one.
+    /// For each language present in both, concatenates the InlineText.
+    /// Languages only in `other` are added as-is.
+    pub fn concat(&mut self, other: TranslatedText) {
+        for (lang, text) in other.0 {
+            if let Some(existing) = self.0.get_mut(&lang) {
+                existing.concat(text);
+            } else {
+                self.0.insert(lang, text);
+            }
+        }
+    }
+
+    /// Check if two TranslatedText are structurally equal.
+    pub fn structural_eq(&self, other: &Self) -> bool {
+        let self_langs: BTreeSet<&String> = self.0.keys().collect();
+        let other_langs: BTreeSet<&String> = other.0.keys().collect();
+
+        let shared_langs: Vec<&&String> = self_langs.intersection(&other_langs).collect();
+
+        if !shared_langs.is_empty() {
+            return shared_langs.iter().any(|lang| {
+                let self_text = self
+                    .0
+                    .get(**lang)
+                    .map(|t| t.as_plain_text())
+                    .unwrap_or_default();
+                let other_text = other
+                    .0
+                    .get(**lang)
+                    .map(|t| t.as_plain_text())
+                    .unwrap_or_default();
+                self_text == other_text
+            });
+        }
+
+        // If no shared languages, compare plain text of first available
+        if self_langs.is_empty() && other_langs.is_empty() {
+            return true;
+        }
+
+        false
+    }
+}
+
+impl Default for TranslatedText {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl InlineNode {
     /// Return the trailing plain-text content of this node (if any).
-    ///
-    /// For `TranslatedText` nodes, returns the first value that would cause
-    /// a separator to be needed (i.e., does not end with whitespace). Falls
-    /// back to the first available value.
     pub(crate) fn trailing_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
             InlineNode::Strong(inner)
             | InlineNode::Emphasis(inner)
             | InlineNode::Superscript(inner) => inner.trailing_text(),
-            InlineNode::TranslatedText(map) => {
-                // Prefer a value that doesn't end with whitespace (worst case
-                // for separator decisions) to avoid nondeterminism.
-                map.values()
-                    .filter_map(|o| o.as_deref())
-                    .find(|s| {
-                        !s.is_empty() && !s.as_bytes().last().unwrap_or(&b' ').is_ascii_whitespace()
-                    })
-                    .or_else(|| {
-                        map.values()
-                            .filter_map(|o| o.as_deref())
-                            .find(|s| !s.is_empty())
-                    })
-            }
             InlineNode::Link(link) => link.content.0.last().and_then(|n| n.trailing_text()),
         }
     }
 
     /// Return the leading plain-text content of this node (if any).
-    ///
-    /// For `TranslatedText` nodes, returns the first value that would cause
-    /// a separator to be needed (i.e., does not start with whitespace). Falls
-    /// back to the first available value.
     pub(crate) fn leading_text(&self) -> Option<&str> {
         match self {
             InlineNode::Text(s) => Some(s.as_str()),
             InlineNode::Strong(inner)
             | InlineNode::Emphasis(inner)
             | InlineNode::Superscript(inner) => inner.leading_text(),
-            InlineNode::TranslatedText(map) => {
-                // Prefer a value that doesn't start with whitespace (worst case
-                // for separator decisions) to avoid nondeterminism.
-                map.values()
-                    .filter_map(|o| o.as_deref())
-                    .find(|s| {
-                        !s.is_empty()
-                            && !s.as_bytes().first().unwrap_or(&b' ').is_ascii_whitespace()
-                    })
-                    .or_else(|| {
-                        map.values()
-                            .filter_map(|o| o.as_deref())
-                            .find(|s| !s.is_empty())
-                    })
-            }
             InlineNode::Link(link) => link.content.0.first().and_then(|n| n.leading_text()),
         }
     }
@@ -1160,36 +1192,6 @@ fn structured_node_slices_eq(
             .all(|(a, b)| a.structural_cmp(b, mode))
 }
 
-impl InlineText {
-    /// Check if two InlineText are structurally equal (compare text content)
-    pub fn structural_eq(&self, other: &Self) -> bool {
-        let mut self_langs = BTreeSet::new();
-        let mut other_langs = BTreeSet::new();
-        self.collect_languages(&mut self_langs);
-        other.collect_languages(&mut other_langs);
-
-        let shared_langs: Vec<&str> = self_langs
-            .intersection(&other_langs)
-            .map(String::as_str)
-            .collect();
-
-        if !shared_langs.is_empty() {
-            return shared_langs
-                .iter()
-                .any(|lang| self.plain_text_in(lang) == other.plain_text_in(lang));
-        }
-
-        // If either side uses translated content but there is no shared
-        // language key, they are considered non-equal.
-        if !self_langs.is_empty() || !other_langs.is_empty() {
-            return false;
-        }
-
-        // Plain-text fallback for non-translated content.
-        self.as_plain_text() == other.as_plain_text()
-    }
-}
-
 impl FieldNode {
     /// Returns the SOM path string of this field, or an empty string if unavailable.
     pub fn som_path_str(&self) -> &str {
@@ -1210,7 +1212,7 @@ trait OptionStructuralEq<T> {
     fn structural_eq(&self, other: &Self) -> bool;
 }
 
-impl OptionStructuralEq<InlineText> for Option<InlineText> {
+impl OptionStructuralEq<TranslatedText> for Option<TranslatedText> {
     fn structural_eq(&self, other: &Self) -> bool {
         match (self, other) {
             (None, None) => true,

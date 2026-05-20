@@ -11,7 +11,7 @@ use blueprint::structured::TableRow as StructTableRow;
 use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    InlineText, ListItem, ListNode, ParagraphNode, StructuredNode,
+    ListItem, ListNode, ParagraphNode, StructuredNode, TranslatedText,
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
@@ -703,7 +703,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 let insert_idx = index.min(l.items.len());
                                 l.items.insert(
                                     insert_idx,
-                                    ListItem::simple(InlineText::plain("New item")),
+                                    ListItem::simple(TranslatedText::plain("New item")),
                                 );
                                 let mut path = parent.clone();
                                 path.push(PathSegment::ListItem(insert_idx));
@@ -721,7 +721,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let cells: Vec<StructuredNode> = (0..col_count)
                                 .map(|_| {
                                     StructuredNode::Paragraph(ParagraphNode {
-                                        content: InlineText::plain(""),
+                                        content: TranslatedText::plain(""),
                                         som_path: None,
                                         source_name: None,
                                     })
@@ -752,7 +752,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 let insert_idx = index;
                                 let make_cell = || {
                                     StructuredNode::Paragraph(ParagraphNode {
-                                        content: InlineText::plain(""),
+                                        content: TranslatedText::plain(""),
                                         som_path: None,
                                         source_name: None,
                                     })
@@ -795,19 +795,19 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         // Standard node types: Paragraph, Heading, List, Group
                         let new_node = match node_type {
                             NewNodeType::Paragraph => StructuredNode::Paragraph(ParagraphNode {
-                                content: InlineText::plain("New paragraph"),
+                                content: TranslatedText::plain("New paragraph"),
                                 som_path: None,
                                 source_name: None,
                             }),
                             NewNodeType::Heading(level) => StructuredNode::Heading(HeadingNode {
                                 level: HeadingLevel::from_u8(level),
-                                content: InlineText::plain("New heading"),
+                                content: TranslatedText::plain("New heading"),
                                 som_path: None,
                                 source_name: None,
                             }),
                             NewNodeType::List => StructuredNode::List(ListNode {
                                 list_style: ListStyleType::Disc,
-                                items: vec![ListItem::simple(InlineText::plain("New item"))],
+                                items: vec![ListItem::simple(TranslatedText::plain("New item"))],
                             }),
                             NewNodeType::Group => {
                                 StructuredNode::Group(GroupNode { children: vec![] })
@@ -1357,14 +1357,15 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
 /// Update inline text content, optionally for a specific language.
 /// Content is parsed as markdown to preserve bold/italic formatting.
-fn update_inline_text(text: &mut InlineText, content: &str, language: Option<&str>) {
+fn update_inline_text(text: &mut TranslatedText, content: &str, language: Option<&str>) {
     if let Some(lang) = language {
         // Parse markdown and merge with existing translations
         // This preserves formatting structure while keeping other languages' content
         *text = markdown_to_inline_text_multilingual(content, lang, text);
     } else {
-        // Parse content as markdown to preserve bold/italic formatting
-        *text = markdown_to_inline_text(content);
+        // No language specified: parse and replace as single-language text
+        let parsed = markdown_to_inline_text(content);
+        *text = TranslatedText::single("default", parsed);
     }
 }
 
@@ -1392,7 +1393,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             content: f
                                 .label
                                 .clone()
-                                .unwrap_or_else(|| InlineText::plain(f.name.to_string())),
+                                .unwrap_or_else(|| TranslatedText::plain(f.name.to_string())),
                             som_path: f.som_path.clone(),
                             source_name: None,
                         })
@@ -1444,7 +1445,7 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
                             content: f
                                 .label
                                 .clone()
-                                .unwrap_or_else(|| InlineText::plain(f.name.to_string())),
+                                .unwrap_or_else(|| TranslatedText::plain(f.name.to_string())),
                             som_path: f.som_path.clone(),
                             source_name: None,
                         })

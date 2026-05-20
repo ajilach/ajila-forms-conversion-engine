@@ -24,7 +24,7 @@ use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichTe
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
     HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslatedText,
 };
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
@@ -186,7 +186,15 @@ fn strip_marker_from_str(s: &str) -> Option<String> {
 /// Convert a Document to a list of StructuredNodes (one per root group).
 /// Output is sorted in reading order: top to bottom, left to right.
 pub fn convert(doc: &Document) -> Vec<StructuredNode> {
-    let converter = Converter { doc };
+    convert_with_language(doc, "default")
+}
+
+/// Convert a Document to a list of StructuredNodes with a specific language key.
+pub fn convert_with_language(doc: &Document, language: &str) -> Vec<StructuredNode> {
+    let converter = Converter {
+        doc,
+        language: language.to_string(),
+    };
 
     // Get roots and sort by reading order (y first, then x)
     let mut roots: Vec<usize> = doc.roots();
@@ -213,7 +221,8 @@ pub fn convert_with_context(
     doc: &Document,
     context: crate::context::Context,
 ) -> crate::structured::DocumentEnvelope {
-    let content = convert(doc);
+    let language = context.language().to_string();
+    let content = convert_with_language(doc, &language);
     crate::structured::DocumentEnvelope {
         context,
         content,
@@ -343,7 +352,7 @@ fn move_number_prefixes_to_headings(nodes: &mut Vec<StructuredNode>) {
             };
 
             if !heading_already_numbered {
-                // Extract the prefix from the paragraph
+                // Extract the prefix from the paragraph (use first available language)
                 let para_text = if let StructuredNode::Paragraph(p) = &nodes[i] {
                     p.content.as_plain_text()
                 } else {
@@ -351,16 +360,21 @@ fn move_number_prefixes_to_headings(nodes: &mut Vec<StructuredNode>) {
                 };
 
                 if let Some((prefix, _remaining)) = extract_numeric_prefix(&para_text) {
-                    // Prepend prefix to heading content
+                    // Prepend prefix to heading content (all languages)
                     if let StructuredNode::Heading(h) = &mut nodes[i - 1] {
-                        let heading_text = h.content.as_plain_text();
-                        h.content =
-                            InlineText(vec![InlineNode::Text(format!("{prefix}{heading_text}"))]);
+                        for (_lang, text) in h.content.0.iter_mut() {
+                            let heading_text = text.as_plain_text();
+                            *text = InlineText(vec![InlineNode::Text(format!(
+                                "{prefix}{heading_text}"
+                            ))]);
+                        }
                     }
 
-                    // Strip prefix from paragraph content
+                    // Strip prefix from paragraph content (all languages)
                     if let StructuredNode::Paragraph(p) = &mut nodes[i] {
-                        strip_numeric_prefix_from_inline_text(&mut p.content);
+                        for (_lang, text) in p.content.0.iter_mut() {
+                            strip_numeric_prefix_from_inline_text(text);
+                        }
                         // If the paragraph is now empty, remove it
                         if p.content.is_empty() {
                             nodes.remove(i);
@@ -503,9 +517,20 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
 
 struct Converter<'a, 'b> {
     doc: &'a Document<'b>,
+    language: String,
 }
 
 impl<'a, 'b> Converter<'a, 'b> {
+    /// Wrap an InlineText into a TranslatedText with the converter's language.
+    fn translated(&self, text: InlineText) -> TranslatedText {
+        TranslatedText::single(&self.language, text)
+    }
+
+    /// Wrap an Option<InlineText> into an Option<TranslatedText>.
+    fn translated_opt(&self, text: Option<InlineText>) -> Option<TranslatedText> {
+        text.map(|t| self.translated(t))
+    }
+
     /// Convert a single group to a StructuredNode.
     fn convert_group(&self, group_idx: usize) -> Option<StructuredNode> {
         let group = self.doc.get_group(group_idx)?;
@@ -534,7 +559,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     }
                 };
                 Some(StructuredNode::Footnote(FootnoteNode {
-                    content: text,
+                    content: self.translated(text),
                     marker,
                     som_path,
                     source_name,
@@ -558,7 +583,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let source_name = self.extract_group_source_name(group_idx);
                 Some(StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::from_u8(*level),
-                    content: text,
+                    content: self.translated(text),
                     som_path,
                     source_name,
                 }))
@@ -600,7 +625,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     let source_name = self.extract_group_source_name(group_idx);
                     Some(StructuredNode::Paragraph(ParagraphNode {
-                        content: text,
+                        content: self.translated(text),
                         som_path,
                         source_name,
                     }))
@@ -858,7 +883,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         // Strip list marker prefix from the item text
                         let stripped = strip_list_marker_from_inline_text(text);
                         if !stripped.is_empty() {
-                            items.push(ListItem::simple(stripped));
+                            items.push(ListItem::simple(self.translated(stripped)));
                         }
                     }
                 }
@@ -904,7 +929,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         .map(|&child_idx| {
                             let text = self.extract_inline_text(child_idx);
                             StructuredNode::Paragraph(ParagraphNode {
-                                content: text,
+                                content: self.translated(text),
                                 som_path: None,
                                 source_name: None,
                             })
@@ -1009,7 +1034,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         None
                     } else {
                         Some(StructuredNode::Paragraph(ParagraphNode {
-                            content: text,
+                            content: self.translated(text),
                             som_path,
                             source_name,
                         }))
@@ -1027,7 +1052,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         None
                     } else {
                         Some(StructuredNode::Paragraph(ParagraphNode {
-                            content: InlineText::plain(text),
+                            content: self.translated(InlineText::plain(text)),
                             som_path: node.som_path().cloned(),
                             source_name: None,
                         }))
@@ -1055,7 +1080,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 return None;
             }
             return Some(StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain(text),
+                content: self.translated(InlineText::plain(text)),
                 som_path: field_node.som_path().cloned(),
                 source_name: None,
             }));
@@ -1132,7 +1157,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name,
             som_path: Some(som_path),
-            label: label.map(|l| l.to_plain()),
+            label: label.map(|l| self.translated(l.to_plain())),
             input_type: FieldType::Radio {
                 options: name_values,
             },
@@ -1180,7 +1205,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: self.get_field_id(field_node),
             som_path: self.get_som_path(field_node).cloned(),
-            label: label.map(|l| l.to_plain()),
+            label: label.map(|l| self.translated(l.to_plain())),
             input_type: FieldType::Radio {
                 options: name_values,
             },
@@ -1239,7 +1264,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let field_node = StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&som_path),
             som_path: Some(som_path),
-            label: Some(InlineText::plain(label_text.to_string())),
+            label: Some(self.translated(InlineText::plain(label_text.to_string()))),
             input_type: FieldType::Date,
             value: None,
             placeholder: None,
@@ -1251,7 +1276,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             && !suffix.is_empty()
         {
             let suffix_paragraph = StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain(suffix.clone()),
+                content: self.translated(InlineText::plain(suffix.clone())),
                 som_path: None,
                 source_name: None,
             });
@@ -1327,14 +1352,14 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 {
                                     if !before_str.is_empty() {
                                         before.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(before_str),
+                                            content: self.translated(InlineText::plain(before_str)),
                                             som_path: None,
                                             source_name: None,
                                         }));
                                     }
                                     if !after_str.is_empty() {
                                         after.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(after_str),
+                                            content: self.translated(InlineText::plain(after_str)),
                                             som_path: None,
                                             source_name: None,
                                         }));
@@ -1358,13 +1383,13 @@ impl<'a, 'b> Converter<'a, 'b> {
 
                             if is_after {
                                 after.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
+                                    content: self.translated(text),
                                     som_path: None,
                                     source_name: None,
                                 }));
                             } else {
                                 before.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
+                                    content: self.translated(text),
                                     som_path: None,
                                     source_name: None,
                                 }));
@@ -1388,14 +1413,14 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 {
                                     if !before_str.is_empty() {
                                         before.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(before_str),
+                                            content: self.translated(InlineText::plain(before_str)),
                                             som_path: None,
                                             source_name: None,
                                         }));
                                     }
                                     if !after_str.is_empty() {
                                         after.push(StructuredNode::Paragraph(ParagraphNode {
-                                            content: InlineText::plain(after_str),
+                                            content: self.translated(InlineText::plain(after_str)),
                                             som_path: None,
                                             source_name: None,
                                         }));
@@ -1415,13 +1440,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                             // Otherwise, classify by center position
                             if text_bounds.x + text_bounds.width <= fb.x {
                                 before.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
+                                    content: self.translated(text),
                                     som_path: None,
                                     source_name: None,
                                 }));
                             } else if text_bounds.x >= fb.x + fb.width {
                                 after.push(StructuredNode::Paragraph(ParagraphNode {
-                                    content: text,
+                                    content: self.translated(text),
                                     som_path: None,
                                     source_name: None,
                                 }));
@@ -1431,13 +1456,13 @@ impl<'a, 'b> Converter<'a, 'b> {
                                 let field_center = fb.x + fb.width / Decimal::TWO;
                                 if text_center < field_center {
                                     before.push(StructuredNode::Paragraph(ParagraphNode {
-                                        content: text,
+                                        content: self.translated(text),
                                         som_path: None,
                                         source_name: None,
                                     }));
                                 } else {
                                     after.push(StructuredNode::Paragraph(ParagraphNode {
-                                        content: text,
+                                        content: self.translated(text),
                                         som_path: None,
                                         source_name: None,
                                     }));
@@ -1446,7 +1471,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                         } else {
                             // No bounds, fall back to original classification
                             before.push(StructuredNode::Paragraph(ParagraphNode {
-                                content: text,
+                                content: self.translated(text),
                                 som_path: None,
                                 source_name: None,
                             }));
@@ -1468,7 +1493,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
                         before_nodes.push(StructuredNode::Paragraph(ParagraphNode {
-                            content: text,
+                            content: self.translated(text),
                             som_path: None,
                             source_name: None,
                         }));
@@ -1489,7 +1514,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     let text = self.extract_inline_text(child_group_idx);
                     if !text.is_empty() {
                         after_nodes.push(StructuredNode::Paragraph(ParagraphNode {
-                            content: text,
+                            content: self.translated(text),
                             som_path: None,
                             source_name: None,
                         }));
@@ -1546,7 +1571,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         Some(StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&field_som_path),
             som_path: Some(field_som_path),
-            label: label.map(|l| l.to_plain()),
+            label: label.map(|l| self.translated(l.to_plain())),
             input_type: field_type,
             value: input_value,
             placeholder: self.get_placeholder(node).map(TranslatableString::Plain),
@@ -1950,7 +1975,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                     None
                 } else {
                     Some(StructuredNode::Paragraph(ParagraphNode {
-                        content: InlineText::new(inline_nodes),
+                        content: self.translated(InlineText::new(inline_nodes)),
                         som_path: som_path.clone(),
                         source_name: source_name.clone(),
                     }))

@@ -16,8 +16,9 @@ use super::parser::{TranslationData, VisibilityCondition};
 use super::{AemNode, AemOption};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GridLayout, GridLayoutElement,
-    GroupNode, HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslationMap,
+    GroupNode, HeadingLevel, HeadingNode, InlineText, InputValue, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslatedText,
+    TranslationMap,
 };
 use crate::xfa::scripting::SomPath;
 
@@ -518,12 +519,19 @@ fn convert_options(options: &[AemOption], _ctx: &ConversionContext) -> Vec<NameV
 }
 
 /// Create InlineText from a TranslatableString.
-fn inline_from_translatable(text: &TranslatableString) -> InlineText {
+fn inline_from_translatable(text: &TranslatableString) -> TranslatedText {
     match text {
-        TranslatableString::Plain(s) => InlineText::plain(s),
+        TranslatableString::Plain(s) => TranslatedText::plain(s.as_str()),
         TranslatableString::Translated(map) => {
-            let nodes: Vec<InlineNode> = vec![InlineNode::TranslatedText(map.clone())];
-            InlineText::new(nodes)
+            let mut tt_map = std::collections::HashMap::new();
+            for (lang, value) in map {
+                if let Some(s) = value {
+                    tt_map.insert(lang.clone(), InlineText::plain(s.as_str()));
+                } else {
+                    tt_map.insert(lang.clone(), InlineText::empty());
+                }
+            }
+            TranslatedText::new(tt_map)
         }
     }
 }

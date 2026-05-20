@@ -267,17 +267,17 @@ pub fn merge_nodes(nodes: Vec<StructuredNode>) -> Result<StructuredNode, MergeEr
 mod tests {
     use super::*;
     use crate::document::ListStyleType;
-    use crate::structured::{HeadingNode, InlineText, ListNode};
+    use crate::structured::{HeadingNode, InlineText, ListNode, TranslatedText};
 
     #[test]
     fn test_merge_paragraphs() {
         let p1 = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         });
         let p2 = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("World"),
+            content: TranslatedText::plain("World"),
             som_path: None,
             source_name: None,
         });
@@ -294,11 +294,11 @@ mod tests {
     fn test_merge_lists() {
         let l1 = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![ListItem::simple(InlineText::plain("Item 1"))],
+            items: vec![ListItem::simple(TranslatedText::plain("Item 1"))],
         });
         let l2 = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![ListItem::simple(InlineText::plain("Item 2"))],
+            items: vec![ListItem::simple(TranslatedText::plain("Item 2"))],
         });
 
         let merged = merge_two(l1, l2).unwrap();
@@ -312,13 +312,13 @@ mod tests {
     #[test]
     fn test_merge_paragraph_into_list() {
         let p = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("New item"),
+            content: TranslatedText::plain("New item"),
             som_path: None,
             source_name: None,
         });
         let l = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
-            items: vec![ListItem::simple(InlineText::plain("Existing item"))],
+            items: vec![ListItem::simple(TranslatedText::plain("Existing item"))],
         });
 
         let merged = merge_two(p, l).unwrap();
@@ -349,7 +349,7 @@ mod tests {
             required: false,
         });
         let p = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Text"),
+            content: TranslatedText::plain("Text"),
             som_path: None,
             source_name: None,
         });
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_merge_with_empty() {
         let p = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Keep me"),
+            content: TranslatedText::plain("Keep me"),
             som_path: None,
             source_name: None,
         });
@@ -381,13 +381,13 @@ mod tests {
     fn test_merge_headings_keeps_lower_level() {
         let h1 = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
-            content: InlineText::plain("Big"),
+            content: TranslatedText::plain("Big"),
             som_path: None,
             source_name: None,
         });
         let h3 = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
-            content: InlineText::plain("Small"),
+            content: TranslatedText::plain("Small"),
             som_path: None,
             source_name: None,
         });

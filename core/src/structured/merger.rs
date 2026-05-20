@@ -1144,20 +1144,21 @@ mod tests {
     use super::*;
     use crate::structured::{
         HeadingLevel, HeadingNode, InlineNode, InlineText, ParagraphNode, StructuredNode,
+        TranslatedText,
     };
 
-    fn translated_text(entries: &[(&str, &str)]) -> InlineText {
-        let map: crate::structured::TranslationMap = entries
+    fn translated_text(entries: &[(&str, &str)]) -> TranslatedText {
+        let map: std::collections::HashMap<String, InlineText> = entries
             .iter()
-            .map(|(lang, text)| ((*lang).to_string(), Some((*text).to_string())))
+            .map(|&(lang, text)| (lang.to_string(), InlineText::plain(text)))
             .collect();
-        InlineText(vec![InlineNode::TranslatedText(map)])
+        TranslatedText::new(map)
     }
 
     #[test]
     fn test_merge_identical_structures() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Hello"),
+            content: TranslatedText::plain("Hello"),
             som_path: None,
             source_name: None,
         })];
@@ -1195,14 +1196,14 @@ mod tests {
         // Before the fix: only branch 1 was kept (first-branch-wins).
         // After the fix: both branches are preserved via structural union.
         let nodes1 = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Version A"),
+            content: TranslatedText::plain("Version A"),
             som_path: None,
             source_name: None,
         })];
 
         let nodes2 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
-            content: InlineText::plain("Version B"),
+            content: TranslatedText::plain("Version B"),
             som_path: None,
             source_name: None,
         })];
@@ -1238,12 +1239,12 @@ mod tests {
         // Shared prefix, then divergence based on selection
         let nodes1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("shared"),
+                content: TranslatedText::plain("shared"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Option A"),
+                content: TranslatedText::plain("Option A"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1251,13 +1252,13 @@ mod tests {
 
         let nodes2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("shared"),
+                content: TranslatedText::plain("shared"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
-                content: InlineText::plain("Option B"),
+                content: TranslatedText::plain("Option B"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1294,30 +1295,30 @@ mod tests {
     fn test_merge_nested_selections() {
         // Simulate nested selections like RB_3 with inner RB_1/RB_2
         let nodes_base = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("RB_3 content"),
+            content: TranslatedText::plain("RB_3 content"),
             som_path: None,
             source_name: None,
         })];
         let nodes_inner1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("RB_3 content"),
+                content: TranslatedText::plain("RB_3 content"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Inner RB_1"),
+                content: TranslatedText::plain("Inner RB_1"),
                 som_path: None,
                 source_name: None,
             }),
         ];
         let nodes_inner2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("RB_3 content"),
+                content: TranslatedText::plain("RB_3 content"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Inner RB_2"),
+                content: TranslatedText::plain("Inner RB_2"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1378,12 +1379,12 @@ mod tests {
         // not wrapped in a synthetic unknown/default conditional.
         let base_nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("shared"),
+                content: TranslatedText::plain("shared"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("base only"),
+                content: TranslatedText::plain("base only"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1391,12 +1392,12 @@ mod tests {
 
         let nested_nodes = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("shared"),
+                content: TranslatedText::plain("shared"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("nested only"),
+                content: TranslatedText::plain("nested only"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1446,19 +1447,19 @@ mod tests {
         // Three different top-level selections (like Neuanlage, Änderung, Löschung)
         let nodes1 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
-            content: InlineText::plain("Neuanlage"),
+            content: TranslatedText::plain("Neuanlage"),
             som_path: None,
             source_name: None,
         })];
         let nodes2 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
-            content: InlineText::plain("Änderung"),
+            content: TranslatedText::plain("Änderung"),
             som_path: None,
             source_name: None,
         })];
         let nodes3 = vec![StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
-            content: InlineText::plain("Löschung"),
+            content: TranslatedText::plain("Löschung"),
             som_path: None,
             source_name: None,
         })];
@@ -1503,7 +1504,7 @@ mod tests {
     #[test]
     fn test_merge_single_input() {
         let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain("Only one"),
+            content: TranslatedText::plain("Only one"),
             som_path: None,
             source_name: None,
         })];
@@ -1547,25 +1548,25 @@ mod tests {
         //   (common prefix extracted, divergent union, no silent drop)
         let nodes1 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Common"),
+                content: TranslatedText::plain("Common"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Branch A only"),
+                content: TranslatedText::plain("Branch A only"),
                 som_path: None,
                 source_name: None,
             }),
         ];
         let nodes2 = vec![
             StructuredNode::Paragraph(ParagraphNode {
-                content: InlineText::plain("Common"),
+                content: TranslatedText::plain("Common"),
                 som_path: None,
                 source_name: None,
             }),
             StructuredNode::Heading(HeadingNode {
                 level: HeadingLevel::H1,
-                content: InlineText::plain("Branch B only"),
+                content: TranslatedText::plain("Branch B only"),
                 som_path: None,
                 source_name: None,
             }),
@@ -1693,7 +1694,7 @@ mod tests {
     /// Helper: build a paragraph node with the given text.
     fn para(text: &str) -> StructuredNode {
         StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText::plain(text),
+            content: TranslatedText::plain(text),
             som_path: None,
             source_name: None,
         })

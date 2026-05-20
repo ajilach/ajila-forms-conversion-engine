@@ -19,7 +19,8 @@ use crate::aem::generate_aem_xml;
 use crate::aem::template;
 use crate::aem::xml_writer::reformat_attributes;
 use crate::structured::{
-    FieldType, HeadingLevel, InlineNode, InlineText, ListNode, StructuredNode, TranslatableString,
+    FieldType, HeadingLevel, ListNode, StructuredNode, TranslatableString,
+    TranslatedText,
 };
 
 // ============================================================================
@@ -617,7 +618,7 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
                 // _value (HTML-wrapped <p>…</p>). We need both keys so that
                 // jcr:title and the titledraw _value are both translatable.
                 HeadingLevel::H2 => {
-                    extract_from_inline_text(&h.content, master_lang, map);
+                    extract_from_translated_text(&h.content, master_lang, map);
                     extract_rich_text_translations(&h.content, master_lang, map, |html| {
                         format!("<p>{html}</p>")
                     });
@@ -640,7 +641,7 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
         }
         StructuredNode::Field(f) => {
             if let Some(label) = &f.label {
-                extract_from_inline_text(label, master_lang, map);
+                extract_from_translated_text(label, master_lang, map);
             }
             if let Some(TranslatableString::Translated(tmap)) = &f.placeholder {
                 if let Some(Some(master)) = tmap.get(master_lang) {
@@ -676,7 +677,7 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
         }
         StructuredNode::Table(t) => {
             if let Some(caption) = &t.caption {
-                extract_from_inline_text(caption, master_lang, map);
+                extract_from_translated_text(caption, master_lang, map);
             }
             if let Some(header) = &t.header {
                 for cell in &header.cells {
@@ -714,7 +715,7 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
 /// that the converter uses (e.g. `|html| format!("<p>{html}</p>")`) so that the
 /// translation key matches the actual `_value` content.
 fn extract_rich_text_translations(
-    text: &InlineText,
+    text: &TranslatedText,
     master_lang: &str,
     map: &mut I18nDictionary,
     wrap: impl Fn(&str) -> String,
@@ -768,35 +769,22 @@ fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut I18nD
 
 /// Extract translations from plain inline text (for field labels, captions, etc.
 /// that are NOT wrapped in HTML tags).
-fn extract_from_inline_text(text: &InlineText, master_lang: &str, map: &mut I18nDictionary) {
-    for node in &text.0 {
-        extract_from_inline_node(node, master_lang, map);
+fn extract_from_translated_text(text: &TranslatedText, master_lang: &str, map: &mut I18nDictionary) {
+    let master = text.plain_text_in(master_lang);
+    if master.is_empty() {
+        return;
     }
-}
-
-fn extract_from_inline_node(node: &InlineNode, master_lang: &str, map: &mut I18nDictionary) {
-    match node {
-        InlineNode::TranslatedText(tmap) => {
-            if let Some(Some(master)) = tmap.get(master_lang) {
-                let others: HashMap<String, String> = tmap
-                    .iter()
-                    .filter(|(k, _)| k.as_str() != master_lang)
-                    .filter_map(|(k, v)| v.as_ref().map(|s| (k.clone(), s.clone())))
-                    .collect();
-                if !others.is_empty() {
-                    map.insert(master.clone(), others);
-                }
+    let mut others = HashMap::new();
+    for (lang, inline) in text.iter() {
+        if lang.as_str() != master_lang {
+            let plain = inline.as_plain_text();
+            if !plain.is_empty() {
+                others.insert(lang.clone(), plain);
             }
         }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            extract_from_inline_node(inner, master_lang, map);
-        }
-        InlineNode::Link(link) => {
-            extract_from_inline_text(&link.content, master_lang, map);
-        }
-        InlineNode::Text(_) => {}
+    }
+    if !others.is_empty() {
+        map.insert(master, others);
     }
 }
 
@@ -1274,15 +1262,15 @@ mod tests {
 
     #[test]
     fn translation_key_equals_fd_prefix_plus_value_for_paragraph() {
-        use crate::structured::{InlineNode, InlineText, ParagraphNode, StructuredNode};
+        use crate::structured::{InlineText, ParagraphNode, StructuredNode, TranslatedText};
         use std::collections::HashMap;
 
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("en".into(), Some("Authorized representative(s)".into()));
         tmap.insert("de".into(), Some("Vertretungsberechtigte(r)".into()));
 
         let node = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
             som_path: None,
             source_name: None,
         });
@@ -1317,17 +1305,17 @@ mod tests {
     fn translation_key_for_h1_guideformtitle_includes_html_wrapping() {
         // H1 headings become guideformtitle _value (HTML-wrapped <p>…</p>)
         use crate::structured::{
-            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+            HeadingLevel, HeadingNode, InlineText, StructuredNode, TranslatedText,
         };
         use std::collections::HashMap;
 
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("de".into(), Some("Bewirtschaftbare Konten".into()));
         tmap.insert("en".into(), Some("Manageable accounts".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
-            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
             som_path: None,
             source_name: None,
         });
@@ -1361,17 +1349,17 @@ mod tests {
     fn translation_key_for_h2_panel_title_is_plain_text() {
         // H2 headings become panel jcr:title (plain text, no HTML wrapping)
         use crate::structured::{
-            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+            HeadingLevel, HeadingNode, InlineText, StructuredNode, TranslatedText,
         };
         use std::collections::HashMap;
 
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("en".into(), Some("Client".into()));
         tmap.insert("de".into(), Some("Kunde".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
-            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
             som_path: None,
             source_name: None,
         });
@@ -1402,17 +1390,17 @@ mod tests {
     fn translation_key_for_h3_titledraw_includes_html_wrapping() {
         // H3+ headings become TitleDraw _value (HTML-wrapped)
         use crate::structured::{
-            HeadingLevel, HeadingNode, InlineNode, InlineText, StructuredNode,
+            HeadingLevel, HeadingNode, InlineText, StructuredNode, TranslatedText,
         };
         use std::collections::HashMap;
 
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("en".into(), Some("Agreement".into()));
         tmap.insert("de".into(), Some("Vereinbarung".into()));
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
-            content: InlineText(vec![InlineNode::TranslatedText(tmap)]),
+            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
             som_path: None,
             source_name: None,
         });
@@ -1435,21 +1423,21 @@ mod tests {
     #[test]
     fn translation_key_equals_fd_prefix_plus_value_for_list() {
         use crate::document::ListStyleType;
-        use crate::structured::{InlineNode, InlineText, ListItem, ListNode, StructuredNode};
+        use crate::structured::{InlineText, ListItem, ListNode, StructuredNode, TranslatedText};
         use std::collections::HashMap;
 
-        let mut tmap1 = HashMap::new();
+        let mut tmap1: HashMap<String, Option<String>> = HashMap::new();
         tmap1.insert("en".into(), Some("Item A".to_string()));
         tmap1.insert("de".into(), Some("Punkt A".to_string()));
-        let mut tmap2 = HashMap::new();
+        let mut tmap2: HashMap<String, Option<String>> = HashMap::new();
         tmap2.insert("en".into(), Some("Item B".to_string()));
         tmap2.insert("de".into(), Some("Punkt B".to_string()));
 
         let node = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
             items: vec![
-                ListItem::simple(InlineText(vec![InlineNode::TranslatedText(tmap1)])),
-                ListItem::simple(InlineText(vec![InlineNode::TranslatedText(tmap2)])),
+                ListItem::simple(TranslatedText::new(tmap1.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
+                ListItem::simple(TranslatedText::new(tmap2.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
             ],
         });
 
@@ -1474,16 +1462,16 @@ mod tests {
     #[test]
     fn field_label_translation_key_is_plain_text() {
         use crate::structured::{
-            FieldId, FieldNode, FieldType, InlineNode, InlineText, StructuredNode,
+            FieldId, FieldNode, FieldType, InlineText, StructuredNode, TranslatedText,
         };
         use std::collections::HashMap;
 
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("en".into(), Some("Company".into()));
         tmap.insert("de".into(), Some("Firma".into()));
 
         let node = StructuredNode::Field(FieldNode {
-            label: Some(InlineText(vec![InlineNode::TranslatedText(tmap)])),
+            label: Some(TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1695,7 +1683,7 @@ mod tests {
     #[test]
     fn default_translations_do_not_override_form_content_translations() {
         use crate::structured::{
-            FieldId, FieldNode, FieldType, InlineNode, InlineText, StructuredNode,
+            FieldId, FieldNode, FieldType, InlineText, StructuredNode, TranslatedText,
         };
 
         let mut config = AemConfig::test_default("TEST");
@@ -1713,12 +1701,12 @@ mod tests {
         };
 
         // But form content says "Company" → "Firma"
-        let mut tmap = HashMap::new();
+        let mut tmap: HashMap<String, Option<String>> = HashMap::new();
         tmap.insert("en".into(), Some("Company".into()));
         tmap.insert("de".into(), Some("Firma".into()));
 
         let content = vec![StructuredNode::Field(FieldNode {
-            label: Some(InlineText(vec![InlineNode::TranslatedText(tmap)])),
+            label: Some(TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,

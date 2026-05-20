@@ -555,7 +555,7 @@ mod tests {
     use super::*;
     use crate::structured::{
         FieldId, FieldNode, FieldType, GroupNode, InlineText, InputValue, NameValue,
-        StructuredNode, TranslatableString,
+        StructuredNode, TranslatableString, TranslatedText,
     };
     use crate::xfa::scripting::SomPath;
 
@@ -571,7 +571,7 @@ mod tests {
         StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&SomPath::new(som)),
             som_path: Some(SomPath::new(som)),
-            label: Some(InlineText::plain(label)),
+            label: Some(TranslatedText::plain(label)),
             input_type: FieldType::Radio { options: opts },
             value: None,
             placeholder: None,
@@ -584,7 +584,7 @@ mod tests {
         StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&SomPath::new(som)),
             som_path: Some(SomPath::new(som)),
-            label: Some(InlineText::plain(label)),
+            label: Some(TranslatedText::plain(label)),
             input_type: FieldType::Bool,
             value: None,
             placeholder: None,

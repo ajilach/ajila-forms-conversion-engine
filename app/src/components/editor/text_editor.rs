@@ -5,14 +5,14 @@
 use dioxus::prelude::*;
 use std::collections::BTreeSet;
 
-use blueprint::InlineText;
+use blueprint::TranslatedText;
 
 use super::state::{EditorAction, NodePath};
 use crate::markdown::inline_text_to_markdown;
 
-/// Wrapper for InlineText that implements PartialEq.
+/// Wrapper for TranslatedText that implements PartialEq.
 #[derive(Clone)]
-pub struct InlineTextWrapper(pub InlineText);
+pub struct InlineTextWrapper(pub TranslatedText);
 
 impl PartialEq for InlineTextWrapper {
     fn eq(&self, _other: &Self) -> bool {

@@ -4,7 +4,7 @@ use crate::structured::{
     ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode,
     HeadingNode, InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
-    TranslationMap,
+    TranslatedText, TranslationMap,
 };
 
 /// Compute the LCS (longest common subsequence) table for two node slices,
@@ -392,64 +392,64 @@ pub(crate) fn fill_missing_translation_placeholders(
     }
 }
 
-fn fill_node(node: &mut StructuredNode, all_languages: &[String], primary_language: &str) {
+fn fill_node(node: &mut StructuredNode, all_languages: &[String], _primary_language: &str) {
     match node {
         StructuredNode::Heading(h) => {
-            fill_inline_text(&mut h.content, all_languages, primary_language)
+            fill_translated_text(&mut h.content, all_languages)
         }
         StructuredNode::Paragraph(p) => {
-            fill_inline_text(&mut p.content, all_languages, primary_language)
+            fill_translated_text(&mut p.content, all_languages)
         }
         StructuredNode::Field(f) => {
             if let Some(label) = &mut f.label {
-                fill_inline_text(label, all_languages, primary_language);
+                fill_translated_text(label, all_languages);
             }
             if let Some(ts) = &mut f.placeholder {
-                fill_translatable_string(ts, all_languages, primary_language);
+                fill_translatable_string(ts, all_languages, _primary_language);
             }
-            fill_field_type(&mut f.input_type, all_languages, primary_language);
+            fill_field_type(&mut f.input_type, all_languages, _primary_language);
         }
         StructuredNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                fill_inline_text(caption, all_languages, primary_language);
+                fill_translated_text(caption, all_languages);
             }
             if let Some(header) = &mut t.header {
                 for cell in &mut header.cells {
-                    fill_node(cell, all_languages, primary_language);
+                    fill_node(cell, all_languages, _primary_language);
                 }
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    fill_node(cell, all_languages, primary_language);
+                    fill_node(cell, all_languages, _primary_language);
                 }
             }
         }
         StructuredNode::Group(g) => {
             for child in &mut g.children {
-                fill_node(child, all_languages, primary_language);
+                fill_node(child, all_languages, _primary_language);
             }
         }
-        StructuredNode::Repeatable(r) => fill_node(&mut r.item, all_languages, primary_language),
+        StructuredNode::Repeatable(r) => fill_node(&mut r.item, all_languages, _primary_language),
         StructuredNode::Conditional(c) => {
-            fill_node(&mut c.content, all_languages, primary_language)
+            fill_node(&mut c.content, all_languages, _primary_language)
         }
         StructuredNode::GridLayout(g) => {
             for element in &mut g.elements {
-                fill_node(&mut element.node, all_languages, primary_language);
+                fill_node(&mut element.node, all_languages, _primary_language);
             }
         }
         StructuredNode::List(l) => {
             for item in &mut l.items {
-                fill_inline_text(&mut item.content, all_languages, primary_language);
+                fill_translated_text(&mut item.content, all_languages);
                 if let Some(sub) = &mut item.sublist {
                     for sub_item in &mut sub.items {
-                        fill_inline_text(&mut sub_item.content, all_languages, primary_language);
+                        fill_translated_text(&mut sub_item.content, all_languages);
                     }
                 }
             }
         }
         StructuredNode::Footnote(n) => {
-            fill_inline_text(&mut n.content, all_languages, primary_language)
+            fill_translated_text(&mut n.content, all_languages)
         }
         StructuredNode::Image(_) | StructuredNode::Empty => {}
     }
@@ -466,29 +466,11 @@ fn fill_field_type(input_type: &mut FieldType, all_languages: &[String], primary
     }
 }
 
-fn fill_inline_text(text: &mut InlineText, all_languages: &[String], primary_language: &str) {
-    for node in &mut text.0 {
-        fill_inline_node(node, all_languages, primary_language);
-    }
-}
-
-fn fill_inline_node(node: &mut InlineNode, all_languages: &[String], primary_language: &str) {
-    match node {
-        InlineNode::Text(s) => {
-            let mut map = TranslationMap::new();
-            map.insert(primary_language.to_string(), Some(s.clone()));
-            ensure_all_languages(&mut map, all_languages);
-            *node = InlineNode::TranslatedText(map);
-        }
-        InlineNode::TranslatedText(map) => ensure_all_languages(map, all_languages),
-        InlineNode::Link(link) => {
-            fill_inline_text(&mut link.content, all_languages, primary_language)
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            fill_inline_node(inner, all_languages, primary_language)
-        }
+/// Ensure a `TranslatedText` has entries for all languages.
+/// Missing languages get an empty `InlineText`.
+fn fill_translated_text(text: &mut TranslatedText, all_languages: &[String]) {
+    for lang in all_languages {
+        text.0.entry(lang.clone()).or_insert_with(InlineText::empty);
     }
 }
 
@@ -854,8 +836,10 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 /// This prevents cross-matching paragraphs from the same XFA element that
 /// were rendered with different styling (e.g. a non-bold introduction and a
 /// bold instruction line).
-fn inline_text_structure_compatible(a: &InlineText, b: &InlineText) -> bool {
-    inline_text_is_bold(a) == inline_text_is_bold(b)
+fn inline_text_structure_compatible(a: &TranslatedText, b: &TranslatedText) -> bool {
+    let a_bold = a.0.values().next().map_or(false, |t| inline_text_is_bold(t));
+    let b_bold = b.0.values().next().map_or(false, |t| inline_text_is_bold(t));
+    a_bold == b_bold
 }
 
 /// Returns true if all non-empty inline nodes are wrapped in Strong.
@@ -867,19 +851,19 @@ fn inline_text_is_bold(text: &InlineText) -> bool {
                 has_content = true;
             }
             InlineNode::Text(s) if s.trim().is_empty() => {}
-            InlineNode::TranslatedText(map)
-                if map
-                    .values()
-                    .all(|v| v.as_ref().is_none_or(|s| s.trim().is_empty())) => {}
             _ => return false,
         }
     }
     has_content
 }
 
-fn inline_text_shape_compatible(a: &InlineText, b: &InlineText) -> bool {
-    let a_projections = all_inline_text_projections(a);
-    let b_projections = all_inline_text_projections(b);
+fn inline_text_shape_compatible(a: &TranslatedText, b: &TranslatedText) -> bool {
+    let a_projections: Vec<String> = a.0.values().map(|t| t.as_plain_text()).collect();
+    let b_projections: Vec<String> = b.0.values().map(|t| t.as_plain_text()).collect();
+
+    // If either side is empty, use empty string as projection
+    let a_projections = if a_projections.is_empty() { vec![String::new()] } else { a_projections };
+    let b_projections = if b_projections.is_empty() { vec![String::new()] } else { b_projections };
 
     for a_proj in &a_projections {
         for b_proj in &b_projections {
@@ -889,118 +873,6 @@ fn inline_text_shape_compatible(a: &InlineText, b: &InlineText) -> bool {
         }
     }
     false
-}
-
-/// Collect all per-language text projections from an `InlineText`.
-///
-/// When merging 3+ languages iteratively, already-merged nodes contain
-/// `TranslatedText` maps with multiple language keys.  A single projection
-/// (e.g. a compound-word language) may fail the shape-compatibility check
-/// against the next language even though another translation in the map
-/// would pass.  By producing one projection per language we let the caller
-/// succeed if ANY pair is compatible.
-fn all_inline_text_projections(text: &InlineText) -> Vec<String> {
-    // Collect all language keys that appear in any TranslatedText node.
-    let mut langs: Vec<String> = Vec::new();
-    for node in &text.0 {
-        collect_projection_languages(node, &mut langs);
-    }
-
-    if langs.is_empty() {
-        // Plain text only — single projection.
-        let mut out = String::new();
-        for node in &text.0 {
-            append_stable_inline_node_projection(node, &mut out);
-        }
-        return vec![out];
-    }
-
-    langs
-        .iter()
-        .map(|lang| {
-            let mut out = String::new();
-            for node in &text.0 {
-                append_inline_node_projection_for_lang(node, lang, &mut out);
-            }
-            out
-        })
-        .collect()
-}
-
-/// Collect all language keys present in `TranslatedText` nodes.
-fn collect_projection_languages(node: &InlineNode, langs: &mut Vec<String>) {
-    match node {
-        InlineNode::TranslatedText(map) => {
-            for lang in map.keys() {
-                if !langs.contains(lang) {
-                    langs.push(lang.clone());
-                }
-            }
-        }
-        InlineNode::Link(link) => {
-            for child in &link.content.0 {
-                collect_projection_languages(child, langs);
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            collect_projection_languages(inner, langs);
-        }
-        InlineNode::Text(_) => {}
-    }
-}
-
-/// Project an inline node using a specific language's text from TranslatedText maps.
-fn append_inline_node_projection_for_lang(node: &InlineNode, lang: &str, out: &mut String) {
-    match node {
-        InlineNode::Text(s) => out.push_str(s),
-        InlineNode::TranslatedText(map) => {
-            if let Some(Some(value)) = map.get(lang) {
-                out.push_str(value);
-            } else if let Some((_k, Some(value))) = map
-                .iter()
-                .filter(|(_, v)| v.is_some())
-                .min_by_key(|(k, _)| k.as_str())
-            {
-                // Fallback to alphabetically-first key if this lang is missing.
-                out.push_str(value);
-            }
-        }
-        InlineNode::Link(link) => {
-            for child in &link.content.0 {
-                append_inline_node_projection_for_lang(child, lang, out);
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            append_inline_node_projection_for_lang(inner, lang, out)
-        }
-    }
-}
-
-fn append_stable_inline_node_projection(node: &InlineNode, out: &mut String) {
-    match node {
-        InlineNode::Text(s) => out.push_str(s),
-        InlineNode::TranslatedText(map) => {
-            if let Some((_lang, Some(value))) = map
-                .iter()
-                .filter(|(_, v)| v.is_some())
-                .min_by_key(|(lang, _)| lang.as_str())
-            {
-                out.push_str(value);
-            }
-        }
-        InlineNode::Link(link) => {
-            for child in &link.content.0 {
-                append_stable_inline_node_projection(child, out);
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => append_stable_inline_node_projection(inner, out),
-    }
 }
 
 fn text_shape_compatible(a: &str, b: &str) -> bool {
@@ -1073,35 +945,9 @@ fn text_shape(input: &str) -> TextShape {
 // Localisation — tag a node tree with a single source language
 // ============================================================================
 
-fn localize_inline_node(node: &InlineNode, lang: &str) -> InlineNode {
-    match node {
-        InlineNode::Text(text) => {
-            InlineNode::TranslatedText(HashMap::from([(lang.to_string(), Some(text.clone()))]))
-        }
-        InlineNode::TranslatedText(map) => InlineNode::TranslatedText(map.clone()),
-        InlineNode::Link(link) => InlineNode::Link(crate::structured::LinkNode {
-            href: link.href.clone(),
-            content: localize_inline_text(&link.content, lang),
-        }),
-        InlineNode::Strong(inner) => {
-            InlineNode::Strong(Box::new(localize_inline_node(inner, lang)))
-        }
-        InlineNode::Emphasis(inner) => {
-            InlineNode::Emphasis(Box::new(localize_inline_node(inner, lang)))
-        }
-        InlineNode::Superscript(inner) => {
-            InlineNode::Superscript(Box::new(localize_inline_node(inner, lang)))
-        }
-    }
-}
-
-fn localize_inline_text(text: &InlineText, lang: &str) -> InlineText {
-    InlineText(
-        text.0
-            .iter()
-            .map(|node| localize_inline_node(node, lang))
-            .collect(),
-    )
+/// Wrap an `InlineText` into a `TranslatedText` with a single language key.
+fn localize_inline_text(text: &InlineText, lang: &str) -> TranslatedText {
+    TranslatedText::single(lang.to_string(), text.clone())
 }
 
 fn localize_translatable_string(value: &TranslatableString, lang: &str) -> TranslatableString {
@@ -1138,15 +984,20 @@ fn localize_field_type(field_type: &FieldType, lang: &str) -> FieldType {
 }
 
 fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode {
+    // With TranslatedText, content fields are already keyed by language.
+    // However, if a single-language node has InlineText content that hasn't
+    // been tagged yet (e.g. from a freshly parsed tree), we wrap it.
+    // In practice, structured nodes already contain TranslatedText, so we
+    // just need to ensure the language key is present.
     match node {
         StructuredNode::Heading(heading) => StructuredNode::Heading(HeadingNode {
             level: heading.level,
-            content: localize_inline_text(&heading.content, lang),
+            content: localize_translated_text(&heading.content, lang),
             som_path: heading.som_path.clone(),
             source_name: heading.source_name.clone(),
         }),
         StructuredNode::Paragraph(paragraph) => StructuredNode::Paragraph(ParagraphNode {
-            content: localize_inline_text(&paragraph.content, lang),
+            content: localize_translated_text(&paragraph.content, lang),
             som_path: paragraph.som_path.clone(),
             source_name: paragraph.source_name.clone(),
         }),
@@ -1173,7 +1024,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
             caption: table
                 .caption
                 .as_ref()
-                .map(|caption| localize_inline_text(caption, lang)),
+                .map(|caption| localize_translated_text(caption, lang)),
         }),
         StructuredNode::Field(field) => StructuredNode::Field(FieldNode {
             name: field.name.clone(),
@@ -1181,7 +1032,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
             label: field
                 .label
                 .as_ref()
-                .map(|label| localize_inline_text(label, lang)),
+                .map(|label| localize_translated_text(label, lang)),
             input_type: localize_field_type(&field.input_type, lang),
             value: field.value.clone(),
             placeholder: field
@@ -1219,7 +1070,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .collect(),
         }),
         StructuredNode::Footnote(n) => StructuredNode::Footnote(FootnoteNode {
-            content: localize_inline_text(&n.content, lang),
+            content: localize_translated_text(&n.content, lang),
             marker: n.marker.clone(),
             som_path: n.som_path.clone(),
             source_name: n.source_name.clone(),
@@ -1230,7 +1081,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .items
                 .iter()
                 .map(|item| ListItem {
-                    content: localize_inline_text(&item.content, lang),
+                    content: localize_translated_text(&item.content, lang),
                     sublist: item.sublist.as_ref().map(|sub| {
                         Box::new(ListNode {
                             list_style: sub.list_style,
@@ -1238,7 +1089,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                                 .items
                                 .iter()
                                 .map(|si| ListItem {
-                                    content: localize_inline_text(&si.content, lang),
+                                    content: localize_translated_text(&si.content, lang),
                                     sublist: None,
                                 })
                                 .collect(),
@@ -1250,26 +1101,32 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
     }
 }
 
+/// Ensure a TranslatedText has the correct language key.
+/// If the text has a single entry under a different key (e.g. "default"),
+/// re-key it to the specified language.
+fn localize_translated_text(text: &TranslatedText, lang: &str) -> TranslatedText {
+    if text.0.contains_key(lang) || text.0.is_empty() {
+        return text.clone();
+    }
+    // If there's exactly one entry with a different key, re-key it
+    if text.0.len() == 1 {
+        let inline = text.0.values().next().unwrap().clone();
+        return TranslatedText::single(lang.to_string(), inline);
+    }
+    // Multiple languages already present — return as-is
+    text.clone()
+}
+
 // ============================================================================
 // Translation merge — node list with consolidation
 // ============================================================================
 
 /// Prepend a space to the leading text of the first inline node in the content.
-///
-/// This is used when prepending an orphan `TranslatedText` node before existing
-/// content: the space must live inside the existing nodes so that it applies to
-/// every language rather than being a standalone `Text(" ")` node that
-/// `fill_missing_translation_placeholders` would corrupt.
 fn prepend_space_to_first_inline_node(text: &mut InlineText) {
     fn prepend(node: &mut InlineNode) {
         match node {
             InlineNode::Text(s) => {
                 s.insert(0, ' ');
-            }
-            InlineNode::TranslatedText(map) => {
-                for s in map.values_mut().flatten() {
-                    s.insert(0, ' ');
-                }
             }
             InlineNode::Strong(inner)
             | InlineNode::Emphasis(inner)
@@ -1288,47 +1145,15 @@ fn prepend_space_to_first_inline_node(text: &mut InlineText) {
     }
 }
 
-fn collect_inline_languages(node: &InlineNode, langs: &mut Vec<String>) {
-    match node {
-        InlineNode::TranslatedText(map) => {
-            for lang in map.keys() {
-                if !langs.contains(lang) {
-                    langs.push(lang.clone());
-                }
-            }
-        }
-        InlineNode::Link(link) => {
-            for child in &link.content.0 {
-                collect_inline_languages(child, langs);
-            }
-        }
-        InlineNode::Strong(inner)
-        | InlineNode::Emphasis(inner)
-        | InlineNode::Superscript(inner) => {
-            collect_inline_languages(inner, langs);
-        }
-        InlineNode::Text(_) => {}
-    }
-}
-
-fn collect_inline_text_languages(text: &InlineText) -> Vec<String> {
-    let mut langs = Vec::new();
-    for node in &text.0 {
-        collect_inline_languages(node, &mut langs);
-    }
-    langs
+fn collect_translated_text_languages(text: &TranslatedText) -> Vec<String> {
+    text.0.keys().cloned().collect()
 }
 
 fn matched_paragraph_has_nonempty_language(entry: &AlignedNode, lang: &str) -> bool {
     if let AlignedNode::Matched(StructuredNode::Paragraph(para)) = entry {
-        for inline in &para.content.0 {
-            if let InlineNode::TranslatedText(map) = inline {
-                if let Some(Some(value)) = map.get(lang) {
-                    if !value.trim().is_empty() {
-                        return true;
-                    }
-                }
-            }
+        if let Some(inline_text) = para.content.get(lang) {
+            let plain = inline_text.as_plain_text();
+            return !plain.trim().is_empty();
         }
     }
     false
@@ -1338,55 +1163,28 @@ pub(crate) fn prepend_orphan_text_to_matched_paragraph(
     entry: &mut AlignedNode,
     text: &str,
     lang: &str,
-    base_lang: &str,
-    other_lang: &str,
+    _base_lang: &str,
+    _other_lang: &str,
 ) -> bool {
     if let AlignedNode::Matched(StructuredNode::Paragraph(para)) = entry {
-        if let Some(InlineNode::TranslatedText(map)) = para.content.0.first_mut() {
-            map.entry(base_lang.to_string()).or_insert(None);
-            map.entry(other_lang.to_string()).or_insert(None);
-            let existing = map
-                .entry(lang.to_string())
-                .or_insert_with(|| Some(String::new()));
-            let existing_str = existing.get_or_insert_with(String::new);
-            if super::needs_separator(text, existing_str) {
-                *existing_str = format!("{} {}", text, existing_str);
-            } else {
-                *existing_str = format!("{}{}", text, existing_str);
-            }
-            return true;
-        }
+        // Get or create the InlineText for this language
+        let inline = para.content.0.entry(lang.to_string()).or_insert_with(InlineText::empty);
 
-        let following_text = para
-            .content
-            .0
-            .first()
-            .and_then(|n| n.leading_text())
-            .unwrap_or(" ");
-        let following_starts_with_space = following_text
-            .as_bytes()
-            .first()
-            .is_none_or(|b| b.is_ascii_whitespace());
-
-        let mut map: TranslationMap = collect_inline_text_languages(&para.content)
-            .into_iter()
-            .map(|existing_lang| (existing_lang, Some(String::new())))
-            .collect();
-        map.entry(base_lang.to_string()).or_insert(None);
-        map.entry(other_lang.to_string()).or_insert(None);
-
-        if !following_starts_with_space {
-            // Prepend a space to the existing content so that all languages
-            // (including placeholders filled later) get the separator.
-            prepend_space_to_first_inline_node(&mut para.content);
-            // Trim trailing whitespace from the orphan text to avoid double
-            // spaces when the orphan text already has trailing whitespace.
-            map.insert(lang.to_string(), Some(text.trim_end().to_string()));
+        let existing_plain = inline.as_plain_text();
+        if existing_plain.is_empty() {
+            *inline = InlineText::plain(text);
         } else {
-            map.insert(lang.to_string(), Some(text.to_string()));
-        }
+            let leading = inline.0.first().and_then(|n| n.leading_text()).unwrap_or(" ");
+            let starts_with_space = leading.as_bytes().first().is_none_or(|b| b.is_ascii_whitespace());
 
-        para.content.0.insert(0, InlineNode::TranslatedText(map));
+            if starts_with_space || !super::needs_separator(text, &existing_plain) {
+                // Prepend text node directly
+                inline.0.insert(0, InlineNode::Text(text.to_string()));
+            } else {
+                // Add separator space
+                inline.0.insert(0, InlineNode::Text(format!("{} ", text)));
+            }
+        }
         return true;
     }
 
@@ -1528,7 +1326,7 @@ fn consolidate_orphan_paragraphs(
         // Absorb single-language orphan paragraphs from either side.
         let (orphan_lang, orphan_text) = match &entries[i] {
             AlignedNode::LeftOnly(StructuredNode::Paragraph(p)) => {
-                let langs = collect_inline_text_languages(&p.content);
+                let langs = collect_translated_text_languages(&p.content);
                 if langs.len() > 1 {
                     // Already multilingual: do not flatten it into one language key.
                     continue;
@@ -1714,12 +1512,12 @@ fn consolidate_orphan_paragraph_groups(
         }
 
         // Build a merged Paragraph with TranslatedText.
-        let mut map = TranslationMap::new();
-        map.insert(base_lang.to_string(), Some(left_combined));
-        map.insert(other_lang.to_string(), Some(right_combined));
+        let mut tt_map = HashMap::new();
+        tt_map.insert(base_lang.to_string(), InlineText::plain(left_combined));
+        tt_map.insert(other_lang.to_string(), InlineText::plain(right_combined));
 
         let merged_para = StructuredNode::Paragraph(ParagraphNode {
-            content: InlineText(vec![InlineNode::TranslatedText(map)]),
+            content: TranslatedText::new(tt_map),
             som_path: None,
             source_name: None,
         });
@@ -1920,26 +1718,9 @@ fn consolidate_orphan_paragraph_into_field_label(
 
         if let StructuredNode::Field(f) = &mut localized {
             // Add the paragraph text as label for the paragraph's language.
-            let label = f.label.get_or_insert_with(InlineText::empty);
-            if let Some(InlineNode::TranslatedText(map)) = label.0.first_mut() {
-                // Only insert if the language slot is empty or not yet present.
-                map.entry(para_lang.to_string())
-                    .or_insert_with(|| para_text.clone());
-            } else if label.is_empty() {
-                // Label was empty — create a TranslatedText with both languages.
-                let mut map = TranslationMap::new();
-                map.insert(para_lang.to_string(), para_text);
-                *label = InlineText(vec![InlineNode::TranslatedText(map)]);
-            } else {
-                // Label has non-TranslatedText content (plain Text after localization).
-                // Preserve existing content for the field's language and add para text.
-                let existing_text = label.as_plain_text();
-                let mut map = TranslationMap::new();
-                if !existing_text.is_empty() {
-                    map.insert(field_lang.to_string(), Some(existing_text));
-                }
-                map.insert(para_lang.to_string(), para_text);
-                *label = InlineText(vec![InlineNode::TranslatedText(map)]);
+            let label = f.label.get_or_insert_with(TranslatedText::empty);
+            if let Some(para_text_str) = &para_text {
+                label.insert(para_lang.to_string(), InlineText::plain(para_text_str.as_str()));
             }
         }
 
@@ -2127,14 +1908,14 @@ fn merge_node(
         (StructuredNode::Heading(a), StructuredNode::Heading(b)) => {
             StructuredNode::Heading(HeadingNode {
                 level: a.level,
-                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+                content: merge_translated_text(&a.content, base_lang, &b.content, other_lang),
                 som_path: a.som_path.clone(),
                 source_name: a.source_name.clone(),
             })
         }
         (StructuredNode::Paragraph(a), StructuredNode::Paragraph(b)) => {
             StructuredNode::Paragraph(ParagraphNode {
-                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
+                content: merge_translated_text(&a.content, base_lang, &b.content, other_lang),
                 som_path: a.som_path.clone(),
                 source_name: a.source_name.clone(),
             })
@@ -2202,112 +1983,22 @@ fn merge_node(
 
 /// Merge two `InlineText`s from different languages.
 ///
-/// If both have the same number of inline nodes with matching types, merge
-/// element-wise.  Otherwise, produce a single `TranslatedText` node from each
-/// side's plain text.
-fn merge_inline_text(
-    base: &InlineText,
-    base_lang: &str,
-    other: &InlineText,
-    other_lang: &str,
-) -> InlineText {
-    if base.0.len() == other.0.len()
-        && base
-            .0
-            .iter()
-            .zip(other.0.iter())
-            .all(|(a, b)| inline_node_variant_eq(a, b))
-    {
-        let nodes: Vec<InlineNode> = base
-            .0
-            .iter()
-            .zip(other.0.iter())
-            .map(|(a, b)| merge_inline_node(a, base_lang, b, other_lang))
-            .collect();
-        return InlineText(nodes);
+/// Merge two `TranslatedText`s by combining their language maps.
+///
+/// Each language's InlineText is preserved independently. If both sides
+/// have the same language key (e.g. when merging a 3rd language into an
+/// already-merged document), the base side wins.
+fn merge_translated_text(
+    base: &TranslatedText,
+    _base_lang: &str,
+    other: &TranslatedText,
+    _other_lang: &str,
+) -> TranslatedText {
+    let mut map = base.0.clone();
+    for (lang, text) in &other.0 {
+        map.entry(lang.clone()).or_insert_with(|| text.clone());
     }
-
-    let mut map = inline_text_to_text_map(base, base_lang);
-    map.extend(inline_text_to_text_map(other, other_lang));
-
-    if map.is_empty() {
-        InlineText::empty()
-    } else {
-        InlineText(vec![InlineNode::TranslatedText(map)])
-    }
-}
-
-/// Extract a language→text map from an `InlineText`.
-fn inline_text_to_text_map(text: &InlineText, lang: &str) -> TranslationMap {
-    if text.0.len() == 1 {
-        if let Some(InlineNode::TranslatedText(existing)) = text.0.first() {
-            return existing.clone();
-        }
-    }
-
-    let plain = text.as_plain_text();
-    if plain.is_empty() {
-        TranslationMap::new()
-    } else {
-        HashMap::from([(lang.to_string(), Some(plain))])
-    }
-}
-
-/// Extract a language→text map from an `InlineNode`.
-fn into_text_map(node: &InlineNode, lang: &str) -> TranslationMap {
-    match node {
-        InlineNode::Text(s) => HashMap::from([(lang.to_string(), Some(s.clone()))]),
-        InlineNode::TranslatedText(m) => m.clone(),
-        _ => TranslationMap::new(),
-    }
-}
-
-/// Check if two `InlineNode`s have the same variant (ignoring content).
-fn inline_node_variant_eq(a: &InlineNode, b: &InlineNode) -> bool {
-    matches!(
-        (a, b),
-        (InlineNode::Text(_), InlineNode::Text(_))
-            | (InlineNode::TranslatedText(_), InlineNode::Text(_))
-            | (InlineNode::Text(_), InlineNode::TranslatedText(_))
-            | (InlineNode::TranslatedText(_), InlineNode::TranslatedText(_))
-            | (InlineNode::Link(_), InlineNode::Link(_))
-            | (InlineNode::Strong(_), InlineNode::Strong(_))
-            | (InlineNode::Emphasis(_), InlineNode::Emphasis(_))
-    )
-}
-
-/// Merge two `InlineNode`s from different languages.
-fn merge_inline_node(
-    base: &InlineNode,
-    base_lang: &str,
-    other: &InlineNode,
-    other_lang: &str,
-) -> InlineNode {
-    match (base, other) {
-        (
-            InlineNode::Text(_) | InlineNode::TranslatedText(_),
-            InlineNode::Text(_) | InlineNode::TranslatedText(_),
-        ) => {
-            let mut map = into_text_map(base, base_lang);
-            map.extend(into_text_map(other, other_lang));
-            InlineNode::TranslatedText(map)
-        }
-        (InlineNode::Strong(a), InlineNode::Strong(b)) => {
-            InlineNode::Strong(Box::new(merge_inline_node(a, base_lang, b, other_lang)))
-        }
-        (InlineNode::Emphasis(a), InlineNode::Emphasis(b)) => {
-            InlineNode::Emphasis(Box::new(merge_inline_node(a, base_lang, b, other_lang)))
-        }
-        (InlineNode::Link(a), InlineNode::Link(b)) => {
-            InlineNode::Link(crate::structured::LinkNode {
-                href: a.href.clone(),
-                content: merge_inline_text(&a.content, base_lang, &b.content, other_lang),
-            })
-        }
-        // Mismatched variants — shouldn't happen after variant check, but
-        // keep base as a safe fallback.
-        _ => base.clone(),
-    }
+    TranslatedText::new(map)
 }
 
 // ============================================================================
@@ -2336,7 +2027,7 @@ fn merge_field(
     other_lang: &str,
 ) -> FieldNode {
     let label = merge_option(&base.label, &other.label, |a, b| {
-        merge_inline_text(a, base_lang, b, other_lang)
+        merge_translated_text(a, base_lang, b, other_lang)
     });
 
     let placeholder = merge_option(&base.placeholder, &other.placeholder, |a, b| {
@@ -2451,7 +2142,7 @@ fn merge_list_items(
         .iter()
         .zip(other.iter())
         .map(|(ia, ib)| {
-            let content = merge_inline_text(&ia.content, base_lang, &ib.content, other_lang);
+            let content = merge_translated_text(&ia.content, base_lang, &ib.content, other_lang);
             // For sublists, prefer base's sublist (sublists are typically language-independent)
             let sublist = ia.sublist.clone().or_else(|| ib.sublist.clone());
             ListItem { content, sublist }
@@ -2465,21 +2156,11 @@ fn merge_list_items(
 /// Append unmatched list items as single-language translated entries.
 fn append_unmatched_list_items(items: &mut Vec<ListItem>, unmatched: &[ListItem], language: &str) {
     for item in unmatched {
-        let content = localize_inline_text_for_language(&item.content, language);
+        let content = localize_translated_text(&item.content, language);
         items.push(ListItem {
             content,
             sublist: item.sublist.clone(),
         });
-    }
-}
-
-/// Wrap single-language inline text in a translation map for `language`.
-fn localize_inline_text_for_language(content: &InlineText, language: &str) -> InlineText {
-    let map = inline_text_to_text_map(content, language);
-    if map.is_empty() {
-        content.clone()
-    } else {
-        InlineText(vec![InlineNode::TranslatedText(map)])
     }
 }
 
@@ -2585,7 +2266,7 @@ pub(crate) fn merge_table(
     };
 
     let caption = merge_option(&base.caption, &other.caption, |a, b| {
-        merge_inline_text(a, base_lang, b, other_lang)
+        merge_translated_text(a, base_lang, b, other_lang)
     });
 
     TableNode {
