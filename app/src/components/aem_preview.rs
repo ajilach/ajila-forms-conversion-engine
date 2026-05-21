@@ -182,5 +182,9 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
             };
             ("aem-static aem-footnote", display, vec![])
         }
+        AemNode::Custom { name, label, template_key, .. } => {
+            let display = format!("[custom:{}] {}", template_key, if label.is_empty() { name } else { label });
+            ("aem-field aem-custom", display, vec![])
+        }
     }
 }

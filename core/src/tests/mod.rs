@@ -6691,9 +6691,9 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
+    let (profile, templates, custom_templates) = load_ubs_profile();
     let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
 
     let root = convert_to_aem(&content, &config);
@@ -11147,9 +11147,9 @@ fn test_aaab_aem_config_form_path_title_code() {
     variables.insert("formrange_entity".to_string(), "019".to_string());
     let ctx = crate::Context::new("de".to_string(), variables);
 
-    let (profile, templates) = load_ubs_profile();
+    let (profile, templates, custom_templates) = load_ubs_profile();
     let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Failed to create AemConfig");
 
     // form_code should be the raw code (first segment)
     assert_eq!(config.form_code, "AAAB", "form_code should be 'AAAB'");
@@ -14472,14 +14472,14 @@ fn test_aaqm_inline_field_contratto() {
 fn test_ubs_profile_entity_folder_mapping() {
     use crate::aem::AemConfig;
 
-    let (profile, _) = load_ubs_profile();
+    let (profile, _, _) = load_ubs_profile();
 
     // Germany (019)
     let mut vars = std::collections::HashMap::new();
     vars.insert("formrange_code".into(), "AAEI".into());
     vars.insert("formrange_entity".into(), "019".into());
     let ctx = crate::Context::new("de".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_germany_all/af_aa");
 
     // Italy (033)
@@ -14487,7 +14487,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "AAOE".into());
     vars.insert("formrange_entity".into(), "033".into());
     let ctx = crate::Context::new("it".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_italy_all/af_aa");
 
     // Switzerland (001)
@@ -14495,7 +14495,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "ACAV".into());
     vars.insert("formrange_entity".into(), "001".into());
     let ctx = crate::Context::new("de".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_ch_all/af_ac");
 
     // Unknown entity
@@ -14503,7 +14503,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "TEST".into());
     vars.insert("formrange_entity".into(), "999".into());
     let ctx = crate::Context::new("en".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_global_all/af_te");
 }
 
@@ -14522,7 +14522,7 @@ bind_to_xsd = true
     vars.insert("formrange_code".to_string(), "AAAB".to_string());
     let ctx = crate::Context::new("en".to_string(), vars);
 
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx)
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx)
         .expect("bind_to_xsd=true without xsd_path should succeed");
 
     assert!(config.bind_to_xsd);
@@ -14544,9 +14544,9 @@ fn test_ubs_profile_aem_output_matches_legacy() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
+    let (profile, templates, custom_templates) = load_ubs_profile();
     let profile_config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Profile config");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Profile config");
     let profile_config = crate::resolve_aem_languages(&content, &profile_config);
     let profile_root = convert_to_aem(&content, &profile_config);
     let profile_xml = generate_aem_xml(&profile_root, &profile_config);
@@ -16432,9 +16432,9 @@ fn test_aaki_has_exactly_two_signature_fragments() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     assert!(
@@ -16499,9 +16499,9 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
@@ -16651,8 +16651,8 @@ fn test_bage_has_exactly_five_signature_fragments() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
         .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
@@ -16696,8 +16696,8 @@ fn test_bage_aem_has_expected_fields() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
         .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
@@ -19064,9 +19064,9 @@ fn test_aaai_has_address_and_individual_fragments() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -19141,9 +19141,9 @@ fn test_fragments_work_without_bind_to_xsd() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     // Explicitly disable bind_to_xsd but enable fragments
     config.bind_to_xsd = false;
@@ -23234,9 +23234,9 @@ fn test_aem_form_xml_has_utf8_declaration() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
+    let (profile, templates, custom_templates) = load_ubs_profile();
     let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
 
     let root = convert_to_aem(&content, &config);
@@ -26048,9 +26048,9 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     // Configure with a form-specific root and a different fragment prefix.
     // The profile has rootElementName = "UBSAF_{{ form_code }}" and
@@ -26125,9 +26125,9 @@ fn test_repeatable_panels_have_bind_ref() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     config.bind_to_xsd = true;
     config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
@@ -26182,9 +26182,9 @@ fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     config.bind_to_xsd = false;
     config.use_fragments = true;
@@ -29018,8 +29018,8 @@ fn test_bage_aem_fragment_position_within_panel() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
         .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");

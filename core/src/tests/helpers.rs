@@ -322,17 +322,22 @@ pub fn find_field_by_name(nodes: &[StructuredNode], name: &str) -> Option<FieldN
 
 /// Load the UBS profile (config.toml + XML templates) from `profiles/ubs/aem/`.
 ///
-/// Returns `(AemProfile, templates)` ready for `AemConfig::from_profile`.
+/// Returns `(AemProfile, templates, custom_templates)` ready for `AemConfig::from_profile`.
 pub fn load_ubs_profile() -> (
     crate::aem::AemProfile,
+    std::collections::HashMap<String, String>,
     std::collections::HashMap<String, String>,
 ) {
     let dir_path = profiles_path("ubs/aem");
     let dir = std::path::Path::new(&dir_path);
     let toml_str = std::fs::read_to_string(dir.join("config.toml"))
         .expect("Failed to read profiles/ubs/aem/config.toml");
-    let profile: crate::aem::AemProfile =
+    // Disable custom element rules by default for tests so that existing tests
+    // asserting on Fragment/Panel structure are not affected by the custom
+    // element replacement pass.
+    let mut profile: crate::aem::AemProfile =
         toml::from_str(&toml_str).expect("Failed to parse UBS config.toml");
+    profile.custom_elements.clear();
 
     let mut templates = std::collections::HashMap::new();
     for entry in std::fs::read_dir(dir).expect("Failed to read profiles/ubs/aem/") {
@@ -345,7 +350,24 @@ pub fn load_ubs_profile() -> (
             }
         }
     }
-    (profile, templates)
+
+    let mut custom_templates = std::collections::HashMap::new();
+    let custom_dir = dir.join("custom");
+    if custom_dir.is_dir() {
+        for entry in std::fs::read_dir(&custom_dir).expect("Failed to read custom/ dir") {
+            let entry = entry.expect("Failed to read custom dir entry");
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let content =
+                        std::fs::read_to_string(&path).expect("Failed to read custom template");
+                    custom_templates.insert(stem.to_string(), content);
+                }
+            }
+        }
+    }
+
+    (profile, templates, custom_templates)
 }
 
 /// Generate AEM XML from one or more PDF files and validate that it is
@@ -521,9 +543,9 @@ pub(super) fn build_aem_test_output(
         (merged.context, merged.content)
     };
 
-    let (profile, templates) = load_ubs_profile();
+    let (profile, templates, custom_templates) = load_ubs_profile();
     let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
     let root = convert_to_aem(&content, &config);
 

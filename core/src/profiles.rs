@@ -42,7 +42,9 @@ pub fn has_xsd_config(name: &str) -> bool {
 
 /// Load and parse `{profile}/aem/config.toml` and all top-level `*.xml`
 /// component templates from `{profile}/aem/`.
-pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, String>), String> {
+pub fn load_aem_profile(
+    name: &str,
+) -> Result<(AemProfile, HashMap<String, String>, HashMap<String, String>), String> {
     let aem_dir = PROFILES_DIR
         .get_dir(format!("{name}/aem"))
         .ok_or_else(|| format!("Profile '{name}' has no aem/ subdirectory"))?;
@@ -70,7 +72,21 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
         }
     }
 
-    Ok((profile, templates))
+    // Load custom element templates from the `custom/` subdirectory.
+    let mut custom_templates = HashMap::new();
+    if let Some(custom_dir) = aem_dir.get_dir(format!("{name}/aem/custom")) {
+        for entry in custom_dir.files() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("xml")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                && let Some(content) = entry.contents_utf8()
+            {
+                custom_templates.insert(stem.to_string(), content.to_string());
+            }
+        }
+    }
+
+    Ok((profile, templates, custom_templates))
 }
 
 /// Build a full `AemConfig` for an embedded profile.
@@ -80,9 +96,9 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
 /// - optional XSD binding (requires embedded xsd config when bind_to_xsd=true)
 /// - optional embedded fragment scan
 pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
-    let (profile, templates) = load_aem_profile(name)?;
+    let (profile, templates, custom_templates) = load_aem_profile(name)?;
 
-    let mut config = AemConfig::from_profile(&profile, templates, ctx)
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, ctx)
         .map_err(|e| format!("Failed to build AEM config: {e}"))?;
 
     if config.bind_to_xsd || config.use_fragments {

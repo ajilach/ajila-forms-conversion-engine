@@ -15,6 +15,26 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// A rule for replacing matched form elements with custom templates.
+///
+/// Each rule matches elements by label (for fields) or title (for panels)
+/// using a regex pattern, and replaces them with the specified custom template.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CustomElementRule {
+    /// Regex pattern matched against the element's label (for fields) or
+    /// title (for panels). Uses Rust regex syntax.
+    pub field_name: String,
+
+    /// Name of the custom template (without `.xml` extension).
+    /// Loaded from the `custom/` subdirectory of the profile.
+    pub template: String,
+
+    /// Optional target page index. When set, the custom element is moved
+    /// to the specified page. 0 = first page, 1 = second page, -1 = last page,
+    /// -2 = second-to-last, etc.
+    pub page: Option<i32>,
+}
+
 /// An AEM output profile loaded from a TOML file.
 ///
 /// All template-typed fields accept Tera syntax. Non-template fields are
@@ -111,4 +131,9 @@ pub struct AemProfile {
     /// time. Form-content translations take precedence over defaults.
     #[serde(default)]
     pub default_translations: HashMap<String, HashMap<String, String>>,
+
+    /// Custom element replacement rules. Each rule matches form elements by
+    /// label/title regex and replaces them with a custom template.
+    #[serde(default)]
+    pub custom_elements: Vec<CustomElementRule>,
 }

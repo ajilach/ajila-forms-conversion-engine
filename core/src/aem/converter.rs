@@ -353,6 +353,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
     inject_page_edge_templates(&mut children, config, &mut ctx);
 
+    // --- Second-B pass: apply custom element replacements ---
+    if !config.custom_elements.is_empty() {
+        apply_custom_elements(&mut children, config);
+    }
+
     // --- Second pass: wire conditions onto trigger fields ---
     let conditions = std::mem::take(&mut ctx.collected_conditions);
     if !conditions.is_empty() {
@@ -432,6 +437,229 @@ fn inject_page_edge_templates(
         {
             page_children.push(appendix);
         }
+    }
+}
+
+// ============================================================================
+// Custom element replacement
+// ============================================================================
+
+/// Apply custom element rules: walk the AEM node tree, match elements by
+/// label/title against compiled regex patterns, replace matches with
+/// `AemNode::Custom` nodes, and optionally move them to a target page.
+fn apply_custom_elements(children: &mut Vec<AemNode>, config: &AemConfig) {
+    // First pass: replace matching nodes in-place with Custom nodes.
+    apply_custom_elements_recursive(children, config);
+
+    // Second pass: move custom elements that have a `page` target.
+    move_custom_elements_to_pages(children, config);
+}
+
+/// Recursively walk the tree and replace matching nodes with Custom nodes.
+fn apply_custom_elements_recursive(nodes: &mut Vec<AemNode>, config: &AemConfig) {
+    for node in nodes.iter_mut() {
+        // Recurse into containers first.
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                apply_custom_elements_recursive(children, config);
+            }
+            _ => {}
+        }
+
+        // Try matching this node against custom element rules.
+        let match_text = match node {
+            AemNode::TextField { label, .. } => Some(label.clone()),
+            AemNode::Dropdown { label, .. } => Some(label.clone()),
+            AemNode::Panel { title, .. } => Some(title.clone()),
+            _ => None,
+        };
+
+        if let Some(text) = match_text {
+            for rule in &config.custom_elements {
+                if rule.pattern.is_match(&text) {
+                    // Page panels are special: keep the page wrapper and
+                    // replace its children with a single Custom node so the
+                    // wizard step structure (title, navigation, etc.) is
+                    // preserved while the body becomes the custom template.
+                    if let AemNode::Panel {
+                        is_page: true,
+                        title,
+                        children,
+                        ..
+                    } = node
+                    {
+                        let custom = AemNode::Custom {
+                            uuid: uuid::Uuid::new_v4(),
+                            name: String::new(),
+                            template_key: rule.template.clone(),
+                            label: title.clone(),
+                            options: Vec::new(),
+                            mandatory: false,
+                            visible: true,
+                            colspan: 1,
+                            dor_colspan: None,
+                            bind_ref: None,
+                        };
+                        *children = vec![custom];
+                        break;
+                    }
+
+                    // Non-page nodes: replace the node entirely.
+                    let custom = match std::mem::replace(node, AemNode::Preface {
+                        uuid: uuid::Uuid::nil(),
+                        name: String::new(),
+                    }) {
+                        AemNode::TextField {
+                            uuid, name, label, mandatory, visible, colspan, dor_colspan, bind_ref, ..
+                        } => AemNode::Custom {
+                            uuid,
+                            name,
+                            template_key: rule.template.clone(),
+                            label,
+                            options: Vec::new(),
+                            mandatory,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                        },
+                        AemNode::Dropdown {
+                            uuid, name, label, options, mandatory, visible, colspan, dor_colspan, bind_ref, ..
+                        } => AemNode::Custom {
+                            uuid,
+                            name,
+                            template_key: rule.template.clone(),
+                            label,
+                            options,
+                            mandatory,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                        },
+                        AemNode::Panel {
+                            uuid, name, title, visible, colspan, dor_colspan, bind_ref, ..
+                        } => AemNode::Custom {
+                            uuid,
+                            name,
+                            template_key: rule.template.clone(),
+                            label: title,
+                            options: Vec::new(),
+                            mandatory: false,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                        },
+                        _ => unreachable!(),
+                    };
+                    *node = custom;
+                    break; // First-match-wins per node.
+                }
+            }
+        }
+    }
+}
+
+/// Move custom elements with a `page` target to the specified page.
+fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, config: &AemConfig) {
+    // Collect page indices (panels with is_page=true that are direct children of Root).
+    let page_indices: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| match node {
+            AemNode::Panel { is_page: true, .. } => Some(idx),
+            _ => None,
+        })
+        .collect();
+
+    if page_indices.is_empty() {
+        return;
+    }
+
+    // Build a map from rule template to page target.
+    let page_targets: std::collections::HashMap<&str, i32> = config
+        .custom_elements
+        .iter()
+        .filter_map(|rule| rule.page.map(|p| (rule.template.as_str(), p)))
+        .collect();
+
+    if page_targets.is_empty() {
+        return;
+    }
+
+    // Extract custom elements that need to be moved from all pages.
+    // Skip Custom nodes that are the sole child of a page panel (those were
+    // placed via in-place page-panel replacement and already live on their
+    // natural page).
+    let mut to_move: Vec<(AemNode, i32)> = Vec::new();
+    for &page_idx in &page_indices {
+        if let AemNode::Panel { children: page_children, .. } = &mut children[page_idx] {
+            let is_sole_custom = page_children.len() == 1
+                && matches!(page_children[0], AemNode::Custom { .. });
+            if is_sole_custom {
+                continue;
+            }
+            extract_custom_elements_for_move(page_children, &page_targets, &mut to_move);
+        }
+    }
+
+    // Insert moved elements into their target pages.
+    for (custom_node, page_target) in to_move {
+        let target_idx = resolve_page_index(page_target, &page_indices);
+        if let Some(target_page_idx) = target_idx {
+            if let AemNode::Panel { children: page_children, .. } = &mut children[target_page_idx] {
+                page_children.push(custom_node);
+            }
+        }
+    }
+}
+
+/// Recursively extract custom elements that need to be moved from a subtree.
+fn extract_custom_elements_for_move(
+    nodes: &mut Vec<AemNode>,
+    page_targets: &std::collections::HashMap<&str, i32>,
+    out: &mut Vec<(AemNode, i32)>,
+) {
+    // First recurse into children of containers.
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Panel { children, .. } | AemNode::Repeatable { children, .. } => {
+                extract_custom_elements_for_move(children, page_targets, out);
+            }
+            _ => {}
+        }
+    }
+
+    // Then remove Custom nodes that have a page target.
+    let mut i = 0;
+    while i < nodes.len() {
+        if let AemNode::Custom { template_key, .. } = &nodes[i] {
+            if let Some(&target) = page_targets.get(template_key.as_str()) {
+                let removed = nodes.remove(i);
+                out.push((removed, target));
+                continue;
+            }
+        }
+        i += 1;
+    }
+}
+
+/// Resolve a signed page index to an actual index into the page_indices array.
+/// 0 = first page, 1 = second page, -1 = last page, -2 = second-to-last, etc.
+fn resolve_page_index(page_target: i32, page_indices: &[usize]) -> Option<usize> {
+    let num_pages = page_indices.len() as i32;
+    let resolved = if page_target >= 0 {
+        page_target
+    } else {
+        num_pages + page_target
+    };
+    if resolved >= 0 && resolved < num_pages {
+        Some(page_indices[resolved as usize])
+    } else {
+        None
     }
 }
 
@@ -1962,7 +2190,8 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
-            | AemNode::Footnote { .. } => {}
+            | AemNode::Footnote { .. }
+            | AemNode::Custom { .. } => {}
         }
     }
 }

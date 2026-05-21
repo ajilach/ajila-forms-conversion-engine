@@ -36,6 +36,25 @@ pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
 /// If no template exists for the node type, an empty string is returned
 /// (the component is omitted from the output).
 fn render_node(node: &AemNode, config: &AemConfig) -> String {
+    // Custom nodes use a separate template lookup.
+    if let AemNode::Custom { template_key, .. } = node {
+        let template = match config.custom_templates.get(template_key) {
+            Some(tmpl) => tmpl,
+            None => {
+                log::error!("Custom template '{}' not found in custom_templates", template_key);
+                return String::new();
+            }
+        };
+        let ctx = build_node_context(node, config);
+        return match template::render_string(template, &ctx) {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                log::error!("Failed to render custom template '{}': {}", template_key, e);
+                String::new()
+            }
+        };
+    }
+
     let template_key = match node {
         AemNode::Root { .. } => "root",
         AemNode::Panel {
@@ -56,6 +75,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::Preface { .. } => "preface",
         AemNode::Appendix { .. } => "appendix",
         AemNode::Footnote { .. } => "footnote",
+        AemNode::Custom { .. } => unreachable!(),
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -377,6 +397,29 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("content", &xml_escape(content));
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
+        }
+
+        AemNode::Custom {
+            uuid,
+            name,
+            template_key: _,
+            label,
+            options,
+            mandatory,
+            visible,
+            colspan,
+            dor_colspan,
+            bind_ref,
+        } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
+            ctx.insert("label", &xml_escape(label));
+            ctx.insert("mandatory", mandatory);
+            ctx.insert("visible", visible);
+            ctx.insert("colspan", colspan);
+            ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("bind_ref", bind_ref);
+            insert_options_context(&mut ctx, options);
         }
     }
 

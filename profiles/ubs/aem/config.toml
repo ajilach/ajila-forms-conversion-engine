@@ -86,6 +86,29 @@ css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
 # =============================================================================
 # Language Synonyms
 # =============================================================================
+# Language Synonyms
+# =============================================================================
 [language_synonyms]
 de = ["de-ch"]
 sp = ["es"]
+
+# =============================================================================
+# Custom Elements — regex-based element replacement with custom templates
+# =============================================================================
+[[custom_elements]]
+field_name = "(?i)^Tipo$"
+template = "tipo_radio"
+
+[[custom_elements]]
+field_name = "^Formular Adressat$"
+template = "formular_adressat_radio"
+
+[[custom_elements]]
+field_name = '^(Kundendaten|Dati del/i cliente/i(?: \(di seguito il «Cliente»\))?)$'
+template = "account_holder"
+page = 0
+
+[[custom_elements]]
+field_name = '^(Signature\(s\)|Unterschrift\(en\)|Firma/e)$'
+template = "signatures"
+page = -1
