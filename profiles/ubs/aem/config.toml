@@ -98,7 +98,7 @@ field_name = "(?i)^Tipo$"
 template = "tipo_radio"
 
 [[custom_elements]]
-field_name = "^Formular Adressat$"
+field_name = "^(Formular Adressat|Form addressee)$"
 template = "formular_adressat_radio"
 
 [[custom_elements]]

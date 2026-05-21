@@ -547,8 +547,8 @@ fn apply_custom_elements_recursive(
                     options: Vec::new(),
                     mandatory: false,
                     visible: true,
-                    colspan: 1,
-                    dor_colspan: None,
+                    colspan: 12,
+                    dor_colspan: Some(12),
                     bind_ref: None,
                 };
                 *children = vec![custom];
@@ -569,8 +569,6 @@ fn apply_custom_elements_recursive(
                     label,
                     mandatory,
                     visible,
-                    colspan,
-                    dor_colspan,
                     bind_ref,
                     ..
                 } => AemNode::Custom {
@@ -581,8 +579,8 @@ fn apply_custom_elements_recursive(
                     options: Vec::new(),
                     mandatory,
                     visible,
-                    colspan,
-                    dor_colspan,
+                    colspan: 12,
+                    dor_colspan: Some(12),
                     bind_ref,
                 },
                 AemNode::Dropdown {
@@ -592,8 +590,6 @@ fn apply_custom_elements_recursive(
                     options,
                     mandatory,
                     visible,
-                    colspan,
-                    dor_colspan,
                     bind_ref,
                     ..
                 } => AemNode::Custom {
@@ -604,8 +600,8 @@ fn apply_custom_elements_recursive(
                     options,
                     mandatory,
                     visible,
-                    colspan,
-                    dor_colspan,
+                    colspan: 12,
+                    dor_colspan: Some(12),
                     bind_ref,
                 },
                 AemNode::Panel {
@@ -613,8 +609,6 @@ fn apply_custom_elements_recursive(
                     name,
                     title,
                     visible,
-                    colspan,
-                    dor_colspan,
                     bind_ref,
                     ..
                 } => AemNode::Custom {
@@ -625,8 +619,8 @@ fn apply_custom_elements_recursive(
                     options: Vec::new(),
                     mandatory: false,
                     visible,
-                    colspan,
-                    dor_colspan,
+                    colspan: 12,
+                    dor_colspan: Some(12),
                     bind_ref,
                 },
                 _ => unreachable!(),

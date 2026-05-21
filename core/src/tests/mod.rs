@@ -29268,6 +29268,24 @@ fn count_custom_elements(node: &crate::aem::AemNode, template: &str) -> usize {
     }
 }
 
+/// Collect all custom nodes in a subtree.
+fn collect_custom_nodes<'a>(
+    node: &'a crate::aem::AemNode,
+    out: &mut Vec<&'a crate::aem::AemNode>,
+) {
+    match node {
+        crate::aem::AemNode::Custom { .. } => out.push(node),
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_custom_nodes(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Find the first Custom node with the given template_key.
 fn find_custom_by_template<'a>(
     node: &'a crate::aem::AemNode,
@@ -29393,6 +29411,19 @@ fn test_aaha_custom_elements_account_holder_on_first_page() {
 }
 
 #[test]
+fn test_aaha_custom_elements_form_addressee_replaced_with_radio() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+    let first_page = pages[0];
+
+    let addressee_count = count_custom_elements(first_page, "formular_adressat_radio");
+    assert_eq!(
+        addressee_count, 1,
+        "Form addressee should be replaced by formular_adressat_radio, found {addressee_count}"
+    );
+}
+
+#[test]
 fn test_aaha_custom_elements_signatures_on_last_page() {
     let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
     let pages = get_page_panels(&root);
@@ -29439,6 +29470,40 @@ fn test_aaha_custom_element_xml_tag_uses_replaced_name() {
         "Signatures custom element tag should reuse replaced panel name, got: {}",
         signatures.element_name()
     );
+}
+
+#[test]
+fn test_custom_elements_are_full_width() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let mut custom_nodes = Vec::new();
+    collect_custom_nodes(&root, &mut custom_nodes);
+
+    assert!(
+        !custom_nodes.is_empty(),
+        "Expected at least one custom element in AAHA output"
+    );
+
+    for node in custom_nodes {
+        if let crate::aem::AemNode::Custom {
+            template_key,
+            colspan,
+            dor_colspan,
+            ..
+        } = node
+        {
+            assert_eq!(
+                *colspan, 12,
+                "Custom element '{}' should have colspan=12",
+                template_key
+            );
+            assert_eq!(
+                *dor_colspan,
+                Some(12),
+                "Custom element '{}' should have dor_colspan=12",
+                template_key
+            );
+        }
+    }
 }
 
 #[test]
