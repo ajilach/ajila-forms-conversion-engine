@@ -507,12 +507,23 @@ fn apply_custom_elements_recursive(nodes: &mut Vec<AemNode>, config: &AemConfig)
                     }
 
                     // Non-page nodes: replace the node entirely.
-                    let custom = match std::mem::replace(node, AemNode::Preface {
-                        uuid: uuid::Uuid::nil(),
-                        name: String::new(),
-                    }) {
+                    let custom = match std::mem::replace(
+                        node,
+                        AemNode::Preface {
+                            uuid: uuid::Uuid::nil(),
+                            name: String::new(),
+                        },
+                    ) {
                         AemNode::TextField {
-                            uuid, name, label, mandatory, visible, colspan, dor_colspan, bind_ref, ..
+                            uuid,
+                            name,
+                            label,
+                            mandatory,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                            ..
                         } => AemNode::Custom {
                             uuid,
                             name,
@@ -526,7 +537,16 @@ fn apply_custom_elements_recursive(nodes: &mut Vec<AemNode>, config: &AemConfig)
                             bind_ref,
                         },
                         AemNode::Dropdown {
-                            uuid, name, label, options, mandatory, visible, colspan, dor_colspan, bind_ref, ..
+                            uuid,
+                            name,
+                            label,
+                            options,
+                            mandatory,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                            ..
                         } => AemNode::Custom {
                             uuid,
                             name,
@@ -540,7 +560,14 @@ fn apply_custom_elements_recursive(nodes: &mut Vec<AemNode>, config: &AemConfig)
                             bind_ref,
                         },
                         AemNode::Panel {
-                            uuid, name, title, visible, colspan, dor_colspan, bind_ref, ..
+                            uuid,
+                            name,
+                            title,
+                            visible,
+                            colspan,
+                            dor_colspan,
+                            bind_ref,
+                            ..
                         } => AemNode::Custom {
                             uuid,
                             name,
@@ -590,18 +617,16 @@ fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, config: &AemConfig
         return;
     }
 
-    // Extract custom elements that need to be moved from all pages.
-    // Skip Custom nodes that are the sole child of a page panel (those were
-    // placed via in-place page-panel replacement and already live on their
-    // natural page).
+    // Extract custom elements (with their parent conditional panels) that need
+    // to be moved. When a page panel's sole child is a Custom node, it was
+    // created via in-place page-panel replacement and the Custom is moved directly.
     let mut to_move: Vec<(AemNode, i32)> = Vec::new();
     for &page_idx in &page_indices {
-        if let AemNode::Panel { children: page_children, .. } = &mut children[page_idx] {
-            let is_sole_custom = page_children.len() == 1
-                && matches!(page_children[0], AemNode::Custom { .. });
-            if is_sole_custom {
-                continue;
-            }
+        if let AemNode::Panel {
+            children: page_children,
+            ..
+        } = &mut children[page_idx]
+        {
             extract_custom_elements_for_move(page_children, &page_targets, &mut to_move);
         }
     }
@@ -610,32 +635,42 @@ fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, config: &AemConfig
     for (custom_node, page_target) in to_move {
         let target_idx = resolve_page_index(page_target, &page_indices);
         if let Some(target_page_idx) = target_idx {
-            if let AemNode::Panel { children: page_children, .. } = &mut children[target_page_idx] {
+            if let AemNode::Panel {
+                children: page_children,
+                ..
+            } = &mut children[target_page_idx]
+            {
                 page_children.push(custom_node);
             }
         }
     }
+
+    // Remove empty page panels left behind after extraction.
+    children.retain(|node| {
+        if let AemNode::Panel {
+            is_page: true,
+            children: page_children,
+            ..
+        } = node
+        {
+            !page_children.is_empty()
+        } else {
+            true
+        }
+    });
 }
 
 /// Recursively extract custom elements that need to be moved from a subtree.
+/// When a Custom node lives inside a parent panel (e.g. a conditional panel),
+/// the entire parent is moved so that conditions are preserved.
 fn extract_custom_elements_for_move(
     nodes: &mut Vec<AemNode>,
     page_targets: &std::collections::HashMap<&str, i32>,
     out: &mut Vec<(AemNode, i32)>,
 ) {
-    // First recurse into children of containers.
-    for node in nodes.iter_mut() {
-        match node {
-            AemNode::Panel { children, .. } | AemNode::Repeatable { children, .. } => {
-                extract_custom_elements_for_move(children, page_targets, out);
-            }
-            _ => {}
-        }
-    }
-
-    // Then remove Custom nodes that have a page target.
     let mut i = 0;
     while i < nodes.len() {
+        // Check if this node directly is a Custom with a page target.
         if let AemNode::Custom { template_key, .. } = &nodes[i] {
             if let Some(&target) = page_targets.get(template_key.as_str()) {
                 let removed = nodes.remove(i);
@@ -643,7 +678,48 @@ fn extract_custom_elements_for_move(
                 continue;
             }
         }
+
+        // Check if this node is a panel that contains (directly or nested)
+        // a Custom node with a page target. If so, move the entire panel.
+        if let Some(target) = panel_contains_movable_custom(&nodes[i], page_targets) {
+            let removed = nodes.remove(i);
+            out.push((removed, target));
+            continue;
+        }
+
+        // Otherwise recurse into panel children.
+        match &mut nodes[i] {
+            AemNode::Panel { children, .. } | AemNode::Repeatable { children, .. } => {
+                extract_custom_elements_for_move(children, page_targets, out);
+            }
+            _ => {}
+        }
         i += 1;
+    }
+}
+
+/// Check if a node is a panel that contains a Custom node with a page target.
+/// Returns the page target if found, None otherwise.
+fn panel_contains_movable_custom(
+    node: &AemNode,
+    page_targets: &std::collections::HashMap<&str, i32>,
+) -> Option<i32> {
+    match node {
+        AemNode::Panel { children, .. } => {
+            for child in children {
+                if let AemNode::Custom { template_key, .. } = child {
+                    if let Some(&target) = page_targets.get(template_key.as_str()) {
+                        return Some(target);
+                    }
+                }
+                // Recurse deeper.
+                if let Some(target) = panel_contains_movable_custom(child, page_targets) {
+                    return Some(target);
+                }
+            }
+            None
+        }
+        _ => None,
     }
 }
 

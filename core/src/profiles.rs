@@ -70,7 +70,9 @@ pub fn load_aem_profile(
                 if let Some(lang) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Some(content) = entry.contents_utf8() {
                         parse_translation_toml(content, lang, &mut profile.default_translations)
-                            .map_err(|e| format!("Failed to parse translations/{lang}.toml: {e}"))?;
+                            .map_err(|e| {
+                                format!("Failed to parse translations/{lang}.toml: {e}")
+                            })?;
                     }
                 }
             }
@@ -592,11 +594,13 @@ pub fn parse_translation_toml(
         translations: HashMap<String, String>,
     }
 
-    let file: TranslationFile =
-        toml::from_str(toml_str).map_err(|e| e.to_string())?;
+    let file: TranslationFile = toml::from_str(toml_str).map_err(|e| e.to_string())?;
 
     for (key, message) in file.translations {
-        translations.entry(key).or_default().insert(lang.to_string(), message);
+        translations
+            .entry(key)
+            .or_default()
+            .insert(lang.to_string(), message);
     }
 
     Ok(())

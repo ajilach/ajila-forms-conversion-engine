@@ -344,22 +344,30 @@ pub fn load_ubs_profile() -> (
     if translations_json_path.is_file() {
         let json_str = std::fs::read_to_string(&translations_json_path)
             .expect("Failed to read translations.json");
-        let translations: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
-            serde_json::from_str(&json_str).expect("Failed to parse translations.json");
+        let translations: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = serde_json::from_str(&json_str).expect("Failed to parse translations.json");
         profile.default_translations = translations;
     }
 
     // Load translations/ directory (per-language TOML files, merged on top)
     let translations_dir = dir.join("translations");
     if translations_dir.is_dir() {
-        for entry in std::fs::read_dir(&translations_dir).expect("Failed to read translations/ dir") {
+        for entry in std::fs::read_dir(&translations_dir).expect("Failed to read translations/ dir")
+        {
             let entry = entry.expect("Failed to read translations dir entry");
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("toml") {
                 if let Some(lang) = path.file_stem().and_then(|s| s.to_str()) {
-                    let content = std::fs::read_to_string(&path).expect("Failed to read translation TOML");
-                    crate::profiles::parse_translation_toml(&content, lang, &mut profile.default_translations)
-                        .unwrap_or_else(|e| panic!("Failed to parse translations/{lang}.toml: {e}"));
+                    let content =
+                        std::fs::read_to_string(&path).expect("Failed to read translation TOML");
+                    crate::profiles::parse_translation_toml(
+                        &content,
+                        lang,
+                        &mut profile.default_translations,
+                    )
+                    .unwrap_or_else(|e| panic!("Failed to parse translations/{lang}.toml: {e}"));
                 }
             }
         }
@@ -394,6 +402,55 @@ pub fn load_ubs_profile() -> (
     }
 
     (profile, templates, custom_templates)
+}
+
+/// Like `load_ubs_profile`, but keeps custom_elements enabled so that tests
+/// can verify custom element placement in the AEM tree.
+pub fn load_ubs_profile_with_custom_elements() -> (
+    crate::aem::AemProfile,
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, String>,
+) {
+    let (mut profile, templates, custom_templates) = load_ubs_profile();
+    // Reload custom_elements from the config (load_ubs_profile clears them).
+    let dir_path = profiles_path("ubs/aem");
+    let dir = std::path::Path::new(&dir_path);
+    let toml_str = std::fs::read_to_string(dir.join("config.toml"))
+        .expect("Failed to read profiles/ubs/aem/config.toml");
+    let full_profile: crate::aem::AemProfile =
+        toml::from_str(&toml_str).expect("Failed to parse UBS config.toml");
+    profile.custom_elements = full_profile.custom_elements;
+    (profile, templates, custom_templates)
+}
+
+/// Build AEM node tree with custom elements enabled.
+pub(super) fn build_aem_test_output_with_custom_elements(
+    pdfs: &[(&str, &str)],
+) -> crate::aem::AemNode {
+    use crate::aem::{AemConfig, convert_to_aem};
+
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let (ctx, content) = if envelopes.len() == 1 {
+        let env = envelopes.into_iter().next().unwrap();
+        (env.context, env.content)
+    } else {
+        let merged = crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations");
+        (merged.context, merged.content)
+    };
+
+    let (profile, templates, custom_templates) = load_ubs_profile_with_custom_elements();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+    convert_to_aem(&content, &config)
 }
 
 /// Generate AEM XML from one or more PDF files and validate that it is
