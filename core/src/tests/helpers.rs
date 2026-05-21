@@ -339,6 +339,32 @@ pub fn load_ubs_profile() -> (
         toml::from_str(&toml_str).expect("Failed to parse UBS config.toml");
     profile.custom_elements.clear();
 
+    // Load translations.json (if present)
+    let translations_json_path = dir.join("translations.json");
+    if translations_json_path.is_file() {
+        let json_str = std::fs::read_to_string(&translations_json_path)
+            .expect("Failed to read translations.json");
+        let translations: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
+            serde_json::from_str(&json_str).expect("Failed to parse translations.json");
+        profile.default_translations = translations;
+    }
+
+    // Load translations/ directory (per-language TOML files, merged on top)
+    let translations_dir = dir.join("translations");
+    if translations_dir.is_dir() {
+        for entry in std::fs::read_dir(&translations_dir).expect("Failed to read translations/ dir") {
+            let entry = entry.expect("Failed to read translations dir entry");
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+                if let Some(lang) = path.file_stem().and_then(|s| s.to_str()) {
+                    let content = std::fs::read_to_string(&path).expect("Failed to read translation TOML");
+                    crate::profiles::parse_translation_toml(&content, lang, &mut profile.default_translations)
+                        .unwrap_or_else(|e| panic!("Failed to parse translations/{lang}.toml: {e}"));
+                }
+            }
+        }
+    }
+
     let mut templates = std::collections::HashMap::new();
     for entry in std::fs::read_dir(dir).expect("Failed to read profiles/ubs/aem/") {
         let entry = entry.expect("Failed to read dir entry");
@@ -544,8 +570,8 @@ pub(super) fn build_aem_test_output(
     };
 
     let (profile, templates, custom_templates) = load_ubs_profile();
-    let config =
-        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("Failed to create AemConfig");
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
     let root = convert_to_aem(&content, &config);
 

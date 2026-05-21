@@ -1,0 +1,21 @@
+# English translations (master language fallback)
+# Key = master text, Value = English translation
+
+[translations]
+"Back" = "Back"
+"Next" = "Next"
+"Submit" = "Submit"
+"Preview" = "Preview"
+"Save Progress" = "Save Progress"
+"Add" = "Add"
+"Submission failed" = "Submission failed"
+"<p>The form could not be sent. Please try again later.</p>" = "<p>The form could not be sent. Please try again later.</p>"
+"Thank you for submitting the form." = "Thank you for submitting the form."
+"<p>By clicking on \"Preview\", you can review your document before submission.</p><p>After clicking \"Submit\", you will no longer be able to edit the document and the PDF will be created for signing.</p>" = "<p>By clicking on \"Preview\", you can review your document before submission.</p><p>After clicking \"Submit\", you will no longer be able to edit the document and the PDF will be created for signing.</p>"
+"Summary of form information" = "Summary of form information"
+"Summary" = "Summary"
+
+# Custom elements
+"For internal bank use only" = "For internal bank use only"
+"Company" = "Company"
+"Add legale rappresentante" = "Add legal representative"

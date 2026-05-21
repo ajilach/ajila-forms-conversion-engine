@@ -61,6 +61,22 @@ pub fn load_aem_profile(
         }
     }
 
+    // Load translations from the `translations/` directory (per-language TOML files).
+    // These are merged on top of translations.json (if both exist, TOML takes precedence).
+    if let Some(translations_dir) = aem_dir.get_dir(format!("{name}/aem/translations")) {
+        for entry in translations_dir.files() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+                if let Some(lang) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Some(content) = entry.contents_utf8() {
+                        parse_translation_toml(content, lang, &mut profile.default_translations)
+                            .map_err(|e| format!("Failed to parse translations/{lang}.toml: {e}"))?;
+                    }
+                }
+            }
+        }
+    }
+
     let mut templates = HashMap::new();
     for entry in aem_dir.files() {
         let path = entry.path();
@@ -555,6 +571,35 @@ fn resolve_embedded_fragment_paths(frag_ref: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+/// Parse a translation TOML file (from the `translations/` directory) and merge
+/// entries into the `default_translations` map.
+///
+/// Expected format:
+/// ```toml
+/// [translations]
+/// "Master text" = "Translated text"
+/// ```
+pub fn parse_translation_toml(
+    toml_str: &str,
+    lang: &str,
+    translations: &mut HashMap<String, HashMap<String, String>>,
+) -> Result<(), String> {
+    #[derive(serde::Deserialize)]
+    struct TranslationFile {
+        #[serde(default)]
+        translations: HashMap<String, String>,
+    }
+
+    let file: TranslationFile =
+        toml::from_str(toml_str).map_err(|e| e.to_string())?;
+
+    for (key, message) in file.translations {
+        translations.entry(key).or_default().insert(lang.to_string(), message);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

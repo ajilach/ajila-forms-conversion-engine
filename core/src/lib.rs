@@ -777,7 +777,10 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         AemNode::Fragment { name, .. } => {
             names.push((name.clone(), true));
         }
-        AemNode::Preface { .. } | AemNode::Appendix { .. } | AemNode::Footnote { .. } | AemNode::Custom { .. } => {}
+        AemNode::Preface { .. }
+        | AemNode::Appendix { .. }
+        | AemNode::Footnote { .. }
+        | AemNode::Custom { .. } => {}
     }
 }
 

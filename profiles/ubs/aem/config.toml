@@ -86,8 +86,6 @@ css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
 # =============================================================================
 # Language Synonyms
 # =============================================================================
-# Language Synonyms
-# =============================================================================
 [language_synonyms]
 de = ["de-ch"]
 sp = ["es"]
