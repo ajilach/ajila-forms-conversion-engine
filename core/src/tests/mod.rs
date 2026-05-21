@@ -29275,6 +29275,33 @@ fn has_page_with_title_containing(root: &crate::aem::AemNode, needle: &str) -> b
         .any(|p| panel_title(p).contains(needle))
 }
 
+/// Collect names of all empty Panel nodes (children.is_empty()) in the subtree.
+fn collect_empty_panels(node: &crate::aem::AemNode) -> Vec<String> {
+    let mut result = Vec::new();
+    match node {
+        crate::aem::AemNode::Panel { name, children, .. } => {
+            if children.is_empty() {
+                result.push(name.clone());
+            }
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        crate::aem::AemNode::Root { children, .. } => {
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        _ => {}
+    }
+    result
+}
+
 #[test]
 fn test_aagz_custom_elements_account_holders_on_first_page() {
     let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
@@ -29419,5 +29446,70 @@ fn test_aaox_custom_elements_signatures_on_last_page() {
         panel_title(last_content_page).contains("Firma"),
         "Last content page should be the Firma/e page, got: {}",
         panel_title(last_content_page)
+    );
+}
+
+#[test]
+fn test_aagz_no_empty_panels_in_tree() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+    let empty = collect_empty_panels(&root);
+    assert!(
+        empty.is_empty(),
+        "AEM tree should have no empty panels, but found {} empty: {:?}",
+        empty.len(),
+        empty
+    );
+}
+
+#[test]
+fn test_aagz_no_empty_panels_without_custom_elements() {
+    let (_, root, _) = helpers::build_aem_test_output(&[("AAGZ_019_DE.pdf", "de")]);
+    let empty = collect_empty_panels(&root);
+    assert!(
+        empty.is_empty(),
+        "AEM tree (without custom elements) should have no empty panels, but found {} empty: {:?}",
+        empty.len(),
+        empty
+    );
+}
+
+#[test]
+fn test_aaha_multilang_custom_elements_account_holder() {
+    // Multi-language merge: custom elements should still be matched
+    // because the regex is checked against ALL language variants.
+    let root = build_aem_test_output_with_custom_elements(&[
+        ("AAHA_019_DE.pdf", "de"),
+        ("AAHA_019_EN.pdf", "en"),
+    ]);
+    let pages = get_page_panels(&root);
+    let first_page = pages[0];
+    let ah_count = count_custom_elements(first_page, "account_holder");
+    assert_eq!(
+        ah_count, 1,
+        "First page should have 1 AccountHolder custom element after multi-lang merge, found {ah_count}"
+    );
+}
+
+#[test]
+fn test_aaha_multilang_custom_elements_signatures() {
+    let root = build_aem_test_output_with_custom_elements(&[
+        ("AAHA_019_DE.pdf", "de"),
+        ("AAHA_019_EN.pdf", "en"),
+    ]);
+    let pages = get_page_panels(&root);
+    let last_content_page = pages
+        .iter()
+        .rev()
+        .find(|p| {
+            let name = panel_name(p);
+            !name.starts_with("summaryPanel")
+                && !name.starts_with("preview")
+                && !name.starts_with("toolbar")
+        })
+        .expect("Should have a last content page");
+    let sig_count = count_custom_elements(last_content_page, "signatures");
+    assert_eq!(
+        sig_count, 1,
+        "Last content page should have 1 Signatures custom element after multi-lang merge, found {sig_count}"
     );
 }

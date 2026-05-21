@@ -247,7 +247,9 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
     // First pass: separate footnotes from normal nodes, then split by H2.
     // Each section is (Option<heading_text>, nodes_in_section).
+    // Also collect all language variants of H2 titles for custom element matching.
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
+    let mut section_all_titles: Vec<Vec<String>> = Vec::new();
     let mut footnotes: Vec<&FootnoteNode> = Vec::new();
     collect_all_footnotes(nodes, &mut footnotes);
 
@@ -258,6 +260,15 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         if let StructuredNode::Heading(h) = node {
             if matches!(h.level, HeadingLevel::H2) {
                 let title = h.content.plain_text_in(&ctx.language).trim().to_string();
+                // Collect all language variants for custom element matching.
+                let all_texts: Vec<String> = h
+                    .content
+                    .all_plain_texts()
+                    .into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                section_all_titles.push(all_texts);
                 sections.push((Some(title), vec![]));
                 continue;
             }
@@ -267,6 +278,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             last.1.push(node);
         } else {
             sections.push((None, vec![node]));
+            section_all_titles.push(Vec::new());
         }
     }
 
@@ -276,8 +288,10 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // preface/intro content appears at the start of the first content page.
     let mut children: Vec<AemNode> = Vec::new();
     let mut preamble_nodes: Vec<AemNode> = Vec::new();
+    // Map panel name → all language variants of its title (for custom element matching).
+    let mut panel_alt_titles: HashMap<String, Vec<String>> = HashMap::new();
 
-    for (title, section_nodes) in &sections {
+    for ((title, section_nodes), all_titles) in sections.iter().zip(section_all_titles.iter()) {
         let converted: Vec<AemNode> = section_nodes
             .iter()
             .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns, None))
@@ -292,6 +306,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 .cloned();
             let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
+
+            // Store all language variants for this panel for custom element matching.
+            if !all_titles.is_empty() {
+                panel_alt_titles.insert(name.clone(), all_titles.clone());
+            }
 
             // Prepend preamble content to the first H2 section
             let section_children = if children.is_empty() && !preamble_nodes.is_empty() {
@@ -355,7 +374,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
     // --- Second-B pass: apply custom element replacements ---
     if !config.custom_elements.is_empty() {
-        apply_custom_elements(&mut children, config);
+        apply_custom_elements(&mut children, config, &panel_alt_titles);
     }
 
     // --- Second pass: wire conditions onto trigger fields ---
@@ -381,6 +400,9 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     if !config.bind_to_xsd {
         strip_bind_refs(&mut children);
     }
+
+    // --- Final pass: remove empty non-page panels ---
+    remove_empty_panels(&mut children);
 
     AemNode::Root {
         title: form_display_title,
@@ -447,145 +469,169 @@ fn inject_page_edge_templates(
 /// Apply custom element rules: walk the AEM node tree, match elements by
 /// label/title against compiled regex patterns, replace matches with
 /// `AemNode::Custom` nodes, and optionally move them to a target page.
-fn apply_custom_elements(children: &mut Vec<AemNode>, config: &AemConfig) {
+fn apply_custom_elements(
+    children: &mut Vec<AemNode>,
+    config: &AemConfig,
+    alt_titles: &HashMap<String, Vec<String>>,
+) {
     // First pass: replace matching nodes in-place with Custom nodes.
-    apply_custom_elements_recursive(children, config);
+    apply_custom_elements_recursive(children, config, alt_titles);
 
     // Second pass: move custom elements that have a `page` target.
     move_custom_elements_to_pages(children, config);
 }
 
 /// Recursively walk the tree and replace matching nodes with Custom nodes.
-fn apply_custom_elements_recursive(nodes: &mut Vec<AemNode>, config: &AemConfig) {
+fn apply_custom_elements_recursive(
+    nodes: &mut Vec<AemNode>,
+    config: &AemConfig,
+    alt_titles: &HashMap<String, Vec<String>>,
+) {
     for node in nodes.iter_mut() {
         // Recurse into containers first.
         match node {
             AemNode::Root { children, .. }
             | AemNode::Panel { children, .. }
             | AemNode::Repeatable { children, .. } => {
-                apply_custom_elements_recursive(children, config);
+                apply_custom_elements_recursive(children, config, alt_titles);
             }
             _ => {}
         }
 
         // Try matching this node against custom element rules.
-        let match_text = match node {
-            AemNode::TextField { label, .. } => Some(label.clone()),
-            AemNode::Dropdown { label, .. } => Some(label.clone()),
-            AemNode::Panel { title, .. } => Some(title.clone()),
-            _ => None,
+        // For panels, also check all language variants of the title.
+        let match_texts = match node {
+            AemNode::TextField { label, .. } => vec![label.clone()],
+            AemNode::Dropdown { label, .. } => vec![label.clone()],
+            AemNode::Panel { title, name, .. } => {
+                let mut texts = vec![title.clone()];
+                if let Some(alts) = alt_titles.get(name) {
+                    for alt in alts {
+                        if !texts.contains(alt) {
+                            texts.push(alt.clone());
+                        }
+                    }
+                }
+                texts
+            }
+            _ => vec![],
         };
 
-        if let Some(text) = match_text {
-            for rule in &config.custom_elements {
-                if rule.pattern.is_match(&text) {
-                    // Page panels are special: keep the page wrapper and
-                    // replace its children with a single Custom node so the
-                    // wizard step structure (title, navigation, etc.) is
-                    // preserved while the body becomes the custom template.
-                    if let AemNode::Panel {
-                        is_page: true,
-                        title,
-                        children,
-                        ..
-                    } = node
-                    {
-                        let custom = AemNode::Custom {
-                            uuid: uuid::Uuid::new_v4(),
-                            name: String::new(),
-                            template_key: rule.template.clone(),
-                            label: title.clone(),
-                            options: Vec::new(),
-                            mandatory: false,
-                            visible: true,
-                            colspan: 1,
-                            dor_colspan: None,
-                            bind_ref: None,
-                        };
-                        *children = vec![custom];
-                        break;
-                    }
+        if match_texts.is_empty() {
+            continue;
+        }
 
-                    // Non-page nodes: replace the node entirely.
-                    let custom = match std::mem::replace(
-                        node,
-                        AemNode::Preface {
-                            uuid: uuid::Uuid::nil(),
-                            name: String::new(),
-                        },
-                    ) {
-                        AemNode::TextField {
-                            uuid,
-                            name,
-                            label,
-                            mandatory,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                            ..
-                        } => AemNode::Custom {
-                            uuid,
-                            name,
-                            template_key: rule.template.clone(),
-                            label,
-                            options: Vec::new(),
-                            mandatory,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                        },
-                        AemNode::Dropdown {
-                            uuid,
-                            name,
-                            label,
-                            options,
-                            mandatory,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                            ..
-                        } => AemNode::Custom {
-                            uuid,
-                            name,
-                            template_key: rule.template.clone(),
-                            label,
-                            options,
-                            mandatory,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                        },
-                        AemNode::Panel {
-                            uuid,
-                            name,
-                            title,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                            ..
-                        } => AemNode::Custom {
-                            uuid,
-                            name,
-                            template_key: rule.template.clone(),
-                            label: title,
-                            options: Vec::new(),
-                            mandatory: false,
-                            visible,
-                            colspan,
-                            dor_colspan,
-                            bind_ref,
-                        },
-                        _ => unreachable!(),
-                    };
-                    *node = custom;
-                    break; // First-match-wins per node.
-                }
+        'rule_loop: for rule in &config.custom_elements {
+            let matched = match_texts.iter().any(|t| rule.pattern.is_match(t));
+            if !matched {
+                continue;
             }
+
+            // Page panels are special: keep the page wrapper and
+            // replace its children with a single Custom node so the
+            // wizard step structure (title, navigation, etc.) is
+            // preserved while the body becomes the custom template.
+            if let AemNode::Panel {
+                is_page: true,
+                title,
+                children,
+                ..
+            } = node
+            {
+                let custom = AemNode::Custom {
+                    uuid: uuid::Uuid::new_v4(),
+                    name: String::new(),
+                    template_key: rule.template.clone(),
+                    label: title.clone(),
+                    options: Vec::new(),
+                    mandatory: false,
+                    visible: true,
+                    colspan: 1,
+                    dor_colspan: None,
+                    bind_ref: None,
+                };
+                *children = vec![custom];
+                break 'rule_loop;
+            }
+
+            // Non-page nodes: replace the node entirely.
+            let custom = match std::mem::replace(
+                node,
+                AemNode::Preface {
+                    uuid: uuid::Uuid::nil(),
+                    name: String::new(),
+                },
+            ) {
+                AemNode::TextField {
+                    uuid,
+                    name,
+                    label,
+                    mandatory,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label,
+                    options: Vec::new(),
+                    mandatory,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                },
+                AemNode::Dropdown {
+                    uuid,
+                    name,
+                    label,
+                    options,
+                    mandatory,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label,
+                    options,
+                    mandatory,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                },
+                AemNode::Panel {
+                    uuid,
+                    name,
+                    title,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label: title,
+                    options: Vec::new(),
+                    mandatory: false,
+                    visible,
+                    colspan,
+                    dor_colspan,
+                    bind_ref,
+                },
+                _ => unreachable!(),
+            };
+            *node = custom;
+            break 'rule_loop;
         }
     }
 }
@@ -2270,6 +2316,27 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::Custom { .. } => {}
         }
     }
+}
+
+/// Recursively remove empty Panel nodes from the tree.
+/// A panel is considered empty if it has no children after its own children
+/// have been recursively pruned.
+fn remove_empty_panels(nodes: &mut Vec<AemNode>) {
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => remove_empty_panels(children),
+            _ => {}
+        }
+    }
+    nodes.retain(|node| {
+        if let AemNode::Panel { children, .. } = node {
+            !children.is_empty()
+        } else {
+            true
+        }
+    });
 }
 
 // ============================================================================

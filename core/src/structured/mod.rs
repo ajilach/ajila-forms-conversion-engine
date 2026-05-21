@@ -737,6 +737,11 @@ impl TranslatedText {
             .unwrap_or_default()
     }
 
+    /// Get the plain text in ALL available languages (for regex matching across languages).
+    pub fn all_plain_texts(&self) -> Vec<String> {
+        self.0.values().map(|t| t.as_plain_text()).collect()
+    }
+
     /// Collect all language codes from this translated text.
     pub fn collect_languages(&self, langs: &mut BTreeSet<String>) {
         langs.extend(self.0.keys().cloned());
