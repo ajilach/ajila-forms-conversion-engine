@@ -533,6 +533,7 @@ fn apply_custom_elements_recursive(
             // preserved while the body becomes the custom template.
             if let AemNode::Panel {
                 is_page: true,
+                name,
                 title,
                 children,
                 ..
@@ -540,7 +541,7 @@ fn apply_custom_elements_recursive(
             {
                 let custom = AemNode::Custom {
                     uuid: uuid::Uuid::new_v4(),
-                    name: String::new(),
+                    name: name.clone(),
                     template_key: rule.template.clone(),
                     label: title.clone(),
                     options: Vec::new(),

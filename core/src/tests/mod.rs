@@ -29268,6 +29268,24 @@ fn count_custom_elements(node: &crate::aem::AemNode, template: &str) -> usize {
     }
 }
 
+/// Find the first Custom node with the given template_key.
+fn find_custom_by_template<'a>(
+    node: &'a crate::aem::AemNode,
+    template: &str,
+) -> Option<&'a crate::aem::AemNode> {
+    match node {
+        crate::aem::AemNode::Custom { template_key, .. } if template_key == template => {
+            Some(node)
+        }
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => children
+            .iter()
+            .find_map(|child| find_custom_by_template(child, template)),
+        _ => None,
+    }
+}
+
 /// Check if any page panel with the given title prefix exists among Root children.
 fn has_page_with_title_containing(root: &crate::aem::AemNode, needle: &str) -> bool {
     get_page_panels(root)
@@ -29399,6 +29417,27 @@ fn test_aaha_custom_elements_signatures_on_last_page() {
         panel_title(last_content_page).contains("Unterschrift"),
         "Last content page should be the Unterschrift page, got: {}",
         panel_title(last_content_page)
+    );
+}
+
+#[test]
+fn test_aaha_custom_element_xml_tag_uses_replaced_name() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+
+    let account_holder = find_custom_by_template(&root, "account_holder")
+        .expect("Expected Account Holder custom element");
+    let signatures =
+        find_custom_by_template(&root, "signatures").expect("Expected Signatures custom element");
+
+    assert!(
+        account_holder.element_name().starts_with("PN_Kundendaten_"),
+        "Account holder custom element tag should reuse replaced panel name, got: {}",
+        account_holder.element_name()
+    );
+    assert!(
+        signatures.element_name().starts_with("PN_UnterschriftEn_"),
+        "Signatures custom element tag should reuse replaced panel name, got: {}",
+        signatures.element_name()
     );
 }
 

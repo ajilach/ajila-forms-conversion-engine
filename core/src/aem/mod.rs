@@ -684,7 +684,13 @@ impl AemNode {
             AemNode::Preface { uuid, .. } => format!("preface_{}", uuid.as_simple()),
             AemNode::Appendix { uuid, .. } => format!("appendix_{}", uuid.as_simple()),
             AemNode::Footnote { uuid, .. } => format!("footnote_{}", uuid.as_simple()),
-            AemNode::Custom { uuid, .. } => format!("custom_{}", uuid.as_simple()),
+            AemNode::Custom { uuid, name, .. } => {
+                if name.is_empty() {
+                    format!("custom_{}", uuid.as_simple())
+                } else {
+                    name.clone()
+                }
+            }
         }
     }
 }
