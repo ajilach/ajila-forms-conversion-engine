@@ -29424,6 +29424,57 @@ fn test_aaha_custom_elements_form_addressee_replaced_with_radio() {
 }
 
 #[test]
+fn test_aaha_form_addressee_radio_options_use_text_values() {
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+    let envelope = crate::run_exhaustive_to_envelope(input_path("AAHA_019_DE.pdf"), "de")
+        .expect("Failed to process AAHA_019_DE.pdf");
+    let content = envelope.content;
+    let ctx = envelope.context;
+
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile_with_custom_elements();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    assert!(
+        xml.contains("RB_FormularAdressat.value == \\\"Private Person\\\"")
+            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Private Person\&quot;"#),
+        "Account holder visibility rule should compare against 'Private Person'"
+    );
+    assert!(
+        xml.contains("RB_FormularAdressat.value == \\\"Minderjährige\\\"")
+            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Minderjährige\&quot;"#),
+        "Account holder visibility rule should compare against 'Minderjährige'"
+    );
+    assert!(
+        xml.contains("RB_FormularAdressat.value == \\\"Firma\\\"")
+            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Firma\&quot;"#),
+        "Account holder visibility rule should compare against 'Firma'"
+    );
+    assert!(
+        xml.contains("RB_FormularAdressat.value == \\\"GbR\\\"")
+            || xml.contains(r#"RB_FormularAdressat.value == \&quot;GbR\&quot;"#),
+        "Account holder visibility rule should compare against 'GbR'"
+    );
+
+    assert!(
+        !xml.contains("RB_FormularAdressat.value == \\\"1\\\"")
+            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;1\&quot;"#)
+            && !xml.contains("RB_FormularAdressat.value == \\\"2\\\"")
+            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;2\&quot;"#)
+            && !xml.contains("RB_FormularAdressat.value == \\\"3\\\"")
+            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;3\&quot;"#)
+            && !xml.contains("RB_FormularAdressat.value == \\\"4\\\"")
+            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;4\&quot;"#),
+        "Account holder visibility rule should not compare against numeric values"
+    );
+}
+
+#[test]
 fn test_aaha_custom_elements_signatures_on_last_page() {
     let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
     let pages = get_page_panels(&root);
