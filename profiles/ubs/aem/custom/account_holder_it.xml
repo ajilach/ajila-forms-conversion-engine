@@ -175,7 +175,7 @@
                                     visible="{Boolean}false">
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
-                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_AHRP.instanceManager.removeInstance(PN_AHRP.instanceIndex);\nPN_SignatureIndividual.instanceManager.removeInstance(PN_AHRP.instanceIndex);\nBT_Add.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_AHRP.instanceManager.removeInstance(PN_AHRP.instanceIndex);\\nPN_SignatureIndividual.instanceManager.removeInstance(PN_AHRP.instanceIndex);\\nBT_Add.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         fd:visible="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.parent.instanceIndex+1 == this.parent.instanceManager.instances.length &amp;&amp; this.parent.instanceManager.instances.length > 1;&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
                                 </removebutton>
@@ -197,7 +197,7 @@
                             type="Button">
                             <fd:rules jcr:primaryType="nt:unstructured"/>
                             <fd:scripts
-                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_AHRP.instanceManager.addInstance();\nPN_SignatureIndividual.instanceManager.addInstance();\nif (PN_AHRP.instanceManager.instances.length >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_AHRP.instanceManager.addInstance();\\nPN_SignatureIndividual.instanceManager.addInstance();\\nif (PN_AHRP.instanceManager.instances.length >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>
@@ -344,7 +344,7 @@
                                     visible="{Boolean}false">
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
-                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_LRP.instanceManager.removeInstance(PN_LRP.instanceIndex);\nPN_LRP_Sign.instanceManager.removeInstance(PN_LRP.instanceIndex);\nBT_AddLR.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_LRP.instanceManager.removeInstance(PN_LRP.instanceIndex);\\nPN_LRP_Sign.instanceManager.removeInstance(PN_LRP.instanceIndex);\\nBT_AddLR.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         fd:visible="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.parent.instanceIndex+1 == this.parent.instanceManager.instances.length &amp;&amp; this.parent.instanceManager.instances.length > 1;&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;field&quot;:&quot;BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
                                 </removebutton>
@@ -366,7 +366,7 @@
                             type="Button">
                             <fd:rules jcr:primaryType="nt:unstructured"/>
                             <fd:scripts
-                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_LRP.instanceManager.addInstance();\nPN_LRP_Sign.instanceManager.addInstance();\nif (PN_LRP.instanceManager.instances.length >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_LRP.instanceManager.addInstance();\\nPN_LRP_Sign.instanceManager.addInstance();\\nif (PN_LRP.instanceManager.instances.length >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>
