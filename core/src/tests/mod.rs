@@ -29269,10 +29269,7 @@ fn count_custom_elements(node: &crate::aem::AemNode, template: &str) -> usize {
 }
 
 /// Collect all custom nodes in a subtree.
-fn collect_custom_nodes<'a>(
-    node: &'a crate::aem::AemNode,
-    out: &mut Vec<&'a crate::aem::AemNode>,
-) {
+fn collect_custom_nodes<'a>(node: &'a crate::aem::AemNode, out: &mut Vec<&'a crate::aem::AemNode>) {
     match node {
         crate::aem::AemNode::Custom { .. } => out.push(node),
         crate::aem::AemNode::Root { children, .. }
@@ -29292,9 +29289,7 @@ fn find_custom_by_template<'a>(
     template: &str,
 ) -> Option<&'a crate::aem::AemNode> {
     match node {
-        crate::aem::AemNode::Custom { template_key, .. } if template_key == template => {
-            Some(node)
-        }
+        crate::aem::AemNode::Custom { template_key, .. } if template_key == template => Some(node),
         crate::aem::AemNode::Root { children, .. }
         | crate::aem::AemNode::Panel { children, .. }
         | crate::aem::AemNode::Repeatable { children, .. } => children
@@ -29441,35 +29436,27 @@ fn test_aaha_form_addressee_radio_options_use_text_values() {
     let xml = generate_aem_xml(&root, &config);
 
     assert!(
-        xml.contains("RB_FormularAdressat.value == \\\"Private Person\\\"")
-            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Private Person\&quot;"#),
+        xml.contains(r#"RB_FormularAdressat.value == \\&quot;Private Person\\&quot;"#),
         "Account holder visibility rule should compare against 'Private Person'"
     );
     assert!(
-        xml.contains("RB_FormularAdressat.value == \\\"Minderjährige\\\"")
-            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Minderjährige\&quot;"#),
+        xml.contains(r#"RB_FormularAdressat.value == \\&quot;Minderjährige\\&quot;"#),
         "Account holder visibility rule should compare against 'Minderjährige'"
     );
     assert!(
-        xml.contains("RB_FormularAdressat.value == \\\"Firma\\\"")
-            || xml.contains(r#"RB_FormularAdressat.value == \&quot;Firma\&quot;"#),
+        xml.contains(r#"RB_FormularAdressat.value == \\&quot;Firma\\&quot;"#),
         "Account holder visibility rule should compare against 'Firma'"
     );
     assert!(
-        xml.contains("RB_FormularAdressat.value == \\\"GbR\\\"")
-            || xml.contains(r#"RB_FormularAdressat.value == \&quot;GbR\&quot;"#),
+        xml.contains(r#"RB_FormularAdressat.value == \\&quot;GbR\\&quot;"#),
         "Account holder visibility rule should compare against 'GbR'"
     );
 
     assert!(
-        !xml.contains("RB_FormularAdressat.value == \\\"1\\\"")
-            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;1\&quot;"#)
-            && !xml.contains("RB_FormularAdressat.value == \\\"2\\\"")
-            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;2\&quot;"#)
-            && !xml.contains("RB_FormularAdressat.value == \\\"3\\\"")
-            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;3\&quot;"#)
-            && !xml.contains("RB_FormularAdressat.value == \\\"4\\\"")
-            && !xml.contains(r#"RB_FormularAdressat.value == \&quot;4\&quot;"#),
+        !xml.contains(r#"RB_FormularAdressat.value == \\&quot;1\\&quot;"#)
+            && !xml.contains(r#"RB_FormularAdressat.value == \\&quot;2\\&quot;"#)
+            && !xml.contains(r#"RB_FormularAdressat.value == \\&quot;3\\&quot;"#)
+            && !xml.contains(r#"RB_FormularAdressat.value == \\&quot;4\\&quot;"#),
         "Account holder visibility rule should not compare against numeric values"
     );
 }
