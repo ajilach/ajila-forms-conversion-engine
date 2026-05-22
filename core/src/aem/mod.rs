@@ -63,6 +63,9 @@ pub struct ResolvedCustomElement {
     pub template: String,
     /// Optional target page index for moving the element.
     pub page: Option<i32>,
+    /// Templates this rule depends on; the rule is skipped unless every
+    /// listed template is also matched somewhere in the form.
+    pub depends_on: Vec<String>,
 }
 
 /// Configuration for AEM Forms XML generation.
@@ -293,6 +296,7 @@ impl AemConfig {
                         pattern,
                         template: rule.template.clone(),
                         page: rule.page,
+                        depends_on: rule.depends_on.clone(),
                     })
                 })
                 .collect::<Result<Vec<_>, crate::Error>>()?,

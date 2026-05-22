@@ -1,0 +1,216 @@
+<{{ element_name }}
+    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+    jcr:createdBy="{{ author }}"
+    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+    jcr:lastModifiedBy="{{ author }}"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="{{ label }}"
+    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+    css="stepTitle"
+    dorExcludeDescription="true"
+    dorFieldStyling="{{ variables.dor_field_styling }}"
+    guideNodeClass="guidePanel"
+    name="PN_Signatures"
+    textIsRich="true"
+    validateOnStepCompletion="{Boolean}false">
+    <items
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="{{ variables.default_layout }}">
+        <panel_private_person
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            jcr:title="Condition: Tipo = Individual"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            dorExcludeDescription="true"
+            dorExcludeTitle="true"
+            dorExclusion="true"
+            dorFieldStyling="{{ variables.dor_field_styling }}"
+            guideNodeClass="guidePanel"
+            hideTitle="true"
+            name="PN_SignaturesPrivatePerson"
+            textIsRich="true"
+            validateOnStepCompletion="{Boolean}false"
+            visible="{Boolean}false">
+            <items
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}">
+                <panel
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="{{ author }}"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/components/panel"
+                    completionExpReq="{Boolean}false"
+                    dorExcludeDescription="true"
+                    dorExcludeTitle="true"
+                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_ClientSignature1"
+                    guideNodeClass="guidePanel"
+                    maxOccur="4"
+                    minOccur="1"
+                    name="PN_SignatureIndividual"
+                    textIsRich="true"
+                    validateOnStepCompletion="{Boolean}false">
+                    <layout
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="{{ variables.default_layout }}"
+                        columns="1"
+                        dorLayoutType="columnar"
+                        dorNumCols="6"
+                        nonNavigable="{Boolean}true"
+                        toolbarPosition="Bottom"/>
+                    <items jcr:primaryType="nt:unstructured"/>
+                </panel>
+            </items>
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}"
+                columns="1"
+                dorLayoutType="columnar"
+                dorNumCols="1"
+                nonNavigable="{Boolean}true"
+                toolbarPosition="Bottom"/>
+            <cq:responsive jcr:primaryType="nt:unstructured">
+                <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+            </cq:responsive>
+            <fd:rules
+                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures.PN_SignaturesPrivatePerson&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_SignaturesPrivatePerson&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                jcr:primaryType="nt:unstructured"/>
+        </panel_private_person>
+        <panel_company
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            jcr:title="Condition: Tipo = Legal entity"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            dorExcludeDescription="true"
+            dorExcludeTitle="true"
+            dorFieldStyling="{{ variables.dor_field_styling }}"
+            guideNodeClass="guidePanel"
+            hideTitle="true"
+            name="PN_SignaturesCompany"
+            textIsRich="true"
+            validateOnStepCompletion="{Boolean}false"
+            visible="{Boolean}false">
+            <items
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}">
+                <panel
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="{{ author }}"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/components/panel"
+                    completionExpReq="{Boolean}false"
+                    dorExcludeDescription="true"
+                    dorExcludeTitle="true"
+                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_ARSignature1"
+                    guideNodeClass="guidePanel"
+                    maxOccur="4"
+                    minOccur="1"
+                    name="PN_LRP_Sign"
+                    textIsRich="true"
+                    validateOnStepCompletion="{Boolean}false">
+                    <layout
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="{{ variables.default_layout }}"
+                        columns="1"
+                        dorLayoutType="columnar"
+                        dorNumCols="6"
+                        nonNavigable="{Boolean}true"
+                        toolbarPosition="Bottom"/>
+                    <items jcr:primaryType="nt:unstructured"/>
+                </panel>
+            </items>
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}"
+                columns="1"
+                dorLayoutType="columnar"
+                dorNumCols="1"
+                nonNavigable="{Boolean}true"
+                toolbarPosition="Bottom"/>
+            <cq:responsive jcr:primaryType="nt:unstructured">
+                <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+            </cq:responsive>
+            <fd:rules
+                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures.PN_SignaturesCompany&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_SignaturesCompany&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;BOOLEAN_BINARY_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;OR&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}\,&quot;nested&quot;:false}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;2\\&quot; || RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                jcr:primaryType="nt:unstructured"/>
+        </panel_company>
+        <panel_internal_bank_use
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            alwaysInPdf="true"
+            dorExcludeDescription="true"
+            dorExcludeTitle="true"
+            guideNodeClass="guidePanel"
+            name="PN_InternalBankUseOnly"
+            summaryExclusion="true"
+            textIsRich="true"
+            validateOnStepCompletion="{Boolean}false"
+            visible="{Boolean}false">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}"
+                columns="1"
+                dorLayoutType="columnar"
+                dorNumCols="1"
+                nonNavigable="{Boolean}true"
+                toolbarPosition="Bottom"/>
+            <items
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}">
+                <panel
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="{{ author }}"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:primaryType="nt:unstructured"
+                    jcr:title="For internal bank use only"
+                    sling:resourceType="fd/af/components/panel"
+                    completionExpReq="{Boolean}false"
+                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_internalbankuse_ouref"
+                    guideNodeClass="guidePanel"
+                    maxOccur="4"
+                    minOccur="1"
+                    name="PN_FRG_InternalBankUseOnly"
+                    textIsRich="true"
+                    validateOnStepCompletion="{Boolean}false">
+                    <layout
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="{{ variables.default_layout }}"
+                        columns="1"
+                        dorLayoutType="columnar"
+                        dorNumCols="1"
+                        nonNavigable="{Boolean}true"
+                        toolbarPosition="Bottom"/>
+                    <items jcr:primaryType="nt:unstructured"/>
+                </panel>
+            </items>
+        </panel_internal_bank_use>
+    </items>
+    <layout
+        jcr:primaryType="nt:unstructured"
+        sling:resourceType="{{ variables.default_layout }}"
+        columns="1"
+        dorLayoutType="columnar"
+        dorNumCols="1"
+        nonNavigable="{Boolean}true"
+        toolbarPosition="Bottom"/>
+    <cq:responsive jcr:primaryType="nt:unstructured">
+        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
+    </cq:responsive>
+</{{ element_name }}>

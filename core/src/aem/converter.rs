@@ -14,7 +14,7 @@ use crate::structured::{
 };
 
 use super::fragment_parser::ParsedFragment;
-use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
+use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, ResolvedCustomElement};
 
 // ============================================================================
 // Conversion context
@@ -474,17 +474,119 @@ fn apply_custom_elements(
     config: &AemConfig,
     alt_titles: &HashMap<String, Vec<String>>,
 ) {
+    // Discover which custom element templates have at least one match in the
+    // tree, then drop any rule whose declared `depends_on` templates are not
+    // all matched. Iterate to a fixed point so that transitive dependencies
+    // are honoured.
+    let matching_templates = discover_matching_templates(children, config, alt_titles);
+    let enabled_templates = resolve_enabled_templates(&config.custom_elements, &matching_templates);
+    let enabled_rules: Vec<ResolvedCustomElement> = config
+        .custom_elements
+        .iter()
+        .filter(|r| enabled_templates.contains(&r.template))
+        .cloned()
+        .collect();
+    if enabled_rules.is_empty() {
+        return;
+    }
+
     // First pass: replace matching nodes in-place with Custom nodes.
-    apply_custom_elements_recursive(children, config, alt_titles);
+    apply_custom_elements_recursive(children, &enabled_rules, alt_titles);
 
     // Second pass: move custom elements that have a `page` target.
-    move_custom_elements_to_pages(children, config);
+    move_custom_elements_to_pages(children, &enabled_rules);
+}
+
+/// Return the set of template names whose regex matches at least one node in
+/// the tree, ignoring dependency requirements.
+fn discover_matching_templates(
+    nodes: &[AemNode],
+    config: &AemConfig,
+    alt_titles: &HashMap<String, Vec<String>>,
+) -> std::collections::HashSet<String> {
+    let mut matched = std::collections::HashSet::new();
+    discover_matching_templates_recursive(nodes, &config.custom_elements, alt_titles, &mut matched);
+    matched
+}
+
+fn discover_matching_templates_recursive(
+    nodes: &[AemNode],
+    rules: &[ResolvedCustomElement],
+    alt_titles: &HashMap<String, Vec<String>>,
+    matched: &mut std::collections::HashSet<String>,
+) {
+    for node in nodes {
+        let match_texts: Vec<String> = match node {
+            AemNode::TextField { label, .. } => vec![label.clone()],
+            AemNode::Dropdown { label, .. } => vec![label.clone()],
+            AemNode::Panel { title, name, .. } => {
+                let mut texts = vec![title.clone()];
+                if let Some(alts) = alt_titles.get(name) {
+                    for alt in alts {
+                        if !texts.contains(alt) {
+                            texts.push(alt.clone());
+                        }
+                    }
+                }
+                texts
+            }
+            _ => Vec::new(),
+        };
+        for rule in rules {
+            if matched.contains(&rule.template) {
+                continue;
+            }
+            if match_texts.iter().any(|t| rule.pattern.is_match(t)) {
+                matched.insert(rule.template.clone());
+            }
+        }
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                discover_matching_templates_recursive(children, rules, alt_titles, matched);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Iteratively prune rules whose declared dependencies are not satisfied by
+/// any other rule that also matches. Returns the set of template names that
+/// should actually be applied.
+fn resolve_enabled_templates(
+    rules: &[ResolvedCustomElement],
+    matching: &std::collections::HashSet<String>,
+) -> std::collections::HashSet<String> {
+    let mut enabled: std::collections::HashSet<String> = matching.clone();
+    loop {
+        let to_remove: Vec<String> = enabled
+            .iter()
+            .filter(|template| {
+                let Some(rule) = rules.iter().find(|r| &r.template == *template) else {
+                    return false;
+                };
+                !rule
+                    .depends_on
+                    .iter()
+                    .all(|dep| enabled.contains(dep.as_str()))
+            })
+            .cloned()
+            .collect();
+        if to_remove.is_empty() {
+            break;
+        }
+        for t in to_remove {
+            enabled.remove(&t);
+        }
+    }
+    enabled
 }
 
 /// Recursively walk the tree and replace matching nodes with Custom nodes.
 fn apply_custom_elements_recursive(
     nodes: &mut Vec<AemNode>,
-    config: &AemConfig,
+    rules: &[ResolvedCustomElement],
     alt_titles: &HashMap<String, Vec<String>>,
 ) {
     for node in nodes.iter_mut() {
@@ -493,7 +595,7 @@ fn apply_custom_elements_recursive(
             AemNode::Root { children, .. }
             | AemNode::Panel { children, .. }
             | AemNode::Repeatable { children, .. } => {
-                apply_custom_elements_recursive(children, config, alt_titles);
+                apply_custom_elements_recursive(children, rules, alt_titles);
             }
             _ => {}
         }
@@ -521,7 +623,7 @@ fn apply_custom_elements_recursive(
             continue;
         }
 
-        'rule_loop: for rule in &config.custom_elements {
+        'rule_loop: for rule in rules {
             let matched = match_texts.iter().any(|t| rule.pattern.is_match(t));
             if !matched {
                 continue;
@@ -632,7 +734,7 @@ fn apply_custom_elements_recursive(
 }
 
 /// Move custom elements with a `page` target to the specified page.
-fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, config: &AemConfig) {
+fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, rules: &[ResolvedCustomElement]) {
     // Collect page indices (panels with is_page=true that are direct children of Root).
     let page_indices: Vec<usize> = children
         .iter()
@@ -648,8 +750,7 @@ fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, config: &AemConfig
     }
 
     // Build a map from rule template to page target.
-    let page_targets: std::collections::HashMap<&str, i32> = config
-        .custom_elements
+    let page_targets: std::collections::HashMap<&str, i32> = rules
         .iter()
         .filter_map(|rule| rule.page.map(|p| (rule.template.as_str(), p)))
         .collect();
@@ -3685,5 +3786,65 @@ mod tests {
         // Empty leaves → trivially true (empty set is subset of any set)
         let leaves: Vec<String> = vec![];
         assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+    }
+
+    // ========================================================================
+    // Custom element dependency-resolution tests
+    // ========================================================================
+
+    fn mk_rule(template: &str, deps: &[&str]) -> ResolvedCustomElement {
+        ResolvedCustomElement {
+            pattern: regex_lite::Regex::new("never").unwrap(),
+            template: template.to_string(),
+            page: None,
+            depends_on: deps.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn matched_set(items: &[&str]) -> std::collections::HashSet<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn resolve_enabled_templates_keeps_rules_with_satisfied_deps() {
+        let rules = vec![
+            mk_rule("a", &[]),
+            mk_rule("b", &["a"]),
+            mk_rule("c", &["a", "b"]),
+        ];
+        let matching = matched_set(&["a", "b", "c"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a", "b", "c"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_rule_with_missing_dep() {
+        let rules = vec![mk_rule("a", &[]), mk_rule("b", &["missing"])];
+        let matching = matched_set(&["a", "b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_propagates_drops_transitively() {
+        // c depends on b, b depends on missing → both b and c must drop.
+        let rules = vec![
+            mk_rule("a", &[]),
+            mk_rule("b", &["missing"]),
+            mk_rule("c", &["b"]),
+        ];
+        let matching = matched_set(&["a", "b", "c"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_when_dep_not_matched_in_form() {
+        // Rule b depends on a; even though a is in `rules`, it never matched
+        // anything in the form, so b must also be dropped.
+        let rules = vec![mk_rule("a", &[]), mk_rule("b", &["a"])];
+        let matching = matched_set(&["b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert!(enabled.is_empty());
     }
 }

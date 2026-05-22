@@ -33,6 +33,15 @@ pub struct CustomElementRule {
     /// to the specified page. 0 = first page, 1 = second page, -1 = last page,
     /// -2 = second-to-last, etc.
     pub page: Option<i32>,
+
+    /// Names of other custom element templates this rule depends on.
+    ///
+    /// A custom element is only applied when every template listed here is
+    /// also matched somewhere in the form. This prevents scripts/visibility
+    /// rules in one template from referencing element names that another,
+    /// missing template would have produced.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 /// An AEM output profile loaded from a TOML file.

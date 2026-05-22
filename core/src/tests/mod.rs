@@ -29462,6 +29462,96 @@ fn test_aaha_form_addressee_radio_options_use_text_values() {
 }
 
 #[test]
+fn test_aaha_account_holder_add_buttons_have_click_scripts() {
+    // Regression: BT_Add / BT_AddLR buttons in the account_holder custom
+    // element used to ship with empty `<fd:scripts>` so clicking them did
+    // nothing. They must invoke instanceManager.addInstance() on the
+    // corresponding repeatable panel (PN_AHRP, PN_LGA, PN_ARP) and also on
+    // the matching signature panel (PN_SignatureIndividual, PN_ARP_Sign) so
+    // the account_holder and signatures custom elements stay in sync.
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+    let envelope = crate::run_exhaustive_to_envelope(input_path("AAHA_019_DE.pdf"), "de")
+        .expect("Failed to process AAHA_019_DE.pdf");
+    let content = envelope.content;
+    let ctx = envelope.context;
+
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile_with_custom_elements();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    for (holder_panel, signature_panel) in [
+        ("PN_AHRP", "PN_SignatureIndividual"),
+        ("PN_LGA", "PN_SignatureIndividual"),
+        ("PN_ARP", "PN_ARP_Sign"),
+    ] {
+        let holder_needle = format!("{holder_panel}.instanceManager.addInstance()");
+        let signature_needle = format!("{signature_panel}.instanceManager.addInstance()");
+        assert!(
+            xml.contains(&holder_needle),
+            "Add button for {holder_panel} must call instanceManager.addInstance()"
+        );
+        assert!(
+            xml.contains(&signature_needle),
+            "Add button for {holder_panel} must also addInstance {signature_panel} so signatures stay in sync"
+        );
+    }
+    // PN_LRP was renamed to PN_ARP to match the signatures element's PN_ARP_Sign.
+    assert!(
+        !xml.contains("PN_LRP"),
+        "PN_LRP should have been renamed to PN_ARP to mirror the AAGO reference"
+    );
+}
+
+#[test]
+fn test_aaha_signatures_has_visibility_rules_with_text_values() {
+    // The signatures custom element's three conditional containers must have
+    // fd:visible rules that compare RB_FormularAdressat against the textual
+    // option values, so they actually appear when the matching account holder
+    // type is selected.
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+
+    let envelope = crate::run_exhaustive_to_envelope(input_path("AAHA_019_DE.pdf"), "de")
+        .expect("Failed to process AAHA_019_DE.pdf");
+    let content = envelope.content;
+    let ctx = envelope.context;
+
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile_with_custom_elements();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let config = crate::resolve_aem_languages(&content, &config);
+
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    for needle in [
+        "RB_FormularAdressat.value == \\\\&quot;Private Person\\\\&quot;",
+        "RB_FormularAdressat.value == \\\\&quot;Minderj\u{00e4}hrige\\\\&quot;",
+        "RB_FormularAdressat.value == \\\\&quot;Firma\\\\&quot; || RB_FormularAdressat.value == \\\\&quot;GbR\\\\&quot;",
+    ] {
+        let count = xml.matches(needle).count();
+        assert!(
+            count >= 2,
+            "Expected visibility script `{needle}` to appear in both account_holder and signatures custom elements (found {count} occurrences)"
+        );
+    }
+    // PN_ARP_Sign is the cross-element target of BT_AddLR; it must exist in the
+    // signatures custom element output.
+    assert!(
+        xml.contains("name=\"PN_ARP_Sign\""),
+        "Signatures element must expose a panel named PN_ARP_Sign"
+    );
+    assert!(
+        xml.contains("name=\"PN_SignatureIndividual\""),
+        "Signatures element must expose a panel named PN_SignatureIndividual"
+    );
+}
+
+#[test]
 fn test_aaha_custom_elements_signatures_on_last_page() {
     let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
     let pages = get_page_panels(&root);
@@ -29556,7 +29646,7 @@ fn test_aaox_custom_elements_account_holder_on_first_page() {
         "First page should be FormConfigurator, got: {}",
         panel_name(first_page)
     );
-    let ah_count = count_custom_elements(first_page, "account_holder");
+    let ah_count = count_custom_elements(first_page, "account_holder_it");
     assert_eq!(
         ah_count, 1,
         "FormConfigurator should contain 1 AccountHolder custom element, found {ah_count}"
@@ -29579,7 +29669,7 @@ fn test_aaox_custom_elements_signatures_on_last_page() {
                 && !name.starts_with("toolbar")
         })
         .expect("Should have a last content page");
-    let sig_count = count_custom_elements(last_content_page, "signatures");
+    let sig_count = count_custom_elements(last_content_page, "signatures_it");
     assert_eq!(
         sig_count, 1,
         "Last content page should contain 1 Signatures custom element, found {sig_count}"
