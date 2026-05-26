@@ -404,15 +404,13 @@ where
     let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
-        let mut state_map: StateMap = HashMap::new();
-
-        for (state_idx, form_state) in form_states.iter().enumerate() {
+        // Collect labels + selections
+        let states_vec: Vec<_> = form_states.iter().enumerate().collect();
+        for (state_idx, form_state) in &states_vec {
             let label = format!("{}_{}", language, state_idx);
-
-            // Collect label + selections for callers (e.g. GraphViz).
             state_labels.push((label.clone(), form_state.selections.clone()));
 
-            // Labelled render
+            // Labelled render (sequential — emits events)
             if config.render_labelled {
                 match form_state.render_labelled(config.scale) {
                     Ok(image) => {
@@ -428,24 +426,48 @@ where
                     ))),
                 }
             }
+        }
 
-            // Structured output
-            let envelope = form_state.structured(context.clone());
-            let signature = selection_signature(&form_state.selections);
+        // Structured output — parallelized across states
+        #[cfg(not(target_arch = "wasm32"))]
+        let structured_results: Vec<_> = {
+            use rayon::prelude::*;
+            states_vec
+                .par_iter()
+                .map(|(state_idx, form_state)| {
+                    let label = format!("{}_{}", language, state_idx);
+                    let envelope = form_state.structured(context.clone());
+                    let signature = selection_signature(&form_state.selections);
+                    (label, signature, form_state.selections.clone(), envelope)
+                })
+                .collect()
+        };
 
+        #[cfg(target_arch = "wasm32")]
+        let structured_results: Vec<_> = states_vec
+            .iter()
+            .map(|(state_idx, form_state)| {
+                let label = format!("{}_{}", language, state_idx);
+                let envelope = form_state.structured(context.clone());
+                let signature = selection_signature(&form_state.selections);
+                (label, signature, form_state.selections.clone(), envelope)
+            })
+            .collect();
+
+        let mut state_map: StateMap = HashMap::new();
+        for (_label, signature, selections, envelope) in structured_results {
             if state_map
-                .insert(signature.clone(), (form_state.selections.clone(), envelope))
+                .insert(signature.clone(), (selections, envelope))
                 .is_some()
             {
                 return Err(Error::Conversion(format!(
                     "Duplicate state signature '{signature}' found in language '{language}'"
                 )));
             }
-
-            yield_fn().await;
         }
 
         per_language_state_maps.push((language.clone(), state_map));
+        yield_fn().await;
     }
 
     // ── Phase 5: Merging ─────────────────────────────────────────────────────
