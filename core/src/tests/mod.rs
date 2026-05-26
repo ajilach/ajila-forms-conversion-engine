@@ -29000,6 +29000,86 @@ fn test_aatz_de_lists_not_merged_across_paragraphs() {
 }
 
 #[test]
+fn test_aatz_en_lists_not_merged_across_paragraphs() {
+    // AATZ EN has the same structure as DE: two separate dash lists separated
+    // by a paragraph. The EN version does NOT have bold text in the separator
+    // paragraph, so the list detector must still recognize it as a separator.
+    //
+    // Expected structure:
+    // 1. Dash list (3 items): "will be acting...", "will be holding...", "may undertake..."
+    //    - "may undertake..." has nested roman sublist (3 items)
+    // 2. Paragraph: "Acting as a representative/nominee additionally means that..."
+    // 3. Dash list (2 items): "UBS (or any third party...) is obliged to", "the transfer..."
+    //    - first item has nested roman sublist (2 items)
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AATZ_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AATZ_019_EN.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // The nominee list ("will be acting...") should have exactly 3 items
+    let nominee_list = lists.iter().find(|l| {
+        l.items
+            .iter()
+            .any(|item| item.as_plain_text().contains("will be acting"))
+    });
+    assert!(
+        nominee_list.is_some(),
+        "Should find a list containing 'will be acting'"
+    );
+    let nominee_list = nominee_list.unwrap();
+    assert_eq!(
+        nominee_list.items.len(),
+        3,
+        "Nominee list should have 3 items (will be acting, will be holding, may undertake), \
+         found {}. Lists from different sections were incorrectly merged.",
+        nominee_list.items.len()
+    );
+
+    // The post-purchase list should contain "UBS (or any third party...)"
+    let post_purchase_list = lists.iter().find(|l| {
+        l.items.iter().any(|item| {
+            item.as_plain_text()
+                .contains("the transfer of the fund units")
+        })
+    });
+    assert!(
+        post_purchase_list.is_some(),
+        "Should find a separate list containing 'the transfer of the fund units'"
+    );
+    let post_purchase_list = post_purchase_list.unwrap();
+    assert_eq!(
+        post_purchase_list.items.len(),
+        2,
+        "Post-purchase list should have 2 items, found {}",
+        post_purchase_list.items.len()
+    );
+}
+
+#[test]
 fn test_bage_aem_fragment_position_within_panel() {
     // Fragments should appear at the position of the fields they replace,
     // NOT appended at the end of the panel. For the "Asset Manager" section

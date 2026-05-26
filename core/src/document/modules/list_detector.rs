@@ -735,7 +735,7 @@ impl AnalysisModule for ListDetector {
         // Collect (bounds, marker_kind) of ALL marker TextBlocks so that
         // can_extend_run can detect when a different-kind marker from
         // another column lies in the y-gap between two same-kind items.
-        let all_marker_tb_info: Vec<(Bounds, ListStyleType)> = roots
+        let all_marker_tb_info: Vec<(Bounds, ListStyleType, usize)> = roots
             .iter()
             .filter_map(|&idx| {
                 if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
@@ -744,7 +744,7 @@ impl AnalysisModule for ListDetector {
                 let text = doc.get_text_content(idx);
                 let marker = detect_marker(&text)?;
                 let bounds = doc.get_bounds(idx)?;
-                Some((bounds, marker.kind))
+                Some((bounds, marker.kind, idx))
             })
             .collect();
 
@@ -780,7 +780,7 @@ impl AnalysisModule for ListDetector {
                     None => return false,
                 };
                 let continuation_gap = Decimal::from(5);
-                let is_continuation = all_marker_tb_info.iter().any(|(mb, _)| {
+                let is_continuation = all_marker_tb_info.iter().any(|(mb, _, _)| {
                     let mb_bottom = mb.y + mb.height;
                     let gap = bounds.y - mb_bottom;
                     if gap < Decimal::ZERO || gap > continuation_gap {
@@ -869,7 +869,7 @@ impl AnalysisModule for ListDetector {
             non_tb_root_ys: &[Decimal],
             ws_leaf_ys: &HashSet<Decimal>,
             non_marker_tb_bounds: &[Bounds],
-            all_marker_tb_info: &[(Bounds, ListStyleType)],
+            all_marker_tb_info: &[(Bounds, ListStyleType, usize)],
             x_tol: Decimal,
         ) -> bool {
             let last = match run.last() {
@@ -912,7 +912,7 @@ impl AnalysisModule for ListDetector {
             // from another column may lie in the y-gap.  This typically means a
             // section boundary (e.g. a numbered heading like "2. Konto-..."
             // between dash items).  Treat it as intervening.
-            let has_cross_column_different_marker = all_marker_tb_info.iter().any(|(mb, mk)| {
+            let has_cross_column_different_marker = all_marker_tb_info.iter().any(|(mb, mk, _)| {
                 if *mk == marker.kind {
                     return false; // same kind — not a boundary
                 }
@@ -1152,6 +1152,56 @@ impl AnalysisModule for ListDetector {
                         continue;
                     }
 
+                    // Check for period-terminated paragraph between A1 and B
+                    // (same logic as the B-to-A2 check below).
+                    let has_period_sep_a1_b =
+                        if let (Some(a1_bot), Some(b_top)) = (a1_last_bottom, b_first_top) {
+                            let (lo, hi) = if a1_bot <= b_top {
+                                (a1_bot, b_top)
+                            } else {
+                                (b_top, a1_bot)
+                            };
+                            let continuation_gap_local = Decimal::from(5);
+                            roots.iter().any(|&idx| {
+                                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                                    return false;
+                                }
+                                let text = doc.get_text_content(idx);
+                                let trimmed = text.trim();
+                                if trimmed.is_empty() || detect_marker(&text).is_some() {
+                                    return false;
+                                }
+                                let sep_bounds = match doc.get_bounds(idx) {
+                                    Some(b) => b,
+                                    None => return false,
+                                };
+                                let sep_bottom = sep_bounds.y + sep_bounds.height;
+                                if !(sep_bottom > lo && sep_bounds.y < hi) {
+                                    return false;
+                                }
+                                all_marker_tb_info.iter().any(|(mb, _, mb_idx)| {
+                                    let mb_bottom = mb.y + mb.height;
+                                    let gap = sep_bounds.y - mb_bottom;
+                                    if gap < Decimal::ZERO || gap > continuation_gap_local {
+                                        return false;
+                                    }
+                                    let x_offset = sep_bounds.x - mb.x;
+                                    if !(x_offset >= -x_tol && x_offset <= Decimal::from(50)) {
+                                        return false;
+                                    }
+                                    let marker_text = doc.get_text_content(*mb_idx);
+                                    marker_text.trim().ends_with('.')
+                                })
+                            })
+                        } else {
+                            false
+                        };
+
+                    if has_period_sep_a1_b {
+                        k += 1;
+                        continue;
+                    }
+
                     // Even with an intro signal, a bold heading or
                     // non-TextBlock element between B and A2 is a definitive
                     // section break that prevents merging.
@@ -1166,9 +1216,7 @@ impl AnalysisModule for ListDetector {
                                 if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
                                     return false;
                                 }
-                                if !doc.is_bold_group(idx)
-                                    && !doc.has_mixed_bold_rich_text(idx)
-                                {
+                                if !doc.is_bold_group(idx) && !doc.has_mixed_bold_rich_text(idx) {
                                     return false;
                                 }
                                 let text = doc.get_text_content(idx);
@@ -1197,6 +1245,73 @@ impl AnalysisModule for ListDetector {
                     // and A2, only merge if A1 introduces B (colon) or B is
                     // indented — otherwise these are separate lists.
                     if has_intervening_between_b_and_a2 && !a1_intro && !b_indented {
+                        k += 1;
+                        continue;
+                    }
+
+                    // Additional check: scan ALL root TextBlocks (including
+                    // those classified as continuations) between B's last item
+                    // and A2's first item.  If any non-marker TextBlock exists
+                    // there whose closest marker above ends with terminal
+                    // punctuation (period), it is a new paragraph that was
+                    // mis-classified as a continuation — block the merge.
+                    // The separator must also be at the same x as A1 (the outer
+                    // list) to avoid triggering on indented sub-item
+                    // continuations.
+                    let has_period_terminated_separator =
+                        if let (Some(b_bot), Some(a2_top)) = (b_last_bottom, a2_first_top) {
+                            let (lo, hi) = if b_bot <= a2_top {
+                                (b_bot, a2_top)
+                            } else {
+                                (a2_top, b_bot)
+                            };
+                            let continuation_gap = Decimal::from(5);
+                            roots.iter().any(|&idx| {
+                                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                                    return false;
+                                }
+                                let text = doc.get_text_content(idx);
+                                let trimmed = text.trim();
+                                if trimmed.is_empty() || detect_marker(&text).is_some() {
+                                    return false;
+                                }
+                                let sep_bounds = match doc.get_bounds(idx) {
+                                    Some(b) => b,
+                                    None => return false,
+                                };
+                                let sep_bottom = sep_bounds.y + sep_bounds.height;
+                                if !(sep_bottom > lo && sep_bounds.y < hi) {
+                                    return false;
+                                }
+                                // Separator must be at the same x-position as A1
+                                // (the outer list). Sub-item continuations are
+                                // indented and should not block the merge.
+                                if let Some(ax) = a1_x {
+                                    if (sep_bounds.x - ax).abs() > x_tol {
+                                        return false;
+                                    }
+                                }
+                                // Check if this TextBlock's closest marker above
+                                // ends with a period (complete sentence).
+                                all_marker_tb_info.iter().any(|(mb, _, mb_idx)| {
+                                    let mb_bottom = mb.y + mb.height;
+                                    let gap = sep_bounds.y - mb_bottom;
+                                    if gap < Decimal::ZERO || gap > continuation_gap {
+                                        return false;
+                                    }
+                                    let x_offset = sep_bounds.x - mb.x;
+                                    if !(x_offset >= -x_tol && x_offset <= Decimal::from(50)) {
+                                        return false;
+                                    }
+                                    let marker_text = doc.get_text_content(*mb_idx);
+                                    marker_text.trim().ends_with('.')
+                                })
+                            })
+                        } else {
+                            false
+                        };
+
+                    if has_period_terminated_separator {
                         k += 1;
                         continue;
                     }
