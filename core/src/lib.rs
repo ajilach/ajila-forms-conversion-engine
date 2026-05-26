@@ -878,12 +878,33 @@ impl<'a> ExactSizeIterator for FormStatesIter<'a> {
 /// This is the shared implementation behind [`Blueprint::merged_structured()`]
 /// and [`run_exhaustive_to_merged()`].
 fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<StructuredNode> {
-    let mut structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = Vec::new();
+    #[cfg(not(target_arch = "wasm32"))]
+    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = {
+        use rayon::prelude::*;
+        form_states
+            .collected
+            .par_iter()
+            .map(|collected_state| {
+                let state = FormState {
+                    flattened: collected_state.flattened.clone(),
+                    selections: collected_state.selections.clone(),
+                    label: collected_state.label.clone(),
+                    global_ctx: Arc::clone(&form_states.global_ctx),
+                };
+                let envelope = state.structured(context.clone());
+                (state.selections, envelope.content)
+            })
+            .collect()
+    };
 
-    for state in form_states.iter() {
-        let envelope = state.structured(context.clone());
-        structured_outputs.push((state.selections.clone(), envelope.content));
-    }
+    #[cfg(target_arch = "wasm32")]
+    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = form_states
+        .iter()
+        .map(|state| {
+            let envelope = state.structured(context.clone());
+            (state.selections, envelope.content)
+        })
+        .collect();
 
     merge_structured_outputs(structured_outputs)
 }

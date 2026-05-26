@@ -1580,9 +1580,19 @@ impl<'a, 'b> Converter<'a, 'b> {
         if let Some(widget) = node.widget_type() {
             return match widget {
                 WidgetKind::Text => self.text_field_type(node),
-                WidgetKind::TextArea => FieldType::Textarea {
-                    max_length: self.get_max_length(node),
-                },
+                WidgetKind::TextArea => {
+                    // Some forms mark single-line fields with multiLine="1" even
+                    // though the field is too short to display multiple lines.
+                    // Treat fields shorter than ~18pt as regular text fields.
+                    let min_textarea_height = Decimal::from(18);
+                    if node.bounds().height < min_textarea_height {
+                        self.text_field_type(node)
+                    } else {
+                        FieldType::Textarea {
+                            max_length: self.get_max_length(node),
+                        }
+                    }
+                }
                 WidgetKind::Checkbox => FieldType::Bool,
                 WidgetKind::Radio => FieldType::Radio { options: vec![] },
                 WidgetKind::Dropdown => {
