@@ -9384,7 +9384,8 @@ impl Flattened {
     ///
     /// Determine the font weight override from a rich text paragraph's runs.
     /// Returns `Some(Bold)` if all content runs are bold, `Some(Normal)` if all
-    /// are normal, or `None` for mixed/empty paragraphs.
+    /// are normal, or the dominant weight (by character count) for mixed paragraphs.
+    /// Returns `None` only for empty paragraphs.
     fn rich_paragraph_weight_override(para: &RichParagraph) -> Option<FontWeight> {
         if para.runs.is_empty() {
             return None;
@@ -9401,6 +9402,28 @@ impl Flattened {
             Some(FontWeight::Bold)
         } else if has_normal && !has_bold {
             Some(FontWeight::Normal)
+        } else if has_bold && has_normal {
+            // Mixed: use the dominant weight by character count.
+            // A paragraph that starts with a short bold phrase but continues
+            // with normal text should not be marked as bold overall.
+            let bold_chars: usize = para
+                .runs
+                .iter()
+                .filter(|r| r.bold && !r.text.trim().is_empty())
+                .map(|r| r.text.len())
+                .sum();
+            let normal_chars: usize = para
+                .runs
+                .iter()
+                .filter(|r| !r.bold && !r.text.trim().is_empty())
+                .map(|r| r.text.len())
+                .sum();
+
+            if bold_chars >= normal_chars {
+                Some(FontWeight::Bold)
+            } else {
+                Some(FontWeight::Normal)
+            }
         } else {
             None
         }

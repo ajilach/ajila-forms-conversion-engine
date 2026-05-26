@@ -763,6 +763,12 @@ impl AnalysisModule for ListDetector {
                 if doc.is_bold_group(idx) {
                     return true;
                 }
+                // TextBlocks with mixed bold/non-bold rich text content are
+                // styled paragraphs (e.g. a sentence starting with a bold
+                // phrase), not list continuations. These are separators.
+                if doc.has_mixed_bold_rich_text(idx) {
+                    return true;
+                }
                 // Non-bold TextBlocks are separators UNLESS they are
                 // continuations of a marker TextBlock (i.e., immediately
                 // below a marker TB at the same or indented x position).
@@ -1160,7 +1166,9 @@ impl AnalysisModule for ListDetector {
                                 if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
                                     return false;
                                 }
-                                if !doc.is_bold_group(idx) {
+                                if !doc.is_bold_group(idx)
+                                    && !doc.has_mixed_bold_rich_text(idx)
+                                {
                                     return false;
                                 }
                                 let text = doc.get_text_content(idx);

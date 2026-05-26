@@ -29248,8 +29248,34 @@ fn test_bbdo_adresszusatz_is_not_textarea() {
         "Adresszusatz should be a normal text field"
     );
     assert!(
-        matches!(adresszusatz_field.unwrap().input_type, crate::structured::FieldType::Text { .. }),
+        matches!(
+            adresszusatz_field.unwrap().input_type,
+            crate::structured::FieldType::Text { .. }
+        ),
         "Adresszusatz should have FieldType::Text, got {:?}",
         adresszusatz_field.unwrap().input_type
     );
+}
+
+#[test]
+fn test_aatz_bold_paragraph_not_detected_as_heading() {
+    // In AATZ DE, the text "Nach dem Kauf des Hedgefonds als Vertreter/Nominee
+    // zu agieren bedeutet zusätzlich, dass" starts with bold text but is a
+    // normal paragraph, not a heading. Bold text at body size that is too long
+    // should not be classified as a heading.
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AATZ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AATZ_019_DE.pdf");
+
+    let headings = collect_headings(&structured_nodes);
+
+    // None of the headings should contain this paragraph text
+    for (_level, text) in &headings {
+        assert!(
+            !text.contains("Vertreter/Nominee zu agieren bedeutet"),
+            "Text 'Nach dem Kauf des Hedgefonds als Vertreter/Nominee zu agieren bedeutet...' \
+             should be a paragraph, not a heading. Found as heading: {}",
+            text
+        );
+    }
 }

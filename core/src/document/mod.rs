@@ -753,6 +753,29 @@ impl<'a> Document<'a> {
         self.collect_nodes(group_idx).iter().any(|n| n.is_bold())
     }
 
+    /// Check if a group contains rich text with mixed bold/non-bold runs.
+    /// This indicates a styled paragraph with emphasis, not a uniformly-styled block.
+    pub fn has_mixed_bold_rich_text(&self, group_idx: usize) -> bool {
+        for node in self.collect_nodes(group_idx) {
+            if let Some(rt) = node.rich_text() {
+                for para in &rt.paragraphs {
+                    let has_bold = para
+                        .runs
+                        .iter()
+                        .any(|r| !r.text.trim().is_empty() && r.bold);
+                    let has_normal = para
+                        .runs
+                        .iter()
+                        .any(|r| !r.text.trim().is_empty() && !r.bold);
+                    if has_bold && has_normal {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a group (or any of its descendants) contains a field node.
     pub fn contains_field(&self, group_idx: usize) -> bool {
         let nodes = self.collect_nodes(group_idx);
