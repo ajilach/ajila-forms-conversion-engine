@@ -29216,3 +29216,40 @@ fn test_bbdo_019_merge_contains_tax_compliance_text_in_all_languages() {
         "Merged ES text should contain expected tax-compliance paragraph"
     );
 }
+
+#[test]
+fn test_bbdo_adresszusatz_is_not_textarea() {
+    let structured = crate::run_exhaustive_to_merged(input_path("BBDO_019_DE.pdf"))
+        .expect("Failed to process BBDO_019_DE.pdf");
+
+    let textareas = collect_textarea_fields(&structured);
+    let adresszusatz_textarea = textareas.iter().find(|f| {
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains("Adresszusatz"))
+            .unwrap_or(false)
+    });
+    assert!(
+        adresszusatz_textarea.is_none(),
+        "Adresszusatz should NOT be a textarea, but was detected as one: {:?}",
+        adresszusatz_textarea.map(|f| f.som_path_str())
+    );
+
+    // Confirm it's a normal text field
+    let fields = collect_fields(&structured);
+    let adresszusatz_field = fields.iter().find(|f| {
+        f.label
+            .as_ref()
+            .map(|l| l.as_plain_text().contains("Adresszusatz"))
+            .unwrap_or(false)
+    });
+    assert!(
+        adresszusatz_field.is_some(),
+        "Adresszusatz should be a normal text field"
+    );
+    assert!(
+        matches!(adresszusatz_field.unwrap().input_type, crate::structured::FieldType::Text { .. }),
+        "Adresszusatz should have FieldType::Text, got {:?}",
+        adresszusatz_field.unwrap().input_type
+    );
+}
