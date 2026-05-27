@@ -177,8 +177,17 @@ pub async fn run_copilot_smart_edit(
          No surrounding prose, no markdown fences, no trailing notes."
     );
 
+    // Resolve gh explicitly because packaged desktop apps often run with a
+    // minimal PATH that does not include Homebrew locations.
+    let gh_executable = resolve_gh_executable().ok_or_else(|| {
+        format!(
+            "Failed to locate GitHub CLI executable 'gh'. Install GitHub CLI and ensure it is available in PATH, or set GITHUB_CLI_PATH. Current PATH: {}",
+            std::env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
+        )
+    })?;
+
     // Build command
-    let mut cmd = tokio::process::Command::new("gh");
+    let mut cmd = tokio::process::Command::new(&gh_executable);
     cmd.arg("copilot").arg("--");
 
     if let Some(name) = session_name {
@@ -239,6 +248,137 @@ pub async fn run_copilot_smart_edit(
     }
 
     Ok(stdout)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn resolve_gh_executable() -> Option<std::path::PathBuf> {
+    use std::ffi::OsStr;
+    use std::path::{Path, PathBuf};
+
+    fn executable_name() -> &'static str {
+        #[cfg(target_os = "windows")]
+        {
+            "gh.exe"
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "gh"
+        }
+    }
+
+    fn has_file(path: &Path) -> bool {
+        path.is_file()
+    }
+
+    fn find_in_path(path_var: Option<&OsStr>, executable: &str) -> Option<PathBuf> {
+        let path_var = path_var?;
+        for dir in std::env::split_paths(path_var) {
+            let candidate = dir.join(executable);
+            if has_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
+    let executable = executable_name();
+
+    if let Some(path_override) = std::env::var_os("GITHUB_CLI_PATH") {
+        let override_path = PathBuf::from(path_override);
+        if has_file(&override_path) {
+            return Some(override_path);
+        }
+    }
+
+    if let Some(path_hit) = find_in_path(std::env::var_os("PATH").as_deref(), executable) {
+        return Some(path_hit);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in [
+            "/opt/homebrew/bin/gh",
+            "/usr/local/bin/gh",
+            "/opt/local/bin/gh",
+            "/usr/bin/gh",
+        ] {
+            let candidate = PathBuf::from(candidate);
+            if has_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for candidate in ["/usr/local/bin/gh", "/usr/bin/gh", "/snap/bin/gh"] {
+            let candidate = PathBuf::from(candidate);
+            if has_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            let candidate = PathBuf::from(local_app_data)
+                .join("GitHubCLI")
+                .join("bin")
+                .join("gh.exe");
+            if has_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::resolve_gh_executable;
+
+    #[test]
+    fn resolves_gh_from_path() {
+        use std::fs;
+
+        let tmp_root =
+            std::env::temp_dir().join(format!("blueprint-gh-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp_root);
+        fs::create_dir_all(&tmp_root).expect("create tmp root");
+
+        #[cfg(target_os = "windows")]
+        let gh_name = "gh.exe";
+        #[cfg(not(target_os = "windows"))]
+        let gh_name = "gh";
+
+        let gh_path = tmp_root.join(gh_name);
+        fs::write(&gh_path, b"#!/bin/sh\n").expect("write fake gh");
+
+        let old_path = std::env::var_os("PATH");
+        let old_override = std::env::var_os("GITHUB_CLI_PATH");
+
+        unsafe {
+            std::env::set_var("GITHUB_CLI_PATH", "");
+            std::env::set_var("PATH", &tmp_root);
+        }
+
+        let resolved = resolve_gh_executable();
+
+        match old_path {
+            Some(v) => unsafe { std::env::set_var("PATH", v) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+        match old_override {
+            Some(v) => unsafe { std::env::set_var("GITHUB_CLI_PATH", v) },
+            None => unsafe { std::env::remove_var("GITHUB_CLI_PATH") },
+        }
+
+        assert_eq!(resolved, Some(gh_path));
+
+        let _ = fs::remove_dir_all(&tmp_root);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
