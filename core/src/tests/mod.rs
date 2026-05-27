@@ -16417,7 +16417,7 @@ fn test_aaki_has_list_with_expected_items() {
 }
 
 #[test]
-fn test_aaki_has_exactly_two_signature_fragments() {
+fn test_aaki_fragment_count() {
     // AAKI_019_SP has multiple XSD elements of type SignatureType across
     // `nombres_de_los_apoderados`, `anexomifid_ii_...`, and the legitimation
     // section. The layout fix (lr-tb slack tracking) correctly keeps
@@ -16477,10 +16477,22 @@ fn test_aaki_has_exactly_two_signature_fragments() {
         fragment_refs
     );
 
+    let iban_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("IBAN"))
+        .collect();
+    assert_eq!(
+        iban_frags.len(),
+        1,
+        "Expected exactly 1 IBAN fragment node, found {}.\nAll fragments: {:?}",
+        iban_frags.len(),
+        fragment_refs
+    );
+
     assert_eq!(
         fragment_refs.len(),
-        5,
-        "Expected exactly 5 fragment nodes (4 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        6,
+        "Expected exactly 6 fragment nodes (4 Signature + 1 EntityBasic + 1 IBAN), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -19320,6 +19332,93 @@ fn test_aaha_de_has_one_repeatable_with_nachname_vorname() {
         labels.iter().any(|l| l.contains("Vorname")),
         "Repeatable should contain 'Vorname(n)', got: {:?}",
         labels
+    );
+}
+
+#[test]
+fn test_aagx_en_has_repeatable_with_lastname_firstnames() {
+    // AAGX EN should contain a repeatable section with person-name fields.
+    use crate::structured::StructuredNode;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAGX_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AAGX_019_EN.pdf");
+
+    let target_labels = ["Last name", "First name(s)"];
+    let mut found = false;
+
+    walk_structured_nodes(&structured_nodes, &mut |node| {
+        if found {
+            return;
+        }
+        if let StructuredNode::Repeatable(rep) = node {
+            let labels = collect_field_labels_trimmed(std::slice::from_ref(rep.item.as_ref()));
+            found = target_labels
+                .iter()
+                .all(|target| labels.iter().any(|label| label.contains(target)));
+        }
+    });
+
+    assert!(
+        found,
+        "Expected to find a repeatable section containing fields with labels 'Last name' and 'First name(s)'"
+    );
+}
+
+#[test]
+fn test_aagx_en_repeatable_not_replaced_by_fragment() {
+    // The repeatable section in AAGX EN (containing "Last name" / "First name(s)")
+    // must remain a Repeatable node in the AEM output and NOT be replaced by a Fragment.
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAGX_019_EN.pdf")).expect("Failed to load AAGX_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // There must be at least one Repeatable in the AEM output
+    let mut has_repeatable = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { .. } = node {
+            has_repeatable = true;
+        }
+    });
+
+    assert!(
+        has_repeatable,
+        "AAGX EN AEM output should contain a Repeatable node (not replaced by a fragment)"
+    );
+
+    // Additionally verify no Fragment replaced the repeatable's fields
+    let mut fragment_contains_person_fields = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Fragment { frag_ref, .. } = node {
+            let frag_lower = frag_ref.to_lowercase();
+            if frag_lower.contains("last") || frag_lower.contains("first") || frag_lower.contains("name") {
+                fragment_contains_person_fields = true;
+            }
+        }
+    });
+
+    assert!(
+        !fragment_contains_person_fields,
+        "AAGX EN: the person-name repeatable should NOT be replaced by a fragment"
     );
 }
 

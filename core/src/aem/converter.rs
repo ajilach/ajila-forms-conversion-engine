@@ -1590,11 +1590,19 @@ fn replace_with_fragments(
             // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
             let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
 
-            if !has_intermediates && !is_conditional && !contains_conditional(children) {
+            let contains_repeatable =
+                children.iter().any(|c| matches!(c, AemNode::Repeatable { .. }));
+
+            if !has_intermediates
+                && !is_conditional
+                && !contains_conditional(children)
+                && !contains_repeatable
+            {
                 // Direct match: all paths are single-segment → try to replace
                 // the whole panel.  Never replace conditional panels (or panels
-                // containing conditionals) because their names are referenced
-                // by visibility scripts.
+                // containing conditionals/repeatables) because those wrappers
+                // must be preserved. Repeatables and conditionals are handled
+                // by dedicated handlers below that place fragments inside them.
                 let leaves = collect_child_bind_ref_leaves(children);
                 if !leaves.is_empty() {
                     if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
@@ -1671,6 +1679,8 @@ fn replace_with_fragments(
                         // we can insert the fragment at that position.
                         let mut first_position_for_prefix: Vec<Option<usize>> =
                             vec![None; matched_prefixes.len()];
+                        let mut placed_in_repeatable: Vec<bool> =
+                            vec![false; matched_prefixes.len()];
 
                         let mut new_children: Vec<Option<AemNode>> =
                             children.drain(..).map(Some).collect();
@@ -1687,6 +1697,7 @@ fn replace_with_fragments(
                             if is_cond {
                                 continue;
                             }
+                            let is_repeatable = matches!(child, AemNode::Repeatable { .. });
                             let child_paths =
                                 collect_child_bind_ref_full_paths(std::slice::from_ref(child));
                             if child_paths.is_empty() {
@@ -1699,25 +1710,43 @@ fn replace_with_fragments(
                                     .all(|cp| cp == mp || cp.starts_with(&format!("{}/", mp)))
                             });
                             if let Some(prefix_idx) = covering_prefix_idx {
-                                // Record the first position where this prefix's
-                                // fields appeared
-                                if first_position_for_prefix[prefix_idx].is_none() {
-                                    first_position_for_prefix[prefix_idx] = Some(idx);
+                                if is_repeatable {
+                                    // Place the fragment inside the Repeatable
+                                    // instead of consuming it.
+                                    let frag = &frag_nodes[prefix_idx];
+                                    if let Some(AemNode::Repeatable {
+                                        children: rep_children,
+                                        ..
+                                    }) = slot.as_mut()
+                                    {
+                                        *rep_children = vec![frag.clone()];
+                                    }
+                                    placed_in_repeatable[prefix_idx] = true;
+                                } else {
+                                    // Record the first position where this prefix's
+                                    // fields appeared
+                                    if first_position_for_prefix[prefix_idx].is_none() {
+                                        first_position_for_prefix[prefix_idx] = Some(idx);
+                                    }
+                                    // Mark for removal
+                                    *slot = None;
                                 }
-                                // Mark for removal
-                                *slot = None;
                             }
                         }
 
                         // Insert fragment nodes at the position of the first
                         // removed child for each group, sorted by position.
+                        // Skip prefixes that were already placed inside a
+                        // Repeatable or whose paths come only from Repeatable
+                        // children (first_position_for_prefix is None).
                         let mut insertions: Vec<(usize, AemNode)> = frag_nodes
                             .into_iter()
                             .enumerate()
-                            .map(|(frag_idx, frag_node)| {
-                                let pos = first_position_for_prefix[frag_idx]
-                                    .unwrap_or(new_children.len());
-                                (pos, frag_node)
+                            .filter_map(|(frag_idx, frag_node)| {
+                                if placed_in_repeatable[frag_idx] {
+                                    return None;
+                                }
+                                first_position_for_prefix[frag_idx].map(|pos| (pos, frag_node))
                             })
                             .collect();
                         insertions.sort_by_key(|(pos, _)| *pos);
@@ -1783,6 +1812,27 @@ fn replace_with_fragments(
                         if let AemNode::Panel { children, .. } = &mut nodes[i] {
                             *children = frag_nodes;
                         }
+                    }
+                }
+            }
+        }
+
+        // Handle Repeatable nodes: if their children collectively match a
+        // fragment type, replace the children with Fragment nodes inside the
+        // Repeatable (preserving the add/remove wrapper). This mirrors the
+        // conditional panel handler above.
+        if let AemNode::Repeatable { children, .. } = &nodes[i] {
+            let leaves = collect_child_bind_ref_leaves(children);
+            if !leaves.is_empty() {
+                if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
+                    let fragment = fragment.clone();
+                    let full_paths = collect_child_bind_ref_full_paths(children);
+                    let bind_ref = compute_common_bind_ref_prefix(&full_paths)
+                        .map(|p| to_fragment_bind_ref(&p, xsd_config));
+                    let n = count_fragment_instances(&fragment, &leaves);
+                    let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                    if let AemNode::Repeatable { children, .. } = &mut nodes[i] {
+                        *children = frag_nodes;
                     }
                 }
             }
